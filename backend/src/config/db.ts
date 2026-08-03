@@ -89,6 +89,16 @@ export function connectPosts(): Collection<ConnectPost> {
   return getDb().collection<ConnectPost>('connect_posts');
 }
 
+export function connectMedia(): Collection<{
+  objectKey: string;
+  contentType: string;
+  size: number;
+  bytes: Buffer;
+  createdAt: Date;
+}> {
+  return getDb().collection('connect_media');
+}
+
 export function games(): Collection<Game> {
   return getDb().collection<Game>('games');
 }

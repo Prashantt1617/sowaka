@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
@@ -105,9 +106,7 @@ class ConnectApiService {
       _ => throw UnsupportedError('Unsupported method $method'),
     };
 
-    final decoded = response.body.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = _decodeResponse(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
     }
@@ -132,18 +131,47 @@ class ConnectApiService {
         'media',
         media.path,
         filename: media.name,
+        contentType: _mediaType(media.mimeType),
       ),
     );
     final streamed = await _client.send(request);
     final response = await http.Response.fromStream(streamed);
-    final decoded = response.body.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = _decodeResponse(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
     }
     final message = decoded['message'] as String? ?? 'Connect request failed';
     throw ConnectApiException(message, response.statusCode);
+  }
+
+  Map<String, dynamic> _decodeResponse(http.Response response) {
+    if (response.body.trim().isEmpty) return <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } on FormatException {
+      // Proxies and hosting platforms may return plain text or HTML errors,
+      // especially when an upload exceeds their configured request limit.
+    }
+
+    final plainText = response.body
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    throw ConnectApiException(
+      plainText.isEmpty
+          ? 'The server returned an invalid response'
+          : plainText.substring(0, plainText.length.clamp(0, 240)),
+      response.statusCode,
+    );
+  }
+
+  MediaType _mediaType(String value) {
+    final parts = value.split('/');
+    if (parts.length != 2 || parts.any((part) => part.trim().isEmpty)) {
+      return MediaType('application', 'octet-stream');
+    }
+    return MediaType(parts[0], parts[1]);
   }
 }
 

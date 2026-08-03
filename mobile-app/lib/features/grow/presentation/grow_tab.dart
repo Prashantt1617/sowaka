@@ -1,7 +1,7 @@
 part of '../../manager/presentation/manager_screen.dart';
 
 class _GrowTab extends StatefulWidget {
-  const _GrowTab({required this.state, required this.onOpenProfile});
+  const _GrowTab({super.key, required this.state, required this.onOpenProfile});
 
   final ManagerState state;
   final VoidCallback onOpenProfile;

@@ -2,6 +2,7 @@ part of '../../manager/presentation/manager_screen.dart';
 
 class _ManageContent extends StatelessWidget {
   const _ManageContent({
+    super.key,
     required this.state,
     required this.bloc,
     required this.onOpenProfile,

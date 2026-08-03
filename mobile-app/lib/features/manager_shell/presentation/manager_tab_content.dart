@@ -17,17 +17,22 @@ class _TabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      child: switch (state.tab) {
-        ManagerTab.manage => _ManageContent(
+    return IndexedStack(
+      index: ManagerTab.values.indexOf(state.tab),
+      children: [
+        _ManageContent(
+          key: const ValueKey('manage-tab'),
           state: state,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
         ),
-        ManagerTab.grow => _GrowTab(state: state, onOpenProfile: onOpenProfile),
-        ManagerTab.connect => _ConnectTab(
-          key: ValueKey('connect'),
+        _GrowTab(
+          key: const ValueKey('grow-tab'),
+          state: state,
+          onOpenProfile: onOpenProfile,
+        ),
+        _ConnectTab(
+          key: const ValueKey('connect-tab'),
           session: session,
           recognitionCandidates: state.dashboard!.recognitionCandidates,
           profileAction: _ProfileAvatarAction(
@@ -36,7 +41,7 @@ class _TabContent extends StatelessWidget {
             onTap: onOpenProfile,
           ),
         ),
-        ManagerTab.quick => QuickActionsScreen(
+        QuickActionsScreen(
           key: const ValueKey('quick-actions'),
           bloc: bloc,
           dashboard: state.dashboard!,
@@ -47,7 +52,7 @@ class _TabContent extends StatelessWidget {
             onTap: onOpenProfile,
           ),
         ),
-      },
+      ],
     );
   }
 }

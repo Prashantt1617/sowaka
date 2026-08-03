@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "seed:sysjini": "tsx src/scripts/seed-sysjini.ts",
+    "attendance:seed": "tsx src/scripts/seed-attendance.ts",
     "attendance:import": "tsx src/scripts/import-attendance.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\""

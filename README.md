@@ -86,6 +86,21 @@ The decision body is `{"decision":"approved"}` or
 employee from the session and checks the employee's current `managerUserId`
 before exposing or deciding a request.
 
+### Attendance sample data
+
+Generate deterministic sample punches for an existing employee code and an
+inclusive date range:
+
+```bash
+cd backend
+npm run attendance:seed -- SYS-001 2026-07-01 2026-07-31
+```
+
+Dates may use either `YYYY-MM-DD` or `DD-MM-YYYY` format.
+
+The command skips Saturdays and Sundays, preserves imported or manually entered
+records, and can be run repeatedly without creating duplicates.
+
 ## HR Admin Web
 
 ```bash

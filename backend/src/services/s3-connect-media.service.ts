@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
+import { connectMedia } from '../config/db';
 
 export type ConnectMediaFile = {
   originalName: string;
@@ -19,6 +20,23 @@ export type ConnectMediaFile = {
 let client: S3Client | undefined;
 
 export async function uploadConnectMedia(userId: string, file: ConnectMediaFile) {
+  if (!hasS3Configuration()) {
+    if (!file.contentType.startsWith('image/')) {
+      throw new Error('AWS S3 is required for video uploads');
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('Images must be 10 MB or smaller');
+    }
+    const objectKey = `mongo/${randomUUID()}`;
+    await connectMedia().insertOne({
+      objectKey,
+      contentType: file.contentType,
+      size: file.size,
+      bytes: file.bytes,
+      createdAt: new Date(),
+    });
+    return { objectKey, contentType: file.contentType, size: file.size };
+  }
   validateConfiguration();
   const objectKey = buildObjectKey(userId, file.originalName);
   const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
@@ -37,11 +55,20 @@ export async function uploadConnectMedia(userId: string, file: ConnectMediaFile)
 }
 
 export async function deleteConnectMedia(objectKey: string) {
+  if (objectKey.startsWith('mongo/')) {
+    await connectMedia().deleteOne({ objectKey });
+    return;
+  }
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
 }
 
 export async function presignConnectMedia(objectKey: string) {
+  if (objectKey.startsWith('mongo/')) {
+    const media = await connectMedia().findOne({ objectKey });
+    if (!media) throw new Error('Connect media not found');
+    return `data:${media.contentType};base64,${media.bytes.toString('base64')}`;
+  }
   validateConfiguration();
   return getSignedUrl(
     getClient(),
@@ -81,6 +108,10 @@ function validateConfiguration() {
   if (env.s3.serverSideEncryption === 'aws:kms' && !env.s3.kmsKeyId) {
     throw new Error('AWS_S3_KMS_KEY_ID is required when using aws:kms');
   }
+}
+
+function hasS3Configuration() {
+  return Boolean(env.s3.region && env.s3.bucket);
 }
 
 function buildObjectKey(userId: string, originalName: string) {
