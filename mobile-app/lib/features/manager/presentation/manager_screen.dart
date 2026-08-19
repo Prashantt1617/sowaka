@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -8,12 +9,14 @@ import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
+import '../../games/presentation/web_game_screen.dart';
 import '../../profile/presentation/profile_screen.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../bloc/manager_bloc.dart';
 import '../data/manager_models.dart';
 
 part '../../connect/presentation/connect_tab.dart';
+part '../../games/presentation/games_tab.dart';
 part '../../grow/presentation/grow_tab.dart';
 part '../../manage/presentation/apply_leave_sheet.dart';
 part '../../manage/presentation/feedback_components.dart';

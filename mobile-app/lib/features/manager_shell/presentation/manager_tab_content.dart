@@ -36,6 +36,15 @@ class _TabContent extends StatelessWidget {
             onTap: onOpenProfile,
           ),
         ),
+        ManagerTab.games => _GamesTab(
+          key: const ValueKey('games'),
+          session: session,
+          profileAction: _ProfileAvatarAction(
+            key: const ValueKey('games-profile-avatar'),
+            initial: state.dashboard!.managerInitial,
+            onTap: onOpenProfile,
+          ),
+        ),
         ManagerTab.quick => QuickActionsScreen(
           key: const ValueKey('quick-actions'),
           bloc: bloc,

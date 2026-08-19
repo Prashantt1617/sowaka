@@ -19,6 +19,11 @@ import { OvertimeRequest } from '../models/overtime.model';
 import { ReimbursementClaim } from '../models/reimbursement.model';
 import { ConnectPost } from '../models/connect.model';
 import { Game, GameScore } from '../models/game.model';
+import { PayHead } from '../models/payHead.model';
+import { StateStatutoryRule } from '../models/statutoryRule.model';
+import { SalaryStructure } from '../models/salaryStructure.model';
+import { SalaryTemplate } from '../models/salaryTemplate.model';
+import { PayrollRun, Payslip } from '../models/payrollRun.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -95,6 +100,30 @@ export function gameScores(): Collection<GameScore> {
   return getDb().collection<GameScore>('game_scores');
 }
 
+export function payHeads(): Collection<PayHead> {
+  return getDb().collection<PayHead>('pay_heads');
+}
+
+export function statutoryRules(): Collection<StateStatutoryRule> {
+  return getDb().collection<StateStatutoryRule>('statutory_rules');
+}
+
+export function salaryStructures(): Collection<SalaryStructure> {
+  return getDb().collection<SalaryStructure>('salary_structures');
+}
+
+export function salaryTemplates(): Collection<SalaryTemplate> {
+  return getDb().collection<SalaryTemplate>('salary_templates');
+}
+
+export function payrollRuns(): Collection<PayrollRun> {
+  return getDb().collection<PayrollRun>('payroll_runs');
+}
+
+export function payslips(): Collection<Payslip> {
+  return getDb().collection<Payslip>('payslips');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   await database
     .collection<OtpChallenge>('otp_challenges')
@@ -163,6 +192,32 @@ async function ensureIndexes(database: Db): Promise<void> {
   const scoresCollection = database.collection<GameScore>('game_scores');
   await scoresCollection.createIndex({ gameId: 1, userId: 1 }, { unique: true });
   await scoresCollection.createIndex({ gameId: 1, score: -1, achievedAt: 1 });
+
+  const payHeadsCollection = database.collection<PayHead>('pay_heads');
+  // Codes are the stable reference used by Salary Structures, unique per org.
+  await payHeadsCollection.createIndex({ org: 1, code: 1 }, { unique: true });
+  await payHeadsCollection.createIndex({ org: 1, category: 1, name: 1 });
+
+  const statutoryRulesCollection = database.collection<StateStatutoryRule>('statutory_rules');
+  // One rule set per org per state; the payroll run resolves by (org, state).
+  await statutoryRulesCollection.createIndex({ org: 1, state: 1 }, { unique: true });
+
+  const salaryStructuresCollection = database.collection<SalaryStructure>('salary_structures');
+  // One salary structure per employee in v1 (Salary Revision history comes later).
+  await salaryStructuresCollection.createIndex({ org: 1, userId: 1 }, { unique: true });
+
+  const salaryTemplatesCollection = database.collection<SalaryTemplate>('salary_templates');
+  // Template codes are the stable reference used by Salary Structures, unique per org.
+  await salaryTemplatesCollection.createIndex({ org: 1, code: 1 }, { unique: true });
+
+  const payrollRunsCollection = database.collection<PayrollRun>('payroll_runs');
+  // One run per org per period (a rejected run is replaced on recreate).
+  await payrollRunsCollection.createIndex({ org: 1, period: 1 }, { unique: true });
+  await payrollRunsCollection.createIndex({ org: 1, status: 1, period: -1 });
+
+  const payslipsCollection = database.collection<Payslip>('payslips');
+  await payslipsCollection.createIndex({ org: 1, runId: 1 });
+  await payslipsCollection.createIndex({ userId: 1, period: -1 });
 }
 
 export async function closeDb(): Promise<void> {

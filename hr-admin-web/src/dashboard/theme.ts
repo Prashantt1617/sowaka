@@ -3,6 +3,7 @@
 export type Pill = { bg: string; fg: string };
 
 export type View =
+  | 'organisation'
   | 'overview'
   | 'leave'
   | 'overtime'
@@ -12,8 +13,19 @@ export type View =
   | 'onboarding'
   | 'exit'
   | 'payroll'
+  | 'payschedule'
+  | 'taxdetails'
+  | 'payheads'
+  | 'templates'
+  | 'statutorycomponents'
+  | 'salary'
+  | 'payruns'
+  | 'statutory'
+  | 'departments'
+  | 'designations'
   | 'employees'
   | 'orgchart'
+  | 'usersroles'
   | 'settings'
   | 'games';
 
@@ -42,7 +54,7 @@ export const TYPE: Record<LeaveType, string> = {
   Casual: '#6E7AA8',
   Earned: '#5E9E7A',
   WFH: '#C98A3C',
-  Unpaid: '#8B8378',
+  Unpaid: '#717171',
 };
 
 export const STAT: Record<ReqStatus, Pill> = {
@@ -56,7 +68,7 @@ export const FSTAT: Record<FeedbackStatus, Pill> = {
   Acknowledged: { bg: '#E4EDE0', fg: '#4F7A52' },
   Submitted: { bg: '#E7ECF4', fg: '#4A6FA5' },
   Pending: { bg: '#F6E9D5', fg: '#9A6B25' },
-  Draft: { bg: '#EFEAE1', fg: '#8B8378' },
+  Draft: { bg: '#F7F7F9', fg: '#717171' },
 };
 
 export const ETYPE: Record<EmpType, Pill> = {
@@ -66,7 +78,7 @@ export const ETYPE: Record<EmpType, Pill> = {
 };
 
 export const OTDUR: Record<OtDuration, Pill> = {
-  'Full day': { bg: '#F7E7DE', fg: '#A34B2B' },
+  'Full day': { bg: '#E7F4FB', fg: '#0571A6' },
   'Half day': { bg: '#EEF0E6', fg: '#5E6B3E' },
 };
 
@@ -83,6 +95,7 @@ export function initials(name: string): string {
 
 // [title, meta] per section.
 export const TITLES: Record<View, [string, string]> = {
+  organisation: ['Organisation', 'The current organisation · Convrse Spaces'],
   overview: ['HR control room', 'Tuesday, 30 June · Convrse Spaces'],
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
@@ -92,8 +105,20 @@ export const TITLES: Record<View, [string, string]> = {
   onboarding: ['Onboarding', 'People · Convrse Spaces'],
   exit: ['Exit', 'People · Convrse Spaces'],
   payroll: ['Payroll', 'People · Convrse Spaces'],
-  employees: ['Employees', 'Organisation · Convrse Spaces'],
-  orgchart: ['Org chart', 'Organisation · Convrse Spaces'],
+  payschedule: ['Pay Schedule', 'Payroll · how often and when payroll runs'],
+  taxdetails: ['Tax Details', 'Payroll · org-level tax identity for filings'],
+  payheads: ['Salary Components', 'Payroll · reusable component catalog'],
+  templates: ['Salary Templates', 'Payroll · reusable pay groups'],
+  statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
+  salary: ['Salary Structure', 'Payroll · assign a template to an employee'],
+  payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
+  statutory: ['Statutory Rules', 'Payroll · per-state PT, LWF & bonus'],
+  departments: ['Departments', 'People · Convrse Spaces'],
+  designations: ['Designations', 'People · Convrse Spaces'],
+  employees: ['Employees', 'People · Convrse Spaces'],
+  orgchart: ['Org chart', 'People · Convrse Spaces'],
+  usersroles: ['Accesses', 'People · users, roles and permissions'],
+  settings: ['Settings', 'Organisation · Convrse Spaces'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
 };
 

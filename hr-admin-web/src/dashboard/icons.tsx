@@ -26,10 +26,35 @@ export const Logo = () => (
 
 // ---- Nav / section icons (18px, currentColor) ----
 export const navIcon: Record<View, ReactElement> = {
+  organisation: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M3 21h18M5 21V7l7-4 7 4v14" />
+      <path d="M9 9h.01M12 9h.01M15 9h.01M9 13h.01M12 13h.01M15 13h.01M10 21v-4h4v4" />
+    </svg>
+  ),
   games: (
     <svg {...base(18, 'currentColor')}>
       <path d="M7 8h10a4 4 0 0 1 3.7 5.5l-1.2 3a2 2 0 0 1-3.2.8L14.8 16H9.2l-1.5 1.3a2 2 0 0 1-3.2-.8l-1.2-3A4 4 0 0 1 7 8z" />
       <path d="M8 11v4M6 13h4M16 12h.01M18 14h.01" />
+    </svg>
+  ),
+  departments: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="13" width="6" height="8" rx="1" />
+      <rect x="14" y="13" width="6" height="8" rx="1" />
+      <path d="M9 13V9a3 3 0 0 1 3-3 3 3 0 0 1 3 3v4M12 6V3" />
+    </svg>
+  ),
+  designations: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 3l2.3 4.7 5.2.8-3.7 3.6.9 5.1L12 15l-4.6 2.4.9-5.1L4.5 8.5l5.2-.8L12 3z" />
+    </svg>
+  ),
+  usersroles: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M18 8.5l1.4 1.4L22 7.3" />
     </svg>
   ),
   overview: (
@@ -89,6 +114,56 @@ export const navIcon: Record<View, ReactElement> = {
       <circle cx="17.5" cy="14.5" r="1.3" />
     </svg>
   ),
+  payschedule: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+      <path d="M3 9h18M8 3v3M16 3v3M8 13h3M8 16.5h6" />
+    </svg>
+  ),
+  taxdetails: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 3h8l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v4h4M9 13.5l2 2 4-4.5" />
+    </svg>
+  ),
+  payheads: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="3.5" width="18" height="17" rx="2.5" />
+      <path d="M7.5 8h9M7.5 12h9M7.5 16h5" />
+    </svg>
+  ),
+  templates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="3.5" width="8" height="8" rx="1.5" />
+      <rect x="13" y="3.5" width="8" height="5" rx="1.5" />
+      <rect x="13" y="11" width="8" height="9.5" rx="1.5" />
+      <rect x="3" y="14" width="8" height="6.5" rx="1.5" />
+    </svg>
+  ),
+  statutorycomponents: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+      <path d="M9 11.5l2 2 4-4" />
+    </svg>
+  ),
+  salary: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v10M9.5 9.2c0-1 1.1-1.7 2.5-1.7s2.5.7 2.5 1.7-1.1 1.6-2.5 1.6-2.5.7-2.5 1.7 1.1 1.7 2.5 1.7 2.5-.7 2.5-1.7" />
+    </svg>
+  ),
+  payruns: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v5h5M8 13l2.5 2.5L16 10" />
+    </svg>
+  ),
+  statutory: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  ),
   employees: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="9" cy="8" r="3.2" />
@@ -102,6 +177,12 @@ export const navIcon: Record<View, ReactElement> = {
       <rect x="2.5" y="16" width="6" height="5" rx="1.3" />
       <rect x="15.5" y="16" width="6" height="5" rx="1.3" />
       <path d="M12 8v4M5.5 16v-2.5h13V16" />
+    </svg>
+  ),
+  settings: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   ),
 };
@@ -145,26 +226,26 @@ export const phIcon: Partial<Record<View, ReactElement>> = {
 };
 
 // ---- Standalone icons ----
-export const IconSearch = ({ size = 16, stroke = '#B7AC9B' }: IconProps) => (
+export const IconSearch = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.9" strokeLinecap="round">
     <circle cx="11" cy="11" r="7" />
     <path d="M21 21l-4-4" />
   </svg>
 );
 
-export const IconChevronRight = ({ size = 17, stroke = '#CDC2B1' }: IconProps) => (
+export const IconChevronRight = ({ size = 17, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 6l6 6-6 6" />
   </svg>
 );
 
-export const IconChevronDown = ({ size = 14, stroke = '#B7AC9B', style }: IconProps) => (
+export const IconChevronDown = ({ size = 14, stroke = '#9197A2', style }: IconProps) => (
   <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 9l6 6 6-6" />
   </svg>
 );
 
-export const IconSort = ({ size = 16, stroke = '#B7AC9B' }: IconProps) => (
+export const IconSort = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
     <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
   </svg>
@@ -176,13 +257,13 @@ export const IconDownload = ({ size = 15, stroke = '#fff' }: IconProps) => (
   </svg>
 );
 
-export const IconClose = ({ size = 16, stroke = '#6E6457' }: IconProps) => (
+export const IconClose = ({ size = 16, stroke = '#484848' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round">
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
 
-export const IconEye = ({ size = 16, stroke = '#9B9082' }: IconProps) => (
+export const IconEye = ({ size = 16, stroke = '#717171' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
@@ -201,7 +282,7 @@ export const IconX = ({ size = 15, stroke = '#A8475F' }: IconProps) => (
   </svg>
 );
 
-export const IconBell = ({ size = 18, stroke = '#6E6457' }: IconProps) => (
+export const IconBell = ({ size = 18, stroke = '#484848' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
     <path d="M13.7 21a2 2 0 0 1-3.4 0" />
@@ -215,45 +296,45 @@ export const IconPlus = ({ size = 16, stroke = '#fff' }: IconProps) => (
 );
 
 export const IconStar = ({ size = 15 }: IconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="#BE5A36" stroke="none">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#0571A6" stroke="none">
     <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.4 6.1 21l1.2-6.5L2.5 9.9 9.1 9z" />
   </svg>
 );
 
-export const IconFile = ({ size = 18, stroke = '#BE5A36' }: IconProps) => (
+export const IconFile = ({ size = 18, stroke = '#0571A6' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
     <path d="M14 2v6h6" />
   </svg>
 );
 
-export const IconExternal = ({ size = 17, stroke = '#B7AC9B' }: IconProps) => (
+export const IconExternal = ({ size = 17, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17L17 7M17 7H8M17 7v9" />
   </svg>
 );
 
-export const IconInfo = ({ size = 16, stroke = '#B7AC9B' }: IconProps) => (
+export const IconInfo = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />
     <path d="M12 11v5M12 7.5v.5" />
   </svg>
 );
 
-export const IconOverride = ({ size = 17, stroke = '#BE5A36' }: IconProps) => (
+export const IconOverride = ({ size = 17, stroke = '#0571A6' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 2.5a9.5 9.5 0 1 0 9.5 9.5" />
     <path d="M21.5 4.5l-9 9-3-3" />
   </svg>
 );
 
-export const IconChevronUpDown = ({ size = 16, stroke = '#B7AC9B' }: IconProps) => (
+export const IconChevronUpDown = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
     <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
   </svg>
 );
 
-export const IconLogout = ({ size = 16, stroke = '#B7AC9B' }: IconProps) => (
+export const IconLogout = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8" />
     <path d="M17 16l4-4-4-4M21 12H9" />

@@ -39,6 +39,12 @@ class _BottomTabs extends StatelessWidget {
               onTap: () => bloc.add(const ChangeManagerTab(ManagerTab.connect)),
             ),
             _TabButton(
+              label: 'Games',
+              icon: Icons.sports_esports_rounded,
+              selected: state.tab == ManagerTab.games,
+              onTap: () => bloc.add(const ChangeManagerTab(ManagerTab.games)),
+            ),
+            _TabButton(
               label: 'Quick Actions',
               icon: Icons.bolt_rounded,
               selected: state.tab == ManagerTab.quick,
