@@ -6,11 +6,12 @@ import type { EmpType } from '../theme';
 import { Avatar, Card, EmptyRow, Pill, SearchInput, SelectBox } from '../ui';
 import { IconPlus } from '../icons';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
+import { EmployeeProfile } from './EmployeeProfile';
 
 const COLS = '2fr 1.4fr 1fr 1.1fr 1fr 1.3fr 1fr';
 
 // —— Mock employee database (frontend-capture phase, ~50 people) ——————————
-type MockEmp = { name: string; id: string; role: string; team: string; location: string; empType: EmpType; manager: string; joining: string };
+export type MockEmp = { name: string; id: string; role: string; team: string; location: string; empType: EmpType; manager: string; joining: string };
 
 const FIRST = ['Ananya', 'Rahul', 'Priya', 'Vikram', 'Sneha', 'Arjun', 'Kavya', 'Rohan', 'Isha', 'Aditya', 'Meera', 'Karan', 'Neha', 'Siddharth', 'Divya', 'Aman', 'Pooja', 'Nikhil', 'Riya', 'Varun', 'Tara', 'Kabir', 'Anjali', 'Dev', 'Sana', 'Yash', 'Ira', 'Nitin', 'Zoya', 'Harsh', 'Lata', 'Om', 'Bhavna', 'Raj', 'Simran', 'Kunal', 'Naina', 'Gaurav', 'Payal', 'Manav', 'Ritu', 'Sahil', 'Diya', 'Vivek', 'Aarti', 'Rehan', 'Kiara', 'Tarun', 'Nisha', 'Ved'];
 const LAST = ['Rao', 'Sharma', 'Nair', 'Iyer', 'Gupta', 'Mehta', 'Reddy', 'Singh', 'Das', 'Kulkarni', 'Bose', 'Menon', 'Kapoor', 'Joshi', 'Pillai', 'Chopra', 'Verma', 'Shetty', 'Bhat', 'Malhotra'];
@@ -27,7 +28,7 @@ const LOCATIONS = ['Bengaluru', 'Mumbai', 'Gurugram', 'Remote'];
 const MANAGERS = ['Ananya Rao', 'Vikram Nair', 'Priya Iyer', 'Rahul Sharma', 'Meera Menon'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const MOCK_EMPS: MockEmp[] = Array.from({ length: 50 }, (_, i) => {
+export const MOCK_EMPS: MockEmp[] = Array.from({ length: 50 }, (_, i) => {
   const team = TEAMS[i % TEAMS.length];
   const roles = ROLES[team];
   const empType: EmpType = i % 11 === 5 ? 'Intern' : i % 7 === 3 ? 'Contract' : 'Full-time';
@@ -49,7 +50,11 @@ const MOCK_EMPS: MockEmp[] = Array.from({ length: 50 }, (_, i) => {
 export function Employees() {
   const s = useStore();
   const [addOpen, setAddOpen] = useState(false);
+  const [selected, setSelected] = useState<MockEmp | null>(null);
   const [page, setPage] = useState(1);
+
+  if (selected) return <EmployeeProfile emp={selected} onBack={() => setSelected(null)} onOpen={setSelected} />;
+
   let rows = MOCK_EMPS.slice();
   const q = s.empSearch.trim().toLowerCase();
   if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.role.toLowerCase().includes(q));
@@ -99,6 +104,7 @@ export function Employees() {
           <div
             key={r.id}
             className="dc-row"
+            onClick={() => setSelected(r)}
             style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
