@@ -2,13 +2,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Origins always allowed, regardless of the CORS_ORIGIN env var. Extra origins
+// can be supplied via CORS_ORIGIN (comma-separated) and are merged in.
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'https://dikcsyvq9i7v1.cloudfront.net', // Flutter web app
+  'https://dkikczh1847dh.cloudfront.net', // HR admin dashboard
+];
+const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
-  corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:8080')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])],
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
   mongoUri: process.env.MONGODB_URI ?? '',
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',

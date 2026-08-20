@@ -231,7 +231,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: MockEmp; onBack:
               <StatChip on label="Employees' Provident Fund" />
               <StatChip on={d.esi} label="Employees' State Insurance" />
               <StatChip on label="Labour Welfare Fund" />
-              <StatChip on={d.empType !== 'Contract'} label="Statutory Bonus" />
+              <StatChip on={emp.empType !== 'Contract'} label="Statutory Bonus" />
             </div>
 
             {/* Salary breakup */}
