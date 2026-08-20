@@ -13,12 +13,13 @@ import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { Games } from './views/Games';
 import { PayHeadMaster } from './views/PayHeadMaster';
-import { SalaryStructure } from './views/SalaryStructure';
 import { SalaryTemplates } from './views/SalaryTemplates';
 import { StatutoryComponents } from './views/StatutoryComponents';
 import { PayrollRuns } from './views/PayrollRuns';
-import { StatutoryRules } from './views/StatutoryRules';
 import { PaySchedule, TaxDetails } from './views/OrgSetup';
+import { ShiftTemplates } from './views/ShiftTemplates';
+import { HolidayBank } from './views/HolidayBank';
+import { Policies } from './views/Policies';
 import { Organisation } from './views/Organisation';
 import { Departments } from './views/Departments';
 import { Designations } from './views/Designations';
@@ -60,16 +61,18 @@ function CurrentView() {
       return <SalaryTemplates />;
     case 'statutorycomponents':
       return <StatutoryComponents />;
-    case 'salary':
-      return <SalaryStructure />;
     case 'payruns':
       return <PayrollRuns />;
-    case 'statutory':
-      return <StatutoryRules />;
     case 'payschedule':
       return <PaySchedule />;
     case 'taxdetails':
       return <TaxDetails />;
+    case 'shifttypes':
+      return <ShiftTemplates />;
+    case 'holidaybank':
+      return <HolidayBank />;
+    case 'policies':
+      return <Policies />;
     default:
       return <Placeholder />;
   }

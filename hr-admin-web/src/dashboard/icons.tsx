@@ -88,6 +88,47 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.5 8.5 0 0 1-3.8-.9L3 20.5l1.6-4.2A8.4 8.4 0 0 1 12 3.2a8.38 8.38 0 0 1 9 8.3z" />
     </svg>
   ),
+  kpi: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l3.5-4 3 2.5L20 7" />
+      <path d="M20 11V7h-4" />
+    </svg>
+  ),
+  shifttypes: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4l2.5 1.5" />
+    </svg>
+  ),
+  roster: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+      <path d="M3 9h18M8 3v3M16 3v3M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2" />
+    </svg>
+  ),
+  shiftswaps: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M16 3l4 4-4 4" />
+      <path d="M20 7H4" />
+      <path d="M8 21l-4-4 4-4" />
+      <path d="M4 17h16" />
+    </svg>
+  ),
+  holidaybank: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+      <path d="M3 9h18M8 3v3M16 3v3" />
+      <path d="M12 11.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 13.6l2-.3z" />
+    </svg>
+  ),
+  policies: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 3h8l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v4h4" />
+      <path d="M8.5 12h7M8.5 15.5h7M8.5 8.5h3" />
+    </svg>
+  ),
   reimbursements: (
     <svg {...base(18, 'currentColor')}>
       <path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21z" />
@@ -146,22 +187,10 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M9 11.5l2 2 4-4" />
     </svg>
   ),
-  salary: (
-    <svg {...base(18, 'currentColor')}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v10M9.5 9.2c0-1 1.1-1.7 2.5-1.7s2.5.7 2.5 1.7-1.1 1.6-2.5 1.6-2.5.7-2.5 1.7 1.1 1.7 2.5 1.7 2.5-.7 2.5-1.7" />
-    </svg>
-  ),
   payruns: (
     <svg {...base(18, 'currentColor')}>
       <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
       <path d="M14 3v5h5M8 13l2.5 2.5L16 10" />
-    </svg>
-  ),
-  statutory: (
-    <svg {...base(18, 'currentColor')}>
-      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
-      <path d="M9 12l2 2 4-4" />
     </svg>
   ),
   employees: (

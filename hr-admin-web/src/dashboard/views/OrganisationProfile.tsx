@@ -9,9 +9,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
 import { Logo } from '../icons';
+import { ORG_DISPLAY_NAME, ORG_REGISTERED_NAME } from '../org';
 
 type OrgForm = {
   name: string;
+  displayName: string;
   country: string;
   industry: string;
   incorporatedOn: string;
@@ -31,7 +33,8 @@ type OrgForm = {
 
 // —— Mock data for capture ————————————————————————————————————————————
 const MOCK: OrgForm = {
-  name: 'Convrse Spaces',
+  name: ORG_REGISTERED_NAME,
+  displayName: ORG_DISPLAY_NAME,
   country: 'India',
   industry: 'Services',
   incorporatedOn: '2021-06-14',
@@ -48,8 +51,8 @@ const MOCK: OrgForm = {
 };
 
 export function OrganisationProfile() {
-  const { flash, user } = useStore();
-  const [form, setForm] = useState<OrgForm>({ ...MOCK, name: user?.company ?? MOCK.name });
+  const { flash } = useStore();
+  const [form, setForm] = useState<OrgForm>({ ...MOCK });
   const [saving, setSaving] = useState(false);
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
@@ -93,10 +96,16 @@ export function OrganisationProfile() {
 
         <div style={grid2}>
           <Field
-            label="Organisation name"
-            explain="Your registered company name. Shown across Sowaka Connect and on every payslip. Owner-managed — read-only here."
+            label="Registered name"
+            explain="Your legally registered company name — used on statutory filings and payslips. Owner-managed, read-only here."
           >
             <input value={form.name} disabled style={{ ...inputStyle, ...readonly }} />
+          </Field>
+          <Field
+            label="Display name"
+            explain="The name employees see across the app — the sidebar, invites and the employee portal. Your public-facing brand name."
+          >
+            <input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} style={inputStyle} />
           </Field>
           <Field
             label="Business location (country)"

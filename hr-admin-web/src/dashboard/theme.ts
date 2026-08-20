@@ -9,6 +9,12 @@ export type View =
   | 'overtime'
   | 'attendance'
   | 'feedback'
+  | 'kpi'
+  | 'shifttypes'
+  | 'holidaybank'
+  | 'policies'
+  | 'roster'
+  | 'shiftswaps'
   | 'reimbursements'
   | 'onboarding'
   | 'exit'
@@ -18,9 +24,7 @@ export type View =
   | 'payheads'
   | 'templates'
   | 'statutorycomponents'
-  | 'salary'
   | 'payruns'
-  | 'statutory'
   | 'departments'
   | 'designations'
   | 'employees'
@@ -95,30 +99,34 @@ export function initials(name: string): string {
 
 // [title, meta] per section.
 export const TITLES: Record<View, [string, string]> = {
-  organisation: ['Organisation', 'The current organisation · Convrse Spaces'],
-  overview: ['HR control room', 'Tuesday, 30 June · Convrse Spaces'],
+  organisation: ['Organisation', 'Company profile, identity & contact details'],
+  overview: ['HR control room', 'Tuesday, 30 June'],
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance', 'People · Convrse Spaces'],
-  feedback: ['Feedback', 'People · Convrse Spaces'],
-  reimbursements: ['Reimbursements', 'People · Convrse Spaces'],
-  onboarding: ['Onboarding', 'People · Convrse Spaces'],
-  exit: ['Exit', 'People · Convrse Spaces'],
-  payroll: ['Payroll', 'People · Convrse Spaces'],
+  attendance: ['Attendance', 'People'],
+  feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
+  kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
+  shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
+  holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
+  policies: ['Policies', 'Shifts · attendance, leave, overtime, late & half-day policies'],
+  roster: ['Roster', 'Shifts · schedule employees onto shifts'],
+  shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
+  reimbursements: ['Reimbursements', 'People'],
+  onboarding: ['Onboarding', 'People'],
+  exit: ['Exit', 'People'],
+  payroll: ['Payroll', 'People'],
   payschedule: ['Pay Schedule', 'Payroll · how often and when payroll runs'],
   taxdetails: ['Tax Details', 'Payroll · org-level tax identity for filings'],
   payheads: ['Salary Components', 'Payroll · reusable component catalog'],
   templates: ['Salary Templates', 'Payroll · reusable pay groups'],
   statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
-  salary: ['Salary Structure', 'Payroll · assign a template to an employee'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
-  statutory: ['Statutory Rules', 'Payroll · per-state PT, LWF & bonus'],
-  departments: ['Departments', 'People · Convrse Spaces'],
-  designations: ['Designations', 'People · Convrse Spaces'],
-  employees: ['Employees', 'People · Convrse Spaces'],
-  orgchart: ['Org chart', 'People · Convrse Spaces'],
+  departments: ['Departments', 'People'],
+  designations: ['Designations', 'People'],
+  employees: ['Employees', 'People'],
+  orgchart: ['Org chart', 'People'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
-  settings: ['Settings', 'Organisation · Convrse Spaces'],
+  settings: ['Settings', 'Organisation'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
 };
 
@@ -133,7 +141,7 @@ export const PH: Partial<Record<View, Placeholder>> = {
   attendance: {
     title: 'Attendance',
     soon: true,
-    desc: 'Live clock-in, shift schedules and regularisation tracking are being wired up for Convrse Spaces.',
+    desc: 'Live clock-in, shift schedules and regularisation tracking are being wired up.',
     fields: [],
   },
   onboarding: {

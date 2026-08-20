@@ -12,9 +12,7 @@ import { Card } from '../ui';
 type ScheduleForm = {
   payDay: string; // 'last_day' | '1'..'28'
   firstPayPeriod: string;
-  workingDays: string[]; // subset of WEEKDAYS
 };
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 type RegForm = {
   pan: string;
   tan: string;
@@ -30,7 +28,6 @@ type RegForm = {
 const MOCK_SCHEDULE: ScheduleForm = {
   payDay: 'last_day',
   firstPayPeriod: '2026-04',
-  workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
 };
 
 // Upcoming payroll runs — the schedule is locked while any run is Approved.
@@ -78,8 +75,6 @@ export function PaySchedule() {
   const hasApproved = approvedRuns.length > 0;
 
   const setS = <K extends keyof ScheduleForm>(k: K, v: ScheduleForm[K]) => setSched({ ...sched, [k]: v });
-  const toggleDay = (d: string) =>
-    setS('workingDays', sched.workingDays.includes(d) ? sched.workingDays.filter((x) => x !== d) : WEEKDAYS.filter((x) => x === d || sched.workingDays.includes(x)));
 
   const onEdit = () => {
     if (hasApproved) {
@@ -151,7 +146,7 @@ export function PaySchedule() {
       )}
 
       <Card style={{ padding: '18px 20px', marginBottom: 16 }}>
-        <SectionTitle title="Pay schedule" sub="How often and when payroll runs, and which days of the week count as working days." />
+        <SectionTitle title="Pay schedule" sub="How often and when payroll runs." />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
           <Field label="Frequency">
             {editing ? <input value="Monthly" disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} /> : <ReadValue text="Monthly" />}
@@ -174,36 +169,6 @@ export function PaySchedule() {
             ) : (
               <ReadValue text={fmtPeriod(sched.firstPayPeriod)} />
             )}
-          </Field>
-          <Field label="Working days" hint={editing ? 'Days of the week that count as working days.' : undefined}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {WEEKDAYS.map((d) => {
-                const on = sched.workingDays.includes(d);
-                if (!editing && !on) return null;
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    disabled={!editing}
-                    onClick={() => editing && toggleDay(d)}
-                    style={{
-                      minWidth: 54,
-                      padding: '9px 12px',
-                      borderRadius: 10,
-                      border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`,
-                      background: on ? '#E7F4FB' : '#fff',
-                      color: on ? '#0571A6' : '#717171',
-                      fontSize: 14,
-                      fontWeight: 700,
-                      fontFamily: 'inherit',
-                      cursor: editing ? 'pointer' : 'default',
-                    }}
-                  >
-                    {d}
-                  </button>
-                );
-              })}
-            </div>
           </Field>
         </div>
       </Card>
