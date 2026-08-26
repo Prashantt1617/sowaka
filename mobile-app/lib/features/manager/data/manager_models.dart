@@ -146,12 +146,8 @@ class TeamMember {
       birthday: DateTime.tryParse(json['birthday'] as String? ?? ''),
       designation: json['designation'] as String? ?? '',
       photoUrl: json['photoUrl'] as String?,
-      punchIn: DateTime.tryParse(
-        json['punchIn'] as String? ?? '',
-      )?.toLocal(),
-      punchOut: DateTime.tryParse(
-        json['punchOut'] as String? ?? '',
-      )?.toLocal(),
+      punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
+      punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
     );
   }
 
@@ -402,9 +398,9 @@ class OvertimeRequest {
     required this.avatarIndex,
     required this.team,
     required this.workDate,
-    required this.duration,
+    required this.startTime,
+    required this.endTime,
     required this.hours,
-    required this.project,
     required this.note,
     required this.requestedOn,
     required this.decision,
@@ -419,9 +415,9 @@ class OvertimeRequest {
   final int avatarIndex;
   final String team;
   final DateTime workDate;
-  final String duration;
+  final DateTime startTime;
+  final DateTime endTime;
   final double hours;
-  final String project;
   final String note;
   final DateTime requestedOn;
   final LeaveDecision decision;
@@ -429,6 +425,12 @@ class OvertimeRequest {
   final String decidedByRole; // 'admin' = overridden from the HR dashboard
 
   bool get decidedByAdmin => decidedByRole == 'admin';
+
+  String get hoursLabel =>
+      '${hours.toStringAsFixed(hours == hours.roundToDouble() ? 0 : 1)} hrs';
+
+  String get timeRangeLabel =>
+      '${_clockLabel(startTime)} – ${_clockLabel(endTime)}';
 
   factory OvertimeRequest.fromJson(Map<String, dynamic> json) {
     final employee = json['employee'] as Map<String, dynamic>? ?? const {};
@@ -441,9 +443,13 @@ class OvertimeRequest {
       avatarIndex: name.hashCode.abs() % 7,
       team: employee['department'] as String? ?? 'Team',
       workDate: DateTime.parse(json['workDate'] as String),
-      duration: json['duration'] == 'full_day' ? 'Full day' : 'Half day',
+      startTime:
+          DateTime.tryParse(json['startTime'] as String? ?? '')?.toLocal() ??
+          DateTime.parse(json['workDate'] as String),
+      endTime:
+          DateTime.tryParse(json['endTime'] as String? ?? '')?.toLocal() ??
+          DateTime.parse(json['workDate'] as String),
       hours: (json['hours'] as num?)?.toDouble() ?? 0,
-      project: json['project'] as String? ?? '',
       note: json['note'] as String? ?? '',
       requestedOn:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
@@ -467,9 +473,9 @@ class OvertimeRequest {
       avatarIndex: avatarIndex,
       team: team,
       workDate: workDate,
-      duration: duration,
+      startTime: startTime,
+      endTime: endTime,
       hours: hours,
-      project: project,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,
@@ -729,3 +735,6 @@ class AttendanceRegularization {
     managerNote: json['managerNote'] as String? ?? '',
   );
 }
+
+String _clockLabel(DateTime value) =>
+    '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';

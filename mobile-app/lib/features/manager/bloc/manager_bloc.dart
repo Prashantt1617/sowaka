@@ -259,13 +259,13 @@ class SubmitLeaveApplication extends ManagerEvent {
 class SubmitOvertimeApplication extends ManagerEvent {
   const SubmitOvertimeApplication({
     required this.workDate,
-    required this.duration,
-    required this.project,
+    required this.startTime,
+    required this.endTime,
     required this.note,
   });
   final DateTime workDate;
-  final String duration;
-  final String project;
+  final DateTime startTime;
+  final DateTime endTime;
   final String note;
 }
 
@@ -289,6 +289,11 @@ class SubmitReimbursementApplication extends ManagerEvent {
 class LoadAttendanceMonth extends ManagerEvent {
   const LoadAttendanceMonth(this.month);
   final DateTime month;
+}
+
+class RecordPunch extends ManagerEvent {
+  const RecordPunch(this.type);
+  final String type;
 }
 
 class SubmitAttendanceRegularization extends ManagerEvent {
@@ -386,6 +391,22 @@ class ManagerBloc {
               ),
             ),
           );
+        case RecordPunch(:final type):
+          final record = await _service.recordPunch(type);
+          final data = _state.dashboard;
+          if (data != null) {
+            final attendance = [
+              for (final item in data.attendance)
+                if (!_sameDate(item.workDate, record.workDate)) item,
+              record,
+            ];
+            _emit(
+              _state.copyWith(
+                dashboard: data.copyWith(attendance: attendance),
+                message: type == 'in' ? 'Punched in' : 'Punched out',
+              ),
+            );
+          }
         case SubmitAttendanceRegularization(
           :final workDate,
           :final period,
@@ -606,14 +627,14 @@ class ManagerBloc {
           );
         case SubmitOvertimeApplication(
           :final workDate,
-          :final duration,
-          :final project,
+          :final startTime,
+          :final endTime,
           :final note,
         ):
           final request = await _service.submitOvertime(
             workDate: workDate,
-            duration: duration,
-            project: project,
+            startTime: startTime,
+            endTime: endTime,
             note: note,
           );
           final data = _state.dashboard;
@@ -737,3 +758,6 @@ class ManagerBloc {
     }
   }
 }
+
+bool _sameDate(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;

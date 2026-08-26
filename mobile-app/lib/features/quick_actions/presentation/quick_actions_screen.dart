@@ -31,7 +31,9 @@ enum _QuickPage {
   leave,
   applyLeave,
   overtime,
+  applyOvertime,
   reimbursements,
+  applyReimbursement,
   policies,
   policy,
   calendar,
@@ -135,6 +137,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   );
   bool _attendanceListView = false;
   _AttendanceFilter? _attendanceFilter;
+  _AttendanceDayView? _selectedCalendarDay;
+  bool _overtimeHistoryView = false;
+  DateTime? _overtimeDate;
+  TimeOfDay? _overtimeStartTime;
+  TimeOfDay? _overtimeEndTime;
+  final _overtimeNote = TextEditingController();
+  bool _reimbursementHistoryView = false;
+  DateTime? _reimbursementDate;
+  String? _reimbursementCategory;
+  final _reimbursementAmount = TextEditingController();
+  final _reimbursementDescription = TextEditingController();
+  final _reimbursementNotes = TextEditingController();
+  String? _reimbursementReceiptName;
+  Uint8List? _reimbursementReceiptBytes;
 
   @override
   void initState() {
@@ -147,6 +163,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     widget.controller._detach(this);
     _text.dispose();
     _leaveReason.dispose();
+    _overtimeNote.dispose();
+    _reimbursementAmount.dispose();
+    _reimbursementDescription.dispose();
+    _reimbursementNotes.dispose();
     super.dispose();
   }
 
@@ -176,6 +196,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _page = _QuickPage.policies;
       } else if (_page == _QuickPage.applyLeave) {
         _page = _QuickPage.leave;
+      } else if (_page == _QuickPage.applyOvertime) {
+        _page = _QuickPage.overtime;
+      } else if (_page == _QuickPage.applyReimbursement) {
+        _page = _QuickPage.reimbursements;
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
@@ -219,7 +243,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.leave => _leaveHub(),
         _QuickPage.applyLeave => _applyLeaveForm(),
         _QuickPage.overtime => _overtimeHub(),
+        _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
+        _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
         _QuickPage.policy => _policyDetail(),
         _QuickPage.calendar => _calendar(),
@@ -333,9 +359,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         AppHomeHeader(
           profileAction: widget.profileAction,
           onNotifications: widget.onNotifications,
-          onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Quick create coming soon')),
-          ),
+          onQuickCreate: _showQuickCreateComingSoon,
         ),
         Expanded(
           child: ColoredBox(
@@ -441,6 +465,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: const ValueKey('leave-hub'),
       title: 'Leave',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(onTap: _openBlankLeaveForm),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
@@ -523,6 +550,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: const ValueKey('apply-leave'),
       title: 'Leave',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(onTap: _submitLeaveApplication),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
@@ -693,9 +723,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _leaveDuration = 'Full Day';
       _leaveReason.clear();
       _leaveAttachmentName = null;
+      _selectedCalendarDay = null;
       _page = _QuickPage.applyLeave;
     });
     widget.controller._navigationChanged();
+  }
+
+  void _showQuickCreateComingSoon() {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Quick create coming soon')));
   }
 
   void _openBlankLeaveForm() {
@@ -747,54 +784,233 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           request.workDate.year == now.year &&
           request.workDate.month == now.month,
     );
+    final totalHours = thisMonth
+        .where((request) => request.decision != LeaveDecision.declined)
+        .fold<double>(0, (sum, request) => sum + request.hours);
     final approvedHours = thisMonth
         .where((request) => request.decision == LeaveDecision.approved)
         .fold<double>(0, (sum, request) => sum + request.hours);
-    final pending = requests
+    final pendingHours = thisMonth
         .where((request) => request.decision == LeaveDecision.pending)
-        .length;
+        .fold<double>(0, (sum, request) => sum + request.hours);
+    final visible = requests
+        .where(
+          (request) => _overtimeHistoryView
+              ? request.decision != LeaveDecision.pending
+              : request.decision == LeaveDecision.pending,
+        )
+        .toList();
     return _HubScaffold(
       key: const ValueKey('overtime-hub'),
       title: 'Overtime',
       onBack: _back,
-      footer: _SingleActionFooter(
-        color: _Q.gold,
-        label: 'Log overtime',
-        onTap: () => _start(_QuickFlow.overtime),
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply Overtime',
+        onTap: _openOvertimeForm,
       ),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _StatStrip(
+        _QuickStatsCard(
+          label: 'This Month',
           stats: [
-            ('${_number(approvedHours)}h', 'Approved this month', _Q.teal),
-            ('$pending', 'Pending', _Q.gold),
+            (_hoursMinutesLabel(totalHours), 'Total', const Color(0xFF111827)),
+            (
+              _hoursMinutesLabel(approvedHours),
+              'Approved',
+              const Color(0xFF16A34A),
+            ),
+            (
+              _hoursMinutesLabel(pendingHours),
+              'Pending',
+              const Color(0xFFFB2C36),
+            ),
           ],
         ),
-        const SizedBox(height: 24),
-        const _SectionLabel('My requests'),
-        const SizedBox(height: 10),
-        _RequestGroup(
-          children: requests.indexed
-              .map(
-                (entry) => _RequestRow(
-                  entry.$2.project,
-                  entry.$2.managerNote.isEmpty
-                      ? '${_short(entry.$2.workDate)} · ${entry.$2.duration}'
-                      : '${_short(entry.$2.workDate)} · ${entry.$2.duration} · ${entry.$2.managerNote}',
-                  _decision(entry.$2.decision),
-                  icon: Icons.schedule_rounded,
-                  color: _Q.gold,
-                  tint: _Q.goldTint,
-                  last: entry.$1 == requests.length - 1,
-                ),
-              )
-              .toList(),
+        const SizedBox(height: 16),
+        _LeaveViewSwitch(
+          history: _overtimeHistoryView,
+          onChanged: (value) => setState(() => _overtimeHistoryView = value),
+          firstLabel: 'Requests',
         ),
         const SizedBox(height: 16),
-        const _InfoCard(
-          'Overtime is paid at 1.5× or taken as comp-off, settled the following month.',
+        if (visible.isEmpty)
+          const _InfoCard('Nothing here yet.')
+        else
+          ...visible.map(
+            (request) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _QuickRequestCard(
+                title: _short(request.workDate),
+                subtitle: request.note.isEmpty
+                    ? request.timeRangeLabel
+                    : request.note,
+                status: _decision(request.decision),
+                statusColor: switch (request.decision) {
+                  LeaveDecision.approved => const Color(0xFF16A34A),
+                  _ => const Color(0xFFFB2C36),
+                },
+                footerIcon: Icons.schedule_rounded,
+                footerText: request.hoursLabel,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openOvertimeForm() {
+    setState(() {
+      _overtimeDate = null;
+      _overtimeStartTime = null;
+      _overtimeEndTime = null;
+      _overtimeNote.clear();
+      _page = _QuickPage.applyOvertime;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  Widget _applyOvertimeForm() {
+    return _HubScaffold(
+      key: const ValueKey('apply-overtime'),
+      title: 'Overtime',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply Overtime',
+        onTap: _submitOvertimeApplication,
+      ),
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        _FormCard(
+          children: [
+            _LeaveFieldLabel('Date'),
+            _LeaveDropdownField(
+              value: _overtimeDate == null
+                  ? 'Select date'
+                  : _short(_overtimeDate!),
+              filled: _overtimeDate != null,
+              onTap: _pickOvertimeDate,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Start Time'),
+            _LeaveDropdownField(
+              value: _overtimeStartTime == null
+                  ? 'Select time'
+                  : _overtimeStartTime!.format(context),
+              filled: _overtimeStartTime != null,
+              onTap: () => _pickOvertimeTime(isStart: true),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('End Time'),
+            _LeaveDropdownField(
+              value: _overtimeEndTime == null
+                  ? 'Select time'
+                  : _overtimeEndTime!.format(context),
+              filled: _overtimeEndTime != null,
+              onTap: () => _pickOvertimeTime(isStart: false),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Reason'),
+            _FormTextArea(controller: _overtimeNote, height: 85.6),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _pickOvertimeDate() async {
+    final today = _dateOnly(DateTime.now());
+    final lastSelectable = today.subtract(const Duration(days: 1));
+    final initial = _overtimeDate ?? lastSelectable;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(lastSelectable) ? lastSelectable : initial,
+      firstDate: today.subtract(const Duration(days: 365)),
+      lastDate: lastSelectable,
+      selectableDayPredicate: _canSelectOvertimeFormDay,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _overtimeDate = picked);
+  }
+
+  Future<void> _pickOvertimeTime({required bool isStart}) async {
+    final initial =
+        (isStart ? _overtimeStartTime : _overtimeEndTime) ??
+        const TimeOfDay(hour: 19, minute: 0);
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (isStart) {
+        _overtimeStartTime = picked;
+      } else {
+        _overtimeEndTime = picked;
+      }
+    });
+  }
+
+  double? get _overtimeComputedHours {
+    final start = _overtimeStartTime;
+    final end = _overtimeEndTime;
+    if (start == null || end == null) return null;
+    final startMinutes = start.hour * 60 + start.minute;
+    var endMinutes = end.hour * 60 + end.minute;
+    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+    return (endMinutes - startMinutes) / 60;
+  }
+
+  bool _canSelectOvertimeFormDay(DateTime day) {
+    final today = _dateOnly(DateTime.now());
+    if (!day.isBefore(today)) return false;
+    final hours = _overtimeComputedHours;
+    if (hours == null || hours < 8) return true;
+    return _isOvertimeWeekoff(day) || _isCompanyHoliday(day);
+  }
+
+  Future<void> _submitOvertimeApplication() async {
+    final date = _overtimeDate;
+    final start = _overtimeStartTime;
+    final end = _overtimeEndTime;
+    if (date == null || start == null || end == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick a date, start time, and end time to continue.'),
+        ),
+      );
+      return;
+    }
+    final startDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      start.hour,
+      start.minute,
+    );
+    var endDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      end.hour,
+      end.minute,
+    );
+    if (!endDateTime.isAfter(startDateTime)) {
+      endDateTime = endDateTime.add(const Duration(days: 1));
+    }
+    final sent = await widget.bloc.add(
+      SubmitOvertimeApplication(
+        workDate: date,
+        startTime: startDateTime,
+        endTime: endDateTime,
+        note: _overtimeNote.text.trim(),
+      ),
+    );
+    if (!mounted || !sent) return;
+    setState(() => _page = _QuickPage.overtime);
+    widget.controller._navigationChanged();
   }
 
   Widget _reimbursementHub() {
@@ -815,44 +1031,203 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final pending = thisMonth
         .where((claim) => claim.status == 'Pending')
         .fold<double>(0, (sum, claim) => sum + claim.amount);
+    final visible = claims
+        .where(
+          (claim) => _reimbursementHistoryView
+              ? claim.status != 'Pending'
+              : claim.status == 'Pending',
+        )
+        .toList();
     return _HubScaffold(
       key: const ValueKey('reimbursement-hub'),
-      title: 'Reimbursements',
+      title: 'Reimbursement',
       onBack: _back,
-      footer: _SingleActionFooter(
-        color: _Q.teal,
-        label: 'New claim',
-        onTap: () => _start(_QuickFlow.reimbursement),
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply',
+        onTap: _openReimbursementForm,
       ),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _StatStrip(
+        _QuickStatsCard(
+          label: 'Overview',
           stats: [
-            (_money(claimed), 'Claimed this month', _Q.ink),
-            (_money(reimbursed), 'Reimbursed', _Q.teal),
-            (_money(pending), 'Pending', _Q.gold),
+            (_money(claimed), 'Total Claimed', const Color(0xFF111827)),
+            (_money(pending), 'Pending', const Color(0xFFFB2C36)),
+            (_money(reimbursed), 'Reimbursed', const Color(0xFF16A34A)),
           ],
         ),
-        const SizedBox(height: 24),
-        const _SectionLabel('My claims'),
-        const SizedBox(height: 10),
-        _RequestGroup(
-          children: claims.indexed
-              .map(
-                (entry) => _RequestRow(
-                  '${entry.$2.category} · ${_money(entry.$2.amount)}',
-                  '${entry.$2.note.isEmpty ? 'Expense claim' : entry.$2.note} · ${_short(entry.$2.expenseDate)}',
-                  entry.$2.status,
-                  statusLabel: entry.$2.statusLabel,
-                  icon: Icons.receipt_long_rounded,
-                  color: _Q.teal,
-                  tint: _Q.tealTint,
-                  last: entry.$1 == claims.length - 1,
-                ),
-              )
-              .toList(),
+        const SizedBox(height: 16),
+        _LeaveViewSwitch(
+          history: _reimbursementHistoryView,
+          onChanged: (value) =>
+              setState(() => _reimbursementHistoryView = value),
+          firstLabel: 'Claims',
+        ),
+        const SizedBox(height: 16),
+        if (visible.isEmpty)
+          const _InfoCard('Nothing here yet.')
+        else
+          ...visible.map(
+            (claim) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _QuickRequestCard(
+                title: claim.category,
+                subtitle: _short(claim.expenseDate),
+                status: '${_money(claim.amount)} · ${claim.statusLabel}',
+                statusColor: switch (claim.status) {
+                  'Paid' || 'Approved' => const Color(0xFF16A34A),
+                  _ => const Color(0xFFFB2C36),
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openReimbursementForm() {
+    setState(() {
+      _reimbursementDate = null;
+      _reimbursementCategory = null;
+      _reimbursementAmount.clear();
+      _reimbursementDescription.clear();
+      _reimbursementNotes.clear();
+      _reimbursementReceiptName = null;
+      _reimbursementReceiptBytes = null;
+      _page = _QuickPage.applyReimbursement;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  Widget _applyReimbursementForm() {
+    return _HubScaffold(
+      key: const ValueKey('apply-reimbursement'),
+      title: 'Reimbursement',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply',
+        onTap: _submitReimbursementApplication,
+      ),
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        _FormCard(
+          children: [
+            _LeaveFieldLabel('Expense Category'),
+            _LeaveDropdownField(
+              value: _reimbursementCategory ?? 'Select category',
+              filled: _reimbursementCategory != null,
+              onTap: _pickReimbursementCategory,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Amount (₹)'),
+            _FormTextField(
+              controller: _reimbursementAmount,
+              hintText: 'Enter amount',
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Date'),
+            _LeaveDropdownField(
+              value: _reimbursementDate == null
+                  ? 'Select date'
+                  : _short(_reimbursementDate!),
+              filled: _reimbursementDate != null,
+              onTap: _pickReimbursementDate,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Description'),
+            _FormTextArea(
+              controller: _reimbursementDescription,
+              height: 65.6,
+              hintText: 'Brief description...',
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Receipt'),
+            _ReceiptUploadField(
+              fileName: _reimbursementReceiptName,
+              onPicked: (file) => setState(() {
+                _reimbursementReceiptName = file?.name;
+                _reimbursementReceiptBytes = file?.bytes;
+              }),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Notes (Optional)'),
+            _FormTextArea(
+              controller: _reimbursementNotes,
+              height: 65.6,
+              hintText: 'Any additional notes...',
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _pickReimbursementCategory() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Travel', 'Meals', 'Internet', 'Other'],
+        selected: _reimbursementCategory,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _reimbursementCategory = picked);
+  }
+
+  Future<void> _pickReimbursementDate() async {
+    final today = _dateOnly(DateTime.now());
+    final initial = _reimbursementDate ?? today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(today) ? today : initial,
+      firstDate: today.subtract(const Duration(days: 365)),
+      lastDate: today,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _reimbursementDate = picked);
+  }
+
+  Future<void> _submitReimbursementApplication() async {
+    final date = _reimbursementDate;
+    final category = _reimbursementCategory;
+    final amount = double.tryParse(_reimbursementAmount.text.trim());
+    if (date == null || category == null || amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick a category, date, and amount to continue.'),
+        ),
+      );
+      return;
+    }
+    final description = _reimbursementDescription.text.trim();
+    final notes = _reimbursementNotes.text.trim();
+    final note = notes.isEmpty ? description : '$description\n\n$notes';
+    final sent = await widget.bloc.add(
+      SubmitReimbursementApplication(
+        expenseDate: date,
+        amount: amount.toStringAsFixed(2),
+        category: category,
+        receiptName: _reimbursementReceiptName ?? '',
+        receiptBytes: _reimbursementReceiptBytes,
+        note: note,
+      ),
+    );
+    if (!mounted || !sent) return;
+    setState(() => _page = _QuickPage.reimbursements);
+    widget.controller._navigationChanged();
   }
 
   Widget _policies() {
@@ -860,6 +1235,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: const ValueKey('policies'),
       title: 'Policies',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       children: [
         ..._policiesData.map(
           (policy) => _ActionCard(
@@ -884,6 +1262,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: ValueKey('policy-${policy.title}'),
       title: '${policy.title} policy',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       footer: _SingleActionFooter(
         color: policy.color,
         label: 'Open full document',
@@ -917,9 +1298,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
-      title: 'Attendance calendar',
+      title: 'Attendance',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       backgroundColor: const Color(0xFFF7F7F9),
+      trailing: _LeaveHeaderButton(
+        enabled: _selectedCalendarDay != null,
+        onTap: _selectedCalendarDay == null
+            ? null
+            : () => _applyLeaveFor(_selectedCalendarDay!.date),
+      ),
       children: [
         Row(
           children: [
@@ -931,7 +1321,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               child: Text(
                 '${_monthName(_attendanceMonth.month)} ${_attendanceMonth.year}',
                 textAlign: TextAlign.center,
-                style: _QText.topbar,
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
             _AttendanceCalendarArrow(
@@ -940,13 +1334,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 28),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: _AttendanceViewSwitch(
-            list: _attendanceListView,
-            onChanged: (list) => setState(() => _attendanceListView = list),
-          ),
+        const SizedBox(height: 24),
+        _LeaveViewSwitch(
+          history: _attendanceListView,
+          onChanged: (list) => setState(() => _attendanceListView = list),
+          firstLabel: 'Grid',
+          secondLabel: 'List',
         ),
         const SizedBox(height: 16),
         _AttendanceFilterChips(
@@ -961,8 +1354,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        const Text(
-          'Tap a future working day to start a leave request.',
+        Text(
+          _selectedCalendarDay == null
+              ? 'Tap a future working day, then Apply Leave.'
+              : 'Selected ${_short(_selectedCalendarDay!.date)} — tap Apply Leave, or tap the date again to clear.',
           style: _QText.subtitle,
         ),
         const SizedBox(height: 20),
@@ -974,19 +1369,43 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 day: day,
                 today: _sameDay(day.date, DateTime.now()),
                 dimmed: !_matchesAttendanceFilter(day.kind, _attendanceFilter),
+                selected: _sameDay(day.date, _selectedCalendarDay?.date),
                 onTap: () => _openAttendanceDay(day),
               ),
             ),
           )
-        else
+        else ...[
           _AttendanceMonthGrid(
             month: _attendanceMonth,
             days: days,
             filter: _attendanceFilter,
+            selectedDate: _selectedCalendarDay?.date,
             onTap: _openAttendanceDay,
           ),
+          if (_todayAttendanceDay(days) case final today?) ...[
+            const SizedBox(height: 24),
+            _AttendanceTodayPunchSection(
+              day: today,
+              onPunchIn: () => _recordPunch('in'),
+              onPunchOut: () => _recordPunch('out'),
+            ),
+          ],
+        ],
       ],
     );
+  }
+
+  _AttendanceDayView? _todayAttendanceDay(List<_AttendanceDayView> days) {
+    final now = DateTime.now();
+    if (_attendanceMonth.year != now.year ||
+        _attendanceMonth.month != now.month) {
+      return null;
+    }
+    return days.where((day) => _sameDay(day.date, now)).firstOrNull;
+  }
+
+  Future<void> _recordPunch(String type) async {
+    await widget.bloc.add(RecordPunch(type));
   }
 
   List<_AttendanceDayView> _attendanceDays() {
@@ -1141,11 +1560,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _attendanceMonth.year,
       _attendanceMonth.month + delta,
     );
-    setState(() => _attendanceMonth = month);
+    setState(() {
+      _attendanceMonth = month;
+      _selectedCalendarDay = null;
+    });
     await widget.bloc.add(LoadAttendanceMonth(month));
   }
 
   Future<void> _openAttendanceDay(_AttendanceDayView day) async {
+    if (day.kind == _AttendanceKind.future) {
+      setState(() {
+        _selectedCalendarDay = _sameDay(_selectedCalendarDay?.date, day.date)
+            ? null
+            : day;
+      });
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1201,8 +1631,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 },
               ),
             ] else if (day.kind != _AttendanceKind.weekoff &&
-                day.kind != _AttendanceKind.holiday &&
-                day.kind != _AttendanceKind.future) ...[
+                day.kind != _AttendanceKind.holiday) ...[
               const SizedBox(height: 20),
               _AttendancePunchRow(
                 label: 'IN',
@@ -1241,19 +1670,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   label: 'Add overtime',
                   onPressed: () {
                     Navigator.pop(sheetContext);
-                    _start(_QuickFlow.overtime);
+                    _openOvertimeForm();
                   },
                 ),
               ],
-            ] else if (day.kind == _AttendanceKind.future) ...[
-              const SizedBox(height: 24),
-              _SheetPrimaryButton(
-                label: 'Apply leave',
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  _applyLeaveFor(day.date);
-                },
-              ),
             ],
           ],
         ),
@@ -1463,6 +1883,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: ValueKey('wizard-${_flow.name}-$_step'),
       title: _flowTitle(_flow),
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       footer: _WizardFooter(
         color: color,
         label: _submitting
@@ -1568,8 +1991,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
-            duration: _answers['Duration'] ?? 'Half day',
-            project: _answers['Project'] ?? '',
+            startTime: _from,
+            endTime: _from.add(const Duration(hours: 4)),
             note: _answers['Note'] ?? '',
           ),
         );
@@ -2069,69 +2492,6 @@ class _AttendanceCalendarArrow extends StatelessWidget {
   );
 }
 
-class _AttendanceViewSwitch extends StatelessWidget {
-  const _AttendanceViewSwitch({required this.list, required this.onChanged});
-  final bool list;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(5),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF0EBE3),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _AttendanceSwitchItem(
-          label: 'Grid',
-          selected: !list,
-          onTap: () => onChanged(false),
-        ),
-        _AttendanceSwitchItem(
-          label: 'List',
-          selected: list,
-          onTap: () => onChanged(true),
-        ),
-      ],
-    ),
-  );
-}
-
-class _AttendanceSwitchItem extends StatelessWidget {
-  const _AttendanceSwitchItem({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(14),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? _Q.ink : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? Colors.white : _Q.inkSoft,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    ),
-  );
-}
-
 class _AttendanceFilterChips extends StatelessWidget {
   const _AttendanceFilterChips({
     required this.selected,
@@ -2195,7 +2555,10 @@ class _AttendanceFilterChips extends StatelessWidget {
             onTap: () => toggle(_AttendanceFilter.leaveApplied),
             leading: CustomPaint(
               size: const Size(8, 8),
-              painter: const _DashedCirclePainter(color: Color(0xFF717171)),
+              painter: const _DashedRoundRectPainter(
+                color: Color(0xFF717171),
+                radius: 2,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -2211,7 +2574,10 @@ class _AttendanceFilterChips extends StatelessWidget {
             onTap: () => toggle(_AttendanceFilter.correctionAwaits),
             leading: CustomPaint(
               size: const Size(8, 8),
-              painter: const _DashedCirclePainter(color: Color(0xFF717171)),
+              painter: const _DashedRoundRectPainter(
+                color: Color(0xFF717171),
+                radius: 2,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -2278,10 +2644,12 @@ class _AttendanceCellStyle {
     required this.color,
     this.bold = true,
     this.dashedBorder,
+    this.fill,
   });
   final Color color;
   final bool bold;
   final Color? dashedBorder;
+  final Color? fill;
 }
 
 _AttendanceCellStyle _attendanceGridCellStyle(_AttendanceKind kind) =>
@@ -2292,15 +2660,24 @@ _AttendanceCellStyle _attendanceGridCellStyle(_AttendanceKind kind) =>
       _AttendanceKind.halfDay => const _AttendanceCellStyle(
         color: Color(0xFF34C759),
       ),
-      _AttendanceKind.weekoff || _AttendanceKind.holiday =>
-        const _AttendanceCellStyle(color: Color(0xFF6A6A6A), bold: false),
-      _AttendanceKind.attention => const _AttendanceCellStyle(
-        color: Color(0xFFFF1400),
-        dashedBorder: Color(0xFFFF4848),
+      _AttendanceKind.weekoff => const _AttendanceCellStyle(
+        color: Color(0xFF6A6A6A),
+        bold: false,
+        fill: Color(0xFFF2F2F2),
       ),
-      _AttendanceKind.regularizationPending => const _AttendanceCellStyle(
+      _AttendanceKind.holiday => const _AttendanceCellStyle(
         color: Color(0xFF717171),
         bold: false,
+        fill: Color(0xFFF2F2F2),
+      ),
+      // "Correction Required" — action needed, not yet requested.
+      _AttendanceKind.attention => const _AttendanceCellStyle(
+        color: Color(0xFFFF383C),
+      ),
+      // "Correction Awaits" — already requested, pending manager decision.
+      _AttendanceKind.regularizationPending => const _AttendanceCellStyle(
+        color: Color(0xFFFF1400),
+        dashedBorder: Color(0xFF0571A6),
       ),
       _AttendanceKind.leaveApproved => const _AttendanceCellStyle(
         color: Color(0xFF0571A6),
@@ -2325,32 +2702,55 @@ Color _attendanceListRowColor(_AttendanceKind kind) => switch (kind) {
   _AttendanceKind.future => const Color(0xFF2A2A2A),
 };
 
+Color _attendanceListRowBackground(_AttendanceKind kind) => switch (kind) {
+  _AttendanceKind.weekoff || _AttendanceKind.holiday => const Color(0xFFF2F2F2),
+  _AttendanceKind.future ||
+  _AttendanceKind.leavePending => const Color(0xFFFAFAFA),
+  _ => Colors.white,
+};
+
+bool _attendanceListShowsChevron(_AttendanceKind kind) =>
+    kind != _AttendanceKind.weekoff &&
+    kind != _AttendanceKind.holiday &&
+    kind != _AttendanceKind.future;
+
 class _AttendanceListCard extends StatelessWidget {
   const _AttendanceListCard({
     required this.day,
     required this.today,
     required this.onTap,
     this.dimmed = false,
+    this.selected = false,
   });
   final _AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
   final bool dimmed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final color = dimmed ? _Q.inkFaint : _attendanceListRowColor(day.kind);
-    final showChevron =
-        !dimmed &&
-        (day.kind == _AttendanceKind.attention ||
-            day.kind == _AttendanceKind.regularizationPending);
+    final showChevron = !dimmed && _attendanceListShowsChevron(day.kind);
+    final background = selected
+        ? const Color(0xFFDBEAFE)
+        : _attendanceListRowBackground(day.kind);
     return Material(
-      color: const Color(0xFFF2F2F2),
+      color: background,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
+        child: Container(
+          decoration: (selected || today)
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF0571A6),
+                    width: selected ? 1.4 : 1,
+                  ),
+                )
+              : null,
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
@@ -2394,11 +2794,7 @@ class _AttendanceListCard extends StatelessWidget {
               ),
               if (showChevron) ...[
                 const SizedBox(width: 6),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 14,
-                  color: Color(0xFFFF383C),
-                ),
+                Icon(Icons.chevron_right_rounded, size: 14, color: color),
               ],
             ],
           ),
@@ -2414,11 +2810,13 @@ class _AttendanceMonthGrid extends StatelessWidget {
     required this.days,
     required this.onTap,
     this.filter,
+    this.selectedDate,
   });
   final DateTime month;
   final List<_AttendanceDayView> days;
   final ValueChanged<_AttendanceDayView> onTap;
   final _AttendanceFilter? filter;
+  final DateTime? selectedDate;
 
   @override
   Widget build(BuildContext context) {
@@ -2461,6 +2859,7 @@ class _AttendanceMonthGrid extends StatelessWidget {
               day: day,
               today: _sameDay(day.date, DateTime.now()),
               dimmed: !_matchesAttendanceFilter(day.kind, filter),
+              selected: _sameDay(day.date, selectedDate),
               onTap: () => onTap(day),
             );
           },
@@ -2476,11 +2875,13 @@ class _AttendanceMonthCell extends StatelessWidget {
     required this.today,
     required this.onTap,
     this.dimmed = false,
+    this.selected = false,
   });
   final _AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
   final bool dimmed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -2488,7 +2889,7 @@ class _AttendanceMonthCell extends StatelessWidget {
         ? const _AttendanceCellStyle(color: _Q.inkFaint, bold: false)
         : _attendanceGridCellStyle(day.kind);
     final isHalfDay = !dimmed && day.kind == _AttendanceKind.halfDay;
-    final dashedColor = today ? null : style.dashedBorder;
+    final dashedColor = (today || selected) ? null : style.dashedBorder;
     final content = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2496,8 +2897,9 @@ class _AttendanceMonthCell extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: Container(
           decoration: BoxDecoration(
+            color: selected ? const Color(0xFFDBEAFE) : style.fill,
             borderRadius: BorderRadius.circular(8),
-            border: today
+            border: (today || selected)
                 ? Border.all(color: const Color(0xFF0571A6), width: 1.6)
                 : null,
           ),
@@ -2544,6 +2946,271 @@ class _AttendanceMonthCell extends StatelessWidget {
   }
 }
 
+const _fullWeekdayNames = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
+
+String _punchClock(DateTime value) =>
+    '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
+
+String _hoursMinutesLabel(double hours) {
+  final totalMinutes = (hours * 60).round();
+  final h = totalMinutes ~/ 60;
+  final m = totalMinutes % 60;
+  return m == 0 ? '${h}h' : '${h}h ${m}m';
+}
+
+class _AttendanceTodayPunchSection extends StatelessWidget {
+  const _AttendanceTodayPunchSection({
+    required this.day,
+    required this.onPunchIn,
+    required this.onPunchOut,
+  });
+
+  final _AttendanceDayView day;
+  final VoidCallback onPunchIn;
+  final VoidCallback onPunchOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = _attendanceTagStyle(day.kind);
+    final punchIn = day.record?.punchIn;
+    final punchOut = day.record?.punchOut;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '${_fullWeekdayNames[day.date.weekday - 1]}, ${day.date.day} ${_monthName(day.date.month)}',
+              style: const TextStyle(
+                color: Color(0xFF2A2A2A),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: tag.bg,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: tag.fg,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    tag.label,
+                    style: TextStyle(
+                      color: tag.fg,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _PunchColumn(
+                  label: 'Punch-in',
+                  time: punchIn,
+                  action: punchIn == null ? onPunchIn : null,
+                  alignEnd: false,
+                ),
+              ),
+              Container(width: 1, height: 34, color: const Color(0xFFDDDDDD)),
+              Expanded(
+                child: _PunchColumn(
+                  label: 'Punch-out',
+                  time: punchOut,
+                  action: (punchIn != null && punchOut == null)
+                      ? onPunchOut
+                      : null,
+                  alignEnd: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (day.kind == _AttendanceKind.regularizationPending) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F2F2),
+              border: Border.all(color: const Color(0xFFEBEBEB)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: Color(0xFFFF383C),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'A correction request is under review for this day.',
+                    style: const TextStyle(
+                      color: Color(0xFFFF383C),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+typedef _AttendanceTagStyle = ({Color bg, Color fg, String label});
+
+_AttendanceTagStyle _attendanceTagStyle(_AttendanceKind kind) => switch (kind) {
+  _AttendanceKind.present => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF28CA08),
+    label: 'Present',
+  ),
+  _AttendanceKind.halfDay => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF34C759),
+    label: 'Half day',
+  ),
+  _AttendanceKind.weekoff => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF6A6A6A),
+    label: 'Weekly off',
+  ),
+  _AttendanceKind.holiday => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF717171),
+    label: 'Holiday',
+  ),
+  _AttendanceKind.attention => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Correction Required',
+  ),
+  _AttendanceKind.regularizationPending => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Pending',
+  ),
+  _AttendanceKind.leaveApproved => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'On Leave',
+  ),
+  _AttendanceKind.leavePending => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'Leave Applied',
+  ),
+  _AttendanceKind.future => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF2A2A2A),
+    label: 'Upcoming',
+  ),
+};
+
+class _PunchColumn extends StatelessWidget {
+  const _PunchColumn({
+    required this.label,
+    required this.time,
+    required this.action,
+    required this.alignEnd,
+  });
+
+  final String label;
+  final DateTime? time;
+  final VoidCallback? action;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF929292),
+            fontSize: 10,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        const SizedBox(height: 4),
+        if (time != null)
+          Text(
+            _punchClock(time!),
+            style: const TextStyle(
+              color: Color(0xFF2A2A2A),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        else if (action != null)
+          Text(
+            label == 'Punch-in' ? 'Tap to punch in' : 'Tap to punch out',
+            style: const TextStyle(
+              color: Color(0xFF0571A6),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          )
+        else
+          const Text(
+            '—',
+            style: TextStyle(
+              color: Color(0xFF2A2A2A),
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+      ],
+    );
+    if (action == null) return content;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: action,
+      child: content,
+    );
+  }
+}
+
 class _DashedRoundRectPainter extends CustomPainter {
   const _DashedRoundRectPainter({required this.color, required this.radius});
   final Color color;
@@ -2569,36 +3236,6 @@ class _DashedRoundRectPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedRoundRectPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.radius != radius;
-}
-
-class _DashedCirclePainter extends CustomPainter {
-  const _DashedCirclePainter({required this.color});
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()..addOval(Offset.zero & size);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    for (final metric in path.computeMetrics()) {
-      for (double distance = 0; distance < metric.length; distance += 3) {
-        final end = distance + 1.6;
-        canvas.drawPath(
-          metric.extractPath(
-            distance,
-            end > metric.length ? metric.length : end,
-          ),
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedCirclePainter oldDelegate) =>
-      oldDelegate.color != color;
 }
 
 class _SheetHandle extends StatelessWidget {
@@ -2816,6 +3453,9 @@ class _HubScaffold extends StatelessWidget {
     required this.title,
     required this.onBack,
     required this.children,
+    required this.profileAction,
+    required this.onNotifications,
+    required this.onQuickCreate,
     this.footer,
     this.trailing,
     this.backgroundColor,
@@ -2824,6 +3464,9 @@ class _HubScaffold extends StatelessWidget {
   final String title;
   final VoidCallback onBack;
   final List<Widget> children;
+  final Widget profileAction;
+  final VoidCallback onNotifications;
+  final VoidCallback onQuickCreate;
   final Widget? footer;
   final Widget? trailing;
   final Color? backgroundColor;
@@ -2832,6 +3475,11 @@ class _HubScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        AppHomeHeader(
+          profileAction: profileAction,
+          onNotifications: onNotifications,
+          onQuickCreate: onQuickCreate,
+        ),
         SafeArea(
           bottom: false,
           child: Container(
@@ -2878,24 +3526,30 @@ class _HubScaffold extends StatelessWidget {
 }
 
 class _LeaveHeaderButton extends StatelessWidget {
-  const _LeaveHeaderButton({required this.onTap});
+  const _LeaveHeaderButton({
+    required this.onTap,
+    this.enabled = true,
+    this.label = 'Apply Leave',
+  });
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool enabled;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF0571A6),
+      color: enabled ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(16),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(
-            'Apply Leave',
+            label,
             style: TextStyle(
-              color: Colors.white,
+              color: enabled ? Colors.white : const Color(0xFF9CA3AF),
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -2954,10 +3608,17 @@ class _LeaveBalanceCard extends StatelessWidget {
 }
 
 class _LeaveViewSwitch extends StatelessWidget {
-  const _LeaveViewSwitch({required this.history, required this.onChanged});
+  const _LeaveViewSwitch({
+    required this.history,
+    required this.onChanged,
+    this.firstLabel = 'Upcoming',
+    this.secondLabel = 'History',
+  });
 
   final bool history;
   final ValueChanged<bool> onChanged;
+  final String firstLabel;
+  final String secondLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2971,14 +3632,14 @@ class _LeaveViewSwitch extends StatelessWidget {
         children: [
           Expanded(
             child: _LeaveViewSwitchItem(
-              label: 'Upcoming',
+              label: firstLabel,
               selected: !history,
               onTap: () => onChanged(false),
             ),
           ),
           Expanded(
             child: _LeaveViewSwitchItem(
-              label: 'History',
+              label: secondLabel,
               selected: history,
               onTap: () => onChanged(true),
             ),
@@ -3127,6 +3788,312 @@ class _LeaveRequestCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickStatsCard extends StatelessWidget {
+  const _QuickStatsCard({required this.label, required this.stats});
+
+  final String label;
+  final List<(String value, String caption, Color color)> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormCard(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .3,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: stats
+              .map(
+                (stat) => Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stat.$1,
+                        style: TextStyle(
+                          color: stat.$3,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        stat.$2,
+                        style: const TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickRequestCard extends StatelessWidget {
+  const _QuickRequestCard({
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.statusColor,
+    this.footerIcon,
+    this.footerText,
+  });
+
+  final String title;
+  final String subtitle;
+  final String status;
+  final Color statusColor;
+  final IconData? footerIcon;
+  final String? footerText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                status,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (footerText != null) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(footerIcon, size: 14, color: const Color(0xFF6B7280)),
+                const SizedBox(width: 6),
+                Text(
+                  footerText!,
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FormCard extends StatelessWidget {
+  const _FormCard({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _FormTextArea extends StatelessWidget {
+  const _FormTextArea({
+    required this.controller,
+    this.height,
+    this.hintText = 'Add a reason...',
+  });
+
+  final TextEditingController controller;
+  final double? height;
+  final String hintText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: height == null ? 3 : null,
+        expands: height != null,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Color(0x80111827)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.all(12),
+        ),
+      ),
+    );
+  }
+}
+
+class _FormTextField extends StatelessWidget {
+  const _FormTextField({
+    required this.controller,
+    required this.hintText,
+    this.keyboardType,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputType? keyboardType;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Color(0x80111827)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 11,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptUploadField extends StatelessWidget {
+  const _ReceiptUploadField({required this.fileName, required this.onPicked});
+
+  final String? fileName;
+  final ValueChanged<PlatformFile?> onPicked;
+
+  Future<void> _pick(BuildContext context) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty || !context.mounted) return;
+      onPicked(result.files.single);
+    } catch (_) {
+      // File picking was cancelled or unsupported on this platform.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _pick(context),
+      borderRadius: BorderRadius.circular(12),
+      child: CustomPaint(
+        foregroundPainter: const _DashedRoundRectPainter(
+          color: Color(0xFFE5E7EB),
+          radius: 12,
+        ),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.upload_rounded,
+                size: 16,
+                color: Color(0xFF9CA3AF),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                fileName ?? 'Upload receipt',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3590,53 +4557,6 @@ class _RequestGroup extends StatelessWidget {
     ),
     clipBehavior: Clip.antiAlias,
     child: Column(children: children),
-  );
-}
-
-class _StatStrip extends StatelessWidget {
-  const _StatStrip({required this.stats});
-  final List<(String, String, Color)> stats;
-
-  @override
-  Widget build(BuildContext context) => _PaperCard(
-    child: Row(
-      children: stats.indexed.map((entry) {
-        final stat = entry.$2;
-        return Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              border: entry.$1 == 0
-                  ? null
-                  : const Border(left: BorderSide(color: _Q.line)),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  stat.$1,
-                  style: TextStyle(
-                    color: stat.$3,
-                    fontSize: 22,
-                    height: 1,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  stat.$2,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _Q.inkFaint,
-                    fontSize: 11,
-                    height: 1.25,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    ),
   );
 }
 
@@ -4305,15 +5225,6 @@ class _IconTile extends StatelessWidget {
   );
 }
 
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(text.toUpperCase(), style: _QText.section);
-}
-
 enum _StepKind { choice, dates, date, text, upload }
 
 class _FlowStep {
@@ -4644,12 +5555,6 @@ String _decision(LeaveDecision decision) => switch (decision) {
   LeaveDecision.declined => 'Declined',
   LeaveDecision.pending => 'Pending',
 };
-
-String _number(double value) {
-  return value == value.roundToDouble()
-      ? value.toInt().toString()
-      : value.toStringAsFixed(1);
-}
 
 String _money(double value) {
   final digits = value.round().toString();

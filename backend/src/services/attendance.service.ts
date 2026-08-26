@@ -37,6 +37,41 @@ export async function getMyAttendance(userId: string, fromInput: string, toInput
   };
 }
 
+export async function recordPunch(userId: string, type: string) {
+  if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
+  const employee = await users().findOne({ userId });
+  if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
+  const now = new Date();
+  const workDate = now.toISOString().slice(0, 10);
+  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+
+  if (type === 'in') {
+    if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
+    await attendanceRecords().updateOne(
+      { employeeId: employee.employeeId, workDate },
+      {
+        $set: { employeeId: employee.employeeId, userId, workDate, punchIn: now, updatedAt: now },
+        $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
+      },
+      { upsert: true },
+    );
+  } else {
+    if (!existing?.punchIn) throw new AttendanceError(409, 'Punch in before punching out');
+    if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
+    await attendanceRecords().updateOne(
+      { employeeId: employee.employeeId, workDate },
+      { $set: { punchOut: now, updatedAt: now } },
+    );
+  }
+
+  const updated = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  return {
+    workDate,
+    punchIn: updated?.punchIn?.toISOString(),
+    punchOut: updated?.punchOut?.toISOString(),
+  };
+}
+
 export async function requestRegularization(
   userId: string,
   input: { workDate?: string; period?: string; note?: string },

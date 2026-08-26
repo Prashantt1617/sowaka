@@ -613,15 +613,10 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             rows: [
               ('Type:', 'Overtime'),
               ('Date:', _managerDate(request.workDate)),
-              (
-                'Overtime hrs:',
-                request.hours > 0
-                    ? '${request.hours.toStringAsFixed(request.hours == request.hours.roundToDouble() ? 0 : 1)} hrs'
-                    : request.duration,
-              ),
+              ('Overtime hrs:', request.hoursLabel),
               (
                 'Comment:',
-                request.note.isEmpty ? request.project : request.note,
+                request.note.isEmpty ? request.timeRangeLabel : request.note,
               ),
             ],
             decision: LeaveDecision.pending,

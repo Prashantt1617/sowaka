@@ -1534,7 +1534,7 @@ class _OvertimeRequestCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     request.decision == LeaveDecision.pending
                         ? _RequestChip(
-                            label: request.duration,
+                            label: request.hoursLabel,
                             foreground: MColors.gold,
                             background: MColors.goldTint,
                           )
@@ -1545,15 +1545,13 @@ class _OvertimeRequestCard extends StatelessWidget {
                 _RequestHighlightPanel(
                   icon: Icons.schedule_rounded,
                   value: _managerDate(request.workDate),
-                  trailing: request.hours > 0
-                      ? '${request.hours.toStringAsFixed(request.hours == request.hours.roundToDouble() ? 0 : 1)} hrs'
-                      : request.duration,
+                  trailing: request.hoursLabel,
                   foreground: MColors.gold,
                   background: MColors.goldTint,
                 ),
                 const SizedBox(height: 11),
                 Text(
-                  request.note.isEmpty ? request.project : request.note,
+                  request.note.isEmpty ? request.timeRangeLabel : request.note,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1618,12 +1616,12 @@ class _OvertimeRequestCard extends StatelessWidget {
       approve: decision == LeaveDecision.approved,
       requestName: 'overtime',
       person: request.who,
-      chipLabel: request.duration,
+      chipLabel: request.hoursLabel,
       chipForeground: MColors.gold,
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      trailing: request.hours > 0 ? '${request.hours} hrs' : request.duration,
+      trailing: request.hoursLabel,
     );
     if (result != null && context.mounted) {
       bloc.add(
@@ -1734,7 +1732,7 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
     requestedOn: request.requestedOn,
     chip: request.decision == LeaveDecision.pending
         ? _RequestChip(
-            label: request.duration,
+            label: request.hoursLabel,
             foreground: MColors.gold,
             background: MColors.goldTint,
             large: true,
@@ -1745,13 +1743,11 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
     primaryForeground: MColors.gold,
     primaryBackground: MColors.goldTint,
     secondaryLabel: 'DURATION',
-    secondaryValue: request.hours > 0
-        ? '${request.hours.toStringAsFixed(request.hours == request.hours.roundToDouble() ? 0 : 1)} hours'
-        : request.duration,
+    secondaryValue: request.hoursLabel,
     noteLabel: request.note.isEmpty ? null : 'NOTE',
     note: request.note.isEmpty ? null : request.note,
     details: [
-      (Icons.work_outline_rounded, 'Project', request.project),
+      (Icons.schedule_rounded, 'Time', request.timeRangeLabel),
       (
         Icons.schedule_rounded,
         'Requested',
@@ -1769,12 +1765,12 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
       approve: decision == LeaveDecision.approved,
       requestName: 'overtime',
       person: request.who,
-      chipLabel: request.duration,
+      chipLabel: request.hoursLabel,
       chipForeground: MColors.gold,
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      trailing: request.hours > 0 ? '${request.hours} hrs' : request.duration,
+      trailing: request.hoursLabel,
     );
     if (result == null || !context.mounted) return;
     bloc.add(

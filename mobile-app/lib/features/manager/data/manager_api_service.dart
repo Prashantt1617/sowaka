@@ -136,6 +136,15 @@ class ManagerApiService {
     );
   }
 
+  Future<AttendanceRecord> recordPunch(String type) async {
+    final json = await _request(
+      'POST',
+      '/attendance/punch',
+      body: {'type': type},
+    );
+    return AttendanceRecord.fromJson(json);
+  }
+
   Future<AttendanceRegularization> submitAttendanceRegularization({
     required DateTime workDate,
     required String period,
@@ -268,8 +277,8 @@ class ManagerApiService {
 
   Future<OvertimeRequest> submitOvertime({
     required DateTime workDate,
-    required String duration,
-    required String project,
+    required DateTime startTime,
+    required DateTime endTime,
     required String note,
   }) async {
     final json = await _request(
@@ -277,8 +286,8 @@ class ManagerApiService {
       '/overtime',
       body: {
         'workDate': _dateOnly(workDate),
-        'duration': duration == 'Full day' ? 'full_day' : 'half_day',
-        'project': project,
+        'startTime': startTime.toUtc().toIso8601String(),
+        'endTime': endTime.toUtc().toIso8601String(),
         'note': note,
       },
     );

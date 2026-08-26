@@ -11,8 +11,8 @@ export async function createOvertime(req: Request, res: Response, next: NextFunc
   try {
     const overtime = await createOvertimeRequest(requireUserId(req), {
       workDate: String(req.body.workDate ?? ''),
-      duration: String(req.body.duration ?? ''),
-      project: String(req.body.project ?? ''),
+      startTime: String(req.body.startTime ?? ''),
+      endTime: String(req.body.endTime ?? ''),
       note: req.body.note == null ? undefined : String(req.body.note),
     });
     res.status(201).json({ success: true, overtime });

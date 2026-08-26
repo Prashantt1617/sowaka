@@ -9,39 +9,37 @@ const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
 export async function createOvertimeRequest(
   userId: string,
-  input: { workDate: string; duration: string; project: string; note?: string },
+  input: { workDate: string; startTime: string; endTime: string; note?: string },
 ) {
   const employee = await requireEmployeeWithManager(userId);
   const workDate = parseDateOnly(input.workDate, 'workDate');
   if (workDate >= startOfUtcDay(new Date())) {
     throw new OvertimeError(400, 'Overtime can only be submitted for a past date');
   }
-  const duration = input.duration.trim().toLowerCase() as OvertimeRequest['duration'];
-  if (duration !== 'half_day' && duration !== 'full_day') {
-    throw new OvertimeError(400, 'Duration must be half_day or full_day');
-  }
+  const startTime = parseDateTime(input.startTime, 'startTime');
+  const endTime = parseDateTime(input.endTime, 'endTime');
+  const hours = Math.round(((endTime.getTime() - startTime.getTime()) / 3_600_000) * 100) / 100;
+  if (hours <= 0) throw new OvertimeError(400, 'End time must be after start time');
+  if (hours > 16) throw new OvertimeError(400, 'Overtime duration looks too long — check the times');
 
-  // Team gate + full-day eligibility. Full-day overtime is only allowed on a
-  // week-off or a company holiday; half-day may be logged for any past day.
+  // Team gate + full-day eligibility. A full day's worth (8h+) of overtime is
+  // only allowed on a week-off or a company holiday; shorter stretches may be
+  // logged for any past day.
   const companyConfig = await getCompanyConfig(employee.org);
   if (companyConfig.overtimeDisabledDepartments.includes((employee.department ?? '').trim())) {
     throw new OvertimeError(403, 'Overtime is not enabled for your team');
   }
-  if (duration === 'full_day') {
+  if (hours >= 8) {
     const holidayDates = await getOrgHolidayDates(employee.org);
     const isHoliday = holidayDates.has(workDate.toISOString().slice(0, 10));
     if (!isHoliday && !isWeekoffDay(workDate, companyConfig.weekoffDays)) {
       throw new OvertimeError(
         400,
-        'Full-day overtime can only be applied on a week-off or holiday',
+        'A full day (8h+) of overtime can only be logged on a week-off or holiday',
       );
     }
   }
 
-  const project = input.project.trim();
-  if (project.length < 2 || project.length > 120) {
-    throw new OvertimeError(400, 'Project must be between 2 and 120 characters');
-  }
   const note = input.note?.trim();
   if (note && note.length > 500) throw new OvertimeError(400, 'Note is too long');
   const duplicate = await overtimeRequests().findOne({
@@ -56,9 +54,9 @@ export async function createOvertimeRequest(
     userId,
     managerUserId: employee.managerUserId!,
     workDate,
-    duration,
-    hours: duration === 'full_day' ? 8 : 4,
-    project,
+    startTime,
+    endTime,
+    hours,
     note,
     status: 'pending',
     createdAt: now,
@@ -207,9 +205,9 @@ function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User) {
       department: employee.department ?? employee.designation ?? 'Team',
     },
     workDate: request.workDate.toISOString().slice(0, 10),
-    duration: request.duration,
+    startTime: request.startTime.toISOString(),
+    endTime: request.endTime.toISOString(),
     hours: request.hours,
-    project: request.project,
     note: request.note,
     managerNote: request.managerNote,
     status: request.status,
@@ -245,6 +243,12 @@ function parseDateOnly(value: string, field: string): Date {
 
 function startOfUtcDay(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function parseDateTime(value: string, field: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new OvertimeError(400, `${field} is not a valid time`);
+  return date;
 }
 
 export class OvertimeError extends Error {
