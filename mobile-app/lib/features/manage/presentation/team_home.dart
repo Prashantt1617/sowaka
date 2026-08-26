@@ -30,7 +30,8 @@ class _TeamHomeState extends State<_TeamHome> {
         data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
         data.managerRegularizations
             .where((r) => r.decision == LeaveDecision.pending)
-            .length;
+            .length +
+        data.reimbursements.where((c) => c.status == 'Pending').length;
 
     return ColoredBox(
       color: Colors.white,
@@ -515,7 +516,10 @@ int _pendingRequestCount(ManagerDashboard data, String userId) {
   final corrections = data.managerRegularizations
       .where((r) => r.userId == userId && r.decision == LeaveDecision.pending)
       .length;
-  return leaves + overtime + corrections;
+  final reimbursements = data.reimbursements
+      .where((c) => c.userId == userId && c.status == 'Pending')
+      .length;
+  return leaves + overtime + corrections + reimbursements;
 }
 
 LeaveRequest? _upcomingLeaveFor(ManagerDashboard data, String userId) {
@@ -553,6 +557,7 @@ enum _RequestViewMode {
   leaveOnly,
   overtimeOnly,
   correctionOnly,
+  reimbursementOnly,
 }
 
 class _TeamRequestsView extends StatefulWidget {
@@ -659,6 +664,28 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ),
           ),
         ),
+      for (final claim in data.reimbursements.where(
+        (c) => c.status == 'Pending',
+      ))
+        (
+          claim.createdAt,
+          claim.who,
+          'reimbursement',
+          _TeamRequestCard(
+            initial: claim.initial,
+            avatarIndex: claim.avatarIndex,
+            name: claim.who,
+            role: claim.team,
+            rows: [
+              ('Type:', claim.category),
+              ('Date:', _managerDate(claim.expenseDate)),
+              ('Amount:', '₹${claim.amount.toStringAsFixed(0)}'),
+              ('Comment:', claim.note.isEmpty ? 'Expense claim' : claim.note),
+            ],
+            decision: LeaveDecision.pending,
+            readOnly: true,
+          ),
+        ),
     ];
 
     var filtered = switch (_mode) {
@@ -668,6 +695,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
         entries.where((entry) => entry.$3 == 'overtime').toList(),
       _RequestViewMode.correctionOnly =>
         entries.where((entry) => entry.$3 == 'correction').toList(),
+      _RequestViewMode.reimbursementOnly =>
+        entries.where((entry) => entry.$3 == 'reimbursement').toList(),
       _RequestViewMode.newestFirst ||
       _RequestViewMode.oldestFirst => [...entries],
     };
@@ -766,6 +795,7 @@ class _ViewByButton extends StatelessWidget {
     _RequestViewMode.leaveOnly: 'Leave Request',
     _RequestViewMode.correctionOnly: 'Correction Request',
     _RequestViewMode.overtimeOnly: 'Overtime Request',
+    _RequestViewMode.reimbursementOnly: 'Reimbursement Request',
   };
 
   @override
@@ -875,8 +905,9 @@ class _TeamRequestCard extends StatelessWidget {
     required this.role,
     required this.rows,
     required this.decision,
-    required this.onApprove,
-    required this.onReject,
+    this.onApprove,
+    this.onReject,
+    this.readOnly = false,
   });
 
   final String initial;
@@ -885,8 +916,9 @@ class _TeamRequestCard extends StatelessWidget {
   final String role;
   final List<(String label, String value)> rows;
   final LeaveDecision decision;
-  final VoidCallback onApprove;
-  final VoidCallback onReject;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -966,27 +998,37 @@ class _TeamRequestCard extends StatelessWidget {
             const SizedBox(height: 8),
           ],
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _TeamDecisionButton(
-                  label: 'Approve',
-                  background: const Color(0xFFDAFFD3),
-                  foreground: const Color(0xFF34C759),
-                  onTap: onApprove,
-                ),
+          if (readOnly)
+            const Text(
+              'Awaiting HR review',
+              style: TextStyle(
+                color: Color(0xFF9CA3AF),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _TeamDecisionButton(
-                  label: 'Reject',
-                  background: const Color(0xFFFDDBDB),
-                  foreground: const Color(0xFFFF383C),
-                  onTap: onReject,
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _TeamDecisionButton(
+                    label: 'Approve',
+                    background: const Color(0xFFDAFFD3),
+                    foreground: const Color(0xFF34C759),
+                    onTap: onApprove!,
+                  ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TeamDecisionButton(
+                    label: 'Reject',
+                    background: const Color(0xFFFDDBDB),
+                    foreground: const Color(0xFFFF383C),
+                    onTap: onReject!,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

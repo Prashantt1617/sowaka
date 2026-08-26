@@ -27,6 +27,9 @@ class ManagerApiService {
     final myOvertimeFuture = fetchMyOvertime();
     final overtimeFuture = fetchManagerOvertime();
     final reimbursementsFuture = fetchMyReimbursements();
+    final managerReimbursementsFuture = session.user.role == 'manager'
+        ? fetchManagerReimbursements()
+        : Future<List<ReimbursementClaim>>.value(const []);
     final now = DateTime.now();
     final attendanceFuture = fetchAttendance(
       DateTime(now.year, now.month, 1),
@@ -108,6 +111,7 @@ class ManagerApiService {
       overtime: await overtimeFuture,
       myOvertime: await myOvertimeFuture,
       myReimbursements: await reimbursementsFuture,
+      reimbursements: await managerReimbursementsFuture,
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
@@ -309,6 +313,15 @@ class ManagerApiService {
 
   Future<List<ReimbursementClaim>> fetchMyReimbursements() async {
     final json = await _request('GET', '/reimbursements/mine');
+    return _parseReimbursements(json);
+  }
+
+  Future<List<ReimbursementClaim>> fetchManagerReimbursements() async {
+    final json = await _request('GET', '/reimbursements/inbox');
+    return _parseReimbursements(json);
+  }
+
+  List<ReimbursementClaim> _parseReimbursements(Map<String, dynamic> json) {
     final values = json['claims'] as List<dynamic>? ?? const [];
     return values
         .map(

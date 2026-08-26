@@ -488,7 +488,10 @@ class OvertimeRequest {
 class ReimbursementClaim {
   const ReimbursementClaim({
     required this.id,
+    this.userId = '',
     required this.who,
+    required this.initial,
+    required this.avatarIndex,
     required this.team,
     required this.category,
     required this.amount,
@@ -501,7 +504,10 @@ class ReimbursementClaim {
   });
 
   final String id;
+  final String userId;
   final String who;
+  final String initial;
+  final int avatarIndex;
   final String team;
   final String category;
   final double amount;
@@ -524,9 +530,13 @@ class ReimbursementClaim {
   factory ReimbursementClaim.fromJson(Map<String, dynamic> json) {
     final category = json['category'] as String? ?? 'other';
     final employee = json['employee'] as Map<String, dynamic>? ?? const {};
+    final name = employee['name'] as String? ?? 'Employee';
     return ReimbursementClaim(
       id: json['id'] as String? ?? '',
-      who: employee['name'] as String? ?? 'Employee',
+      userId: json['userId'] as String? ?? '',
+      who: name,
+      initial: name.isEmpty ? '?' : name[0].toUpperCase(),
+      avatarIndex: name.hashCode.abs() % 7,
       team: employee['department'] as String? ?? 'Team',
       category: category.isEmpty
           ? 'Other'
@@ -551,7 +561,10 @@ class ReimbursementClaim {
   ReimbursementClaim copyWith({String? status}) {
     return ReimbursementClaim(
       id: id,
+      userId: userId,
       who: who,
+      initial: initial,
+      avatarIndex: avatarIndex,
       team: team,
       category: category,
       amount: amount,
@@ -585,6 +598,7 @@ class ManagerDashboard {
     required this.overtime,
     required this.myOvertime,
     required this.myReimbursements,
+    this.reimbursements = const [],
     this.weekoffDays = const [0],
     this.overtimeEnabled = true,
     this.attendance = const [],
@@ -610,6 +624,7 @@ class ManagerDashboard {
   final List<OvertimeRequest> overtime;
   final List<OvertimeRequest> myOvertime;
   final List<ReimbursementClaim> myReimbursements;
+  final List<ReimbursementClaim> reimbursements;
   // Company config (from /manager/workspace): week-off weekdays (0=Sun..6=Sat)
   // and whether the overtime feature is enabled for this user's team.
   final List<int> weekoffDays;
@@ -630,6 +645,7 @@ class ManagerDashboard {
     List<OvertimeRequest>? overtime,
     List<OvertimeRequest>? myOvertime,
     List<ReimbursementClaim>? myReimbursements,
+    List<ReimbursementClaim>? reimbursements,
     List<AttendanceRecord>? attendance,
     List<AttendanceRegularization>? regularizations,
     List<AttendanceRegularization>? managerRegularizations,
@@ -654,6 +670,7 @@ class ManagerDashboard {
       overtime: overtime ?? this.overtime,
       myOvertime: myOvertime ?? this.myOvertime,
       myReimbursements: myReimbursements ?? this.myReimbursements,
+      reimbursements: reimbursements ?? this.reimbursements,
       weekoffDays: weekoffDays,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,

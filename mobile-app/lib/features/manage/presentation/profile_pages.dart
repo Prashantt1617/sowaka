@@ -96,6 +96,23 @@ class _TeamMemberProfilePage extends StatelessWidget {
             ),
           ),
         ),
+      for (final claim in data.reimbursements.where(
+        (item) => item.userId == member.userId && item.status == 'Pending',
+      ))
+        (
+          claim.createdAt,
+          _ProfileRequestCard(
+            icon: Icons.receipt_long_rounded,
+            title: '${claim.category} Request',
+            rows: [
+              ('Date:', _managerDate(claim.expenseDate)),
+              ('Amount:', '₹${claim.amount.toStringAsFixed(0)}'),
+              ('Comment:', claim.note.isEmpty ? 'Expense claim' : claim.note),
+            ],
+            decision: LeaveDecision.pending,
+            readOnly: true,
+          ),
+        ),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
 
     return Scaffold(
