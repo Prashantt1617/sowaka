@@ -7,6 +7,7 @@ import '../../auth/data/auth_models.dart';
 import '../bloc/connect_bloc.dart';
 import '../data/connect_models.dart';
 import 'game_play_screen.dart';
+import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/notification_service.dart';
 
@@ -66,7 +67,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             bottom: false,
             child: Column(
               children: [
-                _ConnectHeader(
+                AppHomeHeader(
                   profileAction: widget.profileAction,
                   onNotifications: () async {
                     await AppNotificationService.instance.requestPermission();
@@ -78,6 +79,12 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                       ),
                     );
                   },
+                  onQuickCreate: () =>
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Quick create coming soon'),
+                        ),
+                      ),
                 ),
                 Expanded(child: _buildBody(state)),
               ],
@@ -224,59 +231,6 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           title: _bodyString(post, 'title'),
           hostedUrl: hostedUrl,
         ),
-      ),
-    );
-  }
-}
-
-class _ConnectHeader extends StatelessWidget {
-  const _ConnectHeader({
-    required this.profileAction,
-    required this.onNotifications,
-  });
-
-  final Widget profileAction;
-  final VoidCallback onNotifications;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Connect',
-                  style: TextStyle(
-                    color: _ConnectColors.ink,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Company feed, shout-outs and updates',
-                  style: TextStyle(
-                    color: _ConnectColors.inkSoft,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: onNotifications,
-            tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-          profileAction,
-        ],
       ),
     );
   }

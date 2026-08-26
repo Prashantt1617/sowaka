@@ -6,19 +6,22 @@ class _ManageContent extends StatelessWidget {
     required this.state,
     required this.bloc,
     required this.onOpenProfile,
+    required this.onNotifications,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
   final VoidCallback onOpenProfile;
+  final VoidCallback onNotifications;
 
   @override
   Widget build(BuildContext context) {
     return switch (state.view) {
-      ManagerView.home => _ManagerHome(
+      ManagerView.home => _TeamHome(
         state: state,
         bloc: bloc,
         onOpenProfile: onOpenProfile,
+        onNotifications: onNotifications,
       ),
       ManagerView.feedbackList => _FeedbackList(state: state, bloc: bloc),
       ManagerView.feedbackRecord => _RecordFeedback(state: state, bloc: bloc),
@@ -38,241 +41,6 @@ class _ManageContent extends StatelessWidget {
         type: _RequestType.attendance,
       ),
     };
-  }
-}
-
-class _ManagerHome extends StatelessWidget {
-  const _ManagerHome({
-    required this.state,
-    required this.bloc,
-    required this.onOpenProfile,
-  });
-
-  final ManagerState state;
-  final ManagerBloc bloc;
-  final VoidCallback onOpenProfile;
-
-  @override
-  Widget build(BuildContext context) {
-    final data = state.dashboard!;
-    final open = data.team
-        .where(
-          (item) =>
-              item.status != FeedbackStatus.sent &&
-              item.status != FeedbackStatus.missed,
-        )
-        .length;
-    final given = data.team.length - open;
-    final pendingLeaveList = data.leaves
-        .where((leave) => leave.decision == LeaveDecision.pending)
-        .toList();
-    final pendingLeaves = pendingLeaveList.length;
-    final named = data.awards.where((award) => award.nomineeId != null).length;
-    final pendingOvertime = data.overtime
-        .where((request) => request.decision == LeaveDecision.pending)
-        .toList();
-    final pendingCorrections = data.managerRegularizations
-        .where((request) => request.decision == LeaveDecision.pending)
-        .toList();
-
-    return ListView(
-      key: const ValueKey('manager-home'),
-      padding: const EdgeInsets.fromLTRB(16, 60, 16, 34),
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_monthName(data.today.month)} · for you to action',
-                      style: const TextStyle(
-                        color: MColors.inkSoft,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Your Team',
-                      style: TextStyle(
-                        color: MColors.ink,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 27,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Semantics(
-                button: true,
-                label: 'Open profile',
-                child: InkWell(
-                  key: const ValueKey('manager-profile-avatar'),
-                  borderRadius: BorderRadius.circular(99),
-                  onTap: onOpenProfile,
-                  child: AvatarBadge(
-                    initial: data.managerInitial,
-                    index: 1,
-                    size: 42,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _MetricCard(
-                value: '$open',
-                label: 'feedback to give',
-                color: MColors.terra,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MetricCard(
-                value: '$pendingLeaves',
-                label: 'leaves pending',
-                color: pendingLeaves == 0 ? MColors.sageDeep : MColors.gold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _SectionTitle(
-          title: 'Feedback',
-          trailing: open == 0 ? 'All given' : '$open pending',
-          onTap: () => bloc.add(const OpenFeedbackList()),
-        ),
-        const SizedBox(height: 10),
-        _ProgressBar(
-          value: data.team.isEmpty ? 0 : given / data.team.length,
-          color: MColors.terra,
-        ),
-        const SizedBox(height: 14),
-        _AvatarActionCluster(
-          people: data.team
-              .take(10)
-              .map(
-                (member) => _ActionAvatar(
-                  initial: _nameInitials(member.name),
-                  index: member.avatarIndex,
-                  completed: member.status == FeedbackStatus.sent,
-                ),
-              ),
-          onTap: () => bloc.add(const OpenFeedbackList()),
-        ),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: 'Leave requests',
-          trailing: pendingLeaves == 0 ? 'All clear' : '$pendingLeaves pending',
-          onTap: () => bloc.add(const OpenLeaveRequests()),
-        ),
-        const SizedBox(height: 12),
-        _AvatarActionCluster(
-          people: pendingLeaveList.map(
-            (leave) => _ActionAvatar(
-              initial: _nameInitials(leave.who),
-              index: leave.avatarIndex,
-            ),
-          ),
-          emptyText: 'All requests reviewed',
-          onTap: () => bloc.add(const OpenLeaveRequests()),
-        ),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: 'Overtime requests',
-          trailing: pendingOvertime.isEmpty
-              ? 'All clear'
-              : '${pendingOvertime.length} pending',
-          onTap: () => bloc.add(const OpenOvertimeRequests()),
-        ),
-        const SizedBox(height: 12),
-        _AvatarActionCluster(
-          people: pendingOvertime.map(
-            (request) => _ActionAvatar(
-              initial: _nameInitials(request.who),
-              index: request.avatarIndex,
-            ),
-          ),
-          emptyText: 'All requests reviewed',
-          onTap: () => bloc.add(const OpenOvertimeRequests()),
-        ),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: 'Attendance corrections',
-          trailing: pendingCorrections.isEmpty
-              ? 'All clear'
-              : '${pendingCorrections.length} pending',
-          onTap: () => bloc.add(const OpenAttendanceCorrections()),
-        ),
-        const SizedBox(height: 12),
-        _AvatarActionCluster(
-          people: pendingCorrections.map(
-            (request) => _ActionAvatar(
-              initial: _nameInitials(request.who),
-              index: request.avatarIndex,
-            ),
-          ),
-          emptyText: 'All requests reviewed',
-          onTap: () => bloc.add(const OpenAttendanceCorrections()),
-        ),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: 'Recognition',
-          trailing: '$named of ${data.awards.length} named',
-        ),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            'Nominate someone for ${_monthName(data.today.month)}’s awards.',
-            style: const TextStyle(color: MColors.inkSoft, fontSize: 13.5),
-          ),
-        ),
-        const SizedBox(height: 13),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: data.awards.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.08,
-          ),
-          itemBuilder: (context, index) {
-            return _AwardCard(
-              award: data.awards[index],
-              team: data.recognitionCandidates,
-              onNominate: () =>
-                  bloc.add(OpenAwardPicker(data.awards[index].key)),
-            );
-          },
-        ),
-        if (data.recognitionHistory.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Center(
-            child: TextButton.icon(
-              onPressed: () =>
-                  _showPastNominations(context, data.recognitionHistory),
-              icon: const Icon(Icons.history_rounded, size: 18),
-              label: Text(
-                'View past nominations (${data.recognitionHistory.length})',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
   }
 }
 
@@ -591,11 +359,13 @@ class _FeedbackSearchField extends StatefulWidget {
     required this.query,
     required this.onChanged,
     required this.onClear,
+    this.hint = 'Find a teammate',
   });
 
   final String query;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
+  final String hint;
 
   @override
   State<_FeedbackSearchField> createState() => _FeedbackSearchFieldState();
@@ -632,7 +402,7 @@ class _FeedbackSearchFieldState extends State<_FeedbackSearchField> {
     controller: _controller,
     onChanged: widget.onChanged,
     decoration: InputDecoration(
-      hintText: 'Find a teammate',
+      hintText: widget.hint,
       prefixIcon: const Icon(Icons.search_rounded, size: 20),
       suffixIcon: widget.query.isEmpty
           ? null

@@ -1,10 +1,16 @@
 part of '../../manager/presentation/manager_screen.dart';
 
 class _GrowTab extends StatefulWidget {
-  const _GrowTab({super.key, required this.state, required this.onOpenProfile});
+  const _GrowTab({
+    super.key,
+    required this.state,
+    required this.onOpenProfile,
+    required this.onNotifications,
+  });
 
   final ManagerState state;
   final VoidCallback onOpenProfile;
+  final VoidCallback onNotifications;
 
   @override
   State<_GrowTab> createState() => _GrowTabState();
@@ -39,46 +45,16 @@ class _GrowTabState extends State<_GrowTab> {
     return Column(
       key: const ValueKey('grow'),
       children: [
-        Container(
-          width: double.infinity,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: MColors.line)),
+        AppHomeHeader(
+          profileAction: _ProfileAvatarAction(
+            key: const ValueKey('grow-profile-avatar'),
+            initial: data.managerInitial,
+            onTap: widget.onOpenProfile,
+            size: 30,
           ),
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _ProfileAvatarAction(
-                      key: const ValueKey('grow-profile-avatar'),
-                      initial: data.managerInitial,
-                      onTap: widget.onOpenProfile,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Grow',
-                    style: TextStyle(
-                      color: MColors.ink,
-                      fontSize: 30,
-                      height: 1.08,
-                      letterSpacing: -0.9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Your performance & trajectory, from 1-on-1s',
-                    style: TextStyle(color: MColors.inkSoft, fontSize: 14.5),
-                  ),
-                ],
-              ),
-            ),
+          onNotifications: widget.onNotifications,
+          onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Quick create coming soon')),
           ),
         ),
         Expanded(

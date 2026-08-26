@@ -880,23 +880,34 @@ class _LeaveStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final approved = decision == LeaveDecision.approved;
-    final color = approved ? MColors.sageDeep : MColors.terraDeep;
+    final (label, color, background) = switch (decision) {
+      LeaveDecision.approved => (
+        'Approved',
+        MColors.sageDeep,
+        MColors.sageTint,
+      ),
+      LeaveDecision.declined => (
+        'Declined',
+        MColors.terraDeep,
+        MColors.terraTint,
+      ),
+      LeaveDecision.pending => ('Pending', MColors.gold, MColors.goldTint),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: approved ? MColors.sageTint : MColors.terraTint,
+        color: background,
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (approved) ...[
+          if (decision == LeaveDecision.approved) ...[
             Icon(Icons.check_rounded, size: 13, color: color),
             const SizedBox(width: 5),
           ],
           Text(
-            approved ? 'Approved' : 'Declined',
+            label,
             style: TextStyle(
               color: color,
               fontSize: 12,

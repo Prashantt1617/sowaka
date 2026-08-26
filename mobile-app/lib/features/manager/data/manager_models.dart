@@ -13,6 +13,8 @@ enum FeedbackStatus { pending, saved, sent, missed }
 
 enum LeaveDecision { pending, approved, declined }
 
+enum TeamPresenceStatus { present, notPunchedIn }
+
 class FeedbackParam {
   const FeedbackParam({
     required this.name,
@@ -82,6 +84,12 @@ class TeamMember {
     required this.avatarIndex,
     required this.params,
     required this.extra,
+    this.todayStatus = TeamPresenceStatus.notPunchedIn,
+    this.birthday,
+    this.designation = '',
+    this.photoUrl,
+    this.punchIn,
+    this.punchOut,
   });
 
   final int id;
@@ -96,6 +104,12 @@ class TeamMember {
   final int avatarIndex;
   final List<FeedbackParam> params;
   final String extra;
+  final TeamPresenceStatus todayStatus;
+  final DateTime? birthday;
+  final String designation;
+  final String? photoUrl;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
 
   factory TeamMember.fromJson(Map<String, dynamic> json, int id) {
     final name = json['name'] as String? ?? 'Employee';
@@ -126,6 +140,18 @@ class TeamMember {
         );
       }).toList(),
       extra: json['extra'] as String? ?? '',
+      todayStatus: json['todayStatus'] == 'present'
+          ? TeamPresenceStatus.present
+          : TeamPresenceStatus.notPunchedIn,
+      birthday: DateTime.tryParse(json['birthday'] as String? ?? ''),
+      designation: json['designation'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String?,
+      punchIn: DateTime.tryParse(
+        json['punchIn'] as String? ?? '',
+      )?.toLocal(),
+      punchOut: DateTime.tryParse(
+        json['punchOut'] as String? ?? '',
+      )?.toLocal(),
     );
   }
 
@@ -148,6 +174,12 @@ class TeamMember {
       avatarIndex: avatarIndex,
       params: params ?? this.params,
       extra: extra ?? this.extra,
+      todayStatus: todayStatus,
+      birthday: birthday,
+      designation: designation,
+      photoUrl: photoUrl,
+      punchIn: punchIn,
+      punchOut: punchOut,
     );
   }
 }
@@ -217,6 +249,7 @@ class CompanyHoliday {
 class LeaveRequest {
   const LeaveRequest({
     required this.id,
+    this.userId = '',
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -233,6 +266,7 @@ class LeaveRequest {
   });
 
   final String id;
+  final String userId;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -257,6 +291,7 @@ class LeaveRequest {
     final end = DateTime.parse(json['endDate'] as String);
     return LeaveRequest(
       id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
@@ -285,6 +320,7 @@ class LeaveRequest {
   LeaveRequest copyWith({LeaveDecision? decision, String? managerNote}) {
     return LeaveRequest(
       id: id,
+      userId: userId,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -360,6 +396,7 @@ class Nomination {
 class OvertimeRequest {
   const OvertimeRequest({
     required this.id,
+    this.userId = '',
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -376,6 +413,7 @@ class OvertimeRequest {
   });
 
   final String id;
+  final String userId;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -397,6 +435,7 @@ class OvertimeRequest {
     final name = employee['name'] as String? ?? 'Employee';
     return OvertimeRequest(
       id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
@@ -422,6 +461,7 @@ class OvertimeRequest {
   OvertimeRequest copyWith({LeaveDecision? decision, String? managerNote}) {
     return OvertimeRequest(
       id: id,
+      userId: userId,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -636,6 +676,7 @@ class AttendanceRecord {
 class AttendanceRegularization {
   const AttendanceRegularization({
     required this.id,
+    this.userId = '',
     required this.workDate,
     required this.period,
     required this.note,
@@ -648,6 +689,7 @@ class AttendanceRegularization {
     this.managerNote = '',
   });
   final String id;
+  final String userId;
   final DateTime workDate;
   final String period;
   final String note;
@@ -669,6 +711,7 @@ class AttendanceRegularization {
     Map<String, dynamic> json,
   ) => AttendanceRegularization(
     id: json['id'] as String? ?? '',
+    userId: json['userId'] as String? ?? '',
     workDate: DateTime.parse(json['workDate'] as String),
     period: json['period'] as String? ?? 'full_day',
     note: json['note'] as String? ?? '',

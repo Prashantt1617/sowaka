@@ -15,6 +15,16 @@ class _TabContent extends StatelessWidget {
   final QuickActionsController quickActionsController;
   final VoidCallback onOpenProfile;
 
+  Future<void> _openNotifications(BuildContext context) async {
+    await AppNotificationService.instance.requestPermission();
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationInboxScreen(session: session),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return IndexedStack(
@@ -25,11 +35,13 @@ class _TabContent extends StatelessWidget {
           state: state,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
+          onNotifications: () => _openNotifications(context),
         ),
         _GrowTab(
           key: const ValueKey('grow-tab'),
           state: state,
           onOpenProfile: onOpenProfile,
+          onNotifications: () => _openNotifications(context),
         ),
         _ConnectTab(
           key: const ValueKey('connect-tab'),
@@ -39,6 +51,7 @@ class _TabContent extends StatelessWidget {
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,
             onTap: onOpenProfile,
+            size: 30,
           ),
         ),
         QuickActionsScreen(
@@ -46,10 +59,12 @@ class _TabContent extends StatelessWidget {
           bloc: bloc,
           dashboard: state.dashboard!,
           controller: quickActionsController,
+          onNotifications: () => _openNotifications(context),
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('quick-profile-avatar'),
             initial: state.dashboard!.managerInitial,
             onTap: onOpenProfile,
+            size: 30,
           ),
         ),
       ],

@@ -9,7 +9,8 @@ import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
-import '../../profile/presentation/profile_screen.dart';
+import '../../manager_shell/presentation/app_home_header.dart';
+import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
@@ -22,6 +23,8 @@ part '../../manage/presentation/feedback_components.dart';
 part '../../manage/presentation/manage_recognition.dart';
 part '../../manage/presentation/manage_requests.dart';
 part '../../manage/presentation/manage_tab.dart';
+part '../../manage/presentation/profile_pages.dart';
+part '../../manage/presentation/team_home.dart';
 part '../../manager_shell/presentation/manager_navigation.dart';
 part '../../manager_shell/presentation/manager_shared.dart';
 part '../../manager_shell/presentation/manager_tab_content.dart';
@@ -221,7 +224,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
           child: Scaffold(
             backgroundColor: MColors.bg,
             body: _profileOpen
-                ? ProfileScreen(
+                ? _ProfileScreen(
                     session: widget.session,
                     dashboard: state.dashboard!,
                     onBack: _closeProfile,

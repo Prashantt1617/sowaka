@@ -55,47 +55,6 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            label,
-            style: const TextStyle(
-              color: MColors.inkSoft,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, this.trailing, this.onTap});
 
@@ -137,30 +96,6 @@ class _SectionTitle extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.value, required this.color});
-
-  final double value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: Container(
-        height: 8,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        color: const Color(0xFFE7DDCD),
-        child: FractionallySizedBox(
-          widthFactor: value.clamp(0, 1),
-          alignment: Alignment.centerLeft,
-          child: Container(color: color),
-        ),
       ),
     );
   }
@@ -467,14 +402,6 @@ String shortDate(DateTime date) {
     'Dec',
   ];
   return '${months[date.month - 1]} ${date.day}';
-}
-
-String _nameInitials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+'));
-  if (parts.isEmpty || parts.first.isEmpty) return '?';
-  final first = parts.first[0];
-  final last = parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '';
-  return '$first$last'.toUpperCase();
 }
 
 String _periodLabel(String period) {

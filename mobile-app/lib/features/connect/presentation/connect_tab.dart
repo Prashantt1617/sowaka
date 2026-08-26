@@ -33,10 +33,12 @@ class _ProfileAvatarAction extends StatelessWidget {
     super.key,
     required this.initial,
     required this.onTap,
+    this.size = 42,
   });
 
   final String initial;
   final VoidCallback onTap;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +48,7 @@ class _ProfileAvatarAction extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(99),
         onTap: onTap,
-        child: AvatarBadge(initial: initial, index: 1, size: 42),
+        child: AvatarBadge(initial: initial, index: 1, size: size),
       ),
     );
   }

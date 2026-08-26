@@ -1,4 +1,5 @@
 import {
+  attendanceRecords,
   feedbackRecords,
   holidays,
   recognitionNominations,
@@ -29,12 +30,18 @@ export interface ManagerTeamMemberView {
   userId: string;
   name: string;
   department: string;
+  designation: string;
   score: number;
   nextDate: string;
   feedbackStatus: 'pending' | 'saved' | 'sent';
   missedMonths: number;
   parameters: FeedbackParameter[];
   extra: string;
+  todayStatus: 'present' | 'not_punched_in';
+  birthday: string | null;
+  photoUrl: string | null;
+  punchIn: string | null;
+  punchOut: string | null;
 }
 
 export async function getManagerWorkspace(managerUserId: string) {
@@ -56,7 +63,11 @@ export async function getManagerWorkspace(managerUserId: string) {
   const recognitionCandidates = reports;
   const period = currentPeriod();
   const reportIds = reports.map((report) => report.userId);
-  const [currentFeedback, latestSent, nominations, nominationHistory, ownFeedbackHistory] =
+  const reportEmployeeIds = reports
+    .map((report) => report.employeeId)
+    .filter((value): value is string => Boolean(value));
+  const today = new Date().toISOString().slice(0, 10);
+  const [currentFeedback, latestSent, nominations, nominationHistory, ownFeedbackHistory, todaysAttendance] =
     await Promise.all([
       feedbackRecords().find({ managerUserId, employeeUserId: { $in: reportIds }, period }).toArray(),
       feedbackRecords()
@@ -76,7 +87,30 @@ export async function getManagerWorkspace(managerUserId: string) {
         .find({ employeeUserId: managerUserId, status: 'sent' })
         .sort({ period: 1 })
         .toArray(),
+      reportIds.length
+        ? attendanceRecords()
+            .find({
+              workDate: today,
+              $or: [
+                { userId: { $in: reportIds } },
+                ...(reportEmployeeIds.length ? [{ employeeId: { $in: reportEmployeeIds } }] : []),
+              ],
+            })
+            .toArray()
+        : Promise.resolve([]),
     ]);
+  // A report's punch record may be keyed by userId (self-service app punches)
+  // or employeeId (SQL-imported punches) — check both, preferring employeeId
+  // since every record has one but not every record has userId.
+  const attendanceByEmployeeId = new Map(
+    todaysAttendance.filter((record) => record.employeeId).map((record) => [record.employeeId, record]),
+  );
+  const attendanceByUserId = new Map(
+    todaysAttendance.filter((record) => record.userId).map((record) => [record.userId, record]),
+  );
+  const todaysRecordFor = (report: (typeof reports)[number]) =>
+    (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
+    attendanceByUserId.get(report.userId);
   // Resolve nominee names for the current + historical nominations (a past
   // nominee may no longer be a direct report).
   const nomineeIds = [...new Set(nominationHistory.map((n) => n.employeeUserId))];
@@ -99,16 +133,23 @@ export async function getManagerWorkspace(managerUserId: string) {
   const team: ManagerTeamMemberView[] = reports.map((report) => {
     const current = currentByEmployee.get(report.userId);
     const latest = latestByEmployee.get(report.userId);
+    const todaysRecord = todaysRecordFor(report);
     return {
       userId: report.userId,
       name: report.name,
       department: report.department ?? report.designation ?? 'Team',
+      designation: report.designation ?? '',
       score: current?.overallScore ?? latest?.overallScore ?? 0,
       nextDate,
       feedbackStatus: current?.status ?? 'pending',
       missedMonths: current ? 0 : monthsSince(latest?.period, period),
       parameters: current?.parameters ?? defaultParameters(),
       extra: current?.extra ?? '',
+      todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
+      birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
+      photoUrl: report.profilePhotoUrl ?? null,
+      punchIn: todaysRecord?.punchIn ? todaysRecord.punchIn.toISOString() : null,
+      punchOut: todaysRecord?.punchOut ? todaysRecord.punchOut.toISOString() : null,
     };
   });
 
