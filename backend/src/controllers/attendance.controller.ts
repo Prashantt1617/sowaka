@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import {
   AttendanceError, decideRegularization, getManagerRegularizations,
-  getMyAttendance, recordPunch, requestRegularization,
+  getMyAttendance, getTeamMemberAttendance, recordPunch, requestRegularization,
 } from '../services/attendance.service';
 
 function userId(req: Request) {
@@ -13,6 +13,17 @@ export async function listMine(req: Request, res: Response, next: NextFunction) 
     const today = new Date().toISOString().slice(0, 10);
     const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
     const data = await getMyAttendance(userId(req), from, String(req.query.to ?? today));
+    res.json({ success: true, ...data });
+  } catch (error) { next(error); }
+}
+export async function listTeamMemberAttendance(req: Request, res: Response, next: NextFunction) {
+  try {
+    const employeeUserId = String(req.params.employeeUserId ?? '');
+    const today = new Date().toISOString().slice(0, 10);
+    const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
+    const data = await getTeamMemberAttendance(
+      userId(req), employeeUserId, from, String(req.query.to ?? today),
+    );
     res.json({ success: true, ...data });
   } catch (error) { next(error); }
 }

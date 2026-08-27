@@ -336,6 +336,7 @@ class ManagerBloc {
   bool _refreshingLeaves = false;
 
   ManagerState get state => _state;
+  ManagerApiService get service => _service;
 
   Stream<ManagerState> get stream => _controller.stream;
 

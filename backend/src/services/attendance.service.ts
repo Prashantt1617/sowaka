@@ -7,7 +7,7 @@ import {
 } from '../models/attendance.model';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const periods = new Set<RegularizationPeriod>(['full_day', 'first_half', 'second_half']);
+const periods = new Set<RegularizationPeriod>(['present', 'half_day', 'late']);
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
@@ -87,7 +87,6 @@ export async function requestRegularization(
   const period = (input.period ?? '').trim() as RegularizationPeriod;
   if (!periods.has(period)) throw new AttendanceError(400, 'Invalid regularization period');
   const note = (input.note ?? '').trim();
-  if (!note) throw new AttendanceError(400, 'A note is required');
   if (note.length > 500) throw new AttendanceError(400, 'Note cannot exceed 500 characters');
 
   const employee = await users().findOne({ userId });
@@ -105,6 +104,20 @@ export async function requestRegularization(
     managerUserId: employee.managerUserId, workDate, period, note,
     status: 'pending', createdAt,
   });
+}
+
+export async function getTeamMemberAttendance(
+  managerUserId: string,
+  employeeUserId: string,
+  fromInput: string,
+  toInput: string,
+) {
+  const employee = await users().findOne({ userId: employeeUserId });
+  if (!employee) throw new AttendanceError(404, 'Employee not found');
+  if (employee.managerUserId !== managerUserId) {
+    throw new AttendanceError(403, "Not authorized to view this employee's attendance");
+  }
+  return getMyAttendance(employeeUserId, fromInput, toInput);
 }
 
 export async function getManagerRegularizations(managerUserId: string) {

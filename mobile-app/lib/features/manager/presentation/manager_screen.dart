@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../routes/app_routes.dart';
@@ -118,6 +119,16 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   void _closeProfile() => setState(() => _profileOpen = false);
 
+  Future<void> _openNotifications(BuildContext context) async {
+    await AppNotificationService.instance.requestPermission();
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationInboxScreen(session: widget.session),
+      ),
+    );
+  }
+
   void _handleNotificationDestination(Map<String, dynamic> data) {
     if (!mounted) return;
     final destination = '${data['destination'] ?? ''}';
@@ -229,6 +240,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     dashboard: state.dashboard!,
                     onBack: _closeProfile,
                     onLogout: _logout,
+                    onNotifications: () => _openNotifications(context),
                   )
                 : Stack(
                     children: [

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
@@ -43,7 +44,7 @@ enum _QuickPage {
 
 enum _QuickFlow { leave, overtime, reimbursement }
 
-enum _AttendanceFilter {
+enum AttendanceFilter {
   present,
   late,
   halfDay,
@@ -54,7 +55,7 @@ enum _AttendanceFilter {
   holiday,
 }
 
-enum _AttendanceKind {
+enum AttendanceKind {
   present,
   attention,
   weekoff,
@@ -66,8 +67,8 @@ enum _AttendanceKind {
   regularizationPending,
 }
 
-class _AttendanceDayView {
-  const _AttendanceDayView({
+class AttendanceDayView {
+  const AttendanceDayView({
     required this.date,
     required this.kind,
     required this.title,
@@ -79,13 +80,160 @@ class _AttendanceDayView {
   });
 
   final DateTime date;
-  final _AttendanceKind kind;
+  final AttendanceKind kind;
   final String title;
   final String cellLabel;
   final AttendanceRecord? record;
   final AttendanceRegularization? regularization;
   final LeaveRequest? leave;
   final CompanyHoliday? holiday;
+}
+
+List<AttendanceDayView> buildAttendanceDays({
+  required DateTime month,
+  required List<AttendanceRecord> records,
+  required List<AttendanceRegularization> regularizations,
+  required List<LeaveRequest> leaves,
+  required List<CompanyHoliday> holidays,
+  required List<OvertimeRequest> overtime,
+  required List<int> weekoffDays,
+}) {
+  final recordsByDate = {
+    for (final record in records)
+      _QuickActionsScreenState._dateKey(record.workDate): record,
+  };
+  final requestsByDate = {
+    for (final request in regularizations)
+      _QuickActionsScreenState._dateKey(request.workDate): request,
+  };
+  final now = DateTime.now();
+  final count = DateTime(month.year, month.month + 1, 0).day;
+  return List.generate(count, (index) {
+    final date = DateTime(month.year, month.month, index + 1);
+    final key = _QuickActionsScreenState._dateKey(date);
+    final record = recordsByDate[key];
+    final regularization = requestsByDate[key];
+    LeaveRequest? leave;
+    for (final item in leaves) {
+      if (!date.isBefore(_dateOnly(item.start)) &&
+          !date.isAfter(_dateOnly(item.end))) {
+        leave = item;
+        break;
+      }
+    }
+    CompanyHoliday? holiday;
+    for (final item in holidays) {
+      if (_sameDay(item.date, date)) {
+        holiday = item;
+        break;
+      }
+    }
+    OvertimeRequest? overtimeItem;
+    for (final item in overtime) {
+      if (_sameDay(item.workDate, date)) {
+        overtimeItem = item;
+        break;
+      }
+    }
+    final future = date.isAfter(_dateOnly(now));
+    final weekoff = weekoffDays.contains(date.weekday % 7);
+    final complete = record?.punchIn != null && record?.punchOut != null;
+    final duration = complete
+        ? record!.punchOut!.difference(record.punchIn!)
+        : null;
+    final approvedRegularization =
+        regularization?.status.toLowerCase() == 'approved';
+    final pendingRegularization =
+        regularization != null &&
+        regularization.status.toLowerCase() == 'pending';
+    final leaveStatus = leave?.decision;
+    final overtimeSuffix = overtimeItem == null
+        ? ''
+        : ' · ${overtimeItem.decision == LeaveDecision.approved ? 'OT · Approved' : 'OT'}';
+
+    if (holiday != null) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.holiday,
+        title: holiday.name,
+        cellLabel: 'Holiday',
+        holiday: holiday,
+        leave: leave,
+        record: record,
+      );
+    }
+    if (leave != null && leaveStatus != LeaveDecision.declined) {
+      final approved = leaveStatus == LeaveDecision.approved;
+      return AttendanceDayView(
+        date: date,
+        kind: approved
+            ? AttendanceKind.leaveApproved
+            : AttendanceKind.leavePending,
+        title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
+        cellLabel: approved ? 'Approved' : 'Pending',
+        leave: leave,
+        record: record,
+      );
+    }
+    if (approvedRegularization) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.present,
+        title: 'Present (regularised)',
+        cellLabel: '',
+        record: record,
+        regularization: regularization,
+      );
+    }
+    if (pendingRegularization) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.regularizationPending,
+        title: 'Regularization · Pending',
+        cellLabel: 'Pending',
+        record: record,
+        regularization: regularization,
+      );
+    }
+    if (complete) {
+      final halfDay = duration! < const Duration(hours: 6);
+      return AttendanceDayView(
+        date: date,
+        kind: halfDay ? AttendanceKind.halfDay : AttendanceKind.present,
+        title:
+            '${halfDay ? 'Half day' : 'Present'} · ${_QuickActionsScreenState._duration(duration)}$overtimeSuffix',
+        cellLabel: halfDay ? 'Half day' : (overtimeItem == null ? '' : 'OT'),
+        record: record,
+      );
+    }
+    if (record != null || (!future && !weekoff)) {
+      final missing = record?.punchIn == null
+          ? 'missing punch-in'
+          : 'missing punch-out';
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.attention,
+        title: 'Needs attention · $missing',
+        cellLabel: 'Attention',
+        record: record,
+        regularization: regularization,
+      );
+    }
+    if (weekoff) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.weekoff,
+        title: 'Weekly off',
+        cellLabel: 'Week off',
+      );
+    }
+    return AttendanceDayView(
+      date: date,
+      kind: AttendanceKind.future,
+      title: future ? 'Working day' : 'No record',
+      cellLabel: '',
+    );
+  });
 }
 
 const int _maxLeaveApplyDays = 30;
@@ -136,8 +284,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     DateTime.now().month,
   );
   bool _attendanceListView = false;
-  _AttendanceFilter? _attendanceFilter;
-  _AttendanceDayView? _selectedCalendarDay;
+  AttendanceFilter? _attendanceFilter;
+  AttendanceDayView? _selectedCalendarDay;
   bool _overtimeHistoryView = false;
   DateTime? _overtimeDate;
   TimeOfDay? _overtimeStartTime;
@@ -172,21 +320,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   void _open(_QuickPage page) {
     setState(() => _page = page);
-    widget.controller._navigationChanged();
-  }
-
-  void _start(_QuickFlow flow) {
-    setState(() {
-      _flow = flow;
-      _step = 0;
-      _choice = null;
-      _answers.clear();
-      _text.clear();
-      _dateChosen = false;
-      _uploadName = null;
-      _uploadBytes = null;
-      _page = _QuickPage.wizard;
-    });
     widget.controller._navigationChanged();
   }
 
@@ -394,6 +527,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       title: 'Leave',
                       subtitle: '$leaveDaysAvailable days available',
                       onTap: () => _open(_QuickPage.leave),
+                      imageAsset: 'assets/icons/action_card_leave_calendar.png',
                     ),
                     if (widget.dashboard.overtimeEnabled)
                       _HomeActionCard(
@@ -403,6 +537,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         title: 'Overtime',
                         subtitle: 'Request & view hours',
                         onTap: () => _open(_QuickPage.overtime),
+                        imageAsset:
+                            'assets/icons/action_card_overtime_hourglass.png',
                       ),
                     _HomeActionCard(
                       icon: Icons.payments_rounded,
@@ -411,6 +547,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       title: 'Reimbursement',
                       subtitle: 'Track your claims',
                       onTap: () => _open(_QuickPage.reimbursements),
+                      imageAsset:
+                          'assets/icons/action_card_reimbursement_money.png',
                     ),
                     _HomeActionCard(
                       icon: Icons.edit_note_rounded,
@@ -419,6 +557,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       title: 'View Policies',
                       subtitle: 'Company guidelines',
                       onTap: () => _open(_QuickPage.policies),
+                      imageAsset:
+                          'assets/icons/action_card_policies_pencil.png',
                     ),
                   ],
                 ),
@@ -508,7 +648,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        _LeaveViewSwitch(
+        LeaveViewSwitch(
           history: _leaveHistoryView,
           onChanged: (history) => setState(() => _leaveHistoryView = history),
         ),
@@ -700,6 +840,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       firstDate: today,
       lastDate: today.add(const Duration(days: 365)),
       selectableDayPredicate: _canSelectLeaveDay,
+      builder: _pickerTheme,
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -830,7 +971,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        _LeaveViewSwitch(
+        LeaveViewSwitch(
           history: _overtimeHistoryView,
           onChanged: (value) => setState(() => _overtimeHistoryView = value),
           firstLabel: 'Requests',
@@ -852,7 +993,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   LeaveDecision.approved => const Color(0xFF16A34A),
                   _ => const Color(0xFFFB2C36),
                 },
-                footerIcon: Icons.schedule_rounded,
                 footerText: request.hoursLabel,
               ),
             ),
@@ -933,6 +1073,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       firstDate: today.subtract(const Duration(days: 365)),
       lastDate: lastSelectable,
       selectableDayPredicate: _canSelectOvertimeFormDay,
+      builder: _pickerTheme,
     );
     if (picked == null || !mounted) return;
     setState(() => _overtimeDate = picked);
@@ -942,8 +1083,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final initial =
         (isStart ? _overtimeStartTime : _overtimeEndTime) ??
         const TimeOfDay(hour: 19, minute: 0);
-    final picked = await showTimePicker(context: context, initialTime: initial);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: _pickerTheme,
+    );
     if (picked == null || !mounted) return;
+    final start = isStart ? picked : _overtimeStartTime;
+    final end = isStart ? _overtimeEndTime : picked;
+    if (start != null && end != null) {
+      final hours = _overtimeHoursBetween(start, end);
+      if (hours <= 0 || hours > 12) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
     setState(() {
       if (isStart) {
         _overtimeStartTime = picked;
@@ -957,10 +1117,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final start = _overtimeStartTime;
     final end = _overtimeEndTime;
     if (start == null || end == null) return null;
-    final startMinutes = start.hour * 60 + start.minute;
-    var endMinutes = end.hour * 60 + end.minute;
-    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
-    return (endMinutes - startMinutes) / 60;
+    return _overtimeHoursBetween(start, end);
   }
 
   bool _canSelectOvertimeFormDay(DateTime day) {
@@ -979,6 +1136,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Pick a date, start time, and end time to continue.'),
+        ),
+      );
+      return;
+    }
+    final hours = _overtimeHoursBetween(start, end);
+    if (hours <= 0 || hours > 12) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
+          ),
         ),
       );
       return;
@@ -1060,7 +1228,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        _LeaveViewSwitch(
+        LeaveViewSwitch(
           history: _reimbursementHistoryView,
           onChanged: (value) =>
               setState(() => _reimbursementHistoryView = value),
@@ -1195,6 +1363,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       initialDate: initial.isAfter(today) ? today : initial,
       firstDate: today.subtract(const Duration(days: 365)),
       lastDate: today,
+      builder: _pickerTheme,
     );
     if (picked == null || !mounted) return;
     setState(() => _reimbursementDate = picked);
@@ -1313,9 +1482,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       children: [
         Row(
           children: [
-            _AttendanceCalendarArrow(
+            AttendanceCalendarArrow(
               onPressed: () => _changeAttendanceMonth(-1),
-              icon: Icons.chevron_left_rounded,
+              asset: 'assets/icons/calendar_chevron_prev.svg',
             ),
             Expanded(
               child: Text(
@@ -1328,21 +1497,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ),
               ),
             ),
-            _AttendanceCalendarArrow(
+            AttendanceCalendarArrow(
               onPressed: () => _changeAttendanceMonth(1),
-              icon: Icons.chevron_right_rounded,
+              asset: 'assets/icons/calendar_chevron_next.svg',
             ),
           ],
         ),
         const SizedBox(height: 24),
-        _LeaveViewSwitch(
+        LeaveViewSwitch(
           history: _attendanceListView,
           onChanged: (list) => setState(() => _attendanceListView = list),
           firstLabel: 'Grid',
           secondLabel: 'List',
         ),
         const SizedBox(height: 16),
-        _AttendanceFilterChips(
+        AttendanceFilterChips(
           selected: _attendanceFilter,
           onChanged: (filter) => setState(() => _attendanceFilter = filter),
           onLateTapped: () => ScaffoldMessenger.of(context).showSnackBar(
@@ -1365,195 +1534,37 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...days.map(
             (day) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _AttendanceListCard(
+              child: AttendanceListCard(
                 day: day,
                 today: _sameDay(day.date, DateTime.now()),
-                dimmed: !_matchesAttendanceFilter(day.kind, _attendanceFilter),
+                dimmed: !matchesAttendanceFilter(day.kind, _attendanceFilter),
                 selected: _sameDay(day.date, _selectedCalendarDay?.date),
                 onTap: () => _openAttendanceDay(day),
               ),
             ),
           )
         else ...[
-          _AttendanceMonthGrid(
+          AttendanceMonthGrid(
             month: _attendanceMonth,
             days: days,
             filter: _attendanceFilter,
             selectedDate: _selectedCalendarDay?.date,
             onTap: _openAttendanceDay,
           ),
-          if (_todayAttendanceDay(days) case final today?) ...[
-            const SizedBox(height: 24),
-            _AttendanceTodayPunchSection(
-              day: today,
-              onPunchIn: () => _recordPunch('in'),
-              onPunchOut: () => _recordPunch('out'),
-            ),
-          ],
         ],
       ],
     );
   }
 
-  _AttendanceDayView? _todayAttendanceDay(List<_AttendanceDayView> days) {
-    final now = DateTime.now();
-    if (_attendanceMonth.year != now.year ||
-        _attendanceMonth.month != now.month) {
-      return null;
-    }
-    return days.where((day) => _sameDay(day.date, now)).firstOrNull;
-  }
-
-  Future<void> _recordPunch(String type) async {
-    await widget.bloc.add(RecordPunch(type));
-  }
-
-  List<_AttendanceDayView> _attendanceDays() {
-    final records = {
-      for (final record in widget.dashboard.attendance)
-        _dateKey(record.workDate): record,
-    };
-    final requests = {
-      for (final request in widget.dashboard.regularizations)
-        _dateKey(request.workDate): request,
-    };
-    final now = DateTime.now();
-    final count = DateTime(
-      _attendanceMonth.year,
-      _attendanceMonth.month + 1,
-      0,
-    ).day;
-    return List.generate(count, (index) {
-      final date = DateTime(
-        _attendanceMonth.year,
-        _attendanceMonth.month,
-        index + 1,
-      );
-      final key = _dateKey(date);
-      final record = records[key];
-      final regularization = requests[key];
-      LeaveRequest? leave;
-      for (final item in widget.dashboard.myLeaves) {
-        if (!date.isBefore(_dateOnly(item.start)) &&
-            !date.isAfter(_dateOnly(item.end))) {
-          leave = item;
-          break;
-        }
-      }
-      CompanyHoliday? holiday;
-      for (final item in widget.dashboard.holidays) {
-        if (_sameDay(item.date, date)) {
-          holiday = item;
-          break;
-        }
-      }
-      OvertimeRequest? overtime;
-      for (final item in widget.dashboard.myOvertime) {
-        if (_sameDay(item.workDate, date)) {
-          overtime = item;
-          break;
-        }
-      }
-      final future = date.isAfter(_dateOnly(now));
-      final weekoff = widget.dashboard.weekoffDays.contains(date.weekday % 7);
-      final complete = record?.punchIn != null && record?.punchOut != null;
-      final duration = complete
-          ? record!.punchOut!.difference(record.punchIn!)
-          : null;
-      final approvedRegularization =
-          regularization?.status.toLowerCase() == 'approved';
-      final pendingRegularization =
-          regularization != null &&
-          regularization.status.toLowerCase() == 'pending';
-      final leaveStatus = leave?.decision;
-      final overtimeSuffix = overtime == null
-          ? ''
-          : ' · ${overtime.decision == LeaveDecision.approved ? 'OT · Approved' : 'OT'}';
-
-      if (holiday != null) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.holiday,
-          title: holiday.name,
-          cellLabel: 'Holiday',
-          holiday: holiday,
-          leave: leave,
-          record: record,
-        );
-      }
-      if (leave != null && leaveStatus != LeaveDecision.declined) {
-        final approved = leaveStatus == LeaveDecision.approved;
-        return _AttendanceDayView(
-          date: date,
-          kind: approved
-              ? _AttendanceKind.leaveApproved
-              : _AttendanceKind.leavePending,
-          title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
-          cellLabel: approved ? 'Approved' : 'Pending',
-          leave: leave,
-          record: record,
-        );
-      }
-      if (approvedRegularization) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.present,
-          title: 'Present (regularised)',
-          cellLabel: '',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (pendingRegularization) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.regularizationPending,
-          title: 'Regularization · Pending',
-          cellLabel: 'Pending',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (complete) {
-        final halfDay = duration! < const Duration(hours: 6);
-        return _AttendanceDayView(
-          date: date,
-          kind: halfDay ? _AttendanceKind.halfDay : _AttendanceKind.present,
-          title:
-              '${halfDay ? 'Half day' : 'Present'} · ${_duration(duration)}$overtimeSuffix',
-          cellLabel: halfDay ? 'Half day' : (overtime == null ? '' : 'OT'),
-          record: record,
-        );
-      }
-      if (record != null || (!future && !weekoff)) {
-        final missing = record?.punchIn == null
-            ? 'missing punch-in'
-            : 'missing punch-out';
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.attention,
-          title: 'Needs attention · $missing',
-          cellLabel: 'Attention',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (weekoff) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.weekoff,
-          title: 'Weekly off',
-          cellLabel: 'Week off',
-        );
-      }
-      return _AttendanceDayView(
-        date: date,
-        kind: _AttendanceKind.future,
-        title: future ? 'Working day' : 'No record',
-        cellLabel: '',
-      );
-    });
-  }
+  List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
+    month: _attendanceMonth,
+    records: widget.dashboard.attendance,
+    regularizations: widget.dashboard.regularizations,
+    leaves: widget.dashboard.myLeaves,
+    holidays: widget.dashboard.holidays,
+    overtime: widget.dashboard.myOvertime,
+    weekoffDays: widget.dashboard.weekoffDays,
+  );
 
   Future<void> _changeAttendanceMonth(int delta) async {
     final month = DateTime(
@@ -1567,13 +1578,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     await widget.bloc.add(LoadAttendanceMonth(month));
   }
 
-  Future<void> _openAttendanceDay(_AttendanceDayView day) async {
-    if (day.kind == _AttendanceKind.future) {
+  Future<void> _openAttendanceDay(AttendanceDayView day) async {
+    if (day.kind == AttendanceKind.future) {
       setState(() {
         _selectedCalendarDay = _sameDay(_selectedCalendarDay?.date, day.date)
             ? null
             : day;
       });
+      return;
+    }
+    if (day.kind == AttendanceKind.attention) {
+      await _showRegularization(day.date);
       return;
     }
     await showModalBottomSheet<void>(
@@ -1607,8 +1622,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ),
             const SizedBox(height: 6),
             Text(_sheetStatus(day), style: _QText.subtitle),
-            if (day.kind == _AttendanceKind.leaveApproved ||
-                day.kind == _AttendanceKind.leavePending) ...[
+            if (day.kind == AttendanceKind.leaveApproved ||
+                day.kind == AttendanceKind.leavePending) ...[
               const SizedBox(height: 20),
               _SheetValueRow(label: 'Type', value: day.leave?.type ?? 'Leave'),
               const SizedBox(height: 8),
@@ -1618,7 +1633,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               ),
               const SizedBox(height: 20),
               _SheetOutlineButton(
-                label: day.kind == _AttendanceKind.leaveApproved
+                label: day.kind == AttendanceKind.leaveApproved
                     ? 'Cancel leave'
                     : 'Withdraw request',
                 onPressed: () {
@@ -1630,8 +1645,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   );
                 },
               ),
-            ] else if (day.kind != _AttendanceKind.weekoff &&
-                day.kind != _AttendanceKind.holiday) ...[
+            ] else if (day.kind != AttendanceKind.weekoff &&
+                day.kind != AttendanceKind.holiday) ...[
               const SizedBox(height: 20),
               _AttendancePunchRow(
                 label: 'IN',
@@ -1644,27 +1659,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 value: _clock(day.record?.punchOut),
                 missing: day.record?.punchOut == null,
               ),
-              if (day.kind == _AttendanceKind.attention) ...[
-                const SizedBox(height: 26),
-                const _AttendanceDeadlineWarning(),
-                const SizedBox(height: 16),
-                _SheetPrimaryButton(
-                  label: 'Request as present',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _showRegularization(day.date);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _SheetOutlineButton(
-                  label: 'Apply leave instead',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _applyLeaveFor(day.date);
-                  },
-                ),
-              ] else if (day.kind == _AttendanceKind.present ||
-                  day.kind == _AttendanceKind.halfDay) ...[
+              if (day.kind == AttendanceKind.present ||
+                  day.kind == AttendanceKind.halfDay) ...[
                 const SizedBox(height: 26),
                 _SheetOutlineButton(
                   label: 'Add overtime',
@@ -1683,7 +1679,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Future<void> _showRegularization(DateTime day) async {
     final note = TextEditingController();
-    String period = 'full_day';
+    String period = 'present';
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1694,7 +1690,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             20,
             12,
             20,
-            22 + MediaQuery.viewInsetsOf(context).bottom,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
           ),
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -1705,99 +1701,119 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const _SheetHandle(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               const Text(
-                'Request as present',
+                'Request Correction',
                 style: TextStyle(
-                  color: _Q.ink,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'This will be sent to your manager for approval.',
-                style: _QText.subtitle,
+              const SizedBox(height: 4),
+              Text(
+                '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
+                style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 14),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               const Text(
-                'HOW MUCH OF THE DAY WERE YOU PRESENT?',
-                style: _QText.eyebrow,
+                'What should this day be?',
+                style: TextStyle(
+                  color: Color(0xFF6A6A6A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  for (final option in const [
-                    ('full_day', 'Full day'),
-                    ('first_half', 'First half'),
-                    ('second_half', 'Second half'),
-                  ]) ...[
-                    Expanded(
-                      child: _RegularizationOption(
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFDDDDDD)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (final option in const [
+                      ('present', 'Present'),
+                      ('half_day', 'Half Day'),
+                      ('late', 'Late'),
+                    ])
+                      _RegularizationRow(
                         label: option.$2,
                         selected: period == option.$1,
                         onTap: () => setSheetState(() => period = option.$1),
                       ),
-                    ),
-                    if (option.$1 != 'second_half') const SizedBox(width: 8),
                   ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Text(
+                    'Notes ',
+                    style: TextStyle(
+                      color: Color(0xFF2A2A2A),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '(optional)',
+                    style: TextStyle(color: Color(0xFF929292), fontSize: 12),
+                  ),
                 ],
               ),
-              const SizedBox(height: 24),
-              const Text('NOTE TO MANAGER', style: _QText.eyebrow),
               const SizedBox(height: 10),
               TextField(
                 controller: note,
-                maxLines: 1,
-                style: const TextStyle(fontSize: 14),
+                minLines: 3,
+                maxLines: 3,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Forgot to punch out yesterday...',
+                  hintText: 'Add a note for your manager...',
+                  hintStyle: const TextStyle(
+                    color: Color(0xFF929292),
+                    fontSize: 13,
+                  ),
                   filled: true,
                   fillColor: Colors.white,
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 18,
+                    horizontal: 15,
+                    vertical: 13,
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: _Q.line, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: _Q.line, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF0571A6),
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SheetSecondaryButton(
-                      label: 'Cancel',
-                      onPressed: () => Navigator.pop(dialogContext),
+              const SizedBox(height: 26),
+              _SheetPrimaryButton(
+                label: 'Submit for review',
+                color: const Color(0xFF0571A6),
+                onPressed: () async {
+                  final ok = await widget.bloc.add(
+                    SubmitAttendanceRegularization(
+                      workDate: day,
+                      period: period,
+                      note: note.text.trim(),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: _SheetPrimaryButton(
-                      label: 'Confirm & send',
-                      onPressed: () async {
-                        if (note.text.trim().isEmpty) return;
-                        final ok = await widget.bloc.add(
-                          SubmitAttendanceRegularization(
-                            workDate: day,
-                            period: period,
-                            note: note.text.trim(),
-                          ),
-                        );
-                        if (ok && dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                      },
-                    ),
-                  ),
-                ],
+                  );
+                  if (ok && dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                },
               ),
             ],
           ),
@@ -1818,24 +1834,24 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
   }
 
-  static String _sheetStatus(_AttendanceDayView day) {
+  static String _sheetStatus(AttendanceDayView day) {
     switch (day.kind) {
-      case _AttendanceKind.attention:
+      case AttendanceKind.attention:
         return 'Needs attention';
-      case _AttendanceKind.leaveApproved:
+      case AttendanceKind.leaveApproved:
         return 'Leave · approved · ${day.leave?.type ?? 'Leave'}';
-      case _AttendanceKind.leavePending:
+      case AttendanceKind.leavePending:
         return 'Leave · pending · ${day.leave?.type ?? 'Leave'}';
-      case _AttendanceKind.weekoff:
+      case AttendanceKind.weekoff:
         return 'Weekly off';
-      case _AttendanceKind.holiday:
+      case AttendanceKind.holiday:
         return day.holiday?.name ?? 'Holiday';
-      case _AttendanceKind.regularizationPending:
+      case AttendanceKind.regularizationPending:
         return 'Regularization · pending';
-      case _AttendanceKind.future:
+      case AttendanceKind.future:
         return 'Working day';
       default:
-        return day.kind == _AttendanceKind.halfDay ? 'Half day' : 'Present';
+        return day.kind == AttendanceKind.halfDay ? 'Half day' : 'Present';
     }
   }
 
@@ -2471,41 +2487,40 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 }
 
-class _AttendanceCalendarArrow extends StatelessWidget {
-  const _AttendanceCalendarArrow({required this.onPressed, required this.icon});
+class AttendanceCalendarArrow extends StatelessWidget {
+  const AttendanceCalendarArrow({required this.onPressed, required this.asset});
   final VoidCallback onPressed;
-  final IconData icon;
+  final String asset;
 
   @override
   Widget build(BuildContext context) => Material(
-    color: _Q.terraTint,
-    borderRadius: BorderRadius.circular(16),
+    color: Colors.transparent,
     child: InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(99),
       child: SizedBox(
-        width: 46,
-        height: 46,
-        child: Icon(icon, color: _Q.terra, size: 23),
+        width: 32,
+        height: 32,
+        child: Center(child: SvgPicture.asset(asset, width: 20, height: 20)),
       ),
     ),
   );
 }
 
-class _AttendanceFilterChips extends StatelessWidget {
-  const _AttendanceFilterChips({
+class AttendanceFilterChips extends StatelessWidget {
+  const AttendanceFilterChips({
     required this.selected,
     required this.onChanged,
     required this.onLateTapped,
   });
 
-  final _AttendanceFilter? selected;
-  final ValueChanged<_AttendanceFilter?> onChanged;
+  final AttendanceFilter? selected;
+  final ValueChanged<AttendanceFilter?> onChanged;
   final VoidCallback onLateTapped;
 
   @override
   Widget build(BuildContext context) {
-    void toggle(_AttendanceFilter filter) =>
+    void toggle(AttendanceFilter filter) =>
         onChanged(selected == filter ? null : filter);
 
     return SingleChildScrollView(
@@ -2514,25 +2529,25 @@ class _AttendanceFilterChips extends StatelessWidget {
         children: [
           _AttendanceFilterChip(
             label: 'Present',
-            selected: selected == _AttendanceFilter.present,
-            onTap: () => toggle(_AttendanceFilter.present),
+            selected: selected == AttendanceFilter.present,
+            onTap: () => toggle(AttendanceFilter.present),
           ),
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Late',
             selected: false,
             onTap: onLateTapped,
-            leading: const Icon(
-              Icons.access_time_rounded,
-              size: 13,
-              color: Color(0xFF6B7280),
+            leading: SvgPicture.asset(
+              'assets/icons/filter_late_clock.svg',
+              width: 12,
+              height: 12,
             ),
           ),
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Half-day',
-            selected: selected == _AttendanceFilter.halfDay,
-            onTap: () => toggle(_AttendanceFilter.halfDay),
+            selected: selected == AttendanceFilter.halfDay,
+            onTap: () => toggle(AttendanceFilter.halfDay),
             leading: const Text(
               '½',
               style: TextStyle(
@@ -2545,14 +2560,14 @@ class _AttendanceFilterChips extends StatelessWidget {
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Leave',
-            selected: selected == _AttendanceFilter.leave,
-            onTap: () => toggle(_AttendanceFilter.leave),
+            selected: selected == AttendanceFilter.leave,
+            onTap: () => toggle(AttendanceFilter.leave),
           ),
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Leave Applied',
-            selected: selected == _AttendanceFilter.leaveApplied,
-            onTap: () => toggle(_AttendanceFilter.leaveApplied),
+            selected: selected == AttendanceFilter.leaveApplied,
+            onTap: () => toggle(AttendanceFilter.leaveApplied),
             leading: CustomPaint(
               size: const Size(8, 8),
               painter: const _DashedRoundRectPainter(
@@ -2564,14 +2579,14 @@ class _AttendanceFilterChips extends StatelessWidget {
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Correction',
-            selected: selected == _AttendanceFilter.correction,
-            onTap: () => toggle(_AttendanceFilter.correction),
+            selected: selected == AttendanceFilter.correction,
+            onTap: () => toggle(AttendanceFilter.correction),
           ),
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Correction Awaits',
-            selected: selected == _AttendanceFilter.correctionAwaits,
-            onTap: () => toggle(_AttendanceFilter.correctionAwaits),
+            selected: selected == AttendanceFilter.correctionAwaits,
+            onTap: () => toggle(AttendanceFilter.correctionAwaits),
             leading: CustomPaint(
               size: const Size(8, 8),
               painter: const _DashedRoundRectPainter(
@@ -2583,8 +2598,8 @@ class _AttendanceFilterChips extends StatelessWidget {
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Holiday',
-            selected: selected == _AttendanceFilter.holiday,
-            onTap: () => toggle(_AttendanceFilter.holiday),
+            selected: selected == AttendanceFilter.holiday,
+            onTap: () => toggle(AttendanceFilter.holiday),
           ),
         ],
       ),
@@ -2652,77 +2667,77 @@ class _AttendanceCellStyle {
   final Color? fill;
 }
 
-_AttendanceCellStyle _attendanceGridCellStyle(_AttendanceKind kind) =>
+_AttendanceCellStyle _attendanceGridCellStyle(AttendanceKind kind) =>
     switch (kind) {
-      _AttendanceKind.present => const _AttendanceCellStyle(
+      AttendanceKind.present => const _AttendanceCellStyle(
         color: Color(0xFF28CA08),
       ),
-      _AttendanceKind.halfDay => const _AttendanceCellStyle(
+      AttendanceKind.halfDay => const _AttendanceCellStyle(
         color: Color(0xFF34C759),
       ),
-      _AttendanceKind.weekoff => const _AttendanceCellStyle(
+      AttendanceKind.weekoff => const _AttendanceCellStyle(
         color: Color(0xFF6A6A6A),
         bold: false,
         fill: Color(0xFFF2F2F2),
       ),
-      _AttendanceKind.holiday => const _AttendanceCellStyle(
+      AttendanceKind.holiday => const _AttendanceCellStyle(
         color: Color(0xFF717171),
         bold: false,
         fill: Color(0xFFF2F2F2),
       ),
       // "Correction Required" — action needed, not yet requested.
-      _AttendanceKind.attention => const _AttendanceCellStyle(
+      AttendanceKind.attention => const _AttendanceCellStyle(
         color: Color(0xFFFF383C),
       ),
       // "Correction Awaits" — already requested, pending manager decision.
-      _AttendanceKind.regularizationPending => const _AttendanceCellStyle(
+      AttendanceKind.regularizationPending => const _AttendanceCellStyle(
         color: Color(0xFFFF1400),
         dashedBorder: Color(0xFF0571A6),
       ),
-      _AttendanceKind.leaveApproved => const _AttendanceCellStyle(
+      AttendanceKind.leaveApproved => const _AttendanceCellStyle(
         color: Color(0xFF0571A6),
       ),
-      _AttendanceKind.leavePending => const _AttendanceCellStyle(
+      AttendanceKind.leavePending => const _AttendanceCellStyle(
         color: Color(0xFF0571A6),
         dashedBorder: Color(0xFF0571A6),
       ),
-      _AttendanceKind.future => const _AttendanceCellStyle(
+      AttendanceKind.future => const _AttendanceCellStyle(
         color: Color(0xFF2A2A2A),
         bold: false,
       ),
     };
 
-Color _attendanceListRowColor(_AttendanceKind kind) => switch (kind) {
-  _AttendanceKind.present || _AttendanceKind.halfDay => const Color(0xFF34C759),
-  _AttendanceKind.weekoff || _AttendanceKind.holiday => const Color(0xFF717171),
-  _AttendanceKind.attention ||
-  _AttendanceKind.regularizationPending => const Color(0xFFFF383C),
-  _AttendanceKind.leaveApproved ||
-  _AttendanceKind.leavePending => const Color(0xFF0571A6),
-  _AttendanceKind.future => const Color(0xFF2A2A2A),
+Color _attendanceListRowColor(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.present || AttendanceKind.halfDay => const Color(0xFF34C759),
+  AttendanceKind.weekoff || AttendanceKind.holiday => const Color(0xFF717171),
+  AttendanceKind.attention ||
+  AttendanceKind.regularizationPending => const Color(0xFFFF383C),
+  AttendanceKind.leaveApproved ||
+  AttendanceKind.leavePending => const Color(0xFF0571A6),
+  AttendanceKind.future => const Color(0xFF2A2A2A),
 };
 
-Color _attendanceListRowBackground(_AttendanceKind kind) => switch (kind) {
-  _AttendanceKind.weekoff || _AttendanceKind.holiday => const Color(0xFFF2F2F2),
-  _AttendanceKind.future ||
-  _AttendanceKind.leavePending => const Color(0xFFFAFAFA),
+Color _attendanceListRowBackground(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.weekoff || AttendanceKind.holiday => const Color(0xFFF2F2F2),
+  AttendanceKind.future ||
+  AttendanceKind.leavePending => const Color(0xFFFAFAFA),
   _ => Colors.white,
 };
 
-bool _attendanceListShowsChevron(_AttendanceKind kind) =>
-    kind != _AttendanceKind.weekoff &&
-    kind != _AttendanceKind.holiday &&
-    kind != _AttendanceKind.future;
+bool _attendanceListShowsChevron(AttendanceKind kind) =>
+    kind != AttendanceKind.weekoff &&
+    kind != AttendanceKind.holiday &&
+    kind != AttendanceKind.future;
 
-class _AttendanceListCard extends StatelessWidget {
-  const _AttendanceListCard({
+class AttendanceListCard extends StatelessWidget {
+  const AttendanceListCard({
     required this.day,
     required this.today,
     required this.onTap,
     this.dimmed = false,
     this.selected = false,
   });
-  final _AttendanceDayView day;
+  final AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
   final bool dimmed;
@@ -2804,8 +2819,8 @@ class _AttendanceListCard extends StatelessWidget {
   }
 }
 
-class _AttendanceMonthGrid extends StatelessWidget {
-  const _AttendanceMonthGrid({
+class AttendanceMonthGrid extends StatelessWidget {
+  const AttendanceMonthGrid({
     required this.month,
     required this.days,
     required this.onTap,
@@ -2813,9 +2828,9 @@ class _AttendanceMonthGrid extends StatelessWidget {
     this.selectedDate,
   });
   final DateTime month;
-  final List<_AttendanceDayView> days;
-  final ValueChanged<_AttendanceDayView> onTap;
-  final _AttendanceFilter? filter;
+  final List<AttendanceDayView> days;
+  final ValueChanged<AttendanceDayView> onTap;
+  final AttendanceFilter? filter;
   final DateTime? selectedDate;
 
   @override
@@ -2858,7 +2873,7 @@ class _AttendanceMonthGrid extends StatelessWidget {
             return _AttendanceMonthCell(
               day: day,
               today: _sameDay(day.date, DateTime.now()),
-              dimmed: !_matchesAttendanceFilter(day.kind, filter),
+              dimmed: !matchesAttendanceFilter(day.kind, filter),
               selected: _sameDay(day.date, selectedDate),
               onTap: () => onTap(day),
             );
@@ -2877,7 +2892,7 @@ class _AttendanceMonthCell extends StatelessWidget {
     this.dimmed = false,
     this.selected = false,
   });
-  final _AttendanceDayView day;
+  final AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
   final bool dimmed;
@@ -2888,7 +2903,7 @@ class _AttendanceMonthCell extends StatelessWidget {
     final style = dimmed
         ? const _AttendanceCellStyle(color: _Q.inkFaint, bold: false)
         : _attendanceGridCellStyle(day.kind);
-    final isHalfDay = !dimmed && day.kind == _AttendanceKind.halfDay;
+    final isHalfDay = !dimmed && day.kind == AttendanceKind.halfDay;
     final dashedColor = (today || selected) ? null : style.dashedBorder;
     final content = Material(
       color: Colors.transparent,
@@ -2956,9 +2971,6 @@ const _fullWeekdayNames = [
   'Sunday',
 ];
 
-String _punchClock(DateTime value) =>
-    '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
-
 String _hoursMinutesLabel(double hours) {
   final totalMinutes = (hours * 60).round();
   final h = totalMinutes ~/ 60;
@@ -2966,249 +2978,28 @@ String _hoursMinutesLabel(double hours) {
   return m == 0 ? '${h}h' : '${h}h ${m}m';
 }
 
-class _AttendanceTodayPunchSection extends StatelessWidget {
-  const _AttendanceTodayPunchSection({
-    required this.day,
-    required this.onPunchIn,
-    required this.onPunchOut,
-  });
-
-  final _AttendanceDayView day;
-  final VoidCallback onPunchIn;
-  final VoidCallback onPunchOut;
-
-  @override
-  Widget build(BuildContext context) {
-    final tag = _attendanceTagStyle(day.kind);
-    final punchIn = day.record?.punchIn;
-    final punchOut = day.record?.punchOut;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              '${_fullWeekdayNames[day.date.weekday - 1]}, ${day.date.day} ${_monthName(day.date.month)}',
-              style: const TextStyle(
-                color: Color(0xFF2A2A2A),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: tag.bg,
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 4,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: tag.fg,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    tag.label,
-                    style: TextStyle(
-                      color: tag.fg,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _PunchColumn(
-                  label: 'Punch-in',
-                  time: punchIn,
-                  action: punchIn == null ? onPunchIn : null,
-                  alignEnd: false,
-                ),
-              ),
-              Container(width: 1, height: 34, color: const Color(0xFFDDDDDD)),
-              Expanded(
-                child: _PunchColumn(
-                  label: 'Punch-out',
-                  time: punchOut,
-                  action: (punchIn != null && punchOut == null)
-                      ? onPunchOut
-                      : null,
-                  alignEnd: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (day.kind == _AttendanceKind.regularizationPending) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF2F2F2),
-              border: Border.all(color: const Color(0xFFEBEBEB)),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 16,
-                  color: Color(0xFFFF383C),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'A correction request is under review for this day.',
-                    style: const TextStyle(
-                      color: Color(0xFFFF383C),
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+double _overtimeHoursBetween(TimeOfDay start, TimeOfDay end) {
+  final startMinutes = start.hour * 60 + start.minute;
+  var endMinutes = end.hour * 60 + end.minute;
+  if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+  return (endMinutes - startMinutes) / 60;
 }
 
-typedef _AttendanceTagStyle = ({Color bg, Color fg, String label});
-
-_AttendanceTagStyle _attendanceTagStyle(_AttendanceKind kind) => switch (kind) {
-  _AttendanceKind.present => (
-    bg: const Color(0xFFDCFCE7),
-    fg: const Color(0xFF28CA08),
-    label: 'Present',
-  ),
-  _AttendanceKind.halfDay => (
-    bg: const Color(0xFFDCFCE7),
-    fg: const Color(0xFF34C759),
-    label: 'Half day',
-  ),
-  _AttendanceKind.weekoff => (
-    bg: const Color(0xFFF2F2F2),
-    fg: const Color(0xFF6A6A6A),
-    label: 'Weekly off',
-  ),
-  _AttendanceKind.holiday => (
-    bg: const Color(0xFFF2F2F2),
-    fg: const Color(0xFF717171),
-    label: 'Holiday',
-  ),
-  _AttendanceKind.attention => (
-    bg: const Color(0xFFFEE0E0),
-    fg: const Color(0xFFFF383C),
-    label: 'Correction Required',
-  ),
-  _AttendanceKind.regularizationPending => (
-    bg: const Color(0xFFFEE0E0),
-    fg: const Color(0xFFFF383C),
-    label: 'Pending',
-  ),
-  _AttendanceKind.leaveApproved => (
-    bg: const Color(0xFFDBEAFE),
-    fg: const Color(0xFF0571A6),
-    label: 'On Leave',
-  ),
-  _AttendanceKind.leavePending => (
-    bg: const Color(0xFFDBEAFE),
-    fg: const Color(0xFF0571A6),
-    label: 'Leave Applied',
-  ),
-  _AttendanceKind.future => (
-    bg: const Color(0xFFF2F2F2),
-    fg: const Color(0xFF2A2A2A),
-    label: 'Upcoming',
-  ),
-};
-
-class _PunchColumn extends StatelessWidget {
-  const _PunchColumn({
-    required this.label,
-    required this.time,
-    required this.action,
-    required this.alignEnd,
-  });
-
-  final String label;
-  final DateTime? time;
-  final VoidCallback? action;
-  final bool alignEnd;
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Column(
-      crossAxisAlignment: alignEnd
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF929292),
-            fontSize: 10,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-        const SizedBox(height: 4),
-        if (time != null)
-          Text(
-            _punchClock(time!),
-            style: const TextStyle(
-              color: Color(0xFF2A2A2A),
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          )
-        else if (action != null)
-          Text(
-            label == 'Punch-in' ? 'Tap to punch in' : 'Tap to punch out',
-            style: const TextStyle(
-              color: Color(0xFF0571A6),
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          )
-        else
-          const Text(
-            '—',
-            style: TextStyle(
-              color: Color(0xFF2A2A2A),
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-      ],
-    );
-    if (action == null) return content;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: action,
-      child: content,
-    );
-  }
+Widget _pickerTheme(BuildContext context, Widget? child) {
+  final base = Theme.of(context);
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF0571A6),
+    brightness: Brightness.light,
+  ).copyWith(surface: Colors.white, onSurface: const Color(0xFF111827));
+  return Theme(
+    data: base.copyWith(
+      colorScheme: colorScheme,
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: const Color(0xFF0571A6)),
+      ),
+    ),
+    child: child!,
+  );
 }
 
 class _DashedRoundRectPainter extends CustomPainter {
@@ -3287,36 +3078,6 @@ class _AttendancePunchRow extends StatelessWidget {
   );
 }
 
-class _AttendanceDeadlineWarning extends StatelessWidget {
-  const _AttendanceDeadlineWarning();
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFBE4E1),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: const Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.warning_amber_rounded, color: Color(0xFF8B302B)),
-        SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'Request as present or apply leave within the attendance window — after that, this day counts as loss of pay.',
-            style: TextStyle(
-              color: Color(0xFF8B302B),
-              fontSize: 13,
-              height: 1.35,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 class _SheetValueRow extends StatelessWidget {
   const _SheetValueRow({required this.label, required this.value});
   final String label;
@@ -3350,16 +3111,21 @@ class _SheetValueRow extends StatelessWidget {
 }
 
 class _SheetPrimaryButton extends StatelessWidget {
-  const _SheetPrimaryButton({required this.label, required this.onPressed});
+  const _SheetPrimaryButton({
+    required this.label,
+    required this.onPressed,
+    this.color = const Color(0xFFC75C36),
+  });
   final String label;
   final VoidCallback onPressed;
+  final Color color;
   @override
   Widget build(BuildContext context) => SizedBox(
     height: 58,
     child: FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFC75C36),
+        backgroundColor: color,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
         textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
@@ -3389,28 +3155,8 @@ class _SheetOutlineButton extends StatelessWidget {
   );
 }
 
-class _SheetSecondaryButton extends StatelessWidget {
-  const _SheetSecondaryButton({required this.label, required this.onPressed});
-  final String label;
-  final VoidCallback onPressed;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 58,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFF5F0E9),
-        foregroundColor: _Q.ink,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-      ),
-      child: Text(label),
-    ),
-  );
-}
-
-class _RegularizationOption extends StatelessWidget {
-  const _RegularizationOption({
+class _RegularizationRow extends StatelessWidget {
+  const _RegularizationRow({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -3422,26 +3168,33 @@ class _RegularizationOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: onTap,
-    borderRadius: BorderRadius.circular(17),
     child: Container(
-      height: 58,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected ? _Q.terraTint : const Color(0xFFF5F0E9),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(
-          color: selected ? _Q.terra : Colors.transparent,
-          width: 2,
-        ),
-      ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: selected ? _Q.terraDeep : _Q.inkSoft,
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-        ),
+      color: selected ? const Color(0xFFDCFCE7) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: selected
+                  ? const Color(0xFF28CA08)
+                  : const Color(0xFF34C759),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: selected
+                  ? const Color(0xFF28CA08)
+                  : const Color(0xFF2A2A2A),
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ],
       ),
     ),
   );
@@ -3496,10 +3249,16 @@ class _HubScaffold extends StatelessWidget {
                   child: InkWell(
                     onTap: onBack,
                     borderRadius: BorderRadius.circular(12),
-                    child: const SizedBox(
+                    child: SizedBox(
                       width: 38,
                       height: 38,
-                      child: Icon(Icons.chevron_left_rounded, size: 23),
+                      child: Center(
+                        child: SvgPicture.asset(
+                          'assets/icons/chevron_back.svg',
+                          width: 20,
+                          height: 20,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -3607,8 +3366,8 @@ class _LeaveBalanceCard extends StatelessWidget {
   }
 }
 
-class _LeaveViewSwitch extends StatelessWidget {
-  const _LeaveViewSwitch({
+class LeaveViewSwitch extends StatelessWidget {
+  const LeaveViewSwitch({
     required this.history,
     required this.onChanged,
     this.firstLabel = 'Upcoming',
@@ -3853,7 +3612,6 @@ class _QuickRequestCard extends StatelessWidget {
     required this.subtitle,
     required this.status,
     required this.statusColor,
-    this.footerIcon,
     this.footerText,
   });
 
@@ -3861,7 +3619,6 @@ class _QuickRequestCard extends StatelessWidget {
   final String subtitle;
   final String status;
   final Color statusColor;
-  final IconData? footerIcon;
   final String? footerText;
 
   @override
@@ -3925,7 +3682,11 @@ class _QuickRequestCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(footerIcon, size: 14, color: const Color(0xFF6B7280)),
+                SvgPicture.asset(
+                  'assets/icons/schedule_clock_gray.svg',
+                  width: 14,
+                  height: 14,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   footerText!,
@@ -4079,10 +3840,10 @@ class _ReceiptUploadField extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.upload_rounded,
-                size: 16,
-                color: Color(0xFF9CA3AF),
+              SvgPicture.asset(
+                'assets/icons/upload_receipt.svg',
+                width: 16,
+                height: 16,
               ),
               const SizedBox(width: 8),
               Text(
@@ -4249,10 +4010,10 @@ class _LeaveAttachmentField extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.upload_rounded,
-              size: 16,
-              color: Color(0xFF9CA3AF),
+            SvgPicture.asset(
+              'assets/icons/upload_receipt.svg',
+              width: 16,
+              height: 16,
             ),
             const SizedBox(width: 8),
             Text(
@@ -4341,10 +4102,12 @@ class _HomeAttendanceCard extends StatelessWidget {
                     color: Color(0xFFF7F7F9),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.calendar_month_rounded,
-                    size: 18,
-                    color: Color(0xFF222222),
+                  child: Center(
+                    child: SvgPicture.asset(
+                      'assets/icons/attendance_card_small_icon.svg',
+                      width: 18,
+                      height: 18,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -4358,9 +4121,14 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFF717171),
+                SvgPicture.asset(
+                  'assets/icons/chevron_right_expand.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: const ColorFilter.mode(
+                    Color(0xFF717171),
+                    BlendMode.srcIn,
+                  ),
                 ),
               ],
             ),
@@ -4488,6 +4256,7 @@ class _HomeActionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.imageAsset,
   });
 
   final IconData icon;
@@ -4496,6 +4265,7 @@ class _HomeActionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final String? imageAsset;
 
   @override
   Widget build(BuildContext context) {
@@ -4520,7 +4290,13 @@ class _HomeActionCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _IconTile(icon: icon, color: color, tint: tint, size: 38),
+            _IconTile(
+              icon: icon,
+              color: color,
+              tint: tint,
+              size: 38,
+              imageAsset: imageAsset,
+            ),
             const SizedBox(height: 10),
             Text(
               title,
@@ -4668,7 +4444,15 @@ class _ActionCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded, color: _Q.inkFaint),
+                SvgPicture.asset(
+                  'assets/icons/chevron_right_expand.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: const ColorFilter.mode(
+                    _Q.inkFaint,
+                    BlendMode.srcIn,
+                  ),
+                ),
               ],
             ),
           ),
@@ -5207,11 +4991,13 @@ class _IconTile extends StatelessWidget {
     required this.color,
     required this.tint,
     this.size = 44,
+    this.imageAsset,
   });
   final IconData icon;
   final Color color;
   final Color tint;
   final double size;
+  final String? imageAsset;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -5221,7 +5007,12 @@ class _IconTile extends StatelessWidget {
       color: tint,
       borderRadius: BorderRadius.circular(13),
     ),
-    child: Icon(icon, color: color, size: 22),
+    child: imageAsset != null
+        ? Padding(
+            padding: const EdgeInsets.all(5),
+            child: Image.asset(imageAsset!, fit: BoxFit.contain),
+          )
+        : Icon(icon, color: color, size: 22),
   );
 }
 
@@ -5515,18 +5306,18 @@ String _monthName(int month) {
   return months[month - 1];
 }
 
-bool _matchesAttendanceFilter(_AttendanceKind kind, _AttendanceFilter? filter) {
+bool matchesAttendanceFilter(AttendanceKind kind, AttendanceFilter? filter) {
   if (filter == null) return true;
   return switch (filter) {
-    _AttendanceFilter.present => kind == _AttendanceKind.present,
-    _AttendanceFilter.late => false,
-    _AttendanceFilter.halfDay => kind == _AttendanceKind.halfDay,
-    _AttendanceFilter.leave => kind == _AttendanceKind.leaveApproved,
-    _AttendanceFilter.leaveApplied => kind == _AttendanceKind.leavePending,
-    _AttendanceFilter.correction => kind == _AttendanceKind.attention,
-    _AttendanceFilter.correctionAwaits =>
-      kind == _AttendanceKind.regularizationPending,
-    _AttendanceFilter.holiday => kind == _AttendanceKind.holiday,
+    AttendanceFilter.present => kind == AttendanceKind.present,
+    AttendanceFilter.late => false,
+    AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
+    AttendanceFilter.leave => kind == AttendanceKind.leaveApproved,
+    AttendanceFilter.leaveApplied => kind == AttendanceKind.leavePending,
+    AttendanceFilter.correction => kind == AttendanceKind.attention,
+    AttendanceFilter.correctionAwaits =>
+      kind == AttendanceKind.regularizationPending,
+    AttendanceFilter.holiday => kind == AttendanceKind.holiday,
   };
 }
 

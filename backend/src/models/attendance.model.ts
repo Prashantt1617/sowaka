@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 
 export type AttendanceSource = 'sql_import' | 'manual';
-export type RegularizationPeriod = 'full_day' | 'first_half' | 'second_half';
+export type RegularizationPeriod = 'present' | 'half_day' | 'late';
 export type RegularizationStatus = 'pending' | 'approved' | 'declined';
 
 export interface AttendanceRecord {
@@ -23,7 +23,7 @@ export interface AttendanceRegularization {
   managerUserId: string;
   workDate: string;
   period: RegularizationPeriod;
-  note: string;
+  note?: string;
   status: RegularizationStatus;
   managerNote?: string;
   createdAt: Date;

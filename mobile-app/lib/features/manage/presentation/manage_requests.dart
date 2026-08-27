@@ -366,10 +366,11 @@ class _AttendanceDatePanel extends StatelessWidget {
     ),
     child: Row(
       children: [
-        const Icon(
-          Icons.calendar_month_rounded,
-          size: 18,
-          color: MColors.terra,
+        SvgPicture.asset(
+          'assets/icons/calendar_header.svg',
+          width: 18,
+          height: 18,
+          colorFilter: const ColorFilter.mode(MColors.terra, BlendMode.srcIn),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -642,9 +643,9 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
 }
 
 String _attendancePeriod(String value) => switch (value) {
-  'first_half' => 'First half',
-  'second_half' => 'Second half',
-  _ => 'Full day',
+  'half_day' => 'Half Day',
+  'late' => 'Late',
+  _ => 'Present',
 };
 String _shortAttendanceDate(DateTime value) =>
     '${value.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]}';
@@ -1347,10 +1348,14 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.calendar_month_rounded,
-                          size: 18,
-                          color: MColors.inkFaint,
+                        SvgPicture.asset(
+                          'assets/icons/calendar_header.svg',
+                          width: 18,
+                          height: 18,
+                          colorFilter: const ColorFilter.mode(
+                            MColors.inkFaint,
+                            BlendMode.srcIn,
+                          ),
                         ),
                         const SizedBox(width: 9),
                         Expanded(

@@ -5,6 +5,7 @@ dotenv.config();
 const defaultCorsOrigins = [
   'http://localhost:5173',
   'http://localhost:8080',
+  'http://localhost:8765',
   'https://dikcsyvq9i7v1.cloudfront.net',
 ];
 

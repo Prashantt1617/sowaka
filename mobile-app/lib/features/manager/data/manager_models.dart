@@ -736,7 +736,7 @@ class AttendanceRegularization {
     id: json['id'] as String? ?? '',
     userId: json['userId'] as String? ?? '',
     workDate: DateTime.parse(json['workDate'] as String),
-    period: json['period'] as String? ?? 'full_day',
+    period: json['period'] as String? ?? 'present',
     note: json['note'] as String? ?? '',
     status: json['status'] as String? ?? 'pending',
     who:

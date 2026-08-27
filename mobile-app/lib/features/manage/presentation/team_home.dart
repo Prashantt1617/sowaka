@@ -30,8 +30,7 @@ class _TeamHomeState extends State<_TeamHome> {
         data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
         data.managerRegularizations
             .where((r) => r.decision == LeaveDecision.pending)
-            .length +
-        data.reimbursements.where((c) => c.status == 'Pending').length;
+            .length;
 
     return ColoredBox(
       color: Colors.white,
@@ -69,7 +68,11 @@ class _TeamHomeState extends State<_TeamHome> {
           const SizedBox(height: 14),
           Expanded(
             child: _section == _TeamSection.myTeam
-                ? _MyTeamView(data: data, bloc: widget.bloc)
+                ? _MyTeamView(
+                    data: data,
+                    bloc: widget.bloc,
+                    onNotifications: widget.onNotifications,
+                  )
                 : _TeamRequestsView(data: data, bloc: widget.bloc),
           ),
         ],
@@ -159,10 +162,15 @@ class _SegmentTab extends StatelessWidget {
 }
 
 class _MyTeamView extends StatefulWidget {
-  const _MyTeamView({required this.data, required this.bloc});
+  const _MyTeamView({
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+  });
 
   final ManagerDashboard data;
   final ManagerBloc bloc;
+  final VoidCallback onNotifications;
 
   @override
   State<_MyTeamView> createState() => _MyTeamViewState();
@@ -217,6 +225,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                 member: member,
                 data: data,
                 bloc: widget.bloc,
+                onNotifications: widget.onNotifications,
               ),
             ),
           ),
@@ -294,11 +303,13 @@ class _TeamMemberRow extends StatelessWidget {
     required this.member,
     required this.data,
     required this.bloc,
+    required this.onNotifications,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
+  final VoidCallback onNotifications;
 
   @override
   Widget build(BuildContext context) {
@@ -310,8 +321,12 @@ class _TeamMemberRow extends StatelessWidget {
     return PressableCard(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              _TeamMemberProfilePage(member: member, data: data, bloc: bloc),
+          builder: (_) => _TeamMemberProfilePage(
+            member: member,
+            data: data,
+            bloc: bloc,
+            onNotifications: onNotifications,
+          ),
         ),
       ),
       padding: const EdgeInsets.all(17),
@@ -377,7 +392,15 @@ class _TeamMemberRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: MColors.inkFaint),
+              SvgPicture.asset(
+                'assets/icons/chevron_right_expand.svg',
+                width: 20,
+                height: 20,
+                colorFilter: const ColorFilter.mode(
+                  MColors.inkFaint,
+                  BlendMode.srcIn,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -516,10 +539,7 @@ int _pendingRequestCount(ManagerDashboard data, String userId) {
   final corrections = data.managerRegularizations
       .where((r) => r.userId == userId && r.decision == LeaveDecision.pending)
       .length;
-  final reimbursements = data.reimbursements
-      .where((c) => c.userId == userId && c.status == 'Pending')
-      .length;
-  return leaves + overtime + corrections + reimbursements;
+  return leaves + overtime + corrections;
 }
 
 LeaveRequest? _upcomingLeaveFor(ManagerDashboard data, String userId) {
@@ -557,7 +577,6 @@ enum _RequestViewMode {
   leaveOnly,
   overtimeOnly,
   correctionOnly,
-  reimbursementOnly,
 }
 
 class _TeamRequestsView extends StatefulWidget {
@@ -664,28 +683,6 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ),
           ),
         ),
-      for (final claim in data.reimbursements.where(
-        (c) => c.status == 'Pending',
-      ))
-        (
-          claim.createdAt,
-          claim.who,
-          'reimbursement',
-          _TeamRequestCard(
-            initial: claim.initial,
-            avatarIndex: claim.avatarIndex,
-            name: claim.who,
-            role: claim.team,
-            rows: [
-              ('Type:', claim.category),
-              ('Date:', _managerDate(claim.expenseDate)),
-              ('Amount:', '₹${claim.amount.toStringAsFixed(0)}'),
-              ('Comment:', claim.note.isEmpty ? 'Expense claim' : claim.note),
-            ],
-            decision: LeaveDecision.pending,
-            readOnly: true,
-          ),
-        ),
     ];
 
     var filtered = switch (_mode) {
@@ -695,8 +692,6 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
         entries.where((entry) => entry.$3 == 'overtime').toList(),
       _RequestViewMode.correctionOnly =>
         entries.where((entry) => entry.$3 == 'correction').toList(),
-      _RequestViewMode.reimbursementOnly =>
-        entries.where((entry) => entry.$3 == 'reimbursement').toList(),
       _RequestViewMode.newestFirst ||
       _RequestViewMode.oldestFirst => [...entries],
     };
@@ -795,7 +790,6 @@ class _ViewByButton extends StatelessWidget {
     _RequestViewMode.leaveOnly: 'Leave Request',
     _RequestViewMode.correctionOnly: 'Correction Request',
     _RequestViewMode.overtimeOnly: 'Overtime Request',
-    _RequestViewMode.reimbursementOnly: 'Reimbursement Request',
   };
 
   @override

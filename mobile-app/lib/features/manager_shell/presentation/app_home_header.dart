@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class AppHomeHeader extends StatelessWidget {
   const AppHomeHeader({
@@ -58,20 +59,24 @@ class _AppHeaderBellButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(99),
-        child: const SizedBox(
+        child: SizedBox(
           width: 40,
           height: 40,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               Center(
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  size: 22,
-                  color: Color(0xFF6A7282),
+                child: SvgPicture.asset(
+                  'assets/icons/bell_notification.svg',
+                  width: 22,
+                  height: 22,
                 ),
               ),
-              Positioned(right: 6, top: 6, child: _AppHeaderNotificationDot()),
+              const Positioned(
+                right: 6,
+                top: 6,
+                child: _AppHeaderNotificationDot(),
+              ),
             ],
           ),
         ),
@@ -109,10 +114,10 @@ class _AppHeaderPlusButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
-        child: const Icon(
-          Icons.add_rounded,
-          size: 28,
-          color: Color(0xFF6A7282),
+        child: SvgPicture.asset(
+          'assets/icons/plus_add.svg',
+          width: 28,
+          height: 28,
         ),
       ),
     );

@@ -140,6 +140,28 @@ class ManagerApiService {
     );
   }
 
+  Future<(List<AttendanceRecord>, List<AttendanceRegularization>)>
+  fetchTeamMemberAttendance(
+    String employeeUserId,
+    DateTime from,
+    DateTime to,
+  ) async {
+    final json = await _request(
+      'GET',
+      '/attendance/team/$employeeUserId?from=${_dateOnly(from)}&to=${_dateOnly(to)}',
+    );
+    return (
+      (json['records'] as List<dynamic>? ?? const [])
+          .map((v) => AttendanceRecord.fromJson(v as Map<String, dynamic>))
+          .toList(),
+      (json['regularizations'] as List<dynamic>? ?? const [])
+          .map(
+            (v) => AttendanceRegularization.fromJson(v as Map<String, dynamic>),
+          )
+          .toList(),
+    );
+  }
+
   Future<AttendanceRecord> recordPunch(String type) async {
     final json = await _request(
       'POST',

@@ -216,10 +216,16 @@ class AvatarBadge extends StatelessWidget {
 }
 
 class RoundIconButton extends StatelessWidget {
-  const RoundIconButton({super.key, required this.icon, required this.onTap});
+  const RoundIconButton({
+    super.key,
+    this.icon,
+    required this.onTap,
+    this.child,
+  });
 
-  final IconData icon;
+  final IconData? icon;
   final VoidCallback onTap;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -229,12 +235,13 @@ class RoundIconButton extends StatelessWidget {
       child: Container(
         width: 38,
         height: 38,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(color: MColors.line),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: MColors.ink),
+        child: child ?? Icon(icon, color: MColors.ink),
       ),
     );
   }

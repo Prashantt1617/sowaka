@@ -5,11 +5,13 @@ class _TeamMemberProfilePage extends StatelessWidget {
     required this.member,
     required this.data,
     required this.bloc,
+    required this.onNotifications,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
+  final VoidCallback onNotifications;
 
   @override
   Widget build(BuildContext context) {
@@ -96,30 +98,42 @@ class _TeamMemberProfilePage extends StatelessWidget {
             ),
           ),
         ),
-      for (final claim in data.reimbursements.where(
-        (item) => item.userId == member.userId && item.status == 'Pending',
-      ))
-        (
-          claim.createdAt,
-          _ProfileRequestCard(
-            icon: Icons.receipt_long_rounded,
-            title: '${claim.category} Request',
-            rows: [
-              ('Date:', _managerDate(claim.expenseDate)),
-              ('Amount:', '₹${claim.amount.toStringAsFixed(0)}'),
-              ('Comment:', claim.note.isEmpty ? 'Expense claim' : claim.note),
-            ],
-            decision: LeaveDecision.pending,
-            readOnly: true,
-          ),
-        ),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
       body: Column(
         children: [
-          _ProfilePageTopBar(onCalendarTap: () => _showCalendarStub(context)),
+          AppHomeHeader(
+            profileAction: Semantics(
+              button: true,
+              label: 'Close profile',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(99),
+                onTap: () => Navigator.of(context).pop(),
+                child: AvatarBadge(
+                  initial: data.managerInitial,
+                  index: 1,
+                  size: 30,
+                ),
+              ),
+            ),
+            onNotifications: onNotifications,
+            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Quick create coming soon')),
+            ),
+          ),
+          _ProfilePageTopBar(
+            onCalendarTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _TeamMemberAttendancePage(
+                  member: member,
+                  data: data,
+                  bloc: bloc,
+                ),
+              ),
+            ),
+          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -130,13 +144,17 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   Center(
                     child: Column(
                       children: [
-                        _TeamMemberPhoto(member: member, size: 92),
+                        _TeamMemberPhoto(
+                          member: member,
+                          size: 112,
+                          showStatus: true,
+                        ),
                         const SizedBox(height: 14),
                         Text(
                           member.name,
                           style: const TextStyle(
                             color: MColors.ink,
-                            fontSize: 21,
+                            fontSize: 24,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -.3,
                           ),
@@ -239,12 +257,14 @@ class _ProfileScreen extends StatelessWidget {
     required this.dashboard,
     required this.onBack,
     required this.onLogout,
+    required this.onNotifications,
   });
 
   final AuthSession session;
   final ManagerDashboard dashboard;
   final VoidCallback onBack;
   final Future<void> Function() onLogout;
+  final VoidCallback onNotifications;
 
   @override
   Widget build(BuildContext context) {
@@ -268,94 +288,143 @@ class _ProfileScreen extends StatelessWidget {
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
-      child: SingleChildScrollView(
+      child: Column(
         key: const ValueKey('profile-screen'),
-        child: Column(
-          children: [
-            _ProfileBanner(
-              name: user.name,
-              designation: designation,
-              company: user.company,
+        children: [
+          AppHomeHeader(
+            profileAction: _ProfileAvatar(
               initials: _initials(user.name),
               profilePhotoUrl: user.profilePhotoUrl,
-              managerScore: user.role.toLowerCase() == 'manager'
-                  ? dashboard.managerScore
-                  : null,
-              onBack: onBack,
+              size: 30,
             ),
-            Transform.translate(
-              offset: const Offset(0, -18),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 620),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _AttendanceCard(
-                          date: today,
-                          present: todayRecord?.punchIn != null,
-                          punchIn: todayRecord?.punchIn,
-                          punchOut: todayRecord?.punchOut,
-                        ),
-                        _MyRequestsSection(data: dashboard),
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Profile'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
+            onNotifications: onNotifications,
+            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Quick create coming soon')),
+            ),
+          ),
+          _ProfilePageTopBar(onBack: onBack),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 620),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Column(
                           children: [
-                            _ProfileRow(
-                              icon: Icons.alternate_email_rounded,
-                              label: 'Email',
-                              value: user.email,
+                            Container(
+                              width: 112,
+                              height: 112,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 3,
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x1A000000),
+                                    blurRadius: 6,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: _ProfileAvatar(
+                                initials: _initials(user.name),
+                                profilePhotoUrl: user.profilePhotoUrl,
+                                size: 112,
+                              ),
                             ),
-                            _ProfileRow(
-                              icon: Icons.event_available_outlined,
-                              label: 'Joined',
-                              value: _formatDate(user.joiningDate),
+                            const SizedBox(height: 14),
+                            Text(
+                              user.name,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: MColors.ink,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -.3,
+                              ),
                             ),
-                            _ProfileRow(
-                              icon: Icons.cake_outlined,
-                              label: 'Date of birth',
-                              value: _formatDate(user.birthday),
+                            const SizedBox(height: 3),
+                            Text(
+                              designation,
+                              style: const TextStyle(
+                                color: MColors.inkSoft,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Work Role'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
-                          children: [
-                            _ProfileRow(
-                              icon: Icons.groups_outlined,
-                              label: 'Department / team',
-                              value: department,
-                            ),
-                            _ProfileRow(
-                              icon: Icons.account_tree_outlined,
-                              label: 'Reports to',
-                              value: reportsTo,
-                            ),
-                          ],
-                        ),
-                        if (user.recognition != null) ...[
-                          const SizedBox(height: 18),
-                          const _SectionTitle(title: 'Recognition'),
-                          const SizedBox(height: 8),
-                          _RecognitionCard(recognition: user.recognition!),
+                      ),
+                      const SizedBox(height: 22),
+                      _AttendanceCard(
+                        date: today,
+                        present: todayRecord?.punchIn != null,
+                        punchIn: todayRecord?.punchIn,
+                        punchOut: todayRecord?.punchOut,
+                      ),
+                      _MyRequestsSection(data: dashboard),
+                      const SizedBox(height: 18),
+                      const _SectionTitle(title: 'Profile'),
+                      const SizedBox(height: 8),
+                      _InfoCard(
+                        children: [
+                          _ProfileRow(
+                            icon: Icons.alternate_email_rounded,
+                            label: 'Email',
+                            value: user.email,
+                          ),
+                          _ProfileRow(
+                            icon: Icons.event_available_outlined,
+                            label: 'Joined',
+                            value: _formatDate(user.joiningDate),
+                          ),
+                          _ProfileRow(
+                            icon: Icons.cake_outlined,
+                            label: 'Date of birth',
+                            value: _formatDate(user.birthday),
+                          ),
                         ],
+                      ),
+                      const SizedBox(height: 18),
+                      const _SectionTitle(title: 'Work Role'),
+                      const SizedBox(height: 8),
+                      _InfoCard(
+                        children: [
+                          _ProfileRow(
+                            icon: Icons.groups_outlined,
+                            label: 'Department / team',
+                            value: department,
+                          ),
+                          _ProfileRow(
+                            icon: Icons.account_tree_outlined,
+                            label: 'Reports to',
+                            value: reportsTo,
+                          ),
+                        ],
+                      ),
+                      if (user.recognition != null) ...[
                         const SizedBox(height: 18),
-                        _LogoutButton(onPressed: onLogout),
-                        const SizedBox(height: 24),
+                        const _SectionTitle(title: 'Recognition'),
+                        const SizedBox(height: 8),
+                        _RecognitionCard(recognition: user.recognition!),
                       ],
-                    ),
+                      const SizedBox(height: 18),
+                      _LogoutButton(onPressed: onLogout),
+                      const SizedBox(height: 24),
+                    ],
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -596,29 +665,6 @@ class _AttendanceCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          InkWell(
-            onTap: () => _showCalendarStub(context),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.calendar_month_rounded,
-                  size: 16,
-                  color: Color(0xFF0571A6),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'View calendar',
-                  style: TextStyle(
-                    color: Color(0xFF0571A6),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -750,23 +796,21 @@ class _MyRequestsSection extends StatelessWidget {
   }
 }
 
-void _showCalendarStub(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Viewing a teammate’s full calendar is coming soon'),
-    ),
-  );
-}
-
 class _ProfilePageTopBar extends StatelessWidget {
-  const _ProfilePageTopBar({required this.onCalendarTap});
+  const _ProfilePageTopBar({
+    this.onCalendarTap,
+    this.onBack,
+    this.title = 'Profile',
+  });
 
-  final VoidCallback onCalendarTap;
+  final VoidCallback? onCalendarTap;
+  final VoidCallback? onBack;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 52, 14, 12),
+      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
       decoration: const BoxDecoration(
         color: Color(0xFFF7F7F9),
         border: Border(bottom: BorderSide(color: MColors.line)),
@@ -774,23 +818,224 @@ class _ProfilePageTopBar extends StatelessWidget {
       child: Row(
         children: [
           RoundIconButton(
-            icon: Icons.chevron_left_rounded,
-            onTap: () => Navigator.of(context).pop(),
+            onTap: onBack ?? () => Navigator.of(context).pop(),
+            child: SvgPicture.asset(
+              'assets/icons/chevron_left_small.svg',
+              width: 18,
+              height: 18,
+            ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Profile',
+              title,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: MColors.ink,
                 fontSize: 16.5,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          RoundIconButton(
-            icon: Icons.calendar_month_rounded,
-            onTap: onCalendarTap,
+          if (onCalendarTap != null)
+            RoundIconButton(
+              onTap: onCalendarTap!,
+              child: SvgPicture.asset(
+                'assets/icons/calendar_header.svg',
+                width: 20,
+                height: 20,
+              ),
+            )
+          else
+            const SizedBox(width: 38),
+        ],
+      ),
+    );
+  }
+}
+
+bool _isSameCalendarDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+class _TeamMemberAttendancePage extends StatefulWidget {
+  const _TeamMemberAttendancePage({
+    required this.member,
+    required this.data,
+    required this.bloc,
+  });
+
+  final TeamMember member;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+
+  @override
+  State<_TeamMemberAttendancePage> createState() =>
+      _TeamMemberAttendancePageState();
+}
+
+class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  bool _listView = false;
+  AttendanceFilter? _filter;
+  bool _loading = true;
+  bool _failed = false;
+  List<AttendanceRecord> _records = const [];
+  List<AttendanceRegularization> _regularizations = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    try {
+      final from = DateTime(_month.year, _month.month, 1);
+      final to = DateTime(_month.year, _month.month + 1, 0);
+      final result = await widget.bloc.service.fetchTeamMemberAttendance(
+        widget.member.userId,
+        from,
+        to,
+      );
+      if (!mounted) return;
+      setState(() {
+        _records = result.$1;
+        _regularizations = result.$2;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _changeMonth(int delta) async {
+    setState(() => _month = DateTime(_month.year, _month.month + delta));
+    await _load();
+  }
+
+  void _openDay(AttendanceDayView day) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReadOnlyAttendanceDaySheet(day: day),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memberLeaves = widget.data.leaves
+        .where((item) => item.userId == widget.member.userId)
+        .toList();
+    final memberOvertime = widget.data.overtime
+        .where((item) => item.userId == widget.member.userId)
+        .toList();
+    final days = buildAttendanceDays(
+      month: _month,
+      records: _records,
+      regularizations: _regularizations,
+      leaves: memberLeaves,
+      holidays: widget.data.holidays,
+      overtime: memberOvertime,
+      weekoffDays: widget.data.weekoffDays,
+    );
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
+      body: Column(
+        children: [
+          _ProfilePageTopBar(title: "${widget.member.name}'s Attendance"),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: MColors.terra),
+                  )
+                : _failed
+                ? Center(
+                    child: Text(
+                      'Could not load attendance for this month.',
+                      style: const TextStyle(color: MColors.inkSoft),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                    children: [
+                      Row(
+                        children: [
+                          AttendanceCalendarArrow(
+                            onPressed: () => _changeMonth(-1),
+                            asset: 'assets/icons/calendar_chevron_prev.svg',
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${_monthName(_month.month)} ${_month.year}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF2A2A2A),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          AttendanceCalendarArrow(
+                            onPressed: () => _changeMonth(1),
+                            asset: 'assets/icons/calendar_chevron_next.svg',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      LeaveViewSwitch(
+                        history: _listView,
+                        onChanged: (list) => setState(() => _listView = list),
+                        firstLabel: 'Grid',
+                        secondLabel: 'List',
+                      ),
+                      const SizedBox(height: 16),
+                      AttendanceFilterChips(
+                        selected: _filter,
+                        onChanged: (filter) => setState(() => _filter = filter),
+                        onLateTapped: () =>
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Late arrivals aren't tracked yet — no threshold is configured.",
+                                ),
+                              ),
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (_listView)
+                        ...days.map(
+                          (day) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: AttendanceListCard(
+                              day: day,
+                              today: _isSameCalendarDay(
+                                day.date,
+                                DateTime.now(),
+                              ),
+                              dimmed: !matchesAttendanceFilter(
+                                day.kind,
+                                _filter,
+                              ),
+                              onTap: () => _openDay(day),
+                            ),
+                          ),
+                        )
+                      else
+                        AttendanceMonthGrid(
+                          month: _month,
+                          days: days,
+                          filter: _filter,
+                          onTap: _openDay,
+                        ),
+                    ],
+                  ),
           ),
         ],
       ),
@@ -798,14 +1043,89 @@ class _ProfilePageTopBar extends StatelessWidget {
   }
 }
 
-class _TeamMemberPhoto extends StatelessWidget {
-  const _TeamMemberPhoto({required this.member, required this.size});
+class _ReadOnlyAttendanceDaySheet extends StatelessWidget {
+  const _ReadOnlyAttendanceDaySheet({required this.day});
 
-  final TeamMember member;
-  final double size;
+  final AttendanceDayView day;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '${_fullWeekday(day.date)}, ${_shortAttendanceDate(day.date)}',
+            style: const TextStyle(
+              color: MColors.ink,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            day.title,
+            style: const TextStyle(color: MColors.inkSoft, fontSize: 14),
+          ),
+          if (day.record?.punchIn != null || day.record?.punchOut != null) ...[
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _PunchColumn(
+                    label: 'PUNCH-IN',
+                    value: _attendanceClock(day.record?.punchIn),
+                  ),
+                ),
+                Expanded(
+                  child: _PunchColumn(
+                    label: 'PUNCH-OUT',
+                    value: _attendanceClock(day.record?.punchOut),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamMemberPhoto extends StatelessWidget {
+  const _TeamMemberPhoto({
+    required this.member,
+    required this.size,
+    this.showStatus = false,
+  });
+
+  final TeamMember member;
+  final double size;
+  final bool showStatus;
+
+  Widget _photo() {
     final url = member.photoUrl;
     if (url == null || url.isEmpty) {
       return AvatarBadge(
@@ -825,6 +1145,39 @@ class _TeamMemberPhoto extends StatelessWidget {
           index: member.avatarIndex,
           size: size,
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = _photo();
+    if (!showStatus) return photo;
+    final present = member.todayStatus == TeamPresenceStatus.present;
+    final dotSize = size * .18;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          photo,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: dotSize,
+              height: dotSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: present
+                    ? const Color(0xFF00C950)
+                    : const Color(0xFFDDDDDD),
+                border: Border.all(color: Colors.white, width: dotSize * .18),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -988,173 +1341,6 @@ class _PunchColumn extends StatelessWidget {
   }
 }
 
-class _ProfileBanner extends StatelessWidget {
-  const _ProfileBanner({
-    required this.name,
-    required this.designation,
-    required this.company,
-    required this.initials,
-    required this.profilePhotoUrl,
-    required this.managerScore,
-    required this.onBack,
-  });
-
-  final String name;
-  final String designation;
-  final String company;
-  final String initials;
-  final String? profilePhotoUrl;
-  final double? managerScore;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      child: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 18,
-              top: 8,
-              child: Material(
-                color: Colors.white.withValues(alpha: .72),
-                shape: const CircleBorder(),
-                child: IconButton(
-                  key: const ValueKey('profile-back'),
-                  tooltip: 'Back',
-                  onPressed: onBack,
-                  icon: const Icon(Icons.chevron_left_rounded),
-                  color: _ProfileColors.inkSoft,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 40),
-              child: Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 92,
-                      height: 92,
-                      decoration: BoxDecoration(
-                        color: _ProfileColors.sage,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x24462D1C),
-                            blurRadius: 18,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: _ProfileAvatar(
-                        initials: initials,
-                        profilePhotoUrl: profilePhotoUrl,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: _ProfileColors.ink,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -.35,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      designation,
-                      style: const TextStyle(
-                        color: _ProfileColors.inkSoft,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (managerScore != null) ...[
-                      const SizedBox(height: 11),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F7F9),
-                          borderRadius: BorderRadius.circular(99),
-                          border: Border.all(color: const Color(0xFFEBEBEB)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.star_rounded,
-                              size: 15,
-                              color: _ProfileColors.gold,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Manager score · ${managerScore!.toStringAsFixed(1)}',
-                              style: const TextStyle(
-                                color: _ProfileColors.gold,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F7F9),
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(color: const Color(0xFFEBEBEB)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.apartment_rounded,
-                            size: 14,
-                            color: _ProfileColors.inkSoft,
-                          ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              company,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _ProfileColors.inkSoft,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _InfoCard extends StatelessWidget {
   const _InfoCard({required this.children});
 
@@ -1171,34 +1357,47 @@ class _InfoCard extends StatelessWidget {
 }
 
 class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({required this.initials, required this.profilePhotoUrl});
+  const _ProfileAvatar({
+    required this.initials,
+    required this.profilePhotoUrl,
+    this.size = 92,
+  });
 
   final String initials;
   final String? profilePhotoUrl;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final url = _nonEmpty(profilePhotoUrl);
-    final fallback = Center(
+    final fallback = Container(
+      color: _ProfileColors.sage,
+      alignment: Alignment.center,
       child: Text(
         initials,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 31,
+          fontSize: size * .336,
           fontWeight: FontWeight.w800,
         ),
       ),
     );
-    if (url == null) return fallback;
-
-    return Image.network(
-      url,
-      width: 92,
-      height: 92,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => fallback,
-      loadingBuilder: (context, child, progress) =>
-          progress == null ? child : fallback,
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url == null
+            ? fallback
+            : Image.network(
+                url,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : fallback,
+              ),
+      ),
     );
   }
 }

@@ -621,10 +621,14 @@ class _FeedbackRows extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 19,
-                  color: Color(0xFFC9BDAC),
+                SvgPicture.asset(
+                  'assets/icons/chevron_right_expand.svg',
+                  width: 19,
+                  height: 19,
+                  colorFilter: const ColorFilter.mode(
+                    Color(0xFFC9BDAC),
+                    BlendMode.srcIn,
+                  ),
                 ),
               ],
             ),
@@ -930,10 +934,14 @@ class _FeedbackReportCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 24,
-            color: MColors.inkFaint,
+          SvgPicture.asset(
+            'assets/icons/chevron_right_expand.svg',
+            width: 24,
+            height: 24,
+            colorFilter: const ColorFilter.mode(
+              MColors.inkFaint,
+              BlendMode.srcIn,
+            ),
           ),
         ],
       ),
@@ -2531,7 +2539,15 @@ class _AttendanceTab extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: MColors.inkFaint),
+              SvgPicture.asset(
+                'assets/icons/chevron_right_expand.svg',
+                width: 20,
+                height: 20,
+                colorFilter: const ColorFilter.mode(
+                  MColors.inkFaint,
+                  BlendMode.srcIn,
+                ),
+              ),
             ],
           ),
         ),
