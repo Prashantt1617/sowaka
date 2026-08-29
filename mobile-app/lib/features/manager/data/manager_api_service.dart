@@ -173,13 +173,19 @@ class ManagerApiService {
 
   Future<AttendanceRegularization> submitAttendanceRegularization({
     required DateTime workDate,
-    required String period,
+    required DateTime? punchIn,
+    required DateTime? punchOut,
     required String note,
   }) async {
     final json = await _request(
       'POST',
       '/attendance/regularizations',
-      body: {'workDate': _dateOnly(workDate), 'period': period, 'note': note},
+      body: {
+        'workDate': _dateOnly(workDate),
+        if (punchIn != null) 'punchIn': punchIn.toUtc().toIso8601String(),
+        if (punchOut != null) 'punchOut': punchOut.toUtc().toIso8601String(),
+        'note': note,
+      },
     );
     return AttendanceRegularization.fromJson(
       json['regularization'] as Map<String, dynamic>,
@@ -282,7 +288,7 @@ class ManagerApiService {
       'POST',
       '/leaves',
       body: {
-        'type': type.toLowerCase(),
+        'type': _leaveTypeToken(type),
         'startDate': _dateOnly(startDate),
         'endDate': _dateOnly(endDate),
         'reason': reason,
@@ -438,6 +444,16 @@ List<OvertimeRequest> _parseOvertime(Map<String, dynamic> json) {
   return values
       .map((value) => OvertimeRequest.fromJson(value as Map<String, dynamic>))
       .toList();
+}
+
+/// The UI labels leave types "Casual Leave" / "Sick Leave" / "Earned Leave",
+/// but the API only accepts the bare tokens `casual` / `sick` / `earned`.
+String _leaveTypeToken(String label) {
+  final lower = label.trim().toLowerCase();
+  for (final token in const ['sick', 'casual', 'earned']) {
+    if (lower.startsWith(token)) return token;
+  }
+  return lower;
 }
 
 String _dateOnly(DateTime value) {

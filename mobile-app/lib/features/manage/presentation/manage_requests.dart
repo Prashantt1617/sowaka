@@ -384,7 +384,7 @@ class _AttendanceDatePanel extends StatelessWidget {
           ),
         ),
         Text(
-          _attendancePeriod(request.period),
+          _attendancePeriod(request),
           style: TextStyle(
             color: MColors.terra.withValues(alpha: .85),
             fontSize: 12.5,
@@ -428,7 +428,7 @@ Future<String?> _showAttendanceDecisionSheet(
           ),
           const SizedBox(height: 6),
           Text(
-            '${request.who} · ${_attendancePeriod(request.period)} · ${_shortAttendanceDate(request.workDate)}',
+            '${request.who} · ${_attendancePeriod(request)} · ${_shortAttendanceDate(request.workDate)}',
             style: const TextStyle(color: MColors.inkSoft, fontSize: 13.5),
           ),
           if (!approved) ...[
@@ -642,11 +642,18 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   }
 }
 
-String _attendancePeriod(String value) => switch (value) {
-  'half_day' => 'Half Day',
-  'late' => 'Late',
-  _ => 'Present',
-};
+/// Summarises the punch times an employee is asking to have recorded.
+String _attendancePeriod(AttendanceRegularization request) {
+  final inAt = request.requestedPunchIn;
+  final outAt = request.requestedPunchOut;
+  if (inAt != null && outAt != null) {
+    return '${_attendanceClock(inAt)} – ${_attendanceClock(outAt)}';
+  }
+  if (inAt != null) return 'In ${_attendanceClock(inAt)}';
+  if (outAt != null) return 'Out ${_attendanceClock(outAt)}';
+  return 'No time given';
+}
+
 String _shortAttendanceDate(DateTime value) =>
     '${value.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]}';
 String _fullWeekday(DateTime value) => const [

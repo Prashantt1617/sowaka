@@ -2,12 +2,10 @@ import { ObjectId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, users } from '../config/db';
 import {
   AttendanceRegularization,
-  RegularizationPeriod,
   RegularizationStatus,
 } from '../models/attendance.model';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const periods = new Set<RegularizationPeriod>(['present', 'half_day', 'late']);
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
@@ -74,7 +72,7 @@ export async function recordPunch(userId: string, type: string) {
 
 export async function requestRegularization(
   userId: string,
-  input: { workDate?: string; period?: string; note?: string },
+  input: { workDate?: string; punchIn?: string; punchOut?: string; note?: string },
 ) {
   const workDate = input.workDate ?? '';
   const date = parseDate(workDate, 'workDate');
@@ -84,8 +82,14 @@ export async function requestRegularization(
   if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > 45) {
     throw new AttendanceError(400, 'Regularization window is 45 days');
   }
-  const period = (input.period ?? '').trim() as RegularizationPeriod;
-  if (!periods.has(period)) throw new AttendanceError(400, 'Invalid regularization period');
+  const punchIn = parsePunch(input.punchIn, workDate, 'punchIn');
+  const punchOut = parsePunch(input.punchOut, workDate, 'punchOut');
+  if (!punchIn && !punchOut) {
+    throw new AttendanceError(400, 'Enter a punch-in or a punch-out time');
+  }
+  if (punchIn && punchOut && punchOut <= punchIn) {
+    throw new AttendanceError(400, 'Punch-out must be after punch-in');
+  }
   const note = (input.note ?? '').trim();
   if (note.length > 500) throw new AttendanceError(400, 'Note cannot exceed 500 characters');
 
@@ -97,11 +101,11 @@ export async function requestRegularization(
   const createdAt = new Date();
   const result = await attendanceRegularizations().insertOne({
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
-    workDate, period, note, status: 'pending', createdAt,
+    workDate, punchIn, punchOut, note, status: 'pending', createdAt,
   });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
-    managerUserId: employee.managerUserId, workDate, period, note,
+    managerUserId: employee.managerUserId, workDate, punchIn, punchOut, note,
     status: 'pending', createdAt,
   });
 }
@@ -159,10 +163,24 @@ async function enrichRegularizations(values: AttendanceRegularization[]) {
     return {
       ...toRegularizationView(value),
       employee: { name: employee?.name ?? 'Employee', department: employee?.department ?? 'Team' },
+      // What the device actually recorded, so the manager can compare it with
+      // the requested times carried by the request itself.
       punchIn: punch?.punchIn?.toISOString(),
       punchOut: punch?.punchOut?.toISOString(),
     };
   });
+}
+
+/**
+ * A corrected punch arrives as an ISO instant from the client. It must land on
+ * the work date being corrected, so a mistyped day can't be smuggled through.
+ */
+function parsePunch(value: string | undefined, workDate: string, field: string): Date | undefined {
+  const raw = (value ?? '').trim();
+  if (!raw) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw new AttendanceError(400, `${field} is not a valid time`);
+  return parsed;
 }
 
 function parseDate(value: string, field: string): Date {
@@ -176,8 +194,13 @@ function parseDate(value: string, field: string): Date {
 
 function daysBetween(a: Date, b: Date) { return Math.floor((b.getTime() - a.getTime()) / 86_400_000); }
 function toRegularizationView(value: AttendanceRegularization) {
-  const { _id, ...rest } = value;
-  return { ...rest, id: _id?.toHexString() };
+  const { _id, punchIn, punchOut, ...rest } = value;
+  return {
+    ...rest,
+    id: _id?.toHexString(),
+    requestedPunchIn: punchIn?.toISOString(),
+    requestedPunchOut: punchOut?.toISOString(),
+  };
 }
 
 export class AttendanceError extends Error {

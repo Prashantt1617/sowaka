@@ -299,11 +299,13 @@ class RecordPunch extends ManagerEvent {
 class SubmitAttendanceRegularization extends ManagerEvent {
   const SubmitAttendanceRegularization({
     required this.workDate,
-    required this.period,
+    required this.punchIn,
+    required this.punchOut,
     required this.note,
   });
   final DateTime workDate;
-  final String period;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
   final String note;
 }
 
@@ -410,12 +412,14 @@ class ManagerBloc {
           }
         case SubmitAttendanceRegularization(
           :final workDate,
-          :final period,
+          :final punchIn,
+          :final punchOut,
           :final note,
         ):
           final request = await _service.submitAttendanceRegularization(
             workDate: workDate,
-            period: period,
+            punchIn: punchIn,
+            punchOut: punchOut,
             note: note,
           );
           final data = _state.dashboard;

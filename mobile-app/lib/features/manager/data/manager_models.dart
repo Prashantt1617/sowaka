@@ -70,6 +70,49 @@ class GrowthRecord {
   }
 }
 
+class OrgChartNode {
+  const OrgChartNode({
+    required this.userId,
+    required this.name,
+    required this.designation,
+    required this.isSelf,
+  });
+
+  final String userId;
+  final String name;
+  final String designation;
+  final bool isSelf;
+
+  factory OrgChartNode.fromJson(Map<String, dynamic> json) => OrgChartNode(
+    userId: json['userId'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    designation: json['designation'] as String? ?? '',
+    isSelf: json['isSelf'] as bool? ?? false,
+  );
+}
+
+class EmployeeDocument {
+  const EmployeeDocument({
+    required this.name,
+    required this.url,
+    this.type,
+    this.uploadedAt,
+  });
+
+  final String name;
+  final String url;
+  final String? type;
+  final DateTime? uploadedAt;
+
+  factory EmployeeDocument.fromJson(Map<String, dynamic> json) =>
+      EmployeeDocument(
+        name: json['name'] as String? ?? 'Document',
+        url: json['url'] as String? ?? '',
+        type: json['type'] as String?,
+        uploadedAt: DateTime.tryParse(json['uploadedAt'] as String? ?? ''),
+      );
+}
+
 class TeamMember {
   const TeamMember({
     required this.id,
@@ -90,6 +133,13 @@ class TeamMember {
     this.photoUrl,
     this.punchIn,
     this.punchOut,
+    this.email = '',
+    this.employeeId,
+    this.joiningDate,
+    this.employmentType,
+    this.managerName,
+    this.orgChart = const [],
+    this.documents = const [],
   });
 
   final int id;
@@ -110,6 +160,13 @@ class TeamMember {
   final String? photoUrl;
   final DateTime? punchIn;
   final DateTime? punchOut;
+  final String email;
+  final String? employeeId;
+  final DateTime? joiningDate;
+  final String? employmentType;
+  final String? managerName;
+  final List<OrgChartNode> orgChart;
+  final List<EmployeeDocument> documents;
 
   factory TeamMember.fromJson(Map<String, dynamic> json, int id) {
     final name = json['name'] as String? ?? 'Employee';
@@ -148,6 +205,19 @@ class TeamMember {
       photoUrl: json['photoUrl'] as String?,
       punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
       punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
+      email: json['email'] as String? ?? '',
+      employeeId: json['employeeId'] as String?,
+      joiningDate: DateTime.tryParse(json['joiningDate'] as String? ?? ''),
+      employmentType: json['employmentType'] as String?,
+      managerName: json['managerName'] as String?,
+      orgChart: (json['orgChart'] as List<dynamic>? ?? const [])
+          .map((value) => OrgChartNode.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      documents: (json['documents'] as List<dynamic>? ?? const [])
+          .map(
+            (value) => EmployeeDocument.fromJson(value as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
@@ -176,6 +246,13 @@ class TeamMember {
       photoUrl: photoUrl,
       punchIn: punchIn,
       punchOut: punchOut,
+      email: email,
+      employeeId: employeeId,
+      joiningDate: joiningDate,
+      employmentType: employmentType,
+      managerName: managerName,
+      orgChart: orgChart,
+      documents: documents,
     );
   }
 }
@@ -701,7 +778,6 @@ class AttendanceRegularization {
     required this.id,
     this.userId = '',
     required this.workDate,
-    required this.period,
     required this.note,
     required this.status,
     required this.who,
@@ -709,19 +785,26 @@ class AttendanceRegularization {
     required this.createdAt,
     this.punchIn,
     this.punchOut,
+    this.requestedPunchIn,
+    this.requestedPunchOut,
     this.managerNote = '',
   });
   final String id;
   final String userId;
   final DateTime workDate;
-  final String period;
   final String note;
   final String status;
   final String who;
   final String team;
   final DateTime createdAt;
+
+  /// What the device actually recorded for the day (may be missing).
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// The times the employee is asking to be recorded.
+  final DateTime? requestedPunchIn;
+  final DateTime? requestedPunchOut;
   final String managerNote;
   String get initial => who.isEmpty ? '?' : who[0].toUpperCase();
   int get avatarIndex => who.hashCode.abs() % 7;
@@ -736,7 +819,6 @@ class AttendanceRegularization {
     id: json['id'] as String? ?? '',
     userId: json['userId'] as String? ?? '',
     workDate: DateTime.parse(json['workDate'] as String),
-    period: json['period'] as String? ?? 'present',
     note: json['note'] as String? ?? '',
     status: json['status'] as String? ?? 'pending',
     who:
@@ -749,6 +831,12 @@ class AttendanceRegularization {
         DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
     punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
+    requestedPunchIn: DateTime.tryParse(
+      json['requestedPunchIn'] as String? ?? '',
+    )?.toLocal(),
+    requestedPunchOut: DateTime.tryParse(
+      json['requestedPunchOut'] as String? ?? '',
+    )?.toLocal(),
     managerNote: json['managerNote'] as String? ?? '',
   );
 }

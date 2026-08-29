@@ -665,7 +665,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             rows: [
               ('Type:', 'Correction'),
               ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request.period)),
+              ('Correction:', _attendancePeriod(request)),
               ('Comment:', request.note),
             ],
             decision: LeaveDecision.pending,

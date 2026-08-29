@@ -10,6 +10,7 @@ import {
   FeedbackParameter,
   FeedbackRecordStatus,
 } from '../models/feedback.model';
+import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
 
@@ -25,6 +26,20 @@ const recognitionCategories = new Set<RecognitionNomination['category']>([
   'culture',
   'rising',
 ]);
+
+export interface OrgChartNode {
+  userId: string;
+  name: string;
+  designation: string;
+  isSelf: boolean;
+}
+
+export interface TeamMemberDocumentView {
+  name: string;
+  url: string;
+  type: string | null;
+  uploadedAt: string | null;
+}
 
 export interface ManagerTeamMemberView {
   userId: string;
@@ -42,6 +57,14 @@ export interface ManagerTeamMemberView {
   photoUrl: string | null;
   punchIn: string | null;
   punchOut: string | null;
+  // Profile detail shown on the manager's read-only view of a report.
+  email: string;
+  employeeId: string | null;
+  joiningDate: string | null;
+  employmentType: string | null;
+  managerName: string | null;
+  orgChart: OrgChartNode[];
+  documents: TeamMemberDocumentView[];
 }
 
 export async function getManagerWorkspace(managerUserId: string) {
@@ -150,6 +173,20 @@ export async function getManagerWorkspace(managerUserId: string) {
       photoUrl: report.profilePhotoUrl ?? null,
       punchIn: todaysRecord?.punchIn ? todaysRecord.punchIn.toISOString() : null,
       punchOut: todaysRecord?.punchOut ? todaysRecord.punchOut.toISOString() : null,
+      email: report.email,
+      employeeId: report.employeeId ?? null,
+      joiningDate: report.joiningDate ? report.joiningDate.toISOString().slice(0, 10) : null,
+      employmentType: report.employeeType ?? null,
+      managerName: manager.name,
+      // Reporting line from the top of the chain down to this report. The chain
+      // is walked from `managerUserId` links already loaded above.
+      orgChart: buildOrgChart(report, manager, approver),
+      documents: (report.documents ?? []).map((document) => ({
+        name: document.name,
+        url: document.url,
+        type: document.type ?? null,
+        uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
+      })),
     };
   });
 
@@ -332,6 +369,28 @@ async function requireRecognitionCandidate(managerUserId: string, employeeUserId
   if (!sameCompany && employee.managerUserId !== managerUserId) {
     throw new ManagerError(403, 'Only an active employee in your company can be selected');
   }
+}
+
+/**
+ * Reporting line shown on a report's profile, ordered top-down:
+ * the manager's own manager (when there is one), the manager, then the report.
+ */
+function buildOrgChart(
+  report: User,
+  manager: User,
+  approver: User | null,
+): OrgChartNode[] {
+  const node = (user: User, isSelf: boolean): OrgChartNode => ({
+    userId: user.userId,
+    name: user.name,
+    designation: user.designation ?? user.department ?? '',
+    isSelf,
+  });
+  return [
+    ...(approver ? [node(approver, false)] : []),
+    node(manager, false),
+    node(report, true),
+  ];
 }
 
 function currentPeriod(date = new Date()): string {

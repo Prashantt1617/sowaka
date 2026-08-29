@@ -512,13 +512,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 const SizedBox(height: 20),
                 const _HomeSectionLabel('Actions'),
                 const SizedBox(height: 10),
-                GridView.count(
-                  crossAxisCount: 2,
+                GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.3,
+                  // Fixed row height rather than an aspect ratio: the tiles hold
+                  // a fixed-height icon plus two text lines, so deriving height
+                  // from width overflows on narrow windows.
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    // 38 icon + 10 + title + 2 + up to two subtitle lines,
+                    // plus 14px padding top and bottom.
+                    mainAxisExtent: 142,
+                  ),
                   children: [
                     _HomeActionCard(
                       icon: Icons.card_giftcard_rounded,
@@ -1551,9 +1558,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             selectedDate: _selectedCalendarDay?.date,
             onTap: _openAttendanceDay,
           ),
+          if (_calendarDetailDay(days) case final detail?) ...[
+            const SizedBox(height: 16),
+            AttendanceDayDetail(
+              day: detail,
+              onRequestCorrection:
+                  detail.kind == AttendanceKind.attention ||
+                      detail.record?.punchIn == null ||
+                      detail.record?.punchOut == null
+                  ? () => _showRegularization(detail.date)
+                  : null,
+            ),
+          ],
         ],
       ],
     );
+  }
+
+  /// Day shown in the detail strip under the grid: the tapped day when one is
+  /// selected, otherwise today (only when today falls in the shown month).
+  AttendanceDayView? _calendarDetailDay(List<AttendanceDayView> days) {
+    if (_selectedCalendarDay case final selected?) {
+      return days
+              .where((day) => _sameDay(day.date, selected.date))
+              .firstOrNull ??
+          selected;
+    }
+    final now = DateTime.now();
+    if (_attendanceMonth.year != now.year ||
+        _attendanceMonth.month != now.month) {
+      return null;
+    }
+    return days.where((day) => _sameDay(day.date, now)).firstOrNull;
   }
 
   List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
@@ -1578,246 +1614,217 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     await widget.bloc.add(LoadAttendanceMonth(month));
   }
 
-  Future<void> _openAttendanceDay(AttendanceDayView day) async {
-    if (day.kind == AttendanceKind.future) {
-      setState(() {
-        _selectedCalendarDay = _sameDay(_selectedCalendarDay?.date, day.date)
-            ? null
-            : day;
-      });
-      return;
-    }
-    if (day.kind == AttendanceKind.attention) {
-      await _showRegularization(day.date);
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          22 + MediaQuery.viewPaddingOf(sheetContext).bottom,
-        ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SheetHandle(),
-            const SizedBox(height: 24),
-            Text(
-              '${_weekday(day.date.weekday)}, ${day.date.day} ${_shortMonth(day.date.month)} ${day.date.year}',
-              style: const TextStyle(
-                color: _Q.ink,
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(_sheetStatus(day), style: _QText.subtitle),
-            if (day.kind == AttendanceKind.leaveApproved ||
-                day.kind == AttendanceKind.leavePending) ...[
-              const SizedBox(height: 20),
-              _SheetValueRow(label: 'Type', value: day.leave?.type ?? 'Leave'),
-              const SizedBox(height: 8),
-              _SheetValueRow(
-                label: 'Status',
-                value: _decisionLabel(day.leave?.decision),
-              ),
-              const SizedBox(height: 20),
-              _SheetOutlineButton(
-                label: day.kind == AttendanceKind.leaveApproved
-                    ? 'Cancel leave'
-                    : 'Withdraw request',
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Leave cancellation requested'),
-                    ),
-                  );
-                },
-              ),
-            ] else if (day.kind != AttendanceKind.weekoff &&
-                day.kind != AttendanceKind.holiday) ...[
-              const SizedBox(height: 20),
-              _AttendancePunchRow(
-                label: 'IN',
-                value: _clock(day.record?.punchIn),
-                missing: day.record?.punchIn == null,
-              ),
-              const SizedBox(height: 10),
-              _AttendancePunchRow(
-                label: 'OUT',
-                value: _clock(day.record?.punchOut),
-                missing: day.record?.punchOut == null,
-              ),
-              if (day.kind == AttendanceKind.present ||
-                  day.kind == AttendanceKind.halfDay) ...[
-                const SizedBox(height: 26),
-                _SheetOutlineButton(
-                  label: 'Add overtime',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _openOvertimeForm();
-                  },
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
+  /// Tapping a day selects it; the detail strip below the grid then shows its
+  /// punches and, when a correction is possible, the link that opens the form.
+  void _openAttendanceDay(AttendanceDayView day) {
+    setState(() {
+      if (day.kind == AttendanceKind.attention) {
+        _selectedCalendarDay = day;
+        return;
+      }
+      _selectedCalendarDay = _sameDay(_selectedCalendarDay?.date, day.date)
+          ? null
+          : day;
+    });
   }
 
+  /// Correction request: the employee supplies the punch times they believe
+  /// should be recorded. At least one of the two is required. Routed to their
+  /// manager for approval by the backend.
   Future<void> _showRegularization(DateTime day) async {
     final note = TextEditingController();
-    String period = 'present';
+    TimeOfDay? punchIn;
+    TimeOfDay? punchOut;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Container(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            12,
-            20,
-            24 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SheetHandle(),
-              const SizedBox(height: 20),
-              const Text(
-                'Request Correction',
-                style: TextStyle(
-                  color: Color(0xFF2A2A2A),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+        builder: (context, setSheetState) {
+          Future<void> pick(bool isStart) async {
+            final current = isStart ? punchIn : punchOut;
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: current ?? const TimeOfDay(hour: 9, minute: 0),
+              builder: _pickerTheme,
+            );
+            if (picked == null) return;
+            setSheetState(() {
+              if (isStart) {
+                punchIn = picked;
+              } else {
+                punchOut = picked;
+              }
+            });
+          }
+
+          void toggleMeridiem(bool isStart) {
+            final current = isStart ? punchIn : punchOut;
+            if (current == null) return;
+            final shifted = TimeOfDay(
+              hour: (current.hour + 12) % 24,
+              minute: current.minute,
+            );
+            setSheetState(() {
+              if (isStart) {
+                punchIn = shifted;
+              } else {
+                punchOut = shifted;
+              }
+            });
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              24 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SheetHandle(),
+                const SizedBox(height: 12),
+                const Text(
+                  'Request Correction',
+                  style: TextStyle(
+                    color: Color(0xFF2A2A2A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
-                style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 14),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'What should this day be?',
-                style: TextStyle(
-                  color: Color(0xFF6A6A6A),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 20),
+                Text(
+                  '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
+                  style: const TextStyle(
+                    color: Color(0xFF6A6A6A),
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFDDDDDD)),
-                  borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 16),
+                _CorrectionTimeField(
+                  label: 'Punch-in',
+                  value: punchIn,
+                  onPickTime: () => pick(true),
+                  onToggleMeridiem: () => toggleMeridiem(true),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
+                const SizedBox(height: 16),
+                _CorrectionTimeField(
+                  label: 'Punch-out',
+                  value: punchOut,
+                  onPickTime: () => pick(false),
+                  onToggleMeridiem: () => toggleMeridiem(false),
+                ),
+                const SizedBox(height: 16),
+                const Row(
                   children: [
-                    for (final option in const [
-                      ('present', 'Present'),
-                      ('half_day', 'Half Day'),
-                      ('late', 'Late'),
-                    ])
-                      _RegularizationRow(
-                        label: option.$2,
-                        selected: period == option.$1,
-                        onTap: () => setSheetState(() => period = option.$1),
+                    Text(
+                      'Notes ',
+                      style: TextStyle(
+                        color: Color(0xFF2A2A2A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    Text(
+                      '(optional)',
+                      style: TextStyle(color: Color(0xFF929292), fontSize: 12),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Row(
-                children: [
-                  Text(
-                    'Notes ',
-                    style: TextStyle(
-                      color: Color(0xFF2A2A2A),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    '(optional)',
-                    style: TextStyle(color: Color(0xFF929292), fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: note,
-                minLines: 3,
-                maxLines: 3,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
-                decoration: InputDecoration(
-                  hintText: 'Add a note for your manager...',
-                  hintStyle: const TextStyle(
-                    color: Color(0xFF929292),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: note,
+                  minLines: 3,
+                  maxLines: 3,
+                  style: const TextStyle(
                     fontSize: 13,
+                    color: Color(0xFF2A2A2A),
                   ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 13,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF0571A6),
-                      width: 1.5,
+                  decoration: InputDecoration(
+                    hintText: 'Add a note for your manager...',
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF929292),
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 13,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF0571A6),
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 26),
-              _SheetPrimaryButton(
-                label: 'Submit for review',
-                color: const Color(0xFF0571A6),
-                onPressed: () async {
-                  final ok = await widget.bloc.add(
-                    SubmitAttendanceRegularization(
-                      workDate: day,
-                      period: period,
-                      note: note.text.trim(),
-                    ),
-                  );
-                  if (ok && dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
+                const SizedBox(height: 26),
+                _SheetPrimaryButton(
+                  label: 'Submit for review',
+                  color: const Color(0xFF0571A6),
+                  onPressed: () async {
+                    if (punchIn == null && punchOut == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Enter a punch-in or punch-out time'),
+                        ),
+                      );
+                      return;
+                    }
+                    DateTime? at(TimeOfDay? time) => time == null
+                        ? null
+                        : DateTime(
+                            day.year,
+                            day.month,
+                            day.day,
+                            time.hour,
+                            time.minute,
+                          );
+                    final from = at(punchIn);
+                    final to = at(punchOut);
+                    if (from != null && to != null && !to.isAfter(from)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Punch-out must be after punch-in'),
+                        ),
+                      );
+                      return;
+                    }
+                    final ok = await widget.bloc.add(
+                      SubmitAttendanceRegularization(
+                        workDate: day,
+                        punchIn: from,
+                        punchOut: to,
+                        note: note.text.trim(),
+                      ),
+                    );
+                    if (ok && dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
     note.dispose();
@@ -1825,56 +1832,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   static String _dateKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-  static String _clock(DateTime? value) => value == null
-      ? 'Missing'
-      : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
   static String _duration(Duration value) {
     final hours = value.inHours;
     final minutes = value.inMinutes.remainder(60);
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
   }
 
-  static String _sheetStatus(AttendanceDayView day) {
-    switch (day.kind) {
-      case AttendanceKind.attention:
-        return 'Needs attention';
-      case AttendanceKind.leaveApproved:
-        return 'Leave · approved · ${day.leave?.type ?? 'Leave'}';
-      case AttendanceKind.leavePending:
-        return 'Leave · pending · ${day.leave?.type ?? 'Leave'}';
-      case AttendanceKind.weekoff:
-        return 'Weekly off';
-      case AttendanceKind.holiday:
-        return day.holiday?.name ?? 'Holiday';
-      case AttendanceKind.regularizationPending:
-        return 'Regularization · pending';
-      case AttendanceKind.future:
-        return 'Working day';
-      default:
-        return day.kind == AttendanceKind.halfDay ? 'Half day' : 'Present';
-    }
-  }
-
-  static String _decisionLabel(LeaveDecision? decision) => switch (decision) {
-    LeaveDecision.approved => 'Approved',
-    LeaveDecision.declined => 'Declined',
-    _ => 'Pending',
-  };
-
-  static String _shortMonth(int month) => const [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ][month - 1];
   static String _monthName(int month) => const [
     'January',
     'February',
@@ -3002,6 +2965,216 @@ Widget _pickerTheme(BuildContext context, Widget? child) {
   );
 }
 
+typedef AttendanceTagStyle = ({Color bg, Color fg, String label});
+
+AttendanceTagStyle attendanceTagStyle(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.present => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF28CA08),
+    label: 'Present',
+  ),
+  AttendanceKind.halfDay => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF34C759),
+    label: 'Half day',
+  ),
+  AttendanceKind.weekoff => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF6A6A6A),
+    label: 'Weekly off',
+  ),
+  AttendanceKind.holiday => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF717171),
+    label: 'Holiday',
+  ),
+  AttendanceKind.attention => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Correction Required',
+  ),
+  AttendanceKind.regularizationPending => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Correction Awaits',
+  ),
+  AttendanceKind.leaveApproved => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'On Leave',
+  ),
+  AttendanceKind.leavePending => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'Leave Applied',
+  ),
+  AttendanceKind.future => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF2A2A2A),
+    label: 'Upcoming',
+  ),
+};
+
+/// Punch clock label. Punch data is imported from the attendance hardware via
+/// the SQL bridge, so a day with no imported record renders as an em dash.
+String attendancePunchClock(DateTime? value) => value == null
+    ? '—'
+    : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
+
+/// Read-only detail for one calendar day: date, status tag and the punch-in /
+/// punch-out pair. Shared by the employee's own calendar and the manager's
+/// read-only view of a team member's calendar.
+class AttendanceDayDetail extends StatelessWidget {
+  const AttendanceDayDetail({
+    super.key,
+    required this.day,
+    this.onRequestCorrection,
+  });
+
+  final AttendanceDayView day;
+
+  /// Shown as the "Apply for a correction" link on days that need one. Omitted
+  /// on the manager's read-only view of a report.
+  final VoidCallback? onRequestCorrection;
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = attendanceTagStyle(day.kind);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                '${_fullWeekdayNames[day.date.weekday - 1]}, ${day.date.day} ${_monthName(day.date.month)}',
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: tag.bg,
+                borderRadius: BorderRadius.circular(9999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: tag.fg,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    tag.label,
+                    style: TextStyle(
+                      color: tag.fg,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          height: 71,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _AttendancePunchCell(
+                  label: 'Punch-in',
+                  value: attendancePunchClock(day.record?.punchIn),
+                  alignEnd: false,
+                ),
+              ),
+              Container(width: 1, color: const Color(0xFFDDDDDD)),
+              Expanded(
+                child: _AttendancePunchCell(
+                  label: 'Punch-out',
+                  value: attendancePunchClock(day.record?.punchOut),
+                  alignEnd: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (onRequestCorrection case final request?) ...[
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: request,
+            child: const Text(
+              'Missed Punch-in or out. Apply for a correction',
+              style: TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AttendancePunchCell extends StatelessWidget {
+  const _AttendancePunchCell({
+    required this.label,
+    required this.value,
+    required this.alignEnd,
+  });
+
+  final String label;
+  final String value;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: alignEnd
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF929292),
+          fontSize: 10,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: const TextStyle(
+          color: Color(0xFF2A2A2A),
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+}
+
 class _DashedRoundRectPainter extends CustomPainter {
   const _DashedRoundRectPainter({required this.color, required this.radius});
   final Color color;
@@ -3044,72 +3217,6 @@ class _SheetHandle extends StatelessWidget {
   );
 }
 
-class _AttendancePunchRow extends StatelessWidget {
-  const _AttendancePunchRow({
-    required this.label,
-    required this.value,
-    required this.missing,
-  });
-  final String label;
-  final String value;
-  final bool missing;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: missing ? const Color(0xFFFBE4E1) : const Color(0xFFE9EBE0),
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: missing ? const Color(0xFFE0483B) : _Q.sage,
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-          ),
-        ),
-      ),
-      const SizedBox(width: 14),
-      Text(value, style: const TextStyle(color: _Q.ink, fontSize: 14)),
-    ],
-  );
-}
-
-class _SheetValueRow extends StatelessWidget {
-  const _SheetValueRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF8F4EE),
-      borderRadius: BorderRadius.circular(15),
-    ),
-    child: Row(
-      children: [
-        Text(label, style: const TextStyle(color: _Q.inkSoft, fontSize: 14)),
-        const Spacer(),
-        Flexible(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 class _SheetPrimaryButton extends StatelessWidget {
   const _SheetPrimaryButton({
     required this.label,
@@ -3135,69 +3242,114 @@ class _SheetPrimaryButton extends StatelessWidget {
   );
 }
 
-class _SheetOutlineButton extends StatelessWidget {
-  const _SheetOutlineButton({required this.label, required this.onPressed});
-  final String label;
-  final VoidCallback onPressed;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 58,
-    child: OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _Q.ink,
-        side: const BorderSide(color: Color(0xFFE8DFD3), width: 1.4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-      ),
-      child: Text(label),
-    ),
-  );
-}
-
-class _RegularizationRow extends StatelessWidget {
-  const _RegularizationRow({
+/// One punch row on the correction sheet: a wide box showing the time and a
+/// narrow AM/PM box, matching the paired fields in the design.
+class _CorrectionTimeField extends StatelessWidget {
+  const _CorrectionTimeField({
     required this.label,
-    required this.selected,
-    required this.onTap,
+    required this.value,
+    required this.onPickTime,
+    required this.onToggleMeridiem,
   });
+
   final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final TimeOfDay? value;
+  final VoidCallback onPickTime;
+  final VoidCallback onToggleMeridiem;
+
+  static const _boxBorder = Color(0xFFE5E7EB);
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Container(
-      color: selected ? const Color(0xFFDCFCE7) : Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: selected
-                  ? const Color(0xFF28CA08)
-                  : const Color(0xFF34C759),
-              shape: BoxShape.circle,
-            ),
+  Widget build(BuildContext context) {
+    final hour = value == null
+        ? null
+        : (value!.hour % 12 == 0 ? 12 : value!.hour % 12);
+    final clock = value == null
+        ? ''
+        : '$hour:${value!.minute.toString().padLeft(2, '0')}';
+    final meridiem = value == null ? 'AM' : (value!.hour >= 12 ? 'PM' : 'AM');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            letterSpacing: .3,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: selected
-                  ? const Color(0xFF28CA08)
-                  : const Color(0xFF2A2A2A),
-              fontSize: 14,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onPickTime,
+                child: Container(
+                  height: 42,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _boxBorder, width: .8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    clock.isEmpty ? '--:--' : clock,
+                    style: TextStyle(
+                      color: clock.isEmpty
+                          ? const Color(0xFF9CA3AF)
+                          : const Color(0xFF2A2A2A),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
-    ),
-  );
+            const SizedBox(width: 18),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: value == null ? null : onToggleMeridiem,
+              child: Container(
+                width: 89,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border.all(color: _boxBorder, width: .8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      meridiem,
+                      style: TextStyle(
+                        color: value == null
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF2A2A2A),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    SvgPicture.asset(
+                      'assets/icons/list_row_chevron.svg',
+                      width: 14,
+                      height: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _HubScaffold extends StatelessWidget {
@@ -4300,6 +4452,8 @@ class _HomeActionCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Color(0xFF222222),
                 fontSize: 15,
@@ -4309,7 +4463,7 @@ class _HomeActionCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               subtitle,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Color(0xFF717171), fontSize: 12),
             ),

@@ -80,7 +80,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
             title: 'Attendance Correction',
             rows: [
               ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request.period)),
+              ('Correction:', _attendancePeriod(request)),
               ('Comment:', request.note),
             ],
             decision: LeaveDecision.pending,
@@ -159,52 +159,105 @@ class _TeamMemberProfilePage extends StatelessWidget {
                             letterSpacing: -.3,
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 4),
                         Text(
                           [
                             member.designation,
                             member.team,
-                          ].where((value) => value.isNotEmpty).join(' · '),
+                          ].where((value) => value.isNotEmpty).join(' • '),
                           style: const TextStyle(
-                            color: MColors.inkSoft,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF717171),
+                            fontSize: 16,
+                            height: 24 / 16,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ],
                     ),
                   ),
                 if (openRequests.isNotEmpty) ...[
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 20),
                   _RequestsSection(
                     title: 'Open Requests',
                     entries: openRequests,
                   ),
                 ],
-                const SizedBox(height: 22),
+                const SizedBox(height: 16),
                 _AttendanceCard(
                   date: today,
                   present: present,
                   punchIn: member.punchIn,
                   punchOut: member.punchOut,
+                  onViewCalendar: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _TeamMemberAttendancePage(
+                        member: member,
+                        data: data,
+                        bloc: bloc,
+                      ),
+                    ),
+                  ),
                 ),
+                const SizedBox(height: 22),
+                const _SectionTitle(title: 'Profile'),
+                const SizedBox(height: 8),
+                _InfoCard(
+                  children: [
+                    if (member.email.isNotEmpty)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_email.svg',
+                        label: 'Email',
+                        value: member.email,
+                      ),
+                    if (member.employeeId case final id?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_employee_id.svg',
+                        label: 'Employee ID',
+                        value: id,
+                      ),
+                    if (member.joiningDate case final joined?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_joining_date.svg',
+                        label: 'Joining Date',
+                        value: _joiningDateLabel(joined),
+                      ),
+                  ],
+                ),
+                if (member.orgChart.length > 1) ...[
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: 'Org Chart'),
+                  const SizedBox(height: 8),
+                  _OrgChartCard(nodes: member.orgChart),
+                ],
                 const SizedBox(height: 22),
                 const _SectionTitle(title: 'Work Role'),
                 const SizedBox(height: 8),
                 _InfoCard(
                   children: [
                     _ProfileRow(
-                      icon: Icons.apartment_rounded,
+                      iconAsset: 'assets/icons/work_department.svg',
                       label: 'Department',
                       value: member.team,
                     ),
                     _ProfileRow(
-                      icon: Icons.person_outline_rounded,
+                      iconAsset: 'assets/icons/work_manager.svg',
                       label: 'Manager',
-                      value: data.managerName,
+                      value: member.managerName ?? data.managerName,
                     ),
+                    if (member.employmentType case final type?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/work_employment_type.svg',
+                        label: 'Employment Type',
+                        value: _employmentTypeLabel(type),
+                      ),
                   ],
                 ),
+                if (member.documents.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: 'Documentation'),
+                  const SizedBox(height: 8),
+                  _DocumentationCard(documents: member.documents),
+                ],
                 const SizedBox(height: 22),
                 _GiveFeedbackButton(
                   onTap: () {
@@ -215,6 +268,177 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+String _joiningDateLabel(DateTime value) =>
+    '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]} ${value.day}, ${value.year}';
+
+/// `employeeType` arrives as a backend token (e.g. `full_time_permanent`).
+String _employmentTypeLabel(String value) => value
+    .replaceAll('_', ' ')
+    .split(' ')
+    .where((word) => word.isNotEmpty)
+    .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+    .join(' ');
+
+class _OrgChartCard extends StatelessWidget {
+  const _OrgChartCard({required this.nodes});
+
+  final List<OrgChartNode> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, node) in nodes.indexed) ...[
+            if (index > 0)
+              Container(width: 1, height: 12, color: const Color(0xFFDDDDDD)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: node.isSelf ? const Color(0xFFF0F7FC) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: node.isSelf
+                      ? const Color(0xFF0571A6)
+                      : const Color(0xFFEBEBEB),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF2F2F2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/icons/work_manager.svg',
+                        width: 18,
+                        height: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          node.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: MColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (node.designation.isNotEmpty)
+                          Text(
+                            node.designation.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF929292),
+                              fontSize: 10,
+                              letterSpacing: .4,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DocumentationCard extends StatelessWidget {
+  const _DocumentationCard({required this.documents});
+
+  final List<EmployeeDocument> documents;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, document) in documents.indexed) ...[
+            if (index > 0)
+              const Divider(height: 1, thickness: 1, color: Color(0xFFF2F2F2)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF2F2F2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/icons/document_file.svg',
+                        width: 18,
+                        height: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          document.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: MColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (document.uploadedAt case final uploaded?)
+                          Text(
+                            _joiningDateLabel(uploaded),
+                            style: const TextStyle(
+                              color: Color(0xFF929292),
+                              fontSize: 11,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -315,28 +539,54 @@ class _ProfileScreen extends StatelessWidget {
                       Center(
                         child: Column(
                           children: [
-                            Container(
+                            SizedBox(
                               width: 112,
                               height: 112,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 3,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x1A000000),
-                                    blurRadius: 6,
-                                    offset: Offset(0, 2),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    width: 112,
+                                    height: 112,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Color(0x1A000000),
+                                          blurRadius: 6,
+                                          offset: Offset(0, 4),
+                                        ),
+                                        BoxShadow(
+                                          color: Color(0x1A000000),
+                                          blurRadius: 4,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: _ProfileAvatar(
+                                      initials: _initials(user.name),
+                                      profilePhotoUrl: user.profilePhotoUrl,
+                                      size: 112,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: 88,
+                                    top: 88,
+                                    child: Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF00C950),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFFF7F7F7),
+                                          width: 3.34,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: _ProfileAvatar(
-                                initials: _initials(user.name),
-                                profilePhotoUrl: user.profilePhotoUrl,
-                                size: 112,
                               ),
                             ),
                             const SizedBox(height: 14),
@@ -344,13 +594,13 @@ class _ProfileScreen extends StatelessWidget {
                               user.name,
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                color: MColors.ink,
+                                color: Color(0xFF222222),
                                 fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -.3,
+                                height: 32 / 24,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 4),
                             Text(
                               designation,
                               style: const TextStyle(
@@ -376,12 +626,12 @@ class _ProfileScreen extends StatelessWidget {
                       _InfoCard(
                         children: [
                           _ProfileRow(
-                            icon: Icons.alternate_email_rounded,
+                            iconAsset: 'assets/icons/profile_email.svg',
                             label: 'Email',
                             value: user.email,
                           ),
                           _ProfileRow(
-                            icon: Icons.event_available_outlined,
+                            iconAsset: 'assets/icons/profile_joining_date.svg',
                             label: 'Joined',
                             value: _formatDate(user.joiningDate),
                           ),
@@ -398,12 +648,12 @@ class _ProfileScreen extends StatelessWidget {
                       _InfoCard(
                         children: [
                           _ProfileRow(
-                            icon: Icons.groups_outlined,
+                            iconAsset: 'assets/icons/work_department.svg',
                             label: 'Department / team',
                             value: department,
                           ),
                           _ProfileRow(
-                            icon: Icons.account_tree_outlined,
+                            iconAsset: 'assets/icons/work_manager.svg',
                             label: 'Reports to',
                             value: reportsTo,
                           ),
@@ -614,12 +864,17 @@ class _AttendanceCard extends StatelessWidget {
     required this.present,
     required this.punchIn,
     required this.punchOut,
+    this.onViewCalendar,
   });
 
   final DateTime date;
   final bool present;
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// Only the manager's read-only view of a report links through to the full
+  /// calendar; the signed-in user's own profile omits it.
+  final VoidCallback? onViewCalendar;
 
   @override
   Widget build(BuildContext context) {
@@ -665,6 +920,31 @@ class _AttendanceCard extends StatelessWidget {
               ),
             ],
           ),
+          if (onViewCalendar case final open?) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: open,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/calendar_view_link.svg',
+                    width: 16,
+                    height: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'View Calendar',
+                    style: TextStyle(
+                      color: Color(0xFF0571A6),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -779,7 +1059,7 @@ class _MyRequestsSection extends StatelessWidget {
             title: 'Attendance Correction',
             rows: [
               ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request.period)),
+              ('Correction:', _attendancePeriod(request)),
               ('Comment:', request.note),
             ],
             decision: request.decision,
@@ -811,10 +1091,7 @@ class _ProfilePageTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF7F7F9),
-        border: Border(bottom: BorderSide(color: MColors.line)),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFFF7F7F9)),
       child: Row(
         children: [
           RoundIconButton(
@@ -878,6 +1155,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   AttendanceFilter? _filter;
   bool _loading = true;
   bool _failed = false;
+  AttendanceDayView? _selectedDay;
   List<AttendanceRecord> _records = const [];
   List<AttendanceRegularization> _regularizations = const [];
 
@@ -916,16 +1194,33 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   }
 
   Future<void> _changeMonth(int delta) async {
-    setState(() => _month = DateTime(_month.year, _month.month + delta));
+    setState(() {
+      _month = DateTime(_month.year, _month.month + delta);
+      _selectedDay = null;
+    });
     await _load();
   }
 
   void _openDay(AttendanceDayView day) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ReadOnlyAttendanceDaySheet(day: day),
-    );
+    setState(() {
+      _selectedDay = _isSameCalendarDay(_selectedDay?.date ?? _month, day.date)
+          ? null
+          : day;
+    });
+  }
+
+  /// Day shown in the detail strip: the tapped day, else today when the shown
+  /// month contains it.
+  AttendanceDayView? _detailDay(List<AttendanceDayView> days) {
+    if (_selectedDay case final selected?) {
+      return days
+              .where((day) => _isSameCalendarDay(day.date, selected.date))
+              .firstOrNull ??
+          selected;
+    }
+    final now = DateTime.now();
+    if (_month.year != now.year || _month.month != now.month) return null;
+    return days.where((day) => _isSameCalendarDay(day.date, now)).firstOrNull;
   }
 
   @override
@@ -1023,91 +1318,30 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                                 day.kind,
                                 _filter,
                               ),
+                              selected: _isSameCalendarDay(
+                                day.date,
+                                _selectedDay?.date ?? _month,
+                              ),
                               onTap: () => _openDay(day),
                             ),
                           ),
                         )
-                      else
+                      else ...[
                         AttendanceMonthGrid(
                           month: _month,
                           days: days,
                           filter: _filter,
+                          selectedDate: _selectedDay?.date,
                           onTap: _openDay,
                         ),
+                        if (_detailDay(days) case final detail?) ...[
+                          const SizedBox(height: 16),
+                          AttendanceDayDetail(day: detail),
+                        ],
+                      ],
                     ],
                   ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReadOnlyAttendanceDaySheet extends StatelessWidget {
-  const _ReadOnlyAttendanceDaySheet({required this.day});
-
-  final AttendanceDayView day;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        12,
-        20,
-        24 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '${_fullWeekday(day.date)}, ${_shortAttendanceDate(day.date)}',
-            style: const TextStyle(
-              color: MColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            day.title,
-            style: const TextStyle(color: MColors.inkSoft, fontSize: 14),
-          ),
-          if (day.record?.punchIn != null || day.record?.punchOut != null) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _PunchColumn(
-                    label: 'PUNCH-IN',
-                    value: _attendanceClock(day.record?.punchIn),
-                  ),
-                ),
-                Expanded(
-                  child: _PunchColumn(
-                    label: 'PUNCH-OUT',
-                    value: _attendanceClock(day.record?.punchOut),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -1404,12 +1638,19 @@ class _ProfileAvatar extends StatelessWidget {
 
 class _ProfileRow extends StatelessWidget {
   const _ProfileRow({
-    required this.icon,
+    this.icon,
+    this.iconAsset,
     required this.label,
     required this.value,
-  });
+  }) : assert(
+         icon != null || iconAsset != null,
+         'provide either icon or iconAsset',
+       );
 
-  final IconData icon;
+  final IconData? icon;
+
+  /// Preferred over [icon]: the glyph exported from Figma.
+  final String? iconAsset;
   final String label;
   final String value;
 
@@ -1426,7 +1667,11 @@ class _ProfileRow extends StatelessWidget {
               color: Color(0xFFF7F7F7),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 20, color: _ProfileColors.ink),
+            child: iconAsset != null
+                ? Center(
+                    child: SvgPicture.asset(iconAsset!, width: 20, height: 20),
+                  )
+                : Icon(icon, size: 20, color: _ProfileColors.ink),
           ),
           const SizedBox(width: 16),
           Expanded(

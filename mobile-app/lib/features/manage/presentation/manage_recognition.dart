@@ -81,20 +81,28 @@ class _AwardCard extends StatelessWidget {
                               color: palette.$1,
                             ),
                             const SizedBox(width: 5),
-                            Text(
-                              'Submitted',
-                              style: TextStyle(
-                                color: palette.$1,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
+                            Flexible(
+                              child: Text(
+                                'Submitted',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.$1,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                            const Text(
-                              '  · Change',
-                              style: TextStyle(
-                                color: MColors.inkSoft,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                            const Flexible(
+                              child: Text(
+                                '  · Change',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: MColors.inkSoft,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
