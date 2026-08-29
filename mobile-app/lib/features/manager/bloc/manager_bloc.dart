@@ -483,7 +483,6 @@ class ManagerBloc {
           if (member == null) return false;
           _emit(
             _state.copyWith(
-              view: ManagerView.feedbackRecord,
               selectedMemberId: member.id,
               recordParams: member.params
                   .map((param) => param.copyWith())
@@ -494,7 +493,6 @@ class ManagerBloc {
         case CloseFeedbackRecord():
           _emit(
             _state.copyWith(
-              view: ManagerView.feedbackList,
               clearSelectedMember: true,
               recordParams: const <FeedbackParam>[],
               recordExtra: '',
@@ -694,6 +692,11 @@ class ManagerBloc {
     }
   }
 
+  static String _currentPeriodKey() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _persistFeedback(FeedbackStatus status, String message) async {
     final data = _state.dashboard;
     final selected = _state.selectedMember;
@@ -710,19 +713,40 @@ class ManagerBloc {
       params: params,
       extra: _state.recordExtra,
     );
+    // A sent review must also land in the member's history, otherwise the
+    // growth timeline keeps showing the period as still due.
+    final period = _currentPeriodKey();
     final team = data.team.map((member) {
       if (member.id != selected.id) return member;
+      final history = status == FeedbackStatus.sent
+          ? <GrowthRecord>[
+              ...member.history.where((record) => record.period != period),
+              GrowthRecord(
+                period: period,
+                overallScore: overall,
+                parameters: params,
+                sentAt: DateTime.now(),
+                managerName: data.managerName,
+              ),
+            ]
+          : member.history;
       return member.copyWith(
         status: status,
         params: params,
         extra: _state.recordExtra,
         score: overall,
+        history: history,
+        previousScore: status == FeedbackStatus.sent
+            ? member.history
+                  .where((record) => record.period != period)
+                  .map((record) => record.overallScore)
+                  .lastOrNull
+            : member.previousScore,
       );
     }).toList();
     _emit(
       _state.copyWith(
         dashboard: data.copyWith(team: team),
-        view: ManagerView.feedbackList,
         clearSelectedMember: true,
         recordParams: const <FeedbackParam>[],
         recordExtra: '',

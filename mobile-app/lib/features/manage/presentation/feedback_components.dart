@@ -23,7 +23,6 @@ class _ParamCard extends StatefulWidget {
 }
 
 class _ParamCardState extends State<_ParamCard> {
-  bool _help = false;
   final FocusNode _noteFocusNode = FocusNode();
   late final TextEditingController _noteController;
 
@@ -66,264 +65,188 @@ class _ParamCardState extends State<_ParamCard> {
   @override
   Widget build(BuildContext context) {
     final color = scoreColor(widget.param.score <= 0 ? 1 : widget.param.score);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: PressableCard(
-        padding: const EdgeInsets.all(17),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          widget.param.name,
-                          style: const TextStyle(
-                            color: MColors.ink,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+    final rated = widget.param.score > 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.param.name,
+                      style: const TextStyle(
+                        color: Color(0xFF101828),
+                        fontSize: 14.5,
+                        height: 17.4 / 14.5,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(99),
-                        onTap: () => setState(() => _help = !_help),
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: _help ? MColors.terra : MColors.terraTint,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.info_outline_rounded,
-                            size: 15,
-                            color: _help ? Colors.white : MColors.terra,
-                          ),
+                    ),
+                    if (paramDescription(widget.param.name)
+                        case final description when description.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 11.5,
+                          height: 14.95 / 11.5,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: widget.param.score <= 0
-                            ? '—'
-                            : widget.param.score.toStringAsFixed(1),
-                        style: TextStyle(
-                          color: color,
-                          fontFamily: 'Plus Jakarta Sans',
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                        ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0x17675AFF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      widget.param.score.toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Color(0xFF717171),
+                        fontSize: 14,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const TextSpan(
-                        text: '/5',
+                    ),
+                    Opacity(
+                      opacity: .8,
+                      child: Text(
+                        scoreLabel(widget.param.score),
                         style: TextStyle(
-                          color: MColors.inkFaint,
-                          fontFamily: 'Plus Jakarta Sans',
-                          fontSize: 13,
+                          color: rated ? color : const Color(0xFF9CA3AF),
+                          fontSize: 9,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (var star = 1; star <= 5; star++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Semantics(
+                    button: true,
+                    label: 'Rate ${widget.param.name} $star out of 5',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(99),
+                      onTap: widget.locked
+                          ? null
+                          : () => widget.onScore(star.toDouble()),
+                      child: Icon(
+                        star <= widget.param.score.round()
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: 30,
+                        color: star <= widget.param.score.round()
+                            ? const Color(0xFF0571A6)
+                            : const Color(0xFFD1D5DB),
+                      ),
+                    ),
+                  ),
+                ),
+              if (rated) ...[
+                const SizedBox(width: 4),
+                Text(
+                  scoreLabel(widget.param.score),
+                  style: const TextStyle(
+                    color: Color(0xFF0571A6),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
-            ),
-            if (_help) ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: MColors.terraTint,
-                  borderRadius: BorderRadius.circular(12),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _noteController,
+            focusNode: _noteFocusNode,
+            enabled: !widget.locked,
+            maxLines: 3,
+            minLines: 2,
+            scrollPadding: const EdgeInsets.only(bottom: 24),
+            style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
+            decoration: InputDecoration(
+              hintText: 'Add supporting feedback...',
+              hintStyle: const TextStyle(
+                color: Color(0xFF929292),
+                fontSize: 13,
+              ),
+              filled: true,
+              fillColor: const Color(0xFFFAFAFA),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              suffixIcon: IconButton(
+                tooltip: widget.listening ? 'Stop listening' : 'Dictate',
+                onPressed: widget.locked ? null : widget.onVoice,
+                icon: Icon(
+                  widget.listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  size: 19,
+                  color: widget.listening
+                      ? MColors.live
+                      : const Color(0xFF6A7282),
                 ),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFEBEBEB)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFEBEBEB)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: Color(0xFF0571A6),
+                  width: 1.4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('💡', style: TextStyle(fontSize: 11)),
+              const SizedBox(width: 6),
+              Expanded(
                 child: Text(
                   paramHelp(widget.param.name),
                   style: const TextStyle(
-                    color: MColors.inkSoft,
-                    fontSize: 13.5,
-                    height: 1.5,
+                    color: Color(0xFF929292),
+                    fontSize: 11,
+                    height: 1.45,
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: color,
-                inactiveTrackColor: MColors.line,
-                thumbColor: color,
-                overlayColor: color.withValues(alpha: .14),
-                trackHeight: 8,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
-              ),
-              child: Slider(
-                min: 1,
-                max: 5,
-                divisions: 8,
-                value: math.max(1, widget.param.score),
-                onChanged: widget.locked ? null : widget.onScore,
-              ),
-            ),
-            Text(
-              widget.param.score >= 4
-                  ? 'Exceeds expectation'
-                  : widget.param.score >= 2.5
-                  ? 'Meets expectation'
-                  : widget.param.score > 0
-                  ? 'Needs work'
-                  : 'Drag to score',
-              style: TextStyle(
-                color: widget.param.score > 0 ? color : MColors.inkFaint,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _noteController,
-              focusNode: _noteFocusNode,
-              enabled: !widget.locked,
-              maxLines: 3,
-              scrollPadding: const EdgeInsets.only(bottom: 24),
-              onChanged: (_) {},
-              decoration: _fieldDecoration(
-                'Add a note — type or record by voice…',
-                suffix: widget.listening
-                    ? Icons.mic_rounded
-                    : Icons.mic_none_rounded,
-                suffixActive: widget.listening,
-                onSuffixTap: widget.locked ? null : widget.onVoice,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FeedbackGuide extends StatefulWidget {
-  const _FeedbackGuide();
-
-  @override
-  State<_FeedbackGuide> createState() => _FeedbackGuideState();
-}
-
-class _FeedbackGuideState extends State<_FeedbackGuide> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() => _open = !_open),
-            child: Padding(
-              padding: const EdgeInsets.all(15),
-              child: Row(
-                children: [
-                  const IconBox(
-                    icon: Icons.lightbulb_outline_rounded,
-                    color: MColors.plum,
-                    tint: MColors.plumTint,
-                    size: 36,
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'What makes good feedback?',
-                      style: TextStyle(
-                        color: MColors.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _open
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: MColors.inkFaint,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_open)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                children: const [
-                  _GuideLine(
-                    'Be specific',
-                    'Point to real moments, not “lately”.',
-                  ),
-                  _GuideLine(
-                    'Balance it',
-                    'Name a strength and one thing to grow.',
-                  ),
-                  _GuideLine('Make it actionable', 'Say what to do next.'),
-                  _GuideLine('Focus on behaviour', 'Comment on what they did.'),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GuideLine extends StatelessWidget {
-  const _GuideLine(this.title, this.body);
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.check_circle_outline_rounded,
-            color: MColors.sageDeep,
-            size: 17,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(
-                  color: MColors.inkSoft,
-                  fontFamily: 'Plus Jakarta Sans',
-                  fontSize: 13.5,
-                  height: 1.45,
-                ),
-                children: [
-                  TextSpan(
-                    text: '$title. ',
-                    style: const TextStyle(
-                      color: MColors.ink,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  TextSpan(text: body),
-                ],
-              ),
-            ),
           ),
         ],
       ),
@@ -423,69 +346,6 @@ class _ConfirmSendSheet extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ComingSoonBlock extends StatelessWidget {
-  const _ComingSoonBlock({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconBox(
-          icon: icon,
-          color: MColors.terra,
-          tint: MColors.terraTint,
-          size: 76,
-        ),
-        const SizedBox(height: 18),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: MColors.ink,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          body,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: MColors.inkSoft,
-            fontSize: 14,
-            height: 1.45,
-          ),
-        ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: MColors.terraTint,
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: const Text(
-            'Coming soon',
-            style: TextStyle(
-              color: MColors.terra,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

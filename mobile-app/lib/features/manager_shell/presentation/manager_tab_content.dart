@@ -40,6 +40,7 @@ class _TabContent extends StatelessWidget {
         _GrowTab(
           key: const ValueKey('grow-tab'),
           state: state,
+          bloc: bloc,
           onOpenProfile: onOpenProfile,
           onNotifications: () => _openNotifications(context),
         ),

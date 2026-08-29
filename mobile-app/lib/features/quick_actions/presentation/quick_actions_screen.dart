@@ -5158,7 +5158,9 @@ class _IconTile extends StatelessWidget {
     width: size,
     height: size,
     decoration: BoxDecoration(
-      color: tint,
+      // The illustrated icons carry their own colour, so they sit on white;
+      // only the flat glyph icons need a tinted plate behind them.
+      color: imageAsset != null ? Colors.white : tint,
       borderRadius: BorderRadius.circular(13),
     ),
     child: imageAsset != null

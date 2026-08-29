@@ -97,8 +97,6 @@ class _ManagerScreenState extends State<ManagerScreen> {
       _bloc.add(const CloseAwardPicker());
     } else if (state.applyLeaveOpen) {
       _bloc.add(const CloseApplyLeave());
-    } else if (state.view == ManagerView.feedbackRecord) {
-      _bloc.add(const CloseFeedbackRecord());
     } else if (state.view == ManagerView.feedbackList) {
       _bloc.add(const CloseFeedbackList());
     } else if (state.view == ManagerView.leaveRequests) {
@@ -208,7 +206,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         if (state.status == ManagerLoadStatus.loading ||
             state.status == ManagerLoadStatus.initial) {
           return const Scaffold(
-            backgroundColor: MColors.bg,
+            backgroundColor: const Color(0xFFF7F7F9),
             body: Center(
               child: CircularProgressIndicator(color: MColors.terra),
             ),
@@ -218,7 +216,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         if (state.status == ManagerLoadStatus.failure ||
             state.dashboard == null) {
           return Scaffold(
-            backgroundColor: MColors.bg,
+            backgroundColor: const Color(0xFFF7F7F9),
             body: Center(
               child: Text(state.error ?? 'Could not load manager view'),
             ),
@@ -233,7 +231,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
             if (!didPop) _handleBack(state);
           },
           child: Scaffold(
-            backgroundColor: MColors.bg,
+            backgroundColor: const Color(0xFFF7F7F9),
             body: _profileOpen
                 ? _ProfileScreen(
                     session: widget.session,

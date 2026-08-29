@@ -14,11 +14,13 @@ import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
 
+// Parameter set and order come from the feedback design. These become
+// HR-configurable once the HR dashboard lands.
 const feedbackParameterNames = [
-  'Ownership Mindset',
-  'Communication Clarity',
-  'Quality of Work',
+  'Performance',
   'Collaboration',
+  'Ownership',
+  'Communication',
 ] as const;
 const recognitionCategories = new Set<RecognitionNomination['category']>([
   'artist',
@@ -47,6 +49,8 @@ export interface ManagerTeamMemberView {
   department: string;
   designation: string;
   score: number;
+  /** Overall score from the most recent *earlier* period, for the delta pill. */
+  previousScore: number | null;
   nextDate: string;
   feedbackStatus: 'pending' | 'saved' | 'sent';
   missedMonths: number;
@@ -65,6 +69,13 @@ export interface ManagerTeamMemberView {
   managerName: string | null;
   orgChart: OrgChartNode[];
   documents: TeamMemberDocumentView[];
+  /** Every sent review for this report, oldest first, for the growth timeline. */
+  history: {
+    period: string;
+    overallScore: number;
+    parameters: FeedbackParameter[];
+    sentAt: Date;
+  }[];
 }
 
 export async function getManagerWorkspace(managerUserId: string) {
@@ -90,12 +101,34 @@ export async function getManagerWorkspace(managerUserId: string) {
     .map((report) => report.employeeId)
     .filter((value): value is string => Boolean(value));
   const today = new Date().toISOString().slice(0, 10);
-  const [currentFeedback, latestSent, nominations, nominationHistory, ownFeedbackHistory, todaysAttendance] =
-    await Promise.all([
+  const [
+    currentFeedback,
+    latestSent,
+    previousSent,
+    nominations,
+    nominationHistory,
+    ownFeedbackHistory,
+    reportHistory,
+    todaysAttendance,
+  ] = await Promise.all([
       feedbackRecords().find({ managerUserId, employeeUserId: { $in: reportIds }, period }).toArray(),
       feedbackRecords()
         .aggregate([
           { $match: { managerUserId, employeeUserId: { $in: reportIds }, status: 'sent' } },
+          { $sort: { period: -1 } },
+          { $group: { _id: '$employeeUserId', record: { $first: '$$ROOT' } } },
+        ])
+        .toArray(),
+      feedbackRecords()
+        .aggregate([
+          {
+            $match: {
+              managerUserId,
+              employeeUserId: { $in: reportIds },
+              status: 'sent',
+              period: { $lt: period },
+            },
+          },
           { $sort: { period: -1 } },
           { $group: { _id: '$employeeUserId', record: { $first: '$$ROOT' } } },
         ])
@@ -110,6 +143,12 @@ export async function getManagerWorkspace(managerUserId: string) {
         .find({ employeeUserId: managerUserId, status: 'sent' })
         .sort({ period: 1 })
         .toArray(),
+      reportIds.length
+        ? feedbackRecords()
+            .find({ managerUserId, employeeUserId: { $in: reportIds }, status: 'sent' })
+            .sort({ period: 1 })
+            .toArray()
+        : Promise.resolve([]),
       reportIds.length
         ? attendanceRecords()
             .find({
@@ -152,6 +191,18 @@ export async function getManagerWorkspace(managerUserId: string) {
       return [record.employeeUserId, record] as const;
     }),
   );
+  const historyByEmployee = new Map<string, typeof reportHistory>();
+  for (const record of reportHistory) {
+    const list = historyByEmployee.get(record.employeeUserId) ?? [];
+    list.push(record);
+    historyByEmployee.set(record.employeeUserId, list);
+  }
+  const previousByEmployee = new Map(
+    previousSent.map((value) => {
+      const record = value.record as { employeeUserId: string; overallScore: number };
+      return [record.employeeUserId, record.overallScore] as const;
+    }),
+  );
   const nextDate = endOfCurrentMonth().toISOString().slice(0, 10);
   const team: ManagerTeamMemberView[] = reports.map((report) => {
     const current = currentByEmployee.get(report.userId);
@@ -163,6 +214,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       department: report.department ?? report.designation ?? 'Team',
       designation: report.designation ?? '',
       score: current?.overallScore ?? latest?.overallScore ?? 0,
+      previousScore: previousByEmployee.get(report.userId) ?? null,
       nextDate,
       feedbackStatus: current?.status ?? 'pending',
       missedMonths: current ? 0 : monthsSince(latest?.period, period),
@@ -181,6 +233,12 @@ export async function getManagerWorkspace(managerUserId: string) {
       // Reporting line from the top of the chain down to this report. The chain
       // is walked from `managerUserId` links already loaded above.
       orgChart: buildOrgChart(report, manager, approver),
+      history: (historyByEmployee.get(report.userId) ?? []).map((record) => ({
+        period: record.period,
+        overallScore: Number(record.overallScore.toFixed(1)),
+        parameters: record.parameters,
+        sentAt: record.sentAt ?? record.updatedAt,
+      })),
       documents: (report.documents ?? []).map((document) => ({
         name: document.name,
         url: document.url,

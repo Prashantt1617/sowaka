@@ -261,8 +261,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
                 const SizedBox(height: 22),
                 _GiveFeedbackButton(
                   onTap: () {
-                    bloc.add(OpenFeedbackRecord(member.id));
-                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            _FeedbackFormPage(bloc: bloc, memberId: member.id),
+                      ),
+                    );
                   },
                 ),
               ],
@@ -1856,4 +1860,363 @@ class _ProfileColors {
   static const gold = Color(0xFFC98A2E);
   static const goldTint = Color(0xFFF4ECDD);
   static const sage = Color(0xFF7E8B6E);
+}
+
+/// Manager's read-only growth timeline for one report: overall score with the
+/// trend chart, then a card per review period. The current period offers the
+/// "Give Feedback" action that opens the rating form.
+class _EmployeeGrowthPage extends StatelessWidget {
+  const _EmployeeGrowthPage({
+    required this.name,
+    required this.designation,
+    required this.history,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    this.memberId,
+  });
+
+  final String name;
+  final String designation;
+  final List<GrowthRecord> history;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+
+  /// Null when the page shows the signed-in user's own growth: you cannot
+  /// review yourself, so the "feedback is due" action is hidden.
+  final int? memberId;
+
+  static String _currentPeriod() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ManagerState>(
+      stream: bloc.stream,
+      initialData: bloc.state,
+      builder: (context, snapshot) {
+        final live = snapshot.data?.dashboard;
+        // Prefer live state so a review sent from here appears immediately.
+        final current = memberId == null
+            ? (live?.growthHistory ?? history)
+            : (live?.team
+                      .where((member) => member.id == memberId)
+                      .firstOrNull
+                      ?.history ??
+                  history);
+        return _build(context, current);
+      },
+    );
+  }
+
+  Widget _build(BuildContext context, List<GrowthRecord> history) {
+    final values = history.map((record) => record.overallScore).toList();
+    final latest = history.isEmpty ? null : history.last;
+    final overall = latest?.overallScore ?? 0;
+    final previous = history.length >= 2
+        ? history[history.length - 2].overallScore
+        : null;
+    final period = _currentPeriod();
+    final currentDone = history.any((record) => record.period == period);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
+      body: Column(
+        children: [
+          AppHomeHeader(
+            profileAction: AvatarBadge(
+              initial: data.managerInitial,
+              index: 1,
+              size: 30,
+            ),
+            onNotifications: onNotifications,
+            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Quick create coming soon')),
+            ),
+          ),
+          _GrowthPageTopBar(name: name, designation: designation),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              children: [
+                _OverallScoreCard(
+                  overall: overall,
+                  previousScore: previous,
+                  showAveragesNote: true,
+                ),
+                if (history.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: MColors.line),
+                    ),
+                    child: _GrowthChart(
+                      records: history,
+                      values: values,
+                      color: const Color(0xFF0571A6),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                if (!currentDone && memberId != null)
+                  _FeedbackDuePeriodCard(
+                    period: period,
+                    onGiveFeedback: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            _FeedbackFormPage(bloc: bloc, memberId: memberId!),
+                      ),
+                    ),
+                  ),
+                for (final (index, record) in history.reversed.indexed) ...[
+                  const SizedBox(height: 12),
+                  // Newest period opens by default, as in the design.
+                  _GrowthMonthCard(
+                    record: record,
+                    initiallyExpanded: index == 0,
+                  ),
+                ],
+                if (history.isEmpty && currentDone) ...[
+                  const SizedBox(height: 40),
+                  const Center(
+                    child: Text(
+                      'No reviews have been sent yet.',
+                      style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GrowthPageTopBar extends StatelessWidget {
+  const _GrowthPageTopBar({
+    required this.name,
+    required this.designation,
+    this.onBack,
+  });
+
+  final String name;
+  final String designation;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
+      decoration: const BoxDecoration(color: Color(0xFFF7F7F9)),
+      child: Row(
+        children: [
+          RoundIconButton(
+            onTap: onBack ?? () => Navigator.of(context).pop(),
+            child: SvgPicture.asset(
+              'assets/icons/chevron_left_small.svg',
+              width: 18,
+              height: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF222222),
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  designation,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The amber "feedback is due" card for the period that has no review yet.
+class _FeedbackDuePeriodCard extends StatelessWidget {
+  const _FeedbackDuePeriodCard({
+    required this.period,
+    required this.onGiveFeedback,
+  });
+
+  final String period;
+  final VoidCallback onGiveFeedback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5C86B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _periodTitle(period),
+                  style: const TextStyle(
+                    color: MColors.ink,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F1F1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '- / 5',
+                  style: TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Feedback is due for this month',
+            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: const Color(0xFFE8862B),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onGiveFeedback,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  child: Text(
+                    'Give Feedback',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The feedback form as a pushed route. Grow and the team-member profile both
+/// open this, so giving feedback never switches tabs or changes what the
+/// Manage tab is showing underneath.
+class _FeedbackFormPage extends StatefulWidget {
+  const _FeedbackFormPage({required this.bloc, required this.memberId});
+
+  final ManagerBloc bloc;
+  final int memberId;
+
+  @override
+  State<_FeedbackFormPage> createState() => _FeedbackFormPageState();
+}
+
+class _FeedbackFormPageState extends State<_FeedbackFormPage> {
+  StreamSubscription<ManagerState>? _subscription;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Loads the member's parameters into bloc state for the form to edit.
+    widget.bloc.add(OpenFeedbackRecord(widget.memberId));
+    // Saving or sending clears the selected member on the bloc. That is the
+    // signal the form is finished, so close the route rather than sitting on a
+    // spinner waiting for a member that will never come back.
+    _subscription = widget.bloc.stream.listen((state) {
+      if (!mounted) return;
+      if (state.selectedMember != null) {
+        _loaded = true;
+        return;
+      }
+      if (_loaded && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Cancel first: clearing the draft below would otherwise re-enter the
+    // listener and try to pop a route that is already going away.
+    _subscription?.cancel();
+    widget.bloc.add(const CloseFeedbackRecord());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ManagerState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? widget.bloc.state;
+        if (state.selectedMember == null) {
+          // Either still loading, or already persisted and about to pop.
+          return const Scaffold(
+            backgroundColor: Color(0xFFF7F7F9),
+            body: Center(
+              child: CircularProgressIndicator(color: MColors.terra),
+            ),
+          );
+        }
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F7F9),
+          body: _RecordFeedback(
+            state: state,
+            bloc: widget.bloc,
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        );
+      },
+    );
+  }
 }

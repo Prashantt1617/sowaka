@@ -310,89 +310,6 @@ class ActionButton extends StatelessWidget {
   }
 }
 
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
-
-  final FeedbackStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final spec = switch (status) {
-      FeedbackStatus.pending => (
-        'Not started',
-        MColors.inkFaint,
-        const Color(0xFFEFEAE2),
-      ),
-      FeedbackStatus.saved => ('Ready to send', MColors.gold, MColors.goldTint),
-      FeedbackStatus.sent => ('Sent', MColors.sageDeep, MColors.sageTint),
-      FeedbackStatus.missed => (
-        'Missed',
-        MColors.live,
-        const Color(0xFFFBE6E3),
-      ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: spec.$3,
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Text(
-        spec.$1,
-        style: TextStyle(
-          color: spec.$2,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-InputDecoration _fieldDecoration(
-  String hint, {
-  IconData? suffix,
-  VoidCallback? onSuffixTap,
-  bool suffixActive = false,
-}) {
-  return InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(color: MColors.inkFaint),
-    suffixIcon: suffix == null
-        ? null
-        : IconButton(
-            tooltip: suffixActive ? 'Stop listening' : 'Dictate feedback',
-            onPressed: onSuffixTap,
-            icon: Icon(
-              suffix,
-              color: suffixActive ? MColors.live : MColors.terra,
-              size: 19,
-            ),
-          ),
-    filled: true,
-    fillColor: Colors.white,
-    contentPadding: const EdgeInsets.all(13),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.line, width: 1.5),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.line, width: 1.5),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.terra, width: 1.5),
-    ),
-  );
-}
-
-int _daysUntil(DateTime today, DateTime date) {
-  final a = DateTime(today.year, today.month, today.day);
-  final b = DateTime(date.year, date.month, date.day);
-  return b.difference(a).inDays;
-}
-
 String shortDate(DateTime date) {
   const months = [
     'Jan',
@@ -456,6 +373,15 @@ Color scoreColor(double score) {
   return MColors.live;
 }
 
+/// Qualitative word shown under a parameter score, as in the feedback design.
+String scoreLabel(double score) {
+  if (score <= 0) return '-';
+  if (score >= 4.25) return 'Excellent';
+  if (score >= 3.5) return 'Strong';
+  if (score >= 2.5) return 'On track';
+  return 'Needs work';
+}
+
 (Color, Color) leavePalette(String type) {
   return switch (type) {
     'Sick' => (MColors.live, const Color(0xFFFBE6E3)),
@@ -483,13 +409,26 @@ IconData awardIcon(String icon) {
   };
 }
 
+/// One-line copy under each parameter name on the feedback form. Held here
+/// rather than on the API: it is static presentation copy, not record data.
+/// Falls back to an empty string so an unknown parameter simply shows no line.
+String paramDescription(String name) {
+  return switch (name) {
+    'Performance' => 'Delivers quality work consistently and on time',
+    'Collaboration' => 'Works well with teammates and cross-team',
+    'Ownership' => 'Takes responsibility and follows through',
+    'Communication' => 'Clarity and impact in interactions',
+    _ => '',
+  };
+}
+
+/// Longer guidance revealed by the info toggle on a parameter card.
 String paramHelp(String name) {
   return switch (name) {
-    'Ownership Mindset' =>
+    'Ownership' =>
       'Takes responsibility end-to-end, unblocks themselves, and follows through without being chased.',
-    'Communication Clarity' =>
-      'Shares context clearly and on time so others can act.',
-    'Quality of Work' =>
+    'Communication' => 'Shares context clearly and on time so others can act.',
+    'Performance' =>
       'Output is accurate, thorough and reliable, with few rework loops.',
     'Collaboration' =>
       'Works well across functions, gives and receives feedback, and lifts the team.',
@@ -525,4 +464,48 @@ class MColors {
   static const plum = Color(0xFF8A6AA0);
   static const plumTint = Color(0xFFEEE6F0);
   static const teal = Color(0xFF4F8C89);
+}
+
+InputDecoration _fieldDecoration(
+  String hint, {
+  IconData? suffix,
+  VoidCallback? onSuffixTap,
+  bool suffixActive = false,
+}) {
+  return InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: MColors.inkFaint),
+    suffixIcon: suffix == null
+        ? null
+        : IconButton(
+            tooltip: suffixActive ? 'Stop listening' : 'Dictate feedback',
+            onPressed: onSuffixTap,
+            icon: Icon(
+              suffix,
+              color: suffixActive ? MColors.live : MColors.terra,
+              size: 19,
+            ),
+          ),
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding: const EdgeInsets.all(13),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.line, width: 1.5),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.line, width: 1.5),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.terra, width: 1.5),
+    ),
+  );
+}
+
+int _daysUntil(DateTime today, DateTime date) {
+  final a = DateTime(today.year, today.month, today.day);
+  final b = DateTime(date.year, date.month, date.day);
+  return b.difference(a).inDays;
 }

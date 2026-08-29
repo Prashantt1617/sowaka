@@ -24,7 +24,6 @@ class _ManageContent extends StatelessWidget {
         onNotifications: onNotifications,
       ),
       ManagerView.feedbackList => _FeedbackList(state: state, bloc: bloc),
-      ManagerView.feedbackRecord => _RecordFeedback(state: state, bloc: bloc),
       ManagerView.leaveRequests => _RequestList(
         state: state,
         bloc: bloc,
@@ -555,7 +554,12 @@ class _FeedbackRows extends StatelessWidget {
             ? 'Due in ${days}d'
             : null;
         return InkWell(
-          onTap: () => bloc.add(OpenFeedbackRecord(member.id)),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  _FeedbackFormPage(bloc: bloc, memberId: member.id),
+            ),
+          ),
           child: Container(
             color: overdue ? const Color(0xFFFBF2E8) : Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
@@ -656,7 +660,12 @@ class _GivenFeedbackRows extends StatelessWidget {
       children: members.indexed.map((entry) {
         final member = entry.$2;
         return InkWell(
-          onTap: () => bloc.add(OpenFeedbackRecord(member.id)),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  _FeedbackFormPage(bloc: bloc, memberId: member.id),
+            ),
+          ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
             decoration: entry.$1 == 0
@@ -1083,108 +1092,37 @@ class _FeedbackScoreRing extends StatelessWidget {
   }
 }
 
-class _OwnLeaveCard extends StatelessWidget {
-  const _OwnLeaveCard({required this.leave});
-
-  final LeaveRequest leave;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color, icon) = switch (leave.decision) {
-      LeaveDecision.approved => (
-        'Approved',
-        MColors.sageDeep,
-        Icons.check_circle_rounded,
-      ),
-      LeaveDecision.declined => (
-        'Declined',
-        MColors.live,
-        Icons.cancel_rounded,
-      ),
-      LeaveDecision.pending => (
-        'Pending',
-        MColors.gold,
-        Icons.schedule_rounded,
-      ),
-    };
-    return PressableCard(
-      padding: const EdgeInsets.all(15),
-      child: Row(
-        children: [
-          IconBox(
-            icon: Icons.beach_access_outlined,
-            color: leavePalette(leave.type).$1,
-            tint: leavePalette(leave.type).$2,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${leave.type} · ${leave.days} ${leave.days == 1 ? 'day' : 'days'}',
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${shortDate(leave.start)}–${shortDate(leave.end)}',
-                  style: const TextStyle(
-                    color: MColors.inkSoft,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 5),
-          Text(
-            leave.decidedByAdmin && leave.decision != LeaveDecision.pending
-                ? '$label by admin'
-                : label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _RecordFeedback extends StatefulWidget {
-  const _RecordFeedback({required this.state, required this.bloc});
+  const _RecordFeedback({
+    required this.state,
+    required this.bloc,
+    this.onClose,
+  });
 
   final ManagerState state;
   final ManagerBloc bloc;
+
+  /// Set when the form is a pushed route (opened from Grow or a profile) so
+  /// closing pops instead of resetting the Manage tab's view.
+  final VoidCallback? onClose;
 
   @override
   State<_RecordFeedback> createState() => _RecordFeedbackState();
 }
 
 class _RecordFeedbackState extends State<_RecordFeedback> {
-  late final PageController _pageController;
   final stt.SpeechToText _speech = stt.SpeechToText();
-  int _tab = 0;
-  int _page = 0;
   bool _speechInitialized = false;
   String? _listeningField;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: .88);
   }
 
   @override
   void dispose() {
     _speech.cancel();
-    _pageController.dispose();
     super.dispose();
   }
 
@@ -1259,276 +1197,110 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final locked =
         member.status == FeedbackStatus.sent ||
         member.status == FeedbackStatus.missed;
-    final complete =
-        state.recordParams.isNotEmpty &&
-        state.recordParams.every((item) => item.score > 0);
-    final scored = state.recordParams.where((item) => item.score > 0).toList();
+    final scored = state.recordParams.where((item) => item.score > 0);
+    final complete = scored.length == state.recordParams.length;
     final overall = scored.isEmpty
         ? 0.0
         : scored.fold<double>(0, (sum, item) => sum + item.score) /
               state.recordParams.length;
-    final overallColor = scoreColor(overall <= 0 ? 1 : overall);
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
-    return ColoredBox(
-      key: const ValueKey('record-feedback'),
-      color: MColors.bg,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      RoundIconButton(
-                        icon: Icons.chevron_left_rounded,
-                        onTap: () => bloc.add(const CloseFeedbackRecord()),
-                      ),
-                      const SizedBox(width: 12),
-                      AvatarBadge(
-                        initial: member.initial,
-                        index: member.avatarIndex,
-                        size: 42,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              member.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: MColors.ink,
-                                fontSize: 21,
-                                height: 1.1,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -.3,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${member.team} · 1-on-1',
-                              style: const TextStyle(
-                                color: MColors.inkSoft,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ],
+    return Column(
+      children: [
+        AppHomeHeader(
+          profileAction: AvatarBadge(
+            initial: member.initial,
+            index: member.avatarIndex,
+            size: 30,
+          ),
+          onNotifications: () {},
+          onQuickCreate: () {},
+        ),
+        _GrowthPageTopBar(
+          name: member.name,
+          designation: _periodTitle(_EmployeeGrowthPage._currentPeriod()),
+          onBack: widget.onClose,
+        ),
+        Expanded(
+          child: state.recordParams.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No feedback parameters configured.',
+                    style: TextStyle(color: MColors.inkSoft),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  children: [
+                    _OverallScoreCard(
+                      overall: overall,
+                      previousScore: member.previousScore,
+                    ),
+                    const SizedBox(height: 12),
+                    for (final (index, param) in state.recordParams.indexed)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ParamCard(
+                          key: ValueKey(
+                            'feedback-param-${member.id}-${param.name}',
+                          ),
+                          param: param,
+                          locked: locked,
+                          listening: _listeningField == 'param-$index',
+                          onScore: (value) =>
+                              bloc.add(UpdateFeedbackScore(index, value)),
+                          onNote: (value) =>
+                              bloc.add(UpdateFeedbackNote(index, value)),
+                          onVoice: () => _toggleSpeech(
+                            field: 'param-$index',
+                            currentText: param.note,
+                            onText: (value) =>
+                                bloc.add(UpdateFeedbackNote(index, value)),
+                          ),
                         ),
                       ),
-                    ],
+                  ],
+                ),
+        ),
+        if (!locked && !keyboardOpen && state.recordParams.isNotEmpty)
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: MColors.line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ActionButton(
+                      label: 'Save',
+                      icon: Icons.save_outlined,
+                      background: Colors.white,
+                      foreground: MColors.ink,
+                      border: MColors.line,
+                      onTap: () => bloc.add(const SaveFeedback()),
+                    ),
                   ),
-                  const SizedBox(height: 18),
-                  _FeedbackModeSwitch(
-                    selected: _tab,
-                    onChanged: (value) => setState(() => _tab = value),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ActionButton(
+                      label: 'Send to ${member.name.split(' ').first}',
+                      icon: Icons.send_rounded,
+                      background: complete ? MColors.terra : MColors.line,
+                      foreground: complete ? Colors.white : MColors.inkFaint,
+                      onTap: complete
+                          ? () => _confirmSend(context, bloc, member)
+                          : null,
+                    ),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: _tab == 0
-                  ? member.status == FeedbackStatus.sent
-                        ? _FeedbackGivenSuccess(member: member)
-                        : Column(
-                            children: [
-                              const SizedBox(height: 17),
-                              const Text(
-                                'OVERALL SCORE',
-                                style: TextStyle(
-                                  color: MColors.inkFaint,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.35,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                width: 88,
-                                height: 88,
-                                decoration: BoxDecoration(
-                                  color: overall == 0
-                                      ? const Color(0xFFD9CDBC)
-                                      : overallColor,
-                                  shape: BoxShape.circle,
-                                ),
-                                alignment: Alignment.center,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      overall == 0
-                                          ? '—'
-                                          : overall.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 34,
-                                        height: .95,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const Text(
-                                      'out of 5',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Expanded(
-                                child: state.recordParams.isEmpty
-                                    ? const Center(
-                                        child: Text(
-                                          'No feedback parameters configured.',
-                                          style: TextStyle(
-                                            color: MColors.inkSoft,
-                                          ),
-                                        ),
-                                      )
-                                    : PageView.builder(
-                                        controller: _pageController,
-                                        itemCount: state.recordParams.length,
-                                        onPageChanged: (value) =>
-                                            setState(() => _page = value),
-                                        itemBuilder: (context, index) => Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 3,
-                                          ),
-                                          child: _ParamCard(
-                                            key: ValueKey(
-                                              'feedback-param-${member.id}-${state.recordParams[index].name}',
-                                            ),
-                                            param: state.recordParams[index],
-                                            locked: locked,
-                                            listening:
-                                                _listeningField ==
-                                                'param-$index',
-                                            onScore: (value) => bloc.add(
-                                              UpdateFeedbackScore(index, value),
-                                            ),
-                                            onNote: (value) => bloc.add(
-                                              UpdateFeedbackNote(index, value),
-                                            ),
-                                            onVoice: () => _toggleSpeech(
-                                              field: 'param-$index',
-                                              currentText: state
-                                                  .recordParams[index]
-                                                  .note,
-                                              onText: (value) => bloc.add(
-                                                UpdateFeedbackNote(
-                                                  index,
-                                                  value,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                              ),
-                              if (state.recordParams.length > 1)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 8,
-                                    bottom: 8,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: List.generate(
-                                      state.recordParams.length,
-                                      (index) => AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 180,
-                                        ),
-                                        width: index == _page ? 18 : 6,
-                                        height: 6,
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: index == _page
-                                              ? MColors.terra
-                                              : const Color(0xFFD9CDBC),
-                                          borderRadius: BorderRadius.circular(
-                                            99,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              if (!locked && !keyboardOpen)
-                                SafeArea(
-                                  top: false,
-                                  bottom: false,
-                                  child: Container(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      10,
-                                      16,
-                                      14,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      border: Border(
-                                        top: BorderSide(color: MColors.line),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: ActionButton(
-                                            label: 'Save',
-                                            icon: Icons.save_outlined,
-                                            background: Colors.white,
-                                            foreground: MColors.ink,
-                                            border: MColors.line,
-                                            onTap: () =>
-                                                bloc.add(const SaveFeedback()),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          flex: 2,
-                                          child: ActionButton(
-                                            label:
-                                                'Send to ${member.name.split(' ').first}',
-                                            icon: Icons.send_rounded,
-                                            background: complete
-                                                ? MColors.terra
-                                                : MColors.line,
-                                            foreground: complete
-                                                ? Colors.white
-                                                : MColors.inkFaint,
-                                            onTap: complete
-                                                ? () => _confirmSend(
-                                                    context,
-                                                    bloc,
-                                                    member,
-                                                  )
-                                                : null,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          )
-                  : _PastFeedbackTab(member: member),
-            ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 
@@ -1547,1034 +1319,116 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
   }
 }
 
-class _FeedbackModeSwitch extends StatelessWidget {
-  const _FeedbackModeSwitch({required this.selected, required this.onChanged});
-
-  final int selected;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(4),
-    decoration: BoxDecoration(
-      color: const Color(0xFFEAE0D2),
-      borderRadius: BorderRadius.circular(13),
-    ),
-    child: Row(
-      children: List.generate(2, (index) {
-        final active = selected == index;
-        return Expanded(
-          child: InkWell(
-            onTap: () => onChanged(index),
-            borderRadius: BorderRadius.circular(11),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              decoration: BoxDecoration(
-                color: active ? Colors.white : Colors.transparent,
-                borderRadius: BorderRadius.circular(11),
-                boxShadow: active
-                    ? const [
-                        BoxShadow(
-                          color: Color(0x1F462D1C),
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Text(
-                index == 0 ? 'Give feedback' : 'Past feedback',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: active ? MColors.ink : MColors.inkSoft,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-}
-
-class _FeedbackGivenSuccess extends StatelessWidget {
-  const _FeedbackGivenSuccess({required this.member});
-
-  final TeamMember member;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 116,
-              height: 116,
-              decoration: const BoxDecoration(
-                color: MColors.sageTint,
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Container(
-                width: 74,
-                height: 74,
-                decoration: const BoxDecoration(
-                  color: MColors.sageDeep,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 42,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Feedback given successfully',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: MColors.ink,
-                fontSize: 24,
-                height: 1.15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${member.name.split(' ').first} can now view this feedback in their growth history.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: MColors.inkSoft,
-                fontSize: 14,
-                height: 1.45,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PastFeedbackTab extends StatelessWidget {
-  const _PastFeedbackTab({required this.member});
-
-  final TeamMember member;
-
-  @override
-  Widget build(BuildContext context) {
-    final scored = member.params.where((item) => item.score > 0).toList();
-    final overall = scored.isEmpty
-        ? member.score
-        : scored.fold<double>(0, (sum, item) => sum + item.score) /
-              scored.length;
-    final color = scoreColor(overall <= 0 ? 1 : overall);
-    final hasFeedback =
-        member.status == FeedbackStatus.sent || scored.isNotEmpty;
-
-    if (!hasFeedback) {
-      return const SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(20, 16, 20, 30),
-        child: _EmptyPastFeedback(),
-      );
-    }
-    final record = GrowthRecord(
-      period:
-          '${member.next.year}-${member.next.month.toString().padLeft(2, '0')}',
-      overallScore: overall,
-      parameters: member.params,
-      sentAt: member.next,
-      managerName: 'Manager',
-    );
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
-      children: [
-        const Text(
-          'Trend',
-          style: TextStyle(
-            color: MColors.ink,
-            fontSize: 18,
-            letterSpacing: -0.1,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _GrowthChart(records: [record], values: [overall], color: color),
-        const SizedBox(height: 22),
-        const _GrowthSectionLabel('MONTH BY MONTH'),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 205,
-          child: _GrowthMonthCard(record: record, parameter: null),
-        ),
-        const SizedBox(height: 22),
-        const Text(
-          'Full history is retained ✦',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: MColors.inkFaint, fontSize: 12),
-        ),
-      ],
-    );
-  }
-}
-
-// Retained temporarily while older deep links are migrated to the tabbed flow.
-// ignore: unused_element
-class _LegacyRecordFeedback extends StatelessWidget {
-  const _LegacyRecordFeedback({required this.state, required this.bloc});
-
-  final ManagerState state;
-  final ManagerBloc bloc;
-
-  @override
-  Widget build(BuildContext context) {
-    final member = state.selectedMember;
-    if (member == null) {
-      return const SizedBox.shrink();
-    }
-    final locked =
-        member.status == FeedbackStatus.sent ||
-        member.status == FeedbackStatus.missed;
-    final complete = state.recordParams.every((item) => item.score > 0);
-    final overall = state.recordParams.isEmpty
-        ? 0.0
-        : state.recordParams.fold<double>(0, (sum, item) => sum + item.score) /
-              state.recordParams.length;
-    final overallColor = scoreColor(overall == 0 ? 1 : overall);
-    final avatarColor = avatarColors[member.avatarIndex % avatarColors.length];
-
-    return Stack(
-      key: const ValueKey('record-feedback'),
-      children: [
-        Column(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                  avatarColor.withValues(alpha: .12),
-                  MColors.bg,
-                ),
-                border: const Border(bottom: BorderSide(color: MColors.line)),
-              ),
-              padding: const EdgeInsets.fromLTRB(18, 52, 18, 14),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      RoundIconButton(
-                        icon: Icons.chevron_left_rounded,
-                        onTap: () => bloc.add(const CloseFeedbackRecord()),
-                      ),
-                      _StatusPill(status: member.status),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      AvatarBadge(
-                        initial: member.initial,
-                        index: member.avatarIndex,
-                        size: 58,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              member.name,
-                              style: const TextStyle(
-                                color: MColors.ink,
-                                fontSize: 25,
-                                height: 1.1,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${member.team} · 1-on-1',
-                              style: const TextStyle(
-                                color: MColors.inkSoft,
-                                fontSize: 14.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          const Text(
-                            'OVERALL',
-                            style: TextStyle(
-                              color: MColors.inkFaint,
-                              fontSize: 10,
-                              letterSpacing: 1.1,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: overall == 0
-                                      ? '—'
-                                      : overall.toStringAsFixed(1),
-                                  style: TextStyle(
-                                    color: overallColor,
-                                    fontFamily: 'Plus Jakarta Sans',
-                                    fontSize: 38,
-                                    height: .9,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const TextSpan(
-                                  text: '/5',
-                                  style: TextStyle(
-                                    color: MColors.inkFaint,
-                                    fontFamily: 'Plus Jakarta Sans',
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  PressableCard(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => _PastFeedbackScreen(member: member),
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        IconBox(
-                          icon: Icons.show_chart_rounded,
-                          color: avatarColor,
-                          tint: avatarColor.withValues(alpha: .14),
-                          size: 38,
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Past Feedbacks',
-                                style: TextStyle(
-                                  color: MColors.ink,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'View Journey',
-                                style: TextStyle(
-                                  color: MColors.inkSoft,
-                                  fontSize: 12.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right_rounded, color: avatarColor),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(16, 18, 16, locked ? 34 : 124),
-                children: [
-                  if (!locked) const _FeedbackGuide(),
-                  if (!locked) const SizedBox(height: 18),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      'Parameters',
-                      style: TextStyle(
-                        color: MColors.ink,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...state.recordParams.indexed.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _ParamCard(
-                        param: entry.$2,
-                        locked: locked,
-                        listening: false,
-                        onScore: (value) =>
-                            bloc.add(UpdateFeedbackScore(entry.$1, value)),
-                        onNote: (value) =>
-                            bloc.add(UpdateFeedbackNote(entry.$1, value)),
-                        onVoice: () {},
-                      ),
-                    );
-                  }),
-                  PressableCard(
-                    color: Colors.transparent,
-                    borderColor: MColors.line,
-                    dashed: true,
-                    padding: const EdgeInsets.all(14),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.add_rounded,
-                          color: MColors.inkSoft,
-                          size: 18,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Add / edit parameters',
-                          style: TextStyle(
-                            color: MColors.inkSoft,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      'Anything else',
-                      style: TextStyle(
-                        color: MColors.ink,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  PressableCard(
-                    padding: const EdgeInsets.all(17),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Additional feedback',
-                          style: TextStyle(
-                            color: MColors.ink,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        const Text(
-                          "Context, wins or concerns the parameters above don't capture.",
-                          style: TextStyle(
-                            color: MColors.inkSoft,
-                            fontSize: 13,
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          initialValue: state.recordExtra,
-                          enabled: !locked,
-                          maxLines: 4,
-                          onChanged: (value) =>
-                              bloc.add(UpdateFeedbackExtra(value)),
-                          decoration: _fieldDecoration(
-                            "e.g. Took on the on-call rotation when the team was short-staffed…",
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        if (!locked)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              top: false,
-              bottom: false,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: MColors.line)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ActionButton(
-                        label: 'Save',
-                        icon: Icons.save_outlined,
-                        background: Colors.white,
-                        foreground: MColors.ink,
-                        border: MColors.line,
-                        onTap: () => bloc.add(const SaveFeedback()),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: ActionButton(
-                        label: 'Send to ${member.name.split(' ').first}',
-                        icon: Icons.send_rounded,
-                        background: complete ? MColors.terra : MColors.line,
-                        foreground: complete ? Colors.white : MColors.inkFaint,
-                        onTap: complete
-                            ? () => _confirmSend(context, bloc, member)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  void _confirmSend(BuildContext context, ManagerBloc bloc, TeamMember member) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _ConfirmSendSheet(
-          member: member,
-          onSend: () {
-            Navigator.of(context).pop();
-            bloc.add(const SendFeedback());
-          },
-        );
-      },
-    );
-  }
-}
-
-class _PastFeedbackScreen extends StatelessWidget {
-  const _PastFeedbackScreen({required this.member});
-
-  final TeamMember member;
-
-  @override
-  Widget build(BuildContext context) {
-    final scored = member.params.where((item) => item.score > 0).toList();
-    final overall = scored.isEmpty
-        ? member.score
-        : scored.fold<double>(0, (sum, item) => sum + item.score) /
-              scored.length;
-    final color = scoreColor(overall <= 0 ? 1 : overall);
-    final hasFeedback =
-        member.status == FeedbackStatus.sent || scored.isNotEmpty;
-
-    return Scaffold(
-      backgroundColor: MColors.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      RoundIconButton(
-                        icon: Icons.chevron_left_rounded,
-                        onTap: () => Navigator.of(context).pop(),
-                      ),
-                      const SizedBox(width: 12),
-                      AvatarBadge(
-                        initial: member.initial,
-                        index: member.avatarIndex,
-                        size: 42,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              member.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: MColors.ink,
-                                fontSize: 21,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -.3,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${member.team} · 1-on-1',
-                              style: const TextStyle(
-                                color: MColors.inkSoft,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAE0D2),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => Navigator.of(context).pop(),
-                            borderRadius: BorderRadius.circular(11),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 9),
-                              child: Text(
-                                'Give feedback',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: MColors.inkSoft,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(11),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x1F462D1C),
-                                  blurRadius: 3,
-                                  offset: Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                            child: const Text(
-                              'Past feedback',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: MColors.ink,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
-                children: [
-                  if (!hasFeedback)
-                    const _EmptyPastFeedback()
-                  else ...[
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: MColors.line),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Text(
-                                'TREND',
-                                style: TextStyle(
-                                  color: MColors.inkFaint,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'overall, month by month',
-                                style: TextStyle(
-                                  color: MColors.inkSoft,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                overall.toStringAsFixed(1),
-                                style: TextStyle(
-                                  color: color,
-                                  fontSize: 42,
-                                  height: .9,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 2),
-                                child: Text(
-                                  '/5',
-                                  style: TextStyle(
-                                    color: MColors.inkFaint,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 11,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDEEBE9),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(
-                                      Icons.trending_up_rounded,
-                                      size: 16,
-                                      color: MColors.teal,
-                                    ),
-                                    SizedBox(width: 5),
-                                    Text(
-                                      'Latest',
-                                      style: TextStyle(
-                                        color: MColors.teal,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(99),
-                            child: LinearProgressIndicator(
-                              value: (overall / 5).clamp(0.0, 1.0),
-                              minHeight: 8,
-                              color: color,
-                              backgroundColor: MColors.line,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _PastFeedbackMonthCard(
-                      member: member,
-                      overall: overall,
-                      color: color,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Full history is retained ✦',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: MColors.inkFaint, fontSize: 12),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyPastFeedback extends StatelessWidget {
-  const _EmptyPastFeedback();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 96),
-    child: Column(
-      children: [
-        const Icon(Icons.show_chart_rounded, size: 42, color: MColors.inkFaint),
-        const SizedBox(height: 14),
-        const Text(
-          'No past feedback yet',
-          style: TextStyle(
-            color: MColors.ink,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Sent feedback will build this journey over time.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
-        ),
-      ],
-    ),
-  );
-}
-
-class _PastFeedbackMonthCard extends StatelessWidget {
-  const _PastFeedbackMonthCard({
-    required this.member,
+/// Overall score header on the feedback form: the running average of the
+/// parameter scores, plus how it moved against the previous review period.
+class _OverallScoreCard extends StatelessWidget {
+  const _OverallScoreCard({
     required this.overall,
-    required this.color,
+    required this.previousScore,
+    this.showAveragesNote = false,
   });
 
-  final TeamMember member;
   final double overall;
-  final Color color;
+  final double? previousScore;
 
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: MColors.line),
-    ),
-    padding: const EdgeInsets.all(15),
-    child: Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${_monthName(member.next.month)} ${member.next.year}',
-                    style: const TextStyle(
-                      color: MColors.ink,
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    overall >= 4
-                        ? 'Exceeds expectation'
-                        : overall >= 2.5
-                        ? 'Meets expectation'
-                        : 'Needs work',
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              overall.toStringAsFixed(1),
-              style: TextStyle(
-                color: color,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const Text(
-              '/5',
-              style: TextStyle(
-                color: MColors.inkFaint,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        if (member.params.isNotEmpty) ...[
-          const Divider(height: 24, color: MColors.line),
-          ...member.params
-              .where((item) => item.score > 0)
-              .map(
-                (item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.name,
-                          style: const TextStyle(
-                            color: MColors.inkSoft,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        item.score.toStringAsFixed(1),
-                        style: TextStyle(
-                          color: scoreColor(item.score),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-        ],
-      ],
-    ),
-  );
-}
-
-// Kept as a reusable surface for a future standalone attendance route.
-// ignore: unused_element
-class _AttendanceTab extends StatelessWidget {
-  const _AttendanceTab({required this.state, required this.bloc});
-
-  final ManagerState state;
-  final ManagerBloc bloc;
+  /// The growth timeline shows the explanatory line; the feedback form does not.
+  final bool showAveragesNote;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      key: const ValueKey('attendance'),
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 34),
-      children: [
-        Text(
-          _monthName(state.dashboard!.today.month),
-          style: const TextStyle(
-            color: MColors.inkSoft,
-            fontSize: 13.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        const Text(
-          'Attendance',
-          style: TextStyle(
-            color: MColors.ink,
-            fontSize: 27,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 110),
-        const _ComingSoonBlock(
-          icon: Icons.calendar_month_outlined,
-          title: 'Attendance tracking',
-          body: 'Clock-ins, shifts and monthly summaries land here soon.',
-        ),
-        const SizedBox(height: 90),
-        PressableCard(
-          onTap: () => bloc.add(const OpenApplyLeave()),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const IconBox(
-                icon: Icons.beach_access_outlined,
-                color: MColors.terra,
-                tint: MColors.terraTint,
-              ),
-              const SizedBox(width: 13),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final delta = (previousScore == null || overall <= 0)
+        ? null
+        : overall - previousScore!;
+    final up = (delta ?? 0) >= 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'OVERALL SCORE',
+                  style: TextStyle(
+                    color: Color(0xFF6A7282),
+                    fontSize: 11,
+                    letterSpacing: .6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Apply for leave',
-                      style: TextStyle(
-                        color: MColors.ink,
-                        fontSize: 16,
+                      overall <= 0 ? '—' : overall.toStringAsFixed(1),
+                      style: const TextStyle(
+                        color: Color(0xFF101828),
+                        fontSize: 44,
+                        height: 1,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Available now — request time off',
-                      style: TextStyle(color: MColors.inkSoft, fontSize: 13),
+                    const SizedBox(width: 12),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '/ 5',
+                        style: TextStyle(
+                          color: Color(0xFF6A7282),
+                          fontSize: 18,
+                          height: 1,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
+                if (showAveragesNote) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This score averages all the parameters below.',
+                    style: TextStyle(
+                      color: Color(0xFF6A7282),
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (delta != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: up ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                border: Border.all(
+                  color: up ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
+                  width: 1.114,
+                ),
+                borderRadius: BorderRadius.circular(999),
               ),
-              SvgPicture.asset(
-                'assets/icons/chevron_right_expand.svg',
-                width: 20,
-                height: 20,
-                colorFilter: const ColorFilter.mode(
-                  MColors.inkFaint,
-                  BlendMode.srcIn,
+              child: Text(
+                '${up ? '+' : ''}${delta.toStringAsFixed(1)} pts',
+                style: TextStyle(
+                  color: up ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                  fontSize: 12.5,
+                  height: 1.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: 'My leave requests',
-          trailing: state.dashboard!.myLeaves.isEmpty
-              ? 'None yet'
-              : '${state.dashboard!.myLeaves.length} total',
-        ),
-        const SizedBox(height: 12),
-        if (state.dashboard!.myLeaves.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Your submitted leave requests will appear here.',
-              style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
             ),
-          )
-        else
-          ...state.dashboard!.myLeaves.map(
-            (leave) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _OwnLeaveCard(leave: leave),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

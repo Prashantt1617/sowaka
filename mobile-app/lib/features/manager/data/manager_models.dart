@@ -3,7 +3,6 @@ enum ManagerTab { manage, grow, connect, quick }
 enum ManagerView {
   home,
   feedbackList,
-  feedbackRecord,
   leaveRequests,
   overtimeRequests,
   attendanceCorrections,
@@ -140,6 +139,8 @@ class TeamMember {
     this.managerName,
     this.orgChart = const [],
     this.documents = const [],
+    this.previousScore,
+    this.history = const [],
   });
 
   final int id;
@@ -168,6 +169,12 @@ class TeamMember {
   final List<OrgChartNode> orgChart;
   final List<EmployeeDocument> documents;
 
+  /// Overall score from the previous review period, when there is one.
+  final double? previousScore;
+
+  /// Every sent review for this member, oldest first.
+  final List<GrowthRecord> history;
+
   factory TeamMember.fromJson(Map<String, dynamic> json, int id) {
     final name = json['name'] as String? ?? 'Employee';
     final values = json['parameters'] as List<dynamic>? ?? const [];
@@ -178,6 +185,10 @@ class TeamMember {
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       team: json['department'] as String? ?? 'Team',
       score: (json['score'] as num?)?.toDouble() ?? 0,
+      previousScore: (json['previousScore'] as num?)?.toDouble(),
+      history: (json['history'] as List<dynamic>? ?? const [])
+          .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))
+          .toList(),
       next:
           DateTime.tryParse(json['nextDate'] as String? ?? '') ??
           DateTime.now(),
@@ -226,6 +237,8 @@ class TeamMember {
     FeedbackStatus? status,
     List<FeedbackParam>? params,
     String? extra,
+    List<GrowthRecord>? history,
+    double? previousScore,
   }) {
     return TeamMember(
       id: id,
@@ -253,6 +266,8 @@ class TeamMember {
       managerName: managerName,
       orgChart: orgChart,
       documents: documents,
+      previousScore: previousScore ?? this.previousScore,
+      history: history ?? this.history,
     );
   }
 }
