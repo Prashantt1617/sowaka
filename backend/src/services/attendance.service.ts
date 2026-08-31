@@ -145,6 +145,27 @@ export async function decideRegularization(
     { returnDocument: 'after' },
   );
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
+
+  if (decision === 'approved') {
+    // Fold the corrected times into the canonical attendance record so the
+    // employee's calendar reflects what was approved, not just the request.
+    const punchUpdate: Record<string, Date> = { updatedAt: decidedAt };
+    if (result.punchIn) punchUpdate.punchIn = result.punchIn;
+    if (result.punchOut) punchUpdate.punchOut = result.punchOut;
+    await attendanceRecords().updateOne(
+      { employeeId: result.employeeId, workDate: result.workDate },
+      {
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate },
+        $setOnInsert: {
+          source: 'manual',
+          sourceKey: `regularization|${result.employeeId}|${result.workDate}`,
+          importedAt: decidedAt,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
   return (await enrichRegularizations([result]))[0];
 }
 

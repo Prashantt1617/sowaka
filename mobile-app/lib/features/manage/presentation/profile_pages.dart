@@ -272,6 +272,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ],
             ),
           ),
+          _BottomTabs(
+            state: bloc.state,
+            bloc: bloc,
+            onBeforeChange: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
         ],
       ),
     );
@@ -483,6 +489,7 @@ class _ProfileScreen extends StatelessWidget {
   const _ProfileScreen({
     required this.session,
     required this.dashboard,
+    required this.bloc,
     required this.onBack,
     required this.onLogout,
     required this.onNotifications,
@@ -490,6 +497,7 @@ class _ProfileScreen extends StatelessWidget {
 
   final AuthSession session;
   final ManagerDashboard dashboard;
+  final ManagerBloc bloc;
   final VoidCallback onBack;
   final Future<void> Function() onLogout;
   final VoidCallback onNotifications;
@@ -617,6 +625,8 @@ class _ProfileScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 22),
+                      const _SectionTitle(title: 'My Requests'),
+                      const SizedBox(height: 8),
                       _AttendanceCard(
                         date: today,
                         present: todayRecord?.punchIn != null,
@@ -678,6 +688,7 @@ class _ProfileScreen extends StatelessWidget {
               ),
             ),
           ),
+          _BottomTabs(state: bloc.state, bloc: bloc, onBeforeChange: onBack),
         ],
       ),
     );
@@ -904,7 +915,7 @@ class _AttendanceCard extends StatelessWidget {
                   ),
                 ),
               ),
-              _PresencePill(present: present),
+              _AttendanceStatusDot(present: present),
             ],
           ),
           const SizedBox(height: 16),
@@ -949,6 +960,38 @@ class _AttendanceCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceStatusDot extends StatelessWidget {
+  const _AttendanceStatusDot({required this.present});
+
+  final bool present;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = present ? const Color(0xFFF0FDF4) : const Color(0xFFF3F4F6);
+    final dot = present ? const Color(0xFF00C950) : const Color(0xFF9CA3AF);
+    final text = present ? const Color(0xFF008236) : const Color(0xFF6B7280);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            present ? 'Present' : 'Not Punched In',
+            style: TextStyle(color: text, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -1345,6 +1388,12 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                       ],
                     ],
                   ),
+          ),
+          _BottomTabs(
+            state: widget.bloc.state,
+            bloc: widget.bloc,
+            onBeforeChange: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
           ),
         ],
       ),
@@ -1994,6 +2043,12 @@ class _EmployeeGrowthPage extends StatelessWidget {
               ],
             ),
           ),
+          _BottomTabs(
+            state: bloc.state,
+            bloc: bloc,
+            onBeforeChange: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
         ],
       ),
     );
@@ -2210,10 +2265,22 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
         }
         return Scaffold(
           backgroundColor: const Color(0xFFF7F7F9),
-          body: _RecordFeedback(
-            state: state,
-            bloc: widget.bloc,
-            onClose: () => Navigator.of(context).pop(),
+          body: Column(
+            children: [
+              Expanded(
+                child: _RecordFeedback(
+                  state: state,
+                  bloc: widget.bloc,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
+              ),
+              _BottomTabs(
+                state: state,
+                bloc: widget.bloc,
+                onBeforeChange: () =>
+                    Navigator.of(context).popUntil((route) => route.isFirst),
+              ),
+            ],
           ),
         );
       },

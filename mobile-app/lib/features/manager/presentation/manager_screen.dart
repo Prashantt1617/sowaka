@@ -236,6 +236,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 ? _ProfileScreen(
                     session: widget.session,
                     dashboard: state.dashboard!,
+                    bloc: _bloc,
                     onBack: _closeProfile,
                     onLogout: _logout,
                     onNotifications: () => _openNotifications(context),

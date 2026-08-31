@@ -1199,10 +1199,12 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
         member.status == FeedbackStatus.missed;
     final scored = state.recordParams.where((item) => item.score > 0);
     final complete = scored.length == state.recordParams.length;
+    // Average only what has been rated. Dividing by every parameter made a
+    // half-filled form read as a near-zero score with a huge negative delta.
     final overall = scored.isEmpty
         ? 0.0
         : scored.fold<double>(0, (sum, item) => sum + item.score) /
-              state.recordParams.length;
+              scored.length;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Column(

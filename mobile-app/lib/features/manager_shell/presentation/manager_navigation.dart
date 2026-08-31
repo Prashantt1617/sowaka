@@ -1,10 +1,18 @@
 part of '../../manager/presentation/manager_screen.dart';
 
 class _BottomTabs extends StatelessWidget {
-  const _BottomTabs({required this.state, required this.bloc});
+  const _BottomTabs({
+    required this.state,
+    required this.bloc,
+    this.onBeforeChange,
+  });
 
   final ManagerState state;
   final ManagerBloc bloc;
+
+  /// Pushed screens pass this to unwind back to the shell before switching tab,
+  /// otherwise the new tab would render underneath the pushed route.
+  final VoidCallback? onBeforeChange;
 
   @override
   Widget build(BuildContext context) {
@@ -24,27 +32,38 @@ class _BottomTabs extends StatelessWidget {
                 iconAsset: 'assets/icons/nav_team.svg',
                 activeIconAsset: 'assets/icons/nav_team_active.svg',
                 selected: state.tab == ManagerTab.manage,
-                onTap: () =>
-                    bloc.add(const ChangeManagerTab(ManagerTab.manage)),
+                onTap: () {
+                  onBeforeChange?.call();
+                  bloc.add(const ChangeManagerTab(ManagerTab.manage));
+                },
               ),
             _TabButton(
               label: 'Grow',
               iconAsset: 'assets/icons/nav_grow.svg',
               selected: state.tab == ManagerTab.grow,
-              onTap: () => bloc.add(const ChangeManagerTab(ManagerTab.grow)),
+              onTap: () {
+                onBeforeChange?.call();
+                bloc.add(const ChangeManagerTab(ManagerTab.grow));
+              },
             ),
             _TabButton(
               label: 'Connect',
               iconAsset: 'assets/icons/nav_connect.svg',
               selected: state.tab == ManagerTab.connect,
-              onTap: () => bloc.add(const ChangeManagerTab(ManagerTab.connect)),
+              onTap: () {
+                onBeforeChange?.call();
+                bloc.add(const ChangeManagerTab(ManagerTab.connect));
+              },
             ),
             _TabButton(
               label: 'Actions',
               iconAsset: 'assets/icons/nav_actions.svg',
               activeIconAsset: 'assets/icons/nav_actions_active.svg',
               selected: state.tab == ManagerTab.quick,
-              onTap: () => bloc.add(const ChangeManagerTab(ManagerTab.quick)),
+              onTap: () {
+                onBeforeChange?.call();
+                bloc.add(const ChangeManagerTab(ManagerTab.quick));
+              },
             ),
           ],
         ),

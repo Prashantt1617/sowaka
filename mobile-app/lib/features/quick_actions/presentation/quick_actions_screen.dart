@@ -176,12 +176,19 @@ List<AttendanceDayView> buildAttendanceDays({
       );
     }
     if (approvedRegularization) {
+      // The device record may not reflect the correction yet, so fall back
+      // to the approved request's own requested times for display.
+      final displayRecord = AttendanceRecord(
+        workDate: date,
+        punchIn: record?.punchIn ?? regularization?.requestedPunchIn,
+        punchOut: record?.punchOut ?? regularization?.requestedPunchOut,
+      );
       return AttendanceDayView(
         date: date,
         kind: AttendanceKind.present,
         title: 'Present (regularised)',
         cellLabel: '',
-        record: record,
+        record: displayRecord,
         regularization: regularization,
       );
     }

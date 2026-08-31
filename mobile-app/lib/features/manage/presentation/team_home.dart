@@ -334,6 +334,7 @@ class _TeamMemberRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
                 width: 56,
@@ -389,6 +390,37 @@ class _TeamMemberRow extends StatelessWidget {
                         fontSize: 14,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _PresencePill(present: present),
+                        if (pendingCount > 0)
+                          _RequestCountPill(count: pendingCount),
+                      ],
+                    ),
+                    if (upcomingLeave != null || birthdaySoon) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (upcomingLeave != null)
+                            const _TagChip(
+                              icon: Icons.calendar_today_rounded,
+                              iconColor: MColors.terra,
+                              label: 'Leave Upcoming',
+                            ),
+                          if (birthdaySoon)
+                            const _TagChip(
+                              icon: Icons.cake_rounded,
+                              iconColor: MColors.gold,
+                              label: 'Birthday Soon',
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -403,36 +435,6 @@ class _TeamMemberRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _PresencePill(present: present),
-              if (pendingCount > 0) _RequestCountPill(count: pendingCount),
-            ],
-          ),
-          if (upcomingLeave != null || birthdaySoon) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (upcomingLeave != null)
-                  const _TagChip(
-                    icon: Icons.calendar_today_rounded,
-                    iconColor: MColors.terra,
-                    label: 'Leave Upcoming',
-                  ),
-                if (birthdaySoon)
-                  const _TagChip(
-                    icon: Icons.cake_rounded,
-                    iconColor: MColors.gold,
-                    label: 'Birthday Soon',
-                  ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -457,7 +459,7 @@ class _PresencePill extends StatelessWidget {
         style: TextStyle(
           color: present ? const Color(0xFF43D27C) : Colors.white,
           fontSize: 12,
-          fontWeight: FontWeight.w500,
+          fontWeight: present ? FontWeight.w400 : FontWeight.w600,
         ),
       ),
     );
@@ -482,7 +484,7 @@ class _RequestCountPill extends StatelessWidget {
         style: const TextStyle(
           color: Color(0xFFFF5A5F),
           fontSize: 12,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

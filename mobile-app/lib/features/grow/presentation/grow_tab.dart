@@ -734,27 +734,25 @@ class _GrowthMonthCardState extends State<_GrowthMonthCard> {
             ),
           ),
           if (_expanded) ...[
-            const Divider(height: 1, color: MColors.line),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final param in record.parameters)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _GrowthParamRow(param: param),
-                    ),
-                  if (note.isNotEmpty)
-                    Text(
-                      note,
-                      style: const TextStyle(
-                        color: MColors.inkSoft,
-                        fontSize: 13,
-                        height: 1.5,
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            ColoredBox(
+              color: const Color(0xFFF7F7F9),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final (index, param) in record.parameters.indexed)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == record.parameters.length - 1
+                              ? 0
+                              : 12,
+                        ),
+                        child: _GrowthParamCard(param: param, fallback: note),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -764,57 +762,105 @@ class _GrowthMonthCardState extends State<_GrowthMonthCard> {
   }
 }
 
-/// "Performance ★★★★☆ 4 / 5" row inside an expanded month card.
-class _GrowthParamRow extends StatelessWidget {
-  const _GrowthParamRow({required this.param});
+/// One parameter inside an expanded month card: name, stars with the score,
+/// then the written insight for that parameter.
+class _GrowthParamCard extends StatelessWidget {
+  const _GrowthParamCard({required this.param, required this.fallback});
 
   final FeedbackParam param;
 
+  /// Older records only carried a single note for the whole review; show it
+  /// rather than leaving the insight blank.
+  final String fallback;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          param.name,
-          style: const TextStyle(
-            color: Color(0xFF101828),
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
+    final insight = param.note.trim().isNotEmpty ? param.note.trim() : fallback;
+    final filled = param.score.round();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF3F4F6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            param.name,
+            style: const TextStyle(
+              color: Color(0xFF222222),
+              fontSize: 15,
+              height: 22.5 / 15,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            for (var i = 1; i <= 5; i++)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(
-                  i <= param.score.round()
-                      ? Icons.star_rounded
-                      : Icons.star_outline_rounded,
-                  size: 20,
-                  color: i <= param.score.round()
-                      ? const Color(0xFF0571A6)
-                      : const Color(0xFFD1D5DB),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (var star = 1; star <= 5; star++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    star <= filled
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 20,
+                    color: star <= filled
+                        ? const Color(0xFF0571A6)
+                        : const Color(0xFFD1D5DB),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Text(
+                param.score.toStringAsFixed(param.score % 1 == 0 ? 0 : 1),
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 18,
+                  height: 27 / 18,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            const SizedBox(width: 6),
-            Text(
-              param.score.toStringAsFixed(param.score % 1 == 0 ? 0 : 1),
-              style: const TextStyle(
-                color: Color(0xFF0571A6),
-                fontSize: 13.5,
+              const SizedBox(width: 4),
+              const Text(
+                '/ 5',
+                style: TextStyle(
+                  color: Color(0xFF717171),
+                  fontSize: 13,
+                  height: 19.5 / 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (insight.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            const SizedBox(height: 16),
+            const Text(
+              'INSIGHT',
+              style: TextStyle(
+                color: Color(0xFF717171),
+                fontSize: 11.5,
+                height: 17.25 / 11.5,
+                letterSpacing: .6,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const Text(
-              ' / 5',
-              style: TextStyle(color: Color(0xFF6A7282), fontSize: 12.5),
+            const SizedBox(height: 8),
+            Text(
+              insight,
+              style: const TextStyle(
+                color: Color(0xFF484848),
+                fontSize: 13.5,
+                height: 21.6 / 13.5,
+              ),
             ),
           ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
