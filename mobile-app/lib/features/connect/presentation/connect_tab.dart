@@ -6,11 +6,13 @@ class _ConnectTab extends StatelessWidget {
     required this.session,
     required this.profileAction,
     required this.recognitionCandidates,
+    required this.composerController,
   });
 
   final AuthSession session;
   final Widget profileAction;
   final List<TeamMember> recognitionCandidates;
+  final ConnectComposerController composerController;
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +20,15 @@ class _ConnectTab extends StatelessWidget {
       key: const ValueKey('connect-feed-screen'),
       session: session,
       profileAction: profileAction,
+      composerController: composerController,
       recognitionCandidates: recognitionCandidates
           .map(
-            (member) =>
-                ConnectTeammate(name: member.name, initials: member.initial),
+            (member) => ConnectTeammate(
+              name: member.name,
+              initials: member.initial,
+              department: member.team,
+              photoUrl: member.photoUrl,
+            ),
           )
           .toList(),
     );

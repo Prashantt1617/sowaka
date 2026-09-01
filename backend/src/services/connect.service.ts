@@ -29,7 +29,11 @@ export async function getConnectFeed(viewerUserId: string) {
     .find({
       org,
       $or: [
-        { 'audience.department': { $exists: false } },
+        // MongoDB's driver stores `undefined` as BSON null rather than
+        // dropping the key, so company-wide posts persist with an explicit
+        // `department: null` — querying for `null` matches both that and a
+        // genuinely missing field, unlike `$exists: false`.
+        { 'audience.department': null },
         { 'audience.department': viewer.department },
       ],
     })
@@ -56,18 +60,30 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
   return viewPost(updated ?? post, viewerUserId);
 }
 
-export async function addConnectComment(viewerUserId: string, postId: string, textInput: string) {
+export async function addConnectComment(
+  viewerUserId: string,
+  postId: string,
+  textInput: string,
+  parentId?: string,
+) {
   const post = await requireVisiblePost(viewerUserId, postId);
   const viewer = await users().findOne({ userId: viewerUserId });
   const text = textInput.trim();
   if (text.length < 1) throw new ConnectError(400, 'Comment cannot be empty');
   if (text.length > 500) throw new ConnectError(400, 'Comment is too long');
+  if (parentId) {
+    const parent = post.comments.find((existing) => existing.id === parentId);
+    if (!parent) throw new ConnectError(400, 'Reply target not found');
+    if (parent.parentId) throw new ConnectError(400, 'Cannot reply to a reply');
+  }
   const comment = {
     id: randomUUID(),
     userId: viewerUserId,
     name: viewer?.name ?? 'Teammate',
     text,
     createdAt: new Date(),
+    likedBy: [] as string[],
+    ...(parentId ? { parentId } : {}),
   };
   await connectPosts().updateOne(
     { id: post.id },
@@ -80,6 +96,25 @@ export async function addConnectComment(viewerUserId: string, postId: string, te
       data: { destination: 'connect_comment', postId: post.id, commentId: comment.id },
     });
   }
+  const updated = await connectPosts().findOne({ id: postId });
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+export async function toggleConnectCommentReaction(
+  viewerUserId: string,
+  postId: string,
+  commentId: string,
+) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  const comment = post.comments.find((item) => item.id === commentId);
+  if (!comment) throw new ConnectError(404, 'Comment not found');
+  const liked = (comment.likedBy ?? []).includes(viewerUserId);
+  const update = liked
+    ? { $pull: { 'comments.$[c].likedBy': viewerUserId } }
+    : { $addToSet: { 'comments.$[c].likedBy': viewerUserId } };
+  await connectPosts().updateOne({ id: postId }, update, {
+    arrayFilters: [{ 'c.id': commentId }],
+  });
   const updated = await connectPosts().findOne({ id: postId });
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -128,8 +163,25 @@ export async function performConnectAction(
 export interface ConnectPostInput {
   type?: string;
   body?: Record<string, unknown>;
-  media?: ConnectMediaFile;
+  media?: ConnectMediaFile[];
+  pollOptionImages?: ConnectMediaFile[];
+  /// Option index each entry in `pollOptionImages` belongs to, since options
+  /// without an image are skipped on upload rather than sent as a gap.
+  pollOptionImageIndexes?: number[];
   removeMedia?: boolean;
+}
+
+function sparsePollImageKeys(
+  uploaded: UploadedMedia[],
+  indexes: number[] | undefined,
+): (string | undefined)[] {
+  if (uploaded.length === 0) return [];
+  const keys: (string | undefined)[] = [];
+  uploaded.forEach((media, i) => {
+    const optionIndex = indexes?.[i] ?? i;
+    keys[optionIndex] = media.objectKey;
+  });
+  return keys;
 }
 
 export async function createConnectPost(viewerUserId: string, input: ConnectPostInput) {
@@ -138,41 +190,42 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const type = parsePostType(input.type);
   const now = new Date();
   const meta = postMeta(type);
-  const normalizedBody = normalizePostBody(type, input.body ?? {});
-  const visibility = visibilityFromBody(type, normalizedBody, viewer);
-  const uploadedMedia = input.media
-    ? await storeConnectMedia(viewerUserId, input.media)
-    : undefined;
-  const post: ConnectPost = {
-    id: randomUUID(),
-    org: orgForUser(viewer),
-    type,
-    tag: meta.tag,
-    tagIcon: meta.tagIcon,
-    tagColor: meta.tagColor,
-    tagTint: meta.tagTint,
-    author: authorForUser(viewer),
-    audience: {
-      label: visibility.label,
-      org: orgForUser(viewer),
-      department: visibility.department,
-    },
-    body: withMedia(normalizedBody, uploadedMedia),
-    likedBy: [],
-    comments: [],
-    actionBy: {},
-    pollVotes: {},
-    publishedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
+  const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
   try {
+    const normalizedBody = normalizePostBody(
+      type,
+      input.body ?? {},
+      sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes),
+    );
+    const visibility = visibilityFromBody(type, normalizedBody, viewer);
+    const post: ConnectPost = {
+      id: randomUUID(),
+      org: orgForUser(viewer),
+      type,
+      tag: meta.tag,
+      tagIcon: meta.tagIcon,
+      tagColor: meta.tagColor,
+      tagTint: meta.tagTint,
+      author: authorForUser(viewer),
+      audience: {
+        label: visibility.label,
+        org: orgForUser(viewer),
+        department: visibility.department,
+      },
+      body: withMedia(normalizedBody, uploadedMedia),
+      likedBy: [],
+      comments: [],
+      actionBy: {},
+      pollVotes: {},
+      publishedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
     await connectPosts().insertOne(post);
     return viewPost(post, viewerUserId);
   } catch (error) {
-    if (uploadedMedia) {
-      await deleteConnectMedia(uploadedMedia.objectKey).catch(() => undefined);
-    }
+    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
     throw error;
   }
 }
@@ -185,42 +238,48 @@ export async function updateConnectPost(
   const { post, viewer } = await requireEditablePost(viewerUserId, postId);
   const type = parsePostType(input.type ?? post.type);
   const meta = postMeta(type);
-  const normalizedBody = normalizePostBody(type, input.body ?? post.body);
-  const visibility = visibilityFromBody(type, normalizedBody, viewer);
-  const uploadedMedia = input.media
-    ? await storeConnectMedia(viewerUserId, input.media)
-    : undefined;
-  const existingMediaObjectKey = mediaObjectKey(post.body);
-  const body = input.removeMedia
-    ? withoutMedia(normalizedBody)
-    : withMedia(normalizedBody, uploadedMedia ?? mediaFromBody(post.body));
-  const update = {
-    $set: {
-      type,
-      tag: meta.tag,
-      tagIcon: meta.tagIcon,
-      tagColor: meta.tagColor,
-      tagTint: meta.tagTint,
-      audience: {
-        label: visibility.label,
-        org: post.org,
-        department: visibility.department,
-      },
-      body,
-      updatedAt: new Date(),
-    },
-  };
+  const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
+  const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
   try {
+    const normalizedBody = normalizePostBody(
+      type,
+      input.body ?? post.body,
+      uploadedPollImages.length > 0
+        ? sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes)
+        : existingPollImageKeys(post.body),
+    );
+    const visibility = visibilityFromBody(type, normalizedBody, viewer);
+    const existingMediaObjectKeys = mediaObjectKeys(post.body);
+    const body = input.removeMedia
+      ? withoutMedia(normalizedBody)
+      : withMedia(
+          normalizedBody,
+          uploadedMedia.length > 0 ? uploadedMedia : mediaFromBody(post.body),
+        );
+    const update = {
+      $set: {
+        type,
+        tag: meta.tag,
+        tagIcon: meta.tagIcon,
+        tagColor: meta.tagColor,
+        tagTint: meta.tagTint,
+        audience: {
+          label: visibility.label,
+          org: post.org,
+          department: visibility.department,
+        },
+        body,
+        updatedAt: new Date(),
+      },
+    };
     await connectPosts().updateOne({ id: post.id }, update);
-    if ((uploadedMedia || input.removeMedia) && existingMediaObjectKey) {
-      await deleteConnectMedia(existingMediaObjectKey).catch(() => undefined);
+    if ((uploadedMedia.length > 0 || input.removeMedia) && existingMediaObjectKeys.length > 0) {
+      await deleteConnectMediaByKeys(existingMediaObjectKeys);
     }
     const updated = await connectPosts().findOne({ id: post.id });
     return viewPost(updated ?? post, viewer.userId);
   } catch (error) {
-    if (uploadedMedia) {
-      await deleteConnectMedia(uploadedMedia.objectKey).catch(() => undefined);
-    }
+    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
     throw error;
   }
 }
@@ -228,8 +287,7 @@ export async function updateConnectPost(
 export async function deleteConnectPost(viewerUserId: string, postId: string) {
   const { post } = await requireEditablePost(viewerUserId, postId);
   await connectPosts().deleteOne({ id: post.id });
-  const objectKey = mediaObjectKey(post.body);
-  if (objectKey) await deleteConnectMedia(objectKey).catch(() => undefined);
+  await deleteConnectMediaByKeys(mediaObjectKeys(post.body));
   return { id: post.id };
 }
 
@@ -262,20 +320,41 @@ async function viewPost(post: ConnectPost, viewerUserId: string) {
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
   const actionValue = post.actionBy?.[viewerUserId] ?? null;
   const body = { ...post.body };
-  const objectKey = mediaObjectKey(body);
-  if (objectKey) {
-    body.mediaUrl = await presignConnectMedia(objectKey).catch(() => undefined);
+  const objectKeys = mediaObjectKeys(body);
+  if (objectKeys.length > 0) {
+    const urls = await Promise.all(
+      objectKeys.map((key) => presignConnectMedia(key).catch(() => undefined)),
+    );
+    body.mediaUrl = urls[0];
+    body.mediaUrls = urls;
   }
   if (post.type === 'survey') {
-    const options = (post.body.options as Array<{ id: string; label: string; votes: number }>).map(
-      (option) => {
+    const options = await Promise.all(
+      (
+        post.body.options as Array<{
+          id: string;
+          label: string;
+          votes: number;
+          imageObjectKey?: string;
+        }>
+      ).map(async (option) => {
         const liveVotes =
           option.votes + Object.values(pollVotes).filter((vote) => vote === option.id).length;
-        return { ...option, votes: liveVotes };
-      },
+        const imageUrl = option.imageObjectKey
+          ? await presignConnectMedia(option.imageObjectKey).catch(() => undefined)
+          : undefined;
+        return { ...option, votes: liveVotes, imageUrl };
+      }),
     );
     body.options = options;
     body.totalVotes = options.reduce((sum, option) => sum + option.votes, 0);
+  }
+  if (post.type === 'event') {
+    // Registered count is never user-entered — it's however many viewers have
+    // taken the "Register" action, the same actionBy map RSVP/wish-style
+    // posts already use, plus whatever baseline the seed data carries.
+    const baseCount = typeof body.baseCount === 'number' ? body.baseCount : 0;
+    body.registeredCount = baseCount + Object.keys(post.actionBy ?? {}).length;
   }
   if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
@@ -290,9 +369,16 @@ async function viewPost(post: ConnectPost, viewerUserId: string) {
       score: entry.score,
     }));
   }
+  const comments = post.comments.map((comment) => ({
+    ...comment,
+    likedBy: comment.likedBy ?? [],
+    likeCount: (comment.likedBy ?? []).length,
+    liked: (comment.likedBy ?? []).includes(viewerUserId),
+  }));
   return {
     ...post,
     body,
+    comments,
     liked,
     likeCount: post.likedBy.length,
     commentCount: post.comments.length,
@@ -350,7 +436,11 @@ function parsePostType(value: string | undefined): ConnectPostType {
   throw new ConnectError(400, 'Post type is invalid');
 }
 
-function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>) {
+function normalizePostBody(
+  type: ConnectPostType,
+  input: Record<string, unknown>,
+  pollOptionImageKeys: (string | undefined)[] = [],
+) {
   switch (type) {
     case 'leadership':
       return {
@@ -385,14 +475,20 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
         linkTitle: normalizeText(input.linkTitle, '', 160),
         linkDomain: normalizeText(input.linkDomain, '', 120),
       };
-    case 'hr_announcement':
+    case 'hr_announcement': {
+      const requireAcknowledgement = input.requireAcknowledgement === true;
       return {
         title: normalizeText(input.title, 'Announcement', 80),
         text: normalizeText(input.text, '', 1000),
         severity: normalizeAnnouncementSeverity(input.severity),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        requireAcknowledgement,
+        acknowledgementMessage: requireAcknowledgement
+          ? normalizeText(input.acknowledgementMessage, '', 300)
+          : '',
       };
+    }
     case 'kudos':
       return {
         text: normalizeText(input.text, '', 700),
@@ -403,7 +499,7 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
       return {
         title: normalizeText(input.title, '', 160),
         totalVotes: 0,
-        options: normalizePollOptions(input.options),
+        options: normalizePollOptions(input.options, pollOptionImageKeys),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
       };
@@ -431,25 +527,43 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
   }
 }
 
-async function storeConnectMedia(userId: string, media: ConnectMediaFile) {
+type UploadedMedia = { objectKey: string; contentType: string; size: number };
+
+async function storeConnectMediaMany(
+  userId: string,
+  files: ConnectMediaFile[],
+): Promise<UploadedMedia[]> {
   try {
-    return await uploadConnectMedia(userId, media);
+    return await Promise.all(files.map((file) => uploadConnectMedia(userId, file)));
   } catch {
     throw new ConnectError(503, 'Media storage is unavailable');
   }
 }
 
-function withMedia(
-  body: Record<string, unknown>,
-  media: { objectKey: string; contentType: string; size: number } | undefined,
-) {
-  if (!media) return body;
+async function deleteConnectMediaMany(media: (UploadedMedia | undefined)[]) {
+  await deleteConnectMediaByKeys(
+    media.filter((item): item is UploadedMedia => Boolean(item)).map((item) => item.objectKey),
+  );
+}
+
+async function deleteConnectMediaByKeys(objectKeys: string[]) {
+  await Promise.all(objectKeys.map((key) => deleteConnectMedia(key).catch(() => undefined)));
+}
+
+/// A single post can carry multiple images/videos (up to 6) — `mediaObjectKeys`
+/// is the source of truth; `mediaObjectKey`/`mediaContentType`/`mediaSize`
+/// mirror the first item for any code still reading the old singular fields.
+function withMedia(body: Record<string, unknown>, media: UploadedMedia[]) {
+  if (media.length === 0) return body;
+  const first = media[0];
   return {
     ...body,
-    mediaKind: media.contentType.startsWith('video/') ? 'video' : 'image',
-    mediaObjectKey: media.objectKey,
-    mediaContentType: media.contentType,
-    mediaSize: media.size,
+    mediaKind: first.contentType.startsWith('video/') ? 'video' : 'image',
+    mediaObjectKey: first.objectKey,
+    mediaContentType: first.contentType,
+    mediaSize: first.size,
+    mediaObjectKeys: media.map((item) => item.objectKey),
+    mediaContentTypes: media.map((item) => item.contentType),
   };
 }
 
@@ -458,20 +572,41 @@ function withoutMedia(body: Record<string, unknown>) {
   delete next.mediaObjectKey;
   delete next.mediaContentType;
   delete next.mediaSize;
+  delete next.mediaObjectKeys;
+  delete next.mediaContentTypes;
   if (next.mediaKind === 'image' || next.mediaKind === 'video') next.mediaKind = 'none';
   return next;
 }
 
-function mediaObjectKey(body: Record<string, unknown>) {
-  const value = body.mediaObjectKey;
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+function mediaObjectKeys(body: Record<string, unknown>): string[] {
+  const many = body.mediaObjectKeys;
+  if (Array.isArray(many)) {
+    return many.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  }
+  const single = body.mediaObjectKey;
+  return typeof single === 'string' && single.trim().length > 0 ? [single] : [];
 }
 
-function mediaFromBody(body: Record<string, unknown>) {
-  const objectKey = mediaObjectKey(body);
-  const contentType = typeof body.mediaContentType === 'string' ? body.mediaContentType : '';
+function mediaFromBody(body: Record<string, unknown>): UploadedMedia[] {
+  const keys = mediaObjectKeys(body);
+  const contentTypes = Array.isArray(body.mediaContentTypes)
+    ? (body.mediaContentTypes as unknown[])
+    : [body.mediaContentType];
   const size = typeof body.mediaSize === 'number' ? body.mediaSize : 0;
-  return objectKey ? { objectKey, contentType, size } : undefined;
+  return keys.map((objectKey, index) => ({
+    objectKey,
+    contentType: typeof contentTypes[index] === 'string' ? (contentTypes[index] as string) : '',
+    size: index === 0 ? size : 0,
+  }));
+}
+
+function existingPollImageKeys(body: Record<string, unknown>): (string | undefined)[] {
+  const options = Array.isArray(body.options) ? body.options : [];
+  return options.map((option) =>
+    option && typeof option === 'object' && typeof (option as { imageObjectKey?: unknown }).imageObjectKey === 'string'
+      ? ((option as { imageObjectKey?: string }).imageObjectKey as string)
+      : undefined,
+  );
 }
 
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
@@ -516,7 +651,7 @@ function visibilityFromBody(
   };
 }
 
-function normalizePollOptions(value: unknown) {
+function normalizePollOptions(value: unknown, imageKeys: (string | undefined)[] = []) {
   const raw = Array.isArray(value) ? value : [];
   const labels = raw
     .map((item) => {
@@ -527,9 +662,14 @@ function normalizePollOptions(value: unknown) {
       return '';
     })
     .filter(Boolean)
-    .slice(0, 5);
+    .slice(0, 4);
   if (labels.length < 2) throw new ConnectError(400, 'Survey needs at least two options');
-  return labels.map((label) => ({ id: randomUUID(), label: label.slice(0, 80), votes: 0 }));
+  return labels.map((label, index) => ({
+    id: randomUUID(),
+    label: label.slice(0, 80),
+    votes: 0,
+    ...(imageKeys[index] ? { imageObjectKey: imageKeys[index] } : {}),
+  }));
 }
 
 function postMeta(type: ConnectPostType) {

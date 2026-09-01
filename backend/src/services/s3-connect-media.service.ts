@@ -20,37 +20,49 @@ export type ConnectMediaFile = {
 let client: S3Client | undefined;
 
 export async function uploadConnectMedia(userId: string, file: ConnectMediaFile) {
-  if (!hasS3Configuration()) {
-    if (!file.contentType.startsWith('image/')) {
-      throw new Error('AWS S3 is required for video uploads');
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      throw new Error('Images must be 10 MB or smaller');
-    }
-    const objectKey = `mongo/${randomUUID()}`;
-    await connectMedia().insertOne({
-      objectKey,
-      contentType: file.contentType,
-      size: file.size,
-      bytes: file.bytes,
-      createdAt: new Date(),
-    });
+  if (!hasS3Configuration()) return storeInMongo(file);
+  try {
+    validateConfiguration();
+    const objectKey = buildObjectKey(userId, file.originalName);
+    const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
+    await getClient().send(
+      new PutObjectCommand({
+        Bucket: env.s3.bucket,
+        Key: objectKey,
+        Body: file.bytes,
+        ContentType: file.contentType,
+        ContentLength: file.size,
+        ServerSideEncryption: encryption,
+        ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
+      }),
+    );
     return { objectKey, contentType: file.contentType, size: file.size };
+  } catch (error) {
+    // No explicit access key was configured, meaning we expected an AWS
+    // instance role to supply credentials. Failing to resolve any means
+    // we're not actually running on AWS (e.g. local dev) rather than a real
+    // misconfiguration — fall back to Mongo storage instead of hard-failing.
+    // An explicit-but-wrong key still throws, since that path is skipped.
+    if (!env.s3.accessKeyId) return storeInMongo(file);
+    throw error;
   }
-  validateConfiguration();
-  const objectKey = buildObjectKey(userId, file.originalName);
-  const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
-  await getClient().send(
-    new PutObjectCommand({
-      Bucket: env.s3.bucket,
-      Key: objectKey,
-      Body: file.bytes,
-      ContentType: file.contentType,
-      ContentLength: file.size,
-      ServerSideEncryption: encryption,
-      ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
-    }),
-  );
+}
+
+async function storeInMongo(file: ConnectMediaFile) {
+  if (!file.contentType.startsWith('image/')) {
+    throw new Error('AWS S3 is required for video uploads');
+  }
+  if (file.size > 10 * 1024 * 1024) { 
+    throw new Error('Images must be 10 MB or smaller');
+  }
+  const objectKey = `mongo/${randomUUID()}`;
+  await connectMedia().insertOne({
+    objectKey,
+    contentType: file.contentType,
+    size: file.size,
+    bytes: file.bytes,
+    createdAt: new Date(),
+  });
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 

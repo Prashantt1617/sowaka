@@ -84,8 +84,19 @@ class ConnectBloc {
     await _mutatePost(postId, () => _api.toggleReaction(postId));
   }
 
-  Future<void> addComment(String postId, String text) async {
-    await _mutatePost(postId, () => _api.addComment(postId, text));
+  Future<void> addComment(
+    String postId,
+    String text, {
+    String? parentId,
+  }) async {
+    await _mutatePost(
+      postId,
+      () => _api.addComment(postId, text, parentId: parentId),
+    );
+  }
+
+  Future<void> reactToComment(String postId, String commentId) async {
+    await _mutatePost(postId, () => _api.reactToComment(postId, commentId));
   }
 
   Future<void> performAction(String postId, {String? optionId}) async {

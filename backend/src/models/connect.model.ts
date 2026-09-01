@@ -33,6 +33,8 @@ export interface ConnectComment {
   name: string;
   text: string;
   createdAt: Date;
+  parentId?: string;
+  likedBy: string[];
 }
 
 export interface ConnectPost {

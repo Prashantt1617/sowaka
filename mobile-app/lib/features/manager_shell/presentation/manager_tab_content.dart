@@ -6,6 +6,7 @@ class _TabContent extends StatelessWidget {
     required this.state,
     required this.bloc,
     required this.quickActionsController,
+    required this.connectComposerController,
     required this.onOpenProfile,
   });
 
@@ -13,6 +14,7 @@ class _TabContent extends StatelessWidget {
   final ManagerState state;
   final ManagerBloc bloc;
   final QuickActionsController quickActionsController;
+  final ConnectComposerController connectComposerController;
   final VoidCallback onOpenProfile;
 
   Future<void> _openNotifications(BuildContext context) async {
@@ -36,6 +38,7 @@ class _TabContent extends StatelessWidget {
           bloc: bloc,
           onOpenProfile: onOpenProfile,
           onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
         ),
         _GrowTab(
           key: const ValueKey('grow-tab'),
@@ -43,11 +46,13 @@ class _TabContent extends StatelessWidget {
           bloc: bloc,
           onOpenProfile: onOpenProfile,
           onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
         ),
         _ConnectTab(
           key: const ValueKey('connect-tab'),
           session: session,
           recognitionCandidates: state.dashboard!.recognitionCandidates,
+          composerController: connectComposerController,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,
@@ -61,6 +66,7 @@ class _TabContent extends StatelessWidget {
           dashboard: state.dashboard!,
           controller: quickActionsController,
           onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('quick-profile-avatar'),
             initial: state.dashboard!.managerInitial,

@@ -6,12 +6,14 @@ class _TeamMemberProfilePage extends StatelessWidget {
     required this.data,
     required this.bloc,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   Widget build(BuildContext context) {
@@ -119,9 +121,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ),
             ),
             onNotifications: onNotifications,
-            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Quick create coming soon')),
-            ),
+            onQuickCreate: onOpenComposer,
           ),
           _ProfilePageTopBar(
             onCalendarTap: () => Navigator.of(context).push(
@@ -493,6 +493,7 @@ class _ProfileScreen extends StatelessWidget {
     required this.onBack,
     required this.onLogout,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final AuthSession session;
@@ -501,6 +502,7 @@ class _ProfileScreen extends StatelessWidget {
   final VoidCallback onBack;
   final Future<void> Function() onLogout;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   Widget build(BuildContext context) {
@@ -534,9 +536,7 @@ class _ProfileScreen extends StatelessWidget {
               size: 30,
             ),
             onNotifications: onNotifications,
-            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Quick create coming soon')),
-            ),
+            onQuickCreate: onOpenComposer,
           ),
           _ProfilePageTopBar(onBack: onBack),
           Expanded(
@@ -621,6 +621,43 @@ class _ProfileScreen extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if (dashboard.growthHistory.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 13,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF7F7F9),
+                                  borderRadius: BorderRadius.circular(99),
+                                  border: Border.all(
+                                    color: const Color(0xFFEBEBEB),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SvgPicture.asset(
+                                      'assets/icons/profile_rating_star.svg',
+                                      width: 16,
+                                      height: 16,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      dashboard.growthHistory.last.overallScore
+                                          .toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        color: Color(0xFF717171),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1914,7 +1951,7 @@ class _ProfileColors {
 /// Manager's read-only growth timeline for one report: overall score with the
 /// trend chart, then a card per review period. The current period offers the
 /// "Give Feedback" action that opens the rating form.
-class _EmployeeGrowthPage extends StatelessWidget {
+class _EmployeeGrowthPage extends StatefulWidget {
   const _EmployeeGrowthPage({
     required this.name,
     required this.designation,
@@ -1922,6 +1959,7 @@ class _EmployeeGrowthPage extends StatelessWidget {
     required this.data,
     required this.bloc,
     required this.onNotifications,
+    required this.onOpenComposer,
     this.memberId,
   });
 
@@ -1931,6 +1969,7 @@ class _EmployeeGrowthPage extends StatelessWidget {
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   /// Null when the page shows the signed-in user's own growth: you cannot
   /// review yourself, so the "feedback is due" action is hidden.
@@ -1942,34 +1981,41 @@ class _EmployeeGrowthPage extends StatelessWidget {
   }
 
   @override
+  State<_EmployeeGrowthPage> createState() => _EmployeeGrowthPageState();
+}
+
+class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
+  /// Index into the chronological history shared by the growth chart and the
+  /// month cards below it, so selecting one updates the other. Null means
+  /// "default to the newest period."
+  int? _selectedIndex;
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<ManagerState>(
-      stream: bloc.stream,
-      initialData: bloc.state,
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
       builder: (context, snapshot) {
         final live = snapshot.data?.dashboard;
         // Prefer live state so a review sent from here appears immediately.
-        final current = memberId == null
-            ? (live?.growthHistory ?? history)
+        final current = widget.memberId == null
+            ? (live?.growthHistory ?? widget.history)
             : (live?.team
-                      .where((member) => member.id == memberId)
+                      .where((member) => member.id == widget.memberId)
                       .firstOrNull
                       ?.history ??
-                  history);
+                  widget.history);
         return _build(context, current);
       },
     );
   }
 
   Widget _build(BuildContext context, List<GrowthRecord> history) {
-    final values = history.map((record) => record.overallScore).toList();
-    final latest = history.isEmpty ? null : history.last;
-    final overall = latest?.overallScore ?? 0;
-    final previous = history.length >= 2
-        ? history[history.length - 2].overallScore
-        : null;
-    final period = _currentPeriod();
+    final period = _EmployeeGrowthPage._currentPeriod();
     final currentDone = history.any((record) => record.period == period);
+    final effectiveIndex = history.isEmpty
+        ? 0
+        : (_selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1977,58 +2023,47 @@ class _EmployeeGrowthPage extends StatelessWidget {
         children: [
           AppHomeHeader(
             profileAction: AvatarBadge(
-              initial: data.managerInitial,
+              initial: widget.data.managerInitial,
               index: 1,
               size: 30,
             ),
-            onNotifications: onNotifications,
-            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Quick create coming soon')),
-            ),
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
           ),
-          _GrowthPageTopBar(name: name, designation: designation),
+          _GrowthPageTopBar(name: widget.name, designation: widget.designation),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                _OverallScoreCard(
-                  overall: overall,
-                  previousScore: previous,
-                  showAveragesNote: true,
+                _GrowthScoreSection(
+                  history: history,
+                  selectedIndex: _selectedIndex,
+                  onSelect: (index) => setState(() => _selectedIndex = index),
                 ),
-                if (history.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: MColors.line),
-                    ),
-                    child: _GrowthChart(
-                      records: history,
-                      values: values,
-                      color: const Color(0xFF0571A6),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 16),
-                if (!currentDone && memberId != null)
+                if (!currentDone && widget.memberId != null)
                   _FeedbackDuePeriodCard(
                     period: period,
                     onGiveFeedback: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) =>
-                            _FeedbackFormPage(bloc: bloc, memberId: memberId!),
+                        builder: (_) => _FeedbackFormPage(
+                          bloc: widget.bloc,
+                          memberId: widget.memberId!,
+                        ),
                       ),
                     ),
                   ),
                 for (final (index, record) in history.reversed.indexed) ...[
                   const SizedBox(height: 12),
-                  // Newest period opens by default, as in the design.
+                  // Kept in sync with the chart above: selecting a chart
+                  // point opens its card, and opening a card selects its
+                  // chart point.
                   _GrowthMonthCard(
                     record: record,
-                    initiallyExpanded: index == 0,
+                    expanded: history.length - 1 - index == effectiveIndex,
+                    onToggle: () => setState(
+                      () => _selectedIndex = history.length - 1 - index,
+                    ),
                   ),
                 ],
                 if (history.isEmpty && currentDone) ...[
@@ -2044,13 +2079,72 @@ class _EmployeeGrowthPage extends StatelessWidget {
             ),
           ),
           _BottomTabs(
-            state: bloc.state,
-            bloc: bloc,
+            state: widget.bloc.state,
+            bloc: widget.bloc,
             onBeforeChange: () =>
                 Navigator.of(context).popUntil((route) => route.isFirst),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Overall-score card + trend chart, kept together since tapping a point on
+/// the chart updates the score card to that month instead of always showing
+/// the latest period.
+/// The overall-score card and growth chart. Selection is owned by the parent
+/// (`_EmployeeGrowthPageState`) so the chart's highlighted point and the
+/// month-card list below it stay in sync in both directions.
+class _GrowthScoreSection extends StatelessWidget {
+  const _GrowthScoreSection({
+    required this.history,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<GrowthRecord> history;
+  final int? selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = history.map((record) => record.overallScore).toList();
+    final effectiveIndex = history.isEmpty
+        ? 0
+        : (selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
+    final selected = history.isEmpty ? null : history[effectiveIndex];
+    final previous = effectiveIndex > 0
+        ? history[effectiveIndex - 1].overallScore
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _OverallScoreCard(
+          overall: selected?.overallScore ?? 0,
+          previousScore: previous,
+          showAveragesNote: true,
+        ),
+        if (history.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: MColors.line),
+            ),
+            child: _GrowthChart(
+              records: history,
+              values: values,
+              color: const Color(0xFF0571A6),
+              selectedIndex: effectiveIndex,
+              onSelect: onSelect,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

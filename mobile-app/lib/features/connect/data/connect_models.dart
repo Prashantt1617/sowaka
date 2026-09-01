@@ -14,10 +14,17 @@ enum ConnectPostType {
 }
 
 class ConnectTeammate {
-  const ConnectTeammate({required this.name, required this.initials});
+  const ConnectTeammate({
+    required this.name,
+    required this.initials,
+    this.department = '',
+    this.photoUrl,
+  });
 
   final String name;
   final String initials;
+  final String department;
+  final String? photoUrl;
 }
 
 class ConnectAuthor {
@@ -27,6 +34,7 @@ class ConnectAuthor {
     required this.initials,
     required this.designation,
     required this.avatarColor,
+    this.photoUrl,
   });
 
   final String userId;
@@ -34,6 +42,7 @@ class ConnectAuthor {
   final String initials;
   final String designation;
   final String avatarColor;
+  final String? photoUrl;
 
   factory ConnectAuthor.fromJson(Map<String, dynamic> json) {
     return ConnectAuthor(
@@ -42,6 +51,7 @@ class ConnectAuthor {
       initials: json['initials'] as String? ?? 'S',
       designation: json['designation'] as String? ?? '',
       avatarColor: json['avatarColor'] as String? ?? '#BE5A36',
+      photoUrl: json['photoUrl'] as String?,
     );
   }
 }
@@ -51,12 +61,20 @@ class ConnectPostDraft {
     required this.type,
     required this.body,
     this.media,
+    this.mediaList = const [],
+    this.pollOptionImages = const [],
     this.removeMedia = false,
   });
 
   final ConnectPostType type;
   final Map<String, dynamic> body;
   final ConnectMediaAttachment? media;
+  /// Multiple images for a single post (item: multi-image support). When
+  /// non-empty this is sent instead of `media`.
+  final List<ConnectMediaAttachment> mediaList;
+  /// Parallel to the survey's poll options by index; a null entry means that
+  /// option has no image.
+  final List<ConnectMediaAttachment?> pollOptionImages;
   final bool removeMedia;
 
   Map<String, dynamic> toJson() {
@@ -115,12 +133,18 @@ class ConnectComment {
     required this.name,
     required this.text,
     required this.createdAt,
+    this.parentId,
+    this.likeCount = 0,
+    this.liked = false,
   });
 
   final String id;
   final String name;
   final String text;
   final DateTime? createdAt;
+  final String? parentId;
+  final int likeCount;
+  final bool liked;
 
   factory ConnectComment.fromJson(Map<String, dynamic> json) {
     return ConnectComment(
@@ -128,6 +152,9 @@ class ConnectComment {
       name: json['name'] as String? ?? 'Teammate',
       text: json['text'] as String? ?? '',
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      parentId: json['parentId'] as String?,
+      likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
+      liked: json['liked'] as bool? ?? false,
     );
   }
 }
@@ -137,17 +164,20 @@ class ConnectPollOption {
     required this.id,
     required this.label,
     required this.votes,
+    this.imageUrl,
   });
 
   final String id;
   final String label;
   final int votes;
+  final String? imageUrl;
 
   factory ConnectPollOption.fromJson(Map<String, dynamic> json) {
     return ConnectPollOption(
       id: json['id'] as String? ?? '',
       label: json['label'] as String? ?? '',
       votes: (json['votes'] as num?)?.toInt() ?? 0,
+      imageUrl: json['imageUrl'] as String?,
     );
   }
 }

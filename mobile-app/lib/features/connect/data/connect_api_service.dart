@@ -27,8 +27,13 @@ class ConnectApiService {
         .toList();
   }
 
+  bool _hasUpload(ConnectPostDraft draft) =>
+      draft.media != null ||
+      draft.mediaList.isNotEmpty ||
+      draft.pollOptionImages.any((item) => item != null);
+
   Future<ConnectPost> createPost(ConnectPostDraft draft) async {
-    if (draft.media != null) {
+    if (_hasUpload(draft)) {
       final json = await _multipartRequest('POST', '/connect/posts', draft);
       return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
     }
@@ -37,7 +42,7 @@ class ConnectApiService {
   }
 
   Future<ConnectPost> updatePost(String postId, ConnectPostDraft draft) async {
-    if (draft.media != null) {
+    if (_hasUpload(draft)) {
       final json = await _multipartRequest(
         'PATCH',
         '/connect/posts/$postId',
@@ -62,11 +67,23 @@ class ConnectApiService {
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 
-  Future<ConnectPost> addComment(String postId, String text) async {
+  Future<ConnectPost> addComment(
+    String postId,
+    String text, {
+    String? parentId,
+  }) async {
     final json = await _request(
       'POST',
       '/connect/posts/$postId/comments',
-      body: {'text': text},
+      body: {'text': text, 'parentId': ?parentId},
+    );
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  Future<ConnectPost> reactToComment(String postId, String commentId) async {
+    final json = await _request(
+      'POST',
+      '/connect/posts/$postId/comments/$commentId/reaction',
     );
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
@@ -119,21 +136,45 @@ class ConnectApiService {
     String path,
     ConnectPostDraft draft,
   ) async {
-    final media = draft.media;
-    if (media == null) throw StateError('Missing media attachment');
     final request = http.MultipartRequest(method, Uri.parse('$_baseUrl$path'));
     request.headers['Authorization'] = 'Bearer ${session.token}';
     request.fields['type'] = connectPostTypeToWire(draft.type);
     request.fields['removeMedia'] = draft.removeMedia ? 'true' : 'false';
     request.fields['body'] = jsonEncode(draft.body);
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'media',
-        media.path,
-        filename: media.name,
-        contentType: _mediaType(media.mimeType),
-      ),
-    );
+    final mediaFiles = draft.mediaList.isNotEmpty
+        ? draft.mediaList
+        : (draft.media != null ? [draft.media!] : const <ConnectMediaAttachment>[]);
+    for (final attachment in mediaFiles) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'media',
+          attachment.path,
+          filename: attachment.name,
+          contentType: _mediaType(attachment.mimeType),
+        ),
+      );
+    }
+    // Options without an image are skipped when uploading, so the backend
+    // needs to know which option index each uploaded file actually belongs
+    // to rather than assuming a gap-free 1:1 order.
+    final pollOptionImageIndexes = <int>[];
+    for (final (index, attachment) in draft.pollOptionImages.indexed) {
+      if (attachment == null) continue;
+      pollOptionImageIndexes.add(index);
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'pollOptionImages',
+          attachment.path,
+          filename: attachment.name,
+          contentType: _mediaType(attachment.mimeType),
+        ),
+      );
+    }
+    if (pollOptionImageIndexes.isNotEmpty) {
+      request.fields['pollOptionImageIndexes'] = jsonEncode(
+        pollOptionImageIndexes,
+      );
+    }
     final streamed = await _client.send(request);
     final response = await http.Response.fromStream(streamed);
     final decoded = _decodeResponse(response);

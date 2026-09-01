@@ -26,6 +26,16 @@ class _BottomTabs extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
         child: Row(
           children: [
+            _TabButton(
+              label: 'Connect',
+              iconAsset: 'assets/icons/nav_connect.svg',
+              activeIconAsset: 'assets/icons/nav_connect_active.svg',
+              selected: state.tab == ManagerTab.connect,
+              onTap: () {
+                onBeforeChange?.call();
+                bloc.add(const ChangeManagerTab(ManagerTab.connect));
+              },
+            ),
             if (state.canManage)
               _TabButton(
                 label: 'Team',
@@ -40,19 +50,11 @@ class _BottomTabs extends StatelessWidget {
             _TabButton(
               label: 'Grow',
               iconAsset: 'assets/icons/nav_grow.svg',
+              activeIconAsset: 'assets/icons/nav_grow_active.svg',
               selected: state.tab == ManagerTab.grow,
               onTap: () {
                 onBeforeChange?.call();
                 bloc.add(const ChangeManagerTab(ManagerTab.grow));
-              },
-            ),
-            _TabButton(
-              label: 'Connect',
-              iconAsset: 'assets/icons/nav_connect.svg',
-              selected: state.tab == ManagerTab.connect,
-              onTap: () {
-                onBeforeChange?.call();
-                bloc.add(const ChangeManagerTab(ManagerTab.connect));
               },
             ),
             _TabButton(

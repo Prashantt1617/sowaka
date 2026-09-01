@@ -5,108 +5,154 @@ class _AwardCard extends StatelessWidget {
     required this.award,
     required this.team,
     required this.onNominate,
+    this.titleOverride,
   });
 
   final AwardNomination award;
   final List<TeamMember> team;
   final VoidCallback onNominate;
 
+  /// "Employee of the Month" is shown regardless of which underlying award
+  /// category backs this card for now — see call site.
+  final String? titleOverride;
+
   @override
   Widget build(BuildContext context) {
-    final palette = awardPalette(award.key);
     final nominee = award.nomineeId == null
         ? null
         : team.where((item) => item.id == award.nomineeId).firstOrNull;
-    return PressableCard(
-      padding: const EdgeInsets.all(13),
+    const gold = Color(0xFFFFBF1B);
+    const goldTint = Color(0xFFFFF8E6);
+    const goldBorder = Color(0xFFFFCC00);
+    const goldBadgeBorder = Color(0xFFFFDF8D);
+    const goldButton = Color(0xFFFBC04B);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: goldTint,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: goldBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1.5,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconBox(
-            icon: awardIcon(award.icon),
-            color: palette.$1,
-            tint: palette.$2,
-            size: 40,
+          Image.asset(
+            'assets/icons/award_trophy_3d.png',
+            width: 43,
+            height: 43,
           ),
-          const Spacer(),
-          Text(
-            award.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: MColors.ink,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: goldTint,
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: goldBadgeBorder),
+            ),
+            child: Text(
+              titleOverride ?? award.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: gold,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            nominee?.name ?? award.subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: nominee == null ? MColors.inkSoft : palette.$1,
-              fontSize: 12.2,
-              height: 1.25,
-              fontWeight: nominee == null ? FontWeight.w500 : FontWeight.w800,
+          if (nominee != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                AvatarBadge(
+                  initial: nominee.initial,
+                  index: nominee.avatarIndex,
+                  size: 35,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        nominee.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: MColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        nominee.team,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Backend only supports (re)submitting a nomination today, not
+                // clearing one — so this re-opens the picker to reassign,
+                // matching the design's remove affordance without a real
+                // clear endpoint behind it.
+                Semantics(
+                  button: true,
+                  label: 'Change nomination for ${titleOverride ?? award.title}',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(99),
+                    onTap: onNominate,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: Color(0xFF717171),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 9),
+          ],
+          const SizedBox(height: 16),
           Semantics(
             button: true,
             label: nominee == null
-                ? 'Nominate someone for ${award.title}'
-                : 'Change nomination for ${award.title}',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+                ? 'Nominate someone for ${titleOverride ?? award.title}'
+                : 'Change nomination for ${titleOverride ?? award.title}',
+            child: SizedBox(
+              width: double.infinity,
+              child: Material(
+                color: goldButton,
                 borderRadius: BorderRadius.circular(8),
-                onTap: onNominate,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: nominee == null
-                      ? Text(
-                          '+ Nominate',
-                          style: TextStyle(
-                            color: palette.$1,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle_rounded,
-                              size: 14,
-                              color: palette.$1,
-                            ),
-                            const SizedBox(width: 5),
-                            Flexible(
-                              child: Text(
-                                'Submitted',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.$1,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const Flexible(
-                              child: Text(
-                                '  · Change',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: MColors.inkSoft,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onNominate,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      'Add',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: goldTint,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -128,16 +174,17 @@ class _AwardPicker extends StatefulWidget {
 }
 
 class _AwardPickerState extends State<_AwardPicker> {
-  TeamMember? _selected;
-  final TextEditingController _reason = TextEditingController();
-
-  @override
-  void dispose() {
-    _reason.dispose();
-    super.dispose();
-  }
-
   void _close() => widget.bloc.add(const CloseAwardPicker());
+
+  void _nominate(AwardNomination award, TeamMember member) {
+    // No reason-writing step — picking a teammate nominates them directly.
+    // The backend still requires a non-empty reason (HR-side review, not
+    // yet surfaced anywhere in the app), so send a generic placeholder.
+    widget.bloc.add(
+      NominateAward(award.key, member.id, 'Employee of the Month nominee'),
+    );
+    _close();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +192,6 @@ class _AwardPickerState extends State<_AwardPicker> {
     final award = data.awards.firstWhere(
       (item) => item.key == widget.state.awardPickerKey,
     );
-    final selected = _selected;
     return Positioned.fill(
       child: GestureDetector(
         onTap: _close,
@@ -184,52 +230,31 @@ class _AwardPickerState extends State<_AwardPicker> {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      Row(
+                      const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (selected != null)
-                            GestureDetector(
-                              onTap: () => setState(() => _selected = null),
-                              child: const Padding(
-                                padding: EdgeInsets.only(right: 10, top: 2),
-                                child: Icon(
-                                  Icons.chevron_left_rounded,
-                                  color: MColors.ink,
-                                ),
-                              ),
+                          Text(
+                            // Only "Employee of the Month" is nominatable
+                            // right now — see _AwardCard.
+                            'Employee of the Month',
+                            style: TextStyle(
+                              color: MColors.ink,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
                             ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  award.title,
-                                  style: const TextStyle(
-                                    color: MColors.ink,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  selected == null
-                                      ? 'Choose one teammate for this recognition.'
-                                      : 'Why are you nominating them?',
-                                  style: const TextStyle(
-                                    color: MColors.inkSoft,
-                                    fontSize: 13.5,
-                                  ),
-                                ),
-                              ],
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Choose one teammate for this recognition.',
+                            style: TextStyle(
+                              color: MColors.inkSoft,
+                              fontSize: 13.5,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 14),
-                      if (selected == null)
-                        _pickList(data, award)
-                      else
-                        _reasonStep(award, selected),
+                      _pickList(data, award),
                     ],
                   ),
                 ),
@@ -276,212 +301,12 @@ class _AwardPickerState extends State<_AwardPicker> {
             ),
             subtitle: Text(member.team),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => setState(() => _selected = member),
+            onTap: () => _nominate(award, member),
           );
         },
       ),
     );
   }
 
-  Widget _reasonStep(AwardNomination award, TeamMember member) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: MColors.bg,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              AvatarBadge(
-                initial: member.initial,
-                index: member.avatarIndex,
-                size: 40,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      member.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: MColors.ink,
-                        fontSize: 15,
-                      ),
-                    ),
-                    Text(
-                      member.team,
-                      style: const TextStyle(
-                        color: MColors.inkSoft,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _reason,
-          autofocus: true,
-          maxLines: 3,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            hintText:
-                'What did ${member.name.split(' ').first} do to deserve this?',
-            filled: true,
-            fillColor: MColors.bg,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _reason.text.trim().isEmpty
-                ? null
-                : () => widget.bloc.add(
-                    NominateAward(award.key, member.id, _reason.text.trim()),
-                  ),
-            style: FilledButton.styleFrom(
-              backgroundColor: MColors.ink,
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: const Text(
-              'Submit nomination',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-const Map<String, String> _awardTitles = {
-  'artist': 'Best Artist',
-  'mentor': 'Best Mentor',
-  'culture': 'Culture Champion',
-  'rising': 'Rising Star',
-};
-
-void _showPastNominations(BuildContext context, List<Nomination> history) {
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.white,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (context) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: MColors.line,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Past nominations',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: MColors.ink,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: history.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (context, i) {
-                  final n = history[i];
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: MColors.bg,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                n.employeeName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: MColors.ink,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(99),
-                                border: Border.all(color: MColors.line),
-                              ),
-                              child: Text(
-                                _awardTitles[n.category] ?? n.category,
-                                style: const TextStyle(
-                                  color: MColors.inkSoft,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (n.reason.isNotEmpty) ...[
-                          const SizedBox(height: 7),
-                          Text(
-                            n.reason,
-                            style: const TextStyle(
-                              color: MColors.inkSoft,
-                              fontSize: 13,
-                              height: 1.45,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}

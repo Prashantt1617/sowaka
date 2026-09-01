@@ -7,12 +7,14 @@ class _ManageContent extends StatelessWidget {
     required this.bloc,
     required this.onOpenProfile,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
   final VoidCallback onOpenProfile;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +24,7 @@ class _ManageContent extends StatelessWidget {
         bloc: bloc,
         onOpenProfile: onOpenProfile,
         onNotifications: onNotifications,
+        onOpenComposer: onOpenComposer,
       ),
       ManagerView.feedbackList => _FeedbackList(state: state, bloc: bloc),
       ManagerView.leaveRequests => _RequestList(
@@ -1291,7 +1294,9 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                     child: ActionButton(
                       label: 'Send to ${member.name.split(' ').first}',
                       icon: Icons.send_rounded,
-                      background: complete ? MColors.terra : MColors.line,
+                      background: complete
+                          ? const Color(0xFF0571A6)
+                          : MColors.line,
                       foreground: complete ? Colors.white : MColors.inkFaint,
                       onTap: complete
                           ? () => _confirmSend(context, bloc, member)

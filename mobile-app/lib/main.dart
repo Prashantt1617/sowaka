@@ -42,6 +42,22 @@ class HrmsMobileApp extends StatelessWidget {
             borderSide: const BorderSide(color: seedColor, width: 1.5),
           ),
         ),
+        // Material 3's seed-derived tertiary color lands on purple for this
+        // terracotta seed, which shows up as the selected AM/PM segment in
+        // the system time picker — override it to the blue used everywhere
+        // else in the app for a selected/interactive state.
+        timePickerTheme: TimePickerThemeData(
+          dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? const Color(0xFF0571A6)
+                : const Color(0xFFF7F7F9),
+          ),
+          dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? Colors.white
+                : const Color(0xFF717171),
+          ),
+        ),
         useMaterial3: true,
       ),
       home: const AuthGate(),

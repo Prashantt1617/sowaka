@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -253,6 +254,7 @@ class QuickActionsScreen extends StatefulWidget {
     required this.controller,
     required this.profileAction,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerBloc bloc;
@@ -260,6 +262,7 @@ class QuickActionsScreen extends StatefulWidget {
   final QuickActionsController controller;
   final Widget profileAction;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -435,63 +438,69 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         widget.dashboard.leaveBalance.casual.remaining +
         widget.dashboard.leaveBalance.earned.remaining;
 
+    String decisionLabel(LeaveDecision decision) => switch (decision) {
+      LeaveDecision.pending => 'Pending',
+      LeaveDecision.approved => 'Approved',
+      LeaveDecision.declined => 'Declined',
+    };
+
+    // Shows pending requests plus recent decisions, not just pending — the
+    // design's example list mixes a Pending and an Approved row (item 711:5299).
     final openRequests =
         <
             (
               DateTime date,
               String title,
               String subtitle,
+              String status,
               IconData icon,
               Color color,
               Color tint,
             )
           >[
-            for (final leave in widget.dashboard.myLeaves.where(
-              (item) => item.decision == LeaveDecision.pending,
-            ))
+            for (final leave in widget.dashboard.myLeaves)
               (
                 leave.requestedOn,
                 '${leave.type} leave',
                 '${_short(leave.start)}–${_short(leave.end)} · ${leave.days} days',
+                decisionLabel(leave.decision),
                 Icons.calendar_month_rounded,
                 const Color(0xFF0571A6),
                 const Color(0xFFE3F2FA),
               ),
-            for (final request in widget.dashboard.myOvertime.where(
-              (item) => item.decision == LeaveDecision.pending,
-            ))
+            for (final request in widget.dashboard.myOvertime)
               (
                 request.requestedOn,
                 'Overtime',
                 _short(request.workDate),
+                decisionLabel(request.decision),
                 Icons.schedule_rounded,
                 const Color(0xFFC98A2E),
                 const Color(0xFFF4ECDD),
               ),
-            for (final claim in widget.dashboard.myReimbursements.where(
-              (item) => item.status == 'Pending',
-            ))
+            for (final claim in widget.dashboard.myReimbursements)
               (
                 claim.createdAt,
                 claim.category,
                 '${_short(claim.expenseDate)} · ₹${claim.amount.toStringAsFixed(0)}',
+                claim.status,
                 Icons.receipt_long_rounded,
                 const Color(0xFF4F8C89),
                 const Color(0xFFDEEBE9),
               ),
-            for (final request in widget.dashboard.regularizations.where(
-              (item) => item.decision == LeaveDecision.pending,
-            ))
+            for (final request in widget.dashboard.regularizations)
               (
                 request.createdAt,
                 'Attendance correction',
                 _short(request.workDate),
+                decisionLabel(request.decision),
                 Icons.edit_calendar_rounded,
                 const Color(0xFFBE5A36),
                 const Color(0xFFF6E5DB),
               ),
           ]
           ..sort((a, b) => b.$1.compareTo(a.$1));
+    final recentRequests = openRequests.take(5).toList();
 
     return Column(
       key: const ValueKey('quick-home'),
@@ -576,21 +585,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     ),
                   ],
                 ),
-                if (openRequests.isNotEmpty) ...[
+                if (recentRequests.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const _HomeSectionLabel('Open request'),
                   const SizedBox(height: 10),
                   _RequestGroup(
                     children: [
-                      for (final (index, entry) in openRequests.indexed)
+                      for (final (index, entry) in recentRequests.indexed)
                         _RequestRow(
                           entry.$2,
                           entry.$3,
-                          'Pending',
-                          icon: entry.$4,
-                          color: entry.$5,
-                          tint: entry.$6,
-                          last: index == openRequests.length - 1,
+                          entry.$4,
+                          icon: entry.$5,
+                          color: entry.$6,
+                          tint: entry.$7,
+                          last: index == recentRequests.length - 1,
                         ),
                     ],
                   ),
@@ -885,9 +894,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _showQuickCreateComingSoon() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Quick create coming soon')));
+    widget.onOpenComposer();
   }
 
   void _openBlankLeaveForm() {
@@ -3343,10 +3350,17 @@ class _CorrectionTimeField extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    SvgPicture.asset(
-                      'assets/icons/list_row_chevron.svg',
-                      width: 14,
-                      height: 14,
+                    // This toggles AM/PM in place rather than drilling into
+                    // another screen, so the chevron should read as a
+                    // dropdown indicator (pointing down), not a nav arrow —
+                    // rotate the shared right-pointing asset 90°.
+                    Transform.rotate(
+                      angle: math.pi / 2,
+                      child: SvgPicture.asset(
+                        'assets/icons/list_row_chevron.svg',
+                        width: 14,
+                        height: 14,
+                      ),
                     ),
                   ],
                 ),
@@ -4647,11 +4661,14 @@ class _RequestRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = switch (status) {
-      'Approved' || 'Paid' => _Q.teal,
-      'Declined' => _Q.live,
-      'Holiday' => _Q.plum,
-      _ => _Q.gold,
+    // Explicit (fg, bg) pairs rather than deriving the pill background from
+    // an alpha on the foreground — matches the app's other status pills
+    // (e.g. the "Present" attendance pill) instead of a washed-out tint.
+    final (statusColor, statusTint) = switch (status) {
+      'Approved' || 'Paid' => (const Color(0xFF28CA08), const Color(0xFFDCFCE7)),
+      'Declined' => (const Color(0xFFFF383C), const Color(0xFFFEE2E2)),
+      'Holiday' => (_Q.plum, _Q.plumTint),
+      _ => (_Q.gold, _Q.goldTint),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
@@ -4678,7 +4695,7 @@ class _RequestRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: .12),
+              color: statusTint,
               borderRadius: BorderRadius.circular(99),
             ),
             child: Text(
@@ -5379,7 +5396,6 @@ class _Q {
   static const plumTint = Color(0xFFEEE6F0);
   static const sage = Color(0xFF4C5840);
   static const sageTint = Color(0xFFE7EFE4);
-  static const live = Color(0xFFC0392B);
 }
 
 class _QText {

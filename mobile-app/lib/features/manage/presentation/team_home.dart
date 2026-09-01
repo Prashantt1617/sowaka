@@ -8,12 +8,14 @@ class _TeamHome extends StatefulWidget {
     required this.bloc,
     required this.onOpenProfile,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
   final VoidCallback onOpenProfile;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<_TeamHome> createState() => _TeamHomeState();
@@ -52,9 +54,7 @@ class _TeamHomeState extends State<_TeamHome> {
               ),
             ),
             onNotifications: widget.onNotifications,
-            onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Quick create coming soon')),
-            ),
+            onQuickCreate: widget.onOpenComposer,
           ),
           const SizedBox(height: 14),
           Padding(
@@ -72,6 +72,7 @@ class _TeamHomeState extends State<_TeamHome> {
                     data: data,
                     bloc: widget.bloc,
                     onNotifications: widget.onNotifications,
+                    onOpenComposer: widget.onOpenComposer,
                   )
                 : _TeamRequestsView(data: data, bloc: widget.bloc),
           ),
@@ -166,11 +167,13 @@ class _MyTeamView extends StatefulWidget {
     required this.data,
     required this.bloc,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<_MyTeamView> createState() => _MyTeamViewState();
@@ -226,6 +229,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                 data: data,
                 bloc: widget.bloc,
                 onNotifications: widget.onNotifications,
+                onOpenComposer: widget.onOpenComposer,
               ),
             ),
           ),
@@ -245,53 +249,17 @@ class _RecognitionSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionTitle(
-          title: 'Recognition',
-          trailing:
-              '${data.awards.where((a) => a.nomineeId != null).length} of ${data.awards.length} named',
-        ),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            'Nominate someone for ${_monthName(DateTime.now().month)}’s awards.',
-            style: const TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+        // Only "Employee of the Month" is shown for now, matching the
+        // design — the other award categories return once the rest of the
+        // recognition flow is redesigned.
+        if (data.awards.isNotEmpty)
+          _AwardCard(
+            award: data.awards.first,
+            team: data.recognitionCandidates,
+            titleOverride: 'Employee of the Month',
+            onNominate: () =>
+                bloc.add(OpenAwardPicker(data.awards.first.key)),
           ),
-        ),
-        const SizedBox(height: 13),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: data.awards.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.08,
-          ),
-          itemBuilder: (context, index) {
-            return _AwardCard(
-              award: data.awards[index],
-              team: data.recognitionCandidates,
-              onNominate: () =>
-                  bloc.add(OpenAwardPicker(data.awards[index].key)),
-            );
-          },
-        ),
-        if (data.recognitionHistory.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Center(
-            child: TextButton.icon(
-              onPressed: () =>
-                  _showPastNominations(context, data.recognitionHistory),
-              icon: const Icon(Icons.history_rounded, size: 18),
-              label: Text(
-                'View past nominations (${data.recognitionHistory.length})',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 18),
       ],
     );
@@ -304,12 +272,14 @@ class _TeamMemberRow extends StatelessWidget {
     required this.data,
     required this.bloc,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +296,7 @@ class _TeamMemberRow extends StatelessWidget {
             data: data,
             bloc: bloc,
             onNotifications: onNotifications,
+            onOpenComposer: onOpenComposer,
           ),
         ),
       ),
@@ -715,7 +686,6 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
         children: [
-          _RecognitionSection(data: data, bloc: widget.bloc),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -741,6 +711,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             onClear: () => setState(() => _query = ''),
             hint: 'Search employee',
           ),
+          const SizedBox(height: 14),
+          _RecognitionSection(data: data, bloc: widget.bloc),
           const SizedBox(height: 14),
           if (filtered.isEmpty)
             Padding(

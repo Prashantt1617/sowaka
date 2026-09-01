@@ -44,6 +44,7 @@ class ManagerScreen extends StatefulWidget {
 class _ManagerScreenState extends State<ManagerScreen> {
   late final ManagerBloc _bloc;
   late final QuickActionsController _quickActionsController;
+  final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
 
@@ -239,6 +240,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     bloc: _bloc,
                     onBack: _closeProfile,
                     onLogout: _logout,
+                    onOpenComposer: _connectComposerController.openComposer,
                     onNotifications: () => _openNotifications(context),
                   )
                 : Stack(
@@ -254,6 +256,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
                                 state: state,
                                 bloc: _bloc,
                                 quickActionsController: _quickActionsController,
+                                connectComposerController:
+                                    _connectComposerController,
                                 onOpenProfile: _openProfile,
                               ),
                             ),

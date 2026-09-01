@@ -5,6 +5,7 @@ import {
   connectFeed,
   createPost,
   deletePost,
+  reactToConnectComment,
   reactToConnectPost,
   updatePost,
 } from '../controllers/connect.controller';
@@ -20,6 +21,7 @@ connectRouter.post('/games/:gameId/scores', playerSubmitScore);
 connectRouter.post('/posts', uploadConnectPostMedia, createPost);
 connectRouter.post('/posts/:postId/reaction', reactToConnectPost);
 connectRouter.post('/posts/:postId/comments', commentOnConnectPost);
+connectRouter.post('/posts/:postId/comments/:commentId/reaction', reactToConnectComment);
 connectRouter.post('/posts/:postId/actions', actOnConnectPost);
 connectRouter.patch('/posts/:postId', uploadConnectPostMedia, updatePost);
 connectRouter.delete('/posts/:postId', deletePost);

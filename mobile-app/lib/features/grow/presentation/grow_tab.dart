@@ -7,12 +7,14 @@ class _GrowTab extends StatefulWidget {
     required this.bloc,
     required this.onOpenProfile,
     required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
   final VoidCallback onOpenProfile;
   final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<_GrowTab> createState() => _GrowTabState();
@@ -58,6 +60,7 @@ class _GrowTabState extends State<_GrowTab> {
             data: data,
             bloc: widget.bloc,
             onNotifications: widget.onNotifications,
+            onOpenComposer: widget.onOpenComposer,
           ),
         ),
       );
@@ -81,9 +84,7 @@ class _GrowTabState extends State<_GrowTab> {
             ),
           ),
           onNotifications: widget.onNotifications,
-          onQuickCreate: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Quick create coming soon')),
-          ),
+          onQuickCreate: widget.onOpenComposer,
         ),
         Expanded(
           child: ListView(
@@ -462,11 +463,33 @@ class _GrowthChart extends StatelessWidget {
     required this.records,
     required this.values,
     required this.color,
+    this.selectedIndex,
+    this.onSelect,
   });
 
   final List<GrowthRecord> records;
   final List<double> values;
   final Color color;
+
+  /// Which point is highlighted with the value pill; defaults to the last
+  /// (most recent) point when null.
+  final int? selectedIndex;
+  final ValueChanged<int>? onSelect;
+
+  int get _effectiveIndex => selectedIndex ?? values.length - 1;
+
+  void _handleTap(Offset localPosition, Size size) {
+    if (onSelect == null || values.isEmpty) return;
+    const left = 28.0;
+    const right = 26.0;
+    final plotWidth = size.width - left - right;
+    final nearest = values.length == 1
+        ? 0
+        : (((localPosition.dx - left) / plotWidth) * (values.length - 1))
+              .round()
+              .clamp(0, values.length - 1);
+    onSelect!(nearest);
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -474,21 +497,38 @@ class _GrowthChart extends StatelessWidget {
       SizedBox(
         height: 158,
         width: double.infinity,
-        child: CustomPaint(painter: _GrowthChartPainter(values, color)),
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) => _handleTap(details.localPosition, constraints.biggest),
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _GrowthChartPainter(values, color, _effectiveIndex),
+            ),
+          ),
+        ),
       ),
       const SizedBox(height: 6),
       Padding(
         padding: const EdgeInsets.only(left: 28, right: 26),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: records
+          children: records.indexed
               .map(
-                (record) => Text(
-                  _periodLabel(record.period),
-                  style: const TextStyle(
-                    color: MColors.inkFaint,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                (entry) => GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onSelect == null ? null : () => onSelect!(entry.$1),
+                  child: Text(
+                    _periodLabel(entry.$2.period),
+                    style: TextStyle(
+                      color: entry.$1 == _effectiveIndex
+                          ? color
+                          : MColors.inkFaint,
+                      fontSize: 11,
+                      fontWeight: entry.$1 == _effectiveIndex
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                    ),
                   ),
                 ),
               )
@@ -500,10 +540,11 @@ class _GrowthChart extends StatelessWidget {
 }
 
 class _GrowthChartPainter extends CustomPainter {
-  const _GrowthChartPainter(this.values, this.color);
+  const _GrowthChartPainter(this.values, this.color, this.selectedIndex);
 
   final List<double> values;
   final Color color;
+  final int selectedIndex;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -597,25 +638,26 @@ class _GrowthChartPainter extends CustomPainter {
       ..drawPath(area, fill)
       ..drawPath(path, line);
     for (final entry in points.indexed) {
-      final isLast = entry.$1 == points.length - 1;
+      final isSelected = entry.$1 == selectedIndex;
       canvas.drawCircle(
         entry.$2,
-        isLast ? 5.5 : 4,
-        Paint()..color = isLast ? color : Colors.white,
+        isSelected ? 5.5 : 4,
+        Paint()..color = isSelected ? color : Colors.white,
       );
       canvas.drawCircle(
         entry.$2,
-        isLast ? 4.25 : 3,
+        isSelected ? 4.25 : 3,
         Paint()
           ..color = color
-          ..style = isLast ? PaintingStyle.fill : PaintingStyle.stroke
+          ..style = isSelected ? PaintingStyle.fill : PaintingStyle.stroke
           ..strokeWidth = 2.5,
       );
     }
 
+    final selected = selectedIndex.clamp(0, values.length - 1);
     final valueLabel = TextPainter(
       text: TextSpan(
-        text: values.last.toStringAsFixed(1),
+        text: values[selected].toStringAsFixed(1),
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
@@ -624,14 +666,14 @@ class _GrowthChartPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    final last = points.last;
+    final selectedPoint = points[selected];
     final pillWidth = valueLabel.width + 16;
     const pillHeight = 23.0;
-    final pillLeft = (last.dx - pillWidth / 2).clamp(
+    final pillLeft = (selectedPoint.dx - pillWidth / 2).clamp(
       left,
       size.width - right - pillWidth,
     );
-    final pillTop = math.max(0.0, last.dy - 31);
+    final pillTop = math.max(0.0, selectedPoint.dy - 31);
     final pill = RRect.fromRectAndRadius(
       Rect.fromLTWH(pillLeft, pillTop, pillWidth, pillHeight),
       const Radius.circular(99),
@@ -648,31 +690,28 @@ class _GrowthChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GrowthChartPainter oldDelegate) =>
-      oldDelegate.values != values || oldDelegate.color != color;
+      oldDelegate.values != values ||
+      oldDelegate.color != color ||
+      oldDelegate.selectedIndex != selectedIndex;
 }
 
 /// One review period on the growth timeline. Collapsed it shows the month and
 /// overall score; expanded it lists each parameter with its stars, matching the
-/// May 2026 card in the design.
-class _GrowthMonthCard extends StatefulWidget {
+/// May 2026 card in the design. Expansion is controlled by the parent so it
+/// can stay in sync with the growth chart's selected point.
+class _GrowthMonthCard extends StatelessWidget {
   const _GrowthMonthCard({
     required this.record,
-    this.initiallyExpanded = false,
+    required this.expanded,
+    required this.onToggle,
   });
 
   final GrowthRecord record;
-  final bool initiallyExpanded;
-
-  @override
-  State<_GrowthMonthCard> createState() => _GrowthMonthCardState();
-}
-
-class _GrowthMonthCardState extends State<_GrowthMonthCard> {
-  late bool _expanded = widget.initiallyExpanded;
+  final bool expanded;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
-    final record = widget.record;
     final note = record.parameters
         .map((item) => item.note.trim())
         .firstWhere((value) => value.isNotEmpty, orElse: () => '');
@@ -687,7 +726,7 @@ class _GrowthMonthCardState extends State<_GrowthMonthCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: onToggle,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
@@ -702,7 +741,7 @@ class _GrowthMonthCardState extends State<_GrowthMonthCard> {
                   ),
                   const SizedBox(width: 6),
                   AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
+                    turns: expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 180),
                     child: const Icon(
                       Icons.expand_more_rounded,
@@ -733,7 +772,7 @@ class _GrowthMonthCardState extends State<_GrowthMonthCard> {
               ),
             ),
           ),
-          if (_expanded) ...[
+          if (expanded) ...[
             const Divider(height: 1, color: Color(0xFFF3F4F6)),
             ColoredBox(
               color: const Color(0xFFF7F7F9),

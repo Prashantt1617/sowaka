@@ -56,11 +56,9 @@ class _TopBar extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.trailing, this.onTap});
+  const _SectionTitle({required this.title});
 
   final String title;
-  final String? trailing;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -79,22 +77,6 @@ class _SectionTitle extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null)
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  trailing!,
-                  style: TextStyle(
-                    color: onTap == null ? MColors.inkSoft : MColors.terra,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
