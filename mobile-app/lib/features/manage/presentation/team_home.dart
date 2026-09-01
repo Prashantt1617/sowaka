@@ -35,34 +35,41 @@ class _TeamHomeState extends State<_TeamHome> {
             .length;
 
     return ColoredBox(
-      color: Colors.white,
+      color: const Color(0xFFF7F7F9),
       child: Column(
         key: const ValueKey('team-home'),
         children: [
-          AppHomeHeader(
-            profileAction: Semantics(
-              button: true,
-              label: 'Open profile',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(99),
-                onTap: widget.onOpenProfile,
-                child: AvatarBadge(
-                  initial: data.managerInitial,
-                  index: 1,
-                  size: 30,
+          ColoredBox(
+            color: Colors.white,
+            child: Column(
+              children: [
+                AppHomeHeader(
+                  profileAction: Semantics(
+                    button: true,
+                    label: 'Open profile',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(99),
+                      onTap: widget.onOpenProfile,
+                      child: AvatarBadge(
+                        initial: data.managerInitial,
+                        index: 1,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                  onNotifications: widget.onNotifications,
+                  onQuickCreate: widget.onOpenComposer,
                 ),
-              ),
-            ),
-            onNotifications: widget.onNotifications,
-            onQuickCreate: widget.onOpenComposer,
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _TeamSegmentedControl(
-              section: _section,
-              pendingRequests: pendingRequests,
-              onChanged: (value) => setState(() => _section = value),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _TeamSegmentedControl(
+                    section: _section,
+                    pendingRequests: pendingRequests,
+                    onChanged: (value) => setState(() => _section = value),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 14),
@@ -97,6 +104,7 @@ class _TeamSegmentedControl extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
+        color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFEBEBEB))),
       ),
       child: Row(
@@ -591,8 +599,17 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             decision: LeaveDecision.pending,
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
-            onReject: () =>
-                bloc.add(DecideLeave(leave.id, LeaveDecision.declined)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideLeave(
+                  leave.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
           ),
         ),
       for (final request in data.overtime.where(
@@ -619,8 +636,17 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             decision: LeaveDecision.pending,
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
-            onReject: () =>
-                bloc.add(DecideOvertime(request.id, LeaveDecision.declined)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideOvertime(
+                  request.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
           ),
         ),
       for (final request in data.managerRegularizations.where(
@@ -1041,4 +1067,107 @@ class _TeamDecisionButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Leave and overtime declines require a non-empty reason on the backend
+/// (attendance corrections don't) — this collects one before the decision
+/// fires, instead of letting the PATCH fail with a raw "A decline reason is
+/// required" error. Returns null if the sheet was dismissed without one.
+Future<String?> _showDeclineReasonSheet(BuildContext context) {
+  final controller = TextEditingController();
+  return showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (context, setSheetState) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: MColors.line,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Reason for rejecting',
+                  style: TextStyle(
+                    color: MColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Let them know why this request isn't being approved.",
+                  style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 500,
+                  maxLines: 3,
+                  onChanged: (_) => setSheetState(() {}),
+                  decoration: _fieldDecoration('Explain why this is being rejected…'),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 10,
+                      child: ActionButton(
+                        label: 'Cancel',
+                        background: Colors.white,
+                        foreground: MColors.inkSoft,
+                        border: MColors.line,
+                        onTap: () => Navigator.pop(sheetContext),
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      flex: 15,
+                      child: ActionButton(
+                        label: 'Confirm reject',
+                        background: controller.text.trim().isEmpty
+                            ? MColors.line
+                            : MColors.terra,
+                        foreground: controller.text.trim().isEmpty
+                            ? MColors.inkFaint
+                            : Colors.white,
+                        onTap: controller.text.trim().isEmpty
+                            ? null
+                            : () => Navigator.pop(
+                                sheetContext,
+                                controller.text.trim(),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }

@@ -3157,10 +3157,13 @@ class _PostComposerPageState extends State<_PostComposerPage> {
         if (_newPostKind == 'media') ...[
           const SizedBox(height: 18),
           _FieldLabel('VIDEO OR PHOTO'),
+          // Per node 526:2474: the first photo is a full-width hero, and
+          // any additional photos are a row of smaller tiles underneath —
+          // not one uniform row of equal tiles.
           _MediaToggle(
             enabled: _hasMedia,
             selectedMedia: _selectedMedia,
-              existingMediaKind: _bodyValue('mediaKind'),
+            existingMediaKind: _bodyValue('mediaKind'),
             existingMediaUrl: _bodyValue('mediaUrl'),
             onTap: _pickMedia,
             onRemove: _hasMedia ? _removeMedia : null,
@@ -5352,10 +5355,15 @@ class _ExtraPhotosRow extends StatelessWidget {
   final VoidCallback onAdd;
   final ValueChanged<int> onRemove;
 
+  // Matches node 526:2474 exactly: 80×50 tiles, 4px radius, 8px gaps —
+  // deliberately smaller than the hero photo above, not the same size.
+  static const _tileWidth = 80.0;
+  static const _tileHeight = 50.0;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 72,
+      height: _tileHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
@@ -5366,11 +5374,11 @@ class _ExtraPhotosRow extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(4),
                     child: Image.file(
                       File(photo.path),
-                      width: 72,
-                      height: 72,
+                      width: _tileWidth,
+                      height: _tileHeight,
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -5380,8 +5388,8 @@ class _ExtraPhotosRow extends StatelessWidget {
                     child: GestureDetector(
                       onTap: () => onRemove(index),
                       child: Container(
-                        width: 22,
-                        height: 22,
+                        width: 20,
+                        height: 20,
                         alignment: Alignment.center,
                         decoration: const BoxDecoration(
                           color: _ConnectColors.ink,
@@ -5389,7 +5397,7 @@ class _ExtraPhotosRow extends StatelessWidget {
                         ),
                         child: const Icon(
                           Icons.close_rounded,
-                          size: 14,
+                          size: 12,
                           color: Colors.white,
                         ),
                       ),
@@ -5400,21 +5408,21 @@ class _ExtraPhotosRow extends StatelessWidget {
             ),
           if (canAddMore)
             InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
               onTap: onAdd,
               child: Container(
-                width: 72,
-                height: 72,
+                width: _tileWidth,
+                height: _tileHeight,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: const Color(0xFFF7F7F9),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: const Color(0xFFEBEBEB)),
                 ),
                 child: const Icon(
                   Icons.add_rounded,
                   color: _ConnectColors.terra,
-                  size: 26,
+                  size: 22,
                 ),
               ),
             ),
@@ -5489,15 +5497,16 @@ class _ComposerHeader extends StatelessWidget {
                           _InitialAvatar(
                             initials: viewerInitials,
                             color: viewerColor,
-                            size: 22,
+                            size: 30,
                           ),
                           const SizedBox(width: 8),
                           Text(
                             audienceLabel ?? 'Public',
                             style: const TextStyle(
-                              color: Color(0xFF222222),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF484848),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                              letterSpacing: 0.4,
                             ),
                           ),
                           const SizedBox(width: 2),

@@ -41,8 +41,17 @@ class _TeamMemberProfilePage extends StatelessWidget {
             decision: LeaveDecision.pending,
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
-            onReject: () =>
-                bloc.add(DecideLeave(leave.id, LeaveDecision.declined)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideLeave(
+                  leave.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
           ),
         ),
       for (final request in data.overtime.where(
@@ -66,8 +75,17 @@ class _TeamMemberProfilePage extends StatelessWidget {
             decision: LeaveDecision.pending,
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
-            onReject: () =>
-                bloc.add(DecideOvertime(request.id, LeaveDecision.declined)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideOvertime(
+                  request.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
           ),
         ),
       for (final request in data.managerRegularizations.where(

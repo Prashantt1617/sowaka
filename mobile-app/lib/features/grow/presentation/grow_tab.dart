@@ -90,6 +90,14 @@ class _GrowTabState extends State<_GrowTab> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
+              if (total > 0) ...[
+                _FeedbackGivenCard(
+                  given: given,
+                  total: total,
+                  percent: percent,
+                ),
+                const SizedBox(height: 14),
+              ],
               _MyFeedbackCard(
                 history: data.growthHistory,
                 approverName: data.approverName,
@@ -102,14 +110,6 @@ class _GrowTabState extends State<_GrowTab> {
                       ),
               ),
               const SizedBox(height: 14),
-              if (total > 0) ...[
-                _FeedbackGivenCard(
-                  given: given,
-                  total: total,
-                  percent: percent,
-                ),
-                const SizedBox(height: 14),
-              ],
               _FeedbackSearchField(
                 query: _query,
                 onChanged: (value) => setState(() => _query = value),
@@ -394,11 +394,11 @@ class _GrowthTeamRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return PressableCard(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(17),
       child: Row(
         children: [
-          _TeamMemberPhoto(member: member, size: 42),
-          const SizedBox(width: 12),
+          _TeamMemberPhoto(member: member, size: 56),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -412,22 +412,44 @@ class _GrowthTeamRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: MColors.ink,
-                          fontSize: 15,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: reviewed
-                            ? const Color(0xFF34C759)
-                            : const Color(0xFFFF383C),
-                        shape: BoxShape.circle,
+                    const SizedBox(width: 8),
+                    if (reviewed)
+                      Container(
+                        width: 14,
+                        height: 14,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00C950),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.1),
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                      )
+                    else
+                      Container(
+                        width: 16,
+                        height: 16,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF8C8F),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.1),
+                        ),
+                        child: const Icon(
+                          Icons.priority_high_rounded,
+                          size: 10,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 if (member.designation.isNotEmpty)
@@ -437,7 +459,7 @@ class _GrowthTeamRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: MColors.inkSoft,
-                      fontSize: 12.5,
+                      fontSize: 14,
                     ),
                   ),
               ],

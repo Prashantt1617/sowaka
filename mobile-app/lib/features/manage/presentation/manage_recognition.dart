@@ -48,6 +48,7 @@ class _AwardCard extends StatelessWidget {
             'assets/icons/award_trophy_3d.png',
             width: 43,
             height: 43,
+            fit: BoxFit.contain,
           ),
           const SizedBox(height: 16),
           Container(
