@@ -5,6 +5,7 @@ import {
   createConnectPost,
   deleteConnectPost,
   getConnectFeed,
+  getConnectPost,
   performConnectAction,
   toggleConnectCommentReaction,
   toggleConnectReaction,
@@ -15,6 +16,15 @@ export async function connectFeed(req: Request, res: Response, next: NextFunctio
   try {
     const posts = await getConnectFeed(requireUserId(req));
     res.status(200).json({ success: true, posts });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function connectPost(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await getConnectPost(requireUserId(req), String(req.params.postId ?? ''));
+    res.status(200).json({ success: true, post });
   } catch (error) {
     handleConnectError(error, next);
   }

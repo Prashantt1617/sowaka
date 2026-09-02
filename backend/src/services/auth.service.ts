@@ -5,6 +5,7 @@ import { AuthUser } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
 import { sendOtpEmail } from './email.service';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 
 const defaultCompany = 'Sowaka';
 
@@ -139,9 +140,14 @@ async function completeLogin(user: User): Promise<AuthUser> {
 }
 
 async function toAuthUser(user: User): Promise<AuthUser> {
-  const [company, manager] = await Promise.all([
+  const [company, manager, profilePhotoUrl] = await Promise.all([
     user.org ? companies().findOne({ id: user.org }) : null,
-    user.managerUserId ? users().findOne({ userId: user.managerUserId }) : null,
+    // Only the name is used below, and a full user document carries the
+    // profile photo with it.
+    user.managerUserId
+      ? users().findOne({ userId: user.managerUserId }, { projection: { _id: 0, name: 1 } })
+      : null,
+    resolveProfilePhoto(user),
   ]);
 
   return {
@@ -150,7 +156,7 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     name: user.name,
     role: user.role ?? 'employee',
     company: company?.name ?? user.org ?? defaultCompany,
-    profilePhotoUrl: user.profilePhotoUrl,
+    profilePhotoUrl,
     location: user.location ?? user.branch,
     state: user.state,
     designation: user.designation,

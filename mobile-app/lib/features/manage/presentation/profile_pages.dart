@@ -1580,7 +1580,7 @@ ImageProvider _profileImage(String url) {
     final base64Part = url.split(',').last;
     return MemoryImage(base64Decode(base64Part));
   }
-  return NetworkImage(url);
+  return NetworkImage(resolveMediaUrl(url));
 }
 
 class _TeamMemberPhoto extends StatelessWidget {

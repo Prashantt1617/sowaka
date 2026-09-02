@@ -27,6 +27,13 @@ class ConnectApiService {
         .toList();
   }
 
+  /// One post as this viewer sees it — used to patch in a single post after a
+  /// realtime change rather than refetching the whole feed.
+  Future<ConnectPost> fetchPost(String postId) async {
+    final json = await _request('GET', '/connect/posts/$postId');
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
   bool _hasUpload(ConnectPostDraft draft) =>
       draft.media != null ||
       draft.mediaList.isNotEmpty ||

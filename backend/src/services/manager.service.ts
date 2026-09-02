@@ -15,6 +15,7 @@ import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
 import {
   presignConnectMedia,
+  resolveProfilePhoto,
   uploadConnectMedia,
   type ConnectMediaFile,
 } from './s3-connect-media.service';
@@ -87,19 +88,20 @@ export async function updateProfilePhoto(userId: string, file: ConnectMediaFile)
   const user = await users().findOne({ userId });
   if (!user) throw new ManagerError(404, 'User not found');
   let photoUrl: string;
+  let objectKey: string;
   try {
     const uploaded = await uploadConnectMedia(userId, file);
-    // Stored resolved rather than as an objectKey: unlike Connect media,
-    // profile photos are read far more often than written, and the Mongo
-    // fallback's `data:` URI never expires anyway. If S3 is configured this
-    // presigned URL will expire after AWS_S3_PRESIGN_TTL — swap to storing
-    // the objectKey and presigning per-read (like Connect media) if profile
-    // photos need to outlive that in a real deployment.
-    photoUrl = await presignConnectMedia(uploaded.objectKey);
+    objectKey = uploaded.objectKey;
+    photoUrl = await presignConnectMedia(objectKey);
   } catch {
     throw new ManagerError(503, 'Photo storage is unavailable');
   }
-  await users().updateOne({ userId }, { $set: { profilePhotoUrl: photoUrl } });
+  // Only the key is persisted. Storing the resolved value put a multi-hundred-KB
+  // `data:` URI inside a document that every authenticated request reads.
+  await users().updateOne(
+    { userId },
+    { $set: { profilePhotoKey: objectKey }, $unset: { profilePhotoUrl: '' } },
+  );
   return photoUrl;
 }
 
@@ -229,7 +231,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     }),
   );
   const nextDate = endOfCurrentMonth().toISOString().slice(0, 10);
-  const team: ManagerTeamMemberView[] = reports.map((report) => {
+  const team: ManagerTeamMemberView[] = await Promise.all(reports.map(async (report) => {
     const current = currentByEmployee.get(report.userId);
     const latest = latestByEmployee.get(report.userId);
     const todaysRecord = todaysRecordFor(report);
@@ -247,7 +249,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       extra: current?.extra ?? '',
       todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
       birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
-      photoUrl: report.profilePhotoUrl ?? null,
+      photoUrl: (await resolveProfilePhoto(report)) ?? null,
       punchIn: todaysRecord?.punchIn ? todaysRecord.punchIn.toISOString() : null,
       punchOut: todaysRecord?.punchOut ? todaysRecord.punchOut.toISOString() : null,
       email: report.email,
@@ -271,7 +273,7 @@ export async function getManagerWorkspace(managerUserId: string) {
         uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
       })),
     };
-  });
+  }));
 
   // Company config for the overtime apply flow: which weekdays are week-offs,
   // whether overtime is enabled for this user's department, and the org holidays.

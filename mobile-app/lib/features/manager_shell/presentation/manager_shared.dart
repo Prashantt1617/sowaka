@@ -171,16 +171,22 @@ class AvatarBadge extends StatelessWidget {
     required this.initial,
     required this.index,
     required this.size,
+    this.photoUrl,
   });
 
   final String initial;
   final int index;
   final double size;
 
+  /// Shown in place of the initial when set. Falls back to the initial while
+  /// loading and if the image fails, so a broken photo never leaves a blank
+  /// circle.
+  final String? photoUrl;
+
   @override
   Widget build(BuildContext context) {
     final color = avatarColors[index % avatarColors.length];
-    return Container(
+    final initialCircle = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
@@ -191,6 +197,23 @@ class AvatarBadge extends StatelessWidget {
           color: Colors.white,
           fontSize: size * .42,
           fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+    final url = photoUrl;
+    if (url == null || url.isEmpty) return initialCircle;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image(
+          image: avatarImageProvider(url),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => initialCircle,
+          frameBuilder: (_, child, frame, wasSyncLoaded) =>
+              frame == null && !wasSyncLoaded ? initialCircle : child,
         ),
       ),
     );

@@ -3,9 +3,11 @@ import { connectPosts, gameScores, users } from '../config/db';
 import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import {
   deleteConnectMedia,
   presignConnectMedia,
+  resolveProfilePhoto,
   type ConnectMediaFile,
   uploadConnectMedia,
 } from './s3-connect-media.service';
@@ -17,6 +19,24 @@ export class ConnectError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * Tells every other client in the post's audience that it changed. Fire-and-
+ * forget: a realtime hiccup must never fail the write that already succeeded.
+ */
+function announceChange(
+  post: Pick<ConnectPost, 'id' | 'org' | 'audience'>,
+  action: ConnectChangeAction,
+  actorUserId?: string,
+): void {
+  emitConnectChange({
+    postId: post.id,
+    action,
+    actorUserId,
+    org: post.org,
+    department: post.audience.department,
+  });
 }
 
 export async function getConnectFeed(viewerUserId: string) {
@@ -50,11 +70,31 @@ export async function getConnectFeed(viewerUserId: string) {
   ];
   const authors = await users()
     .find({ userId: { $in: authorIds } })
-    .project<{ userId: string; profilePhotoUrl?: string }>({ userId: 1, profilePhotoUrl: 1 })
+    .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      userId: 1,
+      profilePhotoKey: 1,
+      profilePhotoUrl: 1,
+    })
     .toArray();
-  const authorPhotoUrls = new Map(authors.map((author) => [author.userId, author.profilePhotoUrl]));
+  const authorPhotoUrls = new Map(
+    await Promise.all(
+      authors.map(
+        async (author) =>
+          [author.userId, await resolveProfilePhoto(author)] as [string, string | undefined],
+      ),
+    ),
+  );
 
   return Promise.all(posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls)));
+}
+
+/**
+ * One post rendered for one viewer. Clients call this after a realtime change
+ * notice rather than refetching the whole feed for a single edited post.
+ */
+export async function getConnectPost(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  return viewPost(post, viewerUserId);
 }
 
 export async function toggleConnectReaction(viewerUserId: string, postId: string) {
@@ -70,6 +110,7 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
       viewer?.name ?? 'Someone', '', { destination: 'connect_post', postId: post.id });
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -110,6 +151,7 @@ export async function addConnectComment(
     });
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -129,6 +171,7 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -170,6 +213,7 @@ export async function performConnectAction(
     }
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -236,6 +280,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       updatedAt: now,
     };
     await connectPosts().insertOne(post);
+    announceChange(post, 'created', viewerUserId);
     return viewPost(post, viewerUserId);
   } catch (error) {
     await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
@@ -290,6 +335,9 @@ export async function updateConnectPost(
       await deleteConnectMediaByKeys(existingMediaObjectKeys);
     }
     const updated = await connectPosts().findOne({ id: post.id });
+    // Audience can change on edit, so announce against the saved post: a now
+    // department-scoped post must not keep reaching the whole org.
+    announceChange(updated ?? post, 'updated', viewer.userId);
     return viewPost(updated ?? post, viewer.userId);
   } catch (error) {
     await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
@@ -301,6 +349,7 @@ export async function deleteConnectPost(viewerUserId: string, postId: string) {
   const { post } = await requireEditablePost(viewerUserId, postId);
   await connectPosts().deleteOne({ id: post.id });
   await deleteConnectMediaByKeys(mediaObjectKeys(post.body));
+  announceChange(post, 'deleted', viewerUserId);
   return { id: post.id };
 }
 
@@ -339,8 +388,11 @@ async function viewPost(
         authorPhotoUrl = authorPhotoUrls.get(post.author.userId);
       }
     } else {
-      const authorUser = await users().findOne({ userId: post.author.userId });
-      if (authorUser) authorPhotoUrl = authorUser.profilePhotoUrl;
+      const authorUser = await users().findOne(
+        { userId: post.author.userId },
+        { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+      );
+      if (authorUser) authorPhotoUrl = await resolveProfilePhoto(authorUser);
     }
   }
   const liked = post.likedBy.includes(viewerUserId);
@@ -348,6 +400,11 @@ async function viewPost(
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
   const actionValue = post.actionBy?.[viewerUserId] ?? null;
   const body = { ...post.body };
+  // Lifecycle posts (birthday/anniversary/new joinee) reference the subject's
+  // photo by key so the post document stays small; resolve it per read.
+  if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
+    body.photoUrl = await presignConnectMedia(body.photoKey).catch(() => undefined);
+  }
   const objectKeys = mediaObjectKeys(body);
   if (objectKeys.length > 0) {
     const urls = await Promise.all(
@@ -427,7 +484,10 @@ function authorForUser(user: User) {
     initials: initialsFor(user.name),
     designation: user.designation ?? user.role ?? 'Teammate',
     avatarColor: avatarColorFor(user.userId),
-    photoUrl: user.profilePhotoUrl,
+    // Deliberately no photo snapshot: `viewPost` resolves the author's live
+    // photo on every read, so embedding one here only bloated every post
+    // document with a copy of the image.
+    photoUrl: undefined as string | undefined,
   };
 }
 
@@ -1047,11 +1107,14 @@ function systemPost(
 }
 
 async function insertSystemPost(post: ConnectPost) {
-  await connectPosts().updateOne(
+  const result = await connectPosts().updateOne(
     { systemKey: post.systemKey },
     { $setOnInsert: post },
     { upsert: true },
   );
+  // These run daily and are deliberately repeatable, so only a genuinely new
+  // insert is worth announcing — a no-op upsert would spam every client.
+  if (result.upsertedCount > 0) announceChange(post, 'created');
 }
 
 /** Generate today's birthday and work-anniversary posts, safely repeatable. */
@@ -1064,7 +1127,19 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
   const month = part('month');
   const day = part('day');
   const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const employees = await users().find({ lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }).toArray();
+  // Projected: this scans the whole directory daily, and full documents would
+  // pull every profile photo along with it.
+  const employees = await users()
+    .find(
+      { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+      {
+        projection: {
+          userId: 1, name: 1, email: 1, org: 1, birthday: 1, joiningDate: 1,
+          designation: 1, department: 1, role: 1, location: 1, profilePhotoKey: 1,
+        },
+      },
+    )
+    .toArray();
 
   for (const employee of employees) {
     const org = orgForUser(employee);
@@ -1072,7 +1147,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
       await insertSystemPost(systemPost(org, 'birthday', `birthday:${employee.userId}:${dateKey}`, {
         personName: employee.name,
         personInitials: initialsFor(employee.name),
-        photoUrl: employee.profilePhotoUrl,
+        photoKey: employee.profilePhotoKey,
         subtitle: `${employee.designation ?? employee.department ?? 'Teammate'} · turns a year wiser today`,
         actionLabel: 'Send wishes',
         actionDoneLabel: 'Wish sent!',
@@ -1084,7 +1159,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
         await insertSystemPost(systemPost(org, 'anniversary', `anniversary:${employee.userId}:${dateKey}`, {
           personName: employee.name,
           personInitials: initialsFor(employee.name),
-          photoUrl: employee.profilePhotoUrl,
+          photoKey: employee.profilePhotoKey,
           years,
           subtitle: `${employee.department ?? employee.designation ?? 'Team'} · joined ${employee.joiningDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`,
         }));
@@ -1099,7 +1174,7 @@ export async function generateNewJoineePost(employee: User, manager?: User) {
   await insertSystemPost(systemPost(org, 'new_joinee', `new-joinee:${employee.userId}`, {
     personName: employee.name,
     personInitials: initialsFor(employee.name),
-    photoUrl: employee.profilePhotoUrl,
+    photoKey: employee.profilePhotoKey,
     subtitle: `Joining as ${employee.designation ?? 'Teammate'} · Team ${employee.department ?? 'Company'}`,
     facts: [employee.location ? `based in ${employee.location}` : '', employee.joiningDate ? `started ${employee.joiningDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : ''].filter(Boolean).join(' · '),
     managerName: manager?.name,

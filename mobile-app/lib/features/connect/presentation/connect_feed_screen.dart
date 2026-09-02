@@ -12,6 +12,7 @@ import '../data/connect_models.dart';
 import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
+import '../../../services/api_config.dart';
 import '../../../services/notification_service.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
@@ -206,6 +207,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           }
           final post = filtered[index - 1];
           return _ConnectPostCard(
+            key: ValueKey(post.id),
             post: post,
             busy: state.busyPostId == post.id,
             canManage:
@@ -328,6 +330,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
 
 class _ConnectPostCard extends StatefulWidget {
   const _ConnectPostCard({
+    super.key,
     required this.post,
     required this.busy,
     required this.canManage,
@@ -6543,7 +6546,7 @@ ImageProvider _remoteImage(String url) {
       }
     }
   }
-  return NetworkImage(url);
+  return NetworkImage(resolveMediaUrl(url));
 }
 
 Color _hexColor(String value, Color fallback) {

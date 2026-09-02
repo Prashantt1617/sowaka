@@ -8,6 +8,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../routes/app_routes.dart';
+import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';

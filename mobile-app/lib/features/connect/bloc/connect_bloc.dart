@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../auth/data/auth_models.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
+import '../data/connect_socket_service.dart';
 
 enum ConnectLoadStatus { initial, loading, ready, failure }
 
@@ -46,12 +47,21 @@ class ConnectState {
 }
 
 class ConnectBloc {
-  ConnectBloc({required AuthSession session, ConnectApiService? api})
-    : _api = api ?? ConnectApiService(session: session);
+  ConnectBloc({
+    required AuthSession session,
+    ConnectApiService? api,
+    ConnectSocketService? socket,
+  }) : _session = session,
+       _api = api ?? ConnectApiService(session: session),
+       _socket = socket ?? ConnectSocketService(session: session);
 
+  final AuthSession _session;
   final ConnectApiService _api;
+  final ConnectSocketService _socket;
   final _controller = StreamController<ConnectState>.broadcast();
   ConnectState _state = ConnectState.initial();
+  StreamSubscription<ConnectChange>? _changeSub;
+  StreamSubscription<void>? _reconnectSub;
 
   Stream<ConnectState> get stream => _controller.stream;
   ConnectState get state => _state;
@@ -61,6 +71,7 @@ class ConnectBloc {
     try {
       final posts = await _api.fetchFeed();
       _emit(ConnectState(status: ConnectLoadStatus.ready, posts: posts));
+      _listenForChanges();
     } catch (error) {
       _emit(
         _state.copyWith(
@@ -68,6 +79,45 @@ class ConnectBloc {
           error: error.toString(),
         ),
       );
+    }
+  }
+
+  void _listenForChanges() {
+    if (_changeSub != null) return;
+    _changeSub = _socket.changes.listen(_applyChange);
+    // A dropped socket means missed events, so resync the whole feed once the
+    // connection comes back rather than trusting incremental updates alone.
+    _reconnectSub = _socket.reconnects.listen((_) => unawaited(refresh()));
+    _socket.connect();
+  }
+
+  Future<void> _applyChange(ConnectChange change) async {
+    // My own actions already updated state from the REST response.
+    if (change.actorUserId == _session.user.id) return;
+    if (change.action == ConnectChangeAction.deleted) {
+      _emit(
+        _state.copyWith(
+          posts: _state.posts
+              .where((post) => post.id != change.postId)
+              .toList(),
+        ),
+      );
+      return;
+    }
+    try {
+      final post = await _api.fetchPost(change.postId);
+      if (_controller.isClosed) return;
+      final index = _state.posts.indexWhere((item) => item.id == post.id);
+      final posts = [..._state.posts];
+      if (index >= 0) {
+        posts[index] = post;
+      } else {
+        posts.insert(0, post);
+      }
+      _emit(_state.copyWith(posts: posts));
+    } catch (_) {
+      // A post we can't fetch (deleted or not visible to us) just stays as-is;
+      // the next reconnect or manual refresh reconciles the feed.
     }
   }
 
@@ -220,6 +270,9 @@ class ConnectBloc {
   }
 
   void dispose() {
+    _changeSub?.cancel();
+    _reconnectSub?.cancel();
+    _socket.dispose();
     _controller.close();
   }
 }

@@ -3,6 +3,7 @@ import {
   actOnConnectPost,
   commentOnConnectPost,
   connectFeed,
+  connectPost,
   createPost,
   deletePost,
   reactToConnectComment,
@@ -16,6 +17,7 @@ import { playerGame, playerSubmitScore } from '../controllers/game.controller';
 export const connectRouter = Router();
 connectRouter.use(requireAuth);
 connectRouter.get('/feed', connectFeed);
+connectRouter.get('/posts/:postId', connectPost);
 connectRouter.get('/games/:gameId', playerGame);
 connectRouter.post('/games/:gameId/scores', playerSubmitScore);
 connectRouter.post('/posts', uploadConnectPostMedia, createPost);

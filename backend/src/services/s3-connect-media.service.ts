@@ -77,9 +77,13 @@ export async function deleteConnectMedia(objectKey: string) {
 
 export async function presignConnectMedia(objectKey: string) {
   if (objectKey.startsWith('mongo/')) {
-    const media = await connectMedia().findOne({ objectKey });
-    if (!media) throw new Error('Connect media not found');
-    return `data:${media.contentType};base64,${media.bytes.toString('base64')}`;
+    // A relative path, not the bytes. Inlining these as `data:` URIs meant one
+    // feed response carried every image in the feed — the same author photo
+    // repeated once per post — pushing a single payload past 20MB. Relative
+    // rather than absolute because clients reach this API on different hosts
+    // (LAN IP from a phone, localhost on desktop); each resolves it against
+    // its own base URL.
+    return `/media/${encodeURIComponent(objectKey)}`;
   }
   validateConfiguration();
   return getSignedUrl(
@@ -87,6 +91,22 @@ export async function presignConnectMedia(objectKey: string) {
     new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }),
     { expiresIn: env.s3.presignTtl },
   );
+}
+
+/**
+ * Resolves a stored profile-photo key to something an app can render, tolerating
+ * both the current key form and legacy inline `data:` URIs left in user
+ * documents. Returns undefined rather than throwing: a missing photo must never
+ * fail the request that happened to include it.
+ */
+export async function resolveProfilePhoto(
+  user: { profilePhotoKey?: string; profilePhotoUrl?: string } | null | undefined,
+): Promise<string | undefined> {
+  if (!user) return undefined;
+  if (user.profilePhotoKey) {
+    return presignConnectMedia(user.profilePhotoKey).catch(() => undefined);
+  }
+  return user.profilePhotoUrl;
 }
 
 function getClient() {

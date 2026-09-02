@@ -38,6 +38,13 @@ export interface User {
   endDate?: Date | null;
   documents?: EmployeeDocument[];
   lifecycleStatus: UserLifecycleStatus;
+  /**
+   * Storage key for the profile photo, resolved to a URL per read. Never store
+   * the resolved value here: without S3 it resolves to a `data:` URI hundreds
+   * of KB long, and this document is fetched on every authenticated request.
+   */
+  profilePhotoKey?: string;
+  /** @deprecated Legacy inline `data:` URI — read-only, migrated to `profilePhotoKey`. */
   profilePhotoUrl?: string;
   location?: string;
   state?: string;

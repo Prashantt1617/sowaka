@@ -2,6 +2,17 @@ part of '../../manager/presentation/manager_screen.dart';
 
 enum _RequestType { leave, overtime, attendance }
 
+/// Requesters are the manager's own reports, who are already loaded in the
+/// dashboard's team list with their photos — so the avatar resolves from there
+/// rather than costing another round trip per request.
+String? _requesterPhoto(ManagerState state, String userId) {
+  if (userId.isEmpty) return null;
+  for (final member in state.dashboard?.team ?? const <TeamMember>[]) {
+    if (member.userId == userId) return member.photoUrl;
+  }
+  return null;
+}
+
 class _RequestList extends StatefulWidget {
   const _RequestList({
     required this.state,
@@ -96,7 +107,13 @@ class _RequestListState extends State<_RequestList> {
                   empty: items.isEmpty,
                   reviewed: _reviewed,
                   children: items
-                      .map((item) => _LeaveCard(leave: item, bloc: widget.bloc))
+                      .map(
+                        (item) => _LeaveCard(
+                          leave: item,
+                          bloc: widget.bloc,
+                          photoUrl: _requesterPhoto(widget.state, item.userId),
+                        ),
+                      )
                       .toList(),
                 );
               }
@@ -116,6 +133,7 @@ class _RequestListState extends State<_RequestList> {
                         (item) => _OvertimeRequestCard(
                           request: item,
                           bloc: widget.bloc,
+                          photoUrl: _requesterPhoto(widget.state, item.userId),
                         ),
                       )
                       .toList(),
@@ -136,6 +154,7 @@ class _RequestListState extends State<_RequestList> {
                       (item) => _AttendanceCorrectionCard(
                         request: item,
                         bloc: widget.bloc,
+                        photoUrl: _requesterPhoto(widget.state, item.userId),
                       ),
                     )
                     .toList(),
@@ -236,16 +255,25 @@ class _RequestListBody extends StatelessWidget {
 }
 
 class _AttendanceCorrectionCard extends StatelessWidget {
-  const _AttendanceCorrectionCard({required this.request, required this.bloc});
+  const _AttendanceCorrectionCard({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
   final AttendanceRegularization request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => PressableCard(
     onTap: () => Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
-            _AttendanceCorrectionDetailPage(request: request, bloc: bloc),
+            _AttendanceCorrectionDetailPage(
+              request: request,
+              bloc: bloc,
+              photoUrl: photoUrl,
+            ),
       ),
     ),
     padding: EdgeInsets.zero,
@@ -263,6 +291,7 @@ class _AttendanceCorrectionCard extends StatelessWidget {
                     initial: request.initial,
                     index: request.avatarIndex,
                     size: 42,
+                    photoUrl: photoUrl,
                   ),
                   const SizedBox(width: 11),
                   Expanded(
@@ -483,9 +512,11 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   const _AttendanceCorrectionDetailPage({
     required this.request,
     required this.bloc,
+    this.photoUrl,
   });
   final AttendanceRegularization request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -511,6 +542,7 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
                           initial: request.initial,
                           index: request.avatarIndex,
                           size: 50,
+                          photoUrl: photoUrl,
                         ),
                         const SizedBox(width: 13),
                         Expanded(
@@ -670,8 +702,9 @@ String _attendanceClock(DateTime? value) => value == null
     : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
 
 class _LeaveCard extends StatelessWidget {
-  const _LeaveCard({required this.leave, required this.bloc});
+  const _LeaveCard({required this.leave, required this.bloc, this.photoUrl});
 
+  final String? photoUrl;
   final LeaveRequest leave;
   final ManagerBloc bloc;
 
@@ -695,6 +728,7 @@ class _LeaveCard extends StatelessWidget {
                       initial: leave.initial,
                       index: leave.avatarIndex,
                       size: 42,
+                      photoUrl: photoUrl,
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -791,7 +825,8 @@ class _LeaveCard extends StatelessWidget {
   void _openDetails(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _LeaveRequestDetailPage(leave: leave, bloc: bloc),
+        builder: (_) =>
+            _LeaveRequestDetailPage(leave: leave, bloc: bloc, photoUrl: photoUrl),
       ),
     );
   }
@@ -929,10 +964,15 @@ class _LeaveStatusPill extends StatelessWidget {
 }
 
 class _LeaveRequestDetailPage extends StatelessWidget {
-  const _LeaveRequestDetailPage({required this.leave, required this.bloc});
+  const _LeaveRequestDetailPage({
+    required this.leave,
+    required this.bloc,
+    this.photoUrl,
+  });
 
   final LeaveRequest leave;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -960,6 +1000,7 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                             initial: leave.initial,
                             index: leave.avatarIndex,
                             size: 50,
+                            photoUrl: photoUrl,
                           ),
                           const SizedBox(width: 13),
                           Expanded(
@@ -1490,8 +1531,13 @@ String _requestTimestamp(DateTime value) {
 }
 
 class _OvertimeRequestCard extends StatelessWidget {
-  const _OvertimeRequestCard({required this.request, required this.bloc});
+  const _OvertimeRequestCard({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
 
+  final String? photoUrl;
   final OvertimeRequest request;
   final ManagerBloc bloc;
 
@@ -1514,6 +1560,7 @@ class _OvertimeRequestCard extends StatelessWidget {
                       initial: request.initial,
                       index: request.avatarIndex,
                       size: 42,
+                      photoUrl: photoUrl,
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -1614,7 +1661,11 @@ class _OvertimeRequestCard extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
-            _OvertimeRequestDetailPage(request: request, bloc: bloc),
+            _OvertimeRequestDetailPage(
+              request: request,
+              bloc: bloc,
+              photoUrl: photoUrl,
+            ),
       ),
     );
   }
@@ -1729,14 +1780,20 @@ class _RequestHighlightPanel extends StatelessWidget {
 }
 
 class _OvertimeRequestDetailPage extends StatelessWidget {
-  const _OvertimeRequestDetailPage({required this.request, required this.bloc});
+  const _OvertimeRequestDetailPage({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
 
   final OvertimeRequest request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => _ManagerRequestDetailPage(
     title: 'Overtime request',
+    photoUrl: photoUrl,
     person: request.who,
     team: request.team,
     initial: request.initial,
@@ -1813,6 +1870,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
     required this.onApprove,
     this.noteLabel,
     this.note,
+    this.photoUrl,
   });
 
   final String title;
@@ -1820,6 +1878,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
   final String team;
   final String initial;
   final int avatarIndex;
+  final String? photoUrl;
   final DateTime requestedOn;
   final Widget chip;
   final String primaryLabel;
@@ -1859,6 +1918,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
                           initial: initial,
                           index: avatarIndex,
                           size: 50,
+                          photoUrl: photoUrl,
                         ),
                         const SizedBox(width: 13),
                         Expanded(
