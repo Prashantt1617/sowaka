@@ -9,14 +9,26 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
+  const employee = await users().findOne({ userId });
+  if (!employee) throw new AttendanceError(404, 'Employee not found');
+  return getAttendanceForEmployee(userId, employee.employeeId, fromInput, toInput);
+}
+
+// Split out so callers that already have the employee record (e.g.
+// `getTeamMemberAttendance`, which fetches it for the manager-authorization
+// check) don't pay for a second `users().findOne` — each `users` lookup on
+// this cluster runs noticeably slower than the attendance collections'.
+async function getAttendanceForEmployee(
+  userId: string,
+  employeeId: string | undefined,
+  fromInput: string,
+  toInput: string,
+) {
   const from = parseDate(fromInput, 'from');
   const to = parseDate(toInput, 'to');
   if (to < from) throw new AttendanceError(400, 'to cannot be before from');
   if (daysBetween(from, to) > 92) throw new AttendanceError(400, 'Date range cannot exceed 93 days');
 
-  const employee = await users().findOne({ userId });
-  if (!employee) throw new AttendanceError(404, 'Employee not found');
-  const employeeId = employee.employeeId;
   const recordFilter = employeeId
     ? { $or: [{ userId }, { employeeId }], workDate: { $gte: fromInput, $lte: toInput } }
     : { userId, workDate: { $gte: fromInput, $lte: toInput } };
@@ -121,7 +133,7 @@ export async function getTeamMemberAttendance(
   if (employee.managerUserId !== managerUserId) {
     throw new AttendanceError(403, "Not authorized to view this employee's attendance");
   }
-  return getMyAttendance(employeeUserId, fromInput, toInput);
+  return getAttendanceForEmployee(employeeUserId, employee.employeeId, fromInput, toInput);
 }
 
 export async function getManagerRegularizations(managerUserId: string) {

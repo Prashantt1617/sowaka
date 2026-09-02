@@ -146,7 +146,20 @@ class _FeedbackList extends StatelessWidget {
                       ],
                     ),
                   ),
-                  AvatarBadge(initial: data.managerInitial, index: 1, size: 42),
+                  data.managerPhotoUrl == null
+                      ? AvatarBadge(
+                          initial: data.managerInitial,
+                          index: 1,
+                          size: 42,
+                        )
+                      : ClipOval(
+                          child: Image(
+                            image: _profileImage(data.managerPhotoUrl!),
+                            width: 42,
+                            height: 42,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -585,11 +598,7 @@ class _FeedbackRows extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                AvatarBadge(
-                  initial: member.initial,
-                  index: member.avatarIndex,
-                  size: 34,
-                ),
+                _TeamMemberPhoto(member: member, size: 34),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -694,11 +703,7 @@ class _GivenFeedbackRows extends StatelessWidget {
                 const SizedBox(width: 12),
                 Opacity(
                   opacity: .55,
-                  child: AvatarBadge(
-                    initial: member.initial,
-                    index: member.avatarIndex,
-                    size: 32,
-                  ),
+                  child: _TeamMemberPhoto(member: member, size: 32),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -870,11 +875,7 @@ class _FeedbackReportCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          AvatarBadge(
-            initial: member.initial,
-            index: member.avatarIndex,
-            size: 54,
-          ),
+          _TeamMemberPhoto(member: member, size: 54),
           const SizedBox(width: 15),
           Expanded(
             child: Column(

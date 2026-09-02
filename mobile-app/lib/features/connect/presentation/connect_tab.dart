@@ -40,22 +40,36 @@ class _ProfileAvatarAction extends StatelessWidget {
     super.key,
     required this.initial,
     required this.onTap,
+    this.photoUrl,
     this.size = 42,
+    this.label = 'Open profile',
   });
 
   final String initial;
   final VoidCallback onTap;
+  final String? photoUrl;
   final double size;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
+    final url = photoUrl;
     return Semantics(
       button: true,
-      label: 'Open profile',
+      label: label,
       child: InkWell(
         borderRadius: BorderRadius.circular(99),
         onTap: onTap,
-        child: AvatarBadge(initial: initial, index: 1, size: size),
+        child: url == null || url.isEmpty
+            ? AvatarBadge(initial: initial, index: 1, size: size)
+            : ClipOval(
+                child: Image(
+                  image: _profileImage(url),
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                ),
+              ),
       ),
     );
   }

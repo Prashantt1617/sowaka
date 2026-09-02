@@ -3,6 +3,7 @@ import {
   getManagerWorkspace,
   ManagerError,
   nominateForRecognition,
+  updateProfilePhoto,
   upsertFeedback,
 } from '../services/manager.service';
 
@@ -10,6 +11,21 @@ export async function managerWorkspace(req: Request, res: Response, next: NextFu
   try {
     const workspace = await getManagerWorkspace(requireUserId(req));
     res.status(200).json({ success: true, ...workspace });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateMyProfilePhoto(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new ManagerError(400, 'A photo file is required');
+    const photoUrl = await updateProfilePhoto(requireUserId(req), {
+      originalName: req.file.originalname,
+      contentType: req.file.mimetype,
+      size: req.file.size,
+      bytes: req.file.buffer,
+    });
+    res.status(200).json({ success: true, photoUrl });
   } catch (error) {
     next(error);
   }

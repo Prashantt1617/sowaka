@@ -70,18 +70,11 @@ class _GrowTabState extends State<_GrowTab> {
       key: const ValueKey('grow'),
       children: [
         AppHomeHeader(
-          profileAction: Semantics(
-            button: true,
-            label: 'Open profile',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(99),
-              onTap: widget.onOpenProfile,
-              child: AvatarBadge(
-                initial: data.managerInitial,
-                index: 1,
-                size: 30,
-              ),
-            ),
+          profileAction: _ProfileAvatarAction(
+            initial: data.managerInitial,
+            photoUrl: data.managerPhotoUrl,
+            onTap: widget.onOpenProfile,
+            size: 30,
           ),
           onNotifications: widget.onNotifications,
           onQuickCreate: widget.onOpenComposer,

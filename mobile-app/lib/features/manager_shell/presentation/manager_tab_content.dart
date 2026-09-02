@@ -56,6 +56,7 @@ class _TabContent extends StatelessWidget {
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
             onTap: onOpenProfile,
             size: 30,
           ),
@@ -70,6 +71,7 @@ class _TabContent extends StatelessWidget {
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('quick-profile-avatar'),
             initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
             onTap: onOpenProfile,
             size: 30,
           ),

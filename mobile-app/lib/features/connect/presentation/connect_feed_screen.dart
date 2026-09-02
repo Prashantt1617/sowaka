@@ -81,6 +81,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   // id.
   String get _viewerInitials => _initials(widget.session.user.name);
   Color get _viewerColor => _avatarColorFor(widget.session.user.id);
+  String get _viewerPhotoUrl => widget.session.user.profilePhotoUrl ?? '';
 
   @override
   void initState() {
@@ -217,6 +218,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             onOpenComments: () => _openComments(post.id),
             viewerInitials: _viewerInitials,
             viewerColor: _viewerColor,
+            viewerPhotoUrl: _viewerPhotoUrl,
           );
         },
       ),
@@ -261,6 +263,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           initialPoll: initialPoll,
           viewerInitials: _viewerInitials,
           viewerColor: _viewerColor,
+          viewerPhotoUrl: _viewerPhotoUrl,
         ),
       ),
     );
@@ -296,6 +299,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         postId: postId,
         viewerInitials: _viewerInitials,
         viewerColor: _viewerColor,
+        viewerPhotoUrl: _viewerPhotoUrl,
       ),
     );
   }
@@ -333,6 +337,7 @@ class _ConnectPostCard extends StatefulWidget {
     required this.onOpenComments,
     required this.viewerInitials,
     required this.viewerColor,
+    this.viewerPhotoUrl = '',
   });
 
   final ConnectPost post;
@@ -347,6 +352,7 @@ class _ConnectPostCard extends StatefulWidget {
   final VoidCallback onOpenComments;
   final String viewerInitials;
   final Color viewerColor;
+  final String viewerPhotoUrl;
 
   @override
   State<_ConnectPostCard> createState() => _ConnectPostCardState();
@@ -412,6 +418,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               onOpenComments: widget.onOpenComments,
               viewerInitials: widget.viewerInitials,
               viewerColor: widget.viewerColor,
+              viewerPhotoUrl: widget.viewerPhotoUrl,
             ),
           ],
         ),
@@ -2367,6 +2374,7 @@ class _PostFooter extends StatelessWidget {
     required this.onOpenComments,
     required this.viewerInitials,
     required this.viewerColor,
+    this.viewerPhotoUrl = '',
   });
 
   final ConnectPost post;
@@ -2377,6 +2385,7 @@ class _PostFooter extends StatelessWidget {
   final VoidCallback onOpenComments;
   final String viewerInitials;
   final Color viewerColor;
+  final String viewerPhotoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -2535,6 +2544,7 @@ class _PostFooter extends StatelessWidget {
                 _InitialAvatar(
                   initials: viewerInitials,
                   color: viewerColor,
+                  photoUrl: viewerPhotoUrl,
                   size: 32,
                 ),
                 const SizedBox(width: 8),
@@ -2906,6 +2916,7 @@ class _PostComposerPage extends StatefulWidget {
     this.initialPoll,
     this.viewerInitials = '',
     this.viewerColor = _ConnectColors.blue,
+    this.viewerPhotoUrl = '',
   });
 
   final ConnectPostType type;
@@ -2915,6 +2926,7 @@ class _PostComposerPage extends StatefulWidget {
   final _PollDraft? initialPoll;
   final String viewerInitials;
   final Color viewerColor;
+  final String viewerPhotoUrl;
 
   @override
   State<_PostComposerPage> createState() => _PostComposerPageState();
@@ -3080,6 +3092,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
                     : _openAudiencePicker,
                 viewerInitials: widget.viewerInitials,
                 viewerColor: widget.viewerColor,
+                viewerPhotoUrl: widget.viewerPhotoUrl,
               ),
               Expanded(
                 child: SingleChildScrollView(
@@ -3944,12 +3957,14 @@ class _CommentsSheet extends StatefulWidget {
     required this.postId,
     required this.viewerInitials,
     required this.viewerColor,
+    this.viewerPhotoUrl = '',
   });
 
   final ConnectBloc bloc;
   final String postId;
   final String viewerInitials;
   final Color viewerColor;
+  final String viewerPhotoUrl;
 
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
@@ -4237,6 +4252,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                               _InitialAvatar(
                                 initials: widget.viewerInitials,
                                 color: widget.viewerColor,
+                                photoUrl: widget.viewerPhotoUrl,
                                 size: 32,
                               ),
                               const SizedBox(width: 10),
@@ -5447,6 +5463,7 @@ class _ComposerHeader extends StatelessWidget {
     this.onAudienceTap,
     this.viewerInitials = '',
     this.viewerColor = _ConnectColors.blue,
+    this.viewerPhotoUrl = '',
   });
 
   final VoidCallback onDismiss;
@@ -5458,6 +5475,7 @@ class _ComposerHeader extends StatelessWidget {
   final VoidCallback? onAudienceTap;
   final String viewerInitials;
   final Color viewerColor;
+  final String viewerPhotoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -5497,6 +5515,7 @@ class _ComposerHeader extends StatelessWidget {
                           _InitialAvatar(
                             initials: viewerInitials,
                             color: viewerColor,
+                            photoUrl: viewerPhotoUrl,
                             size: 30,
                           ),
                           const SizedBox(width: 8),

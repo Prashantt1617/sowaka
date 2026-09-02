@@ -44,18 +44,11 @@ class _TeamHomeState extends State<_TeamHome> {
             child: Column(
               children: [
                 AppHomeHeader(
-                  profileAction: Semantics(
-                    button: true,
-                    label: 'Open profile',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(99),
-                      onTap: widget.onOpenProfile,
-                      child: AvatarBadge(
-                        initial: data.managerInitial,
-                        index: 1,
-                        size: 30,
-                      ),
-                    ),
+                  profileAction: _ProfileAvatarAction(
+                    initial: data.managerInitial,
+                    photoUrl: data.managerPhotoUrl,
+                    onTap: widget.onOpenProfile,
+                    size: 30,
                   ),
                   onNotifications: widget.onNotifications,
                   onQuickCreate: widget.onOpenComposer,
@@ -321,11 +314,7 @@ class _TeamMemberRow extends StatelessWidget {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    AvatarBadge(
-                      initial: member.initial,
-                      index: member.avatarIndex,
-                      size: 56,
-                    ),
+                    _TeamMemberPhoto(member: member, size: 56),
                     Positioned(
                       right: 0,
                       bottom: 0,

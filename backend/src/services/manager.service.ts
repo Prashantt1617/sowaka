@@ -13,6 +13,11 @@ import {
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
+import {
+  presignConnectMedia,
+  uploadConnectMedia,
+  type ConnectMediaFile,
+} from './s3-connect-media.service';
 
 // Parameter set and order come from the feedback design. These become
 // HR-configurable once the HR dashboard lands.
@@ -76,6 +81,26 @@ export interface ManagerTeamMemberView {
     parameters: FeedbackParameter[];
     sentAt: Date;
   }[];
+}
+
+export async function updateProfilePhoto(userId: string, file: ConnectMediaFile) {
+  const user = await users().findOne({ userId });
+  if (!user) throw new ManagerError(404, 'User not found');
+  let photoUrl: string;
+  try {
+    const uploaded = await uploadConnectMedia(userId, file);
+    // Stored resolved rather than as an objectKey: unlike Connect media,
+    // profile photos are read far more often than written, and the Mongo
+    // fallback's `data:` URI never expires anyway. If S3 is configured this
+    // presigned URL will expire after AWS_S3_PRESIGN_TTL — swap to storing
+    // the objectKey and presigning per-read (like Connect media) if profile
+    // photos need to outlive that in a real deployment.
+    photoUrl = await presignConnectMedia(uploaded.objectKey);
+  } catch {
+    throw new ManagerError(503, 'Photo storage is unavailable');
+  }
+  await users().updateOne({ userId }, { $set: { profilePhotoUrl: photoUrl } });
+  return photoUrl;
 }
 
 export async function getManagerWorkspace(managerUserId: string) {

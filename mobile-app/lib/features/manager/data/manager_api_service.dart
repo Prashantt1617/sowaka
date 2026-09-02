@@ -80,6 +80,7 @@ class ManagerApiService {
     return ManagerDashboard(
       managerName: session.user.name,
       managerInitial: session.user.name.isEmpty ? '?' : session.user.name[0],
+      managerPhotoUrl: session.user.profilePhotoUrl,
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
       managerScore: (workspace['managerScore'] as num?)?.toDouble() ?? 0,
@@ -398,6 +399,19 @@ class ManagerApiService {
       },
     );
     return ReimbursementClaim.fromJson(json['claim'] as Map<String, dynamic>);
+  }
+
+  Future<String> updateProfilePhoto({
+    required String path,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest('PATCH', Uri.parse('$_baseUrl/manager/photo'))
+      ..headers['Authorization'] = 'Bearer ${session.token}'
+      ..files.add(
+        await http.MultipartFile.fromPath('photo', path, filename: filename),
+      );
+    final json = await _send(request);
+    return json['photoUrl'] as String;
   }
 
   Future<Map<String, dynamic>> _request(

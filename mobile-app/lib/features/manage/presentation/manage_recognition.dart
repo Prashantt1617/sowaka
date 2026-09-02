@@ -73,11 +73,7 @@ class _AwardCard extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                AvatarBadge(
-                  initial: nominee.initial,
-                  index: nominee.avatarIndex,
-                  size: 35,
-                ),
+                _TeamMemberPhoto(member: nominee, size: 35),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -288,11 +284,7 @@ class _AwardPickerState extends State<_AwardPicker> {
           final member = data.recognitionCandidates[index];
           return ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: AvatarBadge(
-              initial: member.initial,
-              index: member.avatarIndex,
-              size: 38,
-            ),
+            leading: _TeamMemberPhoto(member: member, size: 38),
             title: Text(
               member.name,
               style: const TextStyle(

@@ -125,18 +125,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
       body: Column(
         children: [
           AppHomeHeader(
-            profileAction: Semantics(
-              button: true,
+            profileAction: _ProfileAvatarAction(
+              initial: data.managerInitial,
+              photoUrl: data.managerPhotoUrl,
+              onTap: () => Navigator.of(context).pop(),
+              size: 30,
               label: 'Close profile',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(99),
-                onTap: () => Navigator.of(context).pop(),
-                child: AvatarBadge(
-                  initial: data.managerInitial,
-                  index: 1,
-                  size: 30,
-                ),
-              ),
             ),
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
@@ -503,7 +497,7 @@ class _GiveFeedbackButton extends StatelessWidget {
   }
 }
 
-class _ProfileScreen extends StatelessWidget {
+class _ProfileScreen extends StatefulWidget {
   const _ProfileScreen({
     required this.session,
     required this.dashboard,
@@ -512,6 +506,7 @@ class _ProfileScreen extends StatelessWidget {
     required this.onLogout,
     required this.onNotifications,
     required this.onOpenComposer,
+    required this.onProfilePhotoUpdated,
   });
 
   final AuthSession session;
@@ -521,9 +516,58 @@ class _ProfileScreen extends StatelessWidget {
   final Future<void> Function() onLogout;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+  final Future<void> Function(String photoUrl) onProfilePhotoUpdated;
+
+  @override
+  State<_ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<_ProfileScreen> {
+  bool _uploadingPhoto = false;
+
+  Future<void> _changePhoto() async {
+    if (_uploadingPhoto) return;
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png'],
+      withData: false,
+    );
+    final file = result?.files.single;
+    final path = file?.path;
+    if (file == null || path == null || path.isEmpty) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final photoUrl = await widget.bloc.service.updateProfilePhoto(
+        path: path,
+        filename: file.name,
+      );
+      widget.bloc.setManagerPhoto(photoUrl);
+      await widget.onProfilePhotoUpdated(photoUrl);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not update your photo. Try again.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: MColors.ink,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final session = widget.session;
+    final dashboard = widget.dashboard;
+    final bloc = widget.bloc;
+    final onBack = widget.onBack;
+    final onLogout = widget.onLogout;
+    final onNotifications = widget.onNotifications;
+    final onOpenComposer = widget.onOpenComposer;
     final user = session.user;
     final designation =
         _nonEmpty(user.designation) ??
@@ -575,29 +619,51 @@ class _ProfileScreen extends StatelessWidget {
                               child: Stack(
                                 clipBehavior: Clip.none,
                                 children: [
-                                  Container(
-                                    width: 112,
-                                    height: 112,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Color(0x1A000000),
-                                          blurRadius: 6,
-                                          offset: Offset(0, 4),
-                                        ),
-                                        BoxShadow(
-                                          color: Color(0x1A000000),
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: _ProfileAvatar(
-                                      initials: _initials(user.name),
-                                      profilePhotoUrl: user.profilePhotoUrl,
-                                      size: 112,
+                                  GestureDetector(
+                                    onTap: _changePhoto,
+                                    child: Container(
+                                      width: 112,
+                                      height: 112,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Color(0x1A000000),
+                                            blurRadius: 6,
+                                            offset: Offset(0, 4),
+                                          ),
+                                          BoxShadow(
+                                            color: Color(0x1A000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _ProfileAvatar(
+                                            initials: _initials(user.name),
+                                            profilePhotoUrl: user.profilePhotoUrl,
+                                            size: 112,
+                                          ),
+                                          if (_uploadingPhoto)
+                                            const ColoredBox(
+                                              color: Color(0x66000000),
+                                              child: Center(
+                                                child: SizedBox(
+                                                  width: 28,
+                                                  height: 28,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2.5,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   Positioned(
@@ -612,6 +678,30 @@ class _ProfileScreen extends StatelessWidget {
                                         border: Border.all(
                                           color: const Color(0xFFF7F7F7),
                                           width: 3.34,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    right: -2,
+                                    top: -2,
+                                    child: GestureDetector(
+                                      onTap: _changePhoto,
+                                      child: Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: MColors.terra,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFF7F7F7),
+                                            width: 2.5,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.camera_alt_rounded,
+                                          size: 15,
+                                          color: Colors.white,
                                         ),
                                       ),
                                     ),
@@ -1456,6 +1546,17 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   }
 }
 
+/// Seeded/uploaded photos without S3 configured fall back to `data:` URIs
+/// (see `_remoteImage` in connect_feed_screen.dart) — `Image.network` can't
+/// load those, only real http(s) URLs, so profile photos need the same split.
+ImageProvider _profileImage(String url) {
+  if (url.startsWith('data:')) {
+    final base64Part = url.split(',').last;
+    return MemoryImage(base64Decode(base64Part));
+  }
+  return NetworkImage(url);
+}
+
 class _TeamMemberPhoto extends StatelessWidget {
   const _TeamMemberPhoto({
     required this.member,
@@ -1477,8 +1578,8 @@ class _TeamMemberPhoto extends StatelessWidget {
       );
     }
     return ClipOval(
-      child: Image.network(
-        url,
+      child: Image(
+        image: _profileImage(url),
         width: size,
         height: size,
         fit: BoxFit.cover,
@@ -1730,8 +1831,8 @@ class _ProfileAvatar extends StatelessWidget {
         height: size,
         child: url == null
             ? fallback
-            : Image.network(
-                url,
+            : Image(
+                image: _profileImage(url),
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
@@ -2040,11 +2141,20 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       body: Column(
         children: [
           AppHomeHeader(
-            profileAction: AvatarBadge(
-              initial: widget.data.managerInitial,
-              index: 1,
-              size: 30,
-            ),
+            profileAction: widget.data.managerPhotoUrl == null
+                ? AvatarBadge(
+                    initial: widget.data.managerInitial,
+                    index: 1,
+                    size: 30,
+                  )
+                : ClipOval(
+                    child: Image(
+                      image: _profileImage(widget.data.managerPhotoUrl!),
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
             onNotifications: widget.onNotifications,
             onQuickCreate: widget.onOpenComposer,
           ),

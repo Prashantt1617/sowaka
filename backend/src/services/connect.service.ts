@@ -41,7 +41,20 @@ export async function getConnectFeed(viewerUserId: string) {
     .limit(50)
     .toArray();
 
-  return Promise.all(posts.map((post) => viewPost(post, viewerUserId)));
+  // `post.author.photoUrl` is a snapshot frozen at creation time (see
+  // `createConnectPost`), so a post predates whatever profile photo its
+  // author later uploads. Resolve the live photo for everyone shown in this
+  // page in one query rather than trusting the stale snapshot.
+  const authorIds = [
+    ...new Set(posts.map((post) => post.author.userId).filter((id): id is string => Boolean(id))),
+  ];
+  const authors = await users()
+    .find({ userId: { $in: authorIds } })
+    .project<{ userId: string; profilePhotoUrl?: string }>({ userId: 1, profilePhotoUrl: 1 })
+    .toArray();
+  const authorPhotoUrls = new Map(authors.map((author) => [author.userId, author.profilePhotoUrl]));
+
+  return Promise.all(posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls)));
 }
 
 export async function toggleConnectReaction(viewerUserId: string, postId: string) {
@@ -314,7 +327,22 @@ async function requireEditablePost(viewerUserId: string, postId: string) {
   return { post, viewer };
 }
 
-async function viewPost(post: ConnectPost, viewerUserId: string) {
+async function viewPost(
+  post: ConnectPost,
+  viewerUserId: string,
+  authorPhotoUrls?: Map<string, string | undefined>,
+) {
+  let authorPhotoUrl = post.author.photoUrl;
+  if (post.author.userId) {
+    if (authorPhotoUrls) {
+      if (authorPhotoUrls.has(post.author.userId)) {
+        authorPhotoUrl = authorPhotoUrls.get(post.author.userId);
+      }
+    } else {
+      const authorUser = await users().findOne({ userId: post.author.userId });
+      if (authorUser) authorPhotoUrl = authorUser.profilePhotoUrl;
+    }
+  }
   const liked = post.likedBy.includes(viewerUserId);
   const pollVotes = post.pollVotes ?? {};
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
@@ -377,6 +405,7 @@ async function viewPost(post: ConnectPost, viewerUserId: string) {
   }));
   return {
     ...post,
+    author: { ...post.author, photoUrl: authorPhotoUrl },
     body,
     comments,
     liked,

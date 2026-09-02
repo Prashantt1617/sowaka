@@ -674,6 +674,7 @@ class ManagerDashboard {
   const ManagerDashboard({
     required this.managerName,
     required this.managerInitial,
+    this.managerPhotoUrl,
     required this.managerTeam,
     required this.approverName,
     required this.managerScore,
@@ -700,6 +701,7 @@ class ManagerDashboard {
 
   final String managerName;
   final String managerInitial;
+  final String? managerPhotoUrl;
   final String managerTeam;
   final String approverName;
   final double managerScore;
@@ -726,6 +728,7 @@ class ManagerDashboard {
   final List<AttendanceRegularization> managerRegularizations;
 
   ManagerDashboard copyWith({
+    String? managerPhotoUrl,
     List<TeamMember>? team,
     List<TeamMember>? recognitionCandidates,
     List<LeaveRequest>? leaves,
@@ -745,6 +748,7 @@ class ManagerDashboard {
     return ManagerDashboard(
       managerName: managerName,
       managerInitial: managerInitial,
+      managerPhotoUrl: managerPhotoUrl ?? this.managerPhotoUrl,
       managerTeam: managerTeam,
       approverName: approverName,
       managerScore: managerScore,

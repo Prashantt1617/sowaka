@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -46,11 +48,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
+  late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
 
   @override
   void initState() {
     super.initState();
+    _session = widget.session;
     _quickActionsController = QuickActionsController()
       ..addListener(_refreshBackState);
     _bloc = ManagerBloc(session: widget.session)
@@ -118,12 +122,21 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   void _closeProfile() => setState(() => _profileOpen = false);
 
+  Future<void> _updateProfilePhoto(String photoUrl) async {
+    setState(() {
+      _session = _session.copyWith(
+        user: _session.user.copyWith(profilePhotoUrl: photoUrl),
+      );
+    });
+    await AuthSessionStore().save(_session);
+  }
+
   Future<void> _openNotifications(BuildContext context) async {
     await AppNotificationService.instance.requestPermission();
     if (!context.mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => NotificationInboxScreen(session: widget.session),
+        builder: (_) => NotificationInboxScreen(session: _session),
       ),
     );
   }
@@ -235,13 +248,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
             backgroundColor: const Color(0xFFF7F7F9),
             body: _profileOpen
                 ? _ProfileScreen(
-                    session: widget.session,
+                    session: _session,
                     dashboard: state.dashboard!,
                     bloc: _bloc,
                     onBack: _closeProfile,
                     onLogout: _logout,
                     onOpenComposer: _connectComposerController.openComposer,
                     onNotifications: () => _openNotifications(context),
+                    onProfilePhotoUpdated: _updateProfilePhoto,
                   )
                 : Stack(
                     children: [
@@ -252,7 +266,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                               context: context,
                               removeBottom: true,
                               child: _TabContent(
-                                session: widget.session,
+                                session: _session,
                                 state: state,
                                 bloc: _bloc,
                                 quickActionsController: _quickActionsController,
