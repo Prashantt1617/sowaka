@@ -19,6 +19,11 @@ class ManagerApiService {
   final String _baseUrl;
   final http.Client _client;
 
+  Future<LeaveBalance> fetchLeaveBalance() async {
+    final json = await _request('GET', '/leaves/balance');
+    return LeaveBalance.fromJson(json['balance'] as Map<String, dynamic>);
+  }
+
   Future<ManagerDashboard> fetchDashboard() async {
     final workspaceFuture = _request('GET', '/manager/workspace');
     final myLeavesFuture = fetchMyLeaves();

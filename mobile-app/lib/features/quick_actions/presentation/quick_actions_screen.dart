@@ -525,9 +525,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   needsCorrection: needsCorrection,
                   onTap: () => _open(_QuickPage.calendar),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 const _HomeSectionLabel('Actions'),
-                const SizedBox(height: 10),
+                const SizedBox(height: 2),
                 GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -3406,7 +3406,13 @@ class _HubScaffold extends StatelessWidget {
           onNotifications: onNotifications,
           onQuickCreate: onQuickCreate,
         ),
+        // AppHomeHeader above already wraps itself in a SafeArea, so
+        // applying another top-safe-area here (they're siblings, not
+        // nested — Flutter doesn't dedupe that) double-pads under the
+        // notch on a real iPhone while looking fine on macOS/simulator
+        // where the top inset is 0.
         SafeArea(
+          top: false,
           bottom: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 18, 12),
@@ -4526,7 +4532,6 @@ class _SingleActionFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
     top: false,
-    bottom: false,
     child: Container(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
       decoration: const BoxDecoration(
@@ -5080,7 +5085,6 @@ class _WizardFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      bottom: false,
       child: Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),

@@ -142,6 +142,8 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   member: member,
                   data: data,
                   bloc: bloc,
+                  onNotifications: onNotifications,
+                  onOpenComposer: onOpenComposer,
                 ),
               ),
             ),
@@ -206,6 +208,8 @@ class _TeamMemberProfilePage extends StatelessWidget {
                         member: member,
                         data: data,
                         bloc: bloc,
+                        onNotifications: onNotifications,
+                        onOpenComposer: onOpenComposer,
                       ),
                     ),
                   ),
@@ -1330,11 +1334,15 @@ class _TeamMemberAttendancePage extends StatefulWidget {
     required this.member,
     required this.data,
     required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<_TeamMemberAttendancePage> createState() =>
@@ -1436,6 +1444,24 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
       backgroundColor: const Color(0xFFF7F7F9),
       body: Column(
         children: [
+          AppHomeHeader(
+            profileAction: widget.data.managerPhotoUrl == null
+                ? AvatarBadge(
+                    initial: widget.data.managerInitial,
+                    index: 1,
+                    size: 30,
+                  )
+                : ClipOval(
+                    child: Image(
+                      image: _profileImage(widget.data.managerPhotoUrl!),
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
+          ),
           _ProfilePageTopBar(title: "${widget.member.name}'s Attendance"),
           Expanded(
             child: _loading
@@ -2290,9 +2316,11 @@ class _GrowthPageTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Per node 861:7716: this row sits flush against AppHomeHeader above
+    // it — both white, no visible seam — unlike the grey fill this had.
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
-      decoration: const BoxDecoration(color: Color(0xFFF7F7F9)),
+      decoration: const BoxDecoration(color: Colors.white),
       child: Row(
         children: [
           RoundIconButton(

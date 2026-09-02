@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -67,10 +68,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             .where((post) => post.author.userId == widget.session.user.id)
             .toList();
       case _ConnectFilter.priority:
-        // No backend concept of "priority" exists yet on ConnectPost, so
-        // this always yields an empty (not fabricated) result until a real
-        // field is added.
-        return const [];
+        return posts.where((post) => post.body['priority'] == true).toList();
     }
   }
 
@@ -119,6 +117,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         return Container(
           color: _ConnectColors.bg,
           child: SafeArea(
+            // AppHomeHeader below already wraps itself in a SafeArea, so a
+            // second one here (this Container/SafeArea and AppHomeHeader are
+            // siblings, not nested) double-pads under the notch on iPhone —
+            // same class of bug as the earlier quick-actions header fix.
+            top: false,
             bottom: false,
             child: Column(
               children: [
@@ -371,9 +374,13 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
   Widget build(BuildContext context) {
     final post = widget.post;
     final showHeader = _postShowsHeader(post.type);
+    final cardGradient = _celebrationCardGradient(post.type);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: _celebrationCardTint(post.type) ?? Colors.white,
+        color: cardGradient == null
+            ? (_celebrationCardTint(post.type) ?? Colors.white)
+            : null,
+        gradient: cardGradient,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _ConnectColors.cardBorder),
         boxShadow: const [
@@ -403,6 +410,8 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               canManage: widget.canManage,
               onEdit: widget.onEdit,
               onDelete: widget.onDelete,
+              onCommentPrefill: (text) =>
+                  setState(() => _commentController.text = text),
             ),
             _PostFooter(
               post: post,
@@ -456,9 +465,32 @@ bool _postShowsHeader(ConnectPostType type) {
 /// colored middle. Everything else keeps the default white card.
 Color? _celebrationCardTint(ConnectPostType type) {
   return switch (type) {
-    ConnectPostType.birthday => _ConnectColors.terraTint,
     ConnectPostType.award => _ConnectColors.goldTint,
-    ConnectPostType.anniversary => const Color(0xFFF5F3FF),
+    _ => null,
+  };
+}
+
+/// Birthday and anniversary posts use this exact soft pink-to-lavender
+/// diagonal gradient across the whole card per nodes 436:482 and 436:599 —
+/// not a flat tint like the other celebration types.
+const _celebrationGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [
+    Color(0xFFFFFAFA),
+    Color(0xFFF8FAFF),
+    Color(0xFFF7F7FF),
+    Color(0xFFF5F7FF),
+    Color(0xFFF3F5FF),
+    Color(0xFFF9F2FF),
+    Color(0xFFF5F0FF),
+  ],
+  stops: [0.02, 0.18, 0.33, 0.5, 0.66, 0.82, 0.98],
+);
+
+Gradient? _celebrationCardGradient(ConnectPostType type) {
+  return switch (type) {
+    ConnectPostType.birthday || ConnectPostType.anniversary => _celebrationGradient,
     _ => null,
   };
 }
@@ -758,6 +790,7 @@ class _PostBody extends StatelessWidget {
     required this.canManage,
     required this.onEdit,
     required this.onDelete,
+    required this.onCommentPrefill,
   });
 
   final ConnectPost post;
@@ -766,6 +799,7 @@ class _PostBody extends StatelessWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ValueChanged<String> onCommentPrefill;
 
   @override
   Widget build(BuildContext context) {
@@ -780,6 +814,7 @@ class _PostBody extends StatelessWidget {
         canManage: canManage,
         onEdit: onEdit,
         onDelete: onDelete,
+        onCommentPrefill: onCommentPrefill,
       ),
       ConnectPostType.anniversary => _AnniversaryBody(
         post: post,
@@ -787,6 +822,7 @@ class _PostBody extends StatelessWidget {
         canManage: canManage,
         onEdit: onEdit,
         onDelete: onDelete,
+        onCommentPrefill: onCommentPrefill,
       ),
       ConnectPostType.kudos => _KudosBody(
         post: post,
@@ -857,17 +893,57 @@ class _RecommendationBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final mediaUrl = _bodyString(post, 'mediaUrl');
     final hasThumb = mediaUrl.isNotEmpty;
-    // No byline field exists anywhere in the backend body schema for
-    // recommendation posts (checked connect.service.ts normalizePostBody and
-    // the seed data) — these checks are defensive in case one is added
-    // later, but today they will always be empty and the byline line is
-    // simply omitted.
+    // Prefer an explicit byline if one's ever set; otherwise fall back to
+    // the link's domain, which the composer always captures — so a
+    // recommendation with a link but no separate byline still shows where
+    // it came from instead of a blank line.
     final byline = _bodyString(post, 'mediaByline').isNotEmpty
         ? _bodyString(post, 'mediaByline')
-        : _bodyString(post, 'sourceByline');
+        : (_bodyString(post, 'sourceByline').isNotEmpty
+              ? _bodyString(post, 'sourceByline')
+              : _bodyString(post, 'linkDomain'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Per node 496:20930: a "Recommendation" type badge sits above the
+        // media card, matching the TypeBadge treatment other post types use.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 13,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F7F9),
+                border: Border.all(color: const Color(0xFFEBEBEB)),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/icons/recommendation_thumbs_up.png',
+                    width: 20,
+                    height: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'RECOMMENDATION',
+                    style: TextStyle(
+                      color: _ConnectColors.faint,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Container(
@@ -1207,13 +1283,48 @@ class _AnnouncementBody extends StatelessWidget {
   }
 }
 
-class _BirthdayBody extends StatelessWidget {
+/// Both celebration action buttons (Wish / Congratulations) share this:
+/// tapping fires the backend action, plays the exact celebration GIF Figma
+/// uses for that post's "already celebrated" state (nodes 353:1601 for
+/// birthday, 356:3313 for anniversary — real animated GIF fills, extracted
+/// via Figma's asset export, not a generic particle-effect package), and
+/// drops a suggested message into the comment box below — left for the
+/// user to review/edit and send themselves, never auto-posted.
+class _CelebrationGifOverlay extends StatelessWidget {
+  const _CelebrationGifOverlay({
+    required this.visible,
+    required this.assetPath,
+    required this.size,
+  });
+
+  final bool visible;
+  final String assetPath;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          alignment: Alignment.center,
+          color: visible ? const Color(0x36AEAEAE) : Colors.transparent,
+          child: Image.asset(assetPath, width: size, height: size),
+        ),
+      ),
+    );
+  }
+}
+
+class _BirthdayBody extends StatefulWidget {
   const _BirthdayBody({
     required this.post,
     required this.onAction,
     required this.canManage,
     required this.onEdit,
     required this.onDelete,
+    required this.onCommentPrefill,
   });
 
   final ConnectPost post;
@@ -1221,62 +1332,120 @@ class _BirthdayBody extends StatelessWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ValueChanged<String> onCommentPrefill;
+
+  @override
+  State<_BirthdayBody> createState() => _BirthdayBodyState();
+}
+
+class _BirthdayBodyState extends State<_BirthdayBody> {
+  bool _celebrating = false;
+  Timer? _hideTimer;
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _wish() async {
+    await widget.onAction();
+    if (!mounted) return;
+    setState(() => _celebrating = true);
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _celebrating = false);
+    });
+    final firstName = _bodyString(
+      widget.post,
+      'personName',
+    ).split(' ').first;
+    widget.onCommentPrefill(
+      'Happy Birthday, $firstName! 🎂 Hope you have an amazing day!',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final done = post.actionValue != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        _BodyTopStrip(
-          icon: post.tagIcon,
-          iconBg: _ConnectColors.terraTint,
-          label: 'Celebration',
-          timestamp: _timeAgo(post.publishedAt),
-          canManage: canManage,
-          onEdit: onEdit,
-          onDelete: onDelete,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _BodyTopStrip(
+              icon: post.tagIcon,
+              iconBg: const Color(0xFFF7F7F9),
+              label: 'Celebration',
+              timestamp: _timeAgo(post.publishedAt),
+              canManage: widget.canManage,
+              onEdit: widget.onEdit,
+              onDelete: widget.onDelete,
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2.2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .1),
+                          blurRadius: 6,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: _InitialAvatar(
+                      initials: _bodyString(post, 'personInitials'),
+                      color: _ConnectColors.gold,
+                      size: 80,
+                      photoUrl: _bodyString(post, 'photoUrl'),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Happy Birthday, ${_bodyString(post, 'personName')}!',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _ConnectColors.ink,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _bodyString(post, 'subtitle'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _ConnectColors.inkSoft,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (!done) ...[
+                    const SizedBox(height: 16),
+                    _ActionButton(
+                      label:
+                          '🎂 Wish ${_bodyString(post, 'personName').split(' ').first}',
+                      onTap: _wish,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-        Container(
-          color: _ConnectColors.terraTint,
-          padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
-          child: Column(
-            children: [
-              _InitialAvatar(
-                initials: _bodyString(post, 'personInitials'),
-                color: _ConnectColors.gold,
-                size: 64,
-                photoUrl: _bodyString(post, 'photoUrl'),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Happy Birthday, ${_bodyString(post, 'personName')}!',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ConnectColors.ink,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _bodyString(post, 'subtitle'),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ConnectColors.inkSoft,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (!done) ...[
-                const SizedBox(height: 16),
-                _ActionButton(
-                  label:
-                      '🎂 Wish ${_bodyString(post, 'personName').split(' ').first}',
-                  onTap: () => onAction(),
-                ),
-              ],
-            ],
+        Positioned.fill(
+          child: _CelebrationGifOverlay(
+            visible: _celebrating,
+            assetPath: 'assets/icons/birthday_celebration.gif',
+            size: 200,
           ),
         ),
       ],
@@ -1284,13 +1453,14 @@ class _BirthdayBody extends StatelessWidget {
   }
 }
 
-class _AnniversaryBody extends StatelessWidget {
+class _AnniversaryBody extends StatefulWidget {
   const _AnniversaryBody({
     required this.post,
     required this.onAction,
     required this.canManage,
     required this.onEdit,
     required this.onDelete,
+    required this.onCommentPrefill,
   });
 
   final ConnectPost post;
@@ -1298,100 +1468,150 @@ class _AnniversaryBody extends StatelessWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ValueChanged<String> onCommentPrefill;
+
+  @override
+  State<_AnniversaryBody> createState() => _AnniversaryBodyState();
+}
+
+class _AnniversaryBodyState extends State<_AnniversaryBody> {
+  bool _celebrating = false;
+  Timer? _hideTimer;
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _congratulate(int years) async {
+    await widget.onAction();
+    if (!mounted) return;
+    setState(() => _celebrating = true);
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _celebrating = false);
+    });
+    final firstName = _bodyString(
+      widget.post,
+      'personName',
+    ).split(' ').first;
+    final yearWord = years == 1 ? 'year' : 'years';
+    widget.onCommentPrefill(
+      'Congratulations on $years $yearWord with Sowaka, $firstName! 🎉',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final years = (post.body['years'] as num?)?.toInt() ?? 1;
     final done = post.actionValue != null;
     final actionLabel = _bodyString(post, 'actionLabel');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        _BodyTopStrip(
-          icon: post.tagIcon,
-          iconBg: const Color(0xFFF5F3FF),
-          label: 'Celebration',
-          timestamp: _timeAgo(post.publishedAt),
-          canManage: canManage,
-          onEdit: onEdit,
-          onDelete: onDelete,
-        ),
-        Container(
-          color: const Color(0xFFF5F3FF),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _BodyTopStrip(
+              icon: post.tagIcon,
+              iconBg: Colors.white,
+              label: 'Celebration',
+              timestamp: _timeAgo(post.publishedAt),
+              canManage: widget.canManage,
+              onEdit: widget.onEdit,
+              onDelete: widget.onDelete,
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: _InitialAvatar(
-                      initials: _bodyString(post, 'personInitials'),
-                      color: _ConnectColors.plum,
-                      size: 80,
-                      photoUrl: _bodyString(post, 'photoUrl'),
-                    ),
-                  ),
-                  Positioned(
-                    right: -4,
-                    bottom: -4,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: _ConnectColors.sage,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                      ),
-                      child: Text(
-                        '${years}y',
-                        style: const TextStyle(
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
                           color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _InitialAvatar(
+                          initials: _bodyString(post, 'personInitials'),
+                          color: _ConnectColors.plum,
+                          size: 80,
+                          photoUrl: _bodyString(post, 'photoUrl'),
                         ),
                       ),
+                      Positioned(
+                        right: -4,
+                        bottom: -4,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _ConnectColors.sage,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2.5,
+                            ),
+                          ),
+                          child: Text(
+                            '${years}y',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '${_bodyString(post, 'personName')} has been with Sowaka for $years years!',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _ConnectColors.ink,
+                      fontSize: 17,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _bodyString(post, 'subtitle'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _ConnectColors.inkSoft,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _ActionButton(
+                    label: done
+                        ? _bodyString(post, 'actionDoneLabel')
+                        : (actionLabel.isEmpty
+                              ? '🎉 Congratulations'
+                              : actionLabel),
+                    icon: done
+                        ? Icons.check_rounded
+                        : Icons.celebration_rounded,
+                    onTap: () => _congratulate(years),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              Text(
-                '${_bodyString(post, 'personName')} has been with Sowaka for $years years!',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ConnectColors.ink,
-                  fontSize: 17,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _bodyString(post, 'subtitle'),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ConnectColors.inkSoft,
-                  fontSize: 12.5,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _ActionButton(
-                label: done
-                    ? _bodyString(post, 'actionDoneLabel')
-                    : (actionLabel.isEmpty
-                          ? '🎉 Congratulations'
-                          : actionLabel),
-                icon: done ? Icons.check_rounded : Icons.celebration_rounded,
-                onTap: () => onAction(),
-              ),
-            ],
+            ),
+          ],
+        ),
+        Positioned.fill(
+          child: _CelebrationGifOverlay(
+            visible: _celebrating,
+            assetPath: 'assets/icons/anniversary_celebration.gif',
+            size: 200,
           ),
         ),
       ],
@@ -3388,6 +3608,19 @@ class _PostComposerPageState extends State<_PostComposerPage> {
           minLines: 1,
         ),
         const SizedBox(height: 18),
+        // Per node 496:20930: the card shows an 80x80 thumbnail next to the
+        // title — there's no auto-fetch from the URL, so the thumbnail is
+        // picked the same way any other post's media is.
+        _FieldLabel('THUMBNAIL (OPTIONAL)'),
+        _MediaToggle(
+          enabled: _hasMedia,
+          selectedMedia: _selectedMedia,
+          existingMediaKind: _bodyValue('mediaKind'),
+          existingMediaUrl: _bodyValue('mediaUrl'),
+          onTap: _pickMedia,
+          onRemove: _hasMedia ? _removeMedia : null,
+        ),
+        const SizedBox(height: 18),
         _FieldLabel('BODY'),
         _ComposerTextField(
           controller: _text,
@@ -3747,6 +3980,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     if (widget.type == ConnectPostType.newPost && _newPostKind == 'media') {
       return _selectedMedia;
     }
+    if (widget.type == ConnectPostType.recommendation) return _selectedMedia;
     return null;
   }
 
@@ -6075,8 +6309,16 @@ class _ConnectFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+    // Per node 1803:13023: this strip sits on white, not the feed's grey
+    // background, with a hairline border separating it from the posts below.
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Color(0x99EBEBEB)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 13),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(

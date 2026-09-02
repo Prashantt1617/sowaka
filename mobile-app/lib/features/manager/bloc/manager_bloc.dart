@@ -544,9 +544,21 @@ class ManagerBloc {
           final leaves = data.leaves.map((leave) {
             return leave.id == leaveId ? updatedLeave : leave;
           }).toList();
+          // The days-available count is only recomputed server-side on
+          // request, not pushed here automatically — without this, approving
+          // shows correctly in the request history but the balance number
+          // stays stuck at whatever it was when the dashboard first loaded.
+          // Only matters when the decider's own balance is affected (e.g.
+          // self-approval); failure here shouldn't block the decision itself.
+          final refreshedBalance = await _service
+              .fetchLeaveBalance()
+              .catchError((_) => data.leaveBalance);
           _emit(
             _state.copyWith(
-              dashboard: data.copyWith(leaves: leaves),
+              dashboard: data.copyWith(
+                leaves: leaves,
+                leaveBalance: refreshedBalance,
+              ),
               message: decision == LeaveDecision.approved
                   ? 'Leave approved'
                   : 'Leave declined',

@@ -23,7 +23,7 @@ class _BottomTabs extends StatelessWidget {
           color: Colors.white,
           border: Border(top: BorderSide(color: MColors.line)),
         ),
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
         child: Row(
           children: [
             _TabButton(

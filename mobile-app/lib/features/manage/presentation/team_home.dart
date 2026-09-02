@@ -376,14 +376,18 @@ class _TeamMemberRow extends StatelessWidget {
                         children: [
                           if (upcomingLeave != null)
                             const _TagChip(
-                              icon: Icons.calendar_today_rounded,
-                              iconColor: MColors.terra,
+                              icon: Image(
+                                image: AssetImage(
+                                  'assets/icons/team_pill_leave_calendar.png',
+                                ),
+                              ),
                               label: 'Leave Upcoming',
                             ),
                           if (birthdaySoon)
-                            const _TagChip(
-                              icon: Icons.cake_rounded,
-                              iconColor: MColors.gold,
+                            _TagChip(
+                              icon: SvgPicture.asset(
+                                'assets/icons/team_pill_birthday_cupcake.svg',
+                              ),
                               label: 'Birthday Soon',
                             ),
                         ],
@@ -460,20 +464,17 @@ class _RequestCountPill extends StatelessWidget {
 }
 
 class _TagChip extends StatelessWidget {
-  const _TagChip({
-    required this.icon,
-    required this.label,
-    this.iconColor = const Color(0xFF484848),
-  });
+  const _TagChip({required this.icon, required this.label});
 
-  final IconData icon;
+  /// Per node 546:5832: these chips use the exact Figma icon assets
+  /// (calendar PNG, twemoji cupcake SVG), not generic Material icons.
+  final Widget icon;
   final String label;
-  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
         borderRadius: BorderRadius.circular(99),
@@ -482,8 +483,8 @@ class _TagChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: iconColor),
-          const SizedBox(width: 5),
+          SizedBox(width: 20, height: 20, child: icon),
+          const SizedBox(width: 4),
           Text(
             label,
             style: const TextStyle(
