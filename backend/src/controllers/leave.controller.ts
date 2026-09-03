@@ -15,6 +15,7 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
       startDate: String(req.body.startDate ?? ''),
       endDate: String(req.body.endDate ?? ''),
       reason: String(req.body.reason ?? ''),
+      halfDay: req.body.halfDay === true,
     });
     res.status(201).json({ success: true, leave });
   } catch (error) {

@@ -55,53 +55,10 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            label,
-            style: const TextStyle(
-              color: MColors.inkSoft,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.trailing, this.onTap});
+  const _SectionTitle({required this.title});
 
   final String title;
-  final String? trailing;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -120,47 +77,7 @@ class _SectionTitle extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null)
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  trailing!,
-                  style: TextStyle(
-                    color: onTap == null ? MColors.inkSoft : MColors.terra,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.value, required this.color});
-
-  final double value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: Container(
-        height: 8,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        color: const Color(0xFFE7DDCD),
-        child: FractionallySizedBox(
-          widthFactor: value.clamp(0, 1),
-          alignment: Alignment.centerLeft,
-          child: Container(color: color),
-        ),
       ),
     );
   }
@@ -254,16 +171,22 @@ class AvatarBadge extends StatelessWidget {
     required this.initial,
     required this.index,
     required this.size,
+    this.photoUrl,
   });
 
   final String initial;
   final int index;
   final double size;
 
+  /// Shown in place of the initial when set. Falls back to the initial while
+  /// loading and if the image fails, so a broken photo never leaves a blank
+  /// circle.
+  final String? photoUrl;
+
   @override
   Widget build(BuildContext context) {
     final color = avatarColors[index % avatarColors.length];
-    return Container(
+    final initialCircle = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
@@ -277,14 +200,37 @@ class AvatarBadge extends StatelessWidget {
         ),
       ),
     );
+    final url = photoUrl;
+    if (url == null || url.isEmpty) return initialCircle;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image(
+          image: avatarImageProvider(url),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => initialCircle,
+          frameBuilder: (_, child, frame, wasSyncLoaded) =>
+              frame == null && !wasSyncLoaded ? initialCircle : child,
+        ),
+      ),
+    );
   }
 }
 
 class RoundIconButton extends StatelessWidget {
-  const RoundIconButton({super.key, required this.icon, required this.onTap});
+  const RoundIconButton({
+    super.key,
+    this.icon,
+    required this.onTap,
+    this.child,
+  });
 
-  final IconData icon;
+  final IconData? icon;
   final VoidCallback onTap;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -294,12 +240,13 @@ class RoundIconButton extends StatelessWidget {
       child: Container(
         width: 38,
         height: 38,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(color: MColors.line),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: MColors.ink),
+        child: child ?? Icon(icon, color: MColors.ink),
       ),
     );
   }
@@ -368,89 +315,6 @@ class ActionButton extends StatelessWidget {
   }
 }
 
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
-
-  final FeedbackStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final spec = switch (status) {
-      FeedbackStatus.pending => (
-        'Not started',
-        MColors.inkFaint,
-        const Color(0xFFEFEAE2),
-      ),
-      FeedbackStatus.saved => ('Ready to send', MColors.gold, MColors.goldTint),
-      FeedbackStatus.sent => ('Sent', MColors.sageDeep, MColors.sageTint),
-      FeedbackStatus.missed => (
-        'Missed',
-        MColors.live,
-        const Color(0xFFFBE6E3),
-      ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: spec.$3,
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Text(
-        spec.$1,
-        style: TextStyle(
-          color: spec.$2,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-InputDecoration _fieldDecoration(
-  String hint, {
-  IconData? suffix,
-  VoidCallback? onSuffixTap,
-  bool suffixActive = false,
-}) {
-  return InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(color: MColors.inkFaint),
-    suffixIcon: suffix == null
-        ? null
-        : IconButton(
-            tooltip: suffixActive ? 'Stop listening' : 'Dictate feedback',
-            onPressed: onSuffixTap,
-            icon: Icon(
-              suffix,
-              color: suffixActive ? MColors.live : MColors.terra,
-              size: 19,
-            ),
-          ),
-    filled: true,
-    fillColor: Colors.white,
-    contentPadding: const EdgeInsets.all(13),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.line, width: 1.5),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.line, width: 1.5),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
-      borderSide: const BorderSide(color: MColors.terra, width: 1.5),
-    ),
-  );
-}
-
-int _daysUntil(DateTime today, DateTime date) {
-  final a = DateTime(today.year, today.month, today.day);
-  final b = DateTime(date.year, date.month, date.day);
-  return b.difference(a).inDays;
-}
-
 String shortDate(DateTime date) {
   const months = [
     'Jan',
@@ -467,14 +331,6 @@ String shortDate(DateTime date) {
     'Dec',
   ];
   return '${months[date.month - 1]} ${date.day}';
-}
-
-String _nameInitials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+'));
-  if (parts.isEmpty || parts.first.isEmpty) return '?';
-  final first = parts.first[0];
-  final last = parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '';
-  return '$first$last'.toUpperCase();
 }
 
 String _periodLabel(String period) {
@@ -522,6 +378,15 @@ Color scoreColor(double score) {
   return MColors.live;
 }
 
+/// Qualitative word shown under a parameter score, as in the feedback design.
+String scoreLabel(double score) {
+  if (score <= 0) return '-';
+  if (score >= 4.25) return 'Excellent';
+  if (score >= 3.5) return 'Strong';
+  if (score >= 2.5) return 'On track';
+  return 'Needs work';
+}
+
 (Color, Color) leavePalette(String type) {
   return switch (type) {
     'Sick' => (MColors.live, const Color(0xFFFBE6E3)),
@@ -549,13 +414,26 @@ IconData awardIcon(String icon) {
   };
 }
 
+/// One-line copy under each parameter name on the feedback form. Held here
+/// rather than on the API: it is static presentation copy, not record data.
+/// Falls back to an empty string so an unknown parameter simply shows no line.
+String paramDescription(String name) {
+  return switch (name) {
+    'Performance' => 'Delivers quality work consistently and on time',
+    'Collaboration' => 'Works well with teammates and cross-team',
+    'Ownership' => 'Takes responsibility and follows through',
+    'Communication' => 'Clarity and impact in interactions',
+    _ => '',
+  };
+}
+
+/// Longer guidance revealed by the info toggle on a parameter card.
 String paramHelp(String name) {
   return switch (name) {
-    'Ownership Mindset' =>
+    'Ownership' =>
       'Takes responsibility end-to-end, unblocks themselves, and follows through without being chased.',
-    'Communication Clarity' =>
-      'Shares context clearly and on time so others can act.',
-    'Quality of Work' =>
+    'Communication' => 'Shares context clearly and on time so others can act.',
+    'Performance' =>
       'Output is accurate, thorough and reliable, with few rework loops.',
     'Collaboration' =>
       'Works well across functions, gives and receives feedback, and lifts the team.',
@@ -574,11 +452,14 @@ const List<Color> avatarColors = [
 ];
 
 class MColors {
-  static const bg = Color(0xFFF4EEE5);
+  static const bg = Color(0xFFF7F7F9);
   static const ink = Color(0xFF2A2420);
-  static const inkSoft = Color(0xFF6E655C);
-  static const inkFaint = Color(0xFFA79D92);
-  static const line = Color(0xFFF0E8DD);
+  // Neutrals come from the design system (Text/Tertiary, Border/Icons,
+  // Border/Grey). They used to be warm, terracotta-tinted greys, which read as
+  // a dirty peach on every border and secondary label in the app.
+  static const inkSoft = Color(0xFF717171);
+  static const inkFaint = Color(0xFF9197A2);
+  static const line = Color(0xFFEBEBEB);
   static const terra = Color(0xFFBE5A36);
   static const terraDeep = Color(0xFF7C3318);
   static const terraTint = Color(0xFFF6E5DB);
@@ -591,4 +472,48 @@ class MColors {
   static const plum = Color(0xFF8A6AA0);
   static const plumTint = Color(0xFFEEE6F0);
   static const teal = Color(0xFF4F8C89);
+}
+
+InputDecoration _fieldDecoration(
+  String hint, {
+  IconData? suffix,
+  VoidCallback? onSuffixTap,
+  bool suffixActive = false,
+}) {
+  return InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: MColors.inkFaint),
+    suffixIcon: suffix == null
+        ? null
+        : IconButton(
+            tooltip: suffixActive ? 'Stop listening' : 'Dictate feedback',
+            onPressed: onSuffixTap,
+            icon: Icon(
+              suffix,
+              color: suffixActive ? MColors.live : MColors.terra,
+              size: 19,
+            ),
+          ),
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding: const EdgeInsets.all(13),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.line, width: 1.5),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.line, width: 1.5),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: MColors.terra, width: 1.5),
+    ),
+  );
+}
+
+int _daysUntil(DateTime today, DateTime date) {
+  final a = DateTime(today.year, today.month, today.day);
+  final b = DateTime(date.year, date.month, date.day);
+  return b.difference(a).inDays;
 }

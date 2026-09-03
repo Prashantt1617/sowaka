@@ -19,6 +19,11 @@ class ManagerApiService {
   final String _baseUrl;
   final http.Client _client;
 
+  Future<LeaveBalance> fetchLeaveBalance() async {
+    final json = await _request('GET', '/leaves/balance');
+    return LeaveBalance.fromJson(json['balance'] as Map<String, dynamic>);
+  }
+
   Future<ManagerDashboard> fetchDashboard() async {
     final workspaceFuture = _request('GET', '/manager/workspace');
     final myLeavesFuture = fetchMyLeaves();
@@ -27,6 +32,9 @@ class ManagerApiService {
     final myOvertimeFuture = fetchMyOvertime();
     final overtimeFuture = fetchManagerOvertime();
     final reimbursementsFuture = fetchMyReimbursements();
+    final managerReimbursementsFuture = session.user.role == 'manager'
+        ? fetchManagerReimbursements()
+        : Future<List<ReimbursementClaim>>.value(const []);
     final now = DateTime.now();
     final attendanceFuture = fetchAttendance(
       DateTime(now.year, now.month, 1),
@@ -77,6 +85,7 @@ class ManagerApiService {
     return ManagerDashboard(
       managerName: session.user.name,
       managerInitial: session.user.name.isEmpty ? '?' : session.user.name[0],
+      managerPhotoUrl: session.user.profilePhotoUrl,
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
       managerScore: (workspace['managerScore'] as num?)?.toDouble() ?? 0,
@@ -108,6 +117,7 @@ class ManagerApiService {
       overtime: await overtimeFuture,
       myOvertime: await myOvertimeFuture,
       myReimbursements: await reimbursementsFuture,
+      reimbursements: await managerReimbursementsFuture,
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
@@ -136,15 +146,52 @@ class ManagerApiService {
     );
   }
 
+  Future<(List<AttendanceRecord>, List<AttendanceRegularization>)>
+  fetchTeamMemberAttendance(
+    String employeeUserId,
+    DateTime from,
+    DateTime to,
+  ) async {
+    final json = await _request(
+      'GET',
+      '/attendance/team/$employeeUserId?from=${_dateOnly(from)}&to=${_dateOnly(to)}',
+    );
+    return (
+      (json['records'] as List<dynamic>? ?? const [])
+          .map((v) => AttendanceRecord.fromJson(v as Map<String, dynamic>))
+          .toList(),
+      (json['regularizations'] as List<dynamic>? ?? const [])
+          .map(
+            (v) => AttendanceRegularization.fromJson(v as Map<String, dynamic>),
+          )
+          .toList(),
+    );
+  }
+
+  Future<AttendanceRecord> recordPunch(String type) async {
+    final json = await _request(
+      'POST',
+      '/attendance/punch',
+      body: {'type': type},
+    );
+    return AttendanceRecord.fromJson(json);
+  }
+
   Future<AttendanceRegularization> submitAttendanceRegularization({
     required DateTime workDate,
-    required String period,
+    required DateTime? punchIn,
+    required DateTime? punchOut,
     required String note,
   }) async {
     final json = await _request(
       'POST',
       '/attendance/regularizations',
-      body: {'workDate': _dateOnly(workDate), 'period': period, 'note': note},
+      body: {
+        'workDate': _dateOnly(workDate),
+        if (punchIn != null) 'punchIn': punchIn.toUtc().toIso8601String(),
+        if (punchOut != null) 'punchOut': punchOut.toUtc().toIso8601String(),
+        'note': note,
+      },
     );
     return AttendanceRegularization.fromJson(
       json['regularization'] as Map<String, dynamic>,
@@ -242,15 +289,17 @@ class ManagerApiService {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    bool halfDay = false,
   }) async {
     final json = await _request(
       'POST',
       '/leaves',
       body: {
-        'type': type.toLowerCase(),
+        'type': _leaveTypeToken(type),
         'startDate': _dateOnly(startDate),
         'endDate': _dateOnly(endDate),
         'reason': reason,
+        'halfDay': halfDay,
       },
     );
     return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
@@ -268,8 +317,8 @@ class ManagerApiService {
 
   Future<OvertimeRequest> submitOvertime({
     required DateTime workDate,
-    required String duration,
-    required String project,
+    required DateTime startTime,
+    required DateTime endTime,
     required String note,
   }) async {
     final json = await _request(
@@ -277,8 +326,8 @@ class ManagerApiService {
       '/overtime',
       body: {
         'workDate': _dateOnly(workDate),
-        'duration': duration == 'Full day' ? 'full_day' : 'half_day',
-        'project': project,
+        'startTime': startTime.toUtc().toIso8601String(),
+        'endTime': endTime.toUtc().toIso8601String(),
         'note': note,
       },
     );
@@ -300,6 +349,15 @@ class ManagerApiService {
 
   Future<List<ReimbursementClaim>> fetchMyReimbursements() async {
     final json = await _request('GET', '/reimbursements/mine');
+    return _parseReimbursements(json);
+  }
+
+  Future<List<ReimbursementClaim>> fetchManagerReimbursements() async {
+    final json = await _request('GET', '/reimbursements/inbox');
+    return _parseReimbursements(json);
+  }
+
+  List<ReimbursementClaim> _parseReimbursements(Map<String, dynamic> json) {
     final values = json['claims'] as List<dynamic>? ?? const [];
     return values
         .map(
@@ -350,6 +408,24 @@ class ManagerApiService {
     return ReimbursementClaim.fromJson(json['claim'] as Map<String, dynamic>);
   }
 
+  Future<String> updateProfilePhoto({
+    required String path,
+    required String filename,
+  }) async {
+    final request =
+        http.MultipartRequest('PATCH', Uri.parse('$_baseUrl/manager/photo'))
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..files.add(
+            await http.MultipartFile.fromPath(
+              'photo',
+              path,
+              filename: filename,
+            ),
+          );
+    final json = await _send(request);
+    return json['photoUrl'] as String;
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
@@ -394,6 +470,16 @@ List<OvertimeRequest> _parseOvertime(Map<String, dynamic> json) {
   return values
       .map((value) => OvertimeRequest.fromJson(value as Map<String, dynamic>))
       .toList();
+}
+
+/// The UI labels leave types "Casual Leave" / "Sick Leave" / "Earned Leave",
+/// but the API only accepts the bare tokens `casual` / `sick` / `earned`.
+String _leaveTypeToken(String label) {
+  final lower = label.trim().toLowerCase();
+  for (final token in const ['sick', 'casual', 'earned']) {
+    if (lower.startsWith(token)) return token;
+  }
+  return lower;
 }
 
 String _dateOnly(DateTime value) {

@@ -1,4 +1,5 @@
 import {
+  attendanceRecords,
   feedbackRecords,
   holidays,
   recognitionNominations,
@@ -9,14 +10,23 @@ import {
   FeedbackParameter,
   FeedbackRecordStatus,
 } from '../models/feedback.model';
+import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
+import {
+  presignConnectMedia,
+  resolveProfilePhoto,
+  uploadConnectMedia,
+  type ConnectMediaFile,
+} from './s3-connect-media.service';
 
+// Parameter set and order come from the feedback design. These become
+// HR-configurable once the HR dashboard lands.
 const feedbackParameterNames = [
-  'Ownership Mindset',
-  'Communication Clarity',
-  'Quality of Work',
+  'Performance',
   'Collaboration',
+  'Ownership',
+  'Communication',
 ] as const;
 const recognitionCategories = new Set<RecognitionNomination['category']>([
   'artist',
@@ -25,16 +35,76 @@ const recognitionCategories = new Set<RecognitionNomination['category']>([
   'rising',
 ]);
 
+export interface OrgChartNode {
+  userId: string;
+  name: string;
+  designation: string;
+  isSelf: boolean;
+}
+
+export interface TeamMemberDocumentView {
+  name: string;
+  url: string;
+  type: string | null;
+  uploadedAt: string | null;
+}
+
 export interface ManagerTeamMemberView {
   userId: string;
   name: string;
   department: string;
+  designation: string;
+  /** True for the viewer's own manager, shown as "(Manager)" in the team list. */
+  isManager?: boolean;
   score: number;
+  /** Overall score from the most recent *earlier* period, for the delta pill. */
+  previousScore: number | null;
   nextDate: string;
   feedbackStatus: 'pending' | 'saved' | 'sent';
   missedMonths: number;
   parameters: FeedbackParameter[];
   extra: string;
+  todayStatus: 'present' | 'not_punched_in';
+  birthday: string | null;
+  photoUrl: string | null;
+  punchIn: string | null;
+  punchOut: string | null;
+  // Profile detail shown on the manager's read-only view of a report.
+  email: string;
+  employeeId: string | null;
+  joiningDate: string | null;
+  employmentType: string | null;
+  managerName: string | null;
+  orgChart: OrgChartNode[];
+  documents: TeamMemberDocumentView[];
+  /** Every sent review for this report, oldest first, for the growth timeline. */
+  history: {
+    period: string;
+    overallScore: number;
+    parameters: FeedbackParameter[];
+    sentAt: Date;
+  }[];
+}
+
+export async function updateProfilePhoto(userId: string, file: ConnectMediaFile) {
+  const user = await users().findOne({ userId });
+  if (!user) throw new ManagerError(404, 'User not found');
+  let photoUrl: string;
+  let objectKey: string;
+  try {
+    const uploaded = await uploadConnectMedia(userId, file);
+    objectKey = uploaded.objectKey;
+    photoUrl = await presignConnectMedia(objectKey);
+  } catch {
+    throw new ManagerError(503, 'Photo storage is unavailable');
+  }
+  // Only the key is persisted. Storing the resolved value put a multi-hundred-KB
+  // `data:` URI inside a document that every authenticated request reads.
+  await users().updateOne(
+    { userId },
+    { $set: { profilePhotoKey: objectKey }, $unset: { profilePhotoUrl: '' } },
+  );
+  return photoUrl;
 }
 
 export async function getManagerWorkspace(managerUserId: string) {
@@ -44,24 +114,77 @@ export async function getManagerWorkspace(managerUserId: string) {
     ? await users().findOne({ userId: manager.managerUserId })
     : null;
 
-  const reports = await users()
+  // Scoped to the manager's own company: `managerUserId` alone is not unique
+  // across orgs, and without this another company's employees can appear in
+  // the team list.
+  const orgFilter = manager.org ? { org: manager.org } : {};
+
+  const directReports = await users()
     .find({
       managerUserId,
+      ...orgFilter,
       lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
     })
     .sort({ name: 1, userId: 1 })
     .toArray();
-  // Recognition is limited to the manager's own direct reports — same set as
-  // `reports`, so reuse it (no org-wide or upward-chain nominations).
-  const recognitionCandidates = reports;
+
+  // Someone with no direct reports still has a team: their peers under the
+  // same manager. This is what the read-only Team view shows an individual
+  // contributor.
+  let reports = directReports;
+  if (directReports.length === 0 && manager.managerUserId) {
+    reports = await users()
+      .find({
+        managerUserId: manager.managerUserId,
+        ...orgFilter,
+        userId: { $ne: managerUserId },
+        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+      })
+      .sort({ name: 1, userId: 1 })
+      .toArray();
+  }
+  // Your own manager is part of your team however you got here — they head it.
+  // Managers with reports of their own were previously missing them entirely.
+  if (approver && !reports.some((report) => report.userId === approver.userId)) {
+    reports = [approver, ...reports];
+  }
+  // Recognition is limited to the manager's own direct reports — never the
+  // peer/manager fallback above.
+  const recognitionCandidates = directReports;
   const period = currentPeriod();
   const reportIds = reports.map((report) => report.userId);
-  const [currentFeedback, latestSent, nominations, nominationHistory, ownFeedbackHistory] =
-    await Promise.all([
+  const reportEmployeeIds = reports
+    .map((report) => report.employeeId)
+    .filter((value): value is string => Boolean(value));
+  const today = new Date().toISOString().slice(0, 10);
+  const [
+    currentFeedback,
+    latestSent,
+    previousSent,
+    nominations,
+    nominationHistory,
+    ownFeedbackHistory,
+    reportHistory,
+    todaysAttendance,
+  ] = await Promise.all([
       feedbackRecords().find({ managerUserId, employeeUserId: { $in: reportIds }, period }).toArray(),
       feedbackRecords()
         .aggregate([
           { $match: { managerUserId, employeeUserId: { $in: reportIds }, status: 'sent' } },
+          { $sort: { period: -1 } },
+          { $group: { _id: '$employeeUserId', record: { $first: '$$ROOT' } } },
+        ])
+        .toArray(),
+      feedbackRecords()
+        .aggregate([
+          {
+            $match: {
+              managerUserId,
+              employeeUserId: { $in: reportIds },
+              status: 'sent',
+              period: { $lt: period },
+            },
+          },
           { $sort: { period: -1 } },
           { $group: { _id: '$employeeUserId', record: { $first: '$$ROOT' } } },
         ])
@@ -76,7 +199,36 @@ export async function getManagerWorkspace(managerUserId: string) {
         .find({ employeeUserId: managerUserId, status: 'sent' })
         .sort({ period: 1 })
         .toArray(),
+      reportIds.length
+        ? feedbackRecords()
+            .find({ managerUserId, employeeUserId: { $in: reportIds }, status: 'sent' })
+            .sort({ period: 1 })
+            .toArray()
+        : Promise.resolve([]),
+      reportIds.length
+        ? attendanceRecords()
+            .find({
+              workDate: today,
+              $or: [
+                { userId: { $in: reportIds } },
+                ...(reportEmployeeIds.length ? [{ employeeId: { $in: reportEmployeeIds } }] : []),
+              ],
+            })
+            .toArray()
+        : Promise.resolve([]),
     ]);
+  // A report's punch record may be keyed by userId (self-service app punches)
+  // or employeeId (SQL-imported punches) — check both, preferring employeeId
+  // since every record has one but not every record has userId.
+  const attendanceByEmployeeId = new Map(
+    todaysAttendance.filter((record) => record.employeeId).map((record) => [record.employeeId, record]),
+  );
+  const attendanceByUserId = new Map(
+    todaysAttendance.filter((record) => record.userId).map((record) => [record.userId, record]),
+  );
+  const todaysRecordFor = (report: (typeof reports)[number]) =>
+    (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
+    attendanceByUserId.get(report.userId);
   // Resolve nominee names for the current + historical nominations (a past
   // nominee may no longer be a direct report).
   const nomineeIds = [...new Set(nominationHistory.map((n) => n.employeeUserId))];
@@ -95,29 +247,71 @@ export async function getManagerWorkspace(managerUserId: string) {
       return [record.employeeUserId, record] as const;
     }),
   );
+  const historyByEmployee = new Map<string, typeof reportHistory>();
+  for (const record of reportHistory) {
+    const list = historyByEmployee.get(record.employeeUserId) ?? [];
+    list.push(record);
+    historyByEmployee.set(record.employeeUserId, list);
+  }
+  const previousByEmployee = new Map(
+    previousSent.map((value) => {
+      const record = value.record as { employeeUserId: string; overallScore: number };
+      return [record.employeeUserId, record.overallScore] as const;
+    }),
+  );
   const nextDate = endOfCurrentMonth().toISOString().slice(0, 10);
-  const team: ManagerTeamMemberView[] = reports.map((report) => {
+  const team: ManagerTeamMemberView[] = await Promise.all(reports.map(async (report) => {
     const current = currentByEmployee.get(report.userId);
     const latest = latestByEmployee.get(report.userId);
+    const todaysRecord = todaysRecordFor(report);
     return {
       userId: report.userId,
       name: report.name,
       department: report.department ?? report.designation ?? 'Team',
+      isManager: report.userId === manager.managerUserId,
+      designation: report.designation ?? '',
       score: current?.overallScore ?? latest?.overallScore ?? 0,
+      previousScore: previousByEmployee.get(report.userId) ?? null,
       nextDate,
       feedbackStatus: current?.status ?? 'pending',
       missedMonths: current ? 0 : monthsSince(latest?.period, period),
       parameters: current?.parameters ?? defaultParameters(),
       extra: current?.extra ?? '',
+      todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
+      birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
+      photoUrl: (await resolveProfilePhoto(report)) ?? null,
+      punchIn: todaysRecord?.punchIn ? todaysRecord.punchIn.toISOString() : null,
+      punchOut: todaysRecord?.punchOut ? todaysRecord.punchOut.toISOString() : null,
+      email: report.email,
+      employeeId: report.employeeId ?? null,
+      joiningDate: report.joiningDate ? report.joiningDate.toISOString().slice(0, 10) : null,
+      employmentType: report.employeeType ?? null,
+      managerName: manager.name,
+      // Reporting line from the top of the chain down to this report. The chain
+      // is walked from `managerUserId` links already loaded above.
+      orgChart: buildOrgChart(report, manager, approver),
+      history: (historyByEmployee.get(report.userId) ?? []).map((record) => ({
+        period: record.period,
+        overallScore: Number(record.overallScore.toFixed(1)),
+        parameters: record.parameters,
+        sentAt: record.sentAt ?? record.updatedAt,
+      })),
+      documents: (report.documents ?? []).map((document) => ({
+        name: document.name,
+        url: document.url,
+        type: document.type ?? null,
+        uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
+      })),
     };
-  });
+  }));
 
   // Company config for the overtime apply flow: which weekdays are week-offs,
   // whether overtime is enabled for this user's department, and the org holidays.
   const companyConfig = await getCompanyConfig(manager.org);
-  const overtimeEnabled = !companyConfig.overtimeDisabledDepartments.includes(
-    (manager.department ?? '').trim(),
-  );
+  // Both gates apply: HR can switch a single employee off, or a whole team.
+  const overtimeEnabled =
+    manager.overtimeEligible !== false &&
+    !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim());
   const orgHolidays = manager.org
     ? await holidays().find({ org: manager.org }).sort({ date: 1 }).toArray()
     : [];
@@ -291,6 +485,28 @@ async function requireRecognitionCandidate(managerUserId: string, employeeUserId
   if (!sameCompany && employee.managerUserId !== managerUserId) {
     throw new ManagerError(403, 'Only an active employee in your company can be selected');
   }
+}
+
+/**
+ * Reporting line shown on a report's profile, ordered top-down:
+ * the manager's own manager (when there is one), the manager, then the report.
+ */
+function buildOrgChart(
+  report: User,
+  manager: User,
+  approver: User | null,
+): OrgChartNode[] {
+  const node = (user: User, isSelf: boolean): OrgChartNode => ({
+    userId: user.userId,
+    name: user.name,
+    designation: user.designation ?? user.department ?? '',
+    isSelf,
+  });
+  return [
+    ...(approver ? [node(approver, false)] : []),
+    node(manager, false),
+    node(report, true),
+  ];
 }
 
 function currentPeriod(date = new Date()): string {

@@ -78,6 +78,25 @@ class AuthUser {
     'birthday': birthday,
     'recognition': recognition?.toJson(),
   };
+
+  AuthUser copyWith({String? profilePhotoUrl}) => AuthUser(
+    id: id,
+    email: email,
+    name: name,
+    role: role,
+    company: company,
+    profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
+    location: location,
+    state: state,
+    designation: designation,
+    employmentType: employmentType,
+    department: department,
+    teamDescription: teamDescription,
+    managerName: managerName,
+    joiningDate: joiningDate,
+    birthday: birthday,
+    recognition: recognition,
+  );
 }
 
 class UserRecognition {
@@ -110,6 +129,9 @@ class AuthSession {
   final AuthUser user;
 
   Map<String, dynamic> toJson() => {'token': token, 'user': user.toJson()};
+
+  AuthSession copyWith({AuthUser? user}) =>
+      AuthSession(token: token, user: user ?? this.user);
 }
 
 String? _optionalString(Object? value) {

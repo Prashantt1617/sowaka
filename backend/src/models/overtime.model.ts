@@ -4,9 +4,9 @@ export interface OvertimeRequest {
   userId: string;
   managerUserId: string;
   workDate: Date;
-  duration: 'half_day' | 'full_day';
+  startTime: Date;
+  endTime: Date;
   hours: number;
-  project: string;
   note?: string;
   managerNote?: string;
   status: OvertimeStatus;

@@ -2,6 +2,17 @@ part of '../../manager/presentation/manager_screen.dart';
 
 enum _RequestType { leave, overtime, attendance }
 
+/// Requesters are the manager's own reports, who are already loaded in the
+/// dashboard's team list with their photos — so the avatar resolves from there
+/// rather than costing another round trip per request.
+String? _requesterPhoto(ManagerState state, String userId) {
+  if (userId.isEmpty) return null;
+  for (final member in state.dashboard?.team ?? const <TeamMember>[]) {
+    if (member.userId == userId) return member.photoUrl;
+  }
+  return null;
+}
+
 class _RequestList extends StatefulWidget {
   const _RequestList({
     required this.state,
@@ -96,7 +107,13 @@ class _RequestListState extends State<_RequestList> {
                   empty: items.isEmpty,
                   reviewed: _reviewed,
                   children: items
-                      .map((item) => _LeaveCard(leave: item, bloc: widget.bloc))
+                      .map(
+                        (item) => _LeaveCard(
+                          leave: item,
+                          bloc: widget.bloc,
+                          photoUrl: _requesterPhoto(widget.state, item.userId),
+                        ),
+                      )
                       .toList(),
                 );
               }
@@ -116,6 +133,7 @@ class _RequestListState extends State<_RequestList> {
                         (item) => _OvertimeRequestCard(
                           request: item,
                           bloc: widget.bloc,
+                          photoUrl: _requesterPhoto(widget.state, item.userId),
                         ),
                       )
                       .toList(),
@@ -136,6 +154,7 @@ class _RequestListState extends State<_RequestList> {
                       (item) => _AttendanceCorrectionCard(
                         request: item,
                         bloc: widget.bloc,
+                        photoUrl: _requesterPhoto(widget.state, item.userId),
                       ),
                     )
                     .toList(),
@@ -236,16 +255,24 @@ class _RequestListBody extends StatelessWidget {
 }
 
 class _AttendanceCorrectionCard extends StatelessWidget {
-  const _AttendanceCorrectionCard({required this.request, required this.bloc});
+  const _AttendanceCorrectionCard({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
   final AttendanceRegularization request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => PressableCard(
     onTap: () => Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _AttendanceCorrectionDetailPage(request: request, bloc: bloc),
+        builder: (_) => _AttendanceCorrectionDetailPage(
+          request: request,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     ),
     padding: EdgeInsets.zero,
@@ -263,6 +290,7 @@ class _AttendanceCorrectionCard extends StatelessWidget {
                     initial: request.initial,
                     index: request.avatarIndex,
                     size: 42,
+                    photoUrl: photoUrl,
                   ),
                   const SizedBox(width: 11),
                   Expanded(
@@ -366,10 +394,11 @@ class _AttendanceDatePanel extends StatelessWidget {
     ),
     child: Row(
       children: [
-        const Icon(
-          Icons.calendar_month_rounded,
-          size: 18,
-          color: MColors.terra,
+        SvgPicture.asset(
+          'assets/icons/calendar_header.svg',
+          width: 18,
+          height: 18,
+          colorFilter: const ColorFilter.mode(MColors.terra, BlendMode.srcIn),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -383,7 +412,7 @@ class _AttendanceDatePanel extends StatelessWidget {
           ),
         ),
         Text(
-          _attendancePeriod(request.period),
+          _attendancePeriod(request),
           style: TextStyle(
             color: MColors.terra.withValues(alpha: .85),
             fontSize: 12.5,
@@ -427,7 +456,7 @@ Future<String?> _showAttendanceDecisionSheet(
           ),
           const SizedBox(height: 6),
           Text(
-            '${request.who} · ${_attendancePeriod(request.period)} · ${_shortAttendanceDate(request.workDate)}',
+            '${request.who} · ${_attendancePeriod(request)} · ${_shortAttendanceDate(request.workDate)}',
             style: const TextStyle(color: MColors.inkSoft, fontSize: 13.5),
           ),
           if (!approved) ...[
@@ -482,9 +511,11 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   const _AttendanceCorrectionDetailPage({
     required this.request,
     required this.bloc,
+    this.photoUrl,
   });
   final AttendanceRegularization request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -510,6 +541,7 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
                           initial: request.initial,
                           index: request.avatarIndex,
                           size: 50,
+                          photoUrl: photoUrl,
                         ),
                         const SizedBox(width: 13),
                         Expanded(
@@ -641,11 +673,18 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   }
 }
 
-String _attendancePeriod(String value) => switch (value) {
-  'first_half' => 'First half',
-  'second_half' => 'Second half',
-  _ => 'Full day',
-};
+/// Summarises the punch times an employee is asking to have recorded.
+String _attendancePeriod(AttendanceRegularization request) {
+  final inAt = request.requestedPunchIn;
+  final outAt = request.requestedPunchOut;
+  if (inAt != null && outAt != null) {
+    return '${_attendanceClock(inAt)} – ${_attendanceClock(outAt)}';
+  }
+  if (inAt != null) return 'In ${_attendanceClock(inAt)}';
+  if (outAt != null) return 'Out ${_attendanceClock(outAt)}';
+  return 'No time given';
+}
+
 String _shortAttendanceDate(DateTime value) =>
     '${value.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]}';
 String _fullWeekday(DateTime value) => const [
@@ -662,8 +701,9 @@ String _attendanceClock(DateTime? value) => value == null
     : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
 
 class _LeaveCard extends StatelessWidget {
-  const _LeaveCard({required this.leave, required this.bloc});
+  const _LeaveCard({required this.leave, required this.bloc, this.photoUrl});
 
+  final String? photoUrl;
   final LeaveRequest leave;
   final ManagerBloc bloc;
 
@@ -687,6 +727,7 @@ class _LeaveCard extends StatelessWidget {
                       initial: leave.initial,
                       index: leave.avatarIndex,
                       size: 42,
+                      photoUrl: photoUrl,
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -783,7 +824,11 @@ class _LeaveCard extends StatelessWidget {
   void _openDetails(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _LeaveRequestDetailPage(leave: leave, bloc: bloc),
+        builder: (_) => _LeaveRequestDetailPage(
+          leave: leave,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     );
   }
@@ -830,7 +875,7 @@ class _LeaveDatePanel extends StatelessWidget {
             ),
           ),
           Text(
-            '${leave.days} ${leave.days == 1 ? 'day' : 'days'}',
+            '${leave.daysLabel} ${leave.days == 1 ? 'day' : 'days'}',
             style: TextStyle(
               color: colors.$1.withValues(alpha: .85),
               fontSize: 12.5,
@@ -880,23 +925,34 @@ class _LeaveStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final approved = decision == LeaveDecision.approved;
-    final color = approved ? MColors.sageDeep : MColors.terraDeep;
+    final (label, color, background) = switch (decision) {
+      LeaveDecision.approved => (
+        'Approved',
+        MColors.sageDeep,
+        MColors.sageTint,
+      ),
+      LeaveDecision.declined => (
+        'Declined',
+        MColors.terraDeep,
+        MColors.terraTint,
+      ),
+      LeaveDecision.pending => ('Pending', MColors.gold, MColors.goldTint),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: approved ? MColors.sageTint : MColors.terraTint,
+        color: background,
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (approved) ...[
+          if (decision == LeaveDecision.approved) ...[
             Icon(Icons.check_rounded, size: 13, color: color),
             const SizedBox(width: 5),
           ],
           Text(
-            approved ? 'Approved' : 'Declined',
+            label,
             style: TextStyle(
               color: color,
               fontSize: 12,
@@ -910,10 +966,15 @@ class _LeaveStatusPill extends StatelessWidget {
 }
 
 class _LeaveRequestDetailPage extends StatelessWidget {
-  const _LeaveRequestDetailPage({required this.leave, required this.bloc});
+  const _LeaveRequestDetailPage({
+    required this.leave,
+    required this.bloc,
+    this.photoUrl,
+  });
 
   final LeaveRequest leave;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -941,6 +1002,7 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                             initial: leave.initial,
                             index: leave.avatarIndex,
                             size: 50,
+                            photoUrl: photoUrl,
                           ),
                           const SizedBox(width: 13),
                           Expanded(
@@ -989,7 +1051,7 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                             _LeaveInfoTile(
                               label: 'DURATION',
                               value:
-                                  '${leave.days} ${leave.days == 1 ? 'day' : 'days'}',
+                                  '${leave.daysLabel} ${leave.days == 1 ? 'day' : 'days'}',
                               background: const Color(0xFFF8F4EE),
                               foreground: MColors.ink,
                             ),
@@ -1336,10 +1398,14 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.calendar_month_rounded,
-                          size: 18,
-                          color: MColors.inkFaint,
+                        SvgPicture.asset(
+                          'assets/icons/calendar_header.svg',
+                          width: 18,
+                          height: 18,
+                          colorFilter: const ColorFilter.mode(
+                            MColors.inkFaint,
+                            BlendMode.srcIn,
+                          ),
                         ),
                         const SizedBox(width: 9),
                         Expanded(
@@ -1353,7 +1419,7 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                           ),
                         ),
                         Text(
-                          '${leave.days}d',
+                          '${leave.daysLabel}d',
                           style: const TextStyle(
                             color: MColors.inkSoft,
                             fontSize: 13,
@@ -1467,8 +1533,13 @@ String _requestTimestamp(DateTime value) {
 }
 
 class _OvertimeRequestCard extends StatelessWidget {
-  const _OvertimeRequestCard({required this.request, required this.bloc});
+  const _OvertimeRequestCard({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
 
+  final String? photoUrl;
   final OvertimeRequest request;
   final ManagerBloc bloc;
 
@@ -1491,6 +1562,7 @@ class _OvertimeRequestCard extends StatelessWidget {
                       initial: request.initial,
                       index: request.avatarIndex,
                       size: 42,
+                      photoUrl: photoUrl,
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -1523,7 +1595,7 @@ class _OvertimeRequestCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     request.decision == LeaveDecision.pending
                         ? _RequestChip(
-                            label: request.duration,
+                            label: request.hoursLabel,
                             foreground: MColors.gold,
                             background: MColors.goldTint,
                           )
@@ -1534,15 +1606,13 @@ class _OvertimeRequestCard extends StatelessWidget {
                 _RequestHighlightPanel(
                   icon: Icons.schedule_rounded,
                   value: _managerDate(request.workDate),
-                  trailing: request.hours > 0
-                      ? '${request.hours.toStringAsFixed(request.hours == request.hours.roundToDouble() ? 0 : 1)} hrs'
-                      : request.duration,
+                  trailing: request.hoursLabel,
                   foreground: MColors.gold,
                   background: MColors.goldTint,
                 ),
                 const SizedBox(height: 11),
                 Text(
-                  request.note.isEmpty ? request.project : request.note,
+                  request.note.isEmpty ? request.timeRangeLabel : request.note,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1592,8 +1662,11 @@ class _OvertimeRequestCard extends StatelessWidget {
   void _openDetails(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _OvertimeRequestDetailPage(request: request, bloc: bloc),
+        builder: (_) => _OvertimeRequestDetailPage(
+          request: request,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     );
   }
@@ -1607,12 +1680,12 @@ class _OvertimeRequestCard extends StatelessWidget {
       approve: decision == LeaveDecision.approved,
       requestName: 'overtime',
       person: request.who,
-      chipLabel: request.duration,
+      chipLabel: request.hoursLabel,
       chipForeground: MColors.gold,
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      trailing: request.hours > 0 ? '${request.hours} hrs' : request.duration,
+      trailing: request.hoursLabel,
     );
     if (result != null && context.mounted) {
       bloc.add(
@@ -1708,14 +1781,20 @@ class _RequestHighlightPanel extends StatelessWidget {
 }
 
 class _OvertimeRequestDetailPage extends StatelessWidget {
-  const _OvertimeRequestDetailPage({required this.request, required this.bloc});
+  const _OvertimeRequestDetailPage({
+    required this.request,
+    required this.bloc,
+    this.photoUrl,
+  });
 
   final OvertimeRequest request;
   final ManagerBloc bloc;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) => _ManagerRequestDetailPage(
     title: 'Overtime request',
+    photoUrl: photoUrl,
     person: request.who,
     team: request.team,
     initial: request.initial,
@@ -1723,7 +1802,7 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
     requestedOn: request.requestedOn,
     chip: request.decision == LeaveDecision.pending
         ? _RequestChip(
-            label: request.duration,
+            label: request.hoursLabel,
             foreground: MColors.gold,
             background: MColors.goldTint,
             large: true,
@@ -1734,13 +1813,11 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
     primaryForeground: MColors.gold,
     primaryBackground: MColors.goldTint,
     secondaryLabel: 'DURATION',
-    secondaryValue: request.hours > 0
-        ? '${request.hours.toStringAsFixed(request.hours == request.hours.roundToDouble() ? 0 : 1)} hours'
-        : request.duration,
+    secondaryValue: request.hoursLabel,
     noteLabel: request.note.isEmpty ? null : 'NOTE',
     note: request.note.isEmpty ? null : request.note,
     details: [
-      (Icons.work_outline_rounded, 'Project', request.project),
+      (Icons.schedule_rounded, 'Time', request.timeRangeLabel),
       (
         Icons.schedule_rounded,
         'Requested',
@@ -1758,12 +1835,12 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
       approve: decision == LeaveDecision.approved,
       requestName: 'overtime',
       person: request.who,
-      chipLabel: request.duration,
+      chipLabel: request.hoursLabel,
       chipForeground: MColors.gold,
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      trailing: request.hours > 0 ? '${request.hours} hrs' : request.duration,
+      trailing: request.hoursLabel,
     );
     if (result == null || !context.mounted) return;
     bloc.add(
@@ -1794,6 +1871,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
     required this.onApprove,
     this.noteLabel,
     this.note,
+    this.photoUrl,
   });
 
   final String title;
@@ -1801,6 +1879,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
   final String team;
   final String initial;
   final int avatarIndex;
+  final String? photoUrl;
   final DateTime requestedOn;
   final Widget chip;
   final String primaryLabel;
@@ -1840,6 +1919,7 @@ class _ManagerRequestDetailPage extends StatelessWidget {
                           initial: initial,
                           index: avatarIndex,
                           size: 50,
+                          photoUrl: photoUrl,
                         ),
                         const SizedBox(width: 13),
                         Expanded(

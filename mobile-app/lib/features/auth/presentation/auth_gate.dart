@@ -5,6 +5,7 @@ import '../data/auth_models.dart';
 import '../data/auth_api_service.dart';
 import '../data/auth_session_store.dart';
 import 'login_screen.dart';
+import 'splash_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -17,6 +18,18 @@ class _AuthGateState extends State<AuthGate> {
   late final Future<AuthSession?> _session = _restoreSession();
 
   Future<AuthSession?> _restoreSession() async {
+    // Run the restore and the splash animation together, then take whichever
+    // finishes last — a cached session resolves almost instantly and would
+    // otherwise cut the brand animation off mid-way.
+    final restored = _readSession();
+    await Future.wait<void>([
+      restored.then((_) {}),
+      Future<void>.delayed(SplashScreen.duration),
+    ]);
+    return restored;
+  }
+
+  Future<AuthSession?> _readSession() async {
     final store = AuthSessionStore();
     final cached = await store.read();
     if (cached == null) return null;
@@ -43,9 +56,7 @@ class _AuthGateState extends State<AuthGate> {
       future: _session,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const SplashScreen();
         }
 
         final session = snapshot.data;

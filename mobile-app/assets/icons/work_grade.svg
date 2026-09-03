@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="19.99" height="19.99" viewBox="0 0 19.99 19.99" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="vaadin:pyramid-chart" clip-path="url(#clip0_0_103)">
+<path id="Vector" d="M16.8398 14.2435L19.1279 18.2406H0.862305L3.15039 14.2435H16.8398ZM13.2783 7.99645L15.5557 11.9935H4.43457L6.71191 7.99645H13.2783ZM11.9932 5.74645H7.99609L9.99414 2.25426L11.9932 5.74645Z" stroke="black"/>
+</g>
+<defs>
+<clipPath id="clip0_0_103">
+<rect width="19.99" height="19.99" fill="white"/>
+</clipPath>
+</defs>
+</svg>

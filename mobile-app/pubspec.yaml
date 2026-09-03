@@ -43,6 +43,9 @@ dependencies:
   firebase_core: ^4.4.0
   firebase_messaging: ^16.1.1
   flutter_local_notifications: ^20.1.0
+  flutter_svg: ^2.3.0
+  socket_io_client: ^3.1.6
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -66,10 +69,18 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - assets/images/
+    - assets/icons/
+
   fonts:
     - family: Plus Jakarta Sans
       fonts:
         - asset: assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf
+    # Splash wordmark only — the brand lockup is set in Anton per the design.
+    - family: Anton
+      fonts:
+        - asset: assets/fonts/anton/Anton-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

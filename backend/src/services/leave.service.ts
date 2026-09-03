@@ -4,6 +4,7 @@ import { Leave, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { notifyUsers } from './notification.service';
+import { getCompanyConfig } from './company-settings.service';
 
 const maxLeaveDays = 30;
 const leaveTypes = new Set<Leave['type']>(['sick', 'casual', 'earned']);
@@ -22,6 +23,7 @@ export interface LeaveView {
   startDate: string;
   endDate: string;
   days: number;
+  halfDay: boolean;
   reason: string;
   status: LeaveStatus;
   managerNote?: string;
@@ -32,7 +34,13 @@ export interface LeaveView {
 
 export async function applyForLeave(
   userId: string,
-  input: { type: string; startDate: string; endDate: string; reason: string },
+  input: {
+    type: string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    halfDay?: boolean;
+  },
 ): Promise<LeaveView> {
   const employee = await users().findOne({ userId });
   if (!employee) {
@@ -62,7 +70,28 @@ export async function applyForLeave(
     throw new LeaveError(400, 'End date cannot be before start date');
   }
 
-  const days = inclusiveDays(startDate, endDate);
+  const singleDay = startDate.getTime() === endDate.getTime();
+  const halfDay = input.halfDay === true;
+  if (halfDay && !singleDay) {
+    throw new LeaveError(400, 'A half day can only be applied for a single date');
+  }
+
+  // A range may span week-offs and holidays, but neither is charged as leave.
+  const [holidayDates, companyConfig] = await Promise.all([
+    holidayDatesInRange(
+      employee.org ?? 'default',
+      employee.state ?? employee.location ?? employee.branch ?? '',
+      startDate,
+      endDate,
+    ),
+    getCompanyConfig(employee.org),
+  ]);
+  const days = halfDay
+    ? 0.5
+    : countLeaveDays(startDate, endDate, holidayDates, companyConfig.weekoffDays);
+  if (days === 0) {
+    throw new LeaveError(400, 'These dates are all week-offs or company holidays');
+  }
   if (days > maxLeaveDays) {
     throw new LeaveError(400, `Leave cannot exceed ${maxLeaveDays} days`);
   }
@@ -82,22 +111,14 @@ export async function applyForLeave(
     throw new LeaveError(409, 'A pending or approved leave already overlaps these dates');
   }
 
-  const blockedDate = await firstBlockedDate(
-    employee.org ?? 'default',
-    employee.state ?? employee.location ?? employee.branch ?? '',
-    startDate,
-    endDate,
-  );
-  if (blockedDate) {
-    throw new LeaveError(400, `Leave cannot include ${blockedDate.reason}: ${blockedDate.date}`);
-  }
-
   const createdAt = Date.now();
   const result = await leaves().insertOne({
     userId,
     type,
     startDate,
     endDate,
+    days,
+    halfDay: halfDay || undefined,
     reason,
     status: 'pending',
     createdAt,
@@ -121,6 +142,8 @@ export async function applyForLeave(
       type,
       startDate,
       endDate,
+      days,
+      halfDay,
       reason,
       status: 'pending',
       createdAt,
@@ -158,6 +181,14 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
   const totals: Record<Leave['type'], number> = { sick: 12, casual: 12, earned: 18 };
   const used: Record<Leave['type'], number> = { sick: 0, casual: 0, earned: 0 };
   for (const leave of approved) {
+    const withinYear = leave.startDate >= yearStart && leave.endDate <= yearEnd;
+    if (leave.days != null && withinYear) {
+      // The count agreed at apply time — holidays already excluded.
+      used[leave.type] += leave.days;
+      continue;
+    }
+    // Legacy rows, and leaves straddling a year boundary, fall back to the
+    // clamped calendar span.
     const start = leave.startDate < yearStart ? yearStart : leave.startDate;
     const end = leave.endDate > yearEnd ? yearEnd : leave.endDate;
     used[leave.type] += inclusiveDays(start, end);
@@ -352,30 +383,38 @@ function inclusiveDays(startDate: Date, endDate: Date): number {
   return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
 }
 
-async function firstBlockedDate(
+/** YYYY-MM-DD company holidays for the employee's state inside a date range. */
+async function holidayDatesInRange(
   org: string,
   state: string,
   startDate: Date,
   endDate: Date,
-): Promise<{ date: string; reason: string } | null> {
+): Promise<Set<string>> {
   const holidayDocuments = await holidays()
     .find({ org, state: state.trim().toLowerCase(), date: { $gte: startDate, $lte: endDate } })
-    .project<{ date: Date; name: string }>({ date: 1, name: 1 })
+    .project<{ date: Date }>({ date: 1 })
     .toArray();
-  const holidayByDate = new Map(
-    holidayDocuments.map((holiday) => [holiday.date.toISOString().slice(0, 10), holiday.name]),
-  );
+  return new Set(holidayDocuments.map((holiday) => holiday.date.toISOString().slice(0, 10)));
+}
 
+/**
+ * Leave days consumed by a range: every calendar day in it, less the company's
+ * week-off days (Sunday by default) and any company holiday. Both may sit
+ * inside a range without being charged as leave.
+ */
+function countLeaveDays(
+  startDate: Date,
+  endDate: Date,
+  holidayDates: Set<string>,
+  weekoffDays: number[],
+): number {
+  let days = 0;
   for (let cursor = startDate; cursor <= endDate; cursor = addUtcDays(cursor, 1)) {
-    const date = cursor.toISOString().slice(0, 10);
-    const day = cursor.getUTCDay();
-    if (day === 0 || day === 6) {
-      return { date, reason: day === 0 ? 'Sunday' : 'Saturday' };
-    }
-    const holidayName = holidayByDate.get(date);
-    if (holidayName) return { date, reason: holidayName };
+    if (weekoffDays.includes(cursor.getUTCDay())) continue;
+    if (holidayDates.has(cursor.toISOString().slice(0, 10))) continue;
+    days += 1;
   }
-  return null;
+  return days;
 }
 
 function addUtcDays(date: Date, days: number): Date {
@@ -400,7 +439,9 @@ function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): LeaveVie
     type: leave.type,
     startDate: leave.startDate.toISOString().slice(0, 10),
     endDate: leave.endDate.toISOString().slice(0, 10),
-    days: inclusiveDays(leave.startDate, leave.endDate),
+    // Rows written before `days` existed fall back to the raw calendar span.
+    days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
+    halfDay: leave.halfDay === true,
     reason: leave.reason,
     status: leave.status,
     managerNote: leave.managerNote,

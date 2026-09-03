@@ -1,0 +1,2423 @@
+part of '../../manager/presentation/manager_screen.dart';
+
+class _TeamMemberProfilePage extends StatelessWidget {
+  const _TeamMemberProfilePage({
+    required this.member,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+    this.canManage = true,
+  });
+
+  final TeamMember member;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  /// Individual contributors view a teammate read-only: no request cards and
+  /// no approve/decline actions.
+  final bool canManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final present = member.todayStatus == TeamPresenceStatus.present;
+    final today = DateTime.now();
+
+    final openRequests = <(DateTime date, Widget card)>[
+      for (final leave in data.leaves.where(
+        (item) =>
+            item.userId == member.userId &&
+            item.decision == LeaveDecision.pending,
+      ))
+        (
+          leave.requestedOn,
+          _ProfileRequestCard(
+            icon: Icons.calendar_month_rounded,
+            title: '${leave.type} Request',
+            rows: [
+              ('Date:', _leaveDateRange(leave)),
+              ('Comment:', leave.reason),
+            ],
+            decision: LeaveDecision.pending,
+            onApprove: () =>
+                bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideLeave(
+                  leave.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
+          ),
+        ),
+      for (final request in data.overtime.where(
+        (item) =>
+            item.userId == member.userId &&
+            item.decision == LeaveDecision.pending,
+      ))
+        (
+          request.requestedOn,
+          _ProfileRequestCard(
+            icon: Icons.schedule_rounded,
+            title: 'Overtime Request',
+            rows: [
+              ('Date:', _managerDate(request.workDate)),
+              ('Overtime hrs:', request.hoursLabel),
+              (
+                'Comment:',
+                request.note.isEmpty ? request.timeRangeLabel : request.note,
+              ),
+            ],
+            decision: LeaveDecision.pending,
+            onApprove: () =>
+                bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
+            onReject: () async {
+              final reason = await _showDeclineReasonSheet(context);
+              if (reason == null) return;
+              bloc.add(
+                DecideOvertime(
+                  request.id,
+                  LeaveDecision.declined,
+                  managerNote: reason,
+                ),
+              );
+            },
+          ),
+        ),
+      for (final request in data.managerRegularizations.where(
+        (item) =>
+            item.userId == member.userId &&
+            item.decision == LeaveDecision.pending,
+      ))
+        (
+          request.createdAt,
+          _ProfileRequestCard(
+            icon: Icons.edit_calendar_rounded,
+            title: 'Attendance Correction',
+            rows: [
+              ('Date:', _shortAttendanceDate(request.workDate)),
+              ('Correction:', _attendancePeriod(request)),
+              ('Comment:', request.note),
+            ],
+            decision: LeaveDecision.pending,
+            onApprove: () => bloc.add(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.approved,
+              ),
+            ),
+            onReject: () => bloc.add(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.declined,
+              ),
+            ),
+          ),
+        ),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
+      body: Column(
+        children: [
+          AppHomeHeader(
+            profileAction: _ProfileAvatarAction(
+              initial: data.managerInitial,
+              photoUrl: data.managerPhotoUrl,
+              onTap: () => Navigator.of(context).pop(),
+              size: 30,
+              label: 'Close profile',
+            ),
+            onNotifications: onNotifications,
+            onQuickCreate: onOpenComposer,
+          ),
+          // A teammate's attendance calendar is a manager view; both the
+          // top-bar icon and the card's "view calendar" action are hidden
+          // for everyone else (each takes a nullable callback).
+          _ProfilePageTopBar(
+            onCalendarTap: !canManage
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _TeamMemberAttendancePage(
+                        member: member,
+                        data: data,
+                        bloc: bloc,
+                        onNotifications: onNotifications,
+                        onOpenComposer: onOpenComposer,
+                      ),
+                    ),
+                  ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              children: [
+                Center(
+                  child: Column(
+                    children: [
+                      _TeamMemberPhoto(
+                        member: member,
+                        size: 112,
+                        showStatus: true,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        member.name,
+                        style: const TextStyle(
+                          color: MColors.ink,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          member.designation,
+                          member.team,
+                        ].where((value) => value.isNotEmpty).join(' • '),
+                        style: const TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 16,
+                          height: 24 / 16,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Punch in/out sits above the requests here, matching the
+                // signed-in user's own profile.
+                const SizedBox(height: 16),
+                _AttendanceCard(
+                  date: today,
+                  present: present,
+                  punchIn: member.punchIn,
+                  punchOut: member.punchOut,
+                  onViewCalendar: !canManage
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _TeamMemberAttendancePage(
+                              member: member,
+                              data: data,
+                              bloc: bloc,
+                              onNotifications: onNotifications,
+                              onOpenComposer: onOpenComposer,
+                            ),
+                          ),
+                        ),
+                ),
+                if (canManage && openRequests.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _RequestsSection(
+                    title: 'Open Requests',
+                    entries: openRequests,
+                  ),
+                ],
+                const SizedBox(height: 22),
+                const _SectionTitle(title: 'Profile'),
+                const SizedBox(height: 8),
+                _InfoCard(
+                  children: [
+                    if (member.email.isNotEmpty)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_email.svg',
+                        label: 'Email',
+                        value: member.email,
+                      ),
+                    if (member.employeeId case final id?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_employee_id.svg',
+                        label: 'Employee ID',
+                        value: id,
+                      ),
+                    if (member.joiningDate case final joined?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/profile_joining_date.svg',
+                        label: 'Joining Date',
+                        value: _joiningDateLabel(joined),
+                      ),
+                    if (member.birthday case final born?)
+                      _ProfileRow(
+                        icon: Icons.cake_outlined,
+                        label: 'Date of birth',
+                        value: _joiningDateLabel(born),
+                      ),
+                  ],
+                ),
+                if (member.orgChart.length > 1) ...[
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: 'Org Chart'),
+                  const SizedBox(height: 8),
+                  _OrgChartCard(nodes: member.orgChart),
+                ],
+                const SizedBox(height: 22),
+                const _SectionTitle(title: 'Work Role'),
+                const SizedBox(height: 8),
+                _InfoCard(
+                  children: [
+                    _ProfileRow(
+                      iconAsset: 'assets/icons/work_department.svg',
+                      label: 'Department',
+                      value: member.team,
+                    ),
+                    _ProfileRow(
+                      iconAsset: 'assets/icons/work_manager.svg',
+                      label: 'Manager',
+                      value: member.managerName ?? data.managerName,
+                    ),
+                    if (member.employmentType case final type?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/work_employment_type.svg',
+                        label: 'Employment Type',
+                        value: _employmentTypeLabel(type),
+                      ),
+                  ],
+                ),
+                if (member.documents.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: 'Documentation'),
+                  const SizedBox(height: 8),
+                  _DocumentationCard(documents: member.documents),
+                ],
+                // Only a manager can review someone, and only downward —
+                // never their own manager.
+                if (canManage && !member.isManager) ...[
+                  const SizedBox(height: 22),
+                  _GiveFeedbackButton(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _FeedbackFormPage(
+                            bloc: bloc,
+                            memberId: member.id,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          _BottomTabs(
+            state: bloc.state,
+            bloc: bloc,
+            onBeforeChange: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _joiningDateLabel(DateTime value) =>
+    '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]} ${value.day}, ${value.year}';
+
+/// `employeeType` arrives as a backend token (e.g. `full_time_permanent`).
+String _employmentTypeLabel(String value) => value
+    .replaceAll('_', ' ')
+    .split(' ')
+    .where((word) => word.isNotEmpty)
+    .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+    .join(' ');
+
+class _OrgChartCard extends StatelessWidget {
+  const _OrgChartCard({required this.nodes});
+
+  final List<OrgChartNode> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, node) in nodes.indexed) ...[
+            if (index > 0)
+              Container(width: 1, height: 12, color: const Color(0xFFDDDDDD)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: node.isSelf ? const Color(0xFFF0F7FC) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: node.isSelf
+                      ? const Color(0xFF0571A6)
+                      : const Color(0xFFEBEBEB),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF2F2F2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/icons/work_manager.svg',
+                        width: 18,
+                        height: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          node.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: MColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (node.designation.isNotEmpty)
+                          Text(
+                            node.designation.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF929292),
+                              fontSize: 10,
+                              letterSpacing: .4,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DocumentationCard extends StatelessWidget {
+  const _DocumentationCard({required this.documents});
+
+  final List<EmployeeDocument> documents;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, document) in documents.indexed) ...[
+            if (index > 0)
+              const Divider(height: 1, thickness: 1, color: Color(0xFFF2F2F2)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF2F2F2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/icons/document_file.svg',
+                        width: 18,
+                        height: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          document.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: MColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (document.uploadedAt case final uploaded?)
+                          Text(
+                            _joiningDateLabel(uploaded),
+                            style: const TextStyle(
+                              color: Color(0xFF929292),
+                              fontSize: 11,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GiveFeedbackButton extends StatelessWidget {
+  const _GiveFeedbackButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF0571A6),
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            'Give Feedback',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileScreen extends StatefulWidget {
+  const _ProfileScreen({
+    required this.session,
+    required this.dashboard,
+    required this.bloc,
+    required this.onBack,
+    required this.onLogout,
+    required this.onNotifications,
+    required this.onOpenComposer,
+    required this.onProfilePhotoUpdated,
+  });
+
+  final AuthSession session;
+  final ManagerDashboard dashboard;
+  final ManagerBloc bloc;
+  final VoidCallback onBack;
+  final Future<void> Function() onLogout;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+  final Future<void> Function(String photoUrl) onProfilePhotoUpdated;
+
+  @override
+  State<_ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<_ProfileScreen> {
+  bool _uploadingPhoto = false;
+
+  Future<void> _changePhoto() async {
+    if (_uploadingPhoto) return;
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png'],
+      withData: false,
+    );
+    final file = result?.files.single;
+    final path = file?.path;
+    if (file == null || path == null || path.isEmpty) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final photoUrl = await widget.bloc.service.updateProfilePhoto(
+        path: path,
+        filename: file.name,
+      );
+      widget.bloc.setManagerPhoto(photoUrl);
+      await widget.onProfilePhotoUpdated(photoUrl);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not update your photo. Try again.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: MColors.ink,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = widget.session;
+    final dashboard = widget.dashboard;
+    final bloc = widget.bloc;
+    final onBack = widget.onBack;
+    final onLogout = widget.onLogout;
+    final onNotifications = widget.onNotifications;
+    final onOpenComposer = widget.onOpenComposer;
+    final user = session.user;
+    final designation =
+        _nonEmpty(user.designation) ??
+        (user.role.toLowerCase() == 'manager'
+            ? 'People Manager'
+            : 'Team Member');
+    final department = _nonEmpty(user.department) ?? dashboard.managerTeam;
+    final reportsTo = _nonEmpty(user.managerName) ?? dashboard.approverName;
+    final today = DateTime.now();
+    final todayRecord = dashboard.attendance
+        .where(
+          (record) =>
+              record.workDate.year == today.year &&
+              record.workDate.month == today.month &&
+              record.workDate.day == today.day,
+        )
+        .firstOrNull;
+
+    return ColoredBox(
+      color: const Color(0xFFF7F7F9),
+      child: Column(
+        key: const ValueKey('profile-screen'),
+        children: [
+          AppHomeHeader(
+            profileAction: _ProfileAvatar(
+              initials: _initials(user.name),
+              profilePhotoUrl: user.profilePhotoUrl,
+              size: 30,
+            ),
+            onNotifications: onNotifications,
+            onQuickCreate: onOpenComposer,
+          ),
+          _ProfilePageTopBar(onBack: onBack),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 620),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: 112,
+                              height: 112,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  GestureDetector(
+                                    onTap: _changePhoto,
+                                    child: Container(
+                                      width: 112,
+                                      height: 112,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Color(0x1A000000),
+                                            blurRadius: 6,
+                                            offset: Offset(0, 4),
+                                          ),
+                                          BoxShadow(
+                                            color: Color(0x1A000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          _ProfileAvatar(
+                                            initials: _initials(user.name),
+                                            profilePhotoUrl:
+                                                user.profilePhotoUrl,
+                                            size: 112,
+                                          ),
+                                          if (_uploadingPhoto)
+                                            const ColoredBox(
+                                              color: Color(0x66000000),
+                                              child: Center(
+                                                child: SizedBox(
+                                                  width: 28,
+                                                  height: 28,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2.5,
+                                                        color: Colors.white,
+                                                      ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: 88,
+                                    top: 88,
+                                    child: Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF00C950),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFFF7F7F7),
+                                          width: 3.34,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    right: -2,
+                                    top: -2,
+                                    child: GestureDetector(
+                                      onTap: _changePhoto,
+                                      child: Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: MColors.terra,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFF7F7F7),
+                                            width: 2.5,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.camera_alt_rounded,
+                                          size: 15,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              user.name,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF222222),
+                                fontSize: 24,
+                                height: 32 / 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              designation,
+                              style: const TextStyle(
+                                color: MColors.inkSoft,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (dashboard.growthHistory.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 13,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF7F7F9),
+                                  borderRadius: BorderRadius.circular(99),
+                                  border: Border.all(
+                                    color: const Color(0xFFEBEBEB),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SvgPicture.asset(
+                                      'assets/icons/profile_rating_star.svg',
+                                      width: 16,
+                                      height: 16,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      dashboard.growthHistory.last.overallScore
+                                          .toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        color: Color(0xFF717171),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _AttendanceCard(
+                        date: today,
+                        present: todayRecord?.punchIn != null,
+                        punchIn: todayRecord?.punchIn,
+                        punchOut: todayRecord?.punchOut,
+                      ),
+                      _MyRequestsSection(data: dashboard),
+                      const SizedBox(height: 18),
+                      const _SectionTitle(title: 'Profile'),
+                      const SizedBox(height: 8),
+                      _InfoCard(
+                        children: [
+                          _ProfileRow(
+                            iconAsset: 'assets/icons/profile_email.svg',
+                            label: 'Email',
+                            value: user.email,
+                          ),
+                          _ProfileRow(
+                            iconAsset: 'assets/icons/profile_joining_date.svg',
+                            label: 'Joined',
+                            value: _formatDate(user.joiningDate),
+                          ),
+                          _ProfileRow(
+                            icon: Icons.cake_outlined,
+                            label: 'Date of birth',
+                            value: _formatDate(user.birthday),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      const _SectionTitle(title: 'Work Role'),
+                      const SizedBox(height: 8),
+                      _InfoCard(
+                        children: [
+                          _ProfileRow(
+                            iconAsset: 'assets/icons/work_department.svg',
+                            label: 'Department / team',
+                            value: department,
+                          ),
+                          _ProfileRow(
+                            iconAsset: 'assets/icons/work_manager.svg',
+                            label: 'Reports to',
+                            value: reportsTo,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _LogoutButton(onPressed: onLogout),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _BottomTabs(state: bloc.state, bloc: bloc, onBeforeChange: onBack),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileRequestCard extends StatelessWidget {
+  const _ProfileRequestCard({
+    required this.icon,
+    required this.title,
+    required this.rows,
+    required this.decision,
+    this.onApprove,
+    this.onReject,
+    this.readOnly = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<(String label, String value)> rows;
+  final LeaveDecision decision;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
+  final bool readOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .1),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F9),
+                  border: Border.all(color: const Color(0xFFEBEBEB)),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 20, color: const Color(0xFF222222)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              color: Color(0xFF222222),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        if (readOnly) _ProfileStatusPill(decision: decision),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    for (final row in rows)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              row.$1,
+                              style: const TextStyle(
+                                color: Color(0xFF717171),
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                row.$2,
+                                style: const TextStyle(
+                                  color: Color(0xFF222222),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!readOnly) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _TeamDecisionButton(
+                    label: 'Approve',
+                    background: const Color(0xFFDAFFD3),
+                    foreground: const Color(0xFF34C759),
+                    onTap: onApprove!,
+                    radius: 8,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TeamDecisionButton(
+                    label: 'Reject',
+                    background: const Color(0xFFFDDBDB),
+                    foreground: const Color(0xFFFF383C),
+                    onTap: onReject!,
+                    radius: 8,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileStatusPill extends StatelessWidget {
+  const _ProfileStatusPill({required this.decision});
+
+  final LeaveDecision decision;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, background) = switch (decision) {
+      LeaveDecision.pending => (
+        'PENDING',
+        const Color(0xFFD97706),
+        const Color(0x4DFFD700),
+      ),
+      LeaveDecision.approved => (
+        'APPROVED',
+        const Color(0xFF28CA08),
+        const Color(0x4D66FF00),
+      ),
+      LeaveDecision.declined => (
+        'DECLINED',
+        const Color(0xFFDC2626),
+        const Color(0x4DFF3838),
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .25,
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceCard extends StatelessWidget {
+  const _AttendanceCard({
+    required this.date,
+    required this.present,
+    required this.punchIn,
+    required this.punchOut,
+    this.onViewCalendar,
+  });
+
+  final DateTime date;
+  final bool present;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
+
+  /// Only the manager's read-only view of a report links through to the full
+  /// calendar; the signed-in user's own profile omits it.
+  final VoidCallback? onViewCalendar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF0571A6), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_shortAttendanceDate(date)}, ${_fullWeekday(date)}',
+                  style: const TextStyle(
+                    color: MColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              _AttendanceStatusDot(present: present),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _PunchColumn(
+                  label: 'PUNCH-IN',
+                  value: _attendanceClock(punchIn),
+                ),
+              ),
+              Expanded(
+                child: _PunchColumn(
+                  label: 'PUNCH-OUT',
+                  value: _attendanceClock(punchOut),
+                ),
+              ),
+            ],
+          ),
+          if (onViewCalendar case final open?) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: open,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/calendar_view_link.svg',
+                    width: 16,
+                    height: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'View Calendar',
+                    style: TextStyle(
+                      color: Color(0xFF0571A6),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceStatusDot extends StatelessWidget {
+  const _AttendanceStatusDot({required this.present});
+
+  final bool present;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = present ? const Color(0xFFF0FDF4) : const Color(0xFFF3F4F6);
+    final dot = present ? const Color(0xFF00C950) : const Color(0xFF9CA3AF);
+    final text = present ? const Color(0xFF008236) : const Color(0xFF6B7280);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            present ? 'Present' : 'Not Punched In',
+            style: TextStyle(
+              color: text,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestsSection extends StatefulWidget {
+  const _RequestsSection({required this.title, required this.entries});
+
+  final String title;
+  final List<(DateTime date, Widget card)> entries;
+
+  @override
+  State<_RequestsSection> createState() => _RequestsSectionState();
+}
+
+class _RequestsSectionState extends State<_RequestsSection> {
+  // Collapsed by default so a long request history doesn't bury the rest of
+  // the profile.
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      color: MColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _expanded ? 0 : 0.5,
+                  duration: const Duration(milliseconds: 180),
+                  child: const Icon(
+                    Icons.expand_more_rounded,
+                    color: MColors.ink,
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 6),
+          for (final entry in widget.entries) ...[
+            entry.$2,
+            const SizedBox(height: 12),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _MyRequestsSection extends StatelessWidget {
+  const _MyRequestsSection({required this.data});
+
+  final ManagerDashboard data;
+
+  @override
+  Widget build(BuildContext context) {
+    final myRequests = <(DateTime date, Widget card)>[
+      for (final leave in data.myLeaves)
+        (
+          leave.requestedOn,
+          _ProfileRequestCard(
+            icon: Icons.calendar_month_rounded,
+            title: '${leave.type} Request',
+            rows: [
+              ('Date:', _leaveDateRange(leave)),
+              ('Comment:', leave.reason),
+            ],
+            decision: leave.decision,
+            readOnly: true,
+          ),
+        ),
+      for (final request in data.myOvertime)
+        (
+          request.requestedOn,
+          _ProfileRequestCard(
+            icon: Icons.schedule_rounded,
+            title: 'Overtime Request',
+            rows: [
+              ('Date:', _managerDate(request.workDate)),
+              ('Overtime hrs:', request.hoursLabel),
+              (
+                'Comment:',
+                request.note.isEmpty ? request.timeRangeLabel : request.note,
+              ),
+            ],
+            decision: request.decision,
+            readOnly: true,
+          ),
+        ),
+      for (final request in data.regularizations)
+        (
+          request.createdAt,
+          _ProfileRequestCard(
+            icon: Icons.edit_calendar_rounded,
+            title: 'Attendance Correction',
+            rows: [
+              ('Date:', _shortAttendanceDate(request.workDate)),
+              ('Correction:', _attendancePeriod(request)),
+              ('Comment:', request.note),
+            ],
+            decision: request.decision,
+            readOnly: true,
+          ),
+        ),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+
+    if (myRequests.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: _RequestsSection(title: 'My Requests', entries: myRequests),
+    );
+  }
+}
+
+class _ProfilePageTopBar extends StatelessWidget {
+  const _ProfilePageTopBar({
+    this.onCalendarTap,
+    this.onBack,
+    this.title = 'Profile',
+  });
+
+  final VoidCallback? onCalendarTap;
+  final VoidCallback? onBack;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
+      decoration: const BoxDecoration(color: Color(0xFFF7F7F9)),
+      child: Row(
+        children: [
+          RoundIconButton(
+            onTap: onBack ?? () => Navigator.of(context).pop(),
+            child: SvgPicture.asset(
+              'assets/icons/chevron_left_small.svg',
+              width: 18,
+              height: 18,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: MColors.ink,
+                fontSize: 16.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          if (onCalendarTap != null)
+            RoundIconButton(
+              onTap: onCalendarTap!,
+              child: SvgPicture.asset(
+                'assets/icons/calendar_header.svg',
+                width: 20,
+                height: 20,
+              ),
+            )
+          else
+            const SizedBox(width: 38),
+        ],
+      ),
+    );
+  }
+}
+
+bool _isSameCalendarDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+class _TeamMemberAttendancePage extends StatefulWidget {
+  const _TeamMemberAttendancePage({
+    required this.member,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+  });
+
+  final TeamMember member;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  @override
+  State<_TeamMemberAttendancePage> createState() =>
+      _TeamMemberAttendancePageState();
+}
+
+class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  bool _listView = false;
+  AttendanceFilter? _filter;
+  bool _loading = true;
+  bool _failed = false;
+  AttendanceDayView? _selectedDay;
+  List<AttendanceRecord> _records = const [];
+  List<AttendanceRegularization> _regularizations = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    try {
+      final from = DateTime(_month.year, _month.month, 1);
+      final to = DateTime(_month.year, _month.month + 1, 0);
+      final result = await widget.bloc.service.fetchTeamMemberAttendance(
+        widget.member.userId,
+        from,
+        to,
+      );
+      if (!mounted) return;
+      setState(() {
+        _records = result.$1;
+        _regularizations = result.$2;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _changeMonth(int delta) async {
+    setState(() {
+      _month = DateTime(_month.year, _month.month + delta);
+      _selectedDay = null;
+    });
+    await _load();
+  }
+
+  void _openDay(AttendanceDayView day) {
+    setState(() {
+      _selectedDay = _isSameCalendarDay(_selectedDay?.date ?? _month, day.date)
+          ? null
+          : day;
+    });
+  }
+
+  /// Day shown in the detail strip: the tapped day, else today when the shown
+  /// month contains it.
+  AttendanceDayView? _detailDay(List<AttendanceDayView> days) {
+    if (_selectedDay case final selected?) {
+      return days
+              .where((day) => _isSameCalendarDay(day.date, selected.date))
+              .firstOrNull ??
+          selected;
+    }
+    final now = DateTime.now();
+    if (_month.year != now.year || _month.month != now.month) return null;
+    return days.where((day) => _isSameCalendarDay(day.date, now)).firstOrNull;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memberLeaves = widget.data.leaves
+        .where((item) => item.userId == widget.member.userId)
+        .toList();
+    final memberOvertime = widget.data.overtime
+        .where((item) => item.userId == widget.member.userId)
+        .toList();
+    final days = buildAttendanceDays(
+      month: _month,
+      records: _records,
+      regularizations: _regularizations,
+      leaves: memberLeaves,
+      holidays: widget.data.holidays,
+      overtime: memberOvertime,
+      weekoffDays: widget.data.weekoffDays,
+    );
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
+      body: Column(
+        children: [
+          AppHomeHeader(
+            profileAction: widget.data.managerPhotoUrl == null
+                ? AvatarBadge(
+                    initial: widget.data.managerInitial,
+                    index: 1,
+                    size: 30,
+                  )
+                : ClipOval(
+                    child: Image(
+                      image: _profileImage(widget.data.managerPhotoUrl!),
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
+          ),
+          _ProfilePageTopBar(title: "${widget.member.name}'s Attendance"),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: MColors.terra),
+                  )
+                : _failed
+                ? Center(
+                    child: Text(
+                      'Could not load attendance for this month.',
+                      style: const TextStyle(color: MColors.inkSoft),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                    children: [
+                      Row(
+                        children: [
+                          AttendanceCalendarArrow(
+                            onPressed: () => _changeMonth(-1),
+                            asset: 'assets/icons/calendar_chevron_prev.svg',
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${_monthName(_month.month)} ${_month.year}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF2A2A2A),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          AttendanceCalendarArrow(
+                            onPressed: () => _changeMonth(1),
+                            asset: 'assets/icons/calendar_chevron_next.svg',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      LeaveViewSwitch(
+                        history: _listView,
+                        onChanged: (list) => setState(() => _listView = list),
+                        firstLabel: 'Grid',
+                        secondLabel: 'List',
+                      ),
+                      const SizedBox(height: 16),
+                      AttendanceFilterChips(
+                        selected: _filter,
+                        onChanged: (filter) => setState(() => _filter = filter),
+                        onLateTapped: () =>
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Late arrivals aren't tracked yet — no threshold is configured.",
+                                ),
+                              ),
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (_listView)
+                        ...days.map(
+                          (day) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: AttendanceListCard(
+                              day: day,
+                              today: _isSameCalendarDay(
+                                day.date,
+                                DateTime.now(),
+                              ),
+                              dimmed: !matchesAttendanceFilter(
+                                day.kind,
+                                _filter,
+                              ),
+                              selected: _isSameCalendarDay(
+                                day.date,
+                                _selectedDay?.date ?? _month,
+                              ),
+                              onTap: () => _openDay(day),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        AttendanceMonthGrid(
+                          month: _month,
+                          days: days,
+                          filter: _filter,
+                          selectedDate: _selectedDay?.date,
+                          onTap: _openDay,
+                        ),
+                        if (_detailDay(days) case final detail?) ...[
+                          const SizedBox(height: 16),
+                          AttendanceDayDetail(day: detail),
+                        ],
+                      ],
+                    ],
+                  ),
+          ),
+          _BottomTabs(
+            state: widget.bloc.state,
+            bloc: widget.bloc,
+            onBeforeChange: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Seeded/uploaded photos without S3 configured fall back to `data:` URIs
+/// (see `_remoteImage` in connect_feed_screen.dart) — `Image.network` can't
+/// load those, only real http(s) URLs, so profile photos need the same split.
+ImageProvider _profileImage(String url) {
+  if (url.startsWith('data:')) {
+    final base64Part = url.split(',').last;
+    return MemoryImage(base64Decode(base64Part));
+  }
+  return NetworkImage(resolveMediaUrl(url));
+}
+
+class _TeamMemberPhoto extends StatelessWidget {
+  const _TeamMemberPhoto({
+    required this.member,
+    required this.size,
+    this.showStatus = false,
+  });
+
+  final TeamMember member;
+  final double size;
+  final bool showStatus;
+
+  Widget _photo() {
+    final url = member.photoUrl;
+    if (url == null || url.isEmpty) {
+      return AvatarBadge(
+        initial: member.initial,
+        index: member.avatarIndex,
+        size: size,
+      );
+    }
+    return ClipOval(
+      child: Image(
+        image: _profileImage(url),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => AvatarBadge(
+          initial: member.initial,
+          index: member.avatarIndex,
+          size: size,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = _photo();
+    if (!showStatus) return photo;
+    final present = member.todayStatus == TeamPresenceStatus.present;
+    final dotSize = size * .18;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          photo,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: dotSize,
+              height: dotSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: present
+                    ? const Color(0xFF00C950)
+                    : const Color(0xFFDDDDDD),
+                border: Border.all(color: Colors.white, width: dotSize * .18),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PunchColumn extends StatelessWidget {
+  const _PunchColumn({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: MColors.inkFaint,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: .6,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: MColors.ink,
+            fontSize: 14.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+      decoration: _cardDecoration,
+      child: Column(children: children),
+    );
+  }
+}
+
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({
+    required this.initials,
+    required this.profilePhotoUrl,
+    this.size = 92,
+  });
+
+  final String initials;
+  final String? profilePhotoUrl;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _nonEmpty(profilePhotoUrl);
+    final fallback = Container(
+      color: _ProfileColors.sage,
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * .336,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url == null
+            ? fallback
+            : Image(
+                image: _profileImage(url),
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : fallback,
+              ),
+      ),
+    );
+  }
+}
+
+class _ProfileRow extends StatelessWidget {
+  const _ProfileRow({
+    this.icon,
+    this.iconAsset,
+    required this.label,
+    required this.value,
+  }) : assert(
+         icon != null || iconAsset != null,
+         'provide either icon or iconAsset',
+       );
+
+  final IconData? icon;
+
+  /// Preferred over [icon]: the glyph exported from Figma.
+  final String? iconAsset;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF7F7F7),
+              shape: BoxShape.circle,
+            ),
+            child: iconAsset != null
+                ? Center(
+                    child: SvgPicture.asset(iconAsset!, width: 20, height: 20),
+                  )
+                : Icon(icon, size: 20, color: _ProfileColors.ink),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label.toUpperCase(), style: _ProfileText.label),
+                const SizedBox(height: 2),
+                Text(
+                  value.isEmpty ? 'Not available' : value,
+                  style: _ProfileText.value,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogoutButton extends StatelessWidget {
+  const _LogoutButton({required this.onPressed});
+
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: _ProfileColors.line, width: 1.5),
+      ),
+      child: InkWell(
+        key: const ValueKey('profile-logout'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: onPressed,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.logout_rounded, size: 19, color: _ProfileColors.terra),
+              SizedBox(width: 8),
+              Text(
+                'Log out',
+                style: TextStyle(
+                  color: _ProfileColors.terra,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _initials(String name) {
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty);
+  final initials = parts.take(2).map((part) => part[0].toUpperCase()).join();
+  return initials.isEmpty ? '?' : initials;
+}
+
+String? _nonEmpty(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+String _formatDate(String? value) {
+  final parsed = DateTime.tryParse(value ?? '');
+  if (parsed == null) return '';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${parsed.day.toString().padLeft(2, '0')} ${months[parsed.month - 1]} ${parsed.year}';
+}
+
+const _cardDecoration = BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.all(Radius.circular(16)),
+  border: Border.fromBorderSide(BorderSide(color: _ProfileColors.line)),
+  boxShadow: [
+    BoxShadow(color: Color(0x0A462D1C), blurRadius: 22, offset: Offset(0, 10)),
+  ],
+);
+
+class _ProfileText {
+  static const label = TextStyle(
+    color: _ProfileColors.inkFaint,
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: .55,
+  );
+
+  static const value = TextStyle(
+    color: _ProfileColors.ink,
+    fontSize: 14.5,
+    fontWeight: FontWeight.w700,
+  );
+}
+
+class _ProfileColors {
+  static const ink = Color(0xFF2A2420);
+  static const inkFaint = Color(0xFFA79D92);
+  static const line = Color(0xFFF0E8DD);
+  static const terra = Color(0xFFBE5A36);
+  static const sage = Color(0xFF7E8B6E);
+}
+
+/// Manager's read-only growth timeline for one report: overall score with the
+/// trend chart, then a card per review period. The current period offers the
+/// "Give Feedback" action that opens the rating form.
+class _EmployeeGrowthPage extends StatefulWidget {
+  const _EmployeeGrowthPage({
+    required this.name,
+    required this.designation,
+    required this.history,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+    this.memberId,
+    this.embedded = false,
+    this.onOpenProfile,
+  });
+
+  final String name;
+  final String designation;
+  final List<GrowthRecord> history;
+
+  /// True when rendered as the Grow tab itself (an individual contributor's
+  /// only Grow view) rather than pushed as a route: the shell already provides
+  /// the bottom nav, and there's nothing to navigate back to.
+  final bool embedded;
+
+  /// Makes the header avatar open the signed-in user's profile, matching every
+  /// other tab. Without it the avatar here was inert.
+  final VoidCallback? onOpenProfile;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  /// Null when the page shows the signed-in user's own growth: you cannot
+  /// review yourself, so the "feedback is due" action is hidden.
+  final int? memberId;
+
+  static String _currentPeriod() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  State<_EmployeeGrowthPage> createState() => _EmployeeGrowthPageState();
+}
+
+class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
+  /// Index into the chronological history shared by the growth chart and the
+  /// month cards below it, so selecting one updates the other. Null means
+  /// "default to the newest period."
+  int? _selectedIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ManagerState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final live = snapshot.data?.dashboard;
+        // Prefer live state so a review sent from here appears immediately.
+        final current = widget.memberId == null
+            ? (live?.growthHistory ?? widget.history)
+            : (live?.team
+                      .where((member) => member.id == widget.memberId)
+                      .firstOrNull
+                      ?.history ??
+                  widget.history);
+        return _build(context, current);
+      },
+    );
+  }
+
+  /// True when this growth page belongs to the viewer's own manager.
+  bool get _isOwnManager =>
+      widget.memberId != null &&
+      (widget.data.team
+              .where((member) => member.id == widget.memberId)
+              .firstOrNull
+              ?.isManager ??
+          false);
+
+  Widget _build(BuildContext context, List<GrowthRecord> history) {
+    final period = _EmployeeGrowthPage._currentPeriod();
+    final currentDone = history.any((record) => record.period == period);
+    final effectiveIndex = history.isEmpty
+        ? 0
+        : (_selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
+      body: Column(
+        children: [
+          AppHomeHeader(
+            profileAction: switch (widget.onOpenProfile) {
+              final open? => _ProfileAvatarAction(
+                initial: widget.data.managerInitial,
+                photoUrl: widget.data.managerPhotoUrl,
+                onTap: open,
+                size: 30,
+              ),
+              _ when widget.data.managerPhotoUrl == null => AvatarBadge(
+                initial: widget.data.managerInitial,
+                index: 1,
+                size: 30,
+              ),
+              _ => ClipOval(
+                child: Image(
+                  image: _profileImage(widget.data.managerPhotoUrl!),
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            },
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
+          ),
+          if (!widget.embedded)
+            _GrowthPageTopBar(
+              name: widget.name,
+              designation: widget.designation,
+            ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              children: [
+                _GrowthScoreSection(
+                  history: history,
+                  selectedIndex: _selectedIndex,
+                  onSelect: (index) => setState(() => _selectedIndex = index),
+                ),
+                const SizedBox(height: 16),
+                // Never offered for the viewer's own manager: feedback only
+                // flows downward.
+                if (!currentDone && widget.memberId != null && !_isOwnManager)
+                  _FeedbackDuePeriodCard(
+                    period: period,
+                    onGiveFeedback: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _FeedbackFormPage(
+                          bloc: widget.bloc,
+                          memberId: widget.memberId!,
+                        ),
+                      ),
+                    ),
+                  ),
+                for (final (index, record) in history.reversed.indexed) ...[
+                  const SizedBox(height: 12),
+                  // Kept in sync with the chart above: selecting a chart
+                  // point opens its card, and opening a card selects its
+                  // chart point.
+                  _GrowthMonthCard(
+                    record: record,
+                    expanded: history.length - 1 - index == effectiveIndex,
+                    onToggle: () => setState(
+                      () => _selectedIndex = history.length - 1 - index,
+                    ),
+                  ),
+                ],
+                if (history.isEmpty && currentDone) ...[
+                  const SizedBox(height: 40),
+                  const Center(
+                    child: Text(
+                      'No reviews have been sent yet.',
+                      style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!widget.embedded)
+            _BottomTabs(
+              state: widget.bloc.state,
+              bloc: widget.bloc,
+              onBeforeChange: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overall-score card + trend chart, kept together since tapping a point on
+/// the chart updates the score card to that month instead of always showing
+/// the latest period.
+/// The overall-score card and growth chart. Selection is owned by the parent
+/// (`_EmployeeGrowthPageState`) so the chart's highlighted point and the
+/// month-card list below it stay in sync in both directions.
+class _GrowthScoreSection extends StatelessWidget {
+  const _GrowthScoreSection({
+    required this.history,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<GrowthRecord> history;
+  final int? selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = history.map((record) => record.overallScore).toList();
+    final effectiveIndex = history.isEmpty
+        ? 0
+        : (selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
+    final selected = history.isEmpty ? null : history[effectiveIndex];
+    final previous = effectiveIndex > 0
+        ? history[effectiveIndex - 1].overallScore
+        : null;
+
+    // Score and chart share one card: tapping a point moves the score above it,
+    // so splitting them across two cards broke that relationship visually.
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Same period label as the Grow progress card, so it's clear which
+          // month the score and the highlighted chart point belong to.
+          if (selected != null) ...[
+            Text(
+              _periodTitle(selected.period).toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 11.5,
+                height: 17.25 / 11.5,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          _OverallScoreCard(
+            overall: selected?.overallScore ?? 0,
+            previousScore: previous,
+            showAveragesNote: true,
+            boxed: false,
+          ),
+          if (history.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _GrowthChart(
+              records: history,
+              values: values,
+              color: const Color(0xFF0571A6),
+              selectedIndex: effectiveIndex,
+              onSelect: onSelect,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GrowthPageTopBar extends StatelessWidget {
+  const _GrowthPageTopBar({
+    required this.name,
+    required this.designation,
+    this.onBack,
+  });
+
+  final String name;
+  final String designation;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    // Per node 861:7716: this row sits flush against AppHomeHeader above
+    // it — both white, no visible seam — unlike the grey fill this had.
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
+      decoration: const BoxDecoration(color: Colors.white),
+      child: Row(
+        children: [
+          RoundIconButton(
+            onTap: onBack ?? () => Navigator.of(context).pop(),
+            child: SvgPicture.asset(
+              'assets/icons/chevron_left_small.svg',
+              width: 18,
+              height: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF222222),
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  designation,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The amber "feedback is due" card for the period that has no review yet.
+class _FeedbackDuePeriodCard extends StatelessWidget {
+  const _FeedbackDuePeriodCard({
+    required this.period,
+    required this.onGiveFeedback,
+  });
+
+  final String period;
+  final VoidCallback onGiveFeedback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5C86B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _periodTitle(period),
+                  style: const TextStyle(
+                    color: MColors.ink,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Feedback is due for this month',
+            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: const Color(0xFFE8862B),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onGiveFeedback,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  child: Text(
+                    'Give Feedback',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The feedback form as a pushed route. Grow and the team-member profile both
+/// open this, so giving feedback never switches tabs or changes what the
+/// Manage tab is showing underneath.
+class _FeedbackFormPage extends StatefulWidget {
+  const _FeedbackFormPage({required this.bloc, required this.memberId});
+
+  final ManagerBloc bloc;
+  final int memberId;
+
+  @override
+  State<_FeedbackFormPage> createState() => _FeedbackFormPageState();
+}
+
+class _FeedbackFormPageState extends State<_FeedbackFormPage> {
+  StreamSubscription<ManagerState>? _subscription;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Loads the member's parameters into bloc state for the form to edit.
+    widget.bloc.add(OpenFeedbackRecord(widget.memberId));
+    // Saving or sending clears the selected member on the bloc. That is the
+    // signal the form is finished, so close the route rather than sitting on a
+    // spinner waiting for a member that will never come back.
+    _subscription = widget.bloc.stream.listen((state) {
+      if (!mounted) return;
+      if (state.selectedMember != null) {
+        _loaded = true;
+        return;
+      }
+      if (_loaded && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Cancel first: clearing the draft below would otherwise re-enter the
+    // listener and try to pop a route that is already going away.
+    _subscription?.cancel();
+    widget.bloc.add(const CloseFeedbackRecord());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ManagerState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? widget.bloc.state;
+        if (state.selectedMember == null) {
+          // Either still loading, or already persisted and about to pop.
+          return const Scaffold(
+            backgroundColor: Color(0xFFF7F7F9),
+            body: Center(
+              child: CircularProgressIndicator(color: MColors.terra),
+            ),
+          );
+        }
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F7F9),
+          body: Column(
+            children: [
+              Expanded(
+                child: _RecordFeedback(
+                  state: state,
+                  bloc: widget.bloc,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
+              ),
+              _BottomTabs(
+                state: state,
+                bloc: widget.bloc,
+                onBeforeChange: () =>
+                    Navigator.of(context).popUntil((route) => route.isFirst),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

@@ -6,6 +6,7 @@ class _TabContent extends StatelessWidget {
     required this.state,
     required this.bloc,
     required this.quickActionsController,
+    required this.connectComposerController,
     required this.onOpenProfile,
   });
 
@@ -13,7 +14,18 @@ class _TabContent extends StatelessWidget {
   final ManagerState state;
   final ManagerBloc bloc;
   final QuickActionsController quickActionsController;
+  final ConnectComposerController connectComposerController;
   final VoidCallback onOpenProfile;
+
+  Future<void> _openNotifications(BuildContext context) async {
+    await AppNotificationService.instance.requestPermission();
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationInboxScreen(session: session),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,20 +37,29 @@ class _TabContent extends StatelessWidget {
           state: state,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
+          onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
         ),
         _GrowTab(
           key: const ValueKey('grow-tab'),
           state: state,
+          bloc: bloc,
           onOpenProfile: onOpenProfile,
+          onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
         ),
         _ConnectTab(
           key: const ValueKey('connect-tab'),
           session: session,
           recognitionCandidates: state.dashboard!.recognitionCandidates,
+          composerController: connectComposerController,
+          data: state.dashboard!,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
             onTap: onOpenProfile,
+            size: 30,
           ),
         ),
         QuickActionsScreen(
@@ -46,10 +67,14 @@ class _TabContent extends StatelessWidget {
           bloc: bloc,
           dashboard: state.dashboard!,
           controller: quickActionsController,
+          onNotifications: () => _openNotifications(context),
+          onOpenComposer: connectComposerController.openComposer,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('quick-profile-avatar'),
             initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
             onTap: onOpenProfile,
+            size: 30,
           ),
         ),
       ],

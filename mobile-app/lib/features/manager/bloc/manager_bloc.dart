@@ -248,24 +248,26 @@ class SubmitLeaveApplication extends ManagerEvent {
     required this.startDate,
     required this.endDate,
     required this.reason,
+    this.halfDay = false,
   });
 
   final String type;
   final DateTime startDate;
   final DateTime endDate;
   final String reason;
+  final bool halfDay;
 }
 
 class SubmitOvertimeApplication extends ManagerEvent {
   const SubmitOvertimeApplication({
     required this.workDate,
-    required this.duration,
-    required this.project,
+    required this.startTime,
+    required this.endTime,
     required this.note,
   });
   final DateTime workDate;
-  final String duration;
-  final String project;
+  final DateTime startTime;
+  final DateTime endTime;
   final String note;
 }
 
@@ -291,14 +293,21 @@ class LoadAttendanceMonth extends ManagerEvent {
   final DateTime month;
 }
 
+class RecordPunch extends ManagerEvent {
+  const RecordPunch(this.type);
+  final String type;
+}
+
 class SubmitAttendanceRegularization extends ManagerEvent {
   const SubmitAttendanceRegularization({
     required this.workDate,
-    required this.period,
+    required this.punchIn,
+    required this.punchOut,
     required this.note,
   });
   final DateTime workDate;
-  final String period;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
   final String note;
 }
 
@@ -331,10 +340,19 @@ class ManagerBloc {
   bool _refreshingLeaves = false;
 
   ManagerState get state => _state;
+  ManagerApiService get service => _service;
 
   Stream<ManagerState> get stream => _controller.stream;
 
   Future<bool> add(ManagerEvent event) => _handle(event);
+
+  void setManagerPhoto(String url) {
+    _emit(
+      _state.copyWith(
+        dashboard: _state.dashboard?.copyWith(managerPhotoUrl: url),
+      ),
+    );
+  }
 
   void dispose() {
     _leavePollingTimer?.cancel();
@@ -363,7 +381,9 @@ class ManagerBloc {
             ),
           );
         case ChangeManagerTab(:final tab):
-          if (tab == ManagerTab.manage && !_state.canManage) return false;
+          // Team is open to everyone now — individual contributors get the
+          // same list read-only (no requests segment, no decisions), so this
+          // no longer blocks the switch.
           _emit(
             _state.copyWith(
               tab: tab,
@@ -386,14 +406,32 @@ class ManagerBloc {
               ),
             ),
           );
+        case RecordPunch(:final type):
+          final record = await _service.recordPunch(type);
+          final data = _state.dashboard;
+          if (data != null) {
+            final attendance = [
+              for (final item in data.attendance)
+                if (!_sameDate(item.workDate, record.workDate)) item,
+              record,
+            ];
+            _emit(
+              _state.copyWith(
+                dashboard: data.copyWith(attendance: attendance),
+                message: type == 'in' ? 'Punched in' : 'Punched out',
+              ),
+            );
+          }
         case SubmitAttendanceRegularization(
           :final workDate,
-          :final period,
+          :final punchIn,
+          :final punchOut,
           :final note,
         ):
           final request = await _service.submitAttendanceRegularization(
             workDate: workDate,
-            period: period,
+            punchIn: punchIn,
+            punchOut: punchOut,
             note: note,
           );
           final data = _state.dashboard;
@@ -457,7 +495,6 @@ class ManagerBloc {
           if (member == null) return false;
           _emit(
             _state.copyWith(
-              view: ManagerView.feedbackRecord,
               selectedMemberId: member.id,
               recordParams: member.params
                   .map((param) => param.copyWith())
@@ -468,7 +505,6 @@ class ManagerBloc {
         case CloseFeedbackRecord():
           _emit(
             _state.copyWith(
-              view: ManagerView.feedbackList,
               clearSelectedMember: true,
               recordParams: const <FeedbackParam>[],
               recordExtra: '',
@@ -516,9 +552,21 @@ class ManagerBloc {
           final leaves = data.leaves.map((leave) {
             return leave.id == leaveId ? updatedLeave : leave;
           }).toList();
+          // The days-available count is only recomputed server-side on
+          // request, not pushed here automatically — without this, approving
+          // shows correctly in the request history but the balance number
+          // stays stuck at whatever it was when the dashboard first loaded.
+          // Only matters when the decider's own balance is affected (e.g.
+          // self-approval); failure here shouldn't block the decision itself.
+          final refreshedBalance = await _service
+              .fetchLeaveBalance()
+              .catchError((_) => data.leaveBalance);
           _emit(
             _state.copyWith(
-              dashboard: data.copyWith(leaves: leaves),
+              dashboard: data.copyWith(
+                leaves: leaves,
+                leaveBalance: refreshedBalance,
+              ),
               message: decision == LeaveDecision.approved
                   ? 'Leave approved'
                   : 'Leave declined',
@@ -589,12 +637,14 @@ class ManagerBloc {
           :final startDate,
           :final endDate,
           :final reason,
+          :final halfDay,
         ):
           final leave = await _service.submitLeaveApplication(
             type: type,
             startDate: startDate,
             endDate: endDate,
             reason: reason,
+            halfDay: halfDay,
           );
           final data = _state.dashboard;
           _emit(
@@ -606,14 +656,14 @@ class ManagerBloc {
           );
         case SubmitOvertimeApplication(
           :final workDate,
-          :final duration,
-          :final project,
+          :final startTime,
+          :final endTime,
           :final note,
         ):
           final request = await _service.submitOvertime(
             workDate: workDate,
-            duration: duration,
-            project: project,
+            startTime: startTime,
+            endTime: endTime,
             note: note,
           );
           final data = _state.dashboard;
@@ -668,6 +718,11 @@ class ManagerBloc {
     }
   }
 
+  static String _currentPeriodKey() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _persistFeedback(FeedbackStatus status, String message) async {
     final data = _state.dashboard;
     final selected = _state.selectedMember;
@@ -684,19 +739,40 @@ class ManagerBloc {
       params: params,
       extra: _state.recordExtra,
     );
+    // A sent review must also land in the member's history, otherwise the
+    // growth timeline keeps showing the period as still due.
+    final period = _currentPeriodKey();
     final team = data.team.map((member) {
       if (member.id != selected.id) return member;
+      final history = status == FeedbackStatus.sent
+          ? <GrowthRecord>[
+              ...member.history.where((record) => record.period != period),
+              GrowthRecord(
+                period: period,
+                overallScore: overall,
+                parameters: params,
+                sentAt: DateTime.now(),
+                managerName: data.managerName,
+              ),
+            ]
+          : member.history;
       return member.copyWith(
         status: status,
         params: params,
         extra: _state.recordExtra,
         score: overall,
+        history: history,
+        previousScore: status == FeedbackStatus.sent
+            ? member.history
+                  .where((record) => record.period != period)
+                  .map((record) => record.overallScore)
+                  .lastOrNull
+            : member.previousScore,
       );
     }).toList();
     _emit(
       _state.copyWith(
         dashboard: data.copyWith(team: team),
-        view: ManagerView.feedbackList,
         clearSelectedMember: true,
         recordParams: const <FeedbackParam>[],
         recordExtra: '',
@@ -737,3 +813,6 @@ class ManagerBloc {
     }
   }
 }
+
+bool _sameDate(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;

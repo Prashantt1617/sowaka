@@ -1,7 +1,8 @@
 import { ObjectId } from 'mongodb';
 
 export type AttendanceSource = 'sql_import' | 'manual';
-export type RegularizationPeriod = 'full_day' | 'first_half' | 'second_half';
+// Corrections now capture the punch times the employee says they worked,
+// rather than a coarse present/half-day/late bucket.
 export type RegularizationStatus = 'pending' | 'approved' | 'declined';
 
 export interface AttendanceRecord {
@@ -22,8 +23,11 @@ export interface AttendanceRegularization {
   employeeId: string;
   managerUserId: string;
   workDate: string;
-  period: RegularizationPeriod;
-  note: string;
+  /** Requested punch-in; absent when only a punch-out is being corrected. */
+  punchIn?: Date;
+  /** Requested punch-out; absent when only a punch-in is being corrected. */
+  punchOut?: Date;
+  note?: string;
   status: RegularizationStatus;
   managerNote?: string;
   createdAt: Date;

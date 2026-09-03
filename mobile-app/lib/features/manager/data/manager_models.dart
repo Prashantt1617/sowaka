@@ -3,7 +3,6 @@ enum ManagerTab { manage, grow, connect, quick }
 enum ManagerView {
   home,
   feedbackList,
-  feedbackRecord,
   leaveRequests,
   overtimeRequests,
   attendanceCorrections,
@@ -12,6 +11,8 @@ enum ManagerView {
 enum FeedbackStatus { pending, saved, sent, missed }
 
 enum LeaveDecision { pending, approved, declined }
+
+enum TeamPresenceStatus { present, notPunchedIn }
 
 class FeedbackParam {
   const FeedbackParam({
@@ -68,11 +69,55 @@ class GrowthRecord {
   }
 }
 
+class OrgChartNode {
+  const OrgChartNode({
+    required this.userId,
+    required this.name,
+    required this.designation,
+    required this.isSelf,
+  });
+
+  final String userId;
+  final String name;
+  final String designation;
+  final bool isSelf;
+
+  factory OrgChartNode.fromJson(Map<String, dynamic> json) => OrgChartNode(
+    userId: json['userId'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    designation: json['designation'] as String? ?? '',
+    isSelf: json['isSelf'] as bool? ?? false,
+  );
+}
+
+class EmployeeDocument {
+  const EmployeeDocument({
+    required this.name,
+    required this.url,
+    this.type,
+    this.uploadedAt,
+  });
+
+  final String name;
+  final String url;
+  final String? type;
+  final DateTime? uploadedAt;
+
+  factory EmployeeDocument.fromJson(Map<String, dynamic> json) =>
+      EmployeeDocument(
+        name: json['name'] as String? ?? 'Document',
+        url: json['url'] as String? ?? '',
+        type: json['type'] as String?,
+        uploadedAt: DateTime.tryParse(json['uploadedAt'] as String? ?? ''),
+      );
+}
+
 class TeamMember {
   const TeamMember({
     required this.id,
     required this.userId,
     required this.name,
+    this.isManager = false,
     required this.initial,
     required this.team,
     required this.score,
@@ -82,11 +127,29 @@ class TeamMember {
     required this.avatarIndex,
     required this.params,
     required this.extra,
+    this.todayStatus = TeamPresenceStatus.notPunchedIn,
+    this.birthday,
+    this.designation = '',
+    this.photoUrl,
+    this.punchIn,
+    this.punchOut,
+    this.email = '',
+    this.employeeId,
+    this.joiningDate,
+    this.employmentType,
+    this.managerName,
+    this.orgChart = const [],
+    this.documents = const [],
+    this.previousScore,
+    this.history = const [],
   });
 
   final int id;
   final String userId;
   final String name;
+
+  /// The viewer's own manager — shown as "(Manager)" in the team list.
+  final bool isManager;
   final String initial;
   final String team;
   final double score;
@@ -96,6 +159,25 @@ class TeamMember {
   final int avatarIndex;
   final List<FeedbackParam> params;
   final String extra;
+  final TeamPresenceStatus todayStatus;
+  final DateTime? birthday;
+  final String designation;
+  final String? photoUrl;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
+  final String email;
+  final String? employeeId;
+  final DateTime? joiningDate;
+  final String? employmentType;
+  final String? managerName;
+  final List<OrgChartNode> orgChart;
+  final List<EmployeeDocument> documents;
+
+  /// Overall score from the previous review period, when there is one.
+  final double? previousScore;
+
+  /// Every sent review for this member, oldest first.
+  final List<GrowthRecord> history;
 
   factory TeamMember.fromJson(Map<String, dynamic> json, int id) {
     final name = json['name'] as String? ?? 'Employee';
@@ -104,9 +186,14 @@ class TeamMember {
       id: id,
       userId: json['userId'] as String? ?? '',
       name: name,
+      isManager: json['isManager'] == true,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       team: json['department'] as String? ?? 'Team',
       score: (json['score'] as num?)?.toDouble() ?? 0,
+      previousScore: (json['previousScore'] as num?)?.toDouble(),
+      history: (json['history'] as List<dynamic>? ?? const [])
+          .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))
+          .toList(),
       next:
           DateTime.tryParse(json['nextDate'] as String? ?? '') ??
           DateTime.now(),
@@ -126,6 +213,27 @@ class TeamMember {
         );
       }).toList(),
       extra: json['extra'] as String? ?? '',
+      todayStatus: json['todayStatus'] == 'present'
+          ? TeamPresenceStatus.present
+          : TeamPresenceStatus.notPunchedIn,
+      birthday: DateTime.tryParse(json['birthday'] as String? ?? ''),
+      designation: json['designation'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String?,
+      punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
+      punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
+      email: json['email'] as String? ?? '',
+      employeeId: json['employeeId'] as String?,
+      joiningDate: DateTime.tryParse(json['joiningDate'] as String? ?? ''),
+      employmentType: json['employmentType'] as String?,
+      managerName: json['managerName'] as String?,
+      orgChart: (json['orgChart'] as List<dynamic>? ?? const [])
+          .map((value) => OrgChartNode.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      documents: (json['documents'] as List<dynamic>? ?? const [])
+          .map(
+            (value) => EmployeeDocument.fromJson(value as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
@@ -134,11 +242,14 @@ class TeamMember {
     FeedbackStatus? status,
     List<FeedbackParam>? params,
     String? extra,
+    List<GrowthRecord>? history,
+    double? previousScore,
   }) {
     return TeamMember(
       id: id,
       userId: userId,
       name: name,
+      isManager: isManager,
       initial: initial,
       team: team,
       score: score ?? this.score,
@@ -148,6 +259,21 @@ class TeamMember {
       avatarIndex: avatarIndex,
       params: params ?? this.params,
       extra: extra ?? this.extra,
+      todayStatus: todayStatus,
+      birthday: birthday,
+      designation: designation,
+      photoUrl: photoUrl,
+      punchIn: punchIn,
+      punchOut: punchOut,
+      email: email,
+      employeeId: employeeId,
+      joiningDate: joiningDate,
+      employmentType: employmentType,
+      managerName: managerName,
+      orgChart: orgChart,
+      documents: documents,
+      previousScore: previousScore ?? this.previousScore,
+      history: history ?? this.history,
     );
   }
 }
@@ -217,6 +343,7 @@ class CompanyHoliday {
 class LeaveRequest {
   const LeaveRequest({
     required this.id,
+    this.userId = '',
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -233,6 +360,7 @@ class LeaveRequest {
   });
 
   final String id;
+  final String userId;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -240,7 +368,13 @@ class LeaveRequest {
   final String type;
   final DateTime start;
   final DateTime end;
-  final int days;
+
+  /// Leave days consumed — 0.5 for a half day, so this is fractional.
+  final double days;
+
+  /// "3" / "0.5" — trims the trailing ".0" on whole days.
+  String get daysLabel =>
+      days == days.roundToDouble() ? days.toInt().toString() : days.toString();
   final String reason;
   final DateTime requestedOn;
   final LeaveDecision decision;
@@ -257,6 +391,7 @@ class LeaveRequest {
     final end = DateTime.parse(json['endDate'] as String);
     return LeaveRequest(
       id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
@@ -267,7 +402,9 @@ class LeaveRequest {
       type: '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
-      days: json['days'] as int? ?? end.difference(start).inDays + 1,
+      days:
+          (json['days'] as num?)?.toDouble() ??
+          (end.difference(start).inDays + 1).toDouble(),
       reason: json['reason'] as String? ?? '',
       requestedOn:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
@@ -285,6 +422,7 @@ class LeaveRequest {
   LeaveRequest copyWith({LeaveDecision? decision, String? managerNote}) {
     return LeaveRequest(
       id: id,
+      userId: userId,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -360,14 +498,15 @@ class Nomination {
 class OvertimeRequest {
   const OvertimeRequest({
     required this.id,
+    this.userId = '',
     required this.who,
     required this.initial,
     required this.avatarIndex,
     required this.team,
     required this.workDate,
-    required this.duration,
+    required this.startTime,
+    required this.endTime,
     required this.hours,
-    required this.project,
     required this.note,
     required this.requestedOn,
     required this.decision,
@@ -376,14 +515,15 @@ class OvertimeRequest {
   });
 
   final String id;
+  final String userId;
   final String who;
   final String initial;
   final int avatarIndex;
   final String team;
   final DateTime workDate;
-  final String duration;
+  final DateTime startTime;
+  final DateTime endTime;
   final double hours;
-  final String project;
   final String note;
   final DateTime requestedOn;
   final LeaveDecision decision;
@@ -392,19 +532,30 @@ class OvertimeRequest {
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
+  String get hoursLabel =>
+      '${hours.toStringAsFixed(hours == hours.roundToDouble() ? 0 : 1)} hrs';
+
+  String get timeRangeLabel =>
+      '${_clockLabel(startTime)} – ${_clockLabel(endTime)}';
+
   factory OvertimeRequest.fromJson(Map<String, dynamic> json) {
     final employee = json['employee'] as Map<String, dynamic>? ?? const {};
     final name = employee['name'] as String? ?? 'Employee';
     return OvertimeRequest(
       id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
       team: employee['department'] as String? ?? 'Team',
       workDate: DateTime.parse(json['workDate'] as String),
-      duration: json['duration'] == 'full_day' ? 'Full day' : 'Half day',
+      startTime:
+          DateTime.tryParse(json['startTime'] as String? ?? '')?.toLocal() ??
+          DateTime.parse(json['workDate'] as String),
+      endTime:
+          DateTime.tryParse(json['endTime'] as String? ?? '')?.toLocal() ??
+          DateTime.parse(json['workDate'] as String),
       hours: (json['hours'] as num?)?.toDouble() ?? 0,
-      project: json['project'] as String? ?? '',
       note: json['note'] as String? ?? '',
       requestedOn:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
@@ -422,14 +573,15 @@ class OvertimeRequest {
   OvertimeRequest copyWith({LeaveDecision? decision, String? managerNote}) {
     return OvertimeRequest(
       id: id,
+      userId: userId,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
       team: team,
       workDate: workDate,
-      duration: duration,
+      startTime: startTime,
+      endTime: endTime,
       hours: hours,
-      project: project,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,
@@ -442,7 +594,10 @@ class OvertimeRequest {
 class ReimbursementClaim {
   const ReimbursementClaim({
     required this.id,
+    this.userId = '',
     required this.who,
+    required this.initial,
+    required this.avatarIndex,
     required this.team,
     required this.category,
     required this.amount,
@@ -455,7 +610,10 @@ class ReimbursementClaim {
   });
 
   final String id;
+  final String userId;
   final String who;
+  final String initial;
+  final int avatarIndex;
   final String team;
   final String category;
   final double amount;
@@ -478,9 +636,13 @@ class ReimbursementClaim {
   factory ReimbursementClaim.fromJson(Map<String, dynamic> json) {
     final category = json['category'] as String? ?? 'other';
     final employee = json['employee'] as Map<String, dynamic>? ?? const {};
+    final name = employee['name'] as String? ?? 'Employee';
     return ReimbursementClaim(
       id: json['id'] as String? ?? '',
-      who: employee['name'] as String? ?? 'Employee',
+      userId: json['userId'] as String? ?? '',
+      who: name,
+      initial: name.isEmpty ? '?' : name[0].toUpperCase(),
+      avatarIndex: name.hashCode.abs() % 7,
       team: employee['department'] as String? ?? 'Team',
       category: category.isEmpty
           ? 'Other'
@@ -505,7 +667,10 @@ class ReimbursementClaim {
   ReimbursementClaim copyWith({String? status}) {
     return ReimbursementClaim(
       id: id,
+      userId: userId,
       who: who,
+      initial: initial,
+      avatarIndex: avatarIndex,
       team: team,
       category: category,
       amount: amount,
@@ -523,6 +688,7 @@ class ManagerDashboard {
   const ManagerDashboard({
     required this.managerName,
     required this.managerInitial,
+    this.managerPhotoUrl,
     required this.managerTeam,
     required this.approverName,
     required this.managerScore,
@@ -539,6 +705,7 @@ class ManagerDashboard {
     required this.overtime,
     required this.myOvertime,
     required this.myReimbursements,
+    this.reimbursements = const [],
     this.weekoffDays = const [0],
     this.overtimeEnabled = true,
     this.attendance = const [],
@@ -548,6 +715,7 @@ class ManagerDashboard {
 
   final String managerName;
   final String managerInitial;
+  final String? managerPhotoUrl;
   final String managerTeam;
   final String approverName;
   final double managerScore;
@@ -564,6 +732,7 @@ class ManagerDashboard {
   final List<OvertimeRequest> overtime;
   final List<OvertimeRequest> myOvertime;
   final List<ReimbursementClaim> myReimbursements;
+  final List<ReimbursementClaim> reimbursements;
   // Company config (from /manager/workspace): week-off weekdays (0=Sun..6=Sat)
   // and whether the overtime feature is enabled for this user's team.
   final List<int> weekoffDays;
@@ -573,6 +742,7 @@ class ManagerDashboard {
   final List<AttendanceRegularization> managerRegularizations;
 
   ManagerDashboard copyWith({
+    String? managerPhotoUrl,
     List<TeamMember>? team,
     List<TeamMember>? recognitionCandidates,
     List<LeaveRequest>? leaves,
@@ -584,6 +754,7 @@ class ManagerDashboard {
     List<OvertimeRequest>? overtime,
     List<OvertimeRequest>? myOvertime,
     List<ReimbursementClaim>? myReimbursements,
+    List<ReimbursementClaim>? reimbursements,
     List<AttendanceRecord>? attendance,
     List<AttendanceRegularization>? regularizations,
     List<AttendanceRegularization>? managerRegularizations,
@@ -591,6 +762,7 @@ class ManagerDashboard {
     return ManagerDashboard(
       managerName: managerName,
       managerInitial: managerInitial,
+      managerPhotoUrl: managerPhotoUrl ?? this.managerPhotoUrl,
       managerTeam: managerTeam,
       approverName: approverName,
       managerScore: managerScore,
@@ -608,6 +780,7 @@ class ManagerDashboard {
       overtime: overtime ?? this.overtime,
       myOvertime: myOvertime ?? this.myOvertime,
       myReimbursements: myReimbursements ?? this.myReimbursements,
+      reimbursements: reimbursements ?? this.reimbursements,
       weekoffDays: weekoffDays,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,
@@ -636,8 +809,8 @@ class AttendanceRecord {
 class AttendanceRegularization {
   const AttendanceRegularization({
     required this.id,
+    this.userId = '',
     required this.workDate,
-    required this.period,
     required this.note,
     required this.status,
     required this.who,
@@ -645,18 +818,26 @@ class AttendanceRegularization {
     required this.createdAt,
     this.punchIn,
     this.punchOut,
+    this.requestedPunchIn,
+    this.requestedPunchOut,
     this.managerNote = '',
   });
   final String id;
+  final String userId;
   final DateTime workDate;
-  final String period;
   final String note;
   final String status;
   final String who;
   final String team;
   final DateTime createdAt;
+
+  /// What the device actually recorded for the day (may be missing).
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// The times the employee is asking to be recorded.
+  final DateTime? requestedPunchIn;
+  final DateTime? requestedPunchOut;
   final String managerNote;
   String get initial => who.isEmpty ? '?' : who[0].toUpperCase();
   int get avatarIndex => who.hashCode.abs() % 7;
@@ -669,8 +850,8 @@ class AttendanceRegularization {
     Map<String, dynamic> json,
   ) => AttendanceRegularization(
     id: json['id'] as String? ?? '',
+    userId: json['userId'] as String? ?? '',
     workDate: DateTime.parse(json['workDate'] as String),
-    period: json['period'] as String? ?? 'full_day',
     note: json['note'] as String? ?? '',
     status: json['status'] as String? ?? 'pending',
     who:
@@ -683,6 +864,15 @@ class AttendanceRegularization {
         DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
     punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
+    requestedPunchIn: DateTime.tryParse(
+      json['requestedPunchIn'] as String? ?? '',
+    )?.toLocal(),
+    requestedPunchOut: DateTime.tryParse(
+      json['requestedPunchOut'] as String? ?? '',
+    )?.toLocal(),
     managerNote: json['managerNote'] as String? ?? '',
   );
 }
+
+String _clockLabel(DateTime value) =>
+    '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';

@@ -1,10 +1,14 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
+import '../../manager_shell/presentation/app_home_header.dart';
 
 class QuickActionsController extends ChangeNotifier {
   _QuickActionsScreenState? _state;
@@ -27,8 +31,11 @@ class QuickActionsController extends ChangeNotifier {
 enum _QuickPage {
   home,
   leave,
+  applyLeave,
   overtime,
+  applyOvertime,
   reimbursements,
+  applyReimbursement,
   policies,
   policy,
   calendar,
@@ -38,7 +45,18 @@ enum _QuickPage {
 
 enum _QuickFlow { leave, overtime, reimbursement }
 
-enum _AttendanceKind {
+enum AttendanceFilter {
+  present,
+  late,
+  halfDay,
+  leave,
+  leaveApplied,
+  correction,
+  correctionAwaits,
+  holiday,
+}
+
+enum AttendanceKind {
   present,
   attention,
   weekoff,
@@ -50,8 +68,8 @@ enum _AttendanceKind {
   regularizationPending,
 }
 
-class _AttendanceDayView {
-  const _AttendanceDayView({
+class AttendanceDayView {
+  const AttendanceDayView({
     required this.date,
     required this.kind,
     required this.title,
@@ -63,13 +81,167 @@ class _AttendanceDayView {
   });
 
   final DateTime date;
-  final _AttendanceKind kind;
+  final AttendanceKind kind;
   final String title;
   final String cellLabel;
   final AttendanceRecord? record;
   final AttendanceRegularization? regularization;
   final LeaveRequest? leave;
   final CompanyHoliday? holiday;
+}
+
+List<AttendanceDayView> buildAttendanceDays({
+  required DateTime month,
+  required List<AttendanceRecord> records,
+  required List<AttendanceRegularization> regularizations,
+  required List<LeaveRequest> leaves,
+  required List<CompanyHoliday> holidays,
+  required List<OvertimeRequest> overtime,
+  required List<int> weekoffDays,
+}) {
+  final recordsByDate = {
+    for (final record in records)
+      _QuickActionsScreenState._dateKey(record.workDate): record,
+  };
+  final requestsByDate = {
+    for (final request in regularizations)
+      _QuickActionsScreenState._dateKey(request.workDate): request,
+  };
+  final now = DateTime.now();
+  final count = DateTime(month.year, month.month + 1, 0).day;
+  return List.generate(count, (index) {
+    final date = DateTime(month.year, month.month, index + 1);
+    final key = _QuickActionsScreenState._dateKey(date);
+    final record = recordsByDate[key];
+    final regularization = requestsByDate[key];
+    LeaveRequest? leave;
+    for (final item in leaves) {
+      if (!date.isBefore(_dateOnly(item.start)) &&
+          !date.isAfter(_dateOnly(item.end))) {
+        leave = item;
+        break;
+      }
+    }
+    CompanyHoliday? holiday;
+    for (final item in holidays) {
+      if (_sameDay(item.date, date)) {
+        holiday = item;
+        break;
+      }
+    }
+    OvertimeRequest? overtimeItem;
+    for (final item in overtime) {
+      if (_sameDay(item.workDate, date)) {
+        overtimeItem = item;
+        break;
+      }
+    }
+    final future = date.isAfter(_dateOnly(now));
+    final weekoff = weekoffDays.contains(date.weekday % 7);
+    final complete = record?.punchIn != null && record?.punchOut != null;
+    final duration = complete
+        ? record!.punchOut!.difference(record.punchIn!)
+        : null;
+    final approvedRegularization =
+        regularization?.status.toLowerCase() == 'approved';
+    final pendingRegularization =
+        regularization != null &&
+        regularization.status.toLowerCase() == 'pending';
+    final leaveStatus = leave?.decision;
+    final overtimeSuffix = overtimeItem == null
+        ? ''
+        : ' · ${overtimeItem.decision == LeaveDecision.approved ? 'OT · Approved' : 'OT'}';
+
+    if (holiday != null) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.holiday,
+        title: holiday.name,
+        cellLabel: 'Holiday',
+        holiday: holiday,
+        leave: leave,
+        record: record,
+      );
+    }
+    if (leave != null && leaveStatus != LeaveDecision.declined) {
+      final approved = leaveStatus == LeaveDecision.approved;
+      return AttendanceDayView(
+        date: date,
+        kind: approved
+            ? AttendanceKind.leaveApproved
+            : AttendanceKind.leavePending,
+        title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
+        cellLabel: approved ? 'Approved' : 'Pending',
+        leave: leave,
+        record: record,
+      );
+    }
+    if (approvedRegularization) {
+      // The device record may not reflect the correction yet, so fall back
+      // to the approved request's own requested times for display.
+      final displayRecord = AttendanceRecord(
+        workDate: date,
+        punchIn: record?.punchIn ?? regularization?.requestedPunchIn,
+        punchOut: record?.punchOut ?? regularization?.requestedPunchOut,
+      );
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.present,
+        title: 'Present (regularised)',
+        cellLabel: '',
+        record: displayRecord,
+        regularization: regularization,
+      );
+    }
+    if (pendingRegularization) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.regularizationPending,
+        title: 'Regularization · Pending',
+        cellLabel: 'Pending',
+        record: record,
+        regularization: regularization,
+      );
+    }
+    if (complete) {
+      final halfDay = duration! < const Duration(hours: 6);
+      return AttendanceDayView(
+        date: date,
+        kind: halfDay ? AttendanceKind.halfDay : AttendanceKind.present,
+        title:
+            '${halfDay ? 'Half day' : 'Present'} · ${_QuickActionsScreenState._duration(duration)}$overtimeSuffix',
+        cellLabel: halfDay ? 'Half day' : (overtimeItem == null ? '' : 'OT'),
+        record: record,
+      );
+    }
+    if (record != null || (!future && !weekoff)) {
+      final missing = record?.punchIn == null
+          ? 'missing punch-in'
+          : 'missing punch-out';
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.attention,
+        title: 'Needs attention · $missing',
+        cellLabel: 'Attention',
+        record: record,
+        regularization: regularization,
+      );
+    }
+    if (weekoff) {
+      return AttendanceDayView(
+        date: date,
+        kind: AttendanceKind.weekoff,
+        title: 'Weekly off',
+        cellLabel: 'Week off',
+      );
+    }
+    return AttendanceDayView(
+      date: date,
+      kind: AttendanceKind.future,
+      title: future ? 'Working day' : 'No record',
+      cellLabel: '',
+    );
+  });
 }
 
 const int _maxLeaveApplyDays = 30;
@@ -81,12 +253,16 @@ class QuickActionsScreen extends StatefulWidget {
     required this.dashboard,
     required this.controller,
     required this.profileAction,
+    required this.onNotifications,
+    required this.onOpenComposer,
   });
 
   final ManagerBloc bloc;
   final ManagerDashboard dashboard;
   final QuickActionsController controller;
   final Widget profileAction;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -101,6 +277,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   DateTime _to = DateTime.now();
   DateTime? _leaveFrom;
   DateTime? _leaveTo;
+  String? _leaveType;
+  String _leaveDuration = 'Full Day';
+  bool _leaveHistoryView = false;
+  final _leaveReason = TextEditingController();
+  String? _leaveAttachmentName;
   bool _dateChosen = false;
   String? _uploadName;
   Uint8List? _uploadBytes;
@@ -112,19 +293,64 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     DateTime.now().year,
     DateTime.now().month,
   );
-  bool _attendanceListView = true;
+  bool _attendanceListView = false;
+  AttendanceFilter? _attendanceFilter;
+  AttendanceDayView? _selectedCalendarDay;
+  bool _overtimeHistoryView = false;
+  DateTime? _overtimeDate;
+  TimeOfDay? _overtimeStartTime;
+  TimeOfDay? _overtimeEndTime;
+  final _overtimeNote = TextEditingController();
+  bool _reimbursementHistoryView = false;
+  DateTime? _reimbursementDate;
+  String? _reimbursementCategory;
+  final _reimbursementAmount = TextEditingController();
+  final _reimbursementDescription = TextEditingController();
+  String? _reimbursementReceiptName;
+  Uint8List? _reimbursementReceiptBytes;
 
   @override
   void initState() {
     super.initState();
     widget.controller._attach(this);
+    // The Apply button is disabled until the form is complete, so typing has
+    // to rebuild the header.
+    _reimbursementAmount.addListener(_onReimbursementFieldChanged);
+    _reimbursementDescription.addListener(_onReimbursementFieldChanged);
+    _leaveReason.addListener(_onLeaveFieldChanged);
+  }
+
+  void _onLeaveFieldChanged() {
+    if (_page == _QuickPage.applyLeave) setState(() {});
   }
 
   @override
   void dispose() {
     widget.controller._detach(this);
     _text.dispose();
+    _leaveReason.dispose();
+    _overtimeNote.dispose();
+    _reimbursementAmount.removeListener(_onReimbursementFieldChanged);
+    _reimbursementDescription.removeListener(_onReimbursementFieldChanged);
+    _leaveReason.removeListener(_onLeaveFieldChanged);
+    _reimbursementAmount.dispose();
+    _reimbursementDescription.dispose();
     super.dispose();
+  }
+
+  void _onReimbursementFieldChanged() {
+    if (_page == _QuickPage.applyReimbursement) setState(() {});
+  }
+
+  /// Every field on the reimbursement form is required.
+  bool get _reimbursementComplete {
+    final amount = double.tryParse(_reimbursementAmount.text.trim());
+    return _reimbursementCategory != null &&
+        _reimbursementDate != null &&
+        amount != null &&
+        amount > 0 &&
+        _reimbursementDescription.text.trim().isNotEmpty &&
+        _reimbursementReceiptBytes != null;
   }
 
   void _open(_QuickPage page) {
@@ -132,25 +358,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     widget.controller._navigationChanged();
   }
 
-  void _start(_QuickFlow flow) {
-    setState(() {
-      _flow = flow;
-      _step = 0;
-      _choice = null;
-      _answers.clear();
-      _text.clear();
-      _dateChosen = false;
-      _uploadName = null;
-      _uploadBytes = null;
-      _page = _QuickPage.wizard;
-    });
-    widget.controller._navigationChanged();
-  }
-
   void _back() {
     setState(() {
       if (_page == _QuickPage.policy) {
         _page = _QuickPage.policies;
+      } else if (_page == _QuickPage.applyLeave) {
+        _page = _QuickPage.leave;
+      } else if (_page == _QuickPage.applyOvertime) {
+        _page = _QuickPage.overtime;
+      } else if (_page == _QuickPage.applyReimbursement) {
+        _page = _QuickPage.reimbursements;
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
@@ -192,8 +409,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       child: switch (_page) {
         _QuickPage.home => _home(),
         _QuickPage.leave => _leaveHub(),
+        _QuickPage.applyLeave => _applyLeaveForm(),
         _QuickPage.overtime => _overtimeHub(),
+        _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
+        _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
         _QuickPage.policy => _policyDetail(),
         _QuickPage.calendar => _calendar(),
@@ -204,417 +424,980 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Widget _home() {
-    return ListView(
+    final today = DateTime.now();
+    final todayRecord = widget.dashboard.attendance
+        .where((record) => _sameDay(record.workDate, today))
+        .firstOrNull;
+    final punchIn = todayRecord?.punchIn;
+    final punchOut = todayRecord?.punchOut;
+    const standardShift = Duration(hours: 9);
+    final expectedOut = punchIn?.add(standardShift);
+    final progress = punchIn == null
+        ? 0.0
+        : ((punchOut ?? DateTime.now()).difference(punchIn).inMinutes /
+                  standardShift.inMinutes)
+              .clamp(0.0, 1.0);
+
+    final monthStart = DateTime(today.year, today.month, 1);
+    final todayOnly = _dateOnly(today);
+    final needsCorrection =
+        widget.dashboard.attendance.any(
+          (record) =>
+              !record.workDate.isBefore(monthStart) &&
+              record.workDate.isBefore(todayOnly) &&
+              record.punchIn != null &&
+              record.punchOut == null &&
+              !widget.dashboard.weekoffDays.contains(
+                record.workDate.weekday % 7,
+              ) &&
+              !widget.dashboard.holidays.any(
+                (holiday) => _sameDay(holiday.date, record.workDate),
+              ),
+        ) ||
+        widget.dashboard.regularizations.any(
+          (request) => request.decision == LeaveDecision.pending,
+        );
+
+    final leaveDaysAvailable =
+        widget.dashboard.leaveBalance.sick.remaining +
+        widget.dashboard.leaveBalance.casual.remaining +
+        widget.dashboard.leaveBalance.earned.remaining;
+
+    return Column(
       key: const ValueKey('quick-home'),
-      padding: const EdgeInsets.fromLTRB(18, 58, 18, 28),
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('QUICK ACTIONS', style: _QText.eyebrow),
-                  SizedBox(height: 6),
-                  Text('What do you need?', style: _QText.hero),
-                ],
-              ),
-            ),
-            widget.profileAction,
-          ],
+        AppHomeHeader(
+          profileAction: widget.profileAction,
+          onNotifications: widget.onNotifications,
+          onQuickCreate: _showQuickCreateComingSoon,
         ),
-        const SizedBox(height: 5),
-        const Text('Everything you can do yourself.', style: _QText.subtitle),
-        const SizedBox(height: 28),
-        const _SectionLabel('Requests'),
-        const SizedBox(height: 10),
-        _ActionGroup(
-          children: [
-            _GroupedActionRow(
-              icon: Icons.calendar_month_rounded,
-              color: _Q.terra,
-              tint: _Q.terraTint,
-              title: 'Manage leave',
-              subtitle: 'Apply · view requests',
-              onTap: () => _open(_QuickPage.leave),
+        Expanded(
+          child: ColoredBox(
+            color: const Color(0xFFF7F7F9),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              children: [
+                _HomeAttendanceCard(
+                  date: today,
+                  punchIn: punchIn,
+                  punchOut: punchOut,
+                  expectedOut: expectedOut,
+                  progress: progress,
+                  needsCorrection: needsCorrection,
+                  onTap: () => _open(_QuickPage.calendar),
+                ),
+                const SizedBox(height: 16),
+                const _HomeSectionLabel('Actions'),
+                const SizedBox(height: 2),
+                GridView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  // Without this the grid inherits MediaQuery.padding, which
+                  // on a notched phone injected ~59px above the first row —
+                  // the long-standing gap under the "Actions" label that never
+                  // reproduced on desktop.
+                  padding: EdgeInsets.zero,
+                  // Fixed row height rather than an aspect ratio: the tiles hold
+                  // a fixed-height icon plus two text lines, so deriving height
+                  // from width overflows on narrow windows.
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    // 38 icon + 10 + title + 2 + up to two subtitle lines,
+                    // plus 14px padding top and bottom.
+                    mainAxisExtent: 142,
+                  ),
+                  children: [
+                    _HomeActionCard(
+                      icon: Icons.card_giftcard_rounded,
+                      color: const Color(0xFFBE5A36),
+                      tint: const Color(0xFFF6E5DB),
+                      title: 'Leave',
+                      subtitle: '$leaveDaysAvailable days available',
+                      onTap: () => _open(_QuickPage.leave),
+                      imageAsset: 'assets/icons/action_card_leave_calendar.png',
+                    ),
+                    if (widget.dashboard.overtimeEnabled)
+                      _HomeActionCard(
+                        icon: Icons.hourglass_bottom_rounded,
+                        color: const Color(0xFFC98A2E),
+                        tint: const Color(0xFFF4ECDD),
+                        title: 'Overtime',
+                        subtitle: 'Request & view hours',
+                        onTap: () => _open(_QuickPage.overtime),
+                        imageAsset:
+                            'assets/icons/action_card_overtime_hourglass.png',
+                      ),
+                    _HomeActionCard(
+                      icon: Icons.payments_rounded,
+                      color: const Color(0xFF4F8C89),
+                      tint: const Color(0xFFDEEBE9),
+                      title: 'Reimbursement',
+                      subtitle: 'Track your claims',
+                      onTap: () => _open(_QuickPage.reimbursements),
+                      imageAsset:
+                          'assets/icons/action_card_reimbursement_money.png',
+                    ),
+                    _HomeActionCard(
+                      icon: Icons.edit_note_rounded,
+                      color: const Color(0xFF8A6AA0),
+                      tint: const Color(0xFFEEE6F0),
+                      title: 'View Policies',
+                      subtitle: 'Company guidelines',
+                      onTap: () => _open(_QuickPage.policies),
+                      imageAsset:
+                          'assets/icons/action_card_policies_pencil.png',
+                    ),
+                  ],
+                ),
+              ],
             ),
-            // Overtime is hidden for teams where it's disabled by the company.
-            if (widget.dashboard.overtimeEnabled)
-              _GroupedActionRow(
-                icon: Icons.schedule_rounded,
-                color: _Q.gold,
-                tint: _Q.goldTint,
-                title: 'Overtime',
-                subtitle: 'Apply · view requests',
-                onTap: () => _open(_QuickPage.overtime),
-              ),
-            _GroupedActionRow(
-              icon: Icons.receipt_long_rounded,
-              color: _Q.teal,
-              tint: _Q.tealTint,
-              title: 'Reimbursements',
-              subtitle: 'Claim · view claims',
-              onTap: () => _open(_QuickPage.reimbursements),
-            ),
-            _GroupedActionRow(
-              icon: Icons.calendar_month_outlined,
-              color: _Q.terraDeep,
-              tint: _Q.terraTint,
-              title: 'Calendar',
-              subtitle: 'Attendance · punches · regularize',
-              onTap: () => _open(_QuickPage.calendar),
-              last: true,
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        const _SectionLabel('Info & tools'),
-        const SizedBox(height: 10),
-        _ActionGroup(
-          children: [
-            _GroupedActionRow(
-              icon: Icons.menu_book_rounded,
-              color: _Q.plum,
-              tint: _Q.plumTint,
-              title: 'View policy',
-              subtitle: 'Leave, payroll, POSH…',
-              onTap: () => _open(_QuickPage.policies),
-              last: true,
-            ),
-          ],
+          ),
         ),
       ],
     );
   }
 
   Widget _leaveHub() {
-    final requests = widget.dashboard.myLeaves;
-    final days = _leaveFrom == null
-        ? 0
-        : ((_leaveTo ?? _leaveFrom!).difference(_leaveFrom!).inDays + 1);
-    final range = _leaveFrom == null
-        ? ''
-        : _leaveTo != null && _leaveTo != _leaveFrom
-        ? '${_short(_leaveFrom!)} – ${_short(_leaveTo!)}'
-        : _short(_leaveFrom!);
+    final balance = widget.dashboard.leaveBalance;
+    final today = _dateOnly(DateTime.now());
+    final requests = [...widget.dashboard.myLeaves]
+      ..sort((a, b) => b.start.compareTo(a.start));
+    final visible = requests
+        .where(
+          (item) => _leaveHistoryView
+              ? _dateOnly(item.end).isBefore(today)
+              : !_dateOnly(item.end).isBefore(today),
+        )
+        .toList();
     return _HubScaffold(
       key: const ValueKey('leave-hub'),
-      title: 'Manage leave',
+      title: 'Leave',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(onTap: _openBlankLeaveForm),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        const _SectionLabel('Apply for leave'),
-        const SizedBox(height: 8),
-        Text(
-          _leaveFrom == null
-              ? 'Tap a start and end date. Weekends and holidays are blocked.'
-              : _leaveTo == null
-              ? 'Now tap the end date (or continue for a single day).'
-              : 'Dates selected — apply leave.',
-          style: _QText.subtitle,
-        ),
-        const SizedBox(height: 11),
-        _PaperCard(
-          child: Column(
+        const _HomeSectionLabel('Leave Balance'),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 108,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
             children: [
-              _MonthCalendar(
-                from: _leaveFrom,
-                to: _leaveTo,
-                selectableDayPredicate: _canSelectLeaveDay,
-                onPick: _pickLeaveDay,
-              ),
-              const Divider(height: 25, color: _Q.line),
-              if (_leaveFrom == null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  decoration: BoxDecoration(
-                    color: _Q.line,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_month_rounded,
-                        color: _Q.inkFaint,
-                        size: 18,
-                      ),
-                      SizedBox(width: 7),
-                      Text(
-                        'Select your dates',
-                        style: TextStyle(
-                          color: _Q.inkFaint,
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$range · $days day${days == 1 ? '' : 's'}',
-                            style: _QText.cardTitle,
-                          ),
-                          InkWell(
-                            onTap: () => setState(() {
-                              _leaveFrom = null;
-                              _leaveTo = null;
-                            }),
-                            child: const Padding(
-                              padding: EdgeInsets.only(top: 3),
-                              child: Text(
-                                'Clear',
-                                style: TextStyle(
-                                  color: _Q.terra,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _Q.terra,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 13,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                      ),
-                      onPressed: _openLeaveSheet,
-                      iconAlignment: IconAlignment.end,
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 17),
-                      label: const Text(
-                        'Apply leave',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ],
-                ),
+              _LeaveBalanceCard(label: 'Casual Leave', item: balance.casual),
+              const SizedBox(width: 8),
+              _LeaveBalanceCard(label: 'Sick Leave', item: balance.sick),
+              const SizedBox(width: 8),
+              _LeaveBalanceCard(label: 'Earned Leave', item: balance.earned),
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        const _SectionLabel('My requests'),
-        const SizedBox(height: 10),
-        _RequestGroup(
-          children: requests.indexed
-              .map(
-                (entry) => _RequestRow(
-                  '${_short(entry.$2.start)}–${_short(entry.$2.end)} · ${entry.$2.days} days',
-                  entry.$2.managerNote.isEmpty
-                      ? '${entry.$2.type} leave'
-                      : '${entry.$2.type} leave · ${entry.$2.managerNote}',
-                  _decision(entry.$2.decision),
-                  icon: Icons.calendar_month_rounded,
-                  color: _Q.terra,
-                  tint: _Q.terraTint,
-                  last: entry.$1 == requests.length - 1,
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(color: _Q.inkSoft, fontSize: 12),
+              children: [
+                const TextSpan(text: 'For more information check out our '),
+                TextSpan(
+                  text: 'leave policy',
+                  style: const TextStyle(
+                    color: Color(0xFF0571A6),
+                    fontWeight: FontWeight.w700,
+                  ),
+                  recognizer: TapGestureRecognizer()
+                    ..onTap = () => _open(_QuickPage.policies),
                 ),
-              )
-              .toList(),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        LeaveViewSwitch(
+          history: _leaveHistoryView,
+          onChanged: (history) => setState(() => _leaveHistoryView = history),
+        ),
+        const SizedBox(height: 12),
+        if (visible.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                _leaveHistoryView ? 'No past leave yet.' : 'No upcoming leave.',
+                style: const TextStyle(
+                  color: _Q.inkFaint,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          )
+        else
+          ...visible.map(
+            (request) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _LeaveRequestCard(request: request),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _applyLeaveForm() {
+    final balance = widget.dashboard.leaveBalance;
+    final balanceForType = switch (_leaveType) {
+      'Casual Leave' => balance.casual.remaining,
+      'Sick Leave' => balance.sick.remaining,
+      'Earned Leave' => balance.earned.remaining,
+      _ => null,
+    };
+    return _HubScaffold(
+      key: const ValueKey('apply-leave'),
+      title: 'Leave',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        enabled: _leaveFormComplete,
+        onTap: _submitLeaveApplication,
+      ),
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        if (balanceForType != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDBEAFE),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Available balance: $balanceForType ${_leaveType == 'Casual Leave'
+                  ? 'casual'
+                  : _leaveType == 'Sick Leave'
+                  ? 'sick'
+                  : 'earned'} days',
+              style: const TextStyle(
+                color: Color(0xFF2563EB),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .04),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _LeaveFieldLabel('Leave Type'),
+              _LeaveDropdownField(
+                value: _leaveType ?? 'Select leave type',
+                filled: _leaveType != null,
+                onTap: _pickLeaveType,
+              ),
+              const SizedBox(height: 16),
+              _LeaveFieldLabel('Start Date'),
+              _LeaveDropdownField(
+                value: _leaveFrom == null ? 'Select date' : _short(_leaveFrom!),
+                filled: _leaveFrom != null,
+                onTap: () => _pickLeaveFormDate(isStart: true),
+              ),
+              const SizedBox(height: 16),
+              _LeaveFieldLabel('End Date'),
+              _LeaveDropdownField(
+                value: _leaveTo == null ? 'Select date' : _short(_leaveTo!),
+                filled: _leaveTo != null,
+                onTap: () => _pickLeaveFormDate(isStart: false),
+              ),
+              const SizedBox(height: 16),
+              _LeaveFieldLabel('Duration'),
+              _LeaveDropdownField(
+                value: _leaveDurationLabel,
+                filled: true,
+                onTap: _pickLeaveDuration,
+              ),
+              const SizedBox(height: 16),
+              _LeaveFieldLabel('Reason'),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextField(
+                  controller: _leaveReason,
+                  maxLines: 3,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF111827),
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: 'Add a reason...',
+                    hintStyle: TextStyle(color: Color(0x80111827)),
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.all(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _LeaveFieldLabel('Attachment (Optional)'),
+              _LeaveAttachmentField(
+                fileName: _leaveAttachmentName,
+                onPicked: (name) => setState(() => _leaveAttachmentName = name),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  void _pickLeaveDay(DateTime day) {
+  Future<void> _pickLeaveType() async {
+    final balance = widget.dashboard.leaveBalance;
+    String left(LeaveBalanceItem item) => '${item.remaining}/${item.total}';
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave'],
+        selected: _leaveType,
+        trailingLabels: {
+          'Casual Leave': left(balance.casual),
+          'Sick Leave': left(balance.sick),
+          'Earned Leave': left(balance.earned),
+        },
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _leaveType = picked);
+  }
+
+  Future<void> _pickLeaveDuration() async {
+    // A half day only makes sense on a single date.
+    if (!_isSingleDayLeave) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A half day can only be applied for a single date.'),
+        ),
+      );
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Full Day', 'Half Day'],
+        selected: _leaveDuration,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _leaveDuration = picked);
+  }
+
+  Future<void> _pickLeaveFormDate({required bool isStart}) async {
+    final today = _dateOnly(DateTime.now());
+    final initial = isStart
+        ? (_leaveFrom ?? today)
+        : (_leaveTo ?? _leaveFrom ?? today);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(today) ? today : initial,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+      selectableDayPredicate: _canSelectLeaveDay,
+      builder: _pickerTheme,
+    );
+    if (picked == null || !mounted) return;
     setState(() {
-      if (_leaveFrom == null || _leaveTo != null) {
-        _leaveFrom = day;
-        _leaveTo = null;
-      } else if (day.isBefore(_leaveFrom!)) {
-        _leaveFrom = day;
+      if (isStart) {
+        _leaveFrom = picked;
+        if (_leaveTo != null && _leaveTo!.isBefore(picked)) _leaveTo = picked;
       } else {
-        final span = day.difference(_leaveFrom!).inDays + 1;
-        if (span > _maxLeaveApplyDays ||
-            _rangeHasBlockedLeaveDay(_leaveFrom!, day)) {
-          _leaveFrom = day;
-          _leaveTo = null;
-          return;
+        _leaveTo = picked;
+        if (_leaveFrom != null && _leaveFrom!.isAfter(picked)) {
+          _leaveFrom = picked;
         }
-        _leaveTo = day;
       }
+      // Half day is single-date only, so a widened range drops back to a full
+      // day rather than silently submitting an impossible combination.
+      if (!_isSingleDayLeave) _leaveDuration = 'Full Day';
     });
   }
 
-  Future<void> _openLeaveSheet() async {
-    if (_leaveFrom == null) return;
+  /// "Full Day · 3 days" — the duration choice plus the days it will consume,
+  /// so the count is visible before applying.
+  String get _leaveDurationLabel {
+    final from = _leaveFrom;
+    if (from == null) return _leaveDuration;
+    if (_leaveDuration == 'Half Day') return 'Half Day · 0.5 day';
+    final days = _leaveDaysBetween(from, _leaveTo ?? from);
+    return 'Full Day · $days ${days == 1 ? 'day' : 'days'}';
+  }
+
+  /// Every leave field except the attachment, which stays optional. The range
+  /// must also cost at least one day — an all-week-off range is not a leave.
+  bool get _leaveFormComplete {
+    final from = _leaveFrom;
+    if (_leaveType == null || from == null) return false;
+    if (_leaveReason.text.trim().isEmpty) return false;
+    if (_leaveDuration == 'Half Day') return _isSingleDayLeave;
+    return _leaveDaysBetween(from, _leaveTo ?? from) > 0;
+  }
+
+  /// True when the leave covers exactly one date — the only case where a half
+  /// day can be applied.
+  bool get _isSingleDayLeave {
+    final from = _leaveFrom;
+    if (from == null) return true;
+    final to = _leaveTo ?? from;
+    return _sameDay(from, to);
+  }
+
+  void _applyLeaveFor(DateTime date) {
+    setState(() {
+      _leaveFrom = date;
+      _leaveTo = date;
+      _leaveType = null;
+      _leaveDuration = 'Full Day';
+      _leaveReason.clear();
+      _leaveAttachmentName = null;
+      _selectedCalendarDay = null;
+      _page = _QuickPage.applyLeave;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  void _showQuickCreateComingSoon() {
+    widget.onOpenComposer();
+  }
+
+  void _openBlankLeaveForm() {
+    setState(() {
+      _leaveFrom = null;
+      _leaveTo = null;
+      _leaveType = null;
+      _leaveDuration = 'Full Day';
+      _leaveReason.clear();
+      _leaveAttachmentName = null;
+      _page = _QuickPage.applyLeave;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  Future<void> _submitLeaveApplication() async {
+    if (!_leaveFormComplete) return;
+    final type = _leaveType!;
     final from = _leaveFrom!;
-    final to = _leaveTo ?? _leaveFrom!;
-    _LeaveSheetResult? draft;
-    while (mounted) {
-      final result = await showModalBottomSheet<_LeaveSheetResult>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => _LeaveApplySheet(
-          dashboard: widget.dashboard,
-          from: from,
-          to: to,
-          initial: draft,
-        ),
-      );
-      if (result == null || !mounted) return;
-      draft = result;
-      final confirmed = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => _LeaveConfirmationSheet(
-          dashboard: widget.dashboard,
-          from: from,
-          to: to,
-          result: result,
-        ),
-      );
-      if (!mounted) return;
-      if (confirmed != true) continue;
-      final sent = await widget.bloc.add(
-        SubmitLeaveApplication(
-          type: result.type,
-          startDate: from,
-          endDate: to,
-          reason: result.note,
-        ),
-      );
-      if (!mounted || !sent) return;
-      setState(() {
-        _flow = _QuickFlow.leave;
-        _page = _QuickPage.success;
-      });
-      widget.controller._navigationChanged();
-      return;
-    }
+    final to = _leaveTo ?? from;
+    final sent = await widget.bloc.add(
+      SubmitLeaveApplication(
+        type: type.replaceAll(' Leave', ''),
+        startDate: from,
+        endDate: to,
+        reason: _leaveReason.text.trim(),
+        halfDay: _leaveDuration == 'Half Day' && _isSingleDayLeave,
+      ),
+    );
+    if (!mounted || !sent) return;
+    setState(() {
+      _leaveHistoryView = false;
+      _page = _QuickPage.leave;
+    });
+    widget.controller._navigationChanged();
   }
 
   Widget _overtimeHub() {
     final requests = widget.dashboard.myOvertime;
-    final now = DateTime.now();
-    final thisMonth = requests.where(
-      (request) =>
-          request.workDate.year == now.year &&
-          request.workDate.month == now.month,
-    );
+    // Summarises every request shown in the list below. Scoping this to the
+    // current calendar month meant a pending request from an earlier month sat
+    // in the list while the totals above it read zero.
+    final thisMonth = requests;
+    final totalHours = thisMonth
+        .where((request) => request.decision != LeaveDecision.declined)
+        .fold<double>(0, (sum, request) => sum + request.hours);
     final approvedHours = thisMonth
         .where((request) => request.decision == LeaveDecision.approved)
         .fold<double>(0, (sum, request) => sum + request.hours);
-    final pending = requests
+    final pendingHours = thisMonth
         .where((request) => request.decision == LeaveDecision.pending)
-        .length;
+        .fold<double>(0, (sum, request) => sum + request.hours);
+    final visible = requests
+        .where(
+          (request) => _overtimeHistoryView
+              ? request.decision != LeaveDecision.pending
+              : request.decision == LeaveDecision.pending,
+        )
+        .toList();
     return _HubScaffold(
       key: const ValueKey('overtime-hub'),
       title: 'Overtime',
       onBack: _back,
-      footer: _SingleActionFooter(
-        color: _Q.gold,
-        label: 'Log overtime',
-        onTap: () => _start(_QuickFlow.overtime),
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply Overtime',
+        onTap: _openOvertimeForm,
       ),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _StatStrip(
+        _QuickStatsCard(
+          label: 'Overview',
           stats: [
-            ('${_number(approvedHours)}h', 'Approved this month', _Q.teal),
-            ('$pending', 'Pending', _Q.gold),
+            (_hoursMinutesLabel(totalHours), 'Total', const Color(0xFF111827)),
+            // Same order as the reimbursement overview: total, pending, then
+            // approved.
+            (
+              _hoursMinutesLabel(pendingHours),
+              'Pending',
+              const Color(0xFFFB2C36),
+            ),
+            (
+              _hoursMinutesLabel(approvedHours),
+              'Approved',
+              const Color(0xFF16A34A),
+            ),
           ],
         ),
-        const SizedBox(height: 24),
-        const _SectionLabel('My requests'),
-        const SizedBox(height: 10),
-        _RequestGroup(
-          children: requests.indexed
-              .map(
-                (entry) => _RequestRow(
-                  entry.$2.project,
-                  entry.$2.managerNote.isEmpty
-                      ? '${_short(entry.$2.workDate)} · ${entry.$2.duration}'
-                      : '${_short(entry.$2.workDate)} · ${entry.$2.duration} · ${entry.$2.managerNote}',
-                  _decision(entry.$2.decision),
-                  icon: Icons.schedule_rounded,
-                  color: _Q.gold,
-                  tint: _Q.goldTint,
-                  last: entry.$1 == requests.length - 1,
-                ),
-              )
-              .toList(),
+        const SizedBox(height: 16),
+        LeaveViewSwitch(
+          history: _overtimeHistoryView,
+          onChanged: (value) => setState(() => _overtimeHistoryView = value),
+          firstLabel: 'Requests',
         ),
         const SizedBox(height: 16),
-        const _InfoCard(
-          'Overtime is paid at 1.5× or taken as comp-off, settled the following month.',
+        if (visible.isEmpty)
+          const _InfoCard('Nothing here yet.')
+        else
+          ...visible.map(
+            (request) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _QuickRequestCard(
+                title: _short(request.workDate),
+                subtitle: request.note.isEmpty
+                    ? request.timeRangeLabel
+                    : request.note,
+                status: _decision(request.decision),
+                statusColor: switch (request.decision) {
+                  LeaveDecision.approved => const Color(0xFF16A34A),
+                  _ => const Color(0xFFFB2C36),
+                },
+                footerText: request.hoursLabel,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openOvertimeForm() {
+    setState(() {
+      _overtimeDate = null;
+      _overtimeStartTime = null;
+      _overtimeEndTime = null;
+      _overtimeNote.clear();
+      _page = _QuickPage.applyOvertime;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  Widget _applyOvertimeForm() {
+    return _HubScaffold(
+      key: const ValueKey('apply-overtime'),
+      title: 'Overtime',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply Overtime',
+        onTap: _submitOvertimeApplication,
+      ),
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        _FormCard(
+          children: [
+            _LeaveFieldLabel('Date'),
+            _LeaveDropdownField(
+              value: _overtimeDate == null
+                  ? 'Select date'
+                  : _short(_overtimeDate!),
+              filled: _overtimeDate != null,
+              onTap: _pickOvertimeDate,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Start Time'),
+            _LeaveDropdownField(
+              value: _overtimeStartTime == null
+                  ? 'Select time'
+                  : _overtimeStartTime!.format(context),
+              filled: _overtimeStartTime != null,
+              onTap: () => _pickOvertimeTime(isStart: true),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('End Time'),
+            _LeaveDropdownField(
+              value: _overtimeEndTime == null
+                  ? 'Select time'
+                  : _overtimeEndTime!.format(context),
+              filled: _overtimeEndTime != null,
+              onTap: () => _pickOvertimeTime(isStart: false),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Reason'),
+            _FormTextArea(controller: _overtimeNote, height: 85.6),
+          ],
         ),
       ],
     );
   }
 
+  Future<void> _pickOvertimeDate() async {
+    final today = _dateOnly(DateTime.now());
+    final lastSelectable = today.subtract(const Duration(days: 1));
+    final initial = _overtimeDate ?? lastSelectable;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(lastSelectable) ? lastSelectable : initial,
+      firstDate: today.subtract(const Duration(days: 365)),
+      lastDate: lastSelectable,
+      selectableDayPredicate: _canSelectOvertimeFormDay,
+      builder: _pickerTheme,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _overtimeDate = picked);
+  }
+
+  Future<void> _pickOvertimeTime({required bool isStart}) async {
+    final initial =
+        (isStart ? _overtimeStartTime : _overtimeEndTime) ??
+        const TimeOfDay(hour: 19, minute: 0);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: _pickerTheme,
+    );
+    if (picked == null || !mounted) return;
+    final start = isStart ? picked : _overtimeStartTime;
+    final end = isStart ? _overtimeEndTime : picked;
+    if (start != null && end != null) {
+      final hours = _overtimeHoursBetween(start, end);
+      if (hours <= 0 || hours > 12) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    setState(() {
+      if (isStart) {
+        _overtimeStartTime = picked;
+      } else {
+        _overtimeEndTime = picked;
+      }
+    });
+  }
+
+  double? get _overtimeComputedHours {
+    final start = _overtimeStartTime;
+    final end = _overtimeEndTime;
+    if (start == null || end == null) return null;
+    return _overtimeHoursBetween(start, end);
+  }
+
+  bool _canSelectOvertimeFormDay(DateTime day) {
+    final today = _dateOnly(DateTime.now());
+    if (!day.isBefore(today)) return false;
+    final hours = _overtimeComputedHours;
+    if (hours == null || hours < 8) return true;
+    return _isWeekoffDay(day) || _isCompanyHoliday(day);
+  }
+
+  Future<void> _submitOvertimeApplication() async {
+    final date = _overtimeDate;
+    final start = _overtimeStartTime;
+    final end = _overtimeEndTime;
+    if (date == null || start == null || end == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick a date, start time, and end time to continue.'),
+        ),
+      );
+      return;
+    }
+    final hours = _overtimeHoursBetween(start, end);
+    if (hours <= 0 || hours > 12) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
+          ),
+        ),
+      );
+      return;
+    }
+    final startDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      start.hour,
+      start.minute,
+    );
+    var endDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      end.hour,
+      end.minute,
+    );
+    if (!endDateTime.isAfter(startDateTime)) {
+      endDateTime = endDateTime.add(const Duration(days: 1));
+    }
+    final sent = await widget.bloc.add(
+      SubmitOvertimeApplication(
+        workDate: date,
+        startTime: startDateTime,
+        endTime: endDateTime,
+        note: _overtimeNote.text.trim(),
+      ),
+    );
+    if (!mounted || !sent) return;
+    setState(() => _page = _QuickPage.overtime);
+    widget.controller._navigationChanged();
+  }
+
   Widget _reimbursementHub() {
     final claims = widget.dashboard.myReimbursements;
-    final now = DateTime.now();
-    final thisMonth = claims.where(
-      (claim) =>
-          claim.expenseDate.year == now.year &&
-          claim.expenseDate.month == now.month,
-    );
+    // Every claim in the list below, for the same reason as overtime.
+    final thisMonth = claims;
     final claimed = thisMonth.fold<double>(
       0,
       (sum, claim) => sum + claim.amount,
     );
+    // Approved counts as reimbursed here: it has cleared review and is no
+    // longer pending, and the card only has the two buckets. Counting only
+    // 'Paid' meant approved claims fell out of both and read as zero.
     final reimbursed = thisMonth
-        .where((claim) => claim.status == 'Paid')
+        .where((claim) => claim.status == 'Paid' || claim.status == 'Approved')
         .fold<double>(0, (sum, claim) => sum + claim.amount);
     final pending = thisMonth
         .where((claim) => claim.status == 'Pending')
         .fold<double>(0, (sum, claim) => sum + claim.amount);
+    final visible = claims
+        .where(
+          (claim) => _reimbursementHistoryView
+              ? claim.status != 'Pending'
+              : claim.status == 'Pending',
+        )
+        .toList();
     return _HubScaffold(
       key: const ValueKey('reimbursement-hub'),
-      title: 'Reimbursements',
+      title: 'Reimbursement',
       onBack: _back,
-      footer: _SingleActionFooter(
-        color: _Q.teal,
-        label: 'New claim',
-        onTap: () => _start(_QuickFlow.reimbursement),
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply',
+        onTap: _openReimbursementForm,
       ),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _StatStrip(
+        _QuickStatsCard(
+          label: 'Overview',
           stats: [
-            (_money(claimed), 'Claimed this month', _Q.ink),
-            (_money(reimbursed), 'Reimbursed', _Q.teal),
-            (_money(pending), 'Pending', _Q.gold),
+            (_money(claimed), 'Total Claimed', const Color(0xFF111827)),
+            (_money(pending), 'Pending', const Color(0xFFFB2C36)),
+            (_money(reimbursed), 'Approved', const Color(0xFF16A34A)),
           ],
         ),
-        const SizedBox(height: 24),
-        const _SectionLabel('My claims'),
-        const SizedBox(height: 10),
-        _RequestGroup(
-          children: claims.indexed
-              .map(
-                (entry) => _RequestRow(
-                  '${entry.$2.category} · ${_money(entry.$2.amount)}',
-                  '${entry.$2.note.isEmpty ? 'Expense claim' : entry.$2.note} · ${_short(entry.$2.expenseDate)}',
-                  entry.$2.status,
-                  statusLabel: entry.$2.statusLabel,
-                  icon: Icons.receipt_long_rounded,
-                  color: _Q.teal,
-                  tint: _Q.tealTint,
-                  last: entry.$1 == claims.length - 1,
-                ),
-              )
-              .toList(),
+        const SizedBox(height: 16),
+        LeaveViewSwitch(
+          history: _reimbursementHistoryView,
+          onChanged: (value) =>
+              setState(() => _reimbursementHistoryView = value),
+          firstLabel: 'Claims',
+        ),
+        const SizedBox(height: 16),
+        if (visible.isEmpty)
+          const _InfoCard('Nothing here yet.')
+        else
+          ...visible.map(
+            (claim) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _QuickRequestCard(
+                title: claim.category,
+                subtitle: _short(claim.expenseDate),
+                status: '${_money(claim.amount)} · ${claim.statusLabel}',
+                statusColor: switch (claim.status) {
+                  'Paid' || 'Approved' => const Color(0xFF16A34A),
+                  _ => const Color(0xFFFB2C36),
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openReimbursementForm() {
+    setState(() {
+      _reimbursementDate = null;
+      _reimbursementCategory = null;
+      _reimbursementAmount.clear();
+      _reimbursementDescription.clear();
+      _reimbursementReceiptName = null;
+      _reimbursementReceiptBytes = null;
+      _page = _QuickPage.applyReimbursement;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  Widget _applyReimbursementForm() {
+    return _HubScaffold(
+      key: const ValueKey('apply-reimbursement'),
+      title: 'Reimbursement',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      trailing: _LeaveHeaderButton(
+        label: 'Apply',
+        enabled: _reimbursementComplete,
+        onTap: _submitReimbursementApplication,
+      ),
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        _FormCard(
+          children: [
+            _LeaveFieldLabel('Expense Category'),
+            _LeaveDropdownField(
+              value: _reimbursementCategory ?? 'Select category',
+              filled: _reimbursementCategory != null,
+              onTap: _pickReimbursementCategory,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Amount (₹)'),
+            _FormTextField(
+              controller: _reimbursementAmount,
+              hintText: 'Enter amount',
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Date'),
+            _LeaveDropdownField(
+              value: _reimbursementDate == null
+                  ? 'Select date'
+                  : _short(_reimbursementDate!),
+              filled: _reimbursementDate != null,
+              onTap: _pickReimbursementDate,
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Description'),
+            _FormTextArea(
+              controller: _reimbursementDescription,
+              height: 65.6,
+              hintText: 'Brief description...',
+            ),
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Receipt'),
+            _ReceiptUploadField(
+              fileName: _reimbursementReceiptName,
+              onPicked: (file) => setState(() {
+                _reimbursementReceiptName = file?.name;
+                _reimbursementReceiptBytes = file?.bytes;
+              }),
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _pickReimbursementCategory() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Travel', 'Meals', 'Internet', 'Other'],
+        selected: _reimbursementCategory,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _reimbursementCategory = picked);
+  }
+
+  Future<void> _pickReimbursementDate() async {
+    final today = _dateOnly(DateTime.now());
+    final initial = _reimbursementDate ?? today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(today) ? today : initial,
+      firstDate: today.subtract(const Duration(days: 365)),
+      lastDate: today,
+      builder: _pickerTheme,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _reimbursementDate = picked);
+  }
+
+  Future<void> _submitReimbursementApplication() async {
+    if (!_reimbursementComplete) return;
+    final date = _reimbursementDate!;
+    final category = _reimbursementCategory!;
+    final amount = double.parse(_reimbursementAmount.text.trim());
+    final sent = await widget.bloc.add(
+      SubmitReimbursementApplication(
+        expenseDate: date,
+        amount: amount.toStringAsFixed(2),
+        category: category,
+        receiptName: _reimbursementReceiptName ?? '',
+        receiptBytes: _reimbursementReceiptBytes,
+        note: _reimbursementDescription.text.trim(),
+      ),
+    );
+    if (!mounted || !sent) return;
+    setState(() => _page = _QuickPage.reimbursements);
+    widget.controller._navigationChanged();
   }
 
   Widget _policies() {
@@ -622,6 +1405,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: const ValueKey('policies'),
       title: 'Policies',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       children: [
         ..._policiesData.map(
           (policy) => _ActionCard(
@@ -646,6 +1432,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: ValueKey('policy-${policy.title}'),
       title: '${policy.title} policy',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       footer: _SingleActionFooter(
         color: policy.color,
         label: 'Open full document',
@@ -679,39 +1468,66 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
-      title: 'Attendance calendar',
+      title: 'Attendance',
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
+      trailing: _LeaveHeaderButton(
+        enabled: _selectedCalendarDay != null,
+        onTap: _selectedCalendarDay == null
+            ? null
+            : () => _applyLeaveFor(_selectedCalendarDay!.date),
+      ),
       children: [
         Row(
           children: [
-            _AttendanceCalendarArrow(
+            AttendanceCalendarArrow(
               onPressed: () => _changeAttendanceMonth(-1),
-              icon: Icons.chevron_left_rounded,
+              asset: 'assets/icons/calendar_chevron_prev.svg',
             ),
             Expanded(
               child: Text(
                 '${_monthName(_attendanceMonth.month)} ${_attendanceMonth.year}',
                 textAlign: TextAlign.center,
-                style: _QText.topbar,
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
-            _AttendanceCalendarArrow(
+            AttendanceCalendarArrow(
               onPressed: () => _changeAttendanceMonth(1),
-              icon: Icons.chevron_right_rounded,
+              asset: 'assets/icons/calendar_chevron_next.svg',
             ),
           ],
         ),
-        const SizedBox(height: 28),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: _AttendanceViewSwitch(
-            list: _attendanceListView,
-            onChanged: (list) => setState(() => _attendanceListView = list),
+        const SizedBox(height: 24),
+        LeaveViewSwitch(
+          history: _attendanceListView,
+          onChanged: (list) => setState(() => _attendanceListView = list),
+          firstLabel: 'Grid',
+          secondLabel: 'List',
+        ),
+        const SizedBox(height: 16),
+        AttendanceFilterChips(
+          selected: _attendanceFilter,
+          onChanged: (filter) => setState(() => _attendanceFilter = filter),
+          onLateTapped: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Late arrivals aren\'t tracked yet — no threshold is configured.',
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 24),
-        const Text(
-          'Tap a future working day to start a leave request.',
+        const SizedBox(height: 20),
+        Text(
+          _selectedCalendarDay == null
+              ? 'Tap a future working day, then Apply Leave.'
+              : 'Selected ${_short(_selectedCalendarDay!.date)} — tap Apply Leave, or tap the date again to clear.',
           style: _QText.subtitle,
         ),
         const SizedBox(height: 20),
@@ -719,416 +1535,290 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...days.map(
             (day) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _AttendanceListCard(
+              child: AttendanceListCard(
                 day: day,
                 today: _sameDay(day.date, DateTime.now()),
+                dimmed: !matchesAttendanceFilter(day.kind, _attendanceFilter),
+                selected: _sameDay(day.date, _selectedCalendarDay?.date),
                 onTap: () => _openAttendanceDay(day),
               ),
             ),
           )
-        else
-          _AttendanceMonthGrid(
+        else ...[
+          AttendanceMonthGrid(
             month: _attendanceMonth,
             days: days,
+            filter: _attendanceFilter,
+            selectedDate: _selectedCalendarDay?.date,
             onTap: _openAttendanceDay,
           ),
+          if (_calendarDetailDay(days) case final detail?) ...[
+            const SizedBox(height: 16),
+            AttendanceDayDetail(
+              day: detail,
+              onRequestCorrection:
+                  detail.kind == AttendanceKind.attention ||
+                      detail.record?.punchIn == null ||
+                      detail.record?.punchOut == null
+                  ? () => _showRegularization(detail.date)
+                  : null,
+            ),
+          ],
+        ],
       ],
     );
   }
 
-  List<_AttendanceDayView> _attendanceDays() {
-    final records = {
-      for (final record in widget.dashboard.attendance)
-        _dateKey(record.workDate): record,
-    };
-    final requests = {
-      for (final request in widget.dashboard.regularizations)
-        _dateKey(request.workDate): request,
-    };
+  /// Day shown in the detail strip under the grid: the tapped day when one is
+  /// selected, otherwise today (only when today falls in the shown month).
+  AttendanceDayView? _calendarDetailDay(List<AttendanceDayView> days) {
+    if (_selectedCalendarDay case final selected?) {
+      return days
+              .where((day) => _sameDay(day.date, selected.date))
+              .firstOrNull ??
+          selected;
+    }
     final now = DateTime.now();
-    final count = DateTime(
-      _attendanceMonth.year,
-      _attendanceMonth.month + 1,
-      0,
-    ).day;
-    return List.generate(count, (index) {
-      final date = DateTime(
-        _attendanceMonth.year,
-        _attendanceMonth.month,
-        index + 1,
-      );
-      final key = _dateKey(date);
-      final record = records[key];
-      final regularization = requests[key];
-      LeaveRequest? leave;
-      for (final item in widget.dashboard.myLeaves) {
-        if (!date.isBefore(_dateOnly(item.start)) &&
-            !date.isAfter(_dateOnly(item.end))) {
-          leave = item;
-          break;
-        }
-      }
-      CompanyHoliday? holiday;
-      for (final item in widget.dashboard.holidays) {
-        if (_sameDay(item.date, date)) {
-          holiday = item;
-          break;
-        }
-      }
-      OvertimeRequest? overtime;
-      for (final item in widget.dashboard.myOvertime) {
-        if (_sameDay(item.workDate, date)) {
-          overtime = item;
-          break;
-        }
-      }
-      final future = date.isAfter(_dateOnly(now));
-      final weekoff = widget.dashboard.weekoffDays.contains(date.weekday % 7);
-      final complete = record?.punchIn != null && record?.punchOut != null;
-      final duration = complete
-          ? record!.punchOut!.difference(record.punchIn!)
-          : null;
-      final approvedRegularization =
-          regularization?.status.toLowerCase() == 'approved';
-      final pendingRegularization =
-          regularization != null &&
-          regularization.status.toLowerCase() == 'pending';
-      final leaveStatus = leave?.decision;
-      final overtimeSuffix = overtime == null
-          ? ''
-          : ' · ${overtime.decision == LeaveDecision.approved ? 'OT · Approved' : 'OT'}';
-
-      if (holiday != null) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.holiday,
-          title: holiday.name,
-          cellLabel: 'Holiday',
-          holiday: holiday,
-          leave: leave,
-          record: record,
-        );
-      }
-      if (leave != null && leaveStatus != LeaveDecision.declined) {
-        final approved = leaveStatus == LeaveDecision.approved;
-        return _AttendanceDayView(
-          date: date,
-          kind: approved
-              ? _AttendanceKind.leaveApproved
-              : _AttendanceKind.leavePending,
-          title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
-          cellLabel: approved ? 'Approved' : 'Pending',
-          leave: leave,
-          record: record,
-        );
-      }
-      if (approvedRegularization) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.present,
-          title: 'Present (regularised)',
-          cellLabel: '',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (pendingRegularization) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.regularizationPending,
-          title: 'Regularization · Pending',
-          cellLabel: 'Pending',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (complete) {
-        final halfDay = duration! < const Duration(hours: 6);
-        return _AttendanceDayView(
-          date: date,
-          kind: halfDay ? _AttendanceKind.halfDay : _AttendanceKind.present,
-          title:
-              '${halfDay ? 'Half day' : 'Present'} · ${_duration(duration)}$overtimeSuffix',
-          cellLabel: halfDay ? 'Half day' : (overtime == null ? '' : 'OT'),
-          record: record,
-        );
-      }
-      if (record != null || (!future && !weekoff)) {
-        final missing = record?.punchIn == null
-            ? 'missing punch-in'
-            : 'missing punch-out';
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.attention,
-          title: 'Needs attention · $missing',
-          cellLabel: 'Attention',
-          record: record,
-          regularization: regularization,
-        );
-      }
-      if (weekoff) {
-        return _AttendanceDayView(
-          date: date,
-          kind: _AttendanceKind.weekoff,
-          title: 'Weekly off',
-          cellLabel: 'Week off',
-        );
-      }
-      return _AttendanceDayView(
-        date: date,
-        kind: _AttendanceKind.future,
-        title: future ? 'Working day' : 'No record',
-        cellLabel: '',
-      );
-    });
+    if (_attendanceMonth.year != now.year ||
+        _attendanceMonth.month != now.month) {
+      return null;
+    }
+    return days.where((day) => _sameDay(day.date, now)).firstOrNull;
   }
+
+  List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
+    month: _attendanceMonth,
+    records: widget.dashboard.attendance,
+    regularizations: widget.dashboard.regularizations,
+    leaves: widget.dashboard.myLeaves,
+    holidays: widget.dashboard.holidays,
+    overtime: widget.dashboard.myOvertime,
+    weekoffDays: widget.dashboard.weekoffDays,
+  );
 
   Future<void> _changeAttendanceMonth(int delta) async {
     final month = DateTime(
       _attendanceMonth.year,
       _attendanceMonth.month + delta,
     );
-    setState(() => _attendanceMonth = month);
+    setState(() {
+      _attendanceMonth = month;
+      _selectedCalendarDay = null;
+    });
     await widget.bloc.add(LoadAttendanceMonth(month));
   }
 
-  Future<void> _openAttendanceDay(_AttendanceDayView day) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          22 + MediaQuery.viewPaddingOf(sheetContext).bottom,
-        ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SheetHandle(),
-            const SizedBox(height: 24),
-            Text(
-              '${_weekday(day.date.weekday)}, ${day.date.day} ${_shortMonth(day.date.month)} ${day.date.year}',
-              style: const TextStyle(
-                color: _Q.ink,
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(_sheetStatus(day), style: _QText.subtitle),
-            if (day.kind == _AttendanceKind.leaveApproved ||
-                day.kind == _AttendanceKind.leavePending) ...[
-              const SizedBox(height: 20),
-              _SheetValueRow(label: 'Type', value: day.leave?.type ?? 'Leave'),
-              const SizedBox(height: 8),
-              _SheetValueRow(
-                label: 'Status',
-                value: _decisionLabel(day.leave?.decision),
-              ),
-              const SizedBox(height: 20),
-              _SheetOutlineButton(
-                label: day.kind == _AttendanceKind.leaveApproved
-                    ? 'Cancel leave'
-                    : 'Withdraw request',
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Leave cancellation requested'),
-                    ),
-                  );
-                },
-              ),
-            ] else if (day.kind != _AttendanceKind.weekoff &&
-                day.kind != _AttendanceKind.holiday &&
-                day.kind != _AttendanceKind.future) ...[
-              const SizedBox(height: 20),
-              _AttendancePunchRow(
-                label: 'IN',
-                value: _clock(day.record?.punchIn),
-                missing: day.record?.punchIn == null,
-              ),
-              const SizedBox(height: 10),
-              _AttendancePunchRow(
-                label: 'OUT',
-                value: _clock(day.record?.punchOut),
-                missing: day.record?.punchOut == null,
-              ),
-              if (day.kind == _AttendanceKind.attention) ...[
-                const SizedBox(height: 26),
-                const _AttendanceDeadlineWarning(),
-                const SizedBox(height: 16),
-                _SheetPrimaryButton(
-                  label: 'Request as present',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _showRegularization(day.date);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _SheetOutlineButton(
-                  label: 'Apply leave instead',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _start(_QuickFlow.leave);
-                  },
-                ),
-              ] else if (day.kind == _AttendanceKind.present ||
-                  day.kind == _AttendanceKind.halfDay) ...[
-                const SizedBox(height: 26),
-                _SheetOutlineButton(
-                  label: 'Add overtime',
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-                    _start(_QuickFlow.overtime);
-                  },
-                ),
-              ],
-            ] else if (day.kind == _AttendanceKind.future) ...[
-              const SizedBox(height: 24),
-              _SheetPrimaryButton(
-                label: 'Apply leave',
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  _start(_QuickFlow.leave);
-                },
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  /// Tapping a day selects it; the detail strip below the grid then shows its
+  /// punches and, when a correction is possible, the link that opens the form.
+  void _openAttendanceDay(AttendanceDayView day) {
+    setState(() {
+      if (day.kind == AttendanceKind.attention) {
+        _selectedCalendarDay = day;
+        return;
+      }
+      _selectedCalendarDay = _sameDay(_selectedCalendarDay?.date, day.date)
+          ? null
+          : day;
+    });
   }
 
+  /// Correction request: the employee supplies the punch times they believe
+  /// should be recorded. At least one of the two is required. Routed to their
+  /// manager for approval by the backend.
   Future<void> _showRegularization(DateTime day) async {
     final note = TextEditingController();
-    String period = 'full_day';
+    TimeOfDay? punchIn;
+    TimeOfDay? punchOut;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Container(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            12,
-            20,
-            22 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SheetHandle(),
-              const SizedBox(height: 24),
-              const Text(
-                'Request as present',
-                style: TextStyle(
-                  color: _Q.ink,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
+        builder: (context, setSheetState) {
+          Future<void> pick(bool isStart) async {
+            final current = isStart ? punchIn : punchOut;
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: current ?? const TimeOfDay(hour: 9, minute: 0),
+              builder: _pickerTheme,
+            );
+            if (picked == null) return;
+            setSheetState(() {
+              if (isStart) {
+                punchIn = picked;
+              } else {
+                punchOut = picked;
+              }
+            });
+          }
+
+          void toggleMeridiem(bool isStart) {
+            final current = isStart ? punchIn : punchOut;
+            if (current == null) return;
+            final shifted = TimeOfDay(
+              hour: (current.hour + 12) % 24,
+              minute: current.minute,
+            );
+            setSheetState(() {
+              if (isStart) {
+                punchIn = shifted;
+              } else {
+                punchOut = shifted;
+              }
+            });
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              24 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SheetHandle(),
+                const SizedBox(height: 12),
+                const Text(
+                  'Request Correction',
+                  style: TextStyle(
+                    color: Color(0xFF2A2A2A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'This will be sent to your manager for approval.',
-                style: _QText.subtitle,
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'HOW MUCH OF THE DAY WERE YOU PRESENT?',
-                style: _QText.eyebrow,
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  for (final option in const [
-                    ('full_day', 'Full day'),
-                    ('first_half', 'First half'),
-                    ('second_half', 'Second half'),
-                  ]) ...[
-                    Expanded(
-                      child: _RegularizationOption(
-                        label: option.$2,
-                        selected: period == option.$1,
-                        onTap: () => setSheetState(() => period = option.$1),
+                const SizedBox(height: 20),
+                Text(
+                  '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
+                  style: const TextStyle(
+                    color: Color(0xFF6A6A6A),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _CorrectionTimeField(
+                  label: 'Punch-in',
+                  value: punchIn,
+                  onPickTime: () => pick(true),
+                  onToggleMeridiem: () => toggleMeridiem(true),
+                ),
+                const SizedBox(height: 16),
+                _CorrectionTimeField(
+                  label: 'Punch-out',
+                  value: punchOut,
+                  onPickTime: () => pick(false),
+                  onToggleMeridiem: () => toggleMeridiem(false),
+                ),
+                const SizedBox(height: 16),
+                const Row(
+                  children: [
+                    Text(
+                      'Notes ',
+                      style: TextStyle(
+                        color: Color(0xFF2A2A2A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (option.$1 != 'second_half') const SizedBox(width: 8),
+                    Text(
+                      '(optional)',
+                      style: TextStyle(color: Color(0xFF929292), fontSize: 12),
+                    ),
                   ],
-                ],
-              ),
-              const SizedBox(height: 24),
-              const Text('NOTE TO MANAGER', style: _QText.eyebrow),
-              const SizedBox(height: 10),
-              TextField(
-                controller: note,
-                maxLines: 1,
-                style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'e.g. Forgot to punch out yesterday...',
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 18,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: note,
+                  minLines: 3,
+                  maxLines: 3,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF2A2A2A),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: _Q.line, width: 2),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: _Q.line, width: 2),
+                  decoration: InputDecoration(
+                    hintText: 'Add a note for your manager...',
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF929292),
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 13,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF0571A6),
+                        width: 1.5,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SheetSecondaryButton(
-                      label: 'Cancel',
-                      onPressed: () => Navigator.pop(dialogContext),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: _SheetPrimaryButton(
-                      label: 'Confirm & send',
-                      onPressed: () async {
-                        if (note.text.trim().isEmpty) return;
-                        final ok = await widget.bloc.add(
-                          SubmitAttendanceRegularization(
-                            workDate: day,
-                            period: period,
-                            note: note.text.trim(),
-                          ),
-                        );
-                        if (ok && dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+                const SizedBox(height: 26),
+                _SheetPrimaryButton(
+                  label: 'Submit for review',
+                  color: const Color(0xFF0571A6),
+                  onPressed: () async {
+                    if (punchIn == null && punchOut == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Enter a punch-in or punch-out time'),
+                        ),
+                      );
+                      return;
+                    }
+                    DateTime? at(TimeOfDay? time) => time == null
+                        ? null
+                        : DateTime(
+                            day.year,
+                            day.month,
+                            day.day,
+                            time.hour,
+                            time.minute,
+                          );
+                    final from = at(punchIn);
+                    final to = at(punchOut);
+                    if (from != null && to != null && !to.isAfter(from)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Punch-out must be after punch-in'),
+                        ),
+                      );
+                      return;
+                    }
+                    final ok = await widget.bloc.add(
+                      SubmitAttendanceRegularization(
+                        workDate: day,
+                        punchIn: from,
+                        punchOut: to,
+                        note: note.text.trim(),
+                      ),
+                    );
+                    if (ok && dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
     note.dispose();
@@ -1136,56 +1826,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   static String _dateKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-  static String _clock(DateTime? value) => value == null
-      ? 'Missing'
-      : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
   static String _duration(Duration value) {
     final hours = value.inHours;
     final minutes = value.inMinutes.remainder(60);
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
   }
 
-  static String _sheetStatus(_AttendanceDayView day) {
-    switch (day.kind) {
-      case _AttendanceKind.attention:
-        return 'Needs attention';
-      case _AttendanceKind.leaveApproved:
-        return 'Leave · approved · ${day.leave?.type ?? 'Leave'}';
-      case _AttendanceKind.leavePending:
-        return 'Leave · pending · ${day.leave?.type ?? 'Leave'}';
-      case _AttendanceKind.weekoff:
-        return 'Weekly off';
-      case _AttendanceKind.holiday:
-        return day.holiday?.name ?? 'Holiday';
-      case _AttendanceKind.regularizationPending:
-        return 'Regularization · pending';
-      case _AttendanceKind.future:
-        return 'Working day';
-      default:
-        return day.kind == _AttendanceKind.halfDay ? 'Half day' : 'Present';
-    }
-  }
-
-  static String _decisionLabel(LeaveDecision? decision) => switch (decision) {
-    LeaveDecision.approved => 'Approved',
-    LeaveDecision.declined => 'Declined',
-    _ => 'Pending',
-  };
-
-  static String _shortMonth(int month) => const [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ][month - 1];
   static String _monthName(int month) => const [
     'January',
     'February',
@@ -1210,6 +1856,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       key: ValueKey('wizard-${_flow.name}-$_step'),
       title: _flowTitle(_flow),
       onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
       footer: _WizardFooter(
         color: color,
         label: _submitting
@@ -1315,8 +1964,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
-            duration: _answers['Duration'] ?? 'Half day',
-            project: _answers['Project'] ?? '',
+            startTime: _from,
+            endTime: _from.add(const Duration(hours: 4)),
             note: _answers['Note'] ?? '',
           ),
         );
@@ -1410,8 +2059,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               _from = day;
             } else {
               final span = day.difference(_from).inDays + 1;
-              if (span > _maxLeaveApplyDays ||
-                  _rangeHasBlockedLeaveDay(_from, day)) {
+              if (span > _maxLeaveApplyDays) {
                 _from = day;
                 _to = day;
                 return;
@@ -1754,23 +2402,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     ];
   }
 
+  /// Weekends and company holidays are selectable — they can sit inside a
+  /// leave range. Holidays simply don't count towards the days used.
   bool _canSelectLeaveDay(DateTime day) {
-    final today = _dateOnly(DateTime.now());
-    return !day.isBefore(today) &&
-        day.weekday != DateTime.saturday &&
-        day.weekday != DateTime.sunday &&
-        !_isCompanyHoliday(day);
+    return !day.isBefore(_dateOnly(DateTime.now()));
   }
 
-  bool _rangeHasBlockedLeaveDay(DateTime from, DateTime to) {
+  /// Calendar days in the range, less the company's week-off days (Sunday by
+  /// default) and company holidays — neither is charged as leave.
+  int _leaveDaysBetween(DateTime from, DateTime to) {
+    var days = 0;
     for (
       var day = from;
       !day.isAfter(to);
       day = day.add(const Duration(days: 1))
     ) {
-      if (!_canSelectLeaveDay(day)) return true;
+      if (_isWeekoffDay(day) || _isCompanyHoliday(day)) continue;
+      days += 1;
     }
-    return false;
+    return days;
   }
 
   bool _isCompanyHoliday(DateTime day) {
@@ -1781,7 +2431,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   // dashboard.weekoffDays uses 0=Sun..6=Sat (JS getDay); Dart weekday is
   // 1=Mon..7=Sun, so `weekday % 7` maps Sun(7)->0 and the rest 1:1.
-  bool _isOvertimeWeekoff(DateTime day) =>
+  /// A company week-off (Sunday unless HR configured otherwise).
+  bool _isWeekoffDay(DateTime day) =>
       widget.dashboard.weekoffDays.contains(day.weekday % 7);
 
   // Overtime day rules: any *past* day for half-day; only a week-off or
@@ -1791,219 +2442,334 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (!day.isBefore(today)) return false;
     final fullDay = (_answers['Duration'] ?? _choice) == 'Full day';
     if (!fullDay) return true;
-    return _isOvertimeWeekoff(day) || _isCompanyHoliday(day);
+    return _isWeekoffDay(day) || _isCompanyHoliday(day);
   }
 }
 
-class _AttendanceCalendarArrow extends StatelessWidget {
-  const _AttendanceCalendarArrow({required this.onPressed, required this.icon});
+class AttendanceCalendarArrow extends StatelessWidget {
+  const AttendanceCalendarArrow({required this.onPressed, required this.asset});
   final VoidCallback onPressed;
-  final IconData icon;
+  final String asset;
 
   @override
   Widget build(BuildContext context) => Material(
-    color: _Q.terraTint,
-    borderRadius: BorderRadius.circular(16),
+    color: Colors.transparent,
     child: InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(99),
       child: SizedBox(
-        width: 46,
-        height: 46,
-        child: Icon(icon, color: _Q.terra, size: 23),
+        width: 32,
+        height: 32,
+        child: Center(child: SvgPicture.asset(asset, width: 20, height: 20)),
       ),
     ),
   );
 }
 
-class _AttendanceViewSwitch extends StatelessWidget {
-  const _AttendanceViewSwitch({required this.list, required this.onChanged});
-  final bool list;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(5),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF0EBE3),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _AttendanceSwitchItem(
-          label: 'List',
-          selected: list,
-          onTap: () => onChanged(true),
-        ),
-        _AttendanceSwitchItem(
-          label: 'Month',
-          selected: !list,
-          onTap: () => onChanged(false),
-        ),
-      ],
-    ),
-  );
-}
-
-class _AttendanceSwitchItem extends StatelessWidget {
-  const _AttendanceSwitchItem({
-    required this.label,
+class AttendanceFilterChips extends StatelessWidget {
+  const AttendanceFilterChips({
     required this.selected,
-    required this.onTap,
+    required this.onChanged,
+    required this.onLateTapped,
   });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
 
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(14),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? _Q.ink : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? Colors.white : _Q.inkSoft,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    ),
-  );
-}
-
-class _AttendancePalette {
-  const _AttendancePalette(this.background, this.foreground, this.border);
-  final Color background;
-  final Color foreground;
-  final Color border;
-}
-
-_AttendancePalette _attendancePalette(_AttendanceKind kind) => switch (kind) {
-  _AttendanceKind.present => const _AttendancePalette(
-    Color(0xFFE9EBE0),
-    Color(0xFF4C5840),
-    Colors.transparent,
-  ),
-  _AttendanceKind.attention => const _AttendancePalette(
-    Color(0xFFFBE6E3),
-    Color(0xFFE0483B),
-    Color(0xFFF2B0A9),
-  ),
-  _AttendanceKind.weekoff => const _AttendancePalette(
-    Color(0xFFF4ECDD),
-    Color(0xFF8C5A10),
-    Colors.transparent,
-  ),
-  _AttendanceKind.halfDay ||
-  _AttendanceKind.holiday => const _AttendancePalette(
-    Color(0xFFF7F0E2),
-    Color(0xFF8C5A10),
-    Color(0xFFEBCB78),
-  ),
-  _AttendanceKind.leaveApproved => const _AttendancePalette(
-    Color(0xFF377BB8),
-    Colors.white,
-    Color(0xFF377BB8),
-  ),
-  _AttendanceKind.leavePending ||
-  _AttendanceKind.regularizationPending => const _AttendancePalette(
-    Colors.white,
-    Color(0xFF285A88),
-    Color(0xFF377BB8),
-  ),
-  _AttendanceKind.future => const _AttendancePalette(
-    Colors.white,
-    _Q.ink,
-    Color(0xFFE8DFD3),
-  ),
-};
-
-class _AttendanceListCard extends StatelessWidget {
-  const _AttendanceListCard({
-    required this.day,
-    required this.today,
-    required this.onTap,
-  });
-  final _AttendanceDayView day;
-  final bool today;
-  final VoidCallback onTap;
+  final AttendanceFilter? selected;
+  final ValueChanged<AttendanceFilter?> onChanged;
+  final VoidCallback onLateTapped;
 
   @override
   Widget build(BuildContext context) {
-    final palette = _attendancePalette(day.kind);
-    return Material(
-      color: palette.background,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6.5),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: today ? _Q.ink : palette.border,
-              width: today ? 2.2 : 1.2,
+    void toggle(AttendanceFilter filter) =>
+        onChanged(selected == filter ? null : filter);
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _AttendanceFilterChip(
+            label: 'Present',
+            selected: selected == AttendanceFilter.present,
+            onTap: () => toggle(AttendanceFilter.present),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Late',
+            selected: false,
+            onTap: onLateTapped,
+            leading: SvgPicture.asset(
+              'assets/icons/filter_late_clock.svg',
+              width: 12,
+              height: 12,
             ),
           ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Half-day',
+            selected: selected == AttendanceFilter.halfDay,
+            onTap: () => toggle(AttendanceFilter.halfDay),
+            leading: const Text(
+              '½',
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Leave',
+            selected: selected == AttendanceFilter.leave,
+            onTap: () => toggle(AttendanceFilter.leave),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Leave Applied',
+            selected: selected == AttendanceFilter.leaveApplied,
+            onTap: () => toggle(AttendanceFilter.leaveApplied),
+            leading: CustomPaint(
+              size: const Size(8, 8),
+              painter: const _DashedRoundRectPainter(
+                color: Color(0xFF717171),
+                radius: 2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Correction',
+            selected: selected == AttendanceFilter.correction,
+            onTap: () => toggle(AttendanceFilter.correction),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Correction Awaits',
+            selected: selected == AttendanceFilter.correctionAwaits,
+            onTap: () => toggle(AttendanceFilter.correctionAwaits),
+            leading: CustomPaint(
+              size: const Size(8, 8),
+              painter: const _DashedRoundRectPainter(
+                color: Color(0xFF717171),
+                radius: 2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
+            label: 'Holiday',
+            selected: selected == AttendanceFilter.holiday,
+            onTap: () => toggle(AttendanceFilter.holiday),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceFilterChip extends StatelessWidget {
+  const _AttendanceFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.leading,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _Q.ink : Colors.white,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: selected ? _Q.ink : const Color(0xFFE5E7EB),
+            width: .8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 6)],
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF6B7280),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceCellStyle {
+  const _AttendanceCellStyle({
+    required this.color,
+    this.bold = true,
+    this.dashedBorder,
+    this.fill,
+  });
+  final Color color;
+  final bool bold;
+  final Color? dashedBorder;
+  final Color? fill;
+}
+
+_AttendanceCellStyle _attendanceGridCellStyle(AttendanceKind kind) =>
+    switch (kind) {
+      AttendanceKind.present => const _AttendanceCellStyle(
+        color: Color(0xFF28CA08),
+      ),
+      AttendanceKind.halfDay => const _AttendanceCellStyle(
+        color: Color(0xFF34C759),
+      ),
+      AttendanceKind.weekoff => const _AttendanceCellStyle(
+        color: Color(0xFF6A6A6A),
+        bold: false,
+        fill: Color(0xFFF2F2F2),
+      ),
+      AttendanceKind.holiday => const _AttendanceCellStyle(
+        color: Color(0xFF717171),
+        bold: false,
+        fill: Color(0xFFF2F2F2),
+      ),
+      // "Correction Required" — action needed, not yet requested.
+      AttendanceKind.attention => const _AttendanceCellStyle(
+        color: Color(0xFFFF383C),
+      ),
+      // "Correction Awaits" — already requested, pending manager decision.
+      AttendanceKind.regularizationPending => const _AttendanceCellStyle(
+        color: Color(0xFFFF1400),
+        dashedBorder: Color(0xFF0571A6),
+      ),
+      AttendanceKind.leaveApproved => const _AttendanceCellStyle(
+        color: Color(0xFF0571A6),
+      ),
+      AttendanceKind.leavePending => const _AttendanceCellStyle(
+        color: Color(0xFF0571A6),
+        dashedBorder: Color(0xFF0571A6),
+      ),
+      AttendanceKind.future => const _AttendanceCellStyle(
+        color: Color(0xFF2A2A2A),
+        bold: false,
+      ),
+    };
+
+Color _attendanceListRowColor(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.present || AttendanceKind.halfDay => const Color(0xFF34C759),
+  AttendanceKind.weekoff || AttendanceKind.holiday => const Color(0xFF717171),
+  AttendanceKind.attention ||
+  AttendanceKind.regularizationPending => const Color(0xFFFF383C),
+  AttendanceKind.leaveApproved ||
+  AttendanceKind.leavePending => const Color(0xFF0571A6),
+  AttendanceKind.future => const Color(0xFF2A2A2A),
+};
+
+Color _attendanceListRowBackground(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.weekoff || AttendanceKind.holiday => const Color(0xFFF2F2F2),
+  AttendanceKind.future ||
+  AttendanceKind.leavePending => const Color(0xFFFAFAFA),
+  _ => Colors.white,
+};
+
+bool _attendanceListShowsChevron(AttendanceKind kind) =>
+    kind != AttendanceKind.weekoff &&
+    kind != AttendanceKind.holiday &&
+    kind != AttendanceKind.future;
+
+class AttendanceListCard extends StatelessWidget {
+  const AttendanceListCard({
+    required this.day,
+    required this.today,
+    required this.onTap,
+    this.dimmed = false,
+    this.selected = false,
+  });
+  final AttendanceDayView day;
+  final bool today;
+  final VoidCallback onTap;
+  final bool dimmed;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = dimmed ? _Q.inkFaint : _attendanceListRowColor(day.kind);
+    final showChevron = !dimmed && _attendanceListShowsChevron(day.kind);
+    final background = selected
+        ? const Color(0xFFDBEAFE)
+        : _attendanceListRowBackground(day.kind);
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: (selected || today)
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF0571A6),
+                    width: selected ? 1.4 : 1,
+                  ),
+                )
+              : null,
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               SizedBox(
-                width: 58,
+                width: 40,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       _weekday(day.date.weekday).substring(0, 3).toUpperCase(),
                       style: TextStyle(
-                        color: palette.foreground.withValues(alpha: .68),
+                        color: color,
                         fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     Text(
                       '${day.date.day}',
                       style: TextStyle(
-                        color: palette.foreground,
-                        fontSize: 20,
-                        height: 1.05,
-                        fontWeight: FontWeight.w900,
+                        color: color,
+                        fontSize: 18,
+                        height: 1.15,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
               ),
-              Container(
-                width: 1,
-                height: 36,
-                color: palette.foreground.withValues(alpha: .12),
-              ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   day.title,
                   style: TextStyle(
-                    color: palette.foreground,
+                    color: color,
                     fontSize: 14,
                     height: 1.25,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: palette.foreground.withValues(alpha: .58),
-              ),
+              if (showChevron) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.chevron_right_rounded, size: 14, color: color),
+              ],
             ],
           ),
         ),
@@ -2012,37 +2778,42 @@ class _AttendanceListCard extends StatelessWidget {
   }
 }
 
-class _AttendanceMonthGrid extends StatelessWidget {
-  const _AttendanceMonthGrid({
+class AttendanceMonthGrid extends StatelessWidget {
+  const AttendanceMonthGrid({
     required this.month,
     required this.days,
     required this.onTap,
+    this.filter,
+    this.selectedDate,
   });
   final DateTime month;
-  final List<_AttendanceDayView> days;
-  final ValueChanged<_AttendanceDayView> onTap;
+  final List<AttendanceDayView> days;
+  final ValueChanged<AttendanceDayView> onTap;
+  final AttendanceFilter? filter;
+  final DateTime? selectedDate;
 
   @override
   Widget build(BuildContext context) {
-    final leading = DateTime(month.year, month.month, 1).weekday % 7;
+    final leading = (DateTime(month.year, month.month, 1).weekday - 1) % 7;
     return Column(
       children: [
         Row(
-          children: const ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-              .map(
-                (label) => Expanded(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _Q.inkFaint,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+          children: List.generate(7, (index) {
+            final isWeekend = index >= 5;
+            return Expanded(
+              child: Text(
+                const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index],
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isWeekend
+                      ? const Color(0xFFDDDDDD)
+                      : const Color(0xFF6A6A6A),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
                 ),
-              )
-              .toList(),
+              ),
+            );
+          }),
         ),
         const SizedBox(height: 8),
         GridView.builder(
@@ -2050,9 +2821,9 @@ class _AttendanceMonthGrid extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            mainAxisSpacing: 7,
-            crossAxisSpacing: 5,
-            childAspectRatio: .78,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 0,
+            childAspectRatio: 1.1,
           ),
           itemCount: leading + days.length,
           itemBuilder: (context, index) {
@@ -2061,6 +2832,8 @@ class _AttendanceMonthGrid extends StatelessWidget {
             return _AttendanceMonthCell(
               day: day,
               today: _sameDay(day.date, DateTime.now()),
+              dimmed: !matchesAttendanceFilter(day.kind, filter),
+              selected: _sameDay(day.date, selectedDate),
               onTap: () => onTap(day),
             );
           },
@@ -2075,59 +2848,58 @@ class _AttendanceMonthCell extends StatelessWidget {
     required this.day,
     required this.today,
     required this.onTap,
+    this.dimmed = false,
+    this.selected = false,
   });
-  final _AttendanceDayView day;
+  final AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
+  final bool dimmed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    final palette = _attendancePalette(day.kind);
-    final dashed =
-        day.kind == _AttendanceKind.leavePending ||
-        day.kind == _AttendanceKind.regularizationPending;
+    final style = dimmed
+        ? const _AttendanceCellStyle(color: _Q.inkFaint, bold: false)
+        : _attendanceGridCellStyle(day.kind);
+    final isHalfDay = !dimmed && day.kind == AttendanceKind.halfDay;
+    final dashedColor = (today || selected) ? null : style.dashedBorder;
     final content = Material(
-      color: palette.background,
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: dashed
-                ? null
-                : Border.all(
-                    color: today ? _Q.ink : palette.border,
-                    width: today ? 2.1 : 1.2,
-                  ),
+            color: selected ? const Color(0xFFDBEAFE) : style.fill,
+            borderRadius: BorderRadius.circular(8),
+            border: (today || selected)
+                ? Border.all(color: const Color(0xFF0571A6), width: 1.6)
+                : null,
           ),
+          alignment: Alignment.center,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 '${day.date.day}',
                 style: TextStyle(
-                  color: palette.foreground,
-                  fontSize: 15,
+                  color: style.color,
+                  fontSize: 13,
                   height: 1,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: style.bold ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
-              if (day.cellLabel.isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    day.cellLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.fade,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: palette.foreground,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                    ),
+              if (isHalfDay) ...[
+                const SizedBox(height: 1),
+                Text(
+                  '½',
+                  style: TextStyle(
+                    color: style.color,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
                   ),
                 ),
               ],
@@ -2136,16 +2908,267 @@ class _AttendanceMonthCell extends StatelessWidget {
         ),
       ),
     );
-    return dashed
+    return dashedColor != null
         ? CustomPaint(
             foregroundPainter: _DashedRoundRectPainter(
-              color: palette.border,
-              radius: 16,
+              color: dashedColor,
+              radius: 8,
             ),
             child: content,
           )
         : content;
   }
+}
+
+const _fullWeekdayNames = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
+
+String _hoursMinutesLabel(double hours) {
+  final totalMinutes = (hours * 60).round();
+  final h = totalMinutes ~/ 60;
+  final m = totalMinutes % 60;
+  return m == 0 ? '${h}h' : '${h}h ${m}m';
+}
+
+double _overtimeHoursBetween(TimeOfDay start, TimeOfDay end) {
+  final startMinutes = start.hour * 60 + start.minute;
+  var endMinutes = end.hour * 60 + end.minute;
+  if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+  return (endMinutes - startMinutes) / 60;
+}
+
+Widget _pickerTheme(BuildContext context, Widget? child) {
+  final base = Theme.of(context);
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF0571A6),
+    brightness: Brightness.light,
+  ).copyWith(surface: Colors.white, onSurface: const Color(0xFF111827));
+  return Theme(
+    data: base.copyWith(
+      colorScheme: colorScheme,
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: const Color(0xFF0571A6)),
+      ),
+    ),
+    child: child!,
+  );
+}
+
+typedef AttendanceTagStyle = ({Color bg, Color fg, String label});
+
+AttendanceTagStyle attendanceTagStyle(AttendanceKind kind) => switch (kind) {
+  AttendanceKind.present => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF28CA08),
+    label: 'Present',
+  ),
+  AttendanceKind.halfDay => (
+    bg: const Color(0xFFDCFCE7),
+    fg: const Color(0xFF34C759),
+    label: 'Half day',
+  ),
+  AttendanceKind.weekoff => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF6A6A6A),
+    label: 'Weekly off',
+  ),
+  AttendanceKind.holiday => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF717171),
+    label: 'Holiday',
+  ),
+  AttendanceKind.attention => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Correction Required',
+  ),
+  AttendanceKind.regularizationPending => (
+    bg: const Color(0xFFFEE0E0),
+    fg: const Color(0xFFFF383C),
+    label: 'Correction Awaits',
+  ),
+  AttendanceKind.leaveApproved => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'On Leave',
+  ),
+  AttendanceKind.leavePending => (
+    bg: const Color(0xFFDBEAFE),
+    fg: const Color(0xFF0571A6),
+    label: 'Leave Applied',
+  ),
+  AttendanceKind.future => (
+    bg: const Color(0xFFF2F2F2),
+    fg: const Color(0xFF2A2A2A),
+    label: 'Upcoming',
+  ),
+};
+
+/// Punch clock label. Punch data is imported from the attendance hardware via
+/// the SQL bridge, so a day with no imported record renders as an em dash.
+String attendancePunchClock(DateTime? value) => value == null
+    ? '—'
+    : '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
+
+/// Read-only detail for one calendar day: date, status tag and the punch-in /
+/// punch-out pair. Shared by the employee's own calendar and the manager's
+/// read-only view of a team member's calendar.
+class AttendanceDayDetail extends StatelessWidget {
+  const AttendanceDayDetail({
+    super.key,
+    required this.day,
+    this.onRequestCorrection,
+  });
+
+  final AttendanceDayView day;
+
+  /// Shown as the "Apply for a correction" link on days that need one. Omitted
+  /// on the manager's read-only view of a report.
+  final VoidCallback? onRequestCorrection;
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = attendanceTagStyle(day.kind);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                '${_fullWeekdayNames[day.date.weekday - 1]}, ${day.date.day} ${_monthName(day.date.month)}',
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: tag.bg,
+                borderRadius: BorderRadius.circular(9999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: tag.fg,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    tag.label,
+                    style: TextStyle(
+                      color: tag.fg,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          height: 71,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _AttendancePunchCell(
+                  label: 'Punch-in',
+                  value: attendancePunchClock(day.record?.punchIn),
+                  alignEnd: false,
+                ),
+              ),
+              Container(width: 1, color: const Color(0xFFDDDDDD)),
+              Expanded(
+                child: _AttendancePunchCell(
+                  label: 'Punch-out',
+                  value: attendancePunchClock(day.record?.punchOut),
+                  alignEnd: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (onRequestCorrection case final request?) ...[
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: request,
+            child: const Text(
+              'Missed Punch-in or out. Apply for a correction',
+              style: TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AttendancePunchCell extends StatelessWidget {
+  const _AttendancePunchCell({
+    required this.label,
+    required this.value,
+    required this.alignEnd,
+  });
+
+  final String label;
+  final String value;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: alignEnd
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF929292),
+          fontSize: 10,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: const TextStyle(
+          color: Color(0xFF2A2A2A),
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
 }
 
 class _DashedRoundRectPainter extends CustomPainter {
@@ -2190,113 +3213,22 @@ class _SheetHandle extends StatelessWidget {
   );
 }
 
-class _AttendancePunchRow extends StatelessWidget {
-  const _AttendancePunchRow({
+class _SheetPrimaryButton extends StatelessWidget {
+  const _SheetPrimaryButton({
     required this.label,
-    required this.value,
-    required this.missing,
+    required this.onPressed,
+    this.color = const Color(0xFFC75C36),
   });
   final String label;
-  final String value;
-  final bool missing;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: missing ? const Color(0xFFFBE4E1) : const Color(0xFFE9EBE0),
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: missing ? const Color(0xFFE0483B) : _Q.sage,
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-          ),
-        ),
-      ),
-      const SizedBox(width: 14),
-      Text(value, style: const TextStyle(color: _Q.ink, fontSize: 14)),
-    ],
-  );
-}
-
-class _AttendanceDeadlineWarning extends StatelessWidget {
-  const _AttendanceDeadlineWarning();
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFBE4E1),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: const Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.warning_amber_rounded, color: Color(0xFF8B302B)),
-        SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'Request as present or apply leave within the attendance window — after that, this day counts as loss of pay.',
-            style: TextStyle(
-              color: Color(0xFF8B302B),
-              fontSize: 13,
-              height: 1.35,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _SheetValueRow extends StatelessWidget {
-  const _SheetValueRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF8F4EE),
-      borderRadius: BorderRadius.circular(15),
-    ),
-    child: Row(
-      children: [
-        Text(label, style: const TextStyle(color: _Q.inkSoft, fontSize: 14)),
-        const Spacer(),
-        Flexible(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _SheetPrimaryButton extends StatelessWidget {
-  const _SheetPrimaryButton({required this.label, required this.onPressed});
-  final String label;
   final VoidCallback onPressed;
+  final Color color;
   @override
   Widget build(BuildContext context) => SizedBox(
     height: 58,
     child: FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFC75C36),
+        backgroundColor: color,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
         textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
@@ -2306,82 +3238,121 @@ class _SheetPrimaryButton extends StatelessWidget {
   );
 }
 
-class _SheetOutlineButton extends StatelessWidget {
-  const _SheetOutlineButton({required this.label, required this.onPressed});
-  final String label;
-  final VoidCallback onPressed;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 58,
-    child: OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _Q.ink,
-        side: const BorderSide(color: Color(0xFFE8DFD3), width: 1.4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-      ),
-      child: Text(label),
-    ),
-  );
-}
-
-class _SheetSecondaryButton extends StatelessWidget {
-  const _SheetSecondaryButton({required this.label, required this.onPressed});
-  final String label;
-  final VoidCallback onPressed;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 58,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFF5F0E9),
-        foregroundColor: _Q.ink,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-      ),
-      child: Text(label),
-    ),
-  );
-}
-
-class _RegularizationOption extends StatelessWidget {
-  const _RegularizationOption({
+/// One punch row on the correction sheet: a wide box showing the time and a
+/// narrow AM/PM box, matching the paired fields in the design.
+class _CorrectionTimeField extends StatelessWidget {
+  const _CorrectionTimeField({
     required this.label,
-    required this.selected,
-    required this.onTap,
+    required this.value,
+    required this.onPickTime,
+    required this.onToggleMeridiem,
   });
+
   final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final TimeOfDay? value;
+  final VoidCallback onPickTime;
+  final VoidCallback onToggleMeridiem;
+
+  static const _boxBorder = Color(0xFFE5E7EB);
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(17),
-    child: Container(
-      height: 58,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected ? _Q.terraTint : const Color(0xFFF5F0E9),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(
-          color: selected ? _Q.terra : Colors.transparent,
-          width: 2,
+  Widget build(BuildContext context) {
+    final hour = value == null
+        ? null
+        : (value!.hour % 12 == 0 ? 12 : value!.hour % 12);
+    final clock = value == null
+        ? ''
+        : '$hour:${value!.minute.toString().padLeft(2, '0')}';
+    final meridiem = value == null ? 'AM' : (value!.hour >= 12 ? 'PM' : 'AM');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            height: 16 / 12,
+            letterSpacing: .3,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: selected ? _Q.terraDeep : _Q.inkSoft,
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onPickTime,
+                child: Container(
+                  height: 42,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _boxBorder, width: .8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    clock.isEmpty ? '--:--' : clock,
+                    style: TextStyle(
+                      color: clock.isEmpty
+                          ? const Color(0xFF9CA3AF)
+                          : const Color(0xFF2A2A2A),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 18),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: value == null ? null : onToggleMeridiem,
+              child: Container(
+                width: 89,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border.all(color: _boxBorder, width: .8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      meridiem,
+                      style: TextStyle(
+                        color: value == null
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF2A2A2A),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // This toggles AM/PM in place rather than drilling into
+                    // another screen, so the chevron should read as a
+                    // dropdown indicator (pointing down), not a nav arrow —
+                    // rotate the shared right-pointing asset 90°.
+                    Transform.rotate(
+                      angle: math.pi / 2,
+                      child: SvgPicture.asset(
+                        'assets/icons/list_row_chevron.svg',
+                        width: 14,
+                        height: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-      ),
-    ),
-  );
+      ],
+    );
+  }
 }
 
 class _HubScaffold extends StatelessWidget {
@@ -2390,51 +3361,82 @@ class _HubScaffold extends StatelessWidget {
     required this.title,
     required this.onBack,
     required this.children,
+    required this.profileAction,
+    required this.onNotifications,
+    required this.onQuickCreate,
     this.footer,
+    this.trailing,
+    this.backgroundColor,
   });
 
   final String title;
   final VoidCallback onBack;
   final List<Widget> children;
+  final Widget profileAction;
+  final VoidCallback onNotifications;
+  final VoidCallback onQuickCreate;
   final Widget? footer;
+  final Widget? trailing;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        AppHomeHeader(
+          profileAction: profileAction,
+          onNotifications: onNotifications,
+          onQuickCreate: onQuickCreate,
+        ),
+        // AppHomeHeader above already wraps itself in a SafeArea, so
+        // applying another top-safe-area here (they're siblings, not
+        // nested — Flutter doesn't dedupe that) double-pads under the
+        // notch on a real iPhone while looking fine on macOS/simulator
+        // where the top inset is 0.
         SafeArea(
+          top: false,
           bottom: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 18, 12),
             decoration: const BoxDecoration(
               color: Colors.white,
-              border: Border(bottom: BorderSide(color: _Q.line)),
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
             ),
             child: Row(
               children: [
                 Material(
-                  color: _Q.bg,
+                  color: const Color(0xFFF7F7F9),
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     onTap: onBack,
                     borderRadius: BorderRadius.circular(12),
-                    child: const SizedBox(
+                    child: SizedBox(
                       width: 38,
                       height: 38,
-                      child: Icon(Icons.chevron_left_rounded, size: 23),
+                      child: Center(
+                        child: SvgPicture.asset(
+                          'assets/icons/chevron_back.svg',
+                          width: 20,
+                          height: 20,
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(child: Text(title, style: _QText.topbar)),
+                ?trailing,
               ],
             ),
           ),
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
-            children: children,
+          child: ColoredBox(
+            color: backgroundColor ?? _Q.bg,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
+              children: children,
+            ),
           ),
         ),
         ?footer,
@@ -2443,31 +3445,1014 @@ class _HubScaffold extends StatelessWidget {
   }
 }
 
-class _ActionGroup extends StatelessWidget {
-  const _ActionGroup({required this.children});
+class _LeaveHeaderButton extends StatelessWidget {
+  const _LeaveHeaderButton({
+    required this.onTap,
+    this.enabled = true,
+    this.label = 'Apply Leave',
+  });
+
+  final VoidCallback? onTap;
+  final bool enabled;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: enabled ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: enabled ? Colors.white : const Color(0xFF9CA3AF),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveBalanceCard extends StatelessWidget {
+  const _LeaveBalanceCard({required this.label, required this.item});
+
+  final String label;
+  final LeaveBalanceItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 144,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF222222),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${item.remaining}/${item.total}',
+            style: const TextStyle(
+              color: Color(0xFF222222),
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'days available',
+            style: TextStyle(color: Color(0xFF222222), fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LeaveViewSwitch extends StatelessWidget {
+  const LeaveViewSwitch({
+    required this.history,
+    required this.onChanged,
+    this.firstLabel = 'Upcoming',
+    this.secondLabel = 'History',
+  });
+
+  final bool history;
+  final ValueChanged<bool> onChanged;
+  final String firstLabel;
+  final String secondLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _LeaveViewSwitchItem(
+              label: firstLabel,
+              selected: !history,
+              onTap: () => onChanged(false),
+            ),
+          ),
+          Expanded(
+            child: _LeaveViewSwitchItem(
+              label: secondLabel,
+              selected: history,
+              onTap: () => onChanged(true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaveViewSwitchItem extends StatelessWidget {
+  const _LeaveViewSwitchItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .1),
+                    blurRadius: 1.5,
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: selected ? const Color(0xFF0571A6) : const Color(0xFF9CA3AF),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveRequestCard extends StatelessWidget {
+  const _LeaveRequestCard({required this.request});
+
+  final LeaveRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, tint) = switch (request.decision) {
+      LeaveDecision.approved => (
+        'Approved',
+        const Color(0xFF16A34A),
+        const Color(0xFFDCFCE7),
+      ),
+      LeaveDecision.pending => (
+        'Pending',
+        const Color(0xFFFF383C),
+        const Color(0xFFFEE2E2),
+      ),
+      LeaveDecision.declined => (
+        'Declined',
+        const Color(0xFF6B7280),
+        const Color(0xFFF3F4F6),
+      ),
+    };
+    final range = _sameDay(request.start, request.end)
+        ? _short(request.start)
+        : '${_short(request.start)} – ${_short(request.end)}';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${request.type} Leave',
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: tint,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                range,
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                '${request.daysLabel} day${request.days == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickStatsCard extends StatelessWidget {
+  const _QuickStatsCard({required this.label, required this.stats});
+
+  final String label;
+  final List<(String value, String caption, Color color)> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormCard(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .3,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: stats
+              .map(
+                (stat) => Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stat.$1,
+                        style: TextStyle(
+                          color: stat.$3,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        stat.$2,
+                        style: const TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickRequestCard extends StatelessWidget {
+  const _QuickRequestCard({
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.statusColor,
+    this.footerText,
+  });
+
+  final String title;
+  final String subtitle;
+  final String status;
+  final Color statusColor;
+  final String? footerText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                status,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (footerText != null) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                SvgPicture.asset(
+                  'assets/icons/schedule_clock_gray.svg',
+                  width: 14,
+                  height: 14,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  footerText!,
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FormCard extends StatelessWidget {
+  const _FormCard({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _Q.line),
-      borderRadius: BorderRadius.circular(18),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _FormTextArea extends StatelessWidget {
+  const _FormTextArea({
+    required this.controller,
+    this.height,
+    this.hintText = 'Add a reason...',
+  });
+
+  final TextEditingController controller;
+  final double? height;
+  final String hintText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: height == null ? 3 : null,
+        expands: height != null,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Color(0x80111827)),
+          // The wrapping Container already draws the border. `border` alone
+          // doesn't suppress the theme's enabled/focused outlines, which is
+          // what produced a second border inside this one.
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.all(12),
+        ),
+      ),
+    );
+  }
+}
+
+class _FormTextField extends StatelessWidget {
+  const _FormTextField({
+    required this.controller,
+    required this.hintText,
+    this.keyboardType,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputType? keyboardType;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Color(0x80111827)),
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 11,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptUploadField extends StatelessWidget {
+  const _ReceiptUploadField({required this.fileName, required this.onPicked});
+
+  final String? fileName;
+  final ValueChanged<PlatformFile?> onPicked;
+
+  Future<void> _pick(BuildContext context) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty || !context.mounted) return;
+      onPicked(result.files.single);
+    } catch (_) {
+      // File picking was cancelled or unsupported on this platform.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _pick(context),
+      borderRadius: BorderRadius.circular(12),
+      child: CustomPaint(
+        foregroundPainter: const _DashedRoundRectPainter(
+          color: Color(0xFFE5E7EB),
+          radius: 12,
+        ),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SvgPicture.asset(
+                'assets/icons/upload_receipt.svg',
+                width: 16,
+                height: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                fileName ?? 'Upload receipt',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveFieldLabel extends StatelessWidget {
+  const _LeaveFieldLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: Color(0xFF9CA3AF),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: .3,
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveDropdownField extends StatelessWidget {
+  const _LeaveDropdownField({
+    required this.value,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String value;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        height: 41.6,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          value,
+          style: TextStyle(
+            color: filled ? const Color(0xFF111827) : const Color(0xFF9CA3AF),
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LeavePickerSheet extends StatelessWidget {
+  const _LeavePickerSheet({
+    required this.options,
+    required this.selected,
+    this.trailingLabels = const {},
+  });
+
+  final List<String> options;
+  final String? selected;
+
+  /// Optional right-aligned note per option — the leave picker uses it to show
+  /// the remaining balance ("10/12") next to each type.
+  final Map<String, String> trailingLabels;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final option in options) ...[
+              InkWell(
+                onTap: () => Navigator.of(context).pop(option),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          option,
+                          style: TextStyle(
+                            color: const Color(0xFF222222),
+                            fontSize: 16,
+                            fontWeight: option == selected
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                      if (trailingLabels[option] case final label?)
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (option != options.last)
+                const Divider(height: 1, color: Color(0xFFEBEBEB)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveAttachmentField extends StatelessWidget {
+  const _LeaveAttachmentField({required this.fileName, required this.onPicked});
+
+  final String? fileName;
+  final ValueChanged<String?> onPicked;
+
+  Future<void> _pick(BuildContext context) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+      if (result == null || result.files.isEmpty || !context.mounted) return;
+      onPicked(result.files.single.name);
+    } catch (_) {
+      // File picking was cancelled or unsupported on this platform.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _pick(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SvgPicture.asset(
+              'assets/icons/upload_receipt.svg',
+              width: 16,
+              height: 16,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              fileName ?? 'Upload document',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeSectionLabel extends StatelessWidget {
+  const _HomeSectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text.toUpperCase(),
+    style: const TextStyle(
+      color: Color(0xFF717171),
+      fontSize: 12,
+      fontWeight: FontWeight.w800,
+      letterSpacing: .9,
     ),
-    clipBehavior: Clip.antiAlias,
-    child: Column(children: children),
   );
 }
 
-class _GroupedActionRow extends StatelessWidget {
-  const _GroupedActionRow({
+class _HomeAttendanceCard extends StatelessWidget {
+  const _HomeAttendanceCard({
+    required this.date,
+    required this.punchIn,
+    required this.punchOut,
+    required this.expectedOut,
+    required this.progress,
+    required this.needsCorrection,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
+  final DateTime? expectedOut;
+  final double progress;
+  final bool needsCorrection;
+  final VoidCallback onTap;
+
+  static String _clock(DateTime? value) {
+    if (value == null) return '-';
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFEBEBEB)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF7F7F9),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: SvgPicture.asset(
+                      'assets/icons/attendance_card_small_icon.svg',
+                      width: 18,
+                      height: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Attendance',
+                    style: TextStyle(
+                      color: Color(0xFF222222),
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                SvgPicture.asset(
+                  'assets/icons/chevron_right_expand.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: const ColorFilter.mode(
+                    Color(0xFF717171),
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${date.day} ${_monthName(date.month)} ${date.year}',
+              style: const TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: const Color(0xFFEBEBEB),
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  _clock(punchIn),
+                  style: const TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  expectedOut == null ? '-' : _clock(expectedOut),
+                  style: const TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PUNCH-IN',
+                        style: TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .6,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _clock(punchIn),
+                        style: const TextStyle(
+                          color: Color(0xFF222222),
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(width: 1, height: 32, color: const Color(0xFFEBEBEB)),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PUNCH-OUT',
+                        style: TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .6,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _clock(punchOut),
+                        style: const TextStyle(
+                          color: Color(0xFF222222),
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (needsCorrection) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Attendance correction required for few dates. Please regularize to avoid loss of pay.',
+                style: TextStyle(
+                  color: Color(0xFFFF383C),
+                  fontSize: 12.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeActionCard extends StatelessWidget {
+  const _HomeActionCard({
     required this.icon,
     required this.color,
     required this.tint,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.last = false,
+    this.imageAsset,
   });
 
   final IconData icon;
@@ -2476,98 +4461,61 @@ class _GroupedActionRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool last;
+  final String? imageAsset;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-      decoration: BoxDecoration(
-        border: last ? null : const Border(bottom: BorderSide(color: _Q.line)),
-      ),
-      child: Row(
-        children: [
-          _IconTile(icon: icon, color: color, tint: tint, size: 40),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: _QText.cardTitle),
-                const SizedBox(height: 2),
-                Text(subtitle, style: _QText.cardSubtitleFaint),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: _Q.inkFaint, size: 20),
-        ],
-      ),
-    ),
-  );
-}
-
-class _RequestGroup extends StatelessWidget {
-  const _RequestGroup({required this.children});
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _Q.line),
+  Widget build(BuildContext context) {
+    return InkWell(
       borderRadius: BorderRadius.circular(18),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Column(children: children),
-  );
-}
-
-class _StatStrip extends StatelessWidget {
-  const _StatStrip({required this.stats});
-  final List<(String, String, Color)> stats;
-
-  @override
-  Widget build(BuildContext context) => _PaperCard(
-    child: Row(
-      children: stats.indexed.map((entry) {
-        final stat = entry.$2;
-        return Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              border: entry.$1 == 0
-                  ? null
-                  : const Border(left: BorderSide(color: _Q.line)),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFEBEBEB)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-            child: Column(
-              children: [
-                Text(
-                  stat.$1,
-                  style: TextStyle(
-                    color: stat.$3,
-                    fontSize: 22,
-                    height: 1,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  stat.$2,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _Q.inkFaint,
-                    fontSize: 11,
-                    height: 1.25,
-                  ),
-                ),
-              ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _IconTile(
+              icon: icon,
+              color: color,
+              tint: tint,
+              size: 38,
+              imageAsset: imageAsset,
             ),
-          ),
-        );
-      }).toList(),
-    ),
-  );
+            const SizedBox(height: 10),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF717171), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SingleActionFooter extends StatelessWidget {
@@ -2585,7 +4533,6 @@ class _SingleActionFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
     top: false,
-    bottom: false,
     child: Container(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
       decoration: const BoxDecoration(
@@ -2678,84 +4625,19 @@ class _ActionCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded, color: _Q.inkFaint),
+                SvgPicture.asset(
+                  'assets/icons/chevron_right_expand.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: const ColorFilter.mode(
+                    _Q.inkFaint,
+                    BlendMode.srcIn,
+                  ),
+                ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _RequestRow extends StatelessWidget {
-  const _RequestRow(
-    this.title,
-    this.subtitle,
-    this.status, {
-    this.statusLabel,
-    this.icon,
-    this.color = _Q.terra,
-    this.tint = _Q.terraTint,
-    this.last = true,
-  });
-
-  final String title;
-  final String subtitle;
-  final String status;
-  // Optional display text (e.g. "Approved by admin"); color still keys off `status`.
-  final String? statusLabel;
-  final IconData? icon;
-  final Color color;
-  final Color tint;
-  final bool last;
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor = switch (status) {
-      'Approved' || 'Paid' => _Q.teal,
-      'Declined' => _Q.live,
-      'Holiday' => _Q.plum,
-      _ => _Q.gold,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: last ? null : const Border(bottom: BorderSide(color: _Q.line)),
-      ),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            _IconTile(icon: icon!, color: color, tint: tint, size: 38),
-            const SizedBox(width: 13),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: _QText.cardTitle),
-                const SizedBox(height: 3),
-                Text(subtitle, style: _QText.cardSubtitle),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              statusLabel ?? status,
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2974,289 +4856,6 @@ class _CalendarArrow extends StatelessWidget {
   );
 }
 
-class _LeaveSheetResult {
-  const _LeaveSheetResult(this.type, this.note);
-  final String type;
-  final String note;
-}
-
-class _LeaveApplySheet extends StatefulWidget {
-  const _LeaveApplySheet({
-    required this.dashboard,
-    required this.from,
-    required this.to,
-    this.initial,
-  });
-  final ManagerDashboard dashboard;
-  final DateTime from;
-  final DateTime to;
-  final _LeaveSheetResult? initial;
-
-  @override
-  State<_LeaveApplySheet> createState() => _LeaveApplySheetState();
-}
-
-class _LeaveApplySheetState extends State<_LeaveApplySheet> {
-  String? _type;
-  final _note = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    final initial = widget.initial;
-    if (initial != null) {
-      _type = '${initial.type} leave';
-      _note.text = initial.note;
-    }
-  }
-
-  @override
-  void dispose() {
-    _note.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final days = widget.to.difference(widget.from).inDays + 1;
-    final options = <_FlowOption>[
-      _FlowOption('Sick leave', Icons.thermostat_rounded),
-      _FlowOption('Casual leave', Icons.coffee_rounded),
-      _FlowOption('Earned leave', Icons.flight_takeoff_rounded),
-    ];
-    final range = _sameDay(widget.from, widget.to)
-        ? _short(widget.from)
-        : '${_short(widget.from)} – ${_short(widget.to)}';
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * .9,
-        ),
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: _Q.line,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Apply for leave', style: _QText.topbar),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: _Q.terraTint,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.event_available_rounded,
-                      color: _Q.terra,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 9),
-                    Text(
-                      '$range · $days day${days == 1 ? '' : 's'}',
-                      style: _QText.cardTitle,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _SectionLabel('Leave type'),
-              const SizedBox(height: 9),
-              ...options.map(
-                (option) => Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: _ChoiceCard(
-                    option: option,
-                    selected: _type == option.label,
-                    color: _Q.terra,
-                    onTap: () => setState(() => _type = option.label),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const _SectionLabel('Note · optional'),
-              const SizedBox(height: 9),
-              TextField(
-                controller: _note,
-                decoration: const InputDecoration(
-                  hintText: 'e.g. Family function out of town…',
-                  fillColor: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _Q.terra,
-                    disabledBackgroundColor: _Q.line,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
-                  onPressed: _type == null
-                      ? null
-                      : () => Navigator.pop(
-                          context,
-                          _LeaveSheetResult(
-                            _type!.replaceAll(' leave', ''),
-                            _note.text.trim(),
-                          ),
-                        ),
-                  child: Text(
-                    _type == null ? 'Choose a leave type' : 'Review request',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LeaveConfirmationSheet extends StatelessWidget {
-  const _LeaveConfirmationSheet({
-    required this.dashboard,
-    required this.from,
-    required this.to,
-    required this.result,
-  });
-
-  final ManagerDashboard dashboard;
-  final DateTime from;
-  final DateTime to;
-  final _LeaveSheetResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    final days = to.difference(from).inDays + 1;
-    final range = _sameDay(from, to)
-        ? _short(from)
-        : '${_short(from)} – ${_short(to)}';
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: _Q.line,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Confirm leave request', style: _QText.topbar),
-            const SizedBox(height: 6),
-            Text(
-              'Review the details before sending this to ${dashboard.approverName}.',
-              style: _QText.subtitle,
-            ),
-            const SizedBox(height: 18),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _Q.terraTint,
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.event_available_rounded, color: _Q.terra),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '$range · $days day${days == 1 ? '' : 's'}',
-                      style: _QText.cardTitle,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ConfirmationRow(label: 'Leave type', value: result.type),
-            _ConfirmationRow(label: 'Approver', value: dashboard.approverName),
-            if (result.note.isNotEmpty)
-              _ConfirmationRow(label: 'Note', value: result.note),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Go back'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: _Q.terra),
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Send request'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConfirmationRow extends StatelessWidget {
-  const _ConfirmationRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 92, child: Text(label, style: _QText.mini)),
-        Expanded(child: Text(value, style: _QText.cardTitle)),
-      ],
-    ),
-  );
-}
-
 class _UploadCard extends StatelessWidget {
   const _UploadCard({
     required this.color,
@@ -3411,7 +5010,6 @@ class _WizardFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      bottom: false,
       child: Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
@@ -3500,31 +5098,31 @@ class _IconTile extends StatelessWidget {
     required this.color,
     required this.tint,
     this.size = 44,
+    this.imageAsset,
   });
   final IconData icon;
   final Color color;
   final Color tint;
   final double size;
+  final String? imageAsset;
 
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
     decoration: BoxDecoration(
-      color: tint,
+      // The illustrated icons carry their own colour, so they sit on white;
+      // only the flat glyph icons need a tinted plate behind them.
+      color: imageAsset != null ? Colors.white : tint,
       borderRadius: BorderRadius.circular(13),
     ),
-    child: Icon(icon, color: color, size: 22),
+    child: imageAsset != null
+        ? Padding(
+            padding: const EdgeInsets.all(5),
+            child: Image.asset(imageAsset!, fit: BoxFit.contain),
+          )
+        : Icon(icon, color: color, size: 22),
   );
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(text.toUpperCase(), style: _QText.section);
 }
 
 enum _StepKind { choice, dates, date, text, upload }
@@ -3727,7 +5325,6 @@ class _Q {
   static const plumTint = Color(0xFFEEE6F0);
   static const sage = Color(0xFF4C5840);
   static const sageTint = Color(0xFFE7EFE4);
-  static const live = Color(0xFFC0392B);
 }
 
 class _QText {
@@ -3736,12 +5333,6 @@ class _QText {
     fontSize: 11,
     fontWeight: FontWeight.w800,
     letterSpacing: 1.45,
-  );
-  static const hero = TextStyle(
-    color: _Q.ink,
-    fontSize: 29,
-    fontWeight: FontWeight.w800,
-    letterSpacing: -0.8,
   );
   static const heroSmall = TextStyle(
     color: _Q.ink,
@@ -3823,6 +5414,21 @@ String _monthName(int month) {
   return months[month - 1];
 }
 
+bool matchesAttendanceFilter(AttendanceKind kind, AttendanceFilter? filter) {
+  if (filter == null) return true;
+  return switch (filter) {
+    AttendanceFilter.present => kind == AttendanceKind.present,
+    AttendanceFilter.late => false,
+    AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
+    AttendanceFilter.leave => kind == AttendanceKind.leaveApproved,
+    AttendanceFilter.leaveApplied => kind == AttendanceKind.leavePending,
+    AttendanceFilter.correction => kind == AttendanceKind.attention,
+    AttendanceFilter.correctionAwaits =>
+      kind == AttendanceKind.regularizationPending,
+    AttendanceFilter.holiday => kind == AttendanceKind.holiday,
+  };
+}
+
 bool _sameDay(DateTime? a, DateTime? b) =>
     a != null &&
     b != null &&
@@ -3848,12 +5454,6 @@ String _decision(LeaveDecision decision) => switch (decision) {
   LeaveDecision.declined => 'Declined',
   LeaveDecision.pending => 'Pending',
 };
-
-String _number(double value) {
-  return value == value.roundToDouble()
-      ? value.toInt().toString()
-      : value.toStringAsFixed(1);
-}
 
 String _money(double value) {
   final digits = value.round().toString();

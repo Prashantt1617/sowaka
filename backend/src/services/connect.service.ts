@@ -3,9 +3,12 @@ import { connectPosts, gameScores, users } from '../config/db';
 import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
+import { fetchLinkPreview } from './link-preview.service';
 import {
   deleteConnectMedia,
   presignConnectMedia,
+  resolveProfilePhoto,
   type ConnectMediaFile,
   uploadConnectMedia,
 } from './s3-connect-media.service';
@@ -19,6 +22,25 @@ export class ConnectError extends Error {
   }
 }
 
+/**
+ * Tells every other client in the post's audience that it changed. Fire-and-
+ * forget: a realtime hiccup must never fail the write that already succeeded.
+ */
+function announceChange(
+  post: Pick<ConnectPost, 'id' | 'org' | 'audience'>,
+  action: ConnectChangeAction,
+  actorUserId?: string,
+): void {
+  emitConnectChange({
+    postId: post.id,
+    action,
+    actorUserId,
+    org: post.org,
+    teamId: post.audience.teamId,
+    department: post.audience.department,
+  });
+}
+
 export async function getConnectFeed(viewerUserId: string) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
@@ -29,7 +51,13 @@ export async function getConnectFeed(viewerUserId: string) {
     .find({
       org,
       $or: [
-        { 'audience.department': { $exists: false } },
+        // MongoDB's driver stores `undefined` as BSON null rather than
+        // dropping the key, so company-wide posts persist with an explicit
+        // null — querying for `null` matches both that and a genuinely
+        // missing field, unlike `$exists: false`.
+        { 'audience.teamId': null, 'audience.department': null },
+        { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
+        // Posts written while Team meant "same department".
         { 'audience.department': viewer.department },
       ],
     })
@@ -37,7 +65,40 @@ export async function getConnectFeed(viewerUserId: string) {
     .limit(50)
     .toArray();
 
-  return Promise.all(posts.map((post) => viewPost(post, viewerUserId)));
+  // `post.author.photoUrl` is a snapshot frozen at creation time (see
+  // `createConnectPost`), so a post predates whatever profile photo its
+  // author later uploads. Resolve the live photo for everyone shown in this
+  // page in one query rather than trusting the stale snapshot.
+  const authorIds = [
+    ...new Set(posts.map((post) => post.author.userId).filter((id): id is string => Boolean(id))),
+  ];
+  const authors = await users()
+    .find({ userId: { $in: authorIds } })
+    .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      userId: 1,
+      profilePhotoKey: 1,
+      profilePhotoUrl: 1,
+    })
+    .toArray();
+  const authorPhotoUrls = new Map(
+    await Promise.all(
+      authors.map(
+        async (author) =>
+          [author.userId, await resolveProfilePhoto(author)] as [string, string | undefined],
+      ),
+    ),
+  );
+
+  return Promise.all(posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls)));
+}
+
+/**
+ * One post rendered for one viewer. Clients call this after a realtime change
+ * notice rather than refetching the whole feed for a single edited post.
+ */
+export async function getConnectPost(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  return viewPost(post, viewerUserId);
 }
 
 export async function toggleConnectReaction(viewerUserId: string, postId: string) {
@@ -53,21 +114,34 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
       viewer?.name ?? 'Someone', '', { destination: 'connect_post', postId: post.id });
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
-export async function addConnectComment(viewerUserId: string, postId: string, textInput: string) {
+export async function addConnectComment(
+  viewerUserId: string,
+  postId: string,
+  textInput: string,
+  parentId?: string,
+) {
   const post = await requireVisiblePost(viewerUserId, postId);
   const viewer = await users().findOne({ userId: viewerUserId });
   const text = textInput.trim();
   if (text.length < 1) throw new ConnectError(400, 'Comment cannot be empty');
   if (text.length > 500) throw new ConnectError(400, 'Comment is too long');
+  if (parentId) {
+    const parent = post.comments.find((existing) => existing.id === parentId);
+    if (!parent) throw new ConnectError(400, 'Reply target not found');
+    if (parent.parentId) throw new ConnectError(400, 'Cannot reply to a reply');
+  }
   const comment = {
     id: randomUUID(),
     userId: viewerUserId,
     name: viewer?.name ?? 'Teammate',
     text,
     createdAt: new Date(),
+    likedBy: [] as string[],
+    ...(parentId ? { parentId } : {}),
   };
   await connectPosts().updateOne(
     { id: post.id },
@@ -81,6 +155,27 @@ export async function addConnectComment(viewerUserId: string, postId: string, te
     });
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+export async function toggleConnectCommentReaction(
+  viewerUserId: string,
+  postId: string,
+  commentId: string,
+) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  const comment = post.comments.find((item) => item.id === commentId);
+  if (!comment) throw new ConnectError(404, 'Comment not found');
+  const liked = (comment.likedBy ?? []).includes(viewerUserId);
+  const update = liked
+    ? { $pull: { 'comments.$[c].likedBy': viewerUserId } }
+    : { $addToSet: { 'comments.$[c].likedBy': viewerUserId } };
+  await connectPosts().updateOne({ id: postId }, update, {
+    arrayFilters: [{ 'c.id': commentId }],
+  });
+  const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -122,14 +217,32 @@ export async function performConnectAction(
     }
   }
   const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
 export interface ConnectPostInput {
   type?: string;
   body?: Record<string, unknown>;
-  media?: ConnectMediaFile;
+  media?: ConnectMediaFile[];
+  pollOptionImages?: ConnectMediaFile[];
+  /// Option index each entry in `pollOptionImages` belongs to, since options
+  /// without an image are skipped on upload rather than sent as a gap.
+  pollOptionImageIndexes?: number[];
   removeMedia?: boolean;
+}
+
+function sparsePollImageKeys(
+  uploaded: UploadedMedia[],
+  indexes: number[] | undefined,
+): (string | undefined)[] {
+  if (uploaded.length === 0) return [];
+  const keys: (string | undefined)[] = [];
+  uploaded.forEach((media, i) => {
+    const optionIndex = indexes?.[i] ?? i;
+    keys[optionIndex] = media.objectKey;
+  });
+  return keys;
 }
 
 export async function createConnectPost(viewerUserId: string, input: ConnectPostInput) {
@@ -138,41 +251,45 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const type = parsePostType(input.type);
   const now = new Date();
   const meta = postMeta(type);
-  const normalizedBody = normalizePostBody(type, input.body ?? {});
-  const visibility = visibilityFromBody(type, normalizedBody, viewer);
-  const uploadedMedia = input.media
-    ? await storeConnectMedia(viewerUserId, input.media)
-    : undefined;
-  const post: ConnectPost = {
-    id: randomUUID(),
-    org: orgForUser(viewer),
-    type,
-    tag: meta.tag,
-    tagIcon: meta.tagIcon,
-    tagColor: meta.tagColor,
-    tagTint: meta.tagTint,
-    author: authorForUser(viewer),
-    audience: {
-      label: visibility.label,
-      org: orgForUser(viewer),
-      department: visibility.department,
-    },
-    body: withMedia(normalizedBody, uploadedMedia),
-    likedBy: [],
-    comments: [],
-    actionBy: {},
-    pollVotes: {},
-    publishedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
+  const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
   try {
+    const normalizedBody = normalizePostBody(
+      type,
+      input.body ?? {},
+      sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes),
+    );
+    const enrichedBody =
+      type === 'recommendation' ? await withLinkPreview(normalizedBody) : normalizedBody;
+    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
+    const post: ConnectPost = {
+      id: randomUUID(),
+      org: orgForUser(viewer),
+      type,
+      tag: meta.tag,
+      tagIcon: meta.tagIcon,
+      tagColor: meta.tagColor,
+      tagTint: meta.tagTint,
+      author: authorForUser(viewer),
+      audience: {
+        label: visibility.label,
+        org: orgForUser(viewer),
+        teamId: visibility.teamId,
+      },
+      body: withMedia(enrichedBody, uploadedMedia),
+      likedBy: [],
+      comments: [],
+      actionBy: {},
+      pollVotes: {},
+      publishedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
     await connectPosts().insertOne(post);
+    announceChange(post, 'created', viewerUserId);
     return viewPost(post, viewerUserId);
   } catch (error) {
-    if (uploadedMedia) {
-      await deleteConnectMedia(uploadedMedia.objectKey).catch(() => undefined);
-    }
+    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
     throw error;
   }
 }
@@ -185,42 +302,55 @@ export async function updateConnectPost(
   const { post, viewer } = await requireEditablePost(viewerUserId, postId);
   const type = parsePostType(input.type ?? post.type);
   const meta = postMeta(type);
-  const normalizedBody = normalizePostBody(type, input.body ?? post.body);
-  const visibility = visibilityFromBody(type, normalizedBody, viewer);
-  const uploadedMedia = input.media
-    ? await storeConnectMedia(viewerUserId, input.media)
-    : undefined;
-  const existingMediaObjectKey = mediaObjectKey(post.body);
-  const body = input.removeMedia
-    ? withoutMedia(normalizedBody)
-    : withMedia(normalizedBody, uploadedMedia ?? mediaFromBody(post.body));
-  const update = {
-    $set: {
-      type,
-      tag: meta.tag,
-      tagIcon: meta.tagIcon,
-      tagColor: meta.tagColor,
-      tagTint: meta.tagTint,
-      audience: {
-        label: visibility.label,
-        org: post.org,
-        department: visibility.department,
-      },
-      body,
-      updatedAt: new Date(),
-    },
-  };
+  const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
+  const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
   try {
+    const normalizedBody = normalizePostBody(
+      type,
+      input.body ?? post.body,
+      uploadedPollImages.length > 0
+        ? sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes)
+        : existingPollImageKeys(post.body),
+    );
+    const enrichedBody =
+      type === 'recommendation'
+        ? await withLinkPreview(normalizedBody, post.body.linkUrl as string | undefined)
+        : normalizedBody;
+    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
+    const existingMediaObjectKeys = mediaObjectKeys(post.body);
+    const body = input.removeMedia
+      ? withoutMedia(enrichedBody)
+      : withMedia(
+          enrichedBody,
+          uploadedMedia.length > 0 ? uploadedMedia : mediaFromBody(post.body),
+        );
+    const update = {
+      $set: {
+        type,
+        tag: meta.tag,
+        tagIcon: meta.tagIcon,
+        tagColor: meta.tagColor,
+        tagTint: meta.tagTint,
+        audience: {
+          label: visibility.label,
+          org: post.org,
+          teamId: visibility.teamId,
+        },
+        body,
+        updatedAt: new Date(),
+      },
+    };
     await connectPosts().updateOne({ id: post.id }, update);
-    if ((uploadedMedia || input.removeMedia) && existingMediaObjectKey) {
-      await deleteConnectMedia(existingMediaObjectKey).catch(() => undefined);
+    if ((uploadedMedia.length > 0 || input.removeMedia) && existingMediaObjectKeys.length > 0) {
+      await deleteConnectMediaByKeys(existingMediaObjectKeys);
     }
     const updated = await connectPosts().findOne({ id: post.id });
+    // Audience can change on edit, so announce against the saved post: a now
+    // department-scoped post must not keep reaching the whole org.
+    announceChange(updated ?? post, 'updated', viewer.userId);
     return viewPost(updated ?? post, viewer.userId);
   } catch (error) {
-    if (uploadedMedia) {
-      await deleteConnectMedia(uploadedMedia.objectKey).catch(() => undefined);
-    }
+    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
     throw error;
   }
 }
@@ -228,8 +358,8 @@ export async function updateConnectPost(
 export async function deleteConnectPost(viewerUserId: string, postId: string) {
   const { post } = await requireEditablePost(viewerUserId, postId);
   await connectPosts().deleteOne({ id: post.id });
-  const objectKey = mediaObjectKey(post.body);
-  if (objectKey) await deleteConnectMedia(objectKey).catch(() => undefined);
+  await deleteConnectMediaByKeys(mediaObjectKeys(post.body));
+  announceChange(post, 'deleted', viewerUserId);
   return { id: post.id };
 }
 
@@ -238,8 +368,11 @@ async function requireVisiblePost(viewerUserId: string, postId: string) {
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
-  const department = post.audience.department;
-  if (department && department !== viewer.department) {
+  const { teamId, department } = post.audience;
+  const visible = teamId
+    ? visibleTeamIds(viewer).includes(teamId)
+    : !department || department === viewer.department;
+  if (!visible) {
     throw new ConnectError(403, 'Post is not visible to you');
   }
   return post;
@@ -256,26 +389,75 @@ async function requireEditablePost(viewerUserId: string, postId: string) {
   return { post, viewer };
 }
 
-async function viewPost(post: ConnectPost, viewerUserId: string) {
+async function viewPost(
+  post: ConnectPost,
+  viewerUserId: string,
+  authorPhotoUrls?: Map<string, string | undefined>,
+) {
+  let authorPhotoUrl = post.author.photoUrl;
+  if (post.author.userId) {
+    if (authorPhotoUrls) {
+      if (authorPhotoUrls.has(post.author.userId)) {
+        authorPhotoUrl = authorPhotoUrls.get(post.author.userId);
+      }
+    } else {
+      const authorUser = await users().findOne(
+        { userId: post.author.userId },
+        { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+      );
+      if (authorUser) authorPhotoUrl = await resolveProfilePhoto(authorUser);
+    }
+  }
   const liked = post.likedBy.includes(viewerUserId);
   const pollVotes = post.pollVotes ?? {};
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
   const actionValue = post.actionBy?.[viewerUserId] ?? null;
   const body = { ...post.body };
-  const objectKey = mediaObjectKey(body);
-  if (objectKey) {
-    body.mediaUrl = await presignConnectMedia(objectKey).catch(() => undefined);
+  // Lifecycle posts (birthday/anniversary/new joinee) reference the subject's
+  // photo by key so the post document stays small; resolve it per read.
+  if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
+    body.photoUrl = await presignConnectMedia(body.photoKey).catch(() => undefined);
+  }
+  // Tags store ids only, so a tagged person's name and photo are always
+  // current rather than frozen at the moment the post was written.
+  if (Array.isArray(body.taggedUserIds) && body.taggedUserIds.length > 0) {
+    body.taggedPeople = await resolveTaggedPeople(body.taggedUserIds as string[]);
+  }
+  const objectKeys = mediaObjectKeys(body);
+  if (objectKeys.length > 0) {
+    const urls = await Promise.all(
+      objectKeys.map((key) => presignConnectMedia(key).catch(() => undefined)),
+    );
+    body.mediaUrl = urls[0];
+    body.mediaUrls = urls;
   }
   if (post.type === 'survey') {
-    const options = (post.body.options as Array<{ id: string; label: string; votes: number }>).map(
-      (option) => {
+    const options = await Promise.all(
+      (
+        post.body.options as Array<{
+          id: string;
+          label: string;
+          votes: number;
+          imageObjectKey?: string;
+        }>
+      ).map(async (option) => {
         const liveVotes =
           option.votes + Object.values(pollVotes).filter((vote) => vote === option.id).length;
-        return { ...option, votes: liveVotes };
-      },
+        const imageUrl = option.imageObjectKey
+          ? await presignConnectMedia(option.imageObjectKey).catch(() => undefined)
+          : undefined;
+        return { ...option, votes: liveVotes, imageUrl };
+      }),
     );
     body.options = options;
     body.totalVotes = options.reduce((sum, option) => sum + option.votes, 0);
+  }
+  if (post.type === 'event') {
+    // Registered count is never user-entered — it's however many viewers have
+    // taken the "Register" action, the same actionBy map RSVP/wish-style
+    // posts already use, plus whatever baseline the seed data carries.
+    const baseCount = typeof body.baseCount === 'number' ? body.baseCount : 0;
+    body.registeredCount = baseCount + Object.keys(post.actionBy ?? {}).length;
   }
   if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
@@ -290,9 +472,17 @@ async function viewPost(post: ConnectPost, viewerUserId: string) {
       score: entry.score,
     }));
   }
+  const comments = post.comments.map((comment) => ({
+    ...comment,
+    likedBy: comment.likedBy ?? [],
+    likeCount: (comment.likedBy ?? []).length,
+    liked: (comment.likedBy ?? []).includes(viewerUserId),
+  }));
   return {
     ...post,
+    author: { ...post.author, photoUrl: authorPhotoUrl },
     body,
+    comments,
     liked,
     likeCount: post.likedBy.length,
     commentCount: post.comments.length,
@@ -312,7 +502,10 @@ function authorForUser(user: User) {
     initials: initialsFor(user.name),
     designation: user.designation ?? user.role ?? 'Teammate',
     avatarColor: avatarColorFor(user.userId),
-    photoUrl: user.profilePhotoUrl,
+    // Deliberately no photo snapshot: `viewPost` resolves the author's live
+    // photo on every read, so embedding one here only bloated every post
+    // document with a copy of the image.
+    photoUrl: undefined as string | undefined,
   };
 }
 
@@ -350,7 +543,11 @@ function parsePostType(value: string | undefined): ConnectPostType {
   throw new ConnectError(400, 'Post type is invalid');
 }
 
-function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>) {
+function normalizePostBody(
+  type: ConnectPostType,
+  input: Record<string, unknown>,
+  pollOptionImageKeys: (string | undefined)[] = [],
+) {
   switch (type) {
     case 'leadership':
       return {
@@ -374,6 +571,7 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
         linkDomain: normalizeText(input.linkDomain, '', 120),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        taggedUserIds: normalizeTaggedUserIds(input.taggedUserIds),
       };
     case 'recommendation':
       return {
@@ -384,15 +582,23 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
         linkUrl: normalizeText(input.linkUrl, '', 300),
         linkTitle: normalizeText(input.linkTitle, '', 160),
         linkDomain: normalizeText(input.linkDomain, '', 120),
+        // Filled in by `withLinkPreview` after normalization.
+        linkImageUrl: normalizeText(input.linkImageUrl, '', 600),
       };
-    case 'hr_announcement':
+    case 'hr_announcement': {
+      const requireAcknowledgement = input.requireAcknowledgement === true;
       return {
         title: normalizeText(input.title, 'Announcement', 80),
         text: normalizeText(input.text, '', 1000),
         severity: normalizeAnnouncementSeverity(input.severity),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        requireAcknowledgement,
+        acknowledgementMessage: requireAcknowledgement
+          ? normalizeText(input.acknowledgementMessage, '', 300)
+          : '',
       };
+    }
     case 'kudos':
       return {
         text: normalizeText(input.text, '', 700),
@@ -403,7 +609,7 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
       return {
         title: normalizeText(input.title, '', 160),
         totalVotes: 0,
-        options: normalizePollOptions(input.options),
+        options: normalizePollOptions(input.options, pollOptionImageKeys),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
       };
@@ -431,25 +637,43 @@ function normalizePostBody(type: ConnectPostType, input: Record<string, unknown>
   }
 }
 
-async function storeConnectMedia(userId: string, media: ConnectMediaFile) {
+type UploadedMedia = { objectKey: string; contentType: string; size: number };
+
+async function storeConnectMediaMany(
+  userId: string,
+  files: ConnectMediaFile[],
+): Promise<UploadedMedia[]> {
   try {
-    return await uploadConnectMedia(userId, media);
+    return await Promise.all(files.map((file) => uploadConnectMedia(userId, file)));
   } catch {
     throw new ConnectError(503, 'Media storage is unavailable');
   }
 }
 
-function withMedia(
-  body: Record<string, unknown>,
-  media: { objectKey: string; contentType: string; size: number } | undefined,
-) {
-  if (!media) return body;
+async function deleteConnectMediaMany(media: (UploadedMedia | undefined)[]) {
+  await deleteConnectMediaByKeys(
+    media.filter((item): item is UploadedMedia => Boolean(item)).map((item) => item.objectKey),
+  );
+}
+
+async function deleteConnectMediaByKeys(objectKeys: string[]) {
+  await Promise.all(objectKeys.map((key) => deleteConnectMedia(key).catch(() => undefined)));
+}
+
+/// A single post can carry multiple images/videos (up to 6) — `mediaObjectKeys`
+/// is the source of truth; `mediaObjectKey`/`mediaContentType`/`mediaSize`
+/// mirror the first item for any code still reading the old singular fields.
+function withMedia(body: Record<string, unknown>, media: UploadedMedia[]) {
+  if (media.length === 0) return body;
+  const first = media[0];
   return {
     ...body,
-    mediaKind: media.contentType.startsWith('video/') ? 'video' : 'image',
-    mediaObjectKey: media.objectKey,
-    mediaContentType: media.contentType,
-    mediaSize: media.size,
+    mediaKind: first.contentType.startsWith('video/') ? 'video' : 'image',
+    mediaObjectKey: first.objectKey,
+    mediaContentType: first.contentType,
+    mediaSize: first.size,
+    mediaObjectKeys: media.map((item) => item.objectKey),
+    mediaContentTypes: media.map((item) => item.contentType),
   };
 }
 
@@ -458,25 +682,80 @@ function withoutMedia(body: Record<string, unknown>) {
   delete next.mediaObjectKey;
   delete next.mediaContentType;
   delete next.mediaSize;
+  delete next.mediaObjectKeys;
+  delete next.mediaContentTypes;
   if (next.mediaKind === 'image' || next.mediaKind === 'video') next.mediaKind = 'none';
   return next;
 }
 
-function mediaObjectKey(body: Record<string, unknown>) {
-  const value = body.mediaObjectKey;
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+function mediaObjectKeys(body: Record<string, unknown>): string[] {
+  const many = body.mediaObjectKeys;
+  if (Array.isArray(many)) {
+    return many.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  }
+  const single = body.mediaObjectKey;
+  return typeof single === 'string' && single.trim().length > 0 ? [single] : [];
 }
 
-function mediaFromBody(body: Record<string, unknown>) {
-  const objectKey = mediaObjectKey(body);
-  const contentType = typeof body.mediaContentType === 'string' ? body.mediaContentType : '';
+function mediaFromBody(body: Record<string, unknown>): UploadedMedia[] {
+  const keys = mediaObjectKeys(body);
+  const contentTypes = Array.isArray(body.mediaContentTypes)
+    ? (body.mediaContentTypes as unknown[])
+    : [body.mediaContentType];
   const size = typeof body.mediaSize === 'number' ? body.mediaSize : 0;
-  return objectKey ? { objectKey, contentType, size } : undefined;
+  return keys.map((objectKey, index) => ({
+    objectKey,
+    contentType: typeof contentTypes[index] === 'string' ? (contentTypes[index] as string) : '',
+    size: index === 0 ? size : 0,
+  }));
+}
+
+function existingPollImageKeys(body: Record<string, unknown>): (string | undefined)[] {
+  const options = Array.isArray(body.options) ? body.options : [];
+  return options.map((option) =>
+    option && typeof option === 'object' && typeof (option as { imageObjectKey?: unknown }).imageObjectKey === 'string'
+      ? ((option as { imageObjectKey?: string }).imageObjectKey as string)
+      : undefined,
+  );
 }
 
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
   const text = typeof value === 'string' ? value.trim() : fallback;
   return (text || fallback).slice(0, maxLength);
+}
+
+/** Ids of people tagged in a media post. Deduped and capped; names and photos
+ * are resolved per read so a tag never shows a stale name. */
+/** Names and photos for the people tagged in a post, in the order tagged. */
+async function resolveTaggedPeople(userIds: string[]) {
+  const tagged = await users()
+    .find({ userId: { $in: userIds } })
+    .project<{ userId: string; name: string; designation?: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+    })
+    .toArray();
+  const byId = new Map(tagged.map((person) => [person.userId, person]));
+  const resolved = await Promise.all(
+    // Preserve the author's ordering, and drop anyone since offboarded or deleted.
+    userIds
+      .map((id) => byId.get(id))
+      .filter((person): person is NonNullable<typeof person> => Boolean(person))
+      .map(async (person) => ({
+        userId: person.userId,
+        name: person.name,
+        designation: person.designation ?? '',
+        photoUrl: await resolveProfilePhoto(person),
+      })),
+  );
+  return resolved;
+}
+
+function normalizeTaggedUserIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id) => id.trim().slice(0, 80));
+  return [...new Set(ids)].slice(0, 20);
 }
 
 function normalizeDepartment(value: unknown) {
@@ -499,24 +778,68 @@ function normalizeAnnouncementSeverity(value: unknown) {
   return normalizeChoice(value, 'plain', ['plain', 'highlight_alert']);
 }
 
-function visibilityFromBody(
+async function visibilityFromBody(
   type: ConnectPostType,
   body: Record<string, unknown>,
   viewer: User,
 ) {
   const canTargetTeam = type === 'hr_announcement' || type === 'survey' || type === 'new_post';
   const sendTo = canTargetTeam ? body.sendTo : undefined;
-  const department =
-    sendTo === 'my_team'
-      ? normalizeDepartment(body.sendToDepartment) ?? normalizeDepartment(viewer.department)
-      : undefined;
+  const teamId = sendTo === 'my_team' ? await teamIdForAuthor(viewer) : undefined;
   return {
-    label: department ? 'Team' : 'Company',
-    department,
+    label: teamId ? 'Team' : 'Public',
+    teamId,
   };
 }
 
-function normalizePollOptions(value: unknown) {
+/**
+ * The reporting group a "Team" post from this author addresses, named by the
+ * manager who heads it.
+ *
+ * A manager posts to the team they lead; anyone else posts to the team they
+ * belong to — their manager's — which is exactly the set of people the Team
+ * tab shows them. Leadership with neither a manager nor reports addresses
+ * themselves, which the caller turns back into a company-wide post.
+ */
+async function teamIdForAuthor(author: User): Promise<string | undefined> {
+  const leadsATeam = await users().countDocuments({ managerUserId: author.userId }, { limit: 1 });
+  if (leadsATeam > 0) return author.userId;
+  return author.managerUserId;
+}
+
+/**
+ * Every reporting group the viewer is part of: the one they lead and the one
+ * they belong to. A Team post is visible when it targets either.
+ */
+function visibleTeamIds(viewer: User): string[] {
+  return [viewer.userId, viewer.managerUserId].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  );
+}
+
+/**
+ * Fills a recommendation's thumbnail and source details from the link itself,
+ * so authors only paste a URL. Re-fetched only when the URL changes.
+ */
+async function withLinkPreview(
+  body: Record<string, unknown>,
+  previousUrl?: string,
+): Promise<Record<string, unknown>> {
+  const linkUrl = typeof body.linkUrl === 'string' ? body.linkUrl.trim() : '';
+  if (!linkUrl) return { ...body, linkImageUrl: '', linkTitle: '', linkDomain: '' };
+  if (linkUrl === previousUrl && typeof body.linkImageUrl === 'string' && body.linkImageUrl) {
+    return body;
+  }
+  const preview = await fetchLinkPreview(linkUrl);
+  return {
+    ...body,
+    linkImageUrl: preview.imageUrl,
+    linkTitle: (body.linkTitle as string) || preview.title,
+    linkDomain: (body.linkDomain as string) || preview.siteName,
+  };
+}
+
+function normalizePollOptions(value: unknown, imageKeys: (string | undefined)[] = []) {
   const raw = Array.isArray(value) ? value : [];
   const labels = raw
     .map((item) => {
@@ -527,9 +850,14 @@ function normalizePollOptions(value: unknown) {
       return '';
     })
     .filter(Boolean)
-    .slice(0, 5);
+    .slice(0, 4);
   if (labels.length < 2) throw new ConnectError(400, 'Survey needs at least two options');
-  return labels.map((label) => ({ id: randomUUID(), label: label.slice(0, 80), votes: 0 }));
+  return labels.map((label, index) => ({
+    id: randomUUID(),
+    label: label.slice(0, 80),
+    votes: 0,
+    ...(imageKeys[index] ? { imageObjectKey: imageKeys[index] } : {}),
+  }));
 }
 
 function postMeta(type: ConnectPostType) {
@@ -577,7 +905,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'V',
       'Co-founder & CEO',
       '#BE5A36',
-      'Company',
+      'Public',
       {
         text: 'We did it, team. Sowaka has been named Best PropTech Company of the Year. This belongs to every single one of you.',
         mediaKind: 'video',
@@ -597,7 +925,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         title: 'Heads up!',
         text: 'There is construction ongoing in the common area. It will not be accessible on 17 June. Please plan accordingly.',
@@ -616,7 +944,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'S',
       'Auto · HRIS',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         personName: 'Sneha Sharma',
         personInitials: 'S',
@@ -637,7 +965,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'S',
       'Auto · HRIS',
       '#4C5840',
-      'Company',
+      'Public',
       {
         personName: 'Rahul Mehta',
         personInitials: 'R',
@@ -667,25 +995,6 @@ function defaultPosts(org: string): ConnectPost[] {
     ),
     post(
       org,
-      'award',
-      'Award',
-      '🏆',
-      '#C98A2E',
-      '#F4ECDD',
-      'Sowaka Connect',
-      'S',
-      'Auto · Recognition',
-      '#C98A2E',
-      'Company',
-      {
-        personName: 'Tara Reddy',
-        title: 'Culture Champion',
-        reason: 'For making new team members feel included from day one.',
-      },
-      156,
-    ),
-    post(
-      org,
       'survey',
       'Survey/Poll',
       '📊',
@@ -695,7 +1004,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         title: 'What should our next learning session be?',
         totalVotes: 97,
@@ -720,7 +1029,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#BE5A36',
-      'Company',
+      'Public',
       {
         title: 'Friday Game Night',
         subtitle: 'Cafeteria · 5:30 PM',
@@ -742,7 +1051,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'G',
       'Auto · Games',
       '#4F8C89',
-      'Company',
+      'Public',
       {
         title: 'Find Your Mate',
         subtitle: 'Match the clue to the teammate it describes before the timer runs out.',
@@ -787,7 +1096,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'M',
       'Design Lead',
       '#4F6F8C',
-      'Company',
+      'Public',
       {
         text: "If you're figuring out how to give feedback that actually lands, this one's worth the 12 minutes.",
         mediaKind: 'video',
@@ -813,7 +1122,7 @@ function post(
   visibilityLabel: string,
   body: Record<string, unknown>,
   baseLikes: number,
-  department?: string,
+  teamId?: string,
 ): ConnectPost {
   return {
     id: randomUUID(),
@@ -824,7 +1133,7 @@ function post(
     tagColor,
     tagTint,
     author: { name: authorName, initials, designation, avatarColor },
-    audience: { label: visibilityLabel, org, department },
+    audience: { label: visibilityLabel, org, teamId },
     body,
     likedBy: Array.from({ length: baseLikes }, (_, index) => `seed-${type}-${index}`),
     comments: [],
@@ -854,7 +1163,7 @@ function systemPost(
   type: 'birthday' | 'anniversary' | 'new_joinee',
   systemKey: string,
   body: Record<string, unknown>,
-  department?: string,
+  teamId?: string,
 ): ConnectPost {
   const now = new Date();
   const meta = postMeta(type);
@@ -865,7 +1174,7 @@ function systemPost(
     type,
     ...meta,
     author: systemAuthor(),
-    audience: { label: department ? 'Team' : 'Company', org, department },
+    audience: { label: teamId ? 'Team' : 'Public', org, teamId },
     body,
     likedBy: [],
     comments: [],
@@ -878,11 +1187,14 @@ function systemPost(
 }
 
 async function insertSystemPost(post: ConnectPost) {
-  await connectPosts().updateOne(
+  const result = await connectPosts().updateOne(
     { systemKey: post.systemKey },
     { $setOnInsert: post },
     { upsert: true },
   );
+  // These run daily and are deliberately repeatable, so only a genuinely new
+  // insert is worth announcing — a no-op upsert would spam every client.
+  if (result.upsertedCount > 0) announceChange(post, 'created');
 }
 
 /** Generate today's birthday and work-anniversary posts, safely repeatable. */
@@ -895,7 +1207,19 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
   const month = part('month');
   const day = part('day');
   const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const employees = await users().find({ lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }).toArray();
+  // Projected: this scans the whole directory daily, and full documents would
+  // pull every profile photo along with it.
+  const employees = await users()
+    .find(
+      { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+      {
+        projection: {
+          userId: 1, name: 1, email: 1, org: 1, birthday: 1, joiningDate: 1,
+          designation: 1, department: 1, role: 1, location: 1, profilePhotoKey: 1,
+        },
+      },
+    )
+    .toArray();
 
   for (const employee of employees) {
     const org = orgForUser(employee);
@@ -903,7 +1227,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
       await insertSystemPost(systemPost(org, 'birthday', `birthday:${employee.userId}:${dateKey}`, {
         personName: employee.name,
         personInitials: initialsFor(employee.name),
-        photoUrl: employee.profilePhotoUrl,
+        photoKey: employee.profilePhotoKey,
         subtitle: `${employee.designation ?? employee.department ?? 'Teammate'} · turns a year wiser today`,
         actionLabel: 'Send wishes',
         actionDoneLabel: 'Wish sent!',
@@ -915,7 +1239,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
         await insertSystemPost(systemPost(org, 'anniversary', `anniversary:${employee.userId}:${dateKey}`, {
           personName: employee.name,
           personInitials: initialsFor(employee.name),
-          photoUrl: employee.profilePhotoUrl,
+          photoKey: employee.profilePhotoKey,
           years,
           subtitle: `${employee.department ?? employee.designation ?? 'Team'} · joined ${employee.joiningDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`,
         }));
@@ -930,7 +1254,7 @@ export async function generateNewJoineePost(employee: User, manager?: User) {
   await insertSystemPost(systemPost(org, 'new_joinee', `new-joinee:${employee.userId}`, {
     personName: employee.name,
     personInitials: initialsFor(employee.name),
-    photoUrl: employee.profilePhotoUrl,
+    photoKey: employee.profilePhotoKey,
     subtitle: `Joining as ${employee.designation ?? 'Teammate'} · Team ${employee.department ?? 'Company'}`,
     facts: [employee.location ? `based in ${employee.location}` : '', employee.joiningDate ? `started ${employee.joiningDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}` : ''].filter(Boolean).join(' · '),
     managerName: manager?.name,
@@ -939,5 +1263,6 @@ export async function generateNewJoineePost(employee: User, manager?: User) {
     managerNote: manager ? `Thrilled to have ${employee.name} join the team. Please say hi and help them feel at home!` : undefined,
     actionLabel: 'Say hi',
     actionDoneLabel: 'Said hi!',
-  }, employee.department));
+    // Scoped to the team the joinee lands in — their manager's reporting group.
+  }, employee.managerUserId));
 }

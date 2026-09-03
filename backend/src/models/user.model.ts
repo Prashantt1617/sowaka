@@ -38,6 +38,13 @@ export interface User {
   endDate?: Date | null;
   documents?: EmployeeDocument[];
   lifecycleStatus: UserLifecycleStatus;
+  /**
+   * Storage key for the profile photo, resolved to a URL per read. Never store
+   * the resolved value here: without S3 it resolves to a `data:` URI hundreds
+   * of KB long, and this document is fetched on every authenticated request.
+   */
+  profilePhotoKey?: string;
+  /** @deprecated Legacy inline `data:` URI — read-only, migrated to `profilePhotoKey`. */
   profilePhotoUrl?: string;
   location?: string;
   state?: string;
@@ -59,6 +66,13 @@ export interface User {
   // Grants access to the HR dashboard (org-wide view + request overrides).
   // Independent of the reporting role — a manager/employee may or may not have it.
   dashboardAccess?: boolean;
+  /**
+   * Per-employee overtime eligibility, set by HR from the dashboard. Absent
+   * means eligible, so existing employees keep the behaviour they had before
+   * this flag existed. Applied on top of the department-level gate
+   * (`Company.overtimeDisabledDepartments`) — either one blocks.
+   */
+  overtimeEligible?: boolean;
   createdAt?: number;
   updatedAt?: Date;
   lastLoginAt?: Date;

@@ -3,8 +3,10 @@ import {
   actOnConnectPost,
   commentOnConnectPost,
   connectFeed,
+  connectPost,
   createPost,
   deletePost,
+  reactToConnectComment,
   reactToConnectPost,
   updatePost,
 } from '../controllers/connect.controller';
@@ -15,11 +17,13 @@ import { playerGame, playerSubmitScore } from '../controllers/game.controller';
 export const connectRouter = Router();
 connectRouter.use(requireAuth);
 connectRouter.get('/feed', connectFeed);
+connectRouter.get('/posts/:postId', connectPost);
 connectRouter.get('/games/:gameId', playerGame);
 connectRouter.post('/games/:gameId/scores', playerSubmitScore);
 connectRouter.post('/posts', uploadConnectPostMedia, createPost);
 connectRouter.post('/posts/:postId/reaction', reactToConnectPost);
 connectRouter.post('/posts/:postId/comments', commentOnConnectPost);
+connectRouter.post('/posts/:postId/comments/:commentId/reaction', reactToConnectComment);
 connectRouter.post('/posts/:postId/actions', actOnConnectPost);
 connectRouter.patch('/posts/:postId', uploadConnectPostMedia, updatePost);
 connectRouter.delete('/posts/:postId', deletePost);

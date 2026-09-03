@@ -4,6 +4,7 @@ import { closeDb, connectDb } from './config/db';
 import { logger } from './utils/logger';
 import { startConnectScheduler, stopConnectScheduler } from './services/connect-scheduler.service';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notification-scheduler.service';
+import { closeConnectRealtime, initConnectRealtime } from './services/connect-realtime.service';
 
 async function start(): Promise<void> {
   await connectDb();
@@ -23,8 +24,11 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     });
   });
 
+  initConnectRealtime(server);
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('Shutdown requested', { signal });
+    closeConnectRealtime();
     server.close();
     stopConnectScheduler();
     stopNotificationScheduler();

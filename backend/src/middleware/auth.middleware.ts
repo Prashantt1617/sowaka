@@ -31,7 +31,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const user = await users().findOne({ userId: session.userId });
+    // Only these three fields gate the request. Profile photos are stored
+    // inline as base64 data URIs (hundreds of KB each), so fetching the whole
+    // document here dragged that payload across the wire on *every* API call.
+    const user = await users().findOne(
+      { userId: session.userId },
+      { projection: { _id: 0, userId: 1, lifecycleStatus: 1, dashboardAccess: 1 } },
+    );
     if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
       logAuthRejection(req, 'Session user is missing or inactive', session.userId);
       res.status(401).json({

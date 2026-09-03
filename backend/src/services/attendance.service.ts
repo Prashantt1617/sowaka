@@ -2,23 +2,33 @@ import { ObjectId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, users } from '../config/db';
 import {
   AttendanceRegularization,
-  RegularizationPeriod,
   RegularizationStatus,
 } from '../models/attendance.model';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const periods = new Set<RegularizationPeriod>(['full_day', 'first_half', 'second_half']);
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
+  const employee = await users().findOne({ userId });
+  if (!employee) throw new AttendanceError(404, 'Employee not found');
+  return getAttendanceForEmployee(userId, employee.employeeId, fromInput, toInput);
+}
+
+// Split out so callers that already have the employee record (e.g.
+// `getTeamMemberAttendance`, which fetches it for the manager-authorization
+// check) don't pay for a second `users().findOne` — each `users` lookup on
+// this cluster runs noticeably slower than the attendance collections'.
+async function getAttendanceForEmployee(
+  userId: string,
+  employeeId: string | undefined,
+  fromInput: string,
+  toInput: string,
+) {
   const from = parseDate(fromInput, 'from');
   const to = parseDate(toInput, 'to');
   if (to < from) throw new AttendanceError(400, 'to cannot be before from');
   if (daysBetween(from, to) > 92) throw new AttendanceError(400, 'Date range cannot exceed 93 days');
 
-  const employee = await users().findOne({ userId });
-  if (!employee) throw new AttendanceError(404, 'Employee not found');
-  const employeeId = employee.employeeId;
   const recordFilter = employeeId
     ? { $or: [{ userId }, { employeeId }], workDate: { $gte: fromInput, $lte: toInput } }
     : { userId, workDate: { $gte: fromInput, $lte: toInput } };
@@ -37,9 +47,44 @@ export async function getMyAttendance(userId: string, fromInput: string, toInput
   };
 }
 
+export async function recordPunch(userId: string, type: string) {
+  if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
+  const employee = await users().findOne({ userId });
+  if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
+  const now = new Date();
+  const workDate = now.toISOString().slice(0, 10);
+  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+
+  if (type === 'in') {
+    if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
+    await attendanceRecords().updateOne(
+      { employeeId: employee.employeeId, workDate },
+      {
+        $set: { employeeId: employee.employeeId, userId, workDate, punchIn: now, updatedAt: now },
+        $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
+      },
+      { upsert: true },
+    );
+  } else {
+    if (!existing?.punchIn) throw new AttendanceError(409, 'Punch in before punching out');
+    if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
+    await attendanceRecords().updateOne(
+      { employeeId: employee.employeeId, workDate },
+      { $set: { punchOut: now, updatedAt: now } },
+    );
+  }
+
+  const updated = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  return {
+    workDate,
+    punchIn: updated?.punchIn?.toISOString(),
+    punchOut: updated?.punchOut?.toISOString(),
+  };
+}
+
 export async function requestRegularization(
   userId: string,
-  input: { workDate?: string; period?: string; note?: string },
+  input: { workDate?: string; punchIn?: string; punchOut?: string; note?: string },
 ) {
   const workDate = input.workDate ?? '';
   const date = parseDate(workDate, 'workDate');
@@ -49,10 +94,15 @@ export async function requestRegularization(
   if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > 45) {
     throw new AttendanceError(400, 'Regularization window is 45 days');
   }
-  const period = (input.period ?? '').trim() as RegularizationPeriod;
-  if (!periods.has(period)) throw new AttendanceError(400, 'Invalid regularization period');
+  const punchIn = parsePunch(input.punchIn, workDate, 'punchIn');
+  const punchOut = parsePunch(input.punchOut, workDate, 'punchOut');
+  if (!punchIn && !punchOut) {
+    throw new AttendanceError(400, 'Enter a punch-in or a punch-out time');
+  }
+  if (punchIn && punchOut && punchOut <= punchIn) {
+    throw new AttendanceError(400, 'Punch-out must be after punch-in');
+  }
   const note = (input.note ?? '').trim();
-  if (!note) throw new AttendanceError(400, 'A note is required');
   if (note.length > 500) throw new AttendanceError(400, 'Note cannot exceed 500 characters');
 
   const employee = await users().findOne({ userId });
@@ -63,13 +113,27 @@ export async function requestRegularization(
   const createdAt = new Date();
   const result = await attendanceRegularizations().insertOne({
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
-    workDate, period, note, status: 'pending', createdAt,
+    workDate, punchIn, punchOut, note, status: 'pending', createdAt,
   });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
-    managerUserId: employee.managerUserId, workDate, period, note,
+    managerUserId: employee.managerUserId, workDate, punchIn, punchOut, note,
     status: 'pending', createdAt,
   });
+}
+
+export async function getTeamMemberAttendance(
+  managerUserId: string,
+  employeeUserId: string,
+  fromInput: string,
+  toInput: string,
+) {
+  const employee = await users().findOne({ userId: employeeUserId });
+  if (!employee) throw new AttendanceError(404, 'Employee not found');
+  if (employee.managerUserId !== managerUserId) {
+    throw new AttendanceError(403, "Not authorized to view this employee's attendance");
+  }
+  return getAttendanceForEmployee(employeeUserId, employee.employeeId, fromInput, toInput);
 }
 
 export async function getManagerRegularizations(managerUserId: string) {
@@ -93,6 +157,27 @@ export async function decideRegularization(
     { returnDocument: 'after' },
   );
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
+
+  if (decision === 'approved') {
+    // Fold the corrected times into the canonical attendance record so the
+    // employee's calendar reflects what was approved, not just the request.
+    const punchUpdate: Record<string, Date> = { updatedAt: decidedAt };
+    if (result.punchIn) punchUpdate.punchIn = result.punchIn;
+    if (result.punchOut) punchUpdate.punchOut = result.punchOut;
+    await attendanceRecords().updateOne(
+      { employeeId: result.employeeId, workDate: result.workDate },
+      {
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate },
+        $setOnInsert: {
+          source: 'manual',
+          sourceKey: `regularization|${result.employeeId}|${result.workDate}`,
+          importedAt: decidedAt,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
   return (await enrichRegularizations([result]))[0];
 }
 
@@ -111,10 +196,24 @@ async function enrichRegularizations(values: AttendanceRegularization[]) {
     return {
       ...toRegularizationView(value),
       employee: { name: employee?.name ?? 'Employee', department: employee?.department ?? 'Team' },
+      // What the device actually recorded, so the manager can compare it with
+      // the requested times carried by the request itself.
       punchIn: punch?.punchIn?.toISOString(),
       punchOut: punch?.punchOut?.toISOString(),
     };
   });
+}
+
+/**
+ * A corrected punch arrives as an ISO instant from the client. It must land on
+ * the work date being corrected, so a mistyped day can't be smuggled through.
+ */
+function parsePunch(value: string | undefined, workDate: string, field: string): Date | undefined {
+  const raw = (value ?? '').trim();
+  if (!raw) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw new AttendanceError(400, `${field} is not a valid time`);
+  return parsed;
 }
 
 function parseDate(value: string, field: string): Date {
@@ -128,8 +227,13 @@ function parseDate(value: string, field: string): Date {
 
 function daysBetween(a: Date, b: Date) { return Math.floor((b.getTime() - a.getTime()) / 86_400_000); }
 function toRegularizationView(value: AttendanceRegularization) {
-  const { _id, ...rest } = value;
-  return { ...rest, id: _id?.toHexString() };
+  const { _id, punchIn, punchOut, ...rest } = value;
+  return {
+    ...rest,
+    id: _id?.toHexString(),
+    requestedPunchIn: punchIn?.toISOString(),
+    requestedPunchOut: punchOut?.toISOString(),
+  };
 }
 
 export class AttendanceError extends Error {
