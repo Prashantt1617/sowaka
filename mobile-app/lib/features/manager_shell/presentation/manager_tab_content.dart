@@ -53,6 +53,7 @@ class _TabContent extends StatelessWidget {
           session: session,
           recognitionCandidates: state.dashboard!.recognitionCandidates,
           composerController: connectComposerController,
+          data: state.dashboard!,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,

@@ -368,6 +368,7 @@ class LeaveRequest {
   final String type;
   final DateTime start;
   final DateTime end;
+
   /// Leave days consumed — 0.5 for a half day, so this is fractional.
   final double days;
 

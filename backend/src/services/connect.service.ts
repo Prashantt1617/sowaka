@@ -418,6 +418,11 @@ async function viewPost(
   if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
     body.photoUrl = await presignConnectMedia(body.photoKey).catch(() => undefined);
   }
+  // Tags store ids only, so a tagged person's name and photo are always
+  // current rather than frozen at the moment the post was written.
+  if (Array.isArray(body.taggedUserIds) && body.taggedUserIds.length > 0) {
+    body.taggedPeople = await resolveTaggedPeople(body.taggedUserIds as string[]);
+  }
   const objectKeys = mediaObjectKeys(body);
   if (objectKeys.length > 0) {
     const urls = await Promise.all(
@@ -566,6 +571,7 @@ function normalizePostBody(
         linkDomain: normalizeText(input.linkDomain, '', 120),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        taggedUserIds: normalizeTaggedUserIds(input.taggedUserIds),
       };
     case 'recommendation':
       return {
@@ -716,6 +722,40 @@ function existingPollImageKeys(body: Record<string, unknown>): (string | undefin
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
   const text = typeof value === 'string' ? value.trim() : fallback;
   return (text || fallback).slice(0, maxLength);
+}
+
+/** Ids of people tagged in a media post. Deduped and capped; names and photos
+ * are resolved per read so a tag never shows a stale name. */
+/** Names and photos for the people tagged in a post, in the order tagged. */
+async function resolveTaggedPeople(userIds: string[]) {
+  const tagged = await users()
+    .find({ userId: { $in: userIds } })
+    .project<{ userId: string; name: string; designation?: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+    })
+    .toArray();
+  const byId = new Map(tagged.map((person) => [person.userId, person]));
+  const resolved = await Promise.all(
+    // Preserve the author's ordering, and drop anyone since offboarded or deleted.
+    userIds
+      .map((id) => byId.get(id))
+      .filter((person): person is NonNullable<typeof person> => Boolean(person))
+      .map(async (person) => ({
+        userId: person.userId,
+        name: person.name,
+        designation: person.designation ?? '',
+        photoUrl: await resolveProfilePhoto(person),
+      })),
+  );
+  return resolved;
+}
+
+function normalizeTaggedUserIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id) => id.trim().slice(0, 80));
+  return [...new Set(ids)].slice(0, 20);
 }
 
 function normalizeDepartment(value: unknown) {

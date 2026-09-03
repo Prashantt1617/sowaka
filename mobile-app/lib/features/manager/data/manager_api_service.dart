@@ -412,11 +412,16 @@ class ManagerApiService {
     required String path,
     required String filename,
   }) async {
-    final request = http.MultipartRequest('PATCH', Uri.parse('$_baseUrl/manager/photo'))
-      ..headers['Authorization'] = 'Bearer ${session.token}'
-      ..files.add(
-        await http.MultipartFile.fromPath('photo', path, filename: filename),
-      );
+    final request =
+        http.MultipartRequest('PATCH', Uri.parse('$_baseUrl/manager/photo'))
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..files.add(
+            await http.MultipartFile.fromPath(
+              'photo',
+              path,
+              filename: filename,
+            ),
+          );
     final json = await _send(request);
     return json['photoUrl'] as String;
   }

@@ -23,9 +23,6 @@ class _TeamMemberProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final present = member.todayStatus == TeamPresenceStatus.present;
-    final nomination = data.awards
-        .where((item) => item.nomineeId == member.id)
-        .firstOrNull;
     final today = DateTime.now();
 
     final openRequests = <(DateTime date, Widget card)>[
@@ -162,43 +159,40 @@ class _TeamMemberProfilePage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: [
-                if (nomination != null)
-                  _NominationHero(member: member, nomination: nomination)
-                else
-                  Center(
-                    child: Column(
-                      children: [
-                        _TeamMemberPhoto(
-                          member: member,
-                          size: 112,
-                          showStatus: true,
+                Center(
+                  child: Column(
+                    children: [
+                      _TeamMemberPhoto(
+                        member: member,
+                        size: 112,
+                        showStatus: true,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        member.name,
+                        style: const TextStyle(
+                          color: MColors.ink,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -.3,
                         ),
-                        const SizedBox(height: 14),
-                        Text(
-                          member.name,
-                          style: const TextStyle(
-                            color: MColors.ink,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -.3,
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          member.designation,
+                          member.team,
+                        ].where((value) => value.isNotEmpty).join(' • '),
+                        style: const TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 16,
+                          height: 24 / 16,
+                          fontWeight: FontWeight.w400,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          [
-                            member.designation,
-                            member.team,
-                          ].where((value) => value.isNotEmpty).join(' • '),
-                          style: const TextStyle(
-                            color: Color(0xFF717171),
-                            fontSize: 16,
-                            height: 24 / 16,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                ),
                 // Punch in/out sits above the requests here, matching the
                 // signed-in user's own profile.
                 const SizedBox(height: 16),
@@ -847,12 +841,6 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                           ),
                         ],
                       ),
-                      if (user.recognition != null) ...[
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Recognition'),
-                        const SizedBox(height: 8),
-                        _RecognitionCard(recognition: user.recognition!),
-                      ],
                       const SizedBox(height: 18),
                       _LogoutButton(onPressed: onLogout),
                       const SizedBox(height: 24),
@@ -1686,130 +1674,6 @@ class _TeamMemberPhoto extends StatelessWidget {
   }
 }
 
-class _BouncingTrophy extends StatefulWidget {
-  const _BouncingTrophy();
-
-  @override
-  State<_BouncingTrophy> createState() => _BouncingTrophyState();
-}
-
-class _BouncingTrophyState extends State<_BouncingTrophy>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 583),
-      vsync: this,
-    );
-    _scale = Tween(
-      begin: 1.2,
-      end: 1.0,
-    ).chain(CurveTween(curve: const Cubic(0, 0, 0.58, 1))).animate(_controller);
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
-      child: Image.asset(
-        'assets/images/trophy.png',
-        width: 151,
-        height: 152,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const Icon(
-          Icons.emoji_events_rounded,
-          size: 72,
-          color: Color(0xFFC98A2E),
-        ),
-      ),
-    );
-  }
-}
-
-class _NominationHero extends StatelessWidget {
-  const _NominationHero({required this.member, required this.nomination});
-
-  final TeamMember member;
-  final AwardNomination nomination;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .1),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          _TeamMemberPhoto(member: member, size: 92),
-          const SizedBox(height: 14),
-          Text(
-            member.name,
-            style: const TextStyle(
-              color: MColors.ink,
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.3,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            [
-              member.designation,
-              member.team,
-            ].where((value) => value.isNotEmpty).join(' · '),
-            style: const TextStyle(
-              color: MColors.inkSoft,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const _BouncingTrophy(),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E6),
-              border: Border.all(color: const Color(0xFFFFDF8D)),
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              nomination.title,
-              style: const TextStyle(
-                color: Color(0xFFFFBF1B),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PunchColumn extends StatelessWidget {
   const _PunchColumn({required this.label, required this.value});
 
@@ -1962,62 +1826,6 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
-class _RecognitionCard extends StatelessWidget {
-  const _RecognitionCard({required this.recognition});
-
-  final UserRecognition recognition;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration,
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _ProfileColors.goldTint,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.workspace_premium_rounded,
-              color: _ProfileColors.gold,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  recognition.label.isEmpty ? 'Recognition' : recognition.label,
-                  style: const TextStyle(
-                    color: _ProfileColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (recognition.period.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    recognition.period,
-                    style: const TextStyle(
-                      color: _ProfileColors.inkSoft,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LogoutButton extends StatelessWidget {
   const _LogoutButton({required this.onPressed});
 
@@ -2118,12 +1926,9 @@ class _ProfileText {
 
 class _ProfileColors {
   static const ink = Color(0xFF2A2420);
-  static const inkSoft = Color(0xFF6E655C);
   static const inkFaint = Color(0xFFA79D92);
   static const line = Color(0xFFF0E8DD);
   static const terra = Color(0xFFBE5A36);
-  static const gold = Color(0xFFC98A2E);
-  static const goldTint = Color(0xFFF4ECDD);
   static const sage = Color(0xFF7E8B6E);
 }
 

@@ -28,30 +28,26 @@ class _SplashScreenState extends State<SplashScreen>
     curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
   );
 
-  late final Animation<double> _markScale = Tween<double>(
-    begin: 0.86,
-    end: 1,
-  ).animate(
-    CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
-    ),
-  );
+  late final Animation<double> _markScale = Tween<double>(begin: 0.86, end: 1)
+      .animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
+        ),
+      );
 
   late final Animation<double> _taglineOpacity = CurvedAnimation(
     parent: _controller,
     curve: const Interval(0.45, 0.85, curve: Curves.easeOut),
   );
 
-  late final Animation<double> _taglineShift = Tween<double>(
-    begin: 12,
-    end: 0,
-  ).animate(
-    CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.45, 0.9, curve: Curves.easeOutCubic),
-    ),
-  );
+  late final Animation<double> _taglineShift = Tween<double>(begin: 12, end: 0)
+      .animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: const Interval(0.45, 0.9, curve: Curves.easeOutCubic),
+        ),
+      );
 
   @override
   void dispose() {

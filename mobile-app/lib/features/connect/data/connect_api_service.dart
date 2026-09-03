@@ -150,7 +150,9 @@ class ConnectApiService {
     request.fields['body'] = jsonEncode(draft.body);
     final mediaFiles = draft.mediaList.isNotEmpty
         ? draft.mediaList
-        : (draft.media != null ? [draft.media!] : const <ConnectMediaAttachment>[]);
+        : (draft.media != null
+              ? [draft.media!]
+              : const <ConnectMediaAttachment>[]);
     for (final attachment in mediaFiles) {
       request.files.add(
         await http.MultipartFile.fromPath(

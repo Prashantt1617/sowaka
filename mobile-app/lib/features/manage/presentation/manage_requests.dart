@@ -268,12 +268,11 @@ class _AttendanceCorrectionCard extends StatelessWidget {
   Widget build(BuildContext context) => PressableCard(
     onTap: () => Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _AttendanceCorrectionDetailPage(
-              request: request,
-              bloc: bloc,
-              photoUrl: photoUrl,
-            ),
+        builder: (_) => _AttendanceCorrectionDetailPage(
+          request: request,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     ),
     padding: EdgeInsets.zero,
@@ -825,8 +824,11 @@ class _LeaveCard extends StatelessWidget {
   void _openDetails(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _LeaveRequestDetailPage(leave: leave, bloc: bloc, photoUrl: photoUrl),
+        builder: (_) => _LeaveRequestDetailPage(
+          leave: leave,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     );
   }
@@ -1660,12 +1662,11 @@ class _OvertimeRequestCard extends StatelessWidget {
   void _openDetails(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _OvertimeRequestDetailPage(
-              request: request,
-              bloc: bloc,
-              photoUrl: photoUrl,
-            ),
+        builder: (_) => _OvertimeRequestDetailPage(
+          request: request,
+          bloc: bloc,
+          photoUrl: photoUrl,
+        ),
       ),
     );
   }

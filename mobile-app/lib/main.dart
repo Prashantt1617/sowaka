@@ -70,16 +70,49 @@ class HrmsMobileApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      // App-wide tap-to-dismiss: tapping anywhere outside the focused field
-      // drops focus and closes the keyboard. Translucent so the tap still
-      // reaches whatever was actually pressed.
-      builder: (context, child) => GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      // App-wide tap-to-dismiss: touching anywhere outside the focused field
+      // drops focus and closes the keyboard.
+      //
+      // This is a Listener rather than a GestureDetector on purpose. A
+      // GestureDetector has to win the gesture arena, so any card, InkWell or
+      // scrollable that claims the tap first leaves the keyboard up — which is
+      // most of this app. A Listener sees the pointer during hit-testing
+      // regardless of who ultimately handles it.
+      builder: (context, child) => Listener(
+        onPointerDown: _dismissKeyboardUnlessOnField,
         child: child,
       ),
       home: const AuthGate(),
       routes: AppRoutes.routes,
     );
   }
+}
+
+/// Closes the keyboard on any touch that lands outside the field currently
+/// being edited.
+///
+/// Touches on the field itself are ignored so tapping to reposition the caret
+/// doesn't dismiss what you're typing into. Tapping a *different* field still
+/// unfocuses here, then that field takes focus a moment later as its own tap
+/// resolves — which is the behaviour you want anyway.
+void _dismissKeyboardUnlessOnField(PointerDownEvent event) {
+  final focus = FocusManager.instance.primaryFocus;
+  final context = focus?.context;
+  if (focus == null || context == null) return;
+
+  // Only text entry raises a keyboard; leave any other focus alone so buttons
+  // and other focusable widgets keep behaving normally.
+  final isTextField =
+      context.widget is EditableText ||
+      context.findAncestorWidgetOfExactType<EditableText>() != null;
+  if (!isTextField) return;
+
+  // A touch on the field being edited is a caret placement, not a dismissal.
+  final renderObject = context.findRenderObject();
+  if (renderObject is RenderBox && renderObject.hasSize) {
+    final bounds = renderObject.localToGlobal(Offset.zero) & renderObject.size;
+    if (bounds.contains(event.position)) return;
+  }
+
+  focus.unfocus();
 }

@@ -32,8 +32,10 @@ class AuthApiService {
     return AuthSession.fromJson(json);
   }
 
-  Future<AuthTeammates> fetchTeammates(String token) async {
-    final uri = Uri.parse('$_baseUrl/auth/teammates');
+  Future<AuthTeammates> fetchTeammates(String token, {int? limit}) async {
+    final uri = Uri.parse(
+      '$_baseUrl/auth/teammates${limit == null ? '' : '?limit=$limit'}',
+    );
     final response = await _client.get(
       uri,
       headers: {'Authorization': 'Bearer $token'},
@@ -123,10 +125,8 @@ class AuthTeammate {
   final String? photoUrl;
 
   /// "UX Researcher · Product", collapsing to whichever half exists.
-  String get roleLine => [
-    designation,
-    department,
-  ].where((part) => part.isNotEmpty).join(' · ');
+  String get roleLine =>
+      [designation, department].where((part) => part.isNotEmpty).join(' · ');
 
   String get initials {
     final parts = name.trim().split(RegExp(r'\s+'));
@@ -149,4 +149,3 @@ class AuthTeammates {
   final List<AuthTeammate> teammates;
   final int total;
 }
-

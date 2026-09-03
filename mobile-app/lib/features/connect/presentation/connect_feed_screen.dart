@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../auth/data/auth_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../bloc/connect_bloc.dart';
 import '../data/connect_models.dart';
@@ -41,12 +42,17 @@ class ConnectFeedScreen extends StatefulWidget {
     required this.profileAction,
     this.recognitionCandidates = const [],
     this.composerController,
+    this.onOpenPerson,
   });
 
   final AuthSession session;
   final Widget profileAction;
   final List<ConnectTeammate> recognitionCandidates;
   final ConnectComposerController? composerController;
+
+  /// Opens a tagged person's profile — supplied by the shell, which owns the
+  /// team data and the profile route.
+  final ValueChanged<String>? onOpenPerson;
 
   @override
   State<ConnectFeedScreen> createState() => _ConnectFeedScreenState();
@@ -88,11 +94,43 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   Color get _viewerColor => _avatarColorFor(widget.session.user.id);
   String get _viewerPhotoUrl => widget.session.user.profilePhotoUrl ?? '';
 
+  /// Everyone in the company, for the tag picker. Anyone can be tagged, not
+  /// only the viewer's own team, so this comes from the org-wide directory
+  /// rather than the team data the shell already holds.
+  List<ConnectTeammate> _taggablePeople = const [];
+
   @override
   void initState() {
     super.initState();
     _bloc = ConnectBloc(session: widget.session)..load();
     widget.composerController?._attach(this);
+    _loadTaggablePeople();
+  }
+
+  Future<void> _loadTaggablePeople() async {
+    try {
+      final result = await AuthApiService().fetchTeammates(
+        widget.session.token,
+        limit: 500,
+      );
+      if (!mounted) return;
+      setState(() {
+        _taggablePeople = result.teammates
+            .map(
+              (person) => ConnectTeammate(
+                userId: person.userId,
+                name: person.name,
+                initials: person.initials,
+                department: person.roleLine,
+                photoUrl: person.photoUrl,
+              ),
+            )
+            .toList();
+      });
+    } catch (_) {
+      // Tagging is optional: if the directory can't be reached the composer
+      // simply shows no tag field rather than blocking the post.
+    }
   }
 
   @override
@@ -230,6 +268,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             viewerInitials: _viewerInitials,
             viewerColor: _viewerColor,
             viewerPhotoUrl: _viewerPhotoUrl,
+            onOpenPerson: widget.onOpenPerson,
           );
         },
       ),
@@ -250,6 +289,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           viewerPhotoUrl: _viewerPhotoUrl,
           department: widget.session.user.department,
           onPickType: _pickPostType,
+          teammates: _taggablePeople,
         ),
       ),
     );
@@ -294,6 +334,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           existing: existing,
           department: widget.session.user.department,
           recognitionCandidates: widget.recognitionCandidates,
+          taggablePeople: _taggablePeople,
           initialPoll: initialPoll,
           viewerInitials: _viewerInitials,
           viewerColor: _viewerColor,
@@ -373,6 +414,7 @@ class _ConnectPostCard extends StatefulWidget {
     required this.viewerInitials,
     required this.viewerColor,
     this.viewerPhotoUrl = '',
+    this.onOpenPerson,
   });
 
   final ConnectPost post;
@@ -388,6 +430,9 @@ class _ConnectPostCard extends StatefulWidget {
   final String viewerInitials;
   final Color viewerColor;
   final String viewerPhotoUrl;
+
+  /// Opens a tagged person's profile.
+  final ValueChanged<String>? onOpenPerson;
 
   @override
   State<_ConnectPostCard> createState() => _ConnectPostCardState();
@@ -455,6 +500,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               onDelete: widget.onDelete,
               onCommentPrefill: (text) =>
                   setState(() => _commentController.text = text),
+              onOpenPerson: widget.onOpenPerson,
             ),
             _PostFooter(
               post: post,
@@ -880,6 +926,7 @@ class _PostBody extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCommentPrefill,
+    this.onOpenPerson,
   });
 
   final ConnectPost post;
@@ -890,12 +937,18 @@ class _PostBody extends StatelessWidget {
   final VoidCallback onDelete;
   final ValueChanged<String> onCommentPrefill;
 
+  /// Opens a tagged person's profile. Null where the host can't navigate.
+  final ValueChanged<String>? onOpenPerson;
+
   @override
   Widget build(BuildContext context) {
     return switch (post.type) {
       ConnectPostType.leadership => _MediaPostBody(post: post),
       ConnectPostType.recommendation => _RecommendationBody(post: post),
-      ConnectPostType.newPost => _TextPostBody(post: post),
+      ConnectPostType.newPost => _TextPostBody(
+        post: post,
+        onOpenPerson: onOpenPerson,
+      ),
       ConnectPostType.hrAnnouncement => _AnnouncementBody(post: post),
       ConnectPostType.birthday => _BirthdayBody(
         post: post,
@@ -1118,20 +1171,110 @@ class _LinkTapTarget extends StatelessWidget {
 }
 
 class _TextPostBody extends StatelessWidget {
-  const _TextPostBody({required this.post});
+  const _TextPostBody({required this.post, this.onOpenPerson});
 
   final ConnectPost post;
+  final ValueChanged<String>? onOpenPerson;
 
   @override
   Widget build(BuildContext context) {
     final mediaKind = _bodyString(post, 'mediaKind');
     final hasMedia = mediaKind == 'image' || mediaKind == 'video';
+    final tagged = _taggedPeople(post);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _BodyText(text: _bodyString(post, 'text')),
+        if (tagged.isNotEmpty)
+          _TaggedPeopleRow(people: tagged, onOpenPerson: onOpenPerson),
         if (hasMedia) _MediaPreview(post: post),
       ],
+    );
+  }
+}
+
+/// "with @Ananya Rao, @Priya Nair" under a media post. Each name opens that
+/// person's profile.
+class _TaggedPeopleRow extends StatelessWidget {
+  const _TaggedPeopleRow({required this.people, this.onOpenPerson});
+
+  final List<ConnectTaggedPerson> people;
+  final ValueChanged<String>? onOpenPerson;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text(
+            'with',
+            style: TextStyle(
+              color: _ConnectColors.faint,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          ...people.map(
+            (person) => _TaggedPersonChip(
+              person: person,
+              onTap: onOpenPerson == null
+                  ? null
+                  : () => onOpenPerson!(person.userId),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TaggedPersonChip extends StatelessWidget {
+  const _TaggedPersonChip({required this.person, this.onTap});
+
+  final ConnectTaggedPerson person;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = person.photoUrl;
+    return Material(
+      color: const Color(0xFFEAF4FA),
+      borderRadius: BorderRadius.circular(99),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(99),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(photo == null ? 10 : 4, 4, 10, 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (photo != null) ...[
+                ClipOval(
+                  child: Image(
+                    image: _remoteImage(photo),
+                    width: 20,
+                    height: 20,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                person.name,
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -3304,12 +3447,16 @@ class _QuickPostPage extends StatefulWidget {
     required this.viewerPhotoUrl,
     required this.department,
     required this.onPickType,
+    this.teammates = const [],
   });
 
   final String viewerInitials;
   final Color viewerColor;
   final String viewerPhotoUrl;
   final String? department;
+
+  /// People who can be tagged in a media post.
+  final List<ConnectTeammate> teammates;
 
   /// Opens the post-type picker; returns the chosen type, or null if dismissed.
   final Future<ConnectPostType?> Function() onPickType;
@@ -3324,6 +3471,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   final _media = <ConnectMediaAttachment>[];
   int _previewIndex = 0;
   bool _teamOnly = false;
+  final _taggedUserIds = <String>[];
 
   @override
   void initState() {
@@ -3408,6 +3556,8 @@ class _QuickPostPageState extends State<_QuickPostPage> {
         'linkDomain': '',
         'sendTo': _teamOnly ? 'my_team' : 'everyone',
         'sendToDepartment': _teamOnly ? (widget.department ?? '') : '',
+        // Tagging is a media-post feature, so a text-only post carries none.
+        'taggedUserIds': hasMedia ? _taggedUserIds : const <String>[],
       },
       media: hasMedia ? _media.first : null,
       mediaList: _media.length > 1 ? List.of(_media) : const [],
@@ -3469,7 +3619,21 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                           ),
                         ),
                       ),
-                      if (_media.isNotEmpty) _buildMediaPreview(),
+                      if (_media.isNotEmpty) ...[
+                        _buildMediaPreview(),
+                        if (widget.teammates.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          _TagPeopleField(
+                            teammates: widget.teammates,
+                            selectedUserIds: _taggedUserIds,
+                            onChanged: (ids) => setState(() {
+                              _taggedUserIds
+                                ..clear()
+                                ..addAll(ids);
+                            }),
+                          ),
+                        ],
+                      ],
                     ],
                   ),
                 ),
@@ -3872,6 +4036,7 @@ class _PostComposerPage extends StatefulWidget {
     this.existing,
     this.department,
     this.recognitionCandidates = const [],
+    this.taggablePeople = const [],
     this.initialPoll,
     this.viewerInitials = '',
     this.viewerColor = _ConnectColors.blue,
@@ -3882,6 +4047,9 @@ class _PostComposerPage extends StatefulWidget {
   final ConnectPost? existing;
   final String? department;
   final List<ConnectTeammate> recognitionCandidates;
+
+  /// Everyone in the company — who can be tagged in a media post.
+  final List<ConnectTeammate> taggablePeople;
   final _PollDraft? initialPoll;
   final String viewerInitials;
   final Color viewerColor;
@@ -3903,6 +4071,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   _PollDraft? _pollDraft;
   String _sendTo = 'all_company';
   String _newPostKind = 'media';
+  final _taggedUserIds = <String>[];
   String _eventCategory = 'sports';
   bool _allowRegistration = true;
   bool _requireAcknowledgement = false;
@@ -3946,6 +4115,11 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     _sendTo = _bodyValue('sendTo').isEmpty
         ? 'all_company'
         : _bodyValue('sendTo');
+    _taggedUserIds.addAll(
+      (widget.existing?.body['taggedUserIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty),
+    );
     _newPostKind = _bodyValue('postKind').isEmpty
         ? (_bodyValue('linkUrl').isNotEmpty
               ? 'link'
@@ -4151,6 +4325,19 @@ class _PostComposerPageState extends State<_PostComposerPage> {
               onRemove: _removeExtraMedia,
             ),
           ],
+        ],
+        if (_newPostKind == 'media' && widget.taggablePeople.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          _FieldLabel('TAG PEOPLE'),
+          _TagPeopleField(
+            teammates: widget.taggablePeople,
+            selectedUserIds: _taggedUserIds,
+            onChanged: (ids) => setState(() {
+              _taggedUserIds
+                ..clear()
+                ..addAll(ids);
+            }),
+          ),
         ],
         if (_newPostKind == 'link') ...[
           const SizedBox(height: 18),
@@ -4498,6 +4685,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     if (_acknowledgementMessage.text.trim().isNotEmpty) return true;
     if (_selectedMedia != null) return true;
     if (_extraMedia.isNotEmpty) return true;
+    if (_taggedUserIds.isNotEmpty) return true;
     if (_requireAcknowledgement) return true;
     final poll = _pollDraft;
     if (poll != null &&
@@ -4563,6 +4751,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
             : '',
         'sendTo': _sendTo,
         'sendToDepartment': _sendTo == 'my_team' ? widget.department ?? '' : '',
+        // Tags belong to media posts only.
+        'taggedUserIds': _newPostKind == 'media'
+            ? _taggedUserIds
+            : const <String>[],
       },
       ConnectPostType.hrAnnouncement => {
         'title': _mediaTitle.text,
@@ -5844,6 +6036,255 @@ class _SegmentedChoice extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+/// Multi-select "tag people" control for media posts: shows who's tagged and
+/// opens a searchable sheet to change the selection.
+class _TagPeopleField extends StatelessWidget {
+  const _TagPeopleField({
+    required this.teammates,
+    required this.selectedUserIds,
+    required this.onChanged,
+  });
+
+  final List<ConnectTeammate> teammates;
+  final List<String> selectedUserIds;
+  final ValueChanged<List<String>> onChanged;
+
+  Future<void> _open(BuildContext context) async {
+    final picked = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _TagPeopleSheet(
+        teammates: teammates,
+        selectedUserIds: selectedUserIds,
+      ),
+    );
+    if (picked != null) onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = teammates
+        .where((teammate) => selectedUserIds.contains(teammate.userId))
+        .toList();
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _open(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _ConnectColors.cardBorder),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: selected.isEmpty
+                  ? const Text(
+                      'Tag people in this post',
+                      style: TextStyle(
+                        color: _ConnectColors.faint,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    )
+                  : Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: selected
+                          .map(
+                            (teammate) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF4FA),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: Text(
+                                teammate.name,
+                                style: const TextStyle(
+                                  color: Color(0xFF0571A6),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.person_add_alt_1_rounded,
+              size: 20,
+              color: _ConnectColors.faint,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TagPeopleSheet extends StatefulWidget {
+  const _TagPeopleSheet({
+    required this.teammates,
+    required this.selectedUserIds,
+  });
+
+  final List<ConnectTeammate> teammates;
+  final List<String> selectedUserIds;
+
+  @override
+  State<_TagPeopleSheet> createState() => _TagPeopleSheetState();
+}
+
+class _TagPeopleSheetState extends State<_TagPeopleSheet> {
+  late final List<String> _selected = [...widget.selectedUserIds];
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _search.text.trim().toLowerCase();
+    // Only teammates with a real id can be tagged — a tag has to resolve to a
+    // profile.
+    final options = widget.teammates
+        .where((teammate) => teammate.userId.isNotEmpty)
+        .where(
+          (teammate) =>
+              query.isEmpty || teammate.name.toLowerCase().contains(query),
+        )
+        .toList();
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText: 'Search people',
+                  prefixIcon: Icon(Icons.search_rounded, size: 20),
+                ),
+              ),
+            ),
+            Flexible(
+              child: options.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No one to tag.'),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final teammate = options[index];
+                        final checked = _selected.contains(teammate.userId);
+                        return CheckboxListTile(
+                          value: checked,
+                          controlAffinity: ListTileControlAffinity.trailing,
+                          onChanged: (_) => setState(() {
+                            if (checked) {
+                              _selected.remove(teammate.userId);
+                            } else {
+                              _selected.add(teammate.userId);
+                            }
+                          }),
+                          secondary: _TeammateAvatar(teammate: teammate),
+                          title: Text(
+                            teammate.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: teammate.department.isEmpty
+                              ? null
+                              : Text(teammate.department),
+                        );
+                      },
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(_selected),
+                  child: Text(
+                    _selected.isEmpty ? 'Done' : 'Tag ${_selected.length}',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeammateAvatar extends StatelessWidget {
+  const _TeammateAvatar({required this.teammate});
+
+  final ConnectTeammate teammate;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = teammate.photoUrl;
+    if (photo == null || photo.isEmpty) {
+      return CircleAvatar(
+        radius: 18,
+        backgroundColor: const Color(0xFFEAF4FA),
+        child: Text(
+          teammate.initials,
+          style: const TextStyle(
+            color: Color(0xFF0571A6),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    return ClipOval(
+      child: Image(
+        image: _remoteImage(photo),
+        width: 36,
+        height: 36,
+        fit: BoxFit.cover,
+      ),
     );
   }
 }
@@ -7247,6 +7688,39 @@ class _ConnectColors {
 String _bodyString(ConnectPost post, String key) {
   final value = post.body[key];
   return value == null ? '' : value.toString();
+}
+
+/// One person tagged in a post, resolved server-side per read.
+class ConnectTaggedPerson {
+  const ConnectTaggedPerson({
+    required this.userId,
+    required this.name,
+    this.designation = '',
+    this.photoUrl,
+  });
+
+  final String userId;
+  final String name;
+  final String designation;
+  final String? photoUrl;
+}
+
+List<ConnectTaggedPerson> _taggedPeople(ConnectPost post) {
+  final value = post.body['taggedPeople'];
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) {
+        final photo = item['photoUrl']?.toString();
+        return ConnectTaggedPerson(
+          userId: item['userId']?.toString() ?? '',
+          name: item['name']?.toString() ?? '',
+          designation: item['designation']?.toString() ?? '',
+          photoUrl: photo == null || photo.isEmpty ? null : photo,
+        );
+      })
+      .where((person) => person.userId.isNotEmpty && person.name.isNotEmpty)
+      .toList();
 }
 
 List<String> _bodyStringList(ConnectPost post, String key) {

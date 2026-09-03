@@ -40,7 +40,11 @@ export async function currentUser(req: Request, res: Response, next: NextFunctio
 
 export async function teammates(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await getTeammates(req.auth?.userId ?? '');
+    // The tag picker needs the whole company, not the handful the welcome
+    // screen shows, so the caller sets its own page size.
+    const requested = Number(req.query.limit);
+    const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), 500) : undefined;
+    const result = await getTeammates(req.auth?.userId ?? '', limit);
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);

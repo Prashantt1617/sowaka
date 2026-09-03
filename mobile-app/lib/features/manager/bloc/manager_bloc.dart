@@ -347,7 +347,11 @@ class ManagerBloc {
   Future<bool> add(ManagerEvent event) => _handle(event);
 
   void setManagerPhoto(String url) {
-    _emit(_state.copyWith(dashboard: _state.dashboard?.copyWith(managerPhotoUrl: url)));
+    _emit(
+      _state.copyWith(
+        dashboard: _state.dashboard?.copyWith(managerPhotoUrl: url),
+      ),
+    );
   }
 
   void dispose() {

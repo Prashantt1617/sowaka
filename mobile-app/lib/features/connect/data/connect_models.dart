@@ -17,10 +17,14 @@ class ConnectTeammate {
   const ConnectTeammate({
     required this.name,
     required this.initials,
+    this.userId = '',
     this.department = '',
     this.photoUrl,
   });
 
+  /// Empty for teammates supplied without one — kudos matches on name, but
+  /// tagging needs a stable id.
+  final String userId;
   final String name;
   final String initials;
   final String department;
@@ -69,9 +73,11 @@ class ConnectPostDraft {
   final ConnectPostType type;
   final Map<String, dynamic> body;
   final ConnectMediaAttachment? media;
+
   /// Multiple images for a single post (item: multi-image support). When
   /// non-empty this is sent instead of `media`.
   final List<ConnectMediaAttachment> mediaList;
+
   /// Parallel to the survey's poll options by index; a null entry means that
   /// option has no image.
   final List<ConnectMediaAttachment?> pollOptionImages;

@@ -103,4 +103,3 @@ class _AppHeaderNotificationDot extends StatelessWidget {
     );
   }
 }
-

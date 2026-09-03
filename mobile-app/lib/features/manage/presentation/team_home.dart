@@ -266,33 +266,6 @@ class _MyTeamViewState extends State<_MyTeamView> {
   }
 }
 
-class _RecognitionSection extends StatelessWidget {
-  const _RecognitionSection({required this.data, required this.bloc});
-
-  final ManagerDashboard data;
-  final ManagerBloc bloc;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Only "Employee of the Month" is shown for now, matching the
-        // design — the other award categories return once the rest of the
-        // recognition flow is redesigned.
-        if (data.awards.isNotEmpty)
-          _AwardCard(
-            award: data.awards.first,
-            team: data.recognitionCandidates,
-            titleOverride: 'Employee of the Month',
-            onNominate: () => bloc.add(OpenAwardPicker(data.awards.first.key)),
-          ),
-        const SizedBox(height: 18),
-      ],
-    );
-  }
-}
-
 class _TeamMemberRow extends StatelessWidget {
   const _TeamMemberRow({
     required this.member,
@@ -819,8 +792,6 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             onClear: () => setState(() => _query = ''),
             hint: 'Search employee',
           ),
-          const SizedBox(height: 14),
-          _RecognitionSection(data: data, bloc: widget.bloc),
           const SizedBox(height: 14),
           if (filtered.isEmpty)
             Padding(

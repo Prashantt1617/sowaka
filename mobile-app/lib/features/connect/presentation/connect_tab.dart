@@ -7,12 +7,14 @@ class _ConnectTab extends StatelessWidget {
     required this.profileAction,
     required this.recognitionCandidates,
     required this.composerController,
+    required this.data,
   });
 
   final AuthSession session;
   final Widget profileAction;
   final List<TeamMember> recognitionCandidates;
   final ConnectComposerController composerController;
+  final ManagerDashboard data;
 
   @override
   Widget build(BuildContext context) {
@@ -21,16 +23,24 @@ class _ConnectTab extends StatelessWidget {
       session: session,
       profileAction: profileAction,
       composerController: composerController,
-      recognitionCandidates: recognitionCandidates
-          .map(
-            (member) => ConnectTeammate(
-              name: member.name,
-              initials: member.initial,
-              department: member.team,
-              photoUrl: member.photoUrl,
-            ),
-          )
-          .toList(),
+      // The people who can be tagged, and recognised: the same team the Team
+      // tab lists. Tags render as labels only for now — `onOpenPerson` is
+      // deliberately left unset, so the chips aren't tappable.
+      recognitionCandidates:
+          {
+                for (final member in [...recognitionCandidates, ...data.team])
+                  member.userId: member,
+              }.values
+              .map(
+                (member) => ConnectTeammate(
+                  userId: member.userId,
+                  name: member.name,
+                  initials: member.initial,
+                  department: member.team,
+                  photoUrl: member.photoUrl,
+                ),
+              )
+              .toList(),
     );
   }
 }

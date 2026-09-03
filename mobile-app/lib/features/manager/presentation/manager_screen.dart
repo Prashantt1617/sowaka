@@ -24,7 +24,6 @@ part '../../connect/presentation/connect_tab.dart';
 part '../../grow/presentation/grow_tab.dart';
 part '../../manage/presentation/apply_leave_sheet.dart';
 part '../../manage/presentation/feedback_components.dart';
-part '../../manage/presentation/manage_recognition.dart';
 part '../../manage/presentation/manage_requests.dart';
 part '../../manage/presentation/manage_tab.dart';
 part '../../manage/presentation/profile_pages.dart';
@@ -298,8 +297,6 @@ class _ManagerScreenState extends State<ManagerScreen> {
                             ),
                         ],
                       ),
-                      if (state.awardPickerKey != null)
-                        _AwardPicker(state: state, bloc: _bloc),
                       if (state.applyLeaveOpen)
                         _ApplyLeaveSheet(state: state, bloc: _bloc),
                     ],
