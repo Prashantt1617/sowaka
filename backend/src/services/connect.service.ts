@@ -36,6 +36,7 @@ function announceChange(
     action,
     actorUserId,
     org: post.org,
+    teamId: post.audience.teamId,
     department: post.audience.department,
   });
 }
@@ -52,9 +53,11 @@ export async function getConnectFeed(viewerUserId: string) {
       $or: [
         // MongoDB's driver stores `undefined` as BSON null rather than
         // dropping the key, so company-wide posts persist with an explicit
-        // `department: null` — querying for `null` matches both that and a
-        // genuinely missing field, unlike `$exists: false`.
-        { 'audience.department': null },
+        // null — querying for `null` matches both that and a genuinely
+        // missing field, unlike `$exists: false`.
+        { 'audience.teamId': null, 'audience.department': null },
+        { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
+        // Posts written while Team meant "same department".
         { 'audience.department': viewer.department },
       ],
     })
@@ -258,7 +261,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     );
     const enrichedBody =
       type === 'recommendation' ? await withLinkPreview(normalizedBody) : normalizedBody;
-    const visibility = visibilityFromBody(type, enrichedBody, viewer);
+    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
     const post: ConnectPost = {
       id: randomUUID(),
       org: orgForUser(viewer),
@@ -271,7 +274,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       audience: {
         label: visibility.label,
         org: orgForUser(viewer),
-        department: visibility.department,
+        teamId: visibility.teamId,
       },
       body: withMedia(enrichedBody, uploadedMedia),
       likedBy: [],
@@ -313,7 +316,7 @@ export async function updateConnectPost(
       type === 'recommendation'
         ? await withLinkPreview(normalizedBody, post.body.linkUrl as string | undefined)
         : normalizedBody;
-    const visibility = visibilityFromBody(type, enrichedBody, viewer);
+    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
     const existingMediaObjectKeys = mediaObjectKeys(post.body);
     const body = input.removeMedia
       ? withoutMedia(enrichedBody)
@@ -331,7 +334,7 @@ export async function updateConnectPost(
         audience: {
           label: visibility.label,
           org: post.org,
-          department: visibility.department,
+          teamId: visibility.teamId,
         },
         body,
         updatedAt: new Date(),
@@ -365,8 +368,11 @@ async function requireVisiblePost(viewerUserId: string, postId: string) {
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
-  const department = post.audience.department;
-  if (department && department !== viewer.department) {
+  const { teamId, department } = post.audience;
+  const visible = teamId
+    ? visibleTeamIds(viewer).includes(teamId)
+    : !department || department === viewer.department;
+  if (!visible) {
     throw new ConnectError(403, 'Post is not visible to you');
   }
   return post;
@@ -732,21 +738,43 @@ function normalizeAnnouncementSeverity(value: unknown) {
   return normalizeChoice(value, 'plain', ['plain', 'highlight_alert']);
 }
 
-function visibilityFromBody(
+async function visibilityFromBody(
   type: ConnectPostType,
   body: Record<string, unknown>,
   viewer: User,
 ) {
   const canTargetTeam = type === 'hr_announcement' || type === 'survey' || type === 'new_post';
   const sendTo = canTargetTeam ? body.sendTo : undefined;
-  const department =
-    sendTo === 'my_team'
-      ? normalizeDepartment(body.sendToDepartment) ?? normalizeDepartment(viewer.department)
-      : undefined;
+  const teamId = sendTo === 'my_team' ? await teamIdForAuthor(viewer) : undefined;
   return {
-    label: department ? 'Team' : 'Public',
-    department,
+    label: teamId ? 'Team' : 'Public',
+    teamId,
   };
+}
+
+/**
+ * The reporting group a "Team" post from this author addresses, named by the
+ * manager who heads it.
+ *
+ * A manager posts to the team they lead; anyone else posts to the team they
+ * belong to — their manager's — which is exactly the set of people the Team
+ * tab shows them. Leadership with neither a manager nor reports addresses
+ * themselves, which the caller turns back into a company-wide post.
+ */
+async function teamIdForAuthor(author: User): Promise<string | undefined> {
+  const leadsATeam = await users().countDocuments({ managerUserId: author.userId }, { limit: 1 });
+  if (leadsATeam > 0) return author.userId;
+  return author.managerUserId;
+}
+
+/**
+ * Every reporting group the viewer is part of: the one they lead and the one
+ * they belong to. A Team post is visible when it targets either.
+ */
+function visibleTeamIds(viewer: User): string[] {
+  return [viewer.userId, viewer.managerUserId].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  );
 }
 
 /**
@@ -1054,7 +1082,7 @@ function post(
   visibilityLabel: string,
   body: Record<string, unknown>,
   baseLikes: number,
-  department?: string,
+  teamId?: string,
 ): ConnectPost {
   return {
     id: randomUUID(),
@@ -1065,7 +1093,7 @@ function post(
     tagColor,
     tagTint,
     author: { name: authorName, initials, designation, avatarColor },
-    audience: { label: visibilityLabel, org, department },
+    audience: { label: visibilityLabel, org, teamId },
     body,
     likedBy: Array.from({ length: baseLikes }, (_, index) => `seed-${type}-${index}`),
     comments: [],
@@ -1095,7 +1123,7 @@ function systemPost(
   type: 'birthday' | 'anniversary' | 'new_joinee',
   systemKey: string,
   body: Record<string, unknown>,
-  department?: string,
+  teamId?: string,
 ): ConnectPost {
   const now = new Date();
   const meta = postMeta(type);
@@ -1106,7 +1134,7 @@ function systemPost(
     type,
     ...meta,
     author: systemAuthor(),
-    audience: { label: department ? 'Team' : 'Public', org, department },
+    audience: { label: teamId ? 'Team' : 'Public', org, teamId },
     body,
     likedBy: [],
     comments: [],
@@ -1195,5 +1223,6 @@ export async function generateNewJoineePost(employee: User, manager?: User) {
     managerNote: manager ? `Thrilled to have ${employee.name} join the team. Please say hi and help them feel at home!` : undefined,
     actionLabel: 'Say hi',
     actionDoneLabel: 'Said hi!',
-  }, employee.department));
+    // Scoped to the team the joinee lands in — their manager's reporting group.
+  }, employee.managerUserId));
 }

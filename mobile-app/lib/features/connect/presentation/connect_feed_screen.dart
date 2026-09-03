@@ -3137,22 +3137,35 @@ class _PostTypePickerSheet extends StatelessWidget {
               Flexible(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    // 174.65 x 123.18 per the design.
-                    childAspectRatio: 174.65 / 123.18,
-                    children: tiles
-                        .map(
-                          (tile) => _PostTypeCard(
-                            tile: tile,
-                            onTap: () => Navigator.of(context).pop(tile.type),
-                          ),
-                        )
-                        .toList(),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // 174.65 x 123.18 per the design — but never shorter
+                      // than the card's own content. On wider sheets that
+                      // ratio lands a fraction of a pixel under what the two
+                      // wrapped subtitle lines need, and the column overflows.
+                      final tileWidth = (constraints.maxWidth - 12) / 2;
+                      final tileHeight = math.max(
+                        tileWidth * 123.18 / 174.65,
+                        _postTypeCardMinHeight,
+                      );
+                      return GridView.count(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        childAspectRatio: tileWidth / tileHeight,
+                        children: tiles
+                            .map(
+                              (tile) => _PostTypeCard(
+                                tile: tile,
+                                onTap: () =>
+                                    Navigator.of(context).pop(tile.type),
+                              ),
+                            )
+                            .toList(),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -3163,6 +3176,11 @@ class _PostTypePickerSheet extends StatelessWidget {
     );
   }
 }
+
+/// Exactly what `_PostTypeCard`'s column occupies: 1.1 border + 16 padding +
+/// 40 icon + 10 gap + 21 label line + 2 gap + two 16px subtitle lines + 16
+/// padding + 1.1 border.
+const double _postTypeCardMinHeight = 139.2;
 
 class _PostTypeCard extends StatelessWidget {
   const _PostTypeCard({required this.tile, required this.onTap});
@@ -6977,13 +6995,9 @@ class _ConnectFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Per node 1803:13023: this strip sits on white, not the feed's grey
-    // background, with a hairline border separating it from the posts below.
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0x99EBEBEB))),
-      ),
+    // The strip sits on the feed's own background — the chips carry their own
+    // white fill, so a band behind them reads as a second header.
+    return Padding(
       padding: const EdgeInsets.fromLTRB(2, 2, 2, 13),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,

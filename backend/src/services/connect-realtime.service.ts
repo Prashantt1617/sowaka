@@ -20,22 +20,30 @@ export interface ConnectChange {
 
 interface ConnectChangeTarget extends ConnectChange {
   org: string;
-  /** Department-scoped posts only reach that department; `null`/undefined is company-wide. */
+  /** Team-scoped posts only reach that reporting group; `null`/undefined is company-wide. */
+  teamId?: string | null;
+  /** @deprecated Legacy department-scoped posts. */
   department?: string | null;
 }
 
 let io: SocketServer | undefined;
 
 /**
- * Posts are scoped by org and optionally narrowed to one department (see
+ * Posts are scoped by org and optionally narrowed to one reporting group (see
  * `getConnectFeed`), so rooms mirror exactly that: every socket joins its org
- * room plus its own department room, and a change is emitted to whichever of
- * the two matches the post's audience.
+ * room plus a room for each team it belongs to — the one it leads and the one
+ * it reports into — and a change is emitted to whichever room matches the
+ * post's audience.
  */
 function orgRoom(org: string): string {
   return `connect:org:${org}`;
 }
 
+function teamRoom(org: string, teamId: string): string {
+  return `connect:org:${org}:team:${teamId}`;
+}
+
+/** @deprecated Rooms for posts written while Team meant "same department". */
 function departmentRoom(org: string, department: string): string {
   return `connect:org:${org}:dept:${department}`;
 }
@@ -74,7 +82,16 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
               // base64 data URIs and would otherwise ride along on every
               // handshake.
               pipeline: [
-                { $project: { _id: 0, org: 1, email: 1, department: 1, lifecycleStatus: 1 } },
+                {
+                  $project: {
+                    _id: 0,
+                    org: 1,
+                    email: 1,
+                    department: 1,
+                    managerUserId: 1,
+                    lifecycleStatus: 1,
+                  },
+                },
               ],
             },
           },
@@ -94,6 +111,7 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
       socket.data.userId = record.userId;
       socket.data.org = org;
       socket.data.department = user.department;
+      socket.data.managerUserId = user.managerUserId;
       next();
     } catch (error) {
       logger.error('Connect socket authentication failed', {}, error);
@@ -104,12 +122,18 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
   io.on('connection', (socket) => {
     const org = socket.data.org as string;
     const department = socket.data.department as string | undefined;
+    const userId = socket.data.userId as string;
+    const managerUserId = socket.data.managerUserId as string | undefined;
     void socket.join(orgRoom(org));
+    // The team this socket leads, and the one it reports into — mirrors
+    // `visibleTeamIds` in the feed query.
+    void socket.join(teamRoom(org, userId));
+    if (managerUserId) void socket.join(teamRoom(org, managerUserId));
     if (department) void socket.join(departmentRoom(org, department));
     logger.info('Connect socket connected', {
-      userId: socket.data.userId,
+      userId,
       org,
-      department,
+      managerUserId,
       transport: socket.conn.transport.name,
     });
 
@@ -140,8 +164,12 @@ function socketToken(socket: Socket): string | undefined {
  */
 export function emitConnectChange(change: ConnectChangeTarget): void {
   if (!io) return;
-  const { org, department, ...payload } = change;
-  const room = department ? departmentRoom(org, department) : orgRoom(org);
+  const { org, teamId, department, ...payload } = change;
+  const room = teamId
+    ? teamRoom(org, teamId)
+    : department
+      ? departmentRoom(org, department)
+      : orgRoom(org);
   io.to(room).emit('connect:changed', payload);
 }
 

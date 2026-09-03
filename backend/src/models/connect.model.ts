@@ -24,6 +24,16 @@ export interface ConnectAuthor {
 export interface ConnectAudience {
   label: string;
   org?: string;
+  /**
+   * Reporting group a "Team" post is scoped to, identified by the manager who
+   * heads it: the manager themselves plus everyone who reports to them — the
+   * same people the app's Team tab lists. Absent on company-wide posts.
+   */
+  teamId?: string;
+  /**
+   * @deprecated Team posts used to be scoped by department. Still read so
+   * existing posts stay visible, but no longer written.
+   */
   department?: string;
 }
 
