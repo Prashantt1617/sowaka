@@ -288,8 +288,9 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   const SizedBox(height: 8),
                   _DocumentationCard(documents: member.documents),
                 ],
-                // Only a manager can review someone.
-                if (canManage) ...[
+                // Only a manager can review someone, and only downward —
+                // never their own manager.
+                if (canManage && !member.isManager) ...[
                   const SizedBox(height: 22),
                   _GiveFeedbackButton(
                     onTap: () {
@@ -2005,6 +2006,15 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     );
   }
 
+  /// True when this growth page belongs to the viewer's own manager.
+  bool get _isOwnManager =>
+      widget.memberId != null &&
+      (widget.data.team
+              .where((member) => member.id == widget.memberId)
+              .firstOrNull
+              ?.isManager ??
+          false);
+
   Widget _build(BuildContext context, List<GrowthRecord> history) {
     final period = _EmployeeGrowthPage._currentPeriod();
     final currentDone = history.any((record) => record.period == period);
@@ -2056,7 +2066,9 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                   onSelect: (index) => setState(() => _selectedIndex = index),
                 ),
                 const SizedBox(height: 16),
-                if (!currentDone && widget.memberId != null)
+                // Never offered for the viewer's own manager: feedback only
+                // flows downward.
+                if (!currentDone && widget.memberId != null && !_isOwnManager)
                   _FeedbackDuePeriodCard(
                     period: period,
                     onGiveFeedback: () => Navigator.of(context).push(

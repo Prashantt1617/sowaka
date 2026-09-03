@@ -55,10 +55,13 @@ class _FeedbackList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = state.dashboard!;
-    final open = data.team
+    // Feedback only flows downward, so the viewer's own manager — present in
+    // the team list — is never someone to review.
+    final reviewable = data.team.where((item) => !item.isManager).toList();
+    final open = reviewable
         .where((item) => item.status != FeedbackStatus.sent)
         .toList();
-    final completed = data.team
+    final completed = reviewable
         .where((item) => item.status == FeedbackStatus.sent)
         .toList();
     int urgency(TeamMember member) {
@@ -78,7 +81,7 @@ class _FeedbackList extends StatelessWidget {
     final done = completed..sort((a, b) => b.next.compareTo(a.next));
     final query = state.searchQuery.trim().toLowerCase();
     final visible =
-        data.team.where((item) {
+        reviewable.where((item) {
           final matches =
               query.isEmpty ||
               item.name.toLowerCase().contains(query) ||
@@ -103,9 +106,9 @@ class _FeedbackList extends StatelessWidget {
               : sortByUrgency(a, b);
         });
     final grouped = state.feedbackFilter == FeedbackFilter.all && query.isEmpty;
-    final progress = data.team.isEmpty
+    final progress = reviewable.isEmpty
         ? 0.0
-        : completed.length / data.team.length;
+        : completed.length / reviewable.length;
 
     return Column(
       key: const ValueKey('feedback-list'),
@@ -203,7 +206,7 @@ class _FeedbackList extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${completed.length} of ${data.team.length} given',
+                      '${completed.length} of ${reviewable.length} given',
                       style: const TextStyle(
                         color: MColors.inkSoft,
                         fontSize: 13,
@@ -418,7 +421,17 @@ class _FeedbackSearchFieldState extends State<_FeedbackSearchField> {
     onChanged: widget.onChanged,
     decoration: InputDecoration(
       hintText: widget.hint,
-      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+      // Exported glyph from node 781:6828 (griddy-icons:search), which
+      // already carries the design's #9197A2 fill.
+      prefixIcon: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: SvgPicture.asset(
+          'assets/icons/search_employee.svg',
+          width: 20,
+          height: 20,
+        ),
+      ),
+      prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 20),
       suffixIcon: widget.query.isEmpty
           ? null
           : IconButton(

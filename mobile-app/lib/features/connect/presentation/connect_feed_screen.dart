@@ -58,32 +58,8 @@ class ConnectFeedScreen extends StatefulWidget {
   State<ConnectFeedScreen> createState() => _ConnectFeedScreenState();
 }
 
-enum _ConnectFilter { all, myPost, public, team, priority, game }
-
 class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   late final ConnectBloc _bloc;
-  _ConnectFilter _filter = _ConnectFilter.all;
-
-  List<ConnectPost> _filteredPosts(List<ConnectPost> posts) {
-    switch (_filter) {
-      case _ConnectFilter.all:
-        return posts;
-      case _ConnectFilter.public:
-        return posts.where((post) => post.audience.label != 'Team').toList();
-      case _ConnectFilter.team:
-        return posts.where((post) => post.audience.label == 'Team').toList();
-      case _ConnectFilter.myPost:
-        return posts
-            .where((post) => post.author.userId == widget.session.user.id)
-            .toList();
-      case _ConnectFilter.priority:
-        return posts.where((post) => post.body['priority'] == true).toList();
-      case _ConnectFilter.game:
-        return posts
-            .where((post) => post.type == ConnectPostType.liveGame)
-            .toList();
-    }
-  }
 
   // AuthUser carries no initials/avatarColor fields of its own, so the
   // signed-in viewer's comment-composer avatar is derived the same way the
@@ -219,37 +195,26 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         illustrationAsset: 'assets/icons/connect_empty_state_illustration.png',
       );
     }
-    final filtered = _filteredPosts(state.posts);
+    final posts = state.posts;
     return RefreshIndicator(
       color: _ConnectColors.terra,
       onRefresh: _bloc.refresh,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-        itemCount: filtered.isEmpty ? 2 : filtered.length + 1,
+        itemCount: posts.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 16),
         itemBuilder: (context, index) {
+          // The composer entry point, now that the nav has no Post tab
+          // (node 2002:39114).
           if (index == 0) {
-            return _ConnectFilterBar(
-              selected: _filter,
-              onChanged: (value) => setState(() => _filter = value),
+            return _StartAPostCard(
+              initials: _viewerInitials,
+              color: _viewerColor,
+              photoUrl: _viewerPhotoUrl,
+              onTap: _openPostTypePicker,
             );
           }
-          if (filtered.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(
-                child: Text(
-                  'No posts match this filter yet.',
-                  style: TextStyle(
-                    color: _ConnectColors.faint,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            );
-          }
-          final post = filtered[index - 1];
+          final post = posts[index - 1];
           return _ConnectPostCard(
             key: ValueKey(post.id),
             post: post,
@@ -277,9 +242,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
 
   bool get _isAdmin => widget.session.user.role.toLowerCase() == 'manager';
 
-  /// Entry point for the bottom nav's "Post" tab: the quick composer opens
-  /// first (node 519:8441) and its corner button reveals the type picker,
-  /// rather than the picker being the first thing shown.
+  /// Entry point for the "Start a post" card at the top of the feed: the
+  /// quick composer opens with its type chips (node 2028:53056), which is
+  /// where the post type is chosen now that the nav has no Post tab.
   Future<void> _openPostTypePicker() async {
     final result = await Navigator.of(context).push<_QuickPostResult>(
       MaterialPageRoute(
@@ -288,8 +253,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           viewerColor: _viewerColor,
           viewerPhotoUrl: _viewerPhotoUrl,
           department: widget.session.user.department,
-          onPickType: _pickPostType,
           teammates: _taggablePeople,
+          isAdmin: _isAdmin,
         ),
       ),
     );
@@ -301,16 +266,6 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     }
     final type = result.type;
     if (type != null) await _openComposer(type);
-  }
-
-  Future<ConnectPostType?> _pickPostType() {
-    return showModalBottomSheet<ConnectPostType>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _PostTypePickerSheet(isAdmin: _isAdmin),
-    );
   }
 
   Future<void> _openComposer(
@@ -3183,271 +3138,14 @@ class _DarkChip extends StatelessWidget {
   }
 }
 
-class _PostTypePickerSheet extends StatelessWidget {
-  const _PostTypePickerSheet({required this.isAdmin});
-
-  final bool isAdmin;
-
-  @override
-  Widget build(BuildContext context) {
-    final tiles = [
-      const _PostTypeTile(
-        type: ConnectPostType.newPost,
-        label: 'Add Media',
-        subtitle: 'Photo or video',
-        asset: 'assets/icons/post_type_media.svg',
-      ),
-      const _PostTypeTile(
-        type: ConnectPostType.survey,
-        label: 'Survey / Poll',
-        subtitle: 'Ask the team',
-        asset: 'assets/icons/post_type_poll.png',
-        iconWidth: 32,
-        iconHeight: 21,
-      ),
-      const _PostTypeTile(
-        type: ConnectPostType.kudos,
-        label: 'Give Kudos',
-        subtitle: 'Recognise a teammate',
-        asset: 'assets/icons/post_type_kudos.png',
-      ),
-      const _PostTypeTile(
-        type: ConnectPostType.recommendation,
-        label: 'Recommend',
-        subtitle: 'Must-read or watch',
-        asset: 'assets/icons/post_type_recommend.png',
-      ),
-      if (isAdmin)
-        const _PostTypeTile(
-          type: ConnectPostType.hrAnnouncement,
-          label: 'Announcement',
-          subtitle: 'Policy or notice',
-          asset: 'assets/icons/post_type_announcement.png',
-        ),
-    ];
-
-    // Spec'd against node 519:9852 rather than the shared `_SheetShell`, whose
-    // radius, padding and handle differ from this sheet.
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 420,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
-        ),
-        child: Container(
-          width: double.infinity,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x1F000000),
-                blurRadius: 16,
-                offset: Offset(0, -4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 4),
-                child: Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1D5DB),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 12, 20, 16),
-                child: Text(
-                  "Choose what you'd like to share",
-                  style: TextStyle(
-                    color: Color(0xFF484848),
-                    fontSize: 14,
-                    height: 21 / 14,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // 174.65 x 123.18 per the design — but never shorter
-                      // than the card's own content. On wider sheets that
-                      // ratio lands a fraction of a pixel under what the two
-                      // wrapped subtitle lines need, and the column overflows.
-                      final tileWidth = (constraints.maxWidth - 12) / 2;
-                      final tileHeight = math.max(
-                        tileWidth * 123.18 / 174.65,
-                        _postTypeCardMinHeight,
-                      );
-                      return GridView.count(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        childAspectRatio: tileWidth / tileHeight,
-                        children: tiles
-                            .map(
-                              (tile) => _PostTypeCard(
-                                tile: tile,
-                                onTap: () =>
-                                    Navigator.of(context).pop(tile.type),
-                              ),
-                            )
-                            .toList(),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Exactly what `_PostTypeCard`'s column occupies: 1.1 border + 16 padding +
-/// 40 icon + 10 gap + 21 label line + 2 gap + two 16px subtitle lines + 16
-/// padding + 1.1 border.
-const double _postTypeCardMinHeight = 139.2;
-
-class _PostTypeCard extends StatelessWidget {
-  const _PostTypeCard({required this.tile, required this.onTap});
-
-  final _PostTypeTile tile;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF7F7F9),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDDDDDD), width: 1.1),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 1.5,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: _PostTypeIcon(tile: tile),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              tile.label,
-              style: const TextStyle(
-                color: Color(0xFF222222),
-                fontSize: 14,
-                height: 21 / 14,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.1,
-              ),
-            ),
-            const SizedBox(height: 2),
-            // Two lines, and no ellipsis: these labels are short enough to wrap
-            // rather than be cut off mid-word.
-            Text(
-              tile.subtitle,
-              maxLines: 2,
-              softWrap: true,
-              style: const TextStyle(
-                color: Color(0xFF484848),
-                fontSize: 12,
-                height: 16 / 12,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PostTypeIcon extends StatelessWidget {
-  const _PostTypeIcon({required this.tile});
-
-  final _PostTypeTile tile;
-
-  @override
-  Widget build(BuildContext context) {
-    if (tile.asset.endsWith('.svg')) {
-      return SvgPicture.asset(
-        tile.asset,
-        width: tile.iconWidth,
-        height: tile.iconHeight,
-      );
-    }
-    return Image.asset(
-      tile.asset,
-      width: tile.iconWidth,
-      height: tile.iconHeight,
-      fit: BoxFit.contain,
-    );
-  }
-}
-
-class _PostTypeTile {
-  const _PostTypeTile({
-    required this.type,
-    required this.label,
-    required this.subtitle,
-    required this.asset,
-    this.iconWidth = 24,
-    this.iconHeight = 24,
-  });
-
-  final ConnectPostType type;
-  final String label;
-  final String subtitle;
-  final String asset;
-  final double iconWidth;
-  final double iconHeight;
-}
-
-/// The composer the "Post" tab opens (node 519:8441): a plain text post by
-/// default, with the corner button opening the type picker (node 519:9852) for
-/// anything richer. Attached media renders inline here per node 526:2474.
 class _QuickPostPage extends StatefulWidget {
   const _QuickPostPage({
     required this.viewerInitials,
     required this.viewerColor,
     required this.viewerPhotoUrl,
     required this.department,
-    required this.onPickType,
     this.teammates = const [],
+    this.isAdmin = false,
   });
 
   final String viewerInitials;
@@ -3458,8 +3156,8 @@ class _QuickPostPage extends StatefulWidget {
   /// People who can be tagged in a media post.
   final List<ConnectTeammate> teammates;
 
-  /// Opens the post-type picker; returns the chosen type, or null if dismissed.
-  final Future<ConnectPostType?> Function() onPickType;
+  /// Admins get the extra Announcement type in the chip row.
+  final bool isAdmin;
 
   @override
   State<_QuickPostPage> createState() => _QuickPostPageState();
@@ -3526,15 +3224,15 @@ class _QuickPostPageState extends State<_QuickPostPage> {
     setState(() => _teamOnly = teamOnly);
   }
 
-  Future<void> _openPicker() async {
-    final type = await widget.onPickType();
-    if (!mounted || type == null) return;
+  /// A type chip was tapped. Media is composed right here; every other type
+  /// has its own dedicated composer, so hand off to it and leave this screen
+  /// behind — the flows themselves are unchanged.
+  Future<void> _chooseType(ConnectPostType type) async {
     if (type == ConnectPostType.newPost) {
       await _addMedia();
       return;
     }
-    // Every other type has its own dedicated composer — hand off to it and
-    // leave this screen behind so the flows stay exactly as they were.
+    if (!mounted) return;
     Navigator.of(context).pop(_QuickPostResult.switchType(type));
   }
 
@@ -3573,6 +3271,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
         child: Column(
           children: [
             _buildHeader(),
+            _buildTypeChips(),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -3639,7 +3338,58 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                 ),
               ),
             ),
-            _buildFooter(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Post-type selector (node 2028:53056): a scrollable row of chips beneath
+  /// the composer header, in place of the old bottom-sheet grid.
+  Widget _buildTypeChips() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFEBEBEB), width: 1.114),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          spacing: 10,
+          children: [
+            _PostTypeChip(
+              label: 'Media',
+              asset: 'assets/icons/post_type_media.svg',
+              onTap: () => _chooseType(ConnectPostType.newPost),
+            ),
+            _PostTypeChip(
+              label: 'Poll',
+              asset: 'assets/icons/post_type_poll.png',
+              iconWidth: 30,
+              onTap: () => _chooseType(ConnectPostType.survey),
+            ),
+            _PostTypeChip(
+              label: 'Kudos',
+              asset: 'assets/icons/post_type_kudos.png',
+              onTap: () => _chooseType(ConnectPostType.kudos),
+            ),
+            _PostTypeChip(
+              label: 'Recommend',
+              asset: 'assets/icons/post_type_recommend.png',
+              onTap: () => _chooseType(ConnectPostType.recommendation),
+            ),
+            // Not among the design's four chips, but announcements are
+            // admin-only and this row is now the only way to reach them.
+            if (widget.isAdmin)
+              _PostTypeChip(
+                label: 'Announcement',
+                asset: 'assets/icons/post_type_announcement.png',
+                onTap: () => _chooseType(ConnectPostType.hrAnnouncement),
+              ),
           ],
         ),
       ),
@@ -3839,32 +3589,141 @@ class _QuickPostPageState extends State<_QuickPostPage> {
       ],
     );
   }
+}
 
-  Widget _buildFooter() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openPicker,
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0xFFBEEDFF),
-                shape: BoxShape.circle,
-              ),
-              child: SvgPicture.asset(
-                'assets/icons/composer_add.svg',
-                width: 28,
-                height: 28,
-              ),
-            ),
+/// One post-type chip in the composer's selector row (node 2028:53058).
+class _PostTypeChip extends StatelessWidget {
+  const _PostTypeChip({
+    required this.label,
+    required this.asset,
+    required this.onTap,
+    this.iconWidth = 20,
+  });
+
+  final String label;
+  final String asset;
+  final VoidCallback onTap;
+
+  /// The poll glyph is 30x20; every other chip icon is square at 20.
+  final double iconWidth;
+  static const double iconHeight = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF7F7F9),
+      borderRadius: BorderRadius.circular(99),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(99),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+            borderRadius: BorderRadius.circular(99),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: [
+              SizedBox(
+                width: iconWidth,
+                height: iconHeight,
+                child: asset.endsWith('.svg')
+                    ? SvgPicture.asset(
+                        asset,
+                        width: iconWidth,
+                        height: iconHeight,
+                      )
+                    : Image.asset(
+                        asset,
+                        width: iconWidth,
+                        height: iconHeight,
+                        fit: BoxFit.cover,
+                      ),
+              ),
+              Text(
+                label.toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFF484848),
+                  fontSize: 12,
+                  height: 18 / 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Start a post....." row at the top of the feed (node 2002:39114) — the
+/// composer entry point, replacing the Post tab that used to sit in the nav.
+class _StartAPostCard extends StatelessWidget {
+  const _StartAPostCard({
+    required this.initials,
+    required this.color,
+    required this.photoUrl,
+    required this.onTap,
+  });
+
+  final String initials;
+  final Color color;
+  final String photoUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(22.114),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+          ),
+          child: Row(
+            spacing: 12,
+            children: [
+              _InitialAvatar(
+                initials: initials,
+                color: color,
+                size: 48,
+                photoUrl: photoUrl,
+              ),
+              Expanded(
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.centerLeft,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFAFAFA),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFE8E8F0),
+                      width: 1.129,
+                    ),
+                  ),
+                  child: const Text(
+                    'Start a post.....',
+                    style: TextStyle(
+                      color: Color(0xFF717171),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -7426,176 +7285,6 @@ String _mimeTypeFor(String? extension) {
     'mp4' => 'video/mp4',
     _ => 'application/octet-stream',
   };
-}
-
-class _ConnectFilterBar extends StatelessWidget {
-  const _ConnectFilterBar({required this.selected, required this.onChanged});
-
-  final _ConnectFilter selected;
-  final ValueChanged<_ConnectFilter> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    // The strip sits on the feed's own background — the chips carry their own
-    // white fill, so a band behind them reads as a second header.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 2, 2, 13),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        // Order per node 488:19230: All, My Post, Public, Team, Priority, Game.
-        child: Row(
-          children: [
-            _FilterChip(
-              label: 'All',
-              selected: selected == _ConnectFilter.all,
-              onTap: () => onChanged(_ConnectFilter.all),
-            ),
-            const SizedBox(width: 8),
-            _FilterChip(
-              label: 'My Post',
-              iconAsset: 'assets/icons/filter_mypost.png',
-              iconSize: 26,
-              selected: selected == _ConnectFilter.myPost,
-              onTap: () => onChanged(_ConnectFilter.myPost),
-            ),
-            const SizedBox(width: 8),
-            _FilterChip(
-              label: 'Public',
-              emoji: '🌍',
-              selected: selected == _ConnectFilter.public,
-              onTap: () => onChanged(_ConnectFilter.public),
-            ),
-            const SizedBox(width: 8),
-            _FilterChip(
-              label: 'Team',
-              iconAsset: 'assets/icons/filter_team.png',
-              iconSize: 26,
-              selected: selected == _ConnectFilter.team,
-              onTap: () => onChanged(_ConnectFilter.team),
-            ),
-            const SizedBox(width: 8),
-            _FilterChip(
-              label: 'Priority',
-              iconAsset: 'assets/icons/filter_priority.png',
-              iconSize: 20,
-              selected: selected == _ConnectFilter.priority,
-              onTap: () => onChanged(_ConnectFilter.priority),
-            ),
-            const SizedBox(width: 8),
-            _FilterChip(
-              label: 'Game',
-              iconAsset: 'assets/icons/filter_game.svg',
-              iconSize: 20,
-              selected: selected == _ConnectFilter.game,
-              onTap: () => onChanged(_ConnectFilter.game),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.emoji,
-    this.iconAsset,
-    this.iconSize = 26,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final String? emoji;
-  final String? iconAsset;
-  final double iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasIcon = emoji != null || iconAsset != null;
-    final asset = iconAsset;
-    return InkWell(
-      borderRadius: BorderRadius.circular(99),
-      onTap: onTap,
-      child: Container(
-        // 11.114 vertical padding; the horizontal padding tightens when an
-        // icon is present (31.114 → 17.114) per the design.
-        padding: EdgeInsets.symmetric(
-          horizontal: hasIcon ? 17.114 : 31.114,
-          vertical: 11.114,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF0571A6) : Colors.white,
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(
-            color: selected ? const Color(0xFF0571A6) : const Color(0xFFEBEBEB),
-            width: 1.114,
-          ),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x335A9CFF),
-                    blurRadius: 6,
-                    offset: Offset(0, 4),
-                  ),
-                  BoxShadow(
-                    color: Color(0x335A78FF),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 1.5,
-                    offset: Offset(0, 1),
-                  ),
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 1,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (emoji != null) ...[
-              Text(
-                emoji!,
-                style: const TextStyle(fontSize: 18, height: 28 / 18),
-              ),
-              const SizedBox(width: 8),
-            ] else if (asset != null) ...[
-              if (asset.endsWith('.svg'))
-                SvgPicture.asset(asset, width: iconSize, height: iconSize)
-              else
-                Image.asset(
-                  asset,
-                  width: iconSize,
-                  height: iconSize,
-                  fit: BoxFit.contain,
-                ),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : const Color(0xFF484848),
-                fontSize: 14,
-                height: 16.2 / 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.16,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _ConnectEmptyState extends StatelessWidget {

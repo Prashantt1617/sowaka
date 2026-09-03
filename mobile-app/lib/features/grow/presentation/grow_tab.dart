@@ -27,7 +27,9 @@ class _GrowTabState extends State<_GrowTab> {
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
     final period = _EmployeeGrowthPage._currentPeriod();
-    final team = data.team;
+    // Feedback only flows downward: the viewer's own manager is in the team
+    // list but must never appear as someone to review.
+    final team = data.team.where((member) => !member.isManager).toList();
     // "Given" counts reports whose review for the current period is already
     // sent — the same signal the team list shows as a green dot.
     final given = team
@@ -575,6 +577,9 @@ class _GrowthTeamRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    // Status badges per node 781:7023 / 781:7016: rounded
+                    // squares, green with the exported check tick once the
+                    // review is in, plain amber while it is still due.
                     if (reviewed)
                       Container(
                         width: 14,
@@ -582,29 +587,23 @@ class _GrowthTeamRow extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: const Color(0xFF00C950),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.1),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.white, width: 1.114),
                         ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          size: 10,
-                          color: Colors.white,
+                        child: SvgPicture.asset(
+                          'assets/icons/feedback_check_tick.svg',
+                          width: 10,
+                          height: 10,
                         ),
                       )
                     else
                       Container(
                         width: 16,
                         height: 16,
-                        alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFF8C8F),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.1),
-                        ),
-                        child: const Icon(
-                          Icons.priority_high_rounded,
-                          size: 10,
-                          color: Colors.white,
+                          color: const Color(0xFFFFAF40),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.white, width: 1.114),
                         ),
                       ),
                   ],

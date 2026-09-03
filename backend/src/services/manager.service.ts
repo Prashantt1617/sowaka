@@ -114,28 +114,39 @@ export async function getManagerWorkspace(managerUserId: string) {
     ? await users().findOne({ userId: manager.managerUserId })
     : null;
 
+  // Scoped to the manager's own company: `managerUserId` alone is not unique
+  // across orgs, and without this another company's employees can appear in
+  // the team list.
+  const orgFilter = manager.org ? { org: manager.org } : {};
+
   const directReports = await users()
     .find({
       managerUserId,
+      ...orgFilter,
       lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
     })
     .sort({ name: 1, userId: 1 })
     .toArray();
 
   // Someone with no direct reports still has a team: their peers under the
-  // same manager, plus that manager. This is what the read-only Team view
-  // shows an individual contributor.
+  // same manager. This is what the read-only Team view shows an individual
+  // contributor.
   let reports = directReports;
   if (directReports.length === 0 && manager.managerUserId) {
-    const peers = await users()
+    reports = await users()
       .find({
         managerUserId: manager.managerUserId,
+        ...orgFilter,
         userId: { $ne: managerUserId },
         lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
       })
       .sort({ name: 1, userId: 1 })
       .toArray();
-    reports = approver ? [approver, ...peers] : peers;
+  }
+  // Your own manager is part of your team however you got here — they head it.
+  // Managers with reports of their own were previously missing them entirely.
+  if (approver && !reports.some((report) => report.userId === approver.userId)) {
+    reports = [approver, ...reports];
   }
   // Recognition is limited to the manager's own direct reports — never the
   // peer/manager fallback above.

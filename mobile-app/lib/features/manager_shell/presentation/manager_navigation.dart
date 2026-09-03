@@ -11,8 +11,8 @@ class _BottomTabs extends StatelessWidget {
   final ManagerState state;
   final ManagerBloc bloc;
 
-  /// "Post" is an action rather than a tab — it switches to Connect and opens
-  /// the composer, so it never shows a selected state.
+  /// Retained for call sites; composing now starts from the "Start a post"
+  /// card at the top of the Connect feed rather than a nav tab.
   final VoidCallback? onOpenComposer;
 
   /// Pushed screens pass this to unwind back to the shell before switching tab,
@@ -40,6 +40,7 @@ class _BottomTabs extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 9, 16, 8),
           child: Row(
+            spacing: 14,
             children: [
               _TabButton(
                 label: 'Connect',
@@ -61,15 +62,6 @@ class _BottomTabs extends StatelessWidget {
                 onTap: () {
                   onBeforeChange?.call();
                   bloc.add(const ChangeManagerTab(ManagerTab.manage));
-                },
-              ),
-              _TabButton(
-                label: 'Post',
-                iconAsset: 'assets/icons/nav_post.svg',
-                selected: false,
-                onTap: () {
-                  onBeforeChange?.call();
-                  onOpenComposer?.call();
                 },
               ),
               _TabButton(
