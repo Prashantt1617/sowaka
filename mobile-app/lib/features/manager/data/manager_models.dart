@@ -117,6 +117,7 @@ class TeamMember {
     required this.id,
     required this.userId,
     required this.name,
+    this.isManager = false,
     required this.initial,
     required this.team,
     required this.score,
@@ -146,6 +147,9 @@ class TeamMember {
   final int id;
   final String userId;
   final String name;
+
+  /// The viewer's own manager — shown as "(Manager)" in the team list.
+  final bool isManager;
   final String initial;
   final String team;
   final double score;
@@ -182,6 +186,7 @@ class TeamMember {
       id: id,
       userId: json['userId'] as String? ?? '',
       name: name,
+      isManager: json['isManager'] == true,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       team: json['department'] as String? ?? 'Team',
       score: (json['score'] as num?)?.toDouble() ?? 0,
@@ -244,6 +249,7 @@ class TeamMember {
       id: id,
       userId: userId,
       name: name,
+      isManager: isManager,
       initial: initial,
       team: team,
       score: score ?? this.score,

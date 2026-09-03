@@ -34,7 +34,6 @@ class _GrowTabState extends State<_GrowTab> {
         .where((member) => member.history.any((r) => r.period == period))
         .length;
     final total = team.length;
-    final percent = total == 0 ? 0 : ((given / total) * 100).round();
     final filtered = _query.isEmpty
         ? team
         : team
@@ -66,6 +65,21 @@ class _GrowTabState extends State<_GrowTab> {
       );
     }
 
+    // An individual contributor can't give feedback, so Grow is simply their
+    // own growth screen (node 1498:5847) — no team list, search or progress.
+    if (!widget.state.canManage) {
+      return _EmployeeGrowthPage(
+        name: data.managerName,
+        designation: data.managerTeam,
+        history: data.growthHistory,
+        data: data,
+        bloc: widget.bloc,
+        onNotifications: widget.onNotifications,
+        onOpenComposer: widget.onOpenComposer,
+        embedded: true,
+      );
+    }
+
     return Column(
       key: const ValueKey('grow'),
       children: [
@@ -84,25 +98,9 @@ class _GrowTabState extends State<_GrowTab> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
               if (total > 0) ...[
-                _FeedbackGivenCard(
-                  given: given,
-                  total: total,
-                  percent: percent,
-                ),
+                _FeedbackGivenCard(given: given, total: total, period: period),
                 const SizedBox(height: 14),
               ],
-              _MyFeedbackCard(
-                history: data.growthHistory,
-                approverName: data.approverName,
-                onOpen: data.growthHistory.isEmpty
-                    ? null
-                    : () => openGrowth(
-                        name: data.managerName,
-                        designation: data.managerTeam,
-                        history: data.growthHistory,
-                      ),
-              ),
-              const SizedBox(height: 14),
               _FeedbackSearchField(
                 query: _query,
                 onChanged: (value) => setState(() => _query = value),
@@ -110,6 +108,26 @@ class _GrowTabState extends State<_GrowTab> {
                 hint: 'Search employee',
               ),
               const SizedBox(height: 14),
+              // Per node 781:6773 the viewer's own entry sits directly below
+              // the search field, styled like every other person's card.
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _MyGrowthRow(
+                  name: data.managerName,
+                  designation: data.managerTeam,
+                  initial: data.managerInitial,
+                  photoUrl: data.managerPhotoUrl,
+                  reviewed: data.growthHistory.isNotEmpty,
+                  approverName: data.approverName,
+                  onOpen: data.growthHistory.isEmpty
+                      ? null
+                      : () => openGrowth(
+                          name: data.managerName,
+                          designation: data.managerTeam,
+                          history: data.growthHistory,
+                        ),
+                ),
+              ),
               for (final member in filtered)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -148,80 +166,99 @@ class _GrowTabState extends State<_GrowTab> {
   }
 }
 
-/// "6/12 Feedback Given" progress card at the top of the Grow tab.
+/// "6/12 Feedback Given" progress card at the top of the Grow tab
+/// (node 781:6795).
 class _FeedbackGivenCard extends StatelessWidget {
   const _FeedbackGivenCard({
     required this.given,
     required this.total,
-    required this.percent,
+    required this.period,
   });
 
   final int given;
   final int total;
-  final int percent;
+
+  /// Review period, e.g. `2026-06`, shown as "JUNE 2026" above the count.
+  final String period;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 26),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1.5,
+            offset: Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1,
+            offset: Offset(0, 1),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            _periodTitle(period).toUpperCase(),
+            style: const TextStyle(
+              color: Color(0xFF0571A6),
+              fontSize: 11.5,
+              height: 17.25 / 11.5,
+              letterSpacing: 0.6,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
                 '$given/$total',
                 style: const TextStyle(
-                  color: Color(0xFF101828),
-                  fontSize: 26,
+                  color: Color(0xFF222222),
+                  fontSize: 32,
                   height: 1,
-                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(width: 8),
-              const Expanded(
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
                 child: Text(
                   'Feedback Given',
                   style: TextStyle(
-                    color: Color(0xFF6A7282),
-                    fontSize: 14,
+                    color: Color(0xFF717171),
+                    fontSize: 12,
+                    height: 17.25 / 12,
+                    letterSpacing: 0.6,
                     fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDBEAFE),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$percent%',
-                  style: const TextStyle(
-                    color: Color(0xFF0571A6),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: total == 0 ? 0 : given / total,
-              minHeight: 8,
-              backgroundColor: const Color(0xFFE9EEF3),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+          const SizedBox(height: 16),
+          // Outlined track with a solid fill, rather than a tinted track.
+          Container(
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF0571A6), width: 1.114),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: total == 0 ? 0 : (given / total).clamp(0.0, 1.0),
+              child: const ColoredBox(color: Color(0xFF0571A6)),
             ),
           ),
         ],
@@ -230,8 +267,6 @@ class _FeedbackGivenCard extends StatelessWidget {
   }
 }
 
-/// The signed-in user's own latest review, shown at the top of Grow. When no
-/// manager has reviewed them yet it says so rather than rendering an empty card.
 class _MyFeedbackCard extends StatelessWidget {
   const _MyFeedbackCard({
     required this.history,
@@ -372,6 +407,134 @@ class _MyFeedbackCard extends StatelessWidget {
 }
 
 /// Team row in the Grow tab; the dot shows whether this period's review is in.
+/// The viewer's own feedback entry in the Grow list (node 781:6813). Same card
+/// as a teammate's row, but labelled "You (…)"; when the approver hasn't given
+/// feedback yet there's nothing to open, so tapping explains that instead.
+class _MyGrowthRow extends StatelessWidget {
+  const _MyGrowthRow({
+    required this.name,
+    required this.designation,
+    required this.initial,
+    required this.photoUrl,
+    required this.reviewed,
+    required this.approverName,
+    required this.onOpen,
+  });
+
+  final String name;
+  final String designation;
+  final String initial;
+  final String? photoUrl;
+  final bool reviewed;
+  final String approverName;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableCard(
+      onTap: onOpen ?? () => _explainPending(context),
+      padding: const EdgeInsets.all(17),
+      child: Row(
+        children: [
+          _ProfileAvatarAction(
+            initial: initial,
+            photoUrl: photoUrl,
+            onTap: onOpen ?? () => _explainPending(context),
+            size: 56,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'You ($name)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: MColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (reviewed)
+                      Container(
+                        width: 14,
+                        height: 14,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00C950),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.1),
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                      )
+                    else
+                      Container(
+                        width: 16,
+                        height: 16,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF8C8F),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.1),
+                        ),
+                        child: const Icon(
+                          Icons.priority_high_rounded,
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+                if (designation.isNotEmpty)
+                  Text(
+                    designation,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: MColors.inkSoft,
+                      fontSize: 14,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SvgPicture.asset(
+            'assets/icons/chevron_right_expand.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(
+              MColors.inkFaint,
+              BlendMode.srcIn,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _explainPending(BuildContext context) {
+    final by = approverName.isEmpty ? 'your manager' : approverName;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Feedback hasn't been given yet by $by."),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: MColors.ink,
+      ),
+    );
+  }
+}
+
 class _GrowthTeamRow extends StatelessWidget {
   const _GrowthTeamRow({
     required this.member,
@@ -515,7 +678,8 @@ class _GrowthChart extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapUp: (details) => _handleTap(details.localPosition, constraints.biggest),
+            onTapUp: (details) =>
+                _handleTap(details.localPosition, constraints.biggest),
             child: CustomPaint(
               size: Size.infinite,
               painter: _GrowthChartPainter(values, color, _effectiveIndex),

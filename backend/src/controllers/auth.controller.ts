@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import {
   getCurrentAuthUser,
+  getTeammates,
   requestLoginOtp,
   revokeSession,
   verifyLoginOtp,
@@ -32,6 +33,15 @@ export async function currentUser(req: Request, res: Response, next: NextFunctio
   try {
     const user = await getCurrentAuthUser(req.auth?.userId ?? '');
     res.status(200).json({ success: true, user });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function teammates(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await getTeammates(req.auth?.userId ?? '');
+    res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);
   }

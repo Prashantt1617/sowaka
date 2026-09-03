@@ -2,8 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../routes/app_routes.dart';
+import '../../../services/api_config.dart';
 import '../bloc/auth_bloc.dart';
+import '../data/auth_api_service.dart';
+import '../data/auth_models.dart';
 import '../data/auth_session_store.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen>
   late final List<FocusNode> _otpFocusNodes;
   late final AuthBloc _bloc;
   bool _didFocusOtp = false;
+  bool _rememberMe = false;
 
   @override
   void initState() {
@@ -89,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _CxColors.paper,
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: StreamBuilder<AuthState>(
           stream: _bloc.stream,
@@ -98,7 +103,10 @@ class _LoginScreenState extends State<LoginScreen>
             final state = snapshot.data ?? _bloc.state;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
-              if (state.error != null) {
+              // Errors render inline on the form itself (nodes 1849:17319 and
+              // 1849:17545) rather than as a snackbar, so nothing is surfaced
+              // here beyond the success step's own handling.
+              if (state.error != null && state.step == AuthStep.success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(state.error!),
@@ -137,15 +145,17 @@ class _LoginScreenState extends State<LoginScreen>
               child: switch (state.step) {
                 AuthStep.email => _EmailStep(
                   key: const ValueKey('email'),
-                  floatController: _floatController,
                   emailController: _emailController,
                   isEmailValid: state.isEmailValid,
                   isLoading: state.isLoading,
                   onSendCode: _sendCode,
+                  rememberMe: _rememberMe,
+                  onRememberMeChanged: (value) =>
+                      setState(() => _rememberMe = value),
+                  errorText: state.error,
                 ),
                 AuthStep.code => _CodeStep(
                   key: const ValueKey('code'),
-                  blinkController: _blinkController,
                   email: state.email,
                   otpControllers: _otpControllers,
                   otpFocusNodes: _otpFocusNodes,
@@ -154,12 +164,14 @@ class _LoginScreenState extends State<LoginScreen>
                   onOtpChanged: _handleOtpChanged,
                   onBack: _editEmail,
                   onVerify: _verifyCode,
+                  onResend: _sendCode,
+                  errorText: state.error,
                 ),
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
-                  floatController: _floatController,
                   name: state.session?.user.name ?? 'there',
                   company: state.session?.user.company ?? 'Sowaka',
+                  session: state.session,
                   onEnter: () async {
                     final session = state.session;
                     if (session == null) return;
@@ -181,71 +193,321 @@ class _LoginScreenState extends State<LoginScreen>
   }
 }
 
+/// Shared chrome for the signed-out screens (nodes 1849:17178 / 1849:17502):
+/// a brand band with a white sheet pulled up over it.
+class _LoginShell extends StatelessWidget {
+  const _LoginShell({required this.child});
+
+  final Widget child;
+
+  static const brand = Color(0xFF1A7FA6);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 131,
+          child: Stack(
+            children: [
+              Container(color: brand),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 91,
+                child: Container(
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The rounded brand button used for "Continue" and "Verify".
+class _LoginPrimaryButton extends StatelessWidget {
+  const _LoginPrimaryButton({
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+    this.loading = false,
+    this.trailingArrow = false,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback? onPressed;
+  final bool loading;
+  final bool trailingArrow;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = enabled && !loading;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x4D1A7FA6),
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        // #0571A6 when actionable, the muted #96B7C7 resting state otherwise.
+        color: active ? const Color(0xFF0571A6) : const Color(0xFF96B7C7),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: active ? onPressed : null,
+          child: SizedBox(
+            height: 54,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (loading) ...[
+                  const SizedBox(width: 8),
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  ),
+                ] else if (trailingArrow) ...[
+                  const SizedBox(width: 8),
+                  SvgPicture.asset(
+                    'assets/icons/login_arrow.svg',
+                    width: 18,
+                    height: 18,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EmailStep extends StatelessWidget {
   const _EmailStep({
     super.key,
-    required this.floatController,
     required this.emailController,
     required this.isEmailValid,
     required this.isLoading,
     required this.onSendCode,
+    required this.rememberMe,
+    required this.onRememberMeChanged,
+    this.errorText,
   });
 
-  final AnimationController floatController;
   final TextEditingController emailController;
   final bool isEmailValid;
   final bool isLoading;
   final VoidCallback onSendCode;
+  final bool rememberMe;
+  final ValueChanged<bool> onRememberMeChanged;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
-    return _PhoneCanvas(
-      horizontalPadding: 26,
+    return _LoginShell(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _BrandRow(),
-          const SizedBox(height: 42),
-          _PeopleCluster(controller: floatController),
-          const SizedBox(height: 30),
           const Text(
-            'Sign in to\nConnect',
+            "Let's get you signed in",
             style: TextStyle(
-              color: _CxColors.ink,
-              fontSize: 31,
-              height: 1.08,
-              letterSpacing: -0.9,
-              fontWeight: FontWeight.w800,
+              color: Color(0xFF222222),
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.16,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           const Text(
-            "Enter your work email and we'll send a 6-digit code. No passwords - we'll find your company for you.",
+            'Your workplace, connected.',
             style: TextStyle(
-              color: _CxColors.muted,
+              color: Color(0xFF717171),
               fontSize: 14,
-              height: 1.55,
+              height: 21 / 14,
               fontWeight: FontWeight.w400,
             ),
           ),
-          const Spacer(),
+          const SizedBox(height: 32),
           const Text(
-            'WORK EMAIL',
+            'Work email',
             style: TextStyle(
-              color: _CxColors.softText,
-              fontSize: 11,
-              height: 1,
-              letterSpacing: 1.32,
-              fontWeight: FontWeight.w800,
+              color: Color(0xFF222222),
+              fontSize: 13,
+              height: 19.5 / 13,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 9),
-          _EmailField(controller: emailController, isValid: isEmailValid),
-          const SizedBox(height: 14),
-          _PrimaryButton(
-            label: isLoading ? 'Sending code...' : 'Send me a code',
-            isLoading: isLoading,
-            onPressed: isEmailValid && !isLoading ? onSendCode : null,
+          const SizedBox(height: 6),
+          Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAFAFA),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: errorText != null
+                    ? const Color(0xFFE5484D)
+                    : const Color(0xFFE8E8F0),
+                width: 1.129,
+              ),
+            ),
+            child: Row(
+              children: [
+                SvgPicture.asset(
+                  'assets/icons/login_mail.svg',
+                  width: 18,
+                  height: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (isEmailValid && !isLoading) onSendCode();
+                    },
+                    style: const TextStyle(
+                      color: Color(0xFF222222),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    decoration: const InputDecoration(
+                      isCollapsed: true,
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      hintText: 'you@company.com',
+                      hintStyle: TextStyle(
+                        color: Color(0xFF717171),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ),
+                // Green tick once the address parses, per node 1849:17381.
+                if (isEmailValid)
+                  Container(
+                    width: 20,
+                    height: 20,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF2BB673),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 13,
+                      color: Colors.white,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (errorText != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              errorText!,
+              style: const TextStyle(
+                color: Color(0xFFE5484D),
+                fontSize: 12,
+                height: 18 / 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => onRememberMeChanged(!rememberMe),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: rememberMe
+                          ? const Color(0xFF0571A6)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                      border: Border.all(
+                        color: rememberMe
+                            ? const Color(0xFF0571A6)
+                            : const Color(0xFFDDDDDD),
+                      ),
+                    ),
+                    child: rememberMe
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 13,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Remember me',
+                    style: TextStyle(
+                      color: Color(0xFF484848),
+                      fontSize: 13,
+                      height: 19.5 / 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          _LoginPrimaryButton(
+            label: 'Continue',
+            enabled: isEmailValid,
+            loading: isLoading,
+            trailingArrow: true,
+            onPressed: onSendCode,
           ),
         ],
       ),
@@ -256,7 +518,6 @@ class _EmailStep extends StatelessWidget {
 class _CodeStep extends StatelessWidget {
   const _CodeStep({
     super.key,
-    required this.blinkController,
     required this.email,
     required this.otpControllers,
     required this.otpFocusNodes,
@@ -265,9 +526,10 @@ class _CodeStep extends StatelessWidget {
     required this.onOtpChanged,
     required this.onBack,
     required this.onVerify,
+    required this.onResend,
+    this.errorText,
   });
 
-  final AnimationController blinkController;
   final String email;
   final List<TextEditingController> otpControllers;
   final List<FocusNode> otpFocusNodes;
@@ -276,130 +538,145 @@ class _CodeStep extends StatelessWidget {
   final VoidCallback onOtpChanged;
   final VoidCallback onBack;
   final VoidCallback onVerify;
+  final VoidCallback onResend;
+  final String? errorText;
+
+  /// `ananya@sowaka.fit` → `an***@sowaka.fit`, matching the design.
+  String get _maskedEmail {
+    final at = email.indexOf('@');
+    if (at <= 0) return email;
+    final name = email.substring(0, at);
+    final domain = email.substring(at);
+    if (name.length <= 2) return '$name***$domain';
+    return '${name.substring(0, 2)}***$domain';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return _PhoneCanvas(
-      horizontalPadding: 26,
+    return _LoginShell(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _RoundIconButton(
-                icon: Icons.chevron_left_rounded,
-                onPressed: onBack,
-              ),
-              const Text(
-                'STEP 2 OF 2',
-                style: TextStyle(
-                  color: _CxColors.softText,
-                  fontSize: 11,
-                  letterSpacing: 1.32,
-                  fontWeight: FontWeight.w800,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              onTap: onBack,
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_back_rounded,
+                      size: 18,
+                      color: Color(0xFF717171),
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Change email',
+                      style: TextStyle(
+                        color: Color(0xFF717171),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 36),
-          const Text(
-            'Enter your code',
-            style: TextStyle(
-              color: _CxColors.ink,
-              fontSize: 28,
-              height: 1.1,
-              letterSpacing: -0.84,
-              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 11),
-          Wrap(
-            spacing: 4,
-            runSpacing: 2,
-            children: [
-              const Text(
-                'We sent a 6-digit code to',
-                style: TextStyle(
-                  color: _CxColors.muted,
-                  fontSize: 14,
-                  height: 1.6,
-                ),
+          const SizedBox(height: 12),
+          const SizedBox(
+            width: double.infinity,
+            child: Text(
+              "We've sent a 6-digit code to",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF7A7A9A),
+                fontSize: 14,
+                height: 21 / 14,
+                fontWeight: FontWeight.w400,
               ),
-              Text(
-                email.isEmpty ? 'your work email' : email,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              _maskedEmail,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF1A1A2E),
+                fontSize: 14,
+                height: 21 / 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(6, (index) {
+              return Padding(
+                padding: EdgeInsets.only(right: index == 5 ? 0 : 8),
+                child: _OtpBox(
+                  controller: otpControllers[index],
+                  focusNode: otpFocusNodes[index],
+                  hasError: errorText != null,
+                  onChanged: (value) {
+                    if (value.isNotEmpty && index < 5) {
+                      otpFocusNodes[index + 1].requestFocus();
+                    } else if (value.isEmpty && index > 0) {
+                      otpFocusNodes[index - 1].requestFocus();
+                    }
+                    onOtpChanged();
+                  },
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 20),
+          if (errorText != null) ...[
+            SizedBox(
+              width: double.infinity,
+              child: Text(
+                errorText!,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: _CxColors.ink,
-                  fontSize: 14,
-                  height: 1.6,
-                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFE5484D),
+                  fontSize: 13,
+                  height: 19.5 / 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const Text(
-                '·',
-                style: TextStyle(color: _CxColors.muted, fontSize: 14),
-              ),
-              GestureDetector(
-                onTap: onBack,
-                child: const Text(
-                  'Edit',
+            ),
+            const SizedBox(height: 4),
+          ],
+          Center(
+            child: InkWell(
+              onTap: isLoading ? null : onResend,
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 2, horizontal: 6),
+                child: Text(
+                  'Resend Code',
                   style: TextStyle(
-                    color: _CxColors.rust,
-                    fontSize: 14,
-                    height: 1.6,
-                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0571A6),
+                    fontSize: 13,
+                    height: 19.5 / 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 30),
-          _OtpRow(
-            blinkController: blinkController,
-            controllers: otpControllers,
-            focusNodes: otpFocusNodes,
-            onChanged: onOtpChanged,
-          ),
-          const SizedBox(height: 24),
-          const Row(
-            children: [
-              Icon(Icons.refresh_rounded, size: 15, color: _CxColors.softText),
-              SizedBox(width: 7),
-              Text(
-                'Resend code in ',
-                style: TextStyle(color: _CxColors.softText, fontSize: 13),
-              ),
-              Text(
-                '0:24',
-                style: TextStyle(
-                  color: _CxColors.muted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+            ),
           ),
           const Spacer(),
-          _PrimaryButton(
-            label: isLoading ? 'Verifying...' : 'Verify & continue',
-            isLoading: isLoading,
-            onPressed: isOtpComplete && !isLoading ? onVerify : null,
-          ),
-          const SizedBox(height: 18),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.mark_email_read_outlined,
-                size: 14,
-                color: _CxColors.softText,
-              ),
-              SizedBox(width: 7),
-              Text(
-                "Can't find it? Check your spam folder.",
-                style: TextStyle(color: _CxColors.softText, fontSize: 12),
-              ),
-            ],
+          _LoginPrimaryButton(
+            label: isLoading ? 'Verifying' : 'Verify',
+            enabled: isOtpComplete,
+            loading: isLoading,
+            onPressed: onVerify,
           ),
         ],
       ),
@@ -407,59 +684,370 @@ class _CodeStep extends StatelessWidget {
   }
 }
 
-class _SuccessStep extends StatelessWidget {
-  const _SuccessStep({
-    super.key,
-    required this.floatController,
-    required this.name,
-    required this.company,
-    required this.onEnter,
+class _OtpBox extends StatelessWidget {
+  const _OtpBox({
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+    required this.hasError,
   });
 
-  final AnimationController floatController;
-  final String name;
-  final String company;
-  final VoidCallback onEnter;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  final bool hasError;
 
   @override
   Widget build(BuildContext context) {
-    return _PhoneCanvas(
-      horizontalPadding: 28,
+    return SizedBox(
+      width: 46,
+      height: 56,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        textAlign: TextAlign.center,
+        keyboardType: TextInputType.number,
+        maxLength: 1,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onChanged: onChanged,
+        style: const TextStyle(
+          color: Color(0xFF1A1A2E),
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          counterText: '',
+          filled: true,
+          fillColor: const Color(0xFFFAFAFA),
+          contentPadding: EdgeInsets.zero,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: hasError
+                  ? const Color(0xFFE5484D)
+                  : const Color(0xFFE8E8F0),
+              width: 1.129,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF0571A6), width: 1.5),
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Post-login welcome (node 1849:17741).
+class _SuccessStep extends StatefulWidget {
+  const _SuccessStep({
+    super.key,
+    required this.name,
+    required this.company,
+    required this.session,
+    required this.onEnter,
+  });
+
+  final String name;
+  final String company;
+  final AuthSession? session;
+  final VoidCallback onEnter;
+
+  @override
+  State<_SuccessStep> createState() => _SuccessStepState();
+}
+
+class _SuccessStepState extends State<_SuccessStep> {
+  List<AuthTeammate> _teammates = const [];
+  int _total = 0;
+
+  /// Fixed palette from the design, assigned by position.
+  static const _avatarColors = [
+    Color(0xFFC9A8E2),
+    Color(0xFFA8C8E2),
+    Color(0xFFF2B7A2),
+    Color(0xFFA2E2C2),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeammates();
+  }
+
+  Future<void> _loadTeammates() async {
+    final token = widget.session?.token;
+    if (token == null) return;
+    try {
+      final result = await AuthApiService().fetchTeammates(token);
+      if (!mounted) return;
+      setState(() {
+        _teammates = result.teammates;
+        _total = result.total;
+      });
+    } catch (_) {
+      // The welcome screen still reads correctly without the team section.
+    }
+  }
+
+  String get _initials {
+    final parts = widget.name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final firstName = widget.name.split(' ').first;
+    final strip = _teammates.take(4).toList();
+    final overflow = _total - strip.length;
+    return Container(
+      color: Colors.white,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Spacer(),
-          _SuccessMark(controller: floatController),
-          const SizedBox(height: 14),
-          Text(
-            "You're in, ${name.split(' ').first}",
+          const Text(
+            "You're in! 🎉",
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _CxColors.ink,
-              fontSize: 28,
-              letterSpacing: -0.84,
-              fontWeight: FontWeight.w800,
+            style: TextStyle(
+              color: Color(0xFF1A1A2E),
+              fontSize: 32,
+              height: 39.1 / 32,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 14),
-          _CompanyPill(company: company),
-          const SizedBox(height: 14),
-          const SizedBox(
-            width: 250,
+          const SizedBox(height: 6),
+          Text(
+            'Welcome to ${widget.company}, $firstName.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF7A7A9A),
+              fontSize: 14,
+              height: 22.5 / 14,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            width: 72,
+            height: 72,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Color(0xFFC9A8E2),
+              shape: BoxShape.circle,
+            ),
             child: Text(
-              '248 teammates are already moving together. Welcome to the crew.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _CxColors.muted,
-                fontSize: 14,
-                height: 1.5,
+              _initials,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 25.2,
+                height: 37.8 / 25.2,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          const _AvatarStack(),
-          const Spacer(),
-          _PrimaryButton(label: 'Enter Connect', onPressed: onEnter),
+          const SizedBox(height: 16),
+          if (strip.isNotEmpty) ...[
+            const Text(
+              'Meet your team',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF1A1A2E),
+                fontSize: 15,
+                height: 22.5 / 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < strip.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  _WelcomeAvatar(
+                    initials: strip[i].initials,
+                    photoUrl: strip[i].photoUrl,
+                    color: _avatarColors[i % _avatarColors.length],
+                    size: 48,
+                    fontSize: 16.8,
+                  ),
+                ],
+                if (overflow > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE8E8F0),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '+$overflow',
+                      style: const TextStyle(
+                        color: Color(0xFF7A7A9A),
+                        fontSize: 13,
+                        height: 19.5 / 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: strip.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (_, index) => _TeammateCard(
+                  teammate: strip[index],
+                  color: _avatarColors[index % _avatarColors.length],
+                ),
+              ),
+            ),
+          ] else
+            const Spacer(),
+          const SizedBox(height: 16),
+          _LoginPrimaryButton(
+            label: "Let's get started",
+            enabled: true,
+            trailingArrow: true,
+            onPressed: widget.onEnter,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WelcomeAvatar extends StatelessWidget {
+  const _WelcomeAvatar({
+    required this.initials,
+    required this.color,
+    required this.size,
+    required this.fontSize,
+    this.photoUrl,
+  });
+
+  final String initials;
+  final Color color;
+  final double size;
+  final double fontSize;
+  final String? photoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final circle = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          height: 1.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+    final url = photoUrl;
+    if (url == null || url.isEmpty) return circle;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image(
+          image: avatarImageProvider(url),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => circle,
+          frameBuilder: (_, child, frame, wasSync) =>
+              frame == null && !wasSync ? circle : child,
+        ),
+      ),
+    );
+  }
+}
+
+class _TeammateCard extends StatelessWidget {
+  const _TeammateCard({required this.teammate, required this.color});
+
+  final AuthTeammate teammate;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _WelcomeAvatar(
+            initials: teammate.initials,
+            photoUrl: teammate.photoUrl,
+            color: color,
+            size: 38,
+            fontSize: 13.3,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  teammate.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1A2E),
+                    fontSize: 14,
+                    height: 21 / 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  teammate.roleLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF7A7A9A),
+                    fontSize: 12,
+                    height: 18 / 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -859,166 +1447,6 @@ class _RoundIconButton extends StatelessWidget {
           ],
         ),
         child: Icon(icon, color: _CxColors.ink, size: 20),
-      ),
-    );
-  }
-}
-
-class _OtpRow extends StatelessWidget {
-  const _OtpRow({
-    required this.blinkController,
-    required this.controllers,
-    required this.focusNodes,
-    required this.onChanged,
-  });
-
-  final AnimationController blinkController;
-  final List<TextEditingController> controllers;
-  final List<FocusNode> focusNodes;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(6, (index) {
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(left: index == 0 ? 0 : 9),
-            child: _OtpBox(
-              controller: controllers[index],
-              focusNode: focusNodes[index],
-              blinkController: blinkController,
-              onChanged: (value) {
-                if (value.isNotEmpty && index < focusNodes.length - 1) {
-                  focusNodes[index + 1].requestFocus();
-                }
-                if (value.isEmpty && index > 0) {
-                  focusNodes[index - 1].requestFocus();
-                }
-                onChanged();
-              },
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _OtpBox extends StatefulWidget {
-  const _OtpBox({
-    required this.controller,
-    required this.focusNode,
-    required this.blinkController,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final AnimationController blinkController;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_OtpBox> createState() => _OtpBoxState();
-}
-
-class _OtpBoxState extends State<_OtpBox> {
-  @override
-  void initState() {
-    super.initState();
-    widget.focusNode.addListener(_handleFocusChanged);
-    widget.controller.addListener(_handleTextChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.focusNode.removeListener(_handleFocusChanged);
-    widget.controller.removeListener(_handleTextChanged);
-    super.dispose();
-  }
-
-  void _handleFocusChanged() {
-    setState(() {});
-  }
-
-  void _handleTextChanged() {
-    setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isActive = widget.focusNode.hasFocus;
-
-    return Container(
-      height: 62,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isActive ? _CxColors.rust : _CxColors.line,
-          width: isActive ? 2 : 1.5,
-        ),
-        boxShadow: [
-          if (isActive)
-            BoxShadow(
-              color: _CxColors.rust.withValues(alpha: 0.12),
-              spreadRadius: 4,
-            )
-          else
-            BoxShadow(
-              color: const Color(0xFF462D1C).withValues(alpha: 0.04),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
-        ],
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          TextField(
-            controller: widget.controller,
-            focusNode: widget.focusNode,
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.next,
-            maxLength: 1,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: const TextStyle(
-              color: _CxColors.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w700,
-            ),
-            decoration: const InputDecoration(
-              counterText: '',
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-            ),
-            onChanged: widget.onChanged,
-          ),
-          if (isActive && widget.controller.text.isEmpty)
-            IgnorePointer(
-              child: AnimatedBuilder(
-                animation: widget.blinkController,
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: widget.blinkController.value < 0.5 ? 1 : 0,
-                    child: child,
-                  );
-                },
-                child: Container(
-                  width: 2,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: _CxColors.rust,
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

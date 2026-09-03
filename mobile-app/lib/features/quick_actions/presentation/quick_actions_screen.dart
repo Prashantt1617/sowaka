@@ -531,6 +531,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
+                  // Without this the grid inherits MediaQuery.padding, which
+                  // on a notched phone injected ~59px above the first row —
+                  // the long-standing gap under the "Actions" label that never
+                  // reproduced on desktop.
+                  padding: EdgeInsets.zero,
                   // Fixed row height rather than an aspect ratio: the tiles hold
                   // a fixed-height icon plus two text lines, so deriving height
                   // from width overflows on narrow windows.
@@ -802,7 +807,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   decoration: const InputDecoration(
                     hintText: 'Add a reason...',
                     hintStyle: TextStyle(color: Color(0x80111827)),
+                    filled: false,
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
                     contentPadding: EdgeInsets.all(12),
                   ),
                 ),
@@ -1214,8 +1225,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       0,
       (sum, claim) => sum + claim.amount,
     );
+    // Approved counts as reimbursed here: it has cleared review and is no
+    // longer pending, and the card only has the two buckets. Counting only
+    // 'Paid' meant approved claims fell out of both and read as zero.
     final reimbursed = thisMonth
-        .where((claim) => claim.status == 'Paid')
+        .where((claim) => claim.status == 'Paid' || claim.status == 'Approved')
         .fold<double>(0, (sum, claim) => sum + claim.amount);
     final pending = thisMonth
         .where((claim) => claim.status == 'Pending')
@@ -3939,7 +3953,16 @@ class _FormTextArea extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: const TextStyle(color: Color(0x80111827)),
+          // The wrapping Container already draws the border. `border` alone
+          // doesn't suppress the theme's enabled/focused outlines, which is
+          // what produced a second border inside this one.
+          filled: false,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
           contentPadding: const EdgeInsets.all(12),
         ),
       ),
@@ -3972,7 +3995,13 @@ class _FormTextField extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: const TextStyle(color: Color(0x80111827)),
+          filled: false,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
             vertical: 11,

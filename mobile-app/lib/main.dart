@@ -14,7 +14,9 @@ class HrmsMobileApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seedColor = Color(0xFFBE5A36);
+    // Brand primary. The old terracotta seed tinted every Material default
+    // (switches, checkboxes, progress, selection) a dirty peach.
+    const seedColor = Color(0xFF0571A6);
 
     return MaterialApp(
       title: 'Sowaka Connect',
@@ -25,22 +27,30 @@ class HrmsMobileApp extends StatelessWidget {
           seedColor: seedColor,
           brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF6F2EC),
+        scaffoldBackgroundColor: const Color(0xFFF7F7F9),
+        // Inputs follow the design system's neutral borders with the brand
+        // blue on focus. The terracotta seed used to bleed through here, which
+        // put a peach outline on every text field in the app.
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFFE7DED5)),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFFE7DED5)),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: seedColor, width: 1.5),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF0571A6), width: 1.5),
           ),
+        ),
+        textSelectionTheme: const TextSelectionThemeData(
+          cursorColor: Color(0xFF0571A6),
+          selectionHandleColor: Color(0xFF0571A6),
+          selectionColor: Color(0x330571A6),
         ),
         // Material 3's seed-derived tertiary color lands on purple for this
         // terracotta seed, which shows up as the selected AM/PM segment in
@@ -59,6 +69,14 @@ class HrmsMobileApp extends StatelessWidget {
           ),
         ),
         useMaterial3: true,
+      ),
+      // App-wide tap-to-dismiss: tapping anywhere outside the focused field
+      // drops focus and closes the keyboard. Translucent so the tap still
+      // reaches whatever was actually pressed.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
       ),
       home: const AuthGate(),
       routes: AppRoutes.routes,

@@ -1334,10 +1334,15 @@ class _OverallScoreCard extends StatelessWidget {
     required this.overall,
     required this.previousScore,
     this.showAveragesNote = false,
+    this.boxed = true,
   });
 
   final double overall;
   final double? previousScore;
+
+  /// False when embedded in a larger card (the growth page keeps the score and
+  /// its chart in one card), so this doesn't draw a second card around itself.
+  final bool boxed;
 
   /// The growth timeline shows the explanatory line; the feedback form does not.
   final bool showAveragesNote;
@@ -1348,95 +1353,106 @@ class _OverallScoreCard extends StatelessWidget {
         ? null
         : overall - previousScore!;
     final up = (delta ?? 0) >= 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'OVERALL SCORE',
-                  style: TextStyle(
-                    color: Color(0xFF6A7282),
-                    fontSize: 11,
-                    letterSpacing: .6,
-                    fontWeight: FontWeight.w600,
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'OVERALL SCORE',
+                style: TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 11.5,
+                  height: 17.25 / 11.5,
+                  letterSpacing: .6,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    overall <= 0 ? '—' : overall.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Color(0xFF101828),
+                      fontSize: 44,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      overall <= 0 ? '—' : overall.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: Color(0xFF101828),
-                        fontSize: 44,
+                  const SizedBox(width: 12),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '/ 5',
+                      style: TextStyle(
+                        color: Color(0xFF6A7282),
+                        fontSize: 18,
                         height: 1,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        '/ 5',
-                        style: TextStyle(
-                          color: Color(0xFF6A7282),
-                          fontSize: 18,
-                          height: 1,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (showAveragesNote) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    'This score averages all the parameters below.',
-                    style: TextStyle(
-                      color: Color(0xFF6A7282),
-                      fontSize: 13,
-                      height: 1.4,
                     ),
                   ),
                 ],
+              ),
+              if (showAveragesNote) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'This score averages all the parameters below.',
+                  style: TextStyle(
+                    color: Color(0xFF6A7282),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
               ],
+            ],
+          ),
+        ),
+        if (delta != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: up ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+              border: Border.all(
+                color: up ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
+                width: 1.114,
+              ),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${up ? '+' : ''}${delta.toStringAsFixed(1)} pts',
+              style: TextStyle(
+                color: up ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                fontSize: 12.5,
+                height: 1.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          if (delta != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: up ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                border: Border.all(
-                  color: up ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
-                  width: 1.114,
-                ),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '${up ? '+' : ''}${delta.toStringAsFixed(1)} pts',
-                style: TextStyle(
-                  color: up ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                  fontSize: 12.5,
-                  height: 1.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
+      ],
+    );
+
+    if (!boxed) return content;
+    return Container(
+      width: double.infinity,
+      // Node 733:13191: 20px padding, no border, soft drop shadow.
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
+      child: content,
     );
   }
 }

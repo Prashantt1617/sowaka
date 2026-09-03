@@ -76,6 +76,10 @@ flutter:
     - family: Plus Jakarta Sans
       fonts:
         - asset: assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf
+    # Splash wordmark only — the brand lockup is set in Anton per the design.
+    - family: Anton
+      fonts:
+        - asset: assets/fonts/anton/Anton-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

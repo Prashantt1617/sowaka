@@ -452,11 +452,14 @@ const List<Color> avatarColors = [
 ];
 
 class MColors {
-  static const bg = Color(0xFFF4EEE5);
+  static const bg = Color(0xFFF7F7F9);
   static const ink = Color(0xFF2A2420);
-  static const inkSoft = Color(0xFF6E655C);
-  static const inkFaint = Color(0xFFA79D92);
-  static const line = Color(0xFFF0E8DD);
+  // Neutrals come from the design system (Text/Tertiary, Border/Icons,
+  // Border/Grey). They used to be warm, terracotta-tinted greys, which read as
+  // a dirty peach on every border and secondary label in the app.
+  static const inkSoft = Color(0xFF717171);
+  static const inkFaint = Color(0xFF9197A2);
+  static const line = Color(0xFFEBEBEB);
   static const terra = Color(0xFFBE5A36);
   static const terraDeep = Color(0xFF7C3318);
   static const terraTint = Color(0xFFF6E5DB);

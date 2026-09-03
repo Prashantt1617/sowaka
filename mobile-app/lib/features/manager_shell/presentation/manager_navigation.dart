@@ -5,10 +5,15 @@ class _BottomTabs extends StatelessWidget {
     required this.state,
     required this.bloc,
     this.onBeforeChange,
+    this.onOpenComposer,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
+
+  /// "Post" is an action rather than a tab — it switches to Connect and opens
+  /// the composer, so it never shows a selected state.
+  final VoidCallback? onOpenComposer;
 
   /// Pushed screens pass this to unwind back to the shell before switching tab,
   /// otherwise the new tab would render underneath the pushed route.
@@ -16,27 +21,38 @@ class _BottomTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: MColors.line)),
-        ),
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-        child: Row(
-          children: [
-            _TabButton(
-              label: 'Connect',
-              iconAsset: 'assets/icons/nav_connect.svg',
-              activeIconAsset: 'assets/icons/nav_connect_active.svg',
-              selected: state.tab == ManagerTab.connect,
-              onTap: () {
-                onBeforeChange?.call();
-                bloc.add(const ChangeManagerTab(ManagerTab.connect));
-              },
-            ),
-            if (state.canManage)
+    // Per node 638:14376. SafeArea sits *inside* the white container so the
+    // home-indicator inset stays white instead of exposing the page behind it.
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFF7F7F9), width: 1.114)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 10,
+            offset: Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 9, 16, 8),
+          child: Row(
+            children: [
+              _TabButton(
+                label: 'Connect',
+                iconAsset: 'assets/icons/nav_connect.svg',
+                activeIconAsset: 'assets/icons/nav_connect_active.svg',
+                selected: state.tab == ManagerTab.connect,
+                onTap: () {
+                  onBeforeChange?.call();
+                  bloc.add(const ChangeManagerTab(ManagerTab.connect));
+                },
+              ),
+              // Team is visible to everyone; individual contributors get the
+              // same list read-only, without the requests segment.
               _TabButton(
                 label: 'Team',
                 iconAsset: 'assets/icons/nav_team.svg',
@@ -47,27 +63,37 @@ class _BottomTabs extends StatelessWidget {
                   bloc.add(const ChangeManagerTab(ManagerTab.manage));
                 },
               ),
-            _TabButton(
-              label: 'Grow',
-              iconAsset: 'assets/icons/nav_grow.svg',
-              activeIconAsset: 'assets/icons/nav_grow_active.svg',
-              selected: state.tab == ManagerTab.grow,
-              onTap: () {
-                onBeforeChange?.call();
-                bloc.add(const ChangeManagerTab(ManagerTab.grow));
-              },
-            ),
-            _TabButton(
-              label: 'Actions',
-              iconAsset: 'assets/icons/nav_actions.svg',
-              activeIconAsset: 'assets/icons/nav_actions_active.svg',
-              selected: state.tab == ManagerTab.quick,
-              onTap: () {
-                onBeforeChange?.call();
-                bloc.add(const ChangeManagerTab(ManagerTab.quick));
-              },
-            ),
-          ],
+              _TabButton(
+                label: 'Post',
+                iconAsset: 'assets/icons/nav_post.svg',
+                selected: false,
+                onTap: () {
+                  onBeforeChange?.call();
+                  onOpenComposer?.call();
+                },
+              ),
+              _TabButton(
+                label: 'Grow',
+                iconAsset: 'assets/icons/nav_grow.svg',
+                activeIconAsset: 'assets/icons/nav_grow_active.svg',
+                selected: state.tab == ManagerTab.grow,
+                onTap: () {
+                  onBeforeChange?.call();
+                  bloc.add(const ChangeManagerTab(ManagerTab.grow));
+                },
+              ),
+              _TabButton(
+                label: 'Actions',
+                iconAsset: 'assets/icons/nav_actions.svg',
+                activeIconAsset: 'assets/icons/nav_actions_active.svg',
+                selected: state.tab == ManagerTab.quick,
+                onTap: () {
+                  onBeforeChange?.call();
+                  bloc.add(const ChangeManagerTab(ManagerTab.quick));
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -90,7 +116,6 @@ class _TabButton extends StatelessWidget {
   final VoidCallback onTap;
 
   static const _selectedColor = Color(0xFF0571A6);
-  static const _selectedTint = Color(0xFFE3F2FA);
 
   @override
   Widget build(BuildContext context) {
@@ -98,15 +123,11 @@ class _TabButton extends StatelessWidget {
     final asset = selected && hasActiveAsset ? activeIconAsset! : iconAsset;
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? _selectedTint : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
+        child: Padding(
+          // The design marks the active tab with colour alone — no pill.
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -118,15 +139,16 @@ class _TabButton extends StatelessWidget {
                     ? const ColorFilter.mode(_selectedColor, BlendMode.srcIn)
                     : null,
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? _selectedColor : MColors.inkFaint,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+                  color: selected ? _selectedColor : const Color(0xFF9197A2),
+                  fontSize: 10,
+                  height: 13.333 / 10,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ],

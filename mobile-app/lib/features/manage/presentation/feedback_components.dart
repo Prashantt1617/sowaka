@@ -64,14 +64,22 @@ class _ParamCardState extends State<_ParamCard> {
 
   @override
   Widget build(BuildContext context) {
-    final color = scoreColor(widget.param.score <= 0 ? 1 : widget.param.score);
     final rated = widget.param.score > 0;
+    final filled = widget.param.score.round();
     return Container(
-      padding: const EdgeInsets.all(16),
+      // Node 733:13379.
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF0EEF8), width: 1.114),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,6 +117,7 @@ class _ParamCardState extends State<_ParamCard> {
                 ),
               ),
               const SizedBox(width: 8),
+              // Score chip — violet on a 9% violet wash, both lines.
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(
@@ -120,7 +129,7 @@ class _ParamCardState extends State<_ParamCard> {
                     Text(
                       widget.param.score.toStringAsFixed(1),
                       style: const TextStyle(
-                        color: Color(0xFF717171),
+                        color: Color(0xFF675AFF),
                         fontSize: 14,
                         height: 1,
                         fontWeight: FontWeight.w700,
@@ -129,11 +138,12 @@ class _ParamCardState extends State<_ParamCard> {
                     Opacity(
                       opacity: .8,
                       child: Text(
-                        scoreLabel(widget.param.score),
-                        style: TextStyle(
-                          color: rated ? color : const Color(0xFF9CA3AF),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
+                        rated ? scoreLabel(widget.param.score) : '-',
+                        style: const TextStyle(
+                          color: Color(0xFF675AFF),
+                          fontSize: 9.5,
+                          height: 14.25 / 9.5,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ),
@@ -143,110 +153,140 @@ class _ParamCardState extends State<_ParamCard> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              for (var star = 1; star <= 5; star++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Semantics(
-                    button: true,
-                    label: 'Rate ${widget.param.name} $star out of 5',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(99),
-                      onTap: widget.locked
-                          ? null
-                          : () => widget.onScore(star.toDouble()),
-                      child: Icon(
-                        star <= widget.param.score.round()
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        size: 30,
-                        color: star <= widget.param.score.round()
-                            ? const Color(0xFF0571A6)
-                            : const Color(0xFFD1D5DB),
+          SizedBox(
+            height: 46,
+            child: Row(
+              children: [
+                for (var star = 1; star <= 5; star++)
+                  Padding(
+                    padding: EdgeInsets.only(right: star == 5 ? 0 : 8),
+                    child: Semantics(
+                      button: true,
+                      label: 'Rate ${widget.param.name} $star out of 5',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(99),
+                        onTap: widget.locked
+                            ? null
+                            : () => widget.onScore(star.toDouble()),
+                        // The star at the current rating is drawn larger, the
+                        // way the design calls out the active value.
+                        child: SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: Center(
+                            child: SvgPicture.asset(
+                              star <= filled
+                                  ? (star == filled
+                                        ? 'assets/icons/grow_star_active.svg'
+                                        : 'assets/icons/grow_star_filled.svg')
+                                  : 'assets/icons/grow_star_empty.svg',
+                              width: star == filled ? 40.1 : 34,
+                              height: star == filled ? 40.1 : 34,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
+                if (rated) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    scoreLabel(widget.param.score),
+                    style: const TextStyle(
+                      color: Color(0xFF0571A6),
+                      fontSize: 12,
+                      height: 18 / 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Framed note field: the container owns the border, so the field
+          // itself is drawn borderless inside it.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAFAFA),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _noteController,
+                    focusNode: _noteFocusNode,
+                    enabled: !widget.locked,
+                    maxLines: 3,
+                    minLines: 2,
+                    scrollPadding: const EdgeInsets.only(bottom: 24),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 18.75 / 12.5,
+                      color: Color(0xFF101828),
+                    ),
+                    decoration: const InputDecoration(
+                      isCollapsed: true,
+                      filled: false,
+                      hintText: 'Add supporting feedback...',
+                      hintStyle: TextStyle(
+                        color: Color(0x80101828),
+                        fontSize: 12.5,
+                        height: 18.75 / 12.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 ),
-              if (rated) ...[
-                const SizedBox(width: 4),
-                Text(
-                  scoreLabel(widget.param.score),
-                  style: const TextStyle(
-                    color: Color(0xFF0571A6),
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
+                const SizedBox(width: 8),
+                Semantics(
+                  button: true,
+                  label: widget.listening ? 'Stop listening' : 'Dictate',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: widget.locked ? null : widget.onVoice,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: widget.listening
+                          ? const Icon(
+                              Icons.mic_rounded,
+                              size: 17,
+                              color: MColors.live,
+                            )
+                          : SvgPicture.asset(
+                              'assets/icons/grow_mic.svg',
+                              width: 17,
+                              height: 17,
+                            ),
+                    ),
                   ),
                 ),
               ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _noteController,
-            focusNode: _noteFocusNode,
-            enabled: !widget.locked,
-            maxLines: 3,
-            minLines: 2,
-            scrollPadding: const EdgeInsets.only(bottom: 24),
-            style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
-            decoration: InputDecoration(
-              hintText: 'Add supporting feedback...',
-              hintStyle: const TextStyle(
-                color: Color(0xFF929292),
-                fontSize: 13,
-              ),
-              filled: true,
-              fillColor: const Color(0xFFFAFAFA),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              suffixIcon: IconButton(
-                tooltip: widget.listening ? 'Stop listening' : 'Dictate',
-                onPressed: widget.locked ? null : widget.onVoice,
-                icon: Icon(
-                  widget.listening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                  size: 19,
-                  color: widget.listening
-                      ? MColors.live
-                      : const Color(0xFF6A7282),
-                ),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFEBEBEB)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFEBEBEB)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(
-                  color: Color(0xFF0571A6),
-                  width: 1.4,
-                ),
-              ),
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('💡', style: TextStyle(fontSize: 11)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  paramHelp(widget.param.name),
-                  style: const TextStyle(
-                    color: Color(0xFF929292),
-                    fontSize: 11,
-                    height: 1.45,
-                  ),
-                ),
+          Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Text(
+              '💡 ${paramHelp(widget.param.name)}',
+              style: const TextStyle(
+                color: Color(0xFFA0A4B0),
+                fontSize: 11,
+                height: 15.95 / 11,
+                fontWeight: FontWeight.w400,
               ),
-            ],
+            ),
           ),
         ],
       ),

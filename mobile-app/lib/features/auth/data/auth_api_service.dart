@@ -32,6 +32,31 @@ class AuthApiService {
     return AuthSession.fromJson(json);
   }
 
+  Future<AuthTeammates> fetchTeammates(String token) async {
+    final uri = Uri.parse('$_baseUrl/auth/teammates');
+    final response = await _client.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final raw = utf8.decode(response.bodyBytes);
+    final data = raw.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(raw) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthApiException(
+        data['message'] as String? ?? 'Could not load teammates',
+        statusCode: response.statusCode,
+      );
+    }
+    final list = (data['teammates'] as List<dynamic>? ?? const [])
+        .map((item) => AuthTeammate.fromJson(item as Map<String, dynamic>))
+        .toList();
+    return AuthTeammates(
+      teammates: list,
+      total: (data['total'] as num?)?.toInt() ?? list.length,
+    );
+  }
+
   Future<AuthUser> fetchCurrentUser(String token) async {
     final uri = Uri.parse('$_baseUrl/auth/me');
     final response = await _client.get(
@@ -80,3 +105,48 @@ class AuthApiService {
     return data;
   }
 }
+
+/// One colleague shown on the welcome screen (node 1849:17741).
+class AuthTeammate {
+  const AuthTeammate({
+    required this.userId,
+    required this.name,
+    required this.designation,
+    required this.department,
+    this.photoUrl,
+  });
+
+  final String userId;
+  final String name;
+  final String designation;
+  final String department;
+  final String? photoUrl;
+
+  /// "UX Researcher · Product", collapsing to whichever half exists.
+  String get roleLine => [
+    designation,
+    department,
+  ].where((part) => part.isNotEmpty).join(' · ');
+
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  factory AuthTeammate.fromJson(Map<String, dynamic> json) => AuthTeammate(
+    userId: json['userId'] as String? ?? '',
+    name: json['name'] as String? ?? 'Teammate',
+    designation: json['designation'] as String? ?? '',
+    department: json['department'] as String? ?? '',
+    photoUrl: json['photoUrl'] as String?,
+  );
+}
+
+class AuthTeammates {
+  const AuthTeammates({required this.teammates, required this.total});
+  final List<AuthTeammate> teammates;
+  final int total;
+}
+

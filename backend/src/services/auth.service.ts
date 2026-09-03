@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { Filter } from 'mongodb';
 import { env } from '../config/env';
 import { authSessions, companies, otpChallenges, users } from '../config/db';
 import { AuthUser } from '../models/auth.model';
@@ -137,6 +138,48 @@ async function completeLogin(user: User): Promise<AuthUser> {
   );
 
   return toAuthUser({ ...user, role });
+}
+
+/**
+ * Colleagues shown on the post-login welcome screen. Scoped to the viewer's org
+ * and projected deliberately: a full user document carries the profile photo,
+ * and this runs right after sign-in.
+ */
+export async function getTeammates(viewerUserId: string, limit = 12) {
+  const viewer = await users().findOne(
+    { userId: viewerUserId },
+    { projection: { _id: 0, org: 1, email: 1 } },
+  );
+  if (!viewer) return { teammates: [], total: 0 };
+  const org = viewer.org ?? viewer.email.split('@').at(1) ?? 'default';
+  const filter: Filter<User> = {
+    userId: { $ne: viewerUserId },
+    lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    $or: [{ org }, { email: { $regex: `@${org}$` } }],
+  };
+  const [rows, total] = await Promise.all([
+    users()
+      .find(filter, {
+        projection: {
+          _id: 0, userId: 1, name: 1, designation: 1, department: 1,
+          role: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+        },
+      })
+      .sort({ name: 1 })
+      .limit(limit)
+      .toArray(),
+    users().countDocuments(filter),
+  ]);
+  const teammates = await Promise.all(
+    rows.map(async (row) => ({
+      userId: row.userId,
+      name: row.name,
+      designation: row.designation ?? row.role ?? 'Teammate',
+      department: row.department ?? '',
+      photoUrl: await resolveProfilePhoto(row),
+    })),
+  );
+  return { teammates, total };
 }
 
 async function toAuthUser(user: User): Promise<AuthUser> {

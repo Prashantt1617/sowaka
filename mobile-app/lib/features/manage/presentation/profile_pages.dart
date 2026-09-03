@@ -7,6 +7,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.canManage = true,
   });
 
   final TeamMember member;
@@ -14,6 +15,10 @@ class _TeamMemberProfilePage extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Individual contributors view a teammate read-only: no request cards and
+  /// no approve/decline actions.
+  final bool canManage;
 
   @override
   Widget build(BuildContext context) {
@@ -135,18 +140,23 @@ class _TeamMemberProfilePage extends StatelessWidget {
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
           ),
+          // A teammate's attendance calendar is a manager view; both the
+          // top-bar icon and the card's "view calendar" action are hidden
+          // for everyone else (each takes a nullable callback).
           _ProfilePageTopBar(
-            onCalendarTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _TeamMemberAttendancePage(
-                  member: member,
-                  data: data,
-                  bloc: bloc,
-                  onNotifications: onNotifications,
-                  onOpenComposer: onOpenComposer,
-                ),
-              ),
-            ),
+            onCalendarTap: !canManage
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _TeamMemberAttendancePage(
+                        member: member,
+                        data: data,
+                        bloc: bloc,
+                        onNotifications: onNotifications,
+                        onOpenComposer: onOpenComposer,
+                      ),
+                    ),
+                  ),
           ),
           Expanded(
             child: ListView(
@@ -189,7 +199,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       ],
                     ),
                   ),
-                if (openRequests.isNotEmpty) ...[
+                if (canManage && openRequests.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   _RequestsSection(
                     title: 'Open Requests',
@@ -202,17 +212,19 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   present: present,
                   punchIn: member.punchIn,
                   punchOut: member.punchOut,
-                  onViewCalendar: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => _TeamMemberAttendancePage(
-                        member: member,
-                        data: data,
-                        bloc: bloc,
-                        onNotifications: onNotifications,
-                        onOpenComposer: onOpenComposer,
-                      ),
-                    ),
-                  ),
+                  onViewCalendar: !canManage
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _TeamMemberAttendancePage(
+                              member: member,
+                              data: data,
+                              bloc: bloc,
+                              onNotifications: onNotifications,
+                              onOpenComposer: onOpenComposer,
+                            ),
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 22),
                 const _SectionTitle(title: 'Profile'),
@@ -236,6 +248,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
                         iconAsset: 'assets/icons/profile_joining_date.svg',
                         label: 'Joining Date',
                         value: _joiningDateLabel(joined),
+                      ),
+                    if (member.birthday case final born?)
+                      _ProfileRow(
+                        icon: Icons.cake_outlined,
+                        label: 'Date of birth',
+                        value: _joiningDateLabel(born),
                       ),
                   ],
                 ),
@@ -274,17 +292,22 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   const SizedBox(height: 8),
                   _DocumentationCard(documents: member.documents),
                 ],
-                const SizedBox(height: 22),
-                _GiveFeedbackButton(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            _FeedbackFormPage(bloc: bloc, memberId: member.id),
-                      ),
-                    );
-                  },
-                ),
+                // Only a manager can review someone.
+                if (canManage) ...[
+                  const SizedBox(height: 22),
+                  _GiveFeedbackButton(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _FeedbackFormPage(
+                            bloc: bloc,
+                            memberId: member.id,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -649,7 +672,8 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                         children: [
                                           _ProfileAvatar(
                                             initials: _initials(user.name),
-                                            profilePhotoUrl: user.profilePhotoUrl,
+                                            profilePhotoUrl:
+                                                user.profilePhotoUrl,
                                             size: 112,
                                           ),
                                           if (_uploadingPhoto)
@@ -659,10 +683,11 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                                 child: SizedBox(
                                                   width: 28,
                                                   height: 28,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    color: Colors.white,
-                                                  ),
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2.5,
+                                                        color: Colors.white,
+                                                      ),
                                                 ),
                                               ),
                                             ),
@@ -1127,7 +1152,10 @@ class _AttendanceStatusDot extends StatelessWidget {
     final text = present ? const Color(0xFF008236) : const Color(0xFF6B7280);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(99),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1139,7 +1167,11 @@ class _AttendanceStatusDot extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             present ? 'Present' : 'Not Punched In',
-            style: TextStyle(color: text, fontSize: 12, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: text,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -2106,11 +2138,17 @@ class _EmployeeGrowthPage extends StatefulWidget {
     required this.onNotifications,
     required this.onOpenComposer,
     this.memberId,
+    this.embedded = false,
   });
 
   final String name;
   final String designation;
   final List<GrowthRecord> history;
+
+  /// True when rendered as the Grow tab itself (an individual contributor's
+  /// only Grow view) rather than pushed as a route: the shell already provides
+  /// the bottom nav, and there's nothing to navigate back to.
+  final bool embedded;
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
@@ -2184,7 +2222,11 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             onNotifications: widget.onNotifications,
             onQuickCreate: widget.onOpenComposer,
           ),
-          _GrowthPageTopBar(name: widget.name, designation: widget.designation),
+          if (!widget.embedded)
+            _GrowthPageTopBar(
+              name: widget.name,
+              designation: widget.designation,
+            ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -2232,12 +2274,13 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
               ],
             ),
           ),
-          _BottomTabs(
-            state: widget.bloc.state,
-            bloc: widget.bloc,
-            onBeforeChange: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
-          ),
+          if (!widget.embedded)
+            _BottomTabs(
+              state: widget.bloc.state,
+              bloc: widget.bloc,
+              onBeforeChange: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
         ],
       ),
     );
@@ -2272,33 +2315,43 @@ class _GrowthScoreSection extends StatelessWidget {
         ? history[effectiveIndex - 1].overallScore
         : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _OverallScoreCard(
-          overall: selected?.overallScore ?? 0,
-          previousScore: previous,
-          showAveragesNote: true,
-        ),
-        if (history.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: MColors.line),
-            ),
-            child: _GrowthChart(
+    // Score and chart share one card: tapping a point moves the score above it,
+    // so splitting them across two cards broke that relationship visually.
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _OverallScoreCard(
+            overall: selected?.overallScore ?? 0,
+            previousScore: previous,
+            showAveragesNote: true,
+            boxed: false,
+          ),
+          if (history.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _GrowthChart(
               records: history,
               values: values,
               color: const Color(0xFF0571A6),
               selectedIndex: effectiveIndex,
               onSelect: onSelect,
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

@@ -123,7 +123,7 @@ class ConnectAudience {
   final String label;
 
   factory ConnectAudience.fromJson(Map<String, dynamic> json) {
-    return ConnectAudience(label: json['label'] as String? ?? 'Company');
+    return ConnectAudience(label: json['label'] as String? ?? 'Public');
   }
 }
 

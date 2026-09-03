@@ -27,6 +27,7 @@ class _TeamHomeState extends State<_TeamHome> {
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
+    final canManage = widget.state.canManage;
     final pendingRequests =
         data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
         data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
@@ -54,25 +55,30 @@ class _TeamHomeState extends State<_TeamHome> {
                   onQuickCreate: widget.onOpenComposer,
                 ),
                 const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _TeamSegmentedControl(
-                    section: _section,
-                    pendingRequests: pendingRequests,
-                    onChanged: (value) => setState(() => _section = value),
+                // Requests are a manager capability: an individual contributor
+                // gets the same team list, read-only, with no segment to switch.
+                if (canManage)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _TeamSegmentedControl(
+                      section: _section,
+                      pendingRequests: pendingRequests,
+                      onChanged: (value) => setState(() => _section = value),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: _section == _TeamSection.myTeam
+            child: !canManage || _section == _TeamSection.myTeam
                 ? _MyTeamView(
                     data: data,
                     bloc: widget.bloc,
                     onNotifications: widget.onNotifications,
                     onOpenComposer: widget.onOpenComposer,
+                    onOpenProfile: widget.onOpenProfile,
+                    canManage: canManage,
                   )
                 : _TeamRequestsView(data: data, bloc: widget.bloc),
           ),
@@ -169,12 +175,16 @@ class _MyTeamView extends StatefulWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    required this.onOpenProfile,
+    required this.canManage,
   });
 
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+  final VoidCallback onOpenProfile;
+  final bool canManage;
 
   @override
   State<_MyTeamView> createState() => _MyTeamViewState();
@@ -205,6 +215,18 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 16),
+        // The viewer's own card, matching the teammate cards in this section
+        // and opening their personal profile.
+        if (_query.isEmpty) ...[
+          _MyTeamCard(
+            name: data.managerName,
+            team: data.managerTeam,
+            initial: data.managerInitial,
+            photoUrl: data.managerPhotoUrl,
+            onTap: widget.onOpenProfile,
+          ),
+          const SizedBox(height: 12),
+        ],
         if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
@@ -227,6 +249,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
               padding: const EdgeInsets.only(bottom: 12),
               child: _TeamMemberRow(
                 member: member,
+                canManage: widget.canManage,
                 data: data,
                 bloc: widget.bloc,
                 onNotifications: widget.onNotifications,
@@ -258,8 +281,7 @@ class _RecognitionSection extends StatelessWidget {
             award: data.awards.first,
             team: data.recognitionCandidates,
             titleOverride: 'Employee of the Month',
-            onNominate: () =>
-                bloc.add(OpenAwardPicker(data.awards.first.key)),
+            onNominate: () => bloc.add(OpenAwardPicker(data.awards.first.key)),
           ),
         const SizedBox(height: 18),
       ],
@@ -270,6 +292,7 @@ class _RecognitionSection extends StatelessWidget {
 class _TeamMemberRow extends StatelessWidget {
   const _TeamMemberRow({
     required this.member,
+    required this.canManage,
     required this.data,
     required this.bloc,
     required this.onNotifications,
@@ -277,6 +300,9 @@ class _TeamMemberRow extends StatelessWidget {
   });
 
   final TeamMember member;
+
+  /// Read-only for individual contributors: no request counts, no decisions.
+  final bool canManage;
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
@@ -284,7 +310,9 @@ class _TeamMemberRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pendingCount = _pendingRequestCount(data, member.userId);
+    final pendingCount = canManage
+        ? _pendingRequestCount(data, member.userId)
+        : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
     final present = member.todayStatus == TeamPresenceStatus.present;
@@ -298,6 +326,7 @@ class _TeamMemberRow extends StatelessWidget {
             bloc: bloc,
             onNotifications: onNotifications,
             onOpenComposer: onOpenComposer,
+            canManage: canManage,
           ),
         ),
       ),
@@ -339,7 +368,9 @@ class _TeamMemberRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      member.name,
+                      member.isManager
+                          ? '${member.name} (Manager)'
+                          : member.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -406,6 +437,89 @@ class _TeamMemberRow extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The viewer's own row in the team list — same card as a teammate's, opening
+/// their personal profile instead of a member page.
+class _MyTeamCard extends StatelessWidget {
+  const _MyTeamCard({
+    required this.name,
+    required this.team,
+    required this.initial,
+    required this.photoUrl,
+    required this.onTap,
+  });
+
+  final String name;
+  final String team;
+  final String initial;
+  final String? photoUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(17),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: photoUrl == null || photoUrl!.isEmpty
+                ? AvatarBadge(initial: initial, index: 0, size: 56)
+                : ClipOval(
+                    child: Image(
+                      image: avatarImageProvider(photoUrl!),
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'You ($name)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF222222),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (team.isNotEmpty)
+                  Text(
+                    team,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF717171),
+                      fontSize: 14,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SvgPicture.asset(
+            'assets/icons/chevron_right_expand.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(
+              MColors.inkFaint,
+              BlendMode.srcIn,
+            ),
           ),
         ],
       ),
@@ -1117,7 +1231,9 @@ Future<String?> _showDeclineReasonSheet(BuildContext context) {
                   maxLength: 500,
                   maxLines: 3,
                   onChanged: (_) => setSheetState(() {}),
-                  decoration: _fieldDecoration('Explain why this is being rejected…'),
+                  decoration: _fieldDecoration(
+                    'Explain why this is being rejected…',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(

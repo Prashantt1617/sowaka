@@ -119,6 +119,19 @@ class _ManagerScreenState extends State<ManagerScreen> {
     }
   }
 
+  /// The composer lives inside the Connect feed, so the tab has to be showing
+  /// before it can open — switch first, then open once that frame is built.
+  void _openConnectComposer() {
+    if (_bloc.state.tab != ManagerTab.connect) {
+      _bloc.add(const ChangeManagerTab(ManagerTab.connect));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _connectComposerController.openComposer();
+      });
+      return;
+    }
+    _connectComposerController.openComposer();
+  }
+
   void _openProfile() => setState(() => _profileOpen = true);
 
   void _closeProfile() => setState(() => _profileOpen = false);
@@ -278,7 +291,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
                             ),
                           ),
                           if (!keyboardOpen)
-                            _BottomTabs(state: state, bloc: _bloc),
+                            _BottomTabs(
+                              state: state,
+                              bloc: _bloc,
+                              onOpenComposer: _openConnectComposer,
+                            ),
                         ],
                       ),
                       if (state.awardPickerKey != null)

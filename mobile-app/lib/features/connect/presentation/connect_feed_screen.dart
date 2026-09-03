@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -50,7 +51,7 @@ class ConnectFeedScreen extends StatefulWidget {
   State<ConnectFeedScreen> createState() => _ConnectFeedScreenState();
 }
 
-enum _ConnectFilter { all, public, team, myPost, priority }
+enum _ConnectFilter { all, myPost, public, team, priority, game }
 
 class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   late final ConnectBloc _bloc;
@@ -70,6 +71,10 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             .toList();
       case _ConnectFilter.priority:
         return posts.where((post) => post.body['priority'] == true).toList();
+      case _ConnectFilter.game:
+        return posts
+            .where((post) => post.type == ConnectPostType.liveGame)
+            .toList();
     }
   }
 
@@ -232,16 +237,39 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
 
   bool get _isAdmin => widget.session.user.role.toLowerCase() == 'manager';
 
+  /// Entry point for the bottom nav's "Post" tab: the quick composer opens
+  /// first (node 519:8441) and its corner button reveals the type picker,
+  /// rather than the picker being the first thing shown.
   Future<void> _openPostTypePicker() async {
-    final type = await showModalBottomSheet<ConnectPostType>(
+    final result = await Navigator.of(context).push<_QuickPostResult>(
+      MaterialPageRoute(
+        builder: (_) => _QuickPostPage(
+          viewerInitials: _viewerInitials,
+          viewerColor: _viewerColor,
+          viewerPhotoUrl: _viewerPhotoUrl,
+          department: widget.session.user.department,
+          onPickType: _pickPostType,
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    final draft = result.draft;
+    if (draft != null) {
+      await _bloc.createPost(draft);
+      return;
+    }
+    final type = result.type;
+    if (type != null) await _openComposer(type);
+  }
+
+  Future<ConnectPostType?> _pickPostType() {
+    return showModalBottomSheet<ConnectPostType>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _PostTypePickerSheet(isAdmin: _isAdmin),
     );
-    if (!mounted || type == null) return;
-    await _openComposer(type);
   }
 
   Future<void> _openComposer(
@@ -406,6 +434,17 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 onEdit: widget.onEdit,
                 onDelete: widget.onDelete,
               ),
+            // Exactly one type pill per post, sitting between the author row
+            // and the content at the card's left edge (nodes 496:20866,
+            // 352:1500) rather than indented inside the header column.
+            if (showHeader && _typeBadgeFor(post.type) != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _typeBadgeFor(post.type)!,
+                ),
+              ),
             _PostBody(
               post: post,
               onAction: widget.onAction,
@@ -493,10 +532,31 @@ const _celebrationGradient = LinearGradient(
 
 Gradient? _celebrationCardGradient(ConnectPostType type) {
   return switch (type) {
-    ConnectPostType.birthday || ConnectPostType.anniversary => _celebrationGradient,
+    ConnectPostType.birthday ||
+    ConnectPostType.anniversary => _celebrationGradient,
     _ => null,
   };
 }
+
+/// The pill shown for each post type, or null for types whose body renders its
+/// own heading (celebrations, kudos, events…).
+_TypeBadge? _typeBadgeFor(ConnectPostType type) => switch (type) {
+  ConnectPostType.hrAnnouncement => const _TypeBadge(
+    label: 'HR Notice',
+    asset: 'assets/icons/post_type_announcement.png',
+  ),
+  ConnectPostType.survey => const _TypeBadge(
+    label: 'Poll',
+    asset: 'assets/icons/post_type_poll.png',
+    iconWidth: 30,
+    iconHeight: 20,
+  ),
+  ConnectPostType.recommendation => const _TypeBadge(
+    label: 'Recommendation',
+    asset: 'assets/icons/post_type_recommend.png',
+  ),
+  _ => null,
+};
 
 class _PostHeader extends StatelessWidget {
   const _PostHeader({
@@ -567,8 +627,6 @@ class _PostHeader extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 8),
-                _TypeBadge(icon: post.tagIcon, label: post.tag),
               ],
             ),
           ),
@@ -621,32 +679,59 @@ class _AudienceBadge extends StatelessWidget {
   }
 }
 
+/// The pill above a post's content ("POLL", "HR NOTICE", …) — node 352:1500.
+/// Takes either an exported asset or, for types without one yet, an emoji.
 class _TypeBadge extends StatelessWidget {
-  const _TypeBadge({required this.icon, required this.label});
+  const _TypeBadge({
+    required this.label,
+    this.icon = '',
+    this.asset,
+    this.iconWidth = 20,
+    this.iconHeight = 20,
+  });
 
-  final String icon;
   final String label;
+  final String icon;
+  final String? asset;
+  final double iconWidth;
+  final double iconHeight;
 
   @override
   Widget build(BuildContext context) {
-    final text = icon.isEmpty
-        ? label.toUpperCase()
-        : '$icon ${label.toUpperCase()}';
+    final assetPath = asset;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Color(0xFF484848),
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.3,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (assetPath != null) ...[
+            Image.asset(
+              assetPath,
+              width: iconWidth,
+              height: iconHeight,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 10),
+          ] else if (icon.isNotEmpty) ...[
+            Text(icon, style: const TextStyle(fontSize: 12)),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: Color(0xFF484848),
+              fontSize: 12,
+              height: 18 / 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -894,7 +979,13 @@ class _RecommendationBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mediaUrl = _bodyString(post, 'mediaUrl');
+    // The thumbnail comes from the link's own preview metadata, resolved
+    // server-side — authors never attach one. `mediaUrl` is only a fallback
+    // for older posts created while the picker still existed.
+    final linkImageUrl = _bodyString(post, 'linkImageUrl');
+    final mediaUrl = linkImageUrl.isNotEmpty
+        ? linkImageUrl
+        : _bodyString(post, 'mediaUrl');
     final hasThumb = mediaUrl.isNotEmpty;
     // Prefer an explicit byline if one's ever set; otherwise fall back to
     // the link's domain, which the composer always captures — so a
@@ -908,45 +999,6 @@ class _RecommendationBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Per node 496:20930: a "Recommendation" type badge sits above the
-        // media card, matching the TypeBadge treatment other post types use.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 13,
-                vertical: 6,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F9),
-                border: Border.all(color: const Color(0xFFEBEBEB)),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/icons/recommendation_thumbs_up.png',
-                    width: 20,
-                    height: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'RECOMMENDATION',
-                    style: TextStyle(
-                      color: _ConnectColors.faint,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Container(
@@ -1166,10 +1218,7 @@ class _MediaGalleryState extends State<_MediaGallery> {
             right: 12,
             top: 12,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 9,
-                vertical: 4,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0x99000000),
                 borderRadius: BorderRadius.circular(99),
@@ -1220,8 +1269,6 @@ class _AnnouncementBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = _bodyString(post, 'title');
-    final requiresAcknowledgement = post.body['requireAcknowledgement'] == true;
-    final acknowledgementMessage = _bodyString(post, 'acknowledgementMessage');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
@@ -1233,11 +1280,12 @@ class _AnnouncementBody extends StatelessWidget {
               style: const TextStyle(
                 color: Color(0xFF222222),
                 fontSize: 18,
+                height: 24 / 18,
                 letterSpacing: -0.16,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
           Text(
             _bodyString(post, 'text'),
@@ -1248,38 +1296,6 @@ class _AnnouncementBody extends StatelessWidget {
               fontWeight: FontWeight.w400,
             ),
           ),
-          if (requiresAcknowledgement) ...[
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(13),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF8F0),
-                border: Border.all(color: const Color(0xFFFFE4C4)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('⚠️', style: TextStyle(fontSize: 18)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      acknowledgementMessage.isNotEmpty
-                          ? acknowledgementMessage
-                          : 'Acknowledgement required by all employees.',
-                      style: const TextStyle(
-                        color: Color(0xFFA05A00),
-                        fontSize: 13,
-                        height: 18 / 13,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1359,10 +1375,7 @@ class _BirthdayBodyState extends State<_BirthdayBody> {
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _celebrating = false);
     });
-    final firstName = _bodyString(
-      widget.post,
-      'personName',
-    ).split(' ').first;
+    final firstName = _bodyString(widget.post, 'personName').split(' ').first;
     widget.onCommentPrefill(
       'Happy Birthday, $firstName! 🎂 Hope you have an amazing day!',
     );
@@ -1495,10 +1508,7 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _celebrating = false);
     });
-    final firstName = _bodyString(
-      widget.post,
-      'personName',
-    ).split(' ').first;
+    final firstName = _bodyString(widget.post, 'personName').split(' ').first;
     final yearWord = years == 1 ? 'year' : 'years';
     widget.onCommentPrefill(
       'Congratulations on $years $yearWord with Sowaka, $firstName! 🎉',
@@ -1556,10 +1566,7 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
                           decoration: BoxDecoration(
                             color: _ConnectColors.sage,
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 2.5,
-                            ),
+                            border: Border.all(color: Colors.white, width: 2.5),
                           ),
                           child: Text(
                             '${years}y',
@@ -1963,81 +1970,100 @@ class _SurveyBody extends StatelessWidget {
           Text(
             _bodyString(post, 'title'),
             style: const TextStyle(
-              color: _ConnectColors.ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
+              color: Color(0xFF222222),
+              fontSize: 20,
+              height: 24 / 20,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           ...post.pollOptions.map((option) {
             final selected = post.selectedPollOptionId == option.id;
             final pct = ((option.votes / total) * 100).round();
             final hasImage = (option.imageUrl ?? '').isNotEmpty;
             return Padding(
-              padding: const EdgeInsets.only(bottom: 9),
+              padding: const EdgeInsets.only(bottom: 12),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => onAction(optionId: option.id),
                 child: Container(
                   height: 48,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: hasImage ? 8 : 14,
-                  ),
-                  alignment: Alignment.centerLeft,
+                  clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    color: !hasVoted
-                        ? Colors.white
-                        : (selected
-                              ? const Color(0xFFCCFCFF)
-                              : const Color(0xFFEBEBEB)),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: hasVoted
-                        ? null
-                        : Border.all(color: const Color(0xFFEBEBEB)),
+                    border: Border.all(
+                      color: selected && hasVoted
+                          ? const Color(0xF7CCFCFF)
+                          : const Color(0xFFEBEBEB),
+                      width: 1.114,
+                    ),
                   ),
-                  child: Row(
+                  child: Stack(
                     children: [
-                      if (hasImage) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image(
-                            image: _remoteImage(option.imageUrl!),
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
+                      // The result bar fills proportionally to the share of
+                      // votes rather than washing the whole row in colour.
+                      if (hasVoted)
+                        Positioned.fill(
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: (pct / 100).clamp(0.0, 1.0),
+                            child: ColoredBox(
+                              color: selected
+                                  ? const Color(0xF7CCFCFF)
+                                  : const Color(0xFFEBEBEB),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Text(
-                          option.label,
-                          style: TextStyle(
-                            color: !hasVoted
-                                ? _ConnectColors.ink
-                                : (selected
-                                      ? _ConnectColors.blue
-                                      : const Color(0xFF484848)),
-                            fontSize: 13.5,
-                            fontWeight: !hasVoted
-                                ? FontWeight.w600
-                                : (selected
-                                      ? FontWeight.w800
-                                      : FontWeight.w600),
-                          ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: hasImage ? 8 : 16,
+                        ),
+                        child: Row(
+                          children: [
+                            if (hasImage) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image(
+                                  image: _remoteImage(option.imageUrl!),
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            Expanded(
+                              child: Text(
+                                option.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: hasVoted && selected
+                                      ? const Color(0xFF0571A6)
+                                      : const Color(0xFF484848),
+                                  fontSize: 15,
+                                  height: 22.5 / 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (hasVoted)
+                              Text(
+                                '$pct%',
+                                style: TextStyle(
+                                  color: selected
+                                      ? const Color(0xFF0571A6)
+                                      : const Color(0xFF484848),
+                                  fontSize: 16,
+                                  height: 24 / 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      if (hasVoted)
-                        Text(
-                          '$pct%',
-                          style: TextStyle(
-                            color: selected
-                                ? _ConnectColors.blue
-                                : const Color(0xFF484848),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -2050,6 +2076,7 @@ class _SurveyBody extends StatelessWidget {
             style: const TextStyle(
               color: Color(0xFF9197A2),
               fontSize: 14,
+              height: 21 / 14,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -2973,145 +3000,212 @@ class _PostTypePickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tiles = [
-      _PostTypeTile(
+      const _PostTypeTile(
         type: ConnectPostType.newPost,
         label: 'Add Media',
         subtitle: 'Photo or video',
-        emoji: '📄',
+        asset: 'assets/icons/post_type_media.svg',
       ),
-      _PostTypeTile(
+      const _PostTypeTile(
         type: ConnectPostType.survey,
-        label: 'Survey/Poll',
+        label: 'Survey / Poll',
         subtitle: 'Ask the team',
-        emoji: '📊',
+        asset: 'assets/icons/post_type_poll.png',
+        iconWidth: 32,
+        iconHeight: 21,
       ),
-      _PostTypeTile(
+      const _PostTypeTile(
         type: ConnectPostType.kudos,
         label: 'Give Kudos',
         subtitle: 'Recognise a teammate',
-        emoji: '👍',
+        asset: 'assets/icons/post_type_kudos.png',
       ),
-      _PostTypeTile(
+      const _PostTypeTile(
         type: ConnectPostType.recommendation,
         label: 'Recommend',
         subtitle: 'Must-read or watch',
-        emoji: '🎬',
+        asset: 'assets/icons/post_type_recommend.png',
       ),
       if (isAdmin)
-        _PostTypeTile(
+        const _PostTypeTile(
           type: ConnectPostType.hrAnnouncement,
           label: 'Announcement',
           subtitle: 'Policy or notice',
-          emoji: '📣',
+          asset: 'assets/icons/post_type_announcement.png',
         ),
     ];
 
-    return _SheetShell(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SheetHandle(),
-          const Text(
-            'Create a post',
-            style: TextStyle(
-              color: _ConnectColors.ink,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+    // Spec'd against node 519:9852 rather than the shared `_SheetShell`, whose
+    // radius, padding and handle differ from this sheet.
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        ),
+        child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 16,
+                offset: Offset(0, -4),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          const Text(
-            "Choose what you'd like to share",
-            style: TextStyle(
-              color: _ConnectColors.inkSoft,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          GridView.count(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 2.24,
-            children: tiles.map((tile) {
-              return InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () => Navigator.of(context).pop(tile.type),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F7F9),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFDDDDDD)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 1.5,
-                              offset: Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          tile.emoji,
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              tile.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF222222),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.1,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              tile.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF484848),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
-              );
-            }).toList(),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 16),
+                child: Text(
+                  "Choose what you'd like to share",
+                  style: TextStyle(
+                    color: Color(0xFF484848),
+                    fontSize: 14,
+                    height: 21 / 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  child: GridView.count(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    // 174.65 x 123.18 per the design.
+                    childAspectRatio: 174.65 / 123.18,
+                    children: tiles
+                        .map(
+                          (tile) => _PostTypeCard(
+                            tile: tile,
+                            onTap: () => Navigator.of(context).pop(tile.type),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _PostTypeCard extends StatelessWidget {
+  const _PostTypeCard({required this.tile, required this.onTap});
+
+  final _PostTypeTile tile;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F7F9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDDDDD), width: 1.1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 1.5,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: _PostTypeIcon(tile: tile),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              tile.label,
+              style: const TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 14,
+                height: 21 / 14,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Two lines, and no ellipsis: these labels are short enough to wrap
+            // rather than be cut off mid-word.
+            Text(
+              tile.subtitle,
+              maxLines: 2,
+              softWrap: true,
+              style: const TextStyle(
+                color: Color(0xFF484848),
+                fontSize: 12,
+                height: 16 / 12,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PostTypeIcon extends StatelessWidget {
+  const _PostTypeIcon({required this.tile});
+
+  final _PostTypeTile tile;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tile.asset.endsWith('.svg')) {
+      return SvgPicture.asset(
+        tile.asset,
+        width: tile.iconWidth,
+        height: tile.iconHeight,
+      );
+    }
+    return Image.asset(
+      tile.asset,
+      width: tile.iconWidth,
+      height: tile.iconHeight,
+      fit: BoxFit.contain,
     );
   }
 }
@@ -3121,13 +3215,586 @@ class _PostTypeTile {
     required this.type,
     required this.label,
     required this.subtitle,
-    required this.emoji,
+    required this.asset,
+    this.iconWidth = 24,
+    this.iconHeight = 24,
   });
 
   final ConnectPostType type;
   final String label;
   final String subtitle;
-  final String emoji;
+  final String asset;
+  final double iconWidth;
+  final double iconHeight;
+}
+
+/// The composer the "Post" tab opens (node 519:8441): a plain text post by
+/// default, with the corner button opening the type picker (node 519:9852) for
+/// anything richer. Attached media renders inline here per node 526:2474.
+class _QuickPostPage extends StatefulWidget {
+  const _QuickPostPage({
+    required this.viewerInitials,
+    required this.viewerColor,
+    required this.viewerPhotoUrl,
+    required this.department,
+    required this.onPickType,
+  });
+
+  final String viewerInitials;
+  final Color viewerColor;
+  final String viewerPhotoUrl;
+  final String? department;
+
+  /// Opens the post-type picker; returns the chosen type, or null if dismissed.
+  final Future<ConnectPostType?> Function() onPickType;
+
+  @override
+  State<_QuickPostPage> createState() => _QuickPostPageState();
+}
+
+class _QuickPostPageState extends State<_QuickPostPage> {
+  final _text = TextEditingController();
+  final _focus = FocusNode();
+  final _media = <ConnectMediaAttachment>[];
+  int _previewIndex = 0;
+  bool _teamOnly = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _text.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  bool get _canPost => _text.text.trim().isNotEmpty || _media.isNotEmpty;
+
+  Future<void> _addMedia() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
+      withData: false,
+      allowMultiple: true,
+    );
+    final files = result?.files ?? const [];
+    final picked = <ConnectMediaAttachment>[];
+    for (final file in files) {
+      final path = file.path;
+      if (path == null || path.isEmpty) continue;
+      picked.add(
+        ConnectMediaAttachment(
+          path: path,
+          name: file.name,
+          size: file.size,
+          mimeType: _mimeTypeFor(file.extension),
+        ),
+      );
+    }
+    if (picked.isEmpty) return;
+    setState(() => _media.addAll(picked));
+  }
+
+  Future<void> _pickAudience() async {
+    final teamOnly = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: const Color(0x73000000),
+      builder: (_) => _AudienceSheet(teamOnly: _teamOnly),
+    );
+    if (!mounted || teamOnly == null) return;
+    setState(() => _teamOnly = teamOnly);
+  }
+
+  Future<void> _openPicker() async {
+    final type = await widget.onPickType();
+    if (!mounted || type == null) return;
+    if (type == ConnectPostType.newPost) {
+      await _addMedia();
+      return;
+    }
+    // Every other type has its own dedicated composer — hand off to it and
+    // leave this screen behind so the flows stay exactly as they were.
+    Navigator.of(context).pop(_QuickPostResult.switchType(type));
+  }
+
+  void _submit() {
+    if (!_canPost) return;
+    final hasMedia = _media.isNotEmpty;
+    final isVideo =
+        hasMedia && (_media.first.mimeType?.startsWith('video/') ?? false);
+    final draft = ConnectPostDraft(
+      type: ConnectPostType.newPost,
+      body: {
+        'postKind': hasMedia ? 'media' : 'text',
+        'text': _text.text.trim(),
+        'mediaKind': hasMedia ? (isVideo ? 'video' : 'image') : 'none',
+        'mediaTitle': hasMedia ? _media.first.name : '',
+        'mediaDuration': '',
+        'linkUrl': '',
+        'linkTitle': '',
+        'linkDomain': '',
+        'sendTo': _teamOnly ? 'my_team' : 'everyone',
+        'sendToDepartment': _teamOnly ? (widget.department ?? '') : '',
+      },
+      media: hasMedia ? _media.first : null,
+      mediaList: _media.length > 1 ? List.of(_media) : const [],
+    );
+    Navigator.of(context).pop(_QuickPostResult.draft(draft));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => FocusScope.of(context).unfocus(),
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _text,
+                        focusNode: _focus,
+                        maxLines: null,
+                        minLines: 3,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: const TextStyle(
+                          color: Color(0xFF222222),
+                          fontSize: 15,
+                          height: 23 / 15,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        decoration: const InputDecoration(
+                          isCollapsed: true,
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          focusedErrorBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          hintText:
+                              'Be the first to spark a conversation and share '
+                              'something amazing with your team!',
+                          hintStyle: TextStyle(
+                            color: Color(0xFF9197A2),
+                            fontSize: 15,
+                            height: 23 / 15,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                      if (_media.isNotEmpty) _buildMediaPreview(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            _buildFooter(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1.1),
+        ),
+      ),
+      child: Row(
+        children: [
+          InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF7F7F9),
+                shape: BoxShape.circle,
+              ),
+              child: SvgPicture.asset(
+                'assets/icons/composer_close.svg',
+                width: 16,
+                height: 16,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          _InitialAvatar(
+            initials: widget.viewerInitials,
+            color: widget.viewerColor,
+            size: 30,
+            photoUrl: widget.viewerPhotoUrl,
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: _pickAudience,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _teamOnly ? 'Team' : 'Public',
+                    style: const TextStyle(
+                      color: Color(0xFF484848),
+                      fontSize: 16,
+                      height: 22 / 16,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // The exported glyph points left; the design rotates it -90°
+                  // so it reads as a downward "change audience" chevron.
+                  Transform.rotate(
+                    angle: -math.pi / 2,
+                    child: SvgPicture.asset(
+                      'assets/icons/composer_chevron.svg',
+                      width: 18,
+                      height: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: _canPost ? _submit : null,
+            child: Container(
+              width: 80,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                // #0571A6 once there is something to post, the muted
+                // #96B7C7 resting state until then.
+                color: _canPost
+                    ? const Color(0xFF0571A6)
+                    : const Color(0xFF96B7C7),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Text(
+                'Post',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  height: 16.2 / 12,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: -0.16,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaPreview() {
+    final preview = _media[_previewIndex.clamp(0, _media.length - 1)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              SizedBox(
+                height: 200,
+                width: double.infinity,
+                child: _LocalMediaThumb(attachment: preview),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => setState(() {
+                    _media.remove(preview);
+                    _previewIndex = 0;
+                  }),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0x99000000),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_media.length > 1) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 50,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _media.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, index) {
+                final selected = index == _previewIndex;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => setState(() => _previewIndex = index),
+                  child: Container(
+                    width: 80,
+                    height: 50,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF0571A6)
+                            : Colors.transparent,
+                        width: 1.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x1A000000),
+                          blurRadius: 3,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: _LocalMediaThumb(attachment: _media[index]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFooter() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _openPicker,
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFBEEDFF),
+                shape: BoxShape.circle,
+              ),
+              child: SvgPicture.asset(
+                'assets/icons/composer_add.svg',
+                width: 28,
+                height: 28,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Audience switcher for the composer (node 655:15638).
+class _AudienceSheet extends StatelessWidget {
+  const _AudienceSheet({required this.teamOnly});
+
+  final bool teamOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.only(bottom: 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 16,
+                offset: Offset(0, -4),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D5DB),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                ),
+                _AudienceOption(
+                  label: 'Public',
+                  selected: !teamOnly,
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFFEDEDED),
+                ),
+                _AudienceOption(
+                  label: 'Team',
+                  selected: teamOnly,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AudienceOption extends StatelessWidget {
+  const _AudienceOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF222222),
+                  fontSize: 16,
+                  height: 22 / 16,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
+            if (selected)
+              const Icon(
+                Icons.check_rounded,
+                size: 18,
+                color: Color(0xFF0571A6),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A local file preview — these are picked files on disk, not network media.
+class _LocalMediaThumb extends StatelessWidget {
+  const _LocalMediaThumb({required this.attachment});
+
+  final ConnectMediaAttachment attachment;
+
+  @override
+  Widget build(BuildContext context) {
+    final isVideo = attachment.mimeType?.startsWith('video/') ?? false;
+    if (isVideo) {
+      return Container(
+        color: const Color(0xFF222222),
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.play_circle_outline_rounded,
+          color: Colors.white,
+          size: 32,
+        ),
+      );
+    }
+    return Image.file(
+      File(attachment.path),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      errorBuilder: (_, _, _) => Container(
+        color: _ConnectColors.sand,
+        alignment: Alignment.center,
+        child: const Icon(Icons.image_outlined, color: Color(0xFF9197A2)),
+      ),
+    );
+  }
+}
+
+/// What the quick composer hands back: either a finished draft, or a request to
+/// switch into one of the dedicated typed composers.
+class _QuickPostResult {
+  const _QuickPostResult._({this.draft, this.type});
+
+  factory _QuickPostResult.draft(ConnectPostDraft draft) =>
+      _QuickPostResult._(draft: draft);
+
+  factory _QuickPostResult.switchType(ConnectPostType type) =>
+      _QuickPostResult._(type: type);
+
+  final ConnectPostDraft? draft;
+  final ConnectPostType? type;
 }
 
 class _PostComposerPage extends StatefulWidget {
@@ -3441,59 +4108,6 @@ class _PostComposerPageState extends State<_PostComposerPage> {
           hint: 'Write your announcement...',
           minLines: 6,
         ),
-        const SizedBox(height: 18),
-        _FieldLabel('OPTIONS'),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFEBEBEB)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Require Acknowledgement',
-                      style: TextStyle(
-                        color: Color(0xFF222222),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Employees must confirm they have read this',
-                      style: TextStyle(
-                        color: Color(0xFF717171),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _requireAcknowledgement,
-                activeTrackColor: _ConnectColors.blue,
-                inactiveTrackColor: const Color(0xFFDDDDDD),
-                onChanged: (value) =>
-                    setState(() => _requireAcknowledgement = value),
-              ),
-            ],
-          ),
-        ),
-        if (_requireAcknowledgement) ...[
-          const SizedBox(height: 18),
-          _FieldLabel('ACKNOWLEDGEMENT MESSAGE'),
-          _ComposerTextField(
-            controller: _acknowledgementMessage,
-            hint: 'Write your message',
-            minLines: 1,
-          ),
-        ],
       ],
       ConnectPostType.kudos => [
         _FieldLabel('RECOGNISE A TEAMMATE'),
@@ -3611,19 +4225,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
           minLines: 1,
         ),
         const SizedBox(height: 18),
-        // Per node 496:20930: the card shows an 80x80 thumbnail next to the
-        // title — there's no auto-fetch from the URL, so the thumbnail is
-        // picked the same way any other post's media is.
-        _FieldLabel('THUMBNAIL (OPTIONAL)'),
-        _MediaToggle(
-          enabled: _hasMedia,
-          selectedMedia: _selectedMedia,
-          existingMediaKind: _bodyValue('mediaKind'),
-          existingMediaUrl: _bodyValue('mediaUrl'),
-          onTap: _pickMedia,
-          onRemove: _hasMedia ? _removeMedia : null,
-        ),
-        const SizedBox(height: 18),
+        // No thumbnail picker: the card's image is resolved from the link's
+        // own preview metadata server-side.
         _FieldLabel('BODY'),
         _ComposerTextField(
           controller: _text,
@@ -3983,7 +4586,6 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     if (widget.type == ConnectPostType.newPost && _newPostKind == 'media') {
       return _selectedMedia;
     }
-    if (widget.type == ConnectPostType.recommendation) return _selectedMedia;
     return null;
   }
 
@@ -4238,10 +4840,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     final selection = value.selection.isValid
         ? value.selection
         : TextSelection.collapsed(offset: value.text.length);
-    final newText = value.text.replaceRange(selection.start, selection.end, emoji);
+    final newText = value.text.replaceRange(
+      selection.start,
+      selection.end,
+      emoji,
+    );
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: selection.start + emoji.length),
+      selection: TextSelection.collapsed(
+        offset: selection.start + emoji.length,
+      ),
     );
     _focusNode.requestFocus();
   }
@@ -4644,8 +5252,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         _CommentLikeButton(
           liked: comment.liked,
           count: comment.likeCount,
-          onTap: () =>
-              widget.bloc.reactToComment(widget.postId, comment.id),
+          onTap: () => widget.bloc.reactToComment(widget.postId, comment.id),
         ),
       ],
     );
@@ -5828,11 +6435,12 @@ class _HeaderSubmitPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Node 519:8550: 80 wide, 8px vertical padding (so ~32 tall, not 36),
+    // 12px regular with -0.16 tracking — #0571A6 enabled, #96B7C7 resting.
     return SizedBox(
       width: 80,
-      height: 36,
       child: Material(
-        color: enabled ? _ConnectColors.blue : const Color(0xFF96B7C7),
+        color: enabled ? const Color(0xFF0571A6) : const Color(0xFF96B7C7),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -5846,8 +6454,10 @@ class _HeaderSubmitPill extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  height: 16.2 / 12,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: -0.16,
                 ),
               ),
             ),
@@ -6266,7 +6876,10 @@ class _PollImageOptionRow extends StatelessWidget {
               controller: controller,
               decoration: const InputDecoration(
                 hintText: 'Option label',
+                filled: false,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
                 isDense: true,
               ),
               style: const TextStyle(color: _ConnectColors.ink, fontSize: 14),
@@ -6317,19 +6930,26 @@ class _ConnectFilterBar extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0x99EBEBEB)),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0x99EBEBEB))),
       ),
       padding: const EdgeInsets.fromLTRB(2, 2, 2, 13),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        // Order per node 488:19230: All, My Post, Public, Team, Priority, Game.
         child: Row(
           children: [
             _FilterChip(
               label: 'All',
               selected: selected == _ConnectFilter.all,
               onTap: () => onChanged(_ConnectFilter.all),
+            ),
+            const SizedBox(width: 8),
+            _FilterChip(
+              label: 'My Post',
+              iconAsset: 'assets/icons/filter_mypost.png',
+              iconSize: 26,
+              selected: selected == _ConnectFilter.myPost,
+              onTap: () => onChanged(_ConnectFilter.myPost),
             ),
             const SizedBox(width: 8),
             _FilterChip(
@@ -6341,23 +6961,26 @@ class _ConnectFilterBar extends StatelessWidget {
             const SizedBox(width: 8),
             _FilterChip(
               label: 'Team',
-              iconAsset: 'assets/icons/connect_icon_user.png',
+              iconAsset: 'assets/icons/filter_team.png',
+              iconSize: 26,
               selected: selected == _ConnectFilter.team,
               onTap: () => onChanged(_ConnectFilter.team),
             ),
             const SizedBox(width: 8),
             _FilterChip(
-              label: 'My Post',
-              iconAsset: 'assets/icons/connect_icon_my_post_pencil.png',
-              selected: selected == _ConnectFilter.myPost,
-              onTap: () => onChanged(_ConnectFilter.myPost),
+              label: 'Priority',
+              iconAsset: 'assets/icons/filter_priority.png',
+              iconSize: 20,
+              selected: selected == _ConnectFilter.priority,
+              onTap: () => onChanged(_ConnectFilter.priority),
             ),
             const SizedBox(width: 8),
             _FilterChip(
-              label: 'Priority',
-              iconAsset: 'assets/icons/connect_icon_priority_star.png',
-              selected: selected == _ConnectFilter.priority,
-              onTap: () => onChanged(_ConnectFilter.priority),
+              label: 'Game',
+              iconAsset: 'assets/icons/filter_game.svg',
+              iconSize: 20,
+              selected: selected == _ConnectFilter.game,
+              onTap: () => onChanged(_ConnectFilter.game),
             ),
           ],
         ),
@@ -6373,6 +6996,7 @@ class _FilterChip extends StatelessWidget {
     required this.onTap,
     this.emoji,
     this.iconAsset,
+    this.iconSize = 26,
   });
 
   final String label;
@@ -6380,40 +7004,74 @@ class _FilterChip extends StatelessWidget {
   final VoidCallback onTap;
   final String? emoji;
   final String? iconAsset;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final hasIcon = emoji != null || iconAsset != null;
+    final asset = iconAsset;
     return InkWell(
       borderRadius: BorderRadius.circular(99),
       onTap: onTap,
       child: Container(
-        height: 50,
-        padding: EdgeInsets.symmetric(horizontal: hasIcon ? 17 : 31),
+        // 11.114 vertical padding; the horizontal padding tightens when an
+        // icon is present (31.114 → 17.114) per the design.
+        padding: EdgeInsets.symmetric(
+          horizontal: hasIcon ? 17.114 : 31.114,
+          vertical: 11.114,
+        ),
         decoration: BoxDecoration(
-          color: selected ? _ConnectColors.blue : Colors.white,
+          color: selected ? const Color(0xFF0571A6) : Colors.white,
           borderRadius: BorderRadius.circular(99),
           border: Border.all(
-            color: selected ? _ConnectColors.blue : const Color(0xFFEBEBEB),
+            color: selected ? const Color(0xFF0571A6) : const Color(0xFFEBEBEB),
+            width: 1.114,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: selected
-                  ? const Color(0x335A9CFF)
-                  : const Color(0x1A000000),
-              blurRadius: selected ? 6 : 1.5,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x335A9CFF),
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Color(0x335A78FF),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ]
+              : const [
+                  BoxShadow(
+                    color: Color(0x1A000000),
+                    blurRadius: 1.5,
+                    offset: Offset(0, 1),
+                  ),
+                  BoxShadow(
+                    color: Color(0x1A000000),
+                    blurRadius: 1,
+                    offset: Offset(0, 1),
+                  ),
+                ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (emoji != null) ...[
-              Text(emoji!, style: const TextStyle(fontSize: 18)),
+              Text(
+                emoji!,
+                style: const TextStyle(fontSize: 18, height: 28 / 18),
+              ),
               const SizedBox(width: 8),
-            ] else if (iconAsset != null) ...[
-              Image.asset(iconAsset!, width: 22, height: 22),
+            ] else if (asset != null) ...[
+              if (asset.endsWith('.svg'))
+                SvgPicture.asset(asset, width: iconSize, height: iconSize)
+              else
+                Image.asset(
+                  asset,
+                  width: iconSize,
+                  height: iconSize,
+                  fit: BoxFit.contain,
+                ),
               const SizedBox(width: 8),
             ],
             Text(
@@ -6421,7 +7079,9 @@ class _FilterChip extends StatelessWidget {
               style: TextStyle(
                 color: selected ? Colors.white : const Color(0xFF484848),
                 fontSize: 14,
+                height: 16.2 / 14,
                 fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
               ),
             ),
           ],

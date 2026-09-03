@@ -4,6 +4,7 @@ import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
+import { fetchLinkPreview } from './link-preview.service';
 import {
   deleteConnectMedia,
   presignConnectMedia,
@@ -255,7 +256,9 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       input.body ?? {},
       sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes),
     );
-    const visibility = visibilityFromBody(type, normalizedBody, viewer);
+    const enrichedBody =
+      type === 'recommendation' ? await withLinkPreview(normalizedBody) : normalizedBody;
+    const visibility = visibilityFromBody(type, enrichedBody, viewer);
     const post: ConnectPost = {
       id: randomUUID(),
       org: orgForUser(viewer),
@@ -270,7 +273,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
         org: orgForUser(viewer),
         department: visibility.department,
       },
-      body: withMedia(normalizedBody, uploadedMedia),
+      body: withMedia(enrichedBody, uploadedMedia),
       likedBy: [],
       comments: [],
       actionBy: {},
@@ -306,12 +309,16 @@ export async function updateConnectPost(
         ? sparsePollImageKeys(uploadedPollImages, input.pollOptionImageIndexes)
         : existingPollImageKeys(post.body),
     );
-    const visibility = visibilityFromBody(type, normalizedBody, viewer);
+    const enrichedBody =
+      type === 'recommendation'
+        ? await withLinkPreview(normalizedBody, post.body.linkUrl as string | undefined)
+        : normalizedBody;
+    const visibility = visibilityFromBody(type, enrichedBody, viewer);
     const existingMediaObjectKeys = mediaObjectKeys(post.body);
     const body = input.removeMedia
-      ? withoutMedia(normalizedBody)
+      ? withoutMedia(enrichedBody)
       : withMedia(
-          normalizedBody,
+          enrichedBody,
           uploadedMedia.length > 0 ? uploadedMedia : mediaFromBody(post.body),
         );
     const update = {
@@ -563,6 +570,8 @@ function normalizePostBody(
         linkUrl: normalizeText(input.linkUrl, '', 300),
         linkTitle: normalizeText(input.linkTitle, '', 160),
         linkDomain: normalizeText(input.linkDomain, '', 120),
+        // Filled in by `withLinkPreview` after normalization.
+        linkImageUrl: normalizeText(input.linkImageUrl, '', 600),
       };
     case 'hr_announcement': {
       const requireAcknowledgement = input.requireAcknowledgement === true;
@@ -735,8 +744,30 @@ function visibilityFromBody(
       ? normalizeDepartment(body.sendToDepartment) ?? normalizeDepartment(viewer.department)
       : undefined;
   return {
-    label: department ? 'Team' : 'Company',
+    label: department ? 'Team' : 'Public',
     department,
+  };
+}
+
+/**
+ * Fills a recommendation's thumbnail and source details from the link itself,
+ * so authors only paste a URL. Re-fetched only when the URL changes.
+ */
+async function withLinkPreview(
+  body: Record<string, unknown>,
+  previousUrl?: string,
+): Promise<Record<string, unknown>> {
+  const linkUrl = typeof body.linkUrl === 'string' ? body.linkUrl.trim() : '';
+  if (!linkUrl) return { ...body, linkImageUrl: '', linkTitle: '', linkDomain: '' };
+  if (linkUrl === previousUrl && typeof body.linkImageUrl === 'string' && body.linkImageUrl) {
+    return body;
+  }
+  const preview = await fetchLinkPreview(linkUrl);
+  return {
+    ...body,
+    linkImageUrl: preview.imageUrl,
+    linkTitle: (body.linkTitle as string) || preview.title,
+    linkDomain: (body.linkDomain as string) || preview.siteName,
   };
 }
 
@@ -806,7 +837,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'V',
       'Co-founder & CEO',
       '#BE5A36',
-      'Company',
+      'Public',
       {
         text: 'We did it, team. Sowaka has been named Best PropTech Company of the Year. This belongs to every single one of you.',
         mediaKind: 'video',
@@ -826,7 +857,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         title: 'Heads up!',
         text: 'There is construction ongoing in the common area. It will not be accessible on 17 June. Please plan accordingly.',
@@ -845,7 +876,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'S',
       'Auto · HRIS',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         personName: 'Sneha Sharma',
         personInitials: 'S',
@@ -866,7 +897,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'S',
       'Auto · HRIS',
       '#4C5840',
-      'Company',
+      'Public',
       {
         personName: 'Rahul Mehta',
         personInitials: 'R',
@@ -896,25 +927,6 @@ function defaultPosts(org: string): ConnectPost[] {
     ),
     post(
       org,
-      'award',
-      'Award',
-      '🏆',
-      '#C98A2E',
-      '#F4ECDD',
-      'Sowaka Connect',
-      'S',
-      'Auto · Recognition',
-      '#C98A2E',
-      'Company',
-      {
-        personName: 'Tara Reddy',
-        title: 'Culture Champion',
-        reason: 'For making new team members feel included from day one.',
-      },
-      156,
-    ),
-    post(
-      org,
       'survey',
       'Survey/Poll',
       '📊',
@@ -924,7 +936,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#C98A2E',
-      'Company',
+      'Public',
       {
         title: 'What should our next learning session be?',
         totalVotes: 97,
@@ -949,7 +961,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'HR',
       'HR & Admin team',
       '#BE5A36',
-      'Company',
+      'Public',
       {
         title: 'Friday Game Night',
         subtitle: 'Cafeteria · 5:30 PM',
@@ -971,7 +983,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'G',
       'Auto · Games',
       '#4F8C89',
-      'Company',
+      'Public',
       {
         title: 'Find Your Mate',
         subtitle: 'Match the clue to the teammate it describes before the timer runs out.',
@@ -1016,7 +1028,7 @@ function defaultPosts(org: string): ConnectPost[] {
       'M',
       'Design Lead',
       '#4F6F8C',
-      'Company',
+      'Public',
       {
         text: "If you're figuring out how to give feedback that actually lands, this one's worth the 12 minutes.",
         mediaKind: 'video',
@@ -1094,7 +1106,7 @@ function systemPost(
     type,
     ...meta,
     author: systemAuthor(),
-    audience: { label: department ? 'Team' : 'Company', org, department },
+    audience: { label: department ? 'Team' : 'Public', org, department },
     body,
     likedBy: [],
     comments: [],

@@ -54,6 +54,8 @@ export interface ManagerTeamMemberView {
   name: string;
   department: string;
   designation: string;
+  /** True for the viewer's own manager, shown as "(Manager)" in the team list. */
+  isManager?: boolean;
   score: number;
   /** Overall score from the most recent *earlier* period, for the delta pill. */
   previousScore: number | null;
@@ -112,16 +114,32 @@ export async function getManagerWorkspace(managerUserId: string) {
     ? await users().findOne({ userId: manager.managerUserId })
     : null;
 
-  const reports = await users()
+  const directReports = await users()
     .find({
       managerUserId,
       lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
     })
     .sort({ name: 1, userId: 1 })
     .toArray();
-  // Recognition is limited to the manager's own direct reports — same set as
-  // `reports`, so reuse it (no org-wide or upward-chain nominations).
-  const recognitionCandidates = reports;
+
+  // Someone with no direct reports still has a team: their peers under the
+  // same manager, plus that manager. This is what the read-only Team view
+  // shows an individual contributor.
+  let reports = directReports;
+  if (directReports.length === 0 && manager.managerUserId) {
+    const peers = await users()
+      .find({
+        managerUserId: manager.managerUserId,
+        userId: { $ne: managerUserId },
+        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+      })
+      .sort({ name: 1, userId: 1 })
+      .toArray();
+    reports = approver ? [approver, ...peers] : peers;
+  }
+  // Recognition is limited to the manager's own direct reports — never the
+  // peer/manager fallback above.
+  const recognitionCandidates = directReports;
   const period = currentPeriod();
   const reportIds = reports.map((report) => report.userId);
   const reportEmployeeIds = reports
@@ -239,6 +257,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       userId: report.userId,
       name: report.name,
       department: report.department ?? report.designation ?? 'Team',
+      isManager: report.userId === manager.managerUserId,
       designation: report.designation ?? '',
       score: current?.overallScore ?? latest?.overallScore ?? 0,
       previousScore: previousByEmployee.get(report.userId) ?? null,

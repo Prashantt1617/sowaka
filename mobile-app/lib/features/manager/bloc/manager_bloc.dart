@@ -375,7 +375,9 @@ class ManagerBloc {
             ),
           );
         case ChangeManagerTab(:final tab):
-          if (tab == ManagerTab.manage && !_state.canManage) return false;
+          // Team is open to everyone now — individual contributors get the
+          // same list read-only (no requests segment, no decisions), so this
+          // no longer blocks the switch.
           _emit(
             _state.copyWith(
               tab: tab,

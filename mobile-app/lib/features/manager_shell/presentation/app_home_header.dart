@@ -6,12 +6,16 @@ class AppHomeHeader extends StatelessWidget {
     super.key,
     required this.profileAction,
     required this.onNotifications,
-    required this.onQuickCreate,
+    this.onQuickCreate,
   });
 
   final Widget profileAction;
   final VoidCallback onNotifications;
-  final VoidCallback onQuickCreate;
+
+  /// Retained so existing call sites keep compiling, but no longer rendered:
+  /// per the updated design the header is logo + bell + avatar only, and
+  /// creating a post now starts from the "Post" tab in the bottom nav.
+  final VoidCallback? onQuickCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -35,8 +39,6 @@ class AppHomeHeader extends StatelessWidget {
               ),
               const Spacer(),
               _AppHeaderBellButton(onTap: onNotifications),
-              const SizedBox(width: 12),
-              _AppHeaderPlusButton(onTap: onQuickCreate),
               const SizedBox(width: 12),
               profileAction,
             ],
@@ -102,24 +104,3 @@ class _AppHeaderNotificationDot extends StatelessWidget {
   }
 }
 
-class _AppHeaderPlusButton extends StatelessWidget {
-  const _AppHeaderPlusButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Quick create',
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: SvgPicture.asset(
-          'assets/icons/plus_add.svg',
-          width: 28,
-          height: 28,
-        ),
-      ),
-    );
-  }
-}
