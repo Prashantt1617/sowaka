@@ -66,6 +66,13 @@ export interface User {
   // Grants access to the HR dashboard (org-wide view + request overrides).
   // Independent of the reporting role — a manager/employee may or may not have it.
   dashboardAccess?: boolean;
+  /**
+   * Per-employee overtime eligibility, set by HR from the dashboard. Absent
+   * means eligible, so existing employees keep the behaviour they had before
+   * this flag existed. Applied on top of the department-level gate
+   * (`Company.overtimeDisabledDepartments`) — either one blocks.
+   */
+  overtimeEligible?: boolean;
   createdAt?: number;
   updatedAt?: Date;
   lastLoginAt?: Date;

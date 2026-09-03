@@ -54,10 +54,13 @@ class _TeamHomeState extends State<_TeamHome> {
                   onNotifications: widget.onNotifications,
                   onQuickCreate: widget.onOpenComposer,
                 ),
-                const SizedBox(height: 14),
                 // Requests are a manager capability: an individual contributor
-                // gets the same team list, read-only, with no segment to switch.
-                if (canManage)
+                // gets the same team list, read-only, with no segment to
+                // switch — and no white gap where the segment would have sat,
+                // so the header meets the page background the way it does on
+                // the Apply Leave and Reimbursement screens.
+                if (canManage) ...[
+                  const SizedBox(height: 14),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _TeamSegmentedControl(
@@ -66,6 +69,7 @@ class _TeamHomeState extends State<_TeamHome> {
                       onChanged: (value) => setState(() => _section = value),
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -390,15 +394,14 @@ class _TeamMemberRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _PresencePill(present: present),
-                        if (pendingCount > 0)
-                          _RequestCountPill(count: pendingCount),
-                      ],
-                    ),
+                    // No presence pill: the dot on the avatar already conveys
+                    // present / not punched in.
+                    if (pendingCount > 0)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [_RequestCountPill(count: pendingCount)],
+                      ),
                     if (upcomingLeave != null || birthdaySoon) ...[
                       const SizedBox(height: 4),
                       Wrap(
@@ -489,7 +492,7 @@ class _MyTeamCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'You ($name)',
+                  '$name (You)',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -522,31 +525,6 @@ class _MyTeamCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PresencePill extends StatelessWidget {
-  const _PresencePill({required this.present});
-
-  final bool present;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: present ? const Color(0xFFEAFFE6) : const Color(0xFF717171),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        present ? 'Present' : 'Not Punched In',
-        style: TextStyle(
-          color: present ? const Color(0xFF43D27C) : Colors.white,
-          fontSize: 12,
-          fontWeight: present ? FontWeight.w400 : FontWeight.w600,
-        ),
       ),
     );
   }

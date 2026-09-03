@@ -297,9 +297,10 @@ export async function getManagerWorkspace(managerUserId: string) {
   // Company config for the overtime apply flow: which weekdays are week-offs,
   // whether overtime is enabled for this user's department, and the org holidays.
   const companyConfig = await getCompanyConfig(manager.org);
-  const overtimeEnabled = !companyConfig.overtimeDisabledDepartments.includes(
-    (manager.department ?? '').trim(),
-  );
+  // Both gates apply: HR can switch a single employee off, or a whole team.
+  const overtimeEnabled =
+    manager.overtimeEligible !== false &&
+    !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim());
   const orgHolidays = manager.org
     ? await holidays().find({ org: manager.org }).sort({ date: 1 }).toArray()
     : [];

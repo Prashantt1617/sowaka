@@ -52,6 +52,8 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     role: e.role ?? 'employee',
     isLeadership: e.isLeadership === true,
     dashboardAccess: e.dashboardAccess === true,
+    // Absent means eligible — see User.overtimeEligible.
+    overtimeEligible: e.overtimeEligible !== false,
     managerUserId: e.managerUserId,
     managerName: e.managerUserId ? nameById.get(e.managerUserId) : undefined,
     lifecycleStatus: e.lifecycleStatus,
@@ -89,6 +91,7 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     joiningDate: parseDate(input.joiningDate, 'Joining date') ?? new Date(),
     lifecycleStatus: 'onboarding', onboardingStatus: 'pending', noticeStatus: 'none',
     role: 'employee', dashboardAccess: false, isLeadership: false,
+    overtimeEligible: true,
     createdAt: Date.now(), updatedAt: new Date(),
   };
   const manager = employee.managerUserId
@@ -98,4 +101,26 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
   try { await generateNewJoineePost(employee, manager ?? undefined); }
   catch (error) { await users().deleteOne({ userId: employee.userId }); throw error; }
   return employee;
+}
+
+/**
+ * Flips a single employee's overtime eligibility from the HR dashboard.
+ *
+ * Scoped to the admin's own org so one company's HR cannot touch another's.
+ */
+export async function setOvertimeEligibilityForAdmin(
+  adminUserId: string,
+  employeeUserId: string,
+  eligible: boolean,
+) {
+  const admin = await users().findOne({ userId: adminUserId });
+  if (!admin) throw new AdminError(404, 'Admin user not found');
+  const filter = { userId: employeeUserId, ...(admin.org ? { org: admin.org } : {}) };
+  const employee = await users().findOneAndUpdate(
+    filter,
+    { $set: { overtimeEligible: eligible, updatedAt: new Date() } },
+    { returnDocument: 'after' },
+  );
+  if (!employee) throw new AdminError(404, 'Employee not found');
+  return { userId: employee.userId, name: employee.name, overtimeEligible: eligible };
 }

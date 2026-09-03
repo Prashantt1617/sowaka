@@ -306,7 +306,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   String? _reimbursementCategory;
   final _reimbursementAmount = TextEditingController();
   final _reimbursementDescription = TextEditingController();
-  final _reimbursementNotes = TextEditingController();
   String? _reimbursementReceiptName;
   Uint8List? _reimbursementReceiptBytes;
 
@@ -314,6 +313,15 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void initState() {
     super.initState();
     widget.controller._attach(this);
+    // The Apply button is disabled until the form is complete, so typing has
+    // to rebuild the header.
+    _reimbursementAmount.addListener(_onReimbursementFieldChanged);
+    _reimbursementDescription.addListener(_onReimbursementFieldChanged);
+    _leaveReason.addListener(_onLeaveFieldChanged);
+  }
+
+  void _onLeaveFieldChanged() {
+    if (_page == _QuickPage.applyLeave) setState(() {});
   }
 
   @override
@@ -322,10 +330,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     _text.dispose();
     _leaveReason.dispose();
     _overtimeNote.dispose();
+    _reimbursementAmount.removeListener(_onReimbursementFieldChanged);
+    _reimbursementDescription.removeListener(_onReimbursementFieldChanged);
+    _leaveReason.removeListener(_onLeaveFieldChanged);
     _reimbursementAmount.dispose();
     _reimbursementDescription.dispose();
-    _reimbursementNotes.dispose();
     super.dispose();
+  }
+
+  void _onReimbursementFieldChanged() {
+    if (_page == _QuickPage.applyReimbursement) setState(() {});
+  }
+
+  /// Every field on the reimbursement form is required.
+  bool get _reimbursementComplete {
+    final amount = double.tryParse(_reimbursementAmount.text.trim());
+    return _reimbursementCategory != null &&
+        _reimbursementDate != null &&
+        amount != null &&
+        amount > 0 &&
+        _reimbursementDescription.text.trim().isNotEmpty &&
+        _reimbursementReceiptBytes != null;
   }
 
   void _open(_QuickPage page) {
@@ -438,70 +463,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         widget.dashboard.leaveBalance.casual.remaining +
         widget.dashboard.leaveBalance.earned.remaining;
 
-    String decisionLabel(LeaveDecision decision) => switch (decision) {
-      LeaveDecision.pending => 'Pending',
-      LeaveDecision.approved => 'Approved',
-      LeaveDecision.declined => 'Declined',
-    };
-
-    // Shows pending requests plus recent decisions, not just pending — the
-    // design's example list mixes a Pending and an Approved row (item 711:5299).
-    final openRequests =
-        <
-            (
-              DateTime date,
-              String title,
-              String subtitle,
-              String status,
-              IconData icon,
-              Color color,
-              Color tint,
-            )
-          >[
-            for (final leave in widget.dashboard.myLeaves)
-              (
-                leave.requestedOn,
-                '${leave.type} leave',
-                '${_short(leave.start)}–${_short(leave.end)} · ${leave.days} days',
-                decisionLabel(leave.decision),
-                Icons.calendar_month_rounded,
-                const Color(0xFF0571A6),
-                const Color(0xFFE3F2FA),
-              ),
-            for (final request in widget.dashboard.myOvertime)
-              (
-                request.requestedOn,
-                'Overtime',
-                _short(request.workDate),
-                decisionLabel(request.decision),
-                Icons.schedule_rounded,
-                const Color(0xFFC98A2E),
-                const Color(0xFFF4ECDD),
-              ),
-            for (final claim in widget.dashboard.myReimbursements)
-              (
-                claim.createdAt,
-                claim.category,
-                '${_short(claim.expenseDate)} · ₹${claim.amount.toStringAsFixed(0)}',
-                claim.status,
-                Icons.receipt_long_rounded,
-                const Color(0xFF4F8C89),
-                const Color(0xFFDEEBE9),
-              ),
-            for (final request in widget.dashboard.regularizations)
-              (
-                request.createdAt,
-                'Attendance correction',
-                _short(request.workDate),
-                decisionLabel(request.decision),
-                Icons.edit_calendar_rounded,
-                const Color(0xFFBE5A36),
-                const Color(0xFFF6E5DB),
-              ),
-          ]
-          ..sort((a, b) => b.$1.compareTo(a.$1));
-    final recentRequests = openRequests.take(5).toList();
-
     return Column(
       key: const ValueKey('quick-home'),
       children: [
@@ -590,25 +551,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     ),
                   ],
                 ),
-                if (recentRequests.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  const _HomeSectionLabel('Open request'),
-                  const SizedBox(height: 10),
-                  _RequestGroup(
-                    children: [
-                      for (final (index, entry) in recentRequests.indexed)
-                        _RequestRow(
-                          entry.$2,
-                          entry.$3,
-                          entry.$4,
-                          icon: entry.$5,
-                          color: entry.$6,
-                          tint: entry.$7,
-                          last: index == recentRequests.length - 1,
-                        ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -721,7 +663,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
-      trailing: _LeaveHeaderButton(onTap: _submitLeaveApplication),
+      trailing: _LeaveHeaderButton(
+        enabled: _leaveFormComplete,
+        onTap: _submitLeaveApplication,
+      ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         if (balanceForType != null) ...[
@@ -786,7 +731,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               const SizedBox(height: 16),
               _LeaveFieldLabel('Duration'),
               _LeaveDropdownField(
-                value: _leaveDuration,
+                value: _leaveDurationLabel,
                 filled: true,
                 onTap: _pickLeaveDuration,
               ),
@@ -832,6 +777,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _pickLeaveType() async {
+    final balance = widget.dashboard.leaveBalance;
+    String left(LeaveBalanceItem item) => '${item.remaining}/${item.total}';
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -841,6 +788,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       builder: (sheetContext) => _LeavePickerSheet(
         options: const ['Casual Leave', 'Sick Leave', 'Earned Leave'],
         selected: _leaveType,
+        trailingLabels: {
+          'Casual Leave': left(balance.casual),
+          'Sick Leave': left(balance.sick),
+          'Earned Leave': left(balance.earned),
+        },
       ),
     );
     if (picked == null || !mounted) return;
@@ -848,6 +800,15 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _pickLeaveDuration() async {
+    // A half day only makes sense on a single date.
+    if (!_isSingleDayLeave) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A half day can only be applied for a single date.'),
+        ),
+      );
+      return;
+    }
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -887,7 +848,39 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           _leaveFrom = picked;
         }
       }
+      // Half day is single-date only, so a widened range drops back to a full
+      // day rather than silently submitting an impossible combination.
+      if (!_isSingleDayLeave) _leaveDuration = 'Full Day';
     });
+  }
+
+  /// "Full Day · 3 days" — the duration choice plus the days it will consume,
+  /// so the count is visible before applying.
+  String get _leaveDurationLabel {
+    final from = _leaveFrom;
+    if (from == null) return _leaveDuration;
+    if (_leaveDuration == 'Half Day') return 'Half Day · 0.5 day';
+    final days = _leaveDaysBetween(from, _leaveTo ?? from);
+    return 'Full Day · $days ${days == 1 ? 'day' : 'days'}';
+  }
+
+  /// Every leave field except the attachment, which stays optional. The range
+  /// must also cost at least one day — an all-week-off range is not a leave.
+  bool get _leaveFormComplete {
+    final from = _leaveFrom;
+    if (_leaveType == null || from == null) return false;
+    if (_leaveReason.text.trim().isEmpty) return false;
+    if (_leaveDuration == 'Half Day') return _isSingleDayLeave;
+    return _leaveDaysBetween(from, _leaveTo ?? from) > 0;
+  }
+
+  /// True when the leave covers exactly one date — the only case where a half
+  /// day can be applied.
+  bool get _isSingleDayLeave {
+    final from = _leaveFrom;
+    if (from == null) return true;
+    final to = _leaveTo ?? from;
+    return _sameDay(from, to);
   }
 
   void _applyLeaveFor(DateTime date) {
@@ -922,23 +915,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _submitLeaveApplication() async {
-    final type = _leaveType;
-    final from = _leaveFrom;
-    final to = _leaveTo ?? _leaveFrom;
-    if (type == null || from == null || to == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pick a leave type and start date to continue.'),
-        ),
-      );
-      return;
-    }
+    if (!_leaveFormComplete) return;
+    final type = _leaveType!;
+    final from = _leaveFrom!;
+    final to = _leaveTo ?? from;
     final sent = await widget.bloc.add(
       SubmitLeaveApplication(
         type: type.replaceAll(' Leave', ''),
         startDate: from,
         endDate: to,
         reason: _leaveReason.text.trim(),
+        halfDay: _leaveDuration == 'Half Day' && _isSingleDayLeave,
       ),
     );
     if (!mounted || !sent) return;
@@ -951,12 +938,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Widget _overtimeHub() {
     final requests = widget.dashboard.myOvertime;
-    final now = DateTime.now();
-    final thisMonth = requests.where(
-      (request) =>
-          request.workDate.year == now.year &&
-          request.workDate.month == now.month,
-    );
+    // Summarises every request shown in the list below. Scoping this to the
+    // current calendar month meant a pending request from an earlier month sat
+    // in the list while the totals above it read zero.
+    final thisMonth = requests;
     final totalHours = thisMonth
         .where((request) => request.decision != LeaveDecision.declined)
         .fold<double>(0, (sum, request) => sum + request.hours);
@@ -987,18 +972,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         _QuickStatsCard(
-          label: 'This Month',
+          label: 'Overview',
           stats: [
             (_hoursMinutesLabel(totalHours), 'Total', const Color(0xFF111827)),
-            (
-              _hoursMinutesLabel(approvedHours),
-              'Approved',
-              const Color(0xFF16A34A),
-            ),
+            // Same order as the reimbursement overview: total, pending, then
+            // approved.
             (
               _hoursMinutesLabel(pendingHours),
               'Pending',
               const Color(0xFFFB2C36),
+            ),
+            (
+              _hoursMinutesLabel(approvedHours),
+              'Approved',
+              const Color(0xFF16A34A),
             ),
           ],
         ),
@@ -1157,7 +1144,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (!day.isBefore(today)) return false;
     final hours = _overtimeComputedHours;
     if (hours == null || hours < 8) return true;
-    return _isOvertimeWeekoff(day) || _isCompanyHoliday(day);
+    return _isWeekoffDay(day) || _isCompanyHoliday(day);
   }
 
   Future<void> _submitOvertimeApplication() async {
@@ -1215,12 +1202,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Widget _reimbursementHub() {
     final claims = widget.dashboard.myReimbursements;
-    final now = DateTime.now();
-    final thisMonth = claims.where(
-      (claim) =>
-          claim.expenseDate.year == now.year &&
-          claim.expenseDate.month == now.month,
-    );
+    // Every claim in the list below, for the same reason as overtime.
+    final thisMonth = claims;
     final claimed = thisMonth.fold<double>(
       0,
       (sum, claim) => sum + claim.amount,
@@ -1259,7 +1242,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           stats: [
             (_money(claimed), 'Total Claimed', const Color(0xFF111827)),
             (_money(pending), 'Pending', const Color(0xFFFB2C36)),
-            (_money(reimbursed), 'Reimbursed', const Color(0xFF16A34A)),
+            (_money(reimbursed), 'Approved', const Color(0xFF16A34A)),
           ],
         ),
         const SizedBox(height: 16),
@@ -1297,7 +1280,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _reimbursementCategory = null;
       _reimbursementAmount.clear();
       _reimbursementDescription.clear();
-      _reimbursementNotes.clear();
       _reimbursementReceiptName = null;
       _reimbursementReceiptBytes = null;
       _page = _QuickPage.applyReimbursement;
@@ -1315,6 +1297,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(
         label: 'Apply',
+        enabled: _reimbursementComplete,
         onTap: _submitReimbursementApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1361,13 +1344,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 _reimbursementReceiptBytes = file?.bytes;
               }),
             ),
-            const SizedBox(height: 16),
-            _LeaveFieldLabel('Notes (Optional)'),
-            _FormTextArea(
-              controller: _reimbursementNotes,
-              height: 65.6,
-              hintText: 'Any additional notes...',
-            ),
           ],
         ),
       ],
@@ -1405,20 +1381,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _submitReimbursementApplication() async {
-    final date = _reimbursementDate;
-    final category = _reimbursementCategory;
-    final amount = double.tryParse(_reimbursementAmount.text.trim());
-    if (date == null || category == null || amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pick a category, date, and amount to continue.'),
-        ),
-      );
-      return;
-    }
-    final description = _reimbursementDescription.text.trim();
-    final notes = _reimbursementNotes.text.trim();
-    final note = notes.isEmpty ? description : '$description\n\n$notes';
+    if (!_reimbursementComplete) return;
+    final date = _reimbursementDate!;
+    final category = _reimbursementCategory!;
+    final amount = double.parse(_reimbursementAmount.text.trim());
     final sent = await widget.bloc.add(
       SubmitReimbursementApplication(
         expenseDate: date,
@@ -1426,7 +1392,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         category: category,
         receiptName: _reimbursementReceiptName ?? '',
         receiptBytes: _reimbursementReceiptBytes,
-        note: note,
+        note: _reimbursementDescription.text.trim(),
       ),
     );
     if (!mounted || !sent) return;
@@ -2093,8 +2059,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               _from = day;
             } else {
               final span = day.difference(_from).inDays + 1;
-              if (span > _maxLeaveApplyDays ||
-                  _rangeHasBlockedLeaveDay(_from, day)) {
+              if (span > _maxLeaveApplyDays) {
                 _from = day;
                 _to = day;
                 return;
@@ -2437,23 +2402,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     ];
   }
 
+  /// Weekends and company holidays are selectable — they can sit inside a
+  /// leave range. Holidays simply don't count towards the days used.
   bool _canSelectLeaveDay(DateTime day) {
-    final today = _dateOnly(DateTime.now());
-    return !day.isBefore(today) &&
-        day.weekday != DateTime.saturday &&
-        day.weekday != DateTime.sunday &&
-        !_isCompanyHoliday(day);
+    return !day.isBefore(_dateOnly(DateTime.now()));
   }
 
-  bool _rangeHasBlockedLeaveDay(DateTime from, DateTime to) {
+  /// Calendar days in the range, less the company's week-off days (Sunday by
+  /// default) and company holidays — neither is charged as leave.
+  int _leaveDaysBetween(DateTime from, DateTime to) {
+    var days = 0;
     for (
       var day = from;
       !day.isAfter(to);
       day = day.add(const Duration(days: 1))
     ) {
-      if (!_canSelectLeaveDay(day)) return true;
+      if (_isWeekoffDay(day) || _isCompanyHoliday(day)) continue;
+      days += 1;
     }
-    return false;
+    return days;
   }
 
   bool _isCompanyHoliday(DateTime day) {
@@ -2464,7 +2431,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   // dashboard.weekoffDays uses 0=Sun..6=Sat (JS getDay); Dart weekday is
   // 1=Mon..7=Sun, so `weekday % 7` maps Sun(7)->0 and the rest 1:1.
-  bool _isOvertimeWeekoff(DateTime day) =>
+  /// A company week-off (Sunday unless HR configured otherwise).
+  bool _isWeekoffDay(DateTime day) =>
       widget.dashboard.weekoffDays.contains(day.weekday % 7);
 
   // Overtime day rules: any *past* day for half-day; only a week-off or
@@ -2474,7 +2442,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (!day.isBefore(today)) return false;
     final fullDay = (_answers['Duration'] ?? _choice) == 'Full day';
     if (!fullDay) return true;
-    return _isOvertimeWeekoff(day) || _isCompanyHoliday(day);
+    return _isWeekoffDay(day) || _isCompanyHoliday(day);
   }
 }
 
@@ -3730,7 +3698,7 @@ class _LeaveRequestCard extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Text(
-                '${request.days} day${request.days == 1 ? '' : 's'}',
+                '${request.daysLabel} day${request.days == 1 ? '' : 's'}',
                 style: const TextStyle(
                   color: Color(0xFF111827),
                   fontSize: 12,
@@ -4128,10 +4096,18 @@ class _LeaveDropdownField extends StatelessWidget {
 }
 
 class _LeavePickerSheet extends StatelessWidget {
-  const _LeavePickerSheet({required this.options, required this.selected});
+  const _LeavePickerSheet({
+    required this.options,
+    required this.selected,
+    this.trailingLabels = const {},
+  });
 
   final List<String> options;
   final String? selected;
+
+  /// Optional right-aligned note per option — the leave picker uses it to show
+  /// the remaining balance ("10/12") next to each type.
+  final Map<String, String> trailingLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -4159,18 +4135,30 @@ class _LeavePickerSheet extends StatelessWidget {
                     horizontal: 20,
                     vertical: 14,
                   ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      option,
-                      style: TextStyle(
-                        color: const Color(0xFF222222),
-                        fontSize: 16,
-                        fontWeight: option == selected
-                            ? FontWeight.w700
-                            : FontWeight.w400,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          option,
+                          style: TextStyle(
+                            color: const Color(0xFF222222),
+                            fontSize: 16,
+                            fontWeight: option == selected
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (trailingLabels[option] case final label?)
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -4530,22 +4518,6 @@ class _HomeActionCard extends StatelessWidget {
   }
 }
 
-class _RequestGroup extends StatelessWidget {
-  const _RequestGroup({required this.children});
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _Q.line),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Column(children: children),
-  );
-}
-
 class _SingleActionFooter extends StatelessWidget {
   const _SingleActionFooter({
     required this.color,
@@ -4666,82 +4638,6 @@ class _ActionCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _RequestRow extends StatelessWidget {
-  const _RequestRow(
-    this.title,
-    this.subtitle,
-    this.status, {
-    this.statusLabel,
-    this.icon,
-    this.color = _Q.terra,
-    this.tint = _Q.terraTint,
-    this.last = true,
-  });
-
-  final String title;
-  final String subtitle;
-  final String status;
-  // Optional display text (e.g. "Approved by admin"); color still keys off `status`.
-  final String? statusLabel;
-  final IconData? icon;
-  final Color color;
-  final Color tint;
-  final bool last;
-
-  @override
-  Widget build(BuildContext context) {
-    // Explicit (fg, bg) pairs rather than deriving the pill background from
-    // an alpha on the foreground — matches the app's other status pills
-    // (e.g. the "Present" attendance pill) instead of a washed-out tint.
-    final (statusColor, statusTint) = switch (status) {
-      'Approved' || 'Paid' => (const Color(0xFF28CA08), const Color(0xFFDCFCE7)),
-      'Declined' => (const Color(0xFFFF383C), const Color(0xFFFEE2E2)),
-      'Holiday' => (_Q.plum, _Q.plumTint),
-      _ => (_Q.gold, _Q.goldTint),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: last ? null : const Border(bottom: BorderSide(color: _Q.line)),
-      ),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            _IconTile(icon: icon!, color: color, tint: tint, size: 38),
-            const SizedBox(width: 13),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: _QText.cardTitle),
-                const SizedBox(height: 3),
-                Text(subtitle, style: _QText.cardSubtitle),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: statusTint,
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              statusLabel ?? status,
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

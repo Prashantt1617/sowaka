@@ -7,7 +7,10 @@ export interface LinkPreview {
 }
 
 const FETCH_TIMEOUT_MS = 6000;
-const MAX_BYTES = 512 * 1024;
+// Big sites bury OG tags deep in a very large <head> — YouTube's og:image sits
+// around 700KB in. Reading stops at `</head>` anyway, so this cap only bounds
+// the pathological case; the 6s timeout is the real guard.
+const MAX_BYTES = 2 * 1024 * 1024;
 
 /**
  * Reads a link's own preview metadata (OpenGraph / Twitter card) so a

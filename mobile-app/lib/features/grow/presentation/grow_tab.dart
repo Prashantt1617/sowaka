@@ -77,6 +77,7 @@ class _GrowTabState extends State<_GrowTab> {
         onNotifications: widget.onNotifications,
         onOpenComposer: widget.onOpenComposer,
         embedded: true,
+        onOpenProfile: widget.onOpenProfile,
       );
     }
 
@@ -451,7 +452,7 @@ class _MyGrowthRow extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        'You ($name)',
+                        '$name (You)',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(

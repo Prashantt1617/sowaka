@@ -199,13 +199,8 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       ],
                     ),
                   ),
-                if (canManage && openRequests.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  _RequestsSection(
-                    title: 'Open Requests',
-                    entries: openRequests,
-                  ),
-                ],
+                // Punch in/out sits above the requests here, matching the
+                // signed-in user's own profile.
                 const SizedBox(height: 16),
                 _AttendanceCard(
                   date: today,
@@ -226,6 +221,13 @@ class _TeamMemberProfilePage extends StatelessWidget {
                           ),
                         ),
                 ),
+                if (canManage && openRequests.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _RequestsSection(
+                    title: 'Open Requests',
+                    entries: openRequests,
+                  ),
+                ],
                 const SizedBox(height: 22),
                 const _SectionTitle(title: 'Profile'),
                 const SizedBox(height: 8),
@@ -799,8 +801,6 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 22),
-                      const _SectionTitle(title: 'My Requests'),
-                      const SizedBox(height: 8),
                       _AttendanceCard(
                         date: today,
                         present: todayRecord?.punchIn != null,
@@ -1190,7 +1190,9 @@ class _RequestsSection extends StatefulWidget {
 }
 
 class _RequestsSectionState extends State<_RequestsSection> {
-  bool _expanded = true;
+  // Collapsed by default so a long request history doesn't bury the rest of
+  // the profile.
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -2139,6 +2141,7 @@ class _EmployeeGrowthPage extends StatefulWidget {
     required this.onOpenComposer,
     this.memberId,
     this.embedded = false,
+    this.onOpenProfile,
   });
 
   final String name;
@@ -2149,6 +2152,10 @@ class _EmployeeGrowthPage extends StatefulWidget {
   /// only Grow view) rather than pushed as a route: the shell already provides
   /// the bottom nav, and there's nothing to navigate back to.
   final bool embedded;
+
+  /// Makes the header avatar open the signed-in user's profile, matching every
+  /// other tab. Without it the avatar here was inert.
+  final VoidCallback? onOpenProfile;
   final ManagerDashboard data;
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
@@ -2205,20 +2212,27 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       body: Column(
         children: [
           AppHomeHeader(
-            profileAction: widget.data.managerPhotoUrl == null
-                ? AvatarBadge(
-                    initial: widget.data.managerInitial,
-                    index: 1,
-                    size: 30,
-                  )
-                : ClipOval(
-                    child: Image(
-                      image: _profileImage(widget.data.managerPhotoUrl!),
-                      width: 30,
-                      height: 30,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+            profileAction: switch (widget.onOpenProfile) {
+              final open? => _ProfileAvatarAction(
+                initial: widget.data.managerInitial,
+                photoUrl: widget.data.managerPhotoUrl,
+                onTap: open,
+                size: 30,
+              ),
+              _ when widget.data.managerPhotoUrl == null => AvatarBadge(
+                initial: widget.data.managerInitial,
+                index: 1,
+                size: 30,
+              ),
+              _ => ClipOval(
+                child: Image(
+                  image: _profileImage(widget.data.managerPhotoUrl!),
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            },
             onNotifications: widget.onNotifications,
             onQuickCreate: widget.onOpenComposer,
           ),
@@ -2334,6 +2348,21 @@ class _GrowthScoreSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Same period label as the Grow progress card, so it's clear which
+          // month the score and the highlighted chart point belong to.
+          if (selected != null) ...[
+            Text(
+              _periodTitle(selected.period).toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 11.5,
+                height: 17.25 / 11.5,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           _OverallScoreCard(
             overall: selected?.overallScore ?? 0,
             previousScore: previous,
@@ -2449,21 +2478,6 @@ class _FeedbackDuePeriodCard extends StatelessWidget {
                   style: const TextStyle(
                     color: MColors.ink,
                     fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F1F1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '- / 5',
-                  style: TextStyle(
-                    color: Color(0xFF717171),
-                    fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

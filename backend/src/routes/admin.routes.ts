@@ -11,6 +11,7 @@ import {
   listOvertime,
   listReimbursements,
   updateCompanySettingsHandler,
+  updateOvertimeEligibility,
 } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
@@ -28,6 +29,8 @@ adminRouter.get('/reimbursements', listReimbursements);
 adminRouter.get('/feedback', listFeedback);
 adminRouter.get('/employees', listEmployees);
 adminRouter.post('/employees', createEmployee);
+// Per-employee overtime eligibility (HR-controlled)
+adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 adminRouter.get('/games', adminListGames);
 adminRouter.post('/games', adminCreateGame);
 adminRouter.patch('/games/:gameId', adminUpdateGame);

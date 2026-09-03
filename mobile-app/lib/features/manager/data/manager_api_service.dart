@@ -289,6 +289,7 @@ class ManagerApiService {
     required DateTime startDate,
     required DateTime endDate,
     required String reason,
+    bool halfDay = false,
   }) async {
     final json = await _request(
       'POST',
@@ -298,6 +299,7 @@ class ManagerApiService {
         'startDate': _dateOnly(startDate),
         'endDate': _dateOnly(endDate),
         'reason': reason,
+        'halfDay': halfDay,
       },
     );
     return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);

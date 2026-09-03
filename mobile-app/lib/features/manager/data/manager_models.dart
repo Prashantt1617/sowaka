@@ -368,7 +368,12 @@ class LeaveRequest {
   final String type;
   final DateTime start;
   final DateTime end;
-  final int days;
+  /// Leave days consumed — 0.5 for a half day, so this is fractional.
+  final double days;
+
+  /// "3" / "0.5" — trims the trailing ".0" on whole days.
+  String get daysLabel =>
+      days == days.roundToDouble() ? days.toInt().toString() : days.toString();
   final String reason;
   final DateTime requestedOn;
   final LeaveDecision decision;
@@ -396,7 +401,9 @@ class LeaveRequest {
       type: '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
-      days: json['days'] as int? ?? end.difference(start).inDays + 1,
+      days:
+          (json['days'] as num?)?.toDouble() ??
+          (end.difference(start).inDays + 1).toDouble(),
       reason: json['reason'] as String? ?? '',
       requestedOn:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??

@@ -873,7 +873,7 @@ class _LeaveDatePanel extends StatelessWidget {
             ),
           ),
           Text(
-            '${leave.days} ${leave.days == 1 ? 'day' : 'days'}',
+            '${leave.daysLabel} ${leave.days == 1 ? 'day' : 'days'}',
             style: TextStyle(
               color: colors.$1.withValues(alpha: .85),
               fontSize: 12.5,
@@ -1049,7 +1049,7 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                             _LeaveInfoTile(
                               label: 'DURATION',
                               value:
-                                  '${leave.days} ${leave.days == 1 ? 'day' : 'days'}',
+                                  '${leave.daysLabel} ${leave.days == 1 ? 'day' : 'days'}',
                               background: const Color(0xFFF8F4EE),
                               foreground: MColors.ink,
                             ),
@@ -1417,7 +1417,7 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                           ),
                         ),
                         Text(
-                          '${leave.days}d',
+                          '${leave.daysLabel}d',
                           style: const TextStyle(
                             color: MColors.inkSoft,
                             fontSize: 13,

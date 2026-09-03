@@ -1209,16 +1209,27 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
         ? 0.0
         : scored.fold<double>(0, (sum, item) => sum + item.score) /
               scored.length;
-    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Column(
       children: [
         AppHomeHeader(
-          profileAction: AvatarBadge(
-            initial: member.initial,
-            index: member.avatarIndex,
-            size: 30,
-          ),
+          // The app-bar avatar is always the signed-in user's — it was showing
+          // the person being reviewed, which read as their profile.
+          profileAction: switch (state.dashboard?.managerPhotoUrl) {
+            final photo? when photo.isNotEmpty => ClipOval(
+              child: Image(
+                image: avatarImageProvider(photo),
+                width: 30,
+                height: 30,
+                fit: BoxFit.cover,
+              ),
+            ),
+            _ => AvatarBadge(
+              initial: state.dashboard?.managerInitial ?? '?',
+              index: 1,
+              size: 30,
+            ),
+          },
           onNotifications: () {},
           onQuickCreate: () {},
         ),
@@ -1265,63 +1276,107 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                           ),
                         ),
                       ),
+                    // Node 781:7079 — the actions sit at the end of the
+                    // content, scrolling with it rather than pinned above the
+                    // nav.
+                    if (!locked && state.recordParams.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _FeedbackActionButton(
+                                label: 'Save',
+                                background: const Color(0xFFF7F7F9),
+                                foreground: const Color(0xFF0571A6),
+                                border: const Color(0xFFEBEBEB),
+                                onTap: () => bloc.add(const SaveFeedback()),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _FeedbackActionButton(
+                                label: 'Send',
+                                background: complete
+                                    ? const Color(0xFF0571A6)
+                                    : const Color(0xFF96B7C7),
+                                foreground: Colors.white,
+                                // Sends straight away — the extra confirmation
+                                // sheet added a step without adding safety.
+                                onTap: complete
+                                    ? () => bloc.add(const SendFeedback())
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
         ),
-        if (!locked && !keyboardOpen && state.recordParams.isNotEmpty)
-          SafeArea(
-            top: false,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: MColors.line)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ActionButton(
-                      label: 'Save',
-                      icon: Icons.save_outlined,
-                      background: Colors.white,
-                      foreground: MColors.ink,
-                      border: MColors.line,
-                      onTap: () => bloc.add(const SaveFeedback()),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: ActionButton(
-                      label: 'Send to ${member.name.split(' ').first}',
-                      icon: Icons.send_rounded,
-                      background: complete
-                          ? const Color(0xFF0571A6)
-                          : MColors.line,
-                      foreground: complete ? Colors.white : MColors.inkFaint,
-                      onTap: complete
-                          ? () => _confirmSend(context, bloc, member)
-                          : null,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
       ],
     );
   }
+}
 
-  void _confirmSend(BuildContext context, ManagerBloc bloc, TeamMember member) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ConfirmSendSheet(
-        member: member,
-        onSend: () {
-          Navigator.of(context).pop();
-          bloc.add(const SendFeedback());
-        },
+/// Save / Sent pair at the end of the feedback form (node 781:7079).
+class _FeedbackActionButton extends StatelessWidget {
+  const _FeedbackActionButton({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.onTap,
+    this.border,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+  final VoidCallback? onTap;
+  final Color? border;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1.5,
+            offset: Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: border == null ? null : Border.all(color: border!),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 14,
+                height: 20 / 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

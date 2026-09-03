@@ -25,6 +25,9 @@ export async function createOvertimeRequest(
   // Team gate + full-day eligibility. A full day's worth (8h+) of overtime is
   // only allowed on a week-off or a company holiday; shorter stretches may be
   // logged for any past day.
+  if (employee.overtimeEligible === false) {
+    throw new OvertimeError(403, 'You are not eligible to apply for overtime');
+  }
   const companyConfig = await getCompanyConfig(employee.org);
   if (companyConfig.overtimeDisabledDepartments.includes((employee.department ?? '').trim())) {
     throw new OvertimeError(403, 'Overtime is not enabled for your team');

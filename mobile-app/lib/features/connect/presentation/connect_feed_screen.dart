@@ -14,6 +14,7 @@ import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/api_config.dart';
+import '../../../services/linkified_text.dart';
 import '../../../services/notification_service.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
@@ -996,84 +997,122 @@ class _RecommendationBody extends StatelessWidget {
         : (_bodyString(post, 'sourceByline').isNotEmpty
               ? _bodyString(post, 'sourceByline')
               : _bodyString(post, 'linkDomain'));
+    // The whole preview is the link's affordance — tapping anywhere on it
+    // opens the recommended page.
+    final linkUrl = _bodyString(post, 'linkUrl');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F7F9),
-              border: Border.all(color: const Color(0xFFEBEBEB)),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 80,
-                    height: 80,
-                    child: hasThumb
-                        ? Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Image(
-                                image: _remoteImage(mediaUrl),
-                                fit: BoxFit.cover,
-                              ),
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.28),
+          child: _LinkTapTarget(
+            url: linkUrl,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F7F9),
+                border: Border.all(color: const Color(0xFFEBEBEB)),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: hasThumb
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image(
+                                  image: _remoteImage(mediaUrl),
+                                  fit: BoxFit.cover,
                                 ),
-                              ),
-                              const Center(
-                                child: Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  color: Colors.white,
-                                  size: 30,
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.28),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          )
-                        : Container(color: _ConnectColors.sand),
+                                const Center(
+                                  child: Icon(
+                                    Icons.play_circle_fill_rounded,
+                                    color: Colors.white,
+                                    size: 30,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Container(color: _ConnectColors.sand),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _bodyString(post, 'mediaTitle'),
-                        style: const TextStyle(
-                          color: _ConnectColors.ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (byline.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          byline,
+                          _bodyString(post, 'mediaTitle'),
                           style: const TextStyle(
-                            color: _ConnectColors.faint,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                            color: _ConnectColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
+                        if (byline.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            byline,
+                            style: const TextStyle(
+                              color: _ConnectColors.faint,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
         _BodyText(text: _bodyString(post, 'text')),
       ],
+    );
+  }
+}
+
+/// Wraps a widget so tapping it opens [url]. A blank or unusable URL leaves
+/// the child inert rather than showing a dead tap target.
+class _LinkTapTarget extends StatelessWidget {
+  const _LinkTapTarget({required this.url, required this.child});
+
+  final String url;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.trim().isEmpty) return child;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          final opened = await openExternalLink(url);
+          if (!opened && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Couldn't open $url"),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
+        child: child,
+      ),
     );
   }
 }
@@ -1287,7 +1326,7 @@ class _AnnouncementBody extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          Text(
+          LinkifiedText(
             _bodyString(post, 'text'),
             style: const TextStyle(
               color: Color(0xFF484848),
@@ -2614,6 +2653,12 @@ class _ActionPanel extends StatelessWidget {
   }
 }
 
+/// Last two comments in chronological order (second-newest, then newest).
+List<ConnectComment> _latestComments(List<ConnectComment> comments) {
+  if (comments.length <= 2) return comments;
+  return comments.sublist(comments.length - 2);
+}
+
 class _PostFooter extends StatelessWidget {
   const _PostFooter({
     required this.post,
@@ -2730,7 +2775,10 @@ class _PostFooter extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: post.comments.take(2).map((comment) {
+                // The two most recent comments, oldest of the pair first — so
+                // the newest sits closest to the comment box. `take(2)` showed
+                // the two *oldest* comments on the post.
+                children: _latestComments(post.comments).map((comment) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: GestureDetector(
@@ -2861,7 +2909,7 @@ class _BodyText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-      child: Text(
+      child: LinkifiedText(
         text,
         style: const TextStyle(
           color: _ConnectColors.ink,
@@ -3491,10 +3539,12 @@ class _QuickPostPageState extends State<_QuickPostPage> {
           InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: _canPost ? _submit : null,
+            // No `alignment:` here — it would make the Container expand to the
+            // header's full height instead of hugging the label, which is what
+            // made this button tall instead of the design's pill.
             child: Container(
               width: 80,
               padding: const EdgeInsets.symmetric(vertical: 8),
-              alignment: Alignment.center,
               decoration: BoxDecoration(
                 // #0571A6 once there is something to post, the muted
                 // #96B7C7 resting state until then.
@@ -3505,6 +3555,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               ),
               child: const Text(
                 'Post',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -5225,7 +5276,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 ],
               ),
               const SizedBox(height: 2),
-              Text(
+              LinkifiedText(
                 comment.text,
                 style: const TextStyle(
                   color: Color(0xFF484848),
@@ -6447,18 +6498,19 @@ class _HeaderSubmitPill extends StatelessWidget {
           onTap: enabled ? onTap : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Center(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  height: 16.2 / 12,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: -0.16,
-                ),
+            // `Center` would stretch this to the header's height; the text
+            // centres itself within the fixed 80pt width instead.
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                height: 16.2 / 12,
+                fontWeight: FontWeight.w400,
+                letterSpacing: -0.16,
               ),
             ),
           ),

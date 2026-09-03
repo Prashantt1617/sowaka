@@ -5,7 +5,13 @@ import {
   adminDecideReimbursement,
   listAllReimbursementsForAdmin,
 } from '../services/reimbursement.service';
-import { createEmployeeForAdmin, listAllEmployeesForAdmin, listAllFeedbackForAdmin } from '../services/admin.service';
+import {
+  AdminError,
+  createEmployeeForAdmin,
+  listAllEmployeesForAdmin,
+  listAllFeedbackForAdmin,
+  setOvertimeEligibilityForAdmin,
+} from '../services/admin.service';
 import { getCompanySettings, updateCompanySettings } from '../services/company-settings.service';
 
 function adminUserId(req: Request): string {
@@ -87,6 +93,22 @@ export async function createEmployee(req: Request, res: Response, next: NextFunc
   try {
     const employee = await createEmployeeForAdmin(adminUserId(req), req.body ?? {});
     res.status(201).json({ success: true, employee });
+  } catch (error) { next(error); }
+}
+
+/** HR toggles whether one employee may raise overtime requests. */
+export async function updateOvertimeEligibility(req: Request, res: Response, next: NextFunction) {
+  try {
+    const eligible = req.body?.overtimeEligible;
+    if (typeof eligible !== 'boolean') {
+      throw new AdminError(400, 'overtimeEligible must be true or false');
+    }
+    const employee = await setOvertimeEligibilityForAdmin(
+      adminUserId(req),
+      String(req.params.userId ?? ''),
+      eligible,
+    );
+    res.status(200).json({ success: true, employee });
   } catch (error) { next(error); }
 }
 

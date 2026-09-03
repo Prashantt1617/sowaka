@@ -128,8 +128,10 @@ class _ParamCardState extends State<_ParamCard> {
                   children: [
                     Text(
                       widget.param.score.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: Color(0xFF675AFF),
+                      style: TextStyle(
+                        color: rated
+                            ? const Color(0xFF675AFF)
+                            : const Color(0xFF717171),
                         fontSize: 14,
                         height: 1,
                         fontWeight: FontWeight.w700,
@@ -139,8 +141,10 @@ class _ParamCardState extends State<_ParamCard> {
                       opacity: .8,
                       child: Text(
                         rated ? scoreLabel(widget.param.score) : '-',
-                        style: const TextStyle(
-                          color: Color(0xFF675AFF),
+                        style: TextStyle(
+                          color: rated
+                              ? const Color(0xFF675AFF)
+                              : const Color(0xFF717171),
                           fontSize: 9.5,
                           height: 14.25 / 9.5,
                           fontWeight: FontWeight.w400,
@@ -216,39 +220,42 @@ class _ParamCardState extends State<_ParamCard> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _noteController,
-                    focusNode: _noteFocusNode,
-                    enabled: !widget.locked,
-                    maxLines: 3,
-                    minLines: 2,
-                    scrollPadding: const EdgeInsets.only(bottom: 24),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      height: 18.75 / 12.5,
-                      color: Color(0xFF101828),
-                    ),
-                    decoration: const InputDecoration(
-                      isCollapsed: true,
-                      filled: false,
-                      hintText: 'Add supporting feedback...',
-                      hintStyle: TextStyle(
-                        color: Color(0x80101828),
+                if (widget.listening)
+                  const Expanded(child: _VoiceWaveform())
+                else
+                  Expanded(
+                    child: TextFormField(
+                      controller: _noteController,
+                      focusNode: _noteFocusNode,
+                      enabled: !widget.locked,
+                      maxLines: 3,
+                      minLines: 2,
+                      scrollPadding: const EdgeInsets.only(bottom: 24),
+                      style: const TextStyle(
                         fontSize: 12.5,
                         height: 18.75 / 12.5,
-                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF101828),
                       ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
+                      decoration: const InputDecoration(
+                        isCollapsed: true,
+                        filled: false,
+                        hintText: 'Add supporting feedback...',
+                        hintStyle: TextStyle(
+                          color: Color(0x80101828),
+                          fontSize: 12.5,
+                          height: 18.75 / 12.5,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(width: 8),
                 Semantics(
                   button: true,
@@ -256,19 +263,20 @@ class _ParamCardState extends State<_ParamCard> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
                     onTap: widget.locked ? null : widget.onVoice,
-                    child: Padding(
+                    child: Container(
                       padding: const EdgeInsets.all(4),
-                      child: widget.listening
-                          ? const Icon(
-                              Icons.mic_rounded,
-                              size: 17,
-                              color: MColors.live,
-                            )
-                          : SvgPicture.asset(
-                              'assets/icons/grow_mic.svg',
-                              width: 17,
-                              height: 17,
-                            ),
+                      decoration: BoxDecoration(
+                        // Tinted while recording (node 736:14299).
+                        color: widget.listening
+                            ? const Color(0xFFEEF0FF)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SvgPicture.asset(
+                        'assets/icons/grow_mic.svg',
+                        width: 17,
+                        height: 17,
+                      ),
                     ),
                   ),
                 ),
@@ -294,97 +302,87 @@ class _ParamCardState extends State<_ParamCard> {
   }
 }
 
-class _ConfirmSendSheet extends StatelessWidget {
-  const _ConfirmSendSheet({required this.member, required this.onSend});
+/// Recording indicator that replaces the note field while dictating
+/// (node 736:14268): violet bars whose heights drift, so it reads as live
+/// audio rather than a static graphic.
+class _VoiceWaveform extends StatefulWidget {
+  const _VoiceWaveform();
 
-  final TeamMember member;
-  final VoidCallback onSend;
+  @override
+  State<_VoiceWaveform> createState() => _VoiceWaveformState();
+}
+
+class _VoiceWaveformState extends State<_VoiceWaveform>
+    with SingleTickerProviderStateMixin {
+  static const _barCount = 28;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  /// Fixed per-bar phase so the bars don't pulse in unison.
+  late final List<double> _phases = List.generate(
+    _barCount,
+    (index) => (index * 0.37) % 1.0,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final first = member.name.split(' ').first;
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return SizedBox(
+      height: 32,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: MColors.line,
-                  borderRadius: BorderRadius.circular(99),
+            for (var i = 0; i < _barCount; i++) ...[
+              if (i > 0) const SizedBox(width: 2),
+              Expanded(
+                child: _WaveBar(
+                  // 11.5–30px, matching the range in the design.
+                  height:
+                      11.5 +
+                      18.5 *
+                          (0.5 +
+                              0.5 *
+                                  math.sin(
+                                    (_controller.value + _phases[i]) *
+                                        2 *
+                                        math.pi,
+                                  )),
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const IconBox(
-                  icon: Icons.send_rounded,
-                  color: MColors.terra,
-                  tint: MColors.terraTint,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Send to $first?',
-                        style: const TextStyle(
-                          color: MColors.ink,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'This locks the feedback — no further edits.',
-                        style: TextStyle(
-                          color: MColors.inkSoft,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: ActionButton(
-                    label: 'Cancel',
-                    background: Colors.white,
-                    foreground: MColors.ink,
-                    border: MColors.line,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ActionButton(
-                    label: 'Send now',
-                    icon: Icons.send_rounded,
-                    background: MColors.terra,
-                    foreground: Colors.white,
-                    onTap: onSend,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _WaveBar extends StatelessWidget {
+  const _WaveBar({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF8B80FF), Color(0xFF675AFF)],
+        ),
+        borderRadius: BorderRadius.circular(99),
       ),
     );
   }

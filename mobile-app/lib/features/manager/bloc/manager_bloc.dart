@@ -248,12 +248,14 @@ class SubmitLeaveApplication extends ManagerEvent {
     required this.startDate,
     required this.endDate,
     required this.reason,
+    this.halfDay = false,
   });
 
   final String type;
   final DateTime startDate;
   final DateTime endDate;
   final String reason;
+  final bool halfDay;
 }
 
 class SubmitOvertimeApplication extends ManagerEvent {
@@ -631,12 +633,14 @@ class ManagerBloc {
           :final startDate,
           :final endDate,
           :final reason,
+          :final halfDay,
         ):
           final leave = await _service.submitLeaveApplication(
             type: type,
             startDate: startDate,
             endDate: endDate,
             reason: reason,
+            halfDay: halfDay,
           );
           final data = _state.dashboard;
           _emit(
