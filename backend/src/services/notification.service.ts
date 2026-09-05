@@ -3,7 +3,13 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { deviceTokens, getDb, leaves, notifications, users } from '../config/db';
 import { env } from '../config/env';
+import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
+
+/** Greeting name for email copy; falls back to a neutral form when unset. */
+function firstName(name?: string): string {
+  return name?.trim().split(/\s+/).at(0) || 'there';
+}
 
 export class NotificationError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -76,8 +82,16 @@ export async function markNotificationRead(userId: string, id: string) {
   return { id, read: true };
 }
 
+export interface NotificationEmail {
+  subject: string;
+  /** `{firstName}` is substituted per recipient. */
+  body: string;
+}
+
 export interface NotificationInput {
   scenario: string; title: string; body: string; data: Record<string, string>;
+  /** Email copy to send alongside the push. Omit for in-app-only scenarios. */
+  email?: NotificationEmail;
 }
 
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
@@ -85,8 +99,20 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   if (!uniqueIds.length) return;
   const recipients = await users().find({ userId: { $in: uniqueIds } }).toArray();
   const now = new Date();
+  // `email` is copy for delivery, not part of the stored notification record.
+  const { email, ...record } = input;
   await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
-    org: user.org ?? user.email.split('@').at(1) ?? 'default', ...input, createdAt: now })));
+    org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, createdAt: now })));
+  // Sent before the push below, which returns early when Firebase is unconfigured.
+  if (email) {
+    await Promise.all(recipients
+      .filter((user) => user.email)
+      .map((user) => sendNotificationEmail(
+        user.email,
+        email.subject,
+        email.body.replaceAll('{firstName}', firstName(user.name)),
+      )));
+  }
   const tokens = await deviceTokens().find({ userId: { $in: uniqueIds } }).toArray();
   const firebase = messaging();
   if (!firebase || !tokens.length) return;

@@ -19,6 +19,8 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])],
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
+  // Where notification emails point their "view this" links.
+  appWebUrl: process.env.APP_WEB_URL ?? 'https://dikcsyvq9i7v1.cloudfront.net',
   mongoUri: process.env.MONGODB_URI ?? '',
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),

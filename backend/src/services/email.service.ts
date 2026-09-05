@@ -65,6 +65,70 @@ export async function sendOtpEmail(email: string, otp: string): Promise<void> {
   }
 }
 
+/**
+ * Delivers the email copy that accompanies a notification.
+ *
+ * Unlike the OTP mail this never throws: an email that fails to send must not
+ * fail the action that triggered it (approving leave, sharing feedback), and
+ * the in-app notification has already been recorded regardless.
+ */
+export async function sendNotificationEmail(
+  email: string,
+  subject: string,
+  body: string,
+): Promise<void> {
+  if (!transporter) {
+    logger.warn('SMTP is not configured; skipping notification email', {
+      recipient: maskEmail(email),
+      subject,
+    });
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: env.zohoSmtp.from,
+      to: email,
+      subject,
+      text: body,
+      html: bodyToHtml(body),
+    });
+  } catch (error) {
+    logger.error(
+      'Notification email delivery failed',
+      { recipient: maskEmail(email), subject },
+      error,
+    );
+  }
+}
+
+/**
+ * Renders the plain-text body as HTML: blank lines separate paragraphs, and a
+ * line that is nothing but a URL becomes a link.
+ */
+function bodyToHtml(body: string): string {
+  const paragraphs = body
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split('\n').map((line) => {
+        const trimmed = line.trim();
+        return /^https?:\/\/\S+$/.test(trimmed)
+          ? `<a href="${trimmed}" style="color:#0571A6">${trimmed}</a>`
+          : escapeHtml(line);
+      });
+      return `<p style="margin:0 0 14px">${lines.join('<br />')}</p>`;
+    })
+    .join('');
+  return `<div style="font-family:Arial,sans-serif;color:#2A2420;line-height:1.5">${paragraphs}</div>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function maskEmail(email: string): string {
   const [local = '', domain = ''] = email.split('@');
   const visible = local.slice(0, 2);

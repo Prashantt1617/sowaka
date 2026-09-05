@@ -13,6 +13,7 @@ import {
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { env } from '../config/env';
 import {
   presignConnectMedia,
   resolveProfilePhoto,
@@ -416,10 +417,16 @@ export async function upsertFeedback(
   );
   if (status === 'sent' && existing?.status !== 'sent') {
     const manager = await users().findOne({ userId: managerUserId });
+    const managerName = manager?.name ?? 'Your manager';
     await notifyUsers([employeeUserId], {
       scenario: 'feedback_shared', title: 'Feedback ready',
-      body: `${manager?.name ?? 'Your manager'} has shared your feedback for ${period}`,
+      body: `${managerName} has shared your feedback for ${period}`,
       data: { destination: 'grow_feedback', employeeUserId, period },
+      email: {
+        subject: `Your ${period} feedback from ${managerName} is ready`,
+        body: `Hi {firstName},\n\n${managerName} has shared your feedback for ${period}. `
+          + `View your scores and notes:\n${env.appWebUrl}\n\n- Sowaka Connect`,
+      },
     });
   }
   return record;

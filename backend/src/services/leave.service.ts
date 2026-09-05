@@ -4,6 +4,7 @@ import { Leave, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { notifyUsers } from './notification.service';
+import { env } from '../config/env';
 import { getCompanyConfig } from './company-settings.service';
 
 const maxLeaveDays = 30;
@@ -133,6 +134,11 @@ export async function applyForLeave(
     scenario: 'leave_requested', title: 'Leave request',
     body: `${employee.name} requested ${type} leave for ${dateLabel}: "${reason}"`,
     data: { destination: 'manage_leave', leaveId: result.insertedId.toHexString() },
+    email: {
+      subject: `Leave request: ${employee.name} - ${type}, ${dateLabel}`,
+      body: `Hi {firstName},\n\n${employee.name} has requested ${type} for ${dateLabel}.\n`
+        + `Reason: "${reason}"\n\nApprove or decline:\n${env.appWebUrl}\n\n- Sowaka Connect`,
+    },
   });
 
   return toLeaveView(
@@ -293,6 +299,7 @@ export async function decideLeave(
     scenario: 'leave_decided', title: `Leave ${decision}`,
     body: `Your ${leave.type} leave for ${leave.startDate.toISOString().slice(0, 10)} was ${decision}`,
     data: { destination: 'profile_leaves', leaveId: leaveIdInput, approverName: approver?.name ?? 'Manager' },
+    email: leaveDecisionEmail(leave.type, leave.startDate, decision, approver?.name ?? 'your manager'),
   });
 
   return toLeaveView(updated, employee);
@@ -364,8 +371,24 @@ export async function adminDecideLeave(
     scenario: 'leave_decided', title: `Leave ${decision}`,
     body: `Your ${leave.type} leave for ${leave.startDate.toISOString().slice(0, 10)} was ${decision}`,
     data: { destination: 'profile_leaves', leaveId: leaveIdInput, approverName: approver?.name ?? 'HR' },
+    email: leaveDecisionEmail(leave.type, leave.startDate, decision, approver?.name ?? 'HR'),
   });
   return toLeaveView(updated, employee);
+}
+
+/** Shared by the manager and HR decision paths, which send identical copy. */
+function leaveDecisionEmail(
+  type: string,
+  startDate: Date,
+  decision: string,
+  approverName: string,
+) {
+  const date = startDate.toISOString().slice(0, 10);
+  return {
+    subject: `Your leave for ${date}: ${decision}`,
+    body: `Hi {firstName},\n\nYour ${type} request for ${date} has been ${decision} `
+      + `by ${approverName}.\n\nView details:\n${env.appWebUrl}\n\n- Sowaka Connect`,
+  };
 }
 
 function parseDateOnly(value: string, field: string): Date {
