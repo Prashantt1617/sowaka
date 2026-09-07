@@ -25,6 +25,9 @@ export const env = {
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
   otpDevBypass: process.env.OTP_DEV_BYPASS === 'true',
+  // Sign-in code accepted in place of a mailed one, for local work without
+  // SMTP. No default: unset means no bypass exists at all.
+  otpBypassCode: process.env.OTP_BYPASS_CODE ?? '',
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
   notificationTestEndpointEnabled:

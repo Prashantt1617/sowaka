@@ -68,8 +68,15 @@ export async function verifyLoginOtp(
 
   const expectedHash = challenge.otpHash;
   const actualHash = hashOtp(email, otp);
+  // Local convenience for working without a mail server. The accepted code has
+  // no default and must be set explicitly per environment: the previous fixed
+  // `123456` shipped to production behind a flag that was also set there, which
+  // let anyone sign in as any registered user with a publicly known code.
+  // Gated on the environment too, so both would have to be wrong at once.
   const valid =
-    env.otpDevBypass && otp === '123456' ? true : timingSafeEqualHex(expectedHash, actualHash);
+    env.otpBypassCode && env.nodeEnv !== 'production' && otp === env.otpBypassCode
+      ? true
+      : timingSafeEqualHex(expectedHash, actualHash);
 
   if (!valid) {
     await otpChallenges().updateOne({ email }, { $inc: { attempts: 1 } });
