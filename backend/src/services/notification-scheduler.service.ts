@@ -1,4 +1,4 @@
-import { flushNotificationBatches, sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
+import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
 import {
   sendConsecutiveMissedFlags,
   sendDailyAttendanceSummary,
@@ -45,8 +45,6 @@ export function startNotificationScheduler() {
         const daysLeftInMonth = new Date(Date.UTC(
           istDate.getUTCFullYear(), istDate.getUTCMonth() + 1, 0,
         )).getUTCDate() - istDay;
-
-        await run('flushNotificationBatches', () => flushNotificationBatches(istHour === 18));
 
         if (istHour === 9) {
           await run('sendTodayLifecycleNotifications', sendTodayLifecycleNotifications);

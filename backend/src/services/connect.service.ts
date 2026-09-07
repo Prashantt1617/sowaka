@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { connectPosts, gameScores, users } from '../config/db';
 import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
-import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { notifyUsers } from './notification.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { fetchLinkPreview } from './link-preview.service';
 import {
@@ -110,8 +110,11 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
   await connectPosts().updateOne({ id: postId }, update);
   if (!liked && post.author.userId && post.author.userId !== viewerUserId) {
     const viewer = await users().findOne({ userId: viewerUserId });
-    await queueBatchedNotification(post.author.userId, 'post_liked', post.id,
-      viewer?.name ?? 'Someone', '', { destination: 'connect_post', postId: post.id });
+    await notifyUsers([post.author.userId], {
+      scenario: 'post_liked', title: 'New like',
+      body: `${viewer?.name ?? 'Someone'} liked your post`,
+      data: { destination: 'connect_post', postId: post.id },
+    });
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
@@ -198,9 +201,11 @@ export async function performConnectAction(
     );
     if (post.author.userId && post.author.userId !== viewerUserId) {
       const viewer = await users().findOne({ userId: viewerUserId });
-      await queueBatchedNotification(post.author.userId, 'poll_voted', post.id,
-        viewer?.name ?? 'Someone', String(post.body.title ?? 'Poll'),
-        { destination: 'connect_post', postId: post.id });
+      await notifyUsers([post.author.userId], {
+        scenario: 'poll_voted', title: 'New vote',
+        body: `${viewer?.name ?? 'Someone'} voted on your poll "${String(post.body.title ?? 'Poll')}"`,
+        data: { destination: 'connect_post', postId: post.id },
+      });
     }
   } else {
     const existing = post.actionBy?.[viewerUserId];

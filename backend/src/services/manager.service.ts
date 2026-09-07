@@ -12,7 +12,7 @@ import {
 } from '../models/feedback.model';
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
-import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { notifyUsers } from './notification.service';
 import { env } from '../config/env';
 import {
   presignConnectMedia,
@@ -462,11 +462,13 @@ export async function nominateForRecognition(
   const hrUsers = manager?.org
     ? await users().find({ org: manager.org, dashboardAccess: true }).toArray()
     : [];
-  for (const hr of hrUsers) {
-    await queueBatchedNotification(hr.userId, 'nomination_received', `${period}:${category}`,
-      manager?.name ?? 'A manager', category,
-      { destination: 'nomination_review', period, category, employeeUserId,
-        employeeName: employee?.name ?? 'Employee' });
+  if (hrUsers.length) {
+    await notifyUsers(hrUsers.map((hr) => hr.userId), {
+      scenario: 'nomination_received', title: 'New nomination',
+      body: `${manager?.name ?? 'A manager'} nominated ${employee?.name ?? 'an employee'} for ${category}`,
+      data: { destination: 'nomination_review', period, category, employeeUserId,
+        employeeName: employee?.name ?? 'Employee' },
+    });
   }
   return { period, category, employeeUserId, reason };
 }
