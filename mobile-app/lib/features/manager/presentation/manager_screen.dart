@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -15,12 +16,15 @@ import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
+import '../../games/presentation/web_game_screen.dart';
+import '../../profile/presentation/profile_screen.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
 import '../data/manager_models.dart';
 
 part '../../connect/presentation/connect_tab.dart';
+part '../../games/presentation/games_tab.dart';
 part '../../grow/presentation/grow_tab.dart';
 part '../../manage/presentation/apply_leave_sheet.dart';
 part '../../manage/presentation/feedback_components.dart';

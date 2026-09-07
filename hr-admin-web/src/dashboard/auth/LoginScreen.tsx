@@ -7,26 +7,26 @@ import { Logo } from '../icons';
 
 const inputStyle = {
   width: '100%',
-  border: '1px solid #EBE1D2',
+  border: '1px solid #EBEBEB',
   borderRadius: 11,
   padding: '12px 14px',
-  fontSize: 14,
+  fontSize: 16,
   outline: 'none',
   background: '#fff',
-  color: '#2A2420',
+  color: '#222222',
 } as const;
 
 const primaryBtn = {
   width: '100%',
   border: 'none',
-  background: '#BE5A36',
+  background: '#0571A6',
   color: '#fff',
   borderRadius: 11,
   padding: '13px',
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 700,
   cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(190,90,54,.26)',
+  boxShadow: '0 2px 8px rgba(5,113,166,.26)',
 } as const;
 
 export function LoginScreen() {
@@ -68,22 +68,22 @@ export function LoginScreen() {
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', width: '100%', background: '#F3EDE3', padding: 24 }}>
-      <div style={{ width: 400, background: '#FBF7F0', border: '1px solid #ECE2D4', borderRadius: 20, boxShadow: '0 20px 50px rgba(60,40,24,.12)', padding: '34px 32px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', width: '100%', background: '#F7F7F9', padding: 24 }}>
+      <div style={{ width: 400, background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 20, boxShadow: '0 20px 50px rgba(60,40,24,.12)', padding: '34px 32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: '#BE5A36', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(190,90,54,.28)' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(5,113,166,.28)' }}>
             <Logo />
           </div>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#A89C8B', marginTop: 3 }}>HR Admin</div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#717171', marginTop: 3 }}>HR Admin</div>
           </div>
         </div>
 
-        <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-.4px', marginBottom: 6 }}>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.4px', marginBottom: 6 }}>
           {step === 'email' ? 'Sign in' : 'Enter your code'}
         </div>
-        <div style={{ fontSize: 13.5, color: '#8B8378', fontWeight: 500, lineHeight: 1.5, marginBottom: 22 }}>
+        <div style={{ fontSize: 16, color: '#717171', fontWeight: 500, lineHeight: 1.5, marginBottom: 22 }}>
           {step === 'email'
             ? 'We’ll email you a one-time sign-in code.'
             : `We sent a 6-digit code to ${email}.`}
@@ -99,7 +99,7 @@ export function LoginScreen() {
               autoFocus
               style={inputStyle}
             />
-            {error && <div style={{ fontSize: 12.5, color: '#A8475F', fontWeight: 600 }}>{error}</div>}
+            {error && <div style={{ fontSize: 14, color: '#A8475F', fontWeight: 600 }}>{error}</div>}
             <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>
               {busy ? 'Sending…' : 'Send code'}
             </button>
@@ -112,16 +112,16 @@ export function LoginScreen() {
               placeholder="123456"
               inputMode="numeric"
               autoFocus
-              style={{ ...inputStyle, letterSpacing: '6px', fontSize: 18, fontWeight: 700, textAlign: 'center' }}
+              style={{ ...inputStyle, letterSpacing: '6px', fontSize: 20, fontWeight: 700, textAlign: 'center' }}
             />
-            {error && <div style={{ fontSize: 12.5, color: '#A8475F', fontWeight: 600 }}>{error}</div>}
+            {error && <div style={{ fontSize: 14, color: '#A8475F', fontWeight: 600 }}>{error}</div>}
             <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>
               {busy ? 'Verifying…' : 'Verify & sign in'}
             </button>
             <button
               type="button"
               onClick={() => { setStep('email'); setOtp(''); setError(''); }}
-              style={{ border: 'none', background: 'none', color: '#8B8378', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 4 }}
+              style={{ border: 'none', background: 'none', color: '#717171', fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: 4 }}
             >
               ← Use a different email
             </button>

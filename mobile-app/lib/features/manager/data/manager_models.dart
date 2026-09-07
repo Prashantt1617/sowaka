@@ -1,4 +1,4 @@
-enum ManagerTab { manage, grow, connect, quick }
+enum ManagerTab { manage, grow, connect, games, quick }
 
 enum ManagerView {
   home,

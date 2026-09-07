@@ -13,6 +13,13 @@ import { AdminError } from '../services/admin.service';
 import { ConnectError } from '../services/connect.service';
 import { GameError } from '../services/game.service';
 import { NotificationError } from '../services/notification.service';
+import { PayHeadError } from '../services/payHead.service';
+import { StatutoryError } from '../services/statutory.service';
+import { SalaryStructureError } from '../services/salaryStructure.service';
+import { SalaryTemplateError } from '../services/salaryTemplate.service';
+import { PayrollRunError } from '../services/payrollRun.service';
+import { PayrollInputsError } from '../services/payroll-inputs.service';
+import { OrgSetupError } from '../services/orgSetup.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
   logger.warn('Route not found', requestLogContext(request, 404));
@@ -63,6 +70,13 @@ function getStatusCode(error: unknown): number {
     || error instanceof ConnectError
     || error instanceof GameError
     || error instanceof NotificationError
+    || error instanceof PayHeadError
+    || error instanceof StatutoryError
+    || error instanceof SalaryStructureError
+    || error instanceof SalaryTemplateError
+    || error instanceof PayrollRunError
+    || error instanceof PayrollInputsError
+    || error instanceof OrgSetupError
   ) {
     return error.statusCode;
   }

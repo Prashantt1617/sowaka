@@ -2,11 +2,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Origins always allowed, regardless of the CORS_ORIGIN env var. Extra origins
+// can be supplied via CORS_ORIGIN (comma-separated) and are merged in.
 const defaultCorsOrigins = [
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:8765',
-  'https://dikcsyvq9i7v1.cloudfront.net',
+  'https://dikcsyvq9i7v1.cloudfront.net', // Flutter web app
+  'https://dkikczh1847dh.cloudfront.net', // HR admin dashboard
 ];
 
 const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')

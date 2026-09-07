@@ -1,39 +1,64 @@
 // Sidebar, topbar and toast — the persistent shell around the views.
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { TITLES } from './theme';
 import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
 import { useStore } from './store';
+import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 
 type NavItem = { key: View; label: string };
 
-const PEOPLE_OPS: NavItem[] = [
-  { key: 'overview', label: 'Overview' },
+const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
+const REQUESTS: NavItem[] = [
   { key: 'leave', label: 'Leave requests' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
-  { key: 'feedback', label: 'Feedback' },
   { key: 'reimbursements', label: 'Reimbursements' },
-  { key: 'onboarding', label: 'Onboarding' },
-  { key: 'exit', label: 'Exit' },
-  { key: 'payroll', label: 'Payroll' },
 ];
-const ORGANISATION: NavItem[] = [
-  { key: 'games', label: 'Games' },
+const PEOPLE: NavItem[] = [
+  { key: 'departments', label: 'Departments' },
+  { key: 'designations', label: 'Designations' },
   { key: 'employees', label: 'Employees' },
   { key: 'orgchart', label: 'Org chart' },
-  { key: 'settings', label: 'Settings' },
+  { key: 'usersroles', label: 'Accesses' },
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'exit', label: 'Exit' },
 ];
-const SOON: Partial<Record<View, boolean>> = { attendance: true, onboarding: true, exit: true, payroll: true };
+const PERFORMANCE: NavItem[] = [
+  { key: 'kpi', label: 'KPI Parameters' },
+  { key: 'feedback', label: 'Performance Reviews' },
+];
+const SHIFTS: NavItem[] = [
+  { key: 'policies', label: 'Policies' },
+  { key: 'holidaybank', label: 'Holiday Bank' },
+  { key: 'shifttypes', label: 'Templates' },
+];
+const PAYROLL: NavItem[] = [
+  { key: 'payschedule', label: 'Pay schedule' },
+  { key: 'taxdetails', label: 'Tax details' },
+  { key: 'payheads', label: 'Salary Components' },
+  { key: 'statutorycomponents', label: 'Statutory Components' },
+  { key: 'templates', label: 'Salary Templates' },
+  { key: 'payruns', label: 'Payroll Runs' },
+];
+const SECTIONS: { title: string; items: NavItem[] }[] = [
+  { title: 'REQUESTS', items: REQUESTS },
+  { title: 'PEOPLE', items: PEOPLE },
+  { title: 'SHIFTS', items: SHIFTS },
+  { title: 'PERFORMANCE', items: PERFORMANCE },
+  { title: 'PAYROLL', items: PAYROLL },
+];
+const SOON: Partial<Record<View, boolean>> = { attendance: true, onboarding: true, exit: true };
 
 function CountBadge({ value, danger }: { value: number; danger?: boolean }) {
   return (
     <span
       style={{
         marginLeft: 'auto',
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 700,
-        background: danger ? '#C4382E' : '#EEE3D2',
+        background: danger ? '#C4382E' : '#F7F7F9',
         color: danger ? '#fff' : '#9A6B25',
         borderRadius: 20,
         padding: '1px 7px',
@@ -49,11 +74,11 @@ function SoonBadge() {
     <span
       style={{
         marginLeft: 'auto',
-        fontSize: 9.5,
+        fontSize: 12,
         fontWeight: 700,
         letterSpacing: '.4px',
-        color: '#B7AC9B',
-        border: '1px solid #E2D8C8',
+        color: '#9197A2',
+        border: '1px solid #EBEBEB',
         borderRadius: 20,
         padding: '1px 7px',
       }}
@@ -79,32 +104,87 @@ function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
         border: 'none',
         borderRadius: 11,
         cursor: 'pointer',
-        fontSize: 13.5,
+        fontSize: 16,
         textAlign: 'left',
         transition: 'background .15s',
-        background: active ? '#F7E7DE' : 'transparent',
-        color: active ? '#A34B2B' : soon ? '#B7AC9B' : '#6E6457',
+        background: active ? '#E7F4FB' : 'transparent',
+        color: active ? '#0571A6' : soon ? '#9197A2' : '#484848',
         fontWeight: active ? 700 : 600,
       }}
     >
-      {navIcon[item.key]}
-      {item.label}
+      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{navIcon[item.key]}</span>
+      <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
       {badge}
     </button>
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        marginLeft: 'auto',
+        transition: 'transform .18s ease',
+        transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+      }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+function NavSection({
+  title,
+  items,
+  badgeFor,
+  first,
+}: {
+  title: string;
+  items: NavItem[];
+  badgeFor: (key: View) => ReactNode;
+  first?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: '.7px',
+          color: '#9197A2',
+          padding: first ? '8px 12px 6px' : '16px 12px 6px',
+          textAlign: 'left',
+        }}
+      >
+        <span>{title}</span>
+        <Chevron open={open} />
+      </button>
+      {open && items.map((item) => <NavButton key={item.key} item={item} badge={badgeFor(item.key)} />)}
+    </div>
+  );
+}
+
 export function Sidebar() {
-  const { leaves, ots, rbs, fbMgrs, user, signOut } = useStore();
-  const displayName = user?.name ?? 'HR Admin';
-  const roleLabel = user ? `${user.role[0].toUpperCase()}${user.role.slice(1)} · ${user.company}` : 'HR Admin';
-  const userInitials = displayName
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase();
+  const { leaves, ots, rbs, fbMgrs, view, setView } = useStore();
+  const orgActive = view === 'organisation';
   const leavesPending = leaves.filter((l) => l.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
   const claims = rbs.filter((r) => r.status === 'Pending').length;
@@ -130,90 +210,112 @@ export function Sidebar() {
       style={{
         width: 244,
         flexShrink: 0,
-        background: '#FBF7F0',
-        borderRight: '1px solid #ECE2D4',
+        background: '#F7F7F9',
+        borderRight: '1px solid #EBEBEB',
         display: 'flex',
         flexDirection: 'column',
         padding: '20px 14px 14px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '6px 8px 18px' }}>
+      {/* Company display name + logo — top-left. Clicking opens Organisation details. */}
+      <button
+        onClick={() => setView('organisation')}
+        title="Organisation details"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          width: '100%',
+          padding: '9px 10px',
+          marginBottom: 10,
+          border: '1px solid #EBEBEB',
+          borderRadius: 12,
+          cursor: 'pointer',
+          textAlign: 'left',
+          background: orgActive ? '#E7F4FB' : '#fff',
+          transition: 'background .15s, border-color .15s',
+        }}
+      >
         <div
           style={{
             width: 34,
             height: 34,
             borderRadius: 10,
-            background: '#BE5A36',
+            background: '#0571A6',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 2px 6px rgba(190,90,54,.28)',
+            boxShadow: '0 2px 6px rgba(5,113,166,.28)',
           }}
         >
           <Logo />
         </div>
-        <div>
-          <div style={{ fontSize: 15.5, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#A89C8B', marginTop: 3, letterSpacing: '.2px' }}>Convrse Spaces</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.2px', lineHeight: 1.05, color: orgActive ? '#0571A6' : '#222222', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ORG_DISPLAY_NAME}</div>
         </div>
-      </div>
+        <span style={{ color: orgActive ? '#0571A6' : '#9197A2', fontSize: 20, fontWeight: 700 }}>›</span>
+      </button>
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 4 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.7px', color: '#BCB1A0', padding: '8px 12px 6px' }}>PEOPLE OPS</div>
-        {PEOPLE_OPS.map((item) => (
-          <NavButton key={item.key} item={item} badge={badgeFor(item.key)} />
-        ))}
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.7px', color: '#BCB1A0', padding: '16px 12px 6px' }}>ORGANISATION</div>
-        {ORGANISATION.map((item) => (
-          <NavButton key={item.key} item={item} badge={badgeFor(item.key)} />
+        <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />
+        {SECTIONS.map((section, i) => (
+          <NavSection
+            key={section.title}
+            title={section.title}
+            items={section.items}
+            badgeFor={badgeFor}
+            first={i === 0}
+          />
         ))}
       </div>
 
-      <button
-        onClick={() => void signOut()}
-        title="Sign out"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 10px', marginTop: 8, width: '100%', background: 'none', border: 'none', borderTop: '1px solid #ECE2D4', cursor: 'pointer', textAlign: 'left' }}
-      >
+      {/* Platform mark — bottom-left. The HRMS this workspace runs on. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 10px 4px', marginTop: 8, borderTop: '1px solid #EBEBEB' }}>
         <div
           style={{
-            width: 33,
-            height: 33,
-            borderRadius: '50%',
-            background: '#7C7A52',
-            color: '#fff',
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            background: '#0571A6',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontWeight: 700,
-            fontSize: 13,
             flexShrink: 0,
+            boxShadow: '0 2px 6px rgba(5,113,166,.28)',
           }}
         >
-          {userInitials}
+          <Logo />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
-          <div style={{ fontSize: 11, color: '#A89C8B', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.2px', lineHeight: 1 }}>{PLATFORM_NAME}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#9197A2', marginTop: 2, letterSpacing: '.2px' }}>HRMS platform</div>
         </div>
-        <IconLogout />
-      </button>
+      </div>
     </aside>
   );
 }
 
 export function Topbar() {
-  const { view } = useStore();
+  const { view, user, signOut } = useStore();
   const [title, meta] = TITLES[view];
+  const displayName = user?.name ?? 'HR Admin';
+  const userInitials = displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join('')
+    .toUpperCase();
   return (
     <header
       style={{
         position: 'sticky',
         top: 0,
         zIndex: 30,
-        background: 'rgba(243,237,227,.82)',
+        background: 'rgba(247,247,249,.82)',
         backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid #E9DFD0',
+        borderBottom: '1px solid #EBEBEB',
         padding: '15px 34px',
         display: 'flex',
         alignItems: 'center',
@@ -221,12 +323,12 @@ export function Topbar() {
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 600, color: '#A89C8B', letterSpacing: '.2px' }}>{meta}</div>
-        <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.4px', marginTop: 1 }}>{title}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#717171', letterSpacing: '.2px' }}>{meta}</div>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.4px', marginTop: 1 }}>{title}</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBE1D2', borderRadius: 11, padding: '8px 13px', gap: 9, width: 248 }}>
+      <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '8px 13px', gap: 9, width: 248 }}>
         <IconSearch />
-        <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: '#2A2420' }} />
+        <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 16, width: '100%', color: '#222222' }} />
       </div>
       <button
         style={{
@@ -234,7 +336,7 @@ export function Topbar() {
           width: 40,
           height: 40,
           borderRadius: 11,
-          border: '1px solid #EBE1D2',
+          border: '1px solid #EBEBEB',
           background: '#fff',
           display: 'flex',
           alignItems: 'center',
@@ -243,8 +345,40 @@ export function Topbar() {
         }}
       >
         <IconBell />
-        <span style={{ position: 'absolute', top: 9, right: 10, width: 7, height: 7, background: '#BE5A36', borderRadius: '50%', border: '1.5px solid #fff' }} />
+        <span style={{ position: 'absolute', top: 9, right: 10, width: 7, height: 7, background: '#0571A6', borderRadius: '50%', border: '1.5px solid #fff' }} />
       </button>
+
+      {/* Logged-in HR — top-right. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 4 }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: '#7C7A52',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 700,
+            fontSize: 15,
+            flexShrink: 0,
+          }}
+        >
+          {userInitials}
+        </div>
+        <div style={{ minWidth: 0, lineHeight: 1.15 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap' }}>{displayName}</div>
+          <div style={{ fontSize: 12, color: '#717171', fontWeight: 600 }}>HR</div>
+        </div>
+        <button
+          onClick={() => void signOut()}
+          title="Sign out"
+          style={{ width: 38, height: 38, borderRadius: 11, border: '1px solid #EBEBEB', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginLeft: 2 }}
+        >
+          <IconLogout />
+        </button>
+      </div>
     </header>
   );
 }
@@ -260,13 +394,13 @@ export function Toast() {
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 90,
-        background: '#2A2420',
+        background: '#222222',
         color: '#fff',
         borderRadius: 13,
         padding: '13px 20px',
-        fontSize: 13.5,
+        fontSize: 16,
         fontWeight: 600,
-        boxShadow: '0 12px 30px rgba(42,36,32,.32)',
+        boxShadow: '0 12px 30px rgba(34,34,34,.32)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,

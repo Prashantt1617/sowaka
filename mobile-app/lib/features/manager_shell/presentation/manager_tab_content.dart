@@ -62,6 +62,18 @@ class _TabContent extends StatelessWidget {
             size: 30,
           ),
         ),
+        // Children are positional: the IndexedStack is keyed on the enum's
+        // index, so this must stay in ManagerTab order — games sits between
+        // connect and quick.
+        _GamesTab(
+          key: const ValueKey('games'),
+          session: session,
+          profileAction: _ProfileAvatarAction(
+            key: const ValueKey('games-profile-avatar'),
+            initial: state.dashboard!.managerInitial,
+            onTap: onOpenProfile,
+          ),
+        ),
         QuickActionsScreen(
           key: const ValueKey('quick-actions'),
           bloc: bloc,

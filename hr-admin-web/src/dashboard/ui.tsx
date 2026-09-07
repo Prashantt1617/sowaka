@@ -7,7 +7,7 @@ import { IconChevronDown, IconSearch } from './icons';
 export function Avatar({
   name,
   size = 36,
-  font = 13,
+  font = 14,
 }: {
   name: string;
   size?: number;
@@ -37,7 +37,7 @@ export function Avatar({
 export function Pill({
   label,
   tone,
-  fontSize = 11.5,
+  fontSize = 12,
   padding = '4px 11px',
   fontWeight = 700,
 }: {
@@ -66,15 +66,15 @@ export function Pill({
 export function SummaryCard({
   label,
   value,
-  color = '#2A2420',
+  color = '#222222',
 }: {
   label: string;
   value: ReactNode;
   color?: string;
 }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #EFE6D8', borderRadius: 15, padding: '15px 17px' }}>
-      <div style={{ fontSize: 12, color: '#9B9082', fontWeight: 600 }}>{label}</div>
+    <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 15, padding: '15px 17px' }}>
+      <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.6px', marginTop: 3, color }}>{value}</div>
     </div>
   );
@@ -92,13 +92,13 @@ export function SearchInput({
   width?: number;
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBE1D2', borderRadius: 11, padding: '9px 13px', gap: 9, width }}>
+    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '9px 13px', gap: 9, width }}>
       <IconSearch />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: '#2A2420' }}
+        style={{ border: 'none', outline: 'none', background: 'none', fontSize: 16, width: '100%', color: '#222222' }}
       />
     </div>
   );
@@ -116,7 +116,7 @@ export function StatusTabs<T extends string>({
   labels?: Partial<Record<T, string>>;
 }) {
   return (
-    <div style={{ display: 'flex', background: '#fff', border: '1px solid #EBE1D2', borderRadius: 11, padding: 3, gap: 2 }}>
+    <div style={{ display: 'flex', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: 3, gap: 2 }}>
       {options.map((opt) => {
         const on = active === opt;
         return (
@@ -126,12 +126,12 @@ export function StatusTabs<T extends string>({
             style={{
               border: 'none',
               cursor: 'pointer',
-              fontSize: 12.5,
+              fontSize: 14,
               fontWeight: 700,
               padding: '6px 13px',
               borderRadius: 8,
-              background: on ? '#2A2420' : 'transparent',
-              color: on ? '#fff' : '#8B8378',
+              background: on ? '#222222' : 'transparent',
+              color: on ? '#fff' : '#717171',
             }}
           >
             {labels?.[opt] ?? (opt === ('all' as T) ? 'All' : opt)}
@@ -160,12 +160,12 @@ export function SelectBox({
           appearance: 'none',
           WebkitAppearance: 'none',
           background: '#fff',
-          border: '1px solid #EBE1D2',
+          border: '1px solid #EBEBEB',
           borderRadius: 11,
           padding: '9px 32px 9px 13px',
-          fontSize: 12.5,
+          fontSize: 14,
           fontWeight: 700,
-          color: '#6E6457',
+          color: '#484848',
           cursor: 'pointer',
         }}
       >
@@ -191,16 +191,16 @@ export function DateRange({
     border: 'none',
     outline: 'none',
     background: 'none',
-    fontSize: 12.5,
+    fontSize: 14,
     fontWeight: 700,
-    color: '#6E6457',
+    color: '#484848',
     cursor: 'pointer',
   };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBE1D2', borderRadius: 11, padding: '7px 11px', gap: 7 }}>
-      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#9B9082' }}>From</span>
+    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '7px 11px', gap: 7 }}>
+      <span style={{ fontSize: 14, fontWeight: 700, color: '#717171' }}>From</span>
       <input type="date" value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} style={box} />
-      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#9B9082' }}>to</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: '#717171' }}>to</span>
       <input type="date" value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} style={box} />
       {(from || to) && (
         <button
@@ -209,7 +209,7 @@ export function DateRange({
             onTo('');
           }}
           title="Clear dates"
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#B4A896', fontSize: 15, fontWeight: 700, lineHeight: 1, padding: '0 2px' }}
+          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9197A2', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 2px' }}
         >
           ×
         </button>
@@ -220,7 +220,7 @@ export function DateRange({
 
 export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #EFE6D8', borderRadius: 18, overflow: 'hidden', ...style }}>
+    <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, overflow: 'hidden', ...style }}>
       {children}
     </div>
   );
@@ -228,7 +228,7 @@ export function Card({ children, style }: { children: ReactNode; style?: CSSProp
 
 export function EmptyRow({ text }: { text: string }) {
   return (
-    <div style={{ padding: 48, textAlign: 'center', color: '#A89C8B', fontSize: 13.5, fontWeight: 600 }}>
+    <div style={{ padding: 48, textAlign: 'center', color: '#717171', fontSize: 16, fontWeight: 600 }}>
       {text}
     </div>
   );

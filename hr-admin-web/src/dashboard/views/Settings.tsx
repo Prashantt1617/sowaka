@@ -22,12 +22,12 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
     <button
       onClick={onClick}
       style={{
-        border: `1px solid ${on ? '#B7D0B0' : '#E7DDCE'}`,
-        background: on ? '#EDF3E9' : '#FBF7F0',
-        color: on ? '#3C6340' : '#8A7E6D',
+        border: `1px solid ${on ? '#B7D0B0' : '#F7F7F9'}`,
+        background: on ? '#EDF3E9' : '#F7F7F9',
+        color: on ? '#3C6340' : '#717171',
         borderRadius: 10,
         padding: '9px 14px',
-        fontSize: 13,
+        fontSize: 16,
         fontWeight: 700,
         cursor: 'pointer',
         transition: 'all .12s',
@@ -99,24 +99,24 @@ export function Settings() {
   };
 
   if (loading) {
-    return <div style={{ padding: 40, color: '#8A7E6D', fontSize: 14 }}>Loading settings…</div>;
+    return <div style={{ padding: 40, color: '#717171', fontSize: 16 }}>Loading settings…</div>;
   }
   if (error) {
-    return <div style={{ padding: 40, color: '#A8475F', fontSize: 14 }}>{error}</div>;
+    return <div style={{ padding: 40, color: '#A8475F', fontSize: 16 }}>{error}</div>;
   }
 
   return (
     <div style={{ animation: 'fade .3s ease both', maxWidth: 720 }}>
       <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px', color: '#2A2420' }}>Settings</div>
-        <div style={{ fontSize: 13.5, color: '#8A7E6D', marginTop: 4 }}>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.4px', color: '#222222' }}>Settings</div>
+        <div style={{ fontSize: 16, color: '#717171', marginTop: 4 }}>
           Company-wide rules for the overtime apply flow.
         </div>
       </div>
 
       <Card style={{ padding: 22, marginBottom: 18 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: '#2A2420' }}>Week-off days</div>
-        <div style={{ fontSize: 12.5, color: '#8A7E6D', marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Week-off days</div>
+        <div style={{ fontSize: 14, color: '#717171', marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
           Days treated as a week-off. Full-day overtime can only be applied on a week-off or a company holiday.
         </div>
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
@@ -127,12 +127,12 @@ export function Settings() {
       </Card>
 
       <Card style={{ padding: 22, marginBottom: 18 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: '#2A2420' }}>Overtime by team</div>
-        <div style={{ fontSize: 12.5, color: '#8A7E6D', marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Overtime by team</div>
+        <div style={{ fontSize: 14, color: '#717171', marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
           Turn overtime off for specific teams — those employees won’t see the overtime option in the app.
         </div>
         {settings && settings.departments.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#A89C8B' }}>No teams found in your organization yet.</div>
+          <div style={{ fontSize: 16, color: '#717171' }}>No teams found in your organization yet.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {settings?.departments.map((dep) => {
@@ -145,12 +145,12 @@ export function Settings() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '11px 14px',
-                    border: '1px solid #F0E8DB',
+                    border: '1px solid #F0F0F2',
                     borderRadius: 12,
                     background: '#FFFDF9',
                   }}
                 >
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#3A342C' }}>{dep}</span>
+                  <span style={{ fontSize: 16, fontWeight: 600, color: '#3A342C' }}>{dep}</span>
                   <Toggle label={on ? 'Enabled' : 'Disabled'} on={on} onClick={() => toggleTeam(dep)} />
                 </div>
               );
@@ -165,11 +165,11 @@ export function Settings() {
           disabled={!dirty || saving}
           style={{
             border: 'none',
-            background: dirty && !saving ? '#4F7A52' : '#CBBFAD',
+            background: dirty && !saving ? '#4F7A52' : '#9197A2',
             color: '#fff',
             borderRadius: 12,
             padding: '12px 26px',
-            fontSize: 14,
+            fontSize: 16,
             fontWeight: 700,
             cursor: dirty && !saving ? 'pointer' : 'not-allowed',
           }}
