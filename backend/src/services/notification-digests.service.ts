@@ -1,6 +1,7 @@
 import { attendanceRecords, feedbackRecords, leaves, users } from '../config/db';
 import { env } from '../config/env';
 import { User } from '../models/user.model';
+import { getCompanyConfig, getOrgHolidayDates, isWeekoffDay } from './company-settings.service';
 import { notifyUsers } from './notification.service';
 
 /**
@@ -159,10 +160,22 @@ export async function sendMissedFeedbackSummaries(now = new Date()): Promise<voi
 export async function sendConsecutiveMissedFlags(now = new Date()): Promise<void> {
   const closed = period(previousMonth(now));
   const grouped = await managersWithReports();
-  const sent = await feedbackRecords().find({ status: 'sent' }).toArray();
+  // Bounded to the window the walk-back below can reach, rather than every
+  // review ever sent.
+  const sent = await feedbackRecords()
+    .find({ status: 'sent', period: { $gte: period(monthsBack(now, 13)) } })
+    .toArray();
   const sentPairs = new Set(sent.map((record) => `${record.managerUserId}:${record.employeeUserId}:${record.period}`));
 
   for (const { manager, reports } of grouped.values()) {
+    // Guarded, and resolved once per manager: an unset `org` would match every
+    // other org-less user, sending one company's flags to another company's HR.
+    const hr = manager.org
+      ? await users().find({ org: manager.org, dashboardAccess: true }).toArray()
+      : [];
+    if (!hr.length) continue;
+    const hrIds = hr.map((user) => user.userId);
+
     for (const report of reports) {
       // Walk back from the month that just closed for as long as it was missed.
       const missed: string[] = [];
@@ -173,12 +186,8 @@ export async function sendConsecutiveMissedFlags(now = new Date()): Promise<void
       }
       if (missed.length < 2 || missed.at(-1) !== closed) continue;
 
-      const hr = await users()
-        .find({ org: manager.org, dashboardAccess: true })
-        .toArray();
-      if (!hr.length) continue;
       const monthList = missed.map(monthLabel).join(', ');
-      await notifyUsers(hr.map((user) => user.userId), {
+      await notifyUsers(hrIds, {
         scenario: 'consecutive_missed_feedback', title: 'Missed feedback flag',
         body: `${manager.name} has missed feedback for ${report.name} ${missed.length} months in a row`,
         data: { destination: 'grow_feedback', employeeUserId: report.userId, managerUserId: manager.userId },
@@ -196,7 +205,23 @@ export async function sendConsecutiveMissedFlags(now = new Date()): Promise<void
 /** #23 — 6:00 PM: who was present, on leave, and unaccounted for today. */
 export async function sendDailyAttendanceSummary(now = new Date()): Promise<void> {
   const workDate = now.toISOString().slice(0, 10);
+  // Week-offs and company holidays are skipped: nobody punches in on a day they
+  // are not working, so every report would otherwise be counted as an unplanned
+  // absence and each manager would get a full-team "absent" list every weekend.
+  const settingsByOrg = new Map<string, { weekoffDays: number[]; holidayDates: Set<string> }>();
   for (const { manager, reports } of (await managersWithReports()).values()) {
+    const orgKey = manager.org ?? '';
+    let settings = settingsByOrg.get(orgKey);
+    if (!settings) {
+      const [config, holidayDates] = await Promise.all([
+        getCompanyConfig(manager.org),
+        getOrgHolidayDates(manager.org),
+      ]);
+      settings = { weekoffDays: config.weekoffDays, holidayDates };
+      settingsByOrg.set(orgKey, settings);
+    }
+    if (isWeekoffDay(now, settings.weekoffDays) || settings.holidayDates.has(workDate)) continue;
+
     const reportIds = reports.map((report) => report.userId);
     const employeeIds = reports.map((report) => report.employeeId).filter(Boolean) as string[];
     const [records, onLeave] = await Promise.all([
