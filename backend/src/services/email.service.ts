@@ -12,6 +12,8 @@ const transporter =
           user: env.zohoSmtp.user,
           pass: env.zohoSmtp.pass,
         },
+        connectionTimeout: 10_000,
+        socketTimeout: 10_000,
       })
     : null;
 
@@ -112,9 +114,11 @@ function bodyToHtml(body: string): string {
     .map((block) => {
       const lines = block.split('\n').map((line) => {
         const trimmed = line.trim();
-        return /^https?:\/\/\S+$/.test(trimmed)
-          ? `<a href="${trimmed}" style="color:#0571A6">${trimmed}</a>`
-          : escapeHtml(line);
+        if (/^https?:\/\/\S+$/.test(trimmed)) {
+          const escaped = escapeHtml(trimmed);
+          return `<a href="${escaped}" style="color:#0571A6">${escaped}</a>`;
+        }
+        return escapeHtml(line);
       });
       return `<p style="margin:0 0 14px">${lines.join('<br />')}</p>`;
     })
@@ -126,7 +130,9 @@ function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function maskEmail(email: string): string {

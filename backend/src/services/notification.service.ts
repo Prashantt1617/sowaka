@@ -103,15 +103,17 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const { email, ...record } = input;
   await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
     org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, createdAt: now })));
-  // Sent before the push below, which returns early when Firebase is unconfigured.
+  // Fire-and-forget: sendNotificationEmail never throws, but callers of
+  // notifyUsers (leave/feedback request handlers) must not block on SMTP.
   if (email) {
-    await Promise.all(recipients
-      .filter((user) => user.email)
-      .map((user) => sendNotificationEmail(
+    for (const user of recipients) {
+      if (!user.email) continue;
+      void sendNotificationEmail(
         user.email,
         email.subject,
         email.body.replaceAll('{firstName}', firstName(user.name)),
-      )));
+      );
+    }
   }
   const tokens = await deviceTokens().find({ userId: { $in: uniqueIds } }).toArray();
   const firebase = messaging();

@@ -10,6 +10,18 @@ import {
 } from './notification-digests.service';
 import { logger } from '../utils/logger';
 
+/**
+ * Runs one scheduled job in isolation: a thrown error is logged and does not
+ * stop the other jobs in this tick. These jobs are gated on an exact
+ * date/day-of-week match with no tracked reminder state, so a job skipped by
+ * an earlier throw would otherwise not run again until the same condition
+ * recurs next week or month.
+ */
+async function run(name: string, job: () => Promise<void>) {
+  try { await job(); }
+  catch (error) { logger.error(`Scheduled notification job failed: ${name}`, {}, error); }
+}
+
 let timer: NodeJS.Timeout | undefined;
 export function startNotificationScheduler() {
   const schedule = () => {
@@ -34,23 +46,23 @@ export function startNotificationScheduler() {
           istDate.getUTCFullYear(), istDate.getUTCMonth() + 1, 0,
         )).getUTCDate() - istDay;
 
-        await flushNotificationBatches(istHour === 18);
+        await run('flushNotificationBatches', () => flushNotificationBatches(istHour === 18));
 
         if (istHour === 9) {
-          await sendTodayLifecycleNotifications();
-          await sendPendingLeaveReminders();
-          if (daysLeftInMonth === 2) await sendFeedbackDueReminders();
-          if (daysLeftInMonth === 0) await sendFeedbackOverdueReminders();
+          await run('sendTodayLifecycleNotifications', sendTodayLifecycleNotifications);
+          await run('sendPendingLeaveReminders', sendPendingLeaveReminders);
+          if (daysLeftInMonth === 2) await run('sendFeedbackDueReminders', sendFeedbackDueReminders);
+          if (daysLeftInMonth === 0) await run('sendFeedbackOverdueReminders', sendFeedbackOverdueReminders);
           if (istDay === 1) {
-            await sendMissedFeedbackSummaries();
-            await sendConsecutiveMissedFlags();
+            await run('sendMissedFeedbackSummaries', sendMissedFeedbackSummaries);
+            await run('sendConsecutiveMissedFlags', sendConsecutiveMissedFlags);
           }
-          if (weekday === 'Mon') await sendWeeklyAttendanceReport();
+          if (weekday === 'Mon') await run('sendWeeklyAttendanceReport', sendWeeklyAttendanceReport);
         }
-        if (istHour === 18) await sendDailyAttendanceSummary();
-        if (istHour === 16 && weekday === 'Fri') await sendLeavePlanningReport();
+        if (istHour === 18) await run('sendDailyAttendanceSummary', sendDailyAttendanceSummary);
+        if (istHour === 16 && weekday === 'Fri') await run('sendLeavePlanningReport', sendLeavePlanningReport);
       }
-      catch (error) { logger.error('Notification batch flush failed', {}, error); }
+      catch (error) { logger.error('Notification scheduler tick failed', {}, error); }
       finally { schedule(); }
     }, next.getTime() - now.getTime());
     timer.unref();
