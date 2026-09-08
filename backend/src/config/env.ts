@@ -28,6 +28,18 @@ export const env = {
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
   otpDevBypass: process.env.OTP_DEV_BYPASS === 'true',
+  /**
+   * Orgs this process may contact, from `NOTIFY_ORGS` (comma-separated).
+   *
+   * Local and production share one Atlas cluster, so an unguarded dev server
+   * can reach every real employee in the database — a scheduled digest once
+   * emailed an entire other company. Empty means unrestricted, which is what
+   * production wants; a dev `.env` names the org being worked on.
+   */
+  notifyOrgs: String(process.env.NOTIFY_ORGS ?? '')
+    .split(',')
+    .map((org) => org.trim())
+    .filter(Boolean),
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
   notificationTestEndpointEnabled:

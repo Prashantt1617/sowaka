@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env';
+import { users } from '../config/db';
 import { logger } from '../utils/logger';
 
 const transporter =
@@ -17,7 +18,31 @@ const transporter =
       })
     : null;
 
+/**
+ * Whether this process may email an address at all.
+ *
+ * Checked here rather than at each caller so every route out — OTP,
+ * notifications, anything added later — passes the same gate. An address with
+ * no user record is refused while an allowlist is set: unrecognised is not the
+ * same as safe, and the only reason to run restricted is that the database is
+ * shared with production.
+ */
+export async function isAllowedRecipient(email: string): Promise<boolean> {
+  if (env.notifyOrgs.length === 0) return true;
+  const user = await users().findOne({ email: email.trim().toLowerCase() });
+  const allowed = Boolean(user?.org && env.notifyOrgs.includes(user.org));
+  if (!allowed) {
+    logger.info('Email suppressed: recipient is outside NOTIFY_ORGS', {
+      recipient: maskEmail(email),
+      org: user?.org ?? 'unknown',
+      allowed: env.notifyOrgs,
+    });
+  }
+  return allowed;
+}
+
 export async function sendOtpEmail(email: string, otp: string): Promise<void> {
+  if (!(await isAllowedRecipient(email))) return;
   if (!transporter) {
     if (env.nodeEnv !== 'production' || env.otpDevBypass) {
       logger.warn('SMTP is not configured; using local OTP delivery', {
@@ -79,6 +104,7 @@ export async function sendNotificationEmail(
   subject: string,
   body: string,
 ): Promise<void> {
+  if (!(await isAllowedRecipient(email))) return;
   if (!transporter) {
     logger.warn('SMTP is not configured; skipping notification email', {
       recipient: maskEmail(email),

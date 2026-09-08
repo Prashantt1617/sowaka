@@ -94,29 +94,19 @@ export interface NotificationInput {
   email?: NotificationEmail;
 }
 
-/**
- * Orgs this process is allowed to notify, from `NOTIFY_ORGS` (comma-separated).
- *
- * Local and production share one Atlas cluster, so an unguarded dev server
- * reaches every real employee in the database — a scheduled digest here once
- * pushed to an entire other company. Empty means unrestricted, which is what
- * production wants; a dev `.env` sets it to the org being worked on.
- */
-const NOTIFY_ORGS = String(process.env.NOTIFY_ORGS ?? '')
-  .split(',')
-  .map((org) => org.trim())
-  .filter(Boolean);
-
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
   const all = await users().find({ userId: { $in: uniqueIds } }).toArray();
-  const recipients = NOTIFY_ORGS.length
-    ? all.filter((user) => NOTIFY_ORGS.includes(user.org ?? ''))
+  // Same allowlist the mail transport enforces — see `env.notifyOrgs`. Applied
+  // here too so a suppressed org gets no push and no stored notification
+  // either, not just no email.
+  const recipients = env.notifyOrgs.length
+    ? all.filter((user) => env.notifyOrgs.includes(user.org ?? ''))
     : all;
   if (recipients.length !== all.length) {
     logger.info('Notification suppressed for orgs outside NOTIFY_ORGS', {
-      allowed: NOTIFY_ORGS, suppressed: all.length - recipients.length, scenario: input.scenario,
+      allowed: env.notifyOrgs, suppressed: all.length - recipients.length, scenario: input.scenario,
     });
   }
   if (!recipients.length) return;
