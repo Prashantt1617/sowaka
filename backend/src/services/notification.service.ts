@@ -94,10 +94,32 @@ export interface NotificationInput {
   email?: NotificationEmail;
 }
 
+/**
+ * Orgs this process is allowed to notify, from `NOTIFY_ORGS` (comma-separated).
+ *
+ * Local and production share one Atlas cluster, so an unguarded dev server
+ * reaches every real employee in the database — a scheduled digest here once
+ * pushed to an entire other company. Empty means unrestricted, which is what
+ * production wants; a dev `.env` sets it to the org being worked on.
+ */
+const NOTIFY_ORGS = String(process.env.NOTIFY_ORGS ?? '')
+  .split(',')
+  .map((org) => org.trim())
+  .filter(Boolean);
+
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
-  const recipients = await users().find({ userId: { $in: uniqueIds } }).toArray();
+  const all = await users().find({ userId: { $in: uniqueIds } }).toArray();
+  const recipients = NOTIFY_ORGS.length
+    ? all.filter((user) => NOTIFY_ORGS.includes(user.org ?? ''))
+    : all;
+  if (recipients.length !== all.length) {
+    logger.info('Notification suppressed for orgs outside NOTIFY_ORGS', {
+      allowed: NOTIFY_ORGS, suppressed: all.length - recipients.length, scenario: input.scenario,
+    });
+  }
+  if (!recipients.length) return;
   const now = new Date();
   // `email` is copy for delivery, not part of the stored notification record.
   const { email, ...record } = input;
@@ -105,6 +127,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
     org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, createdAt: now })));
   // Fire-and-forget: sendNotificationEmail never throws, but callers of
   // notifyUsers (leave/feedback request handlers) must not block on SMTP.
+  // Iterates `recipients`, so NOTIFY_ORGS gates email as well as push.
   if (email) {
     for (const user of recipients) {
       if (!user.email) continue;
@@ -115,7 +138,11 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
       );
     }
   }
-  const tokens = await deviceTokens().find({ userId: { $in: uniqueIds } }).toArray();
+  // Scoped to the filtered recipients rather than every id asked for —
+  // otherwise a suppressed org still gets the push.
+  const tokens = await deviceTokens()
+    .find({ userId: { $in: recipients.map((user) => user.userId) } })
+    .toArray();
   const firebase = messaging();
   if (!firebase || !tokens.length) return;
   const result = await firebase.sendEachForMulticast({

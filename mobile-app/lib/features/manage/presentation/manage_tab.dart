@@ -1253,10 +1253,32 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
         ),
         Expanded(
           child: state.recordParams.isEmpty
+              // There is no default parameter set: HR assigns one per person
+              // per cycle, and the server refuses feedback without it.
               ? const Center(
-                  child: Text(
-                    'No feedback parameters configured.',
-                    style: TextStyle(color: MColors.inkSoft),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 40),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'No KPIs assigned',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: MColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'HR has not assigned feedback parameters for this '
+                          'person this cycle, so there is nothing to score yet.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : ListView(

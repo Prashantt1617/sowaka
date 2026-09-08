@@ -1,5 +1,6 @@
 import { companies, holidays, users } from '../config/db';
 import { Company } from '../models/company.model';
+import { cycleWindow, DEFAULT_CYCLE_START_DAY, normaliseStartDay, periodFor } from './cycle';
 
 // Default week-off when a company has none configured: Sunday only.
 export const DEFAULT_WEEKOFF_DAYS = [0];
@@ -18,6 +19,10 @@ export interface CompanySettingsView {
   weekoffDays: number[];
   overtimeDisabledDepartments: string[];
   departments: string[]; // all departments in the org, for building toggles
+  /** Day of month review cycles open on (1-28). */
+  reviewCycleStartDay: number;
+  /** The cycle that day currently puts the org in, for the settings preview. */
+  currentCycle: { period: string; start: string; end: string };
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
@@ -46,6 +51,12 @@ export async function getCompanyConfig(
 export async function getCompanySettings(adminUserId: string): Promise<CompanySettingsView> {
   const org = await requireAdminOrg(adminUserId);
   const config = await getCompanyConfig(org);
+  const company = await companies().findOne({ id: org });
+  const reviewCycleStartDay = normaliseStartDay(
+    company?.reviewCycleStartDay ?? DEFAULT_CYCLE_START_DAY,
+  );
+  const period = periodFor(new Date(), reviewCycleStartDay);
+  const { start, end } = cycleWindow(period, reviewCycleStartDay);
   const orgEmployees = await users().find({ org }).project({ department: 1 }).toArray();
   const departments = [
     ...new Set(
@@ -54,12 +65,25 @@ export async function getCompanySettings(adminUserId: string): Promise<CompanySe
         .filter((department): department is string => Boolean(department)),
     ),
   ].sort((a, b) => a.localeCompare(b));
-  return { ...config, departments };
+  return {
+    ...config,
+    departments,
+    reviewCycleStartDay,
+    currentCycle: {
+      period,
+      start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
+    },
+  };
 }
 
 export async function updateCompanySettings(
   adminUserId: string,
-  patch: { weekoffDays?: unknown; overtimeDisabledDepartments?: unknown },
+  patch: {
+    weekoffDays?: unknown;
+    overtimeDisabledDepartments?: unknown;
+    reviewCycleStartDay?: unknown;
+  },
 ): Promise<CompanySettingsView> {
   const org = await requireAdminOrg(adminUserId);
   const update: Partial<Company> = { updatedAt: new Date() };
@@ -84,6 +108,15 @@ export async function updateCompanySettings(
     update.overtimeDisabledDepartments = [
       ...new Set((patch.overtimeDisabledDepartments as string[]).map((dep) => dep.trim()).filter(Boolean)),
     ];
+  }
+
+  if (patch.reviewCycleStartDay !== undefined) {
+    const day = Number(patch.reviewCycleStartDay);
+    // Capped at 28 so the cycle opens on a day every month actually has.
+    if (!Number.isInteger(day) || day < 1 || day > 28) {
+      throw new CompanySettingsError(400, 'reviewCycleStartDay must be a whole number from 1 to 28');
+    }
+    update.reviewCycleStartDay = day;
   }
 
   await companies().updateOne({ id: org }, { $set: update }, { upsert: true });

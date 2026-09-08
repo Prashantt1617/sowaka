@@ -12,8 +12,10 @@ import {
 } from '../models/feedback.model';
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
-import { notifyUsers } from './notification.service';
+import { notifyUsers, queueBatchedNotification } from './notification.service';
 import { env } from '../config/env';
+import { assignedParametersFor } from './kpi.service';
+import { currentPeriodFor } from './cycle';
 import {
   presignConnectMedia,
   resolveProfilePhoto,
@@ -21,14 +23,6 @@ import {
   type ConnectMediaFile,
 } from './s3-connect-media.service';
 
-// Parameter set and order come from the feedback design. These become
-// HR-configurable once the HR dashboard lands.
-const feedbackParameterNames = [
-  'Performance',
-  'Collaboration',
-  'Ownership',
-  'Communication',
-] as const;
 const recognitionCategories = new Set<RecognitionNomination['category']>([
   'artist',
   'mentor',
@@ -152,7 +146,7 @@ export async function getManagerWorkspace(managerUserId: string) {
   // Recognition is limited to the manager's own direct reports — never the
   // peer/manager fallback above.
   const recognitionCandidates = directReports;
-  const period = currentPeriod();
+  const period = await currentPeriodFor(manager.org ?? '');
   const reportIds = reports.map((report) => report.userId);
   const reportEmployeeIds = reports
     .map((report) => report.employeeId)
@@ -221,6 +215,16 @@ export async function getManagerWorkspace(managerUserId: string) {
   // A report's punch record may be keyed by userId (self-service app punches)
   // or employeeId (SQL-imported punches) — check both, preferring employeeId
   // since every record has one but not every record has userId.
+  // Each report is scored on their own assigned parameters, so the blank form
+  // the app renders differs per person. Resolved once here rather than per row.
+  const assignedByUser = new Map<string, Awaited<ReturnType<typeof assignedParametersFor>>>(
+    await Promise.all(
+      reportIds.map(async (id) =>
+        [id, await assignedParametersFor(manager.org ?? '', id, period)] as const,
+      ),
+    ),
+  );
+
   const attendanceByEmployeeId = new Map(
     todaysAttendance.filter((record) => record.employeeId).map((record) => [record.employeeId, record]),
   );
@@ -276,7 +280,8 @@ export async function getManagerWorkspace(managerUserId: string) {
       nextDate,
       feedbackStatus: current?.status ?? 'pending',
       missedMonths: current ? 0 : monthsSince(latest?.period, period),
-      parameters: current?.parameters ?? defaultParameters(),
+      parameters: current?.parameters
+        ?? blankParameters(assignedByUser.get(report.userId) ?? []),
       extra: current?.extra ?? '',
       todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
       birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
@@ -343,7 +348,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       nextDate,
       feedbackStatus: 'pending' as const,
       missedMonths: 0,
-      parameters: defaultParameters(),
+      parameters: blankParameters(assignedByUser.get(employee.userId) ?? []),
       extra: '',
     })),
     nominations: nominations.map((nomination) => ({
@@ -368,20 +373,38 @@ export async function upsertFeedback(
   employeeUserId: string,
   input: { status: string; parameters: unknown; extra?: string },
 ) {
-  await requireDirectReport(managerUserId, employeeUserId);
+  const employee = await requireDirectReport(managerUserId, employeeUserId);
   const status = input.status.trim().toLowerCase() as FeedbackRecordStatus;
   if (status !== 'saved' && status !== 'sent') {
     throw new ManagerError(400, 'Feedback status must be saved or sent');
   }
-  if (!Array.isArray(input.parameters) || input.parameters.length !== feedbackParameterNames.length) {
+
+  // What this employee is scored on comes from HR's assignment for this cycle.
+  // There is no default set, so an unassigned employee cannot be reviewed —
+  // scoring someone against parameters nobody chose for them is worse than
+  // blocking until HR decides.
+  const org = employee.org ?? '';
+  const period = await currentPeriodFor(org);
+  const assigned = await assignedParametersFor(org, employeeUserId, period);
+  if (!assigned.length) {
+    throw new ManagerError(
+      409,
+      'No KPI parameters are assigned to this employee for this cycle. Ask HR to assign them.',
+    );
+  }
+  if (!Array.isArray(input.parameters) || input.parameters.length !== assigned.length) {
     throw new ManagerError(400, 'All feedback parameters are required');
   }
   const parameters = input.parameters.map((value, index) => {
     const parameter = value as Partial<FeedbackParameter>;
+    const expected = assigned[index];
     const score = Number(parameter.score);
     const note = String(parameter.note ?? '').trim();
-    if (parameter.name !== feedbackParameterNames[index]) {
-      throw new ManagerError(400, 'Feedback parameters are invalid');
+    // Positional, but the id is checked when the client sends one, so a stale
+    // form built against an older assignment is rejected rather than silently
+    // scoring the wrong parameter.
+    if (parameter.parameterId && parameter.parameterId !== expected.id) {
+      throw new ManagerError(409, 'These parameters have changed. Reload before saving.');
     }
     if (!Number.isFinite(score) || score < 0 || score > 5) {
       throw new ManagerError(400, 'Feedback scores must be between 0 and 5');
@@ -390,14 +413,28 @@ export async function upsertFeedback(
       throw new ManagerError(400, 'A score is required for every parameter before sending');
     }
     if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
-    return { name: parameter.name, score, note } as FeedbackParameter;
+    // Copy is snapshotted so the review still reads correctly if HR later
+    // renames or archives the parameter.
+    return {
+      parameterId: expected.id,
+      name: expected.title,
+      subtitle: expected.subtitle,
+      // Snapshotted with the copy: re-weighting the template later must not
+      // restate what this review meant.
+      weight: expected.weight,
+      score,
+      note,
+    } as FeedbackParameter;
   });
   const extra = String(input.extra ?? '').trim();
   if (extra.length > 2000) throw new ManagerError(400, 'Additional feedback is too long');
-  const overallScore = parameters.reduce((sum, parameter) => sum + parameter.score, 0) /
-    parameters.length;
+  // Weighted mean. Weights are percentages summing to 100, so the result stays
+  // on the same 0-5 scale as each parameter: 0.5x5 + 0.3x5 + 0.2x5 = 5.
+  const totalWeight = parameters.reduce((sum, p) => sum + (p.weight ?? 0), 0);
+  const overallScore = totalWeight > 0
+    ? parameters.reduce((sum, p) => sum + p.score * (p.weight ?? 0), 0) / totalWeight
+    : parameters.reduce((sum, p) => sum + p.score, 0) / parameters.length;
   const now = new Date();
-  const period = currentPeriod();
   const existing = await feedbackRecords().findOne({ managerUserId, employeeUserId, period });
   const record = await feedbackRecords().findOneAndUpdate(
     { managerUserId, employeeUserId, period },
@@ -479,6 +516,7 @@ async function requireDirectReport(managerUserId: string, employeeUserId: string
   if (employee.managerUserId !== managerUserId) {
     throw new ManagerError(403, 'Only a direct report can be selected');
   }
+  return employee;
 }
 
 async function requireRecognitionCandidate(managerUserId: string, employeeUserId: string) {
@@ -518,6 +556,11 @@ function buildOrgChart(
   ];
 }
 
+/**
+ * @deprecated Calendar-month fallback. Prefer `currentPeriodFor(org)`, which
+ * honours the org's configured cycle start day; this remains only for callers
+ * that have no org to hand.
+ */
 function currentPeriod(date = new Date()): string {
   return date.toISOString().slice(0, 7);
 }
@@ -533,8 +576,24 @@ function monthsSince(previous: string | undefined, current: string): number {
   return Math.max(0, currentYear * 12 + currentMonth - (previousYear * 12 + previousMonth) - 1);
 }
 
-function defaultParameters(): FeedbackParameter[] {
-  return feedbackParameterNames.map((name) => ({ name, score: 0, note: '' }));
+/**
+ * A blank form for an employee's assigned parameters. Empty when HR has not
+ * assigned any — the app shows the "no KPIs assigned" state rather than an
+ * arbitrary default set.
+ */
+function blankParameters(
+  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+): FeedbackParameter[] {
+  return assigned.map((p) => ({
+    parameterId: p.id,
+    name: p.title,
+    subtitle: p.subtitle,
+    // Carried onto the blank form so the app can show what each parameter is
+    // worth before anything is scored.
+    weight: p.weight,
+    score: 0,
+    note: '',
+  }));
 }
 
 export class ManagerError extends Error {

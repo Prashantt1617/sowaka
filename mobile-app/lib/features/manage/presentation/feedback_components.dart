@@ -91,16 +91,47 @@ class _ParamCardState extends State<_ParamCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.param.name,
-                      style: const TextStyle(
-                        color: Color(0xFF101828),
-                        fontSize: 14.5,
-                        height: 17.4 / 14.5,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.param.name,
+                            style: const TextStyle(
+                              color: Color(0xFF101828),
+                              fontSize: 14.5,
+                              height: 17.4 / 14.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        // How much this parameter counts towards the overall
+                        // score. Worth seeing while scoring: a 40% parameter
+                        // moves the result more than twice as far as a 15% one.
+                        if (widget.param.weight case final weight?) ...[
+                          const SizedBox(width: 7),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F4F8),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '$weight%',
+                              style: const TextStyle(
+                                color: Color(0xFF5A6B7F),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (paramDescription(widget.param.name)
+                    if ((widget.param.subtitle ?? paramDescription(widget.param.name))
                         case final description when description.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
@@ -287,7 +318,7 @@ class _ParamCardState extends State<_ParamCard> {
           Padding(
             padding: const EdgeInsets.only(left: 2),
             child: Text(
-              '💡 ${paramHelp(widget.param.name)}',
+              '💡 ${widget.param.description?.isNotEmpty == true ? widget.param.description : paramHelp(widget.param.name)}',
               style: const TextStyle(
                 color: Color(0xFFA0A4B0),
                 fontSize: 11,

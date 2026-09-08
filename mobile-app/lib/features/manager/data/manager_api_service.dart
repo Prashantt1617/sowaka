@@ -248,6 +248,9 @@ class ManagerApiService {
         'parameters': params
             .map(
               (param) => {
+                // The id lets the server reject a form built against an older
+                // assignment rather than scoring the wrong parameter.
+                if (param.parameterId != null) 'parameterId': param.parameterId,
                 'name': param.name,
                 'score': param.score,
                 'note': param.note,
