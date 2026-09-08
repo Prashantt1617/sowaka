@@ -57,6 +57,17 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     managerUserId: e.managerUserId,
     managerName: e.managerUserId ? nameById.get(e.managerUserId) : undefined,
     lifecycleStatus: e.lifecycleStatus,
+    // Present on the user record already; the dashboard's employee table and
+    // profile show these, and without them every row reads as a dash.
+    employeeId: e.employeeId,
+    location: e.location ?? e.branch,
+    // Kept separate from `location` as well as merged into it: KPI template
+    // targeting filters on branch and location independently.
+    branch: e.branch,
+    recognition: e.recognition?.label,
+    employeeType: e.employeeType,
+    joiningDate: e.joiningDate ? e.joiningDate.toISOString().slice(0, 10) : undefined,
+    birthday: e.birthday ? e.birthday.toISOString().slice(0, 10) : undefined,
   }));
 }
 

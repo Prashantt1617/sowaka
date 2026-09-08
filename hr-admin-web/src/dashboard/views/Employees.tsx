@@ -2,62 +2,29 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ETYPE } from '../theme';
-import type { EmpType } from '../theme';
-import { Avatar, Card, EmptyRow, Pill, SearchInput, SelectBox } from '../ui';
+import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
 import { IconPlus } from '../icons';
+import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
 import { EmployeeProfile } from './EmployeeProfile';
-
-const COLS = '2fr 1.4fr 1fr 1.1fr 1fr 1.3fr 1fr';
-
-// —— Mock employee database (frontend-capture phase, ~50 people) ——————————
-export type MockEmp = { name: string; id: string; role: string; team: string; location: string; empType: EmpType; manager: string; joining: string };
-
-const FIRST = ['Ananya', 'Rahul', 'Priya', 'Vikram', 'Sneha', 'Arjun', 'Kavya', 'Rohan', 'Isha', 'Aditya', 'Meera', 'Karan', 'Neha', 'Siddharth', 'Divya', 'Aman', 'Pooja', 'Nikhil', 'Riya', 'Varun', 'Tara', 'Kabir', 'Anjali', 'Dev', 'Sana', 'Yash', 'Ira', 'Nitin', 'Zoya', 'Harsh', 'Lata', 'Om', 'Bhavna', 'Raj', 'Simran', 'Kunal', 'Naina', 'Gaurav', 'Payal', 'Manav', 'Ritu', 'Sahil', 'Diya', 'Vivek', 'Aarti', 'Rehan', 'Kiara', 'Tarun', 'Nisha', 'Ved'];
-const LAST = ['Rao', 'Sharma', 'Nair', 'Iyer', 'Gupta', 'Mehta', 'Reddy', 'Singh', 'Das', 'Kulkarni', 'Bose', 'Menon', 'Kapoor', 'Joshi', 'Pillai', 'Chopra', 'Verma', 'Shetty', 'Bhat', 'Malhotra'];
-const TEAMS = ['Engineering', 'Design', 'Sales', 'Marketing', 'Operations', 'Finance'];
-const ROLES: Record<string, string[]> = {
-  Engineering: ['Software Engineer', 'Senior Software Engineer', 'Engineering Manager', 'QA Engineer'],
-  Design: ['Product Designer', 'UX Designer', 'Design Lead'],
-  Sales: ['Account Executive', 'Sales Development Rep', 'Regional Sales Head'],
-  Marketing: ['Marketing Associate', 'Content Lead', 'Growth Manager'],
-  Operations: ['People Operations', 'Customer Success Manager', 'Ops Analyst'],
-  Finance: ['Finance Analyst', 'Accountant', 'Finance Manager'],
-};
-const LOCATIONS = ['Bengaluru', 'Mumbai', 'Gurugram', 'Remote'];
-const MANAGERS = ['Ananya Rao', 'Vikram Nair', 'Priya Iyer', 'Rahul Sharma', 'Meera Menon'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-export const MOCK_EMPS: MockEmp[] = Array.from({ length: 50 }, (_, i) => {
-  const team = TEAMS[i % TEAMS.length];
-  const roles = ROLES[team];
-  const empType: EmpType = i % 11 === 5 ? 'Intern' : i % 7 === 3 ? 'Contract' : 'Full-time';
-  const day = ((i * 7) % 27) + 1;
-  const month = MONTHS[i % 12];
-  const year = 2022 + (i % 4);
-  return {
-    name: `${FIRST[i]} ${LAST[i % LAST.length]}`,
-    id: `EMP-${101 + i}`,
-    role: roles[i % roles.length],
-    team,
-    location: LOCATIONS[i % LOCATIONS.length],
-    empType,
-    manager: MANAGERS[i % MANAGERS.length],
-    joining: `${String(day).padStart(2, '0')} ${month} ${year}`,
-  };
-});
+import { NameCell, Td, Th } from './kpiUi';
+import { primaryBtn, smallBtn } from './kpiStyles';
 
 export function Employees() {
   const s = useStore();
   const [addOpen, setAddOpen] = useState(false);
-  const [selected, setSelected] = useState<MockEmp | null>(null);
+  const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
 
   if (selected) return <EmployeeProfile emp={selected} onBack={() => setSelected(null)} onOpen={setSelected} />;
 
-  let rows = MOCK_EMPS.slice();
+  // Departments actually present in this org, rather than a fixed list that
+  // may name teams the company does not have.
+  const teams = [...new Set(s.emps.map((e) => e.team).filter((t) => t && t !== '—'))].sort();
+
+  let rows = s.emps.slice();
   const q = s.empSearch.trim().toLowerCase();
-  if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.role.toLowerCase().includes(q));
+  if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.employeeId.toLowerCase().includes(q) || r.role.toLowerCase().includes(q));
   if (s.empTeam !== 'all') rows = rows.filter((r) => r.team === s.empTeam);
 
   const PAGE_SIZE = 11; // first page ends after Meera Bose
@@ -68,63 +35,66 @@ export function Employees() {
   const lastShown = (curPage - 1) * PAGE_SIZE + pageRows.length;
 
   return (
-    <div style={{ animation: 'fade .3s ease both' }}>
+    <div>
       {addOpen && <AddEmployeeWizard onClose={() => setAddOpen(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
         <SearchInput value={s.empSearch} onChange={s.setEmpSearch} placeholder="Search name, ID or role…" width={280} />
         <SelectBox value={s.empTeam} onChange={s.setEmpTeam}>
           <option value="all">All teams</option>
-          <option value="Design">Design</option>
-          <option value="Engineering">Engineering</option>
-          <option value="Sales">Sales</option>
-          <option value="Marketing">Marketing</option>
-          <option value="Operations">Operations</option>
-          <option value="Finance">Finance</option>
+          {teams.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </SelectBox>
-        <div style={{ marginLeft: 'auto', fontSize: 16, color: '#717171', fontWeight: 600 }}>{rows.length} of {MOCK_EMPS.length} people</div>
-        <button
-          onClick={() => setAddOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0571A6', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 16px', fontSize: 16, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(5,113,166,.26)' }}
-        >
-          <IconPlus /> Add user
+        <div style={{ marginLeft: 'auto', fontSize: 16, color: '#717171', fontWeight: 600 }}>{rows.length} of {s.emps.length} people</div>
+        <button onClick={() => setAddOpen(true)} style={primaryBtn}>
+          <IconPlus size={15} /> Add user
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
-          <div>EMPLOYEE</div>
-          <div>ROLE</div>
-          <div>TEAM</div>
-          <div>LOCATION</div>
-          <div>TYPE</div>
-          <div>MANAGER</div>
-          <div>JOINED</div>
-        </div>
-        {pageRows.map((r) => (
-          <div
-            key={r.id}
-            className="dc-row"
-            onClick={() => setSelected(r)}
-            style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-              <Avatar name={r.name} size={38} font={14} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>{r.id}</div>
-              </div>
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.role}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.team}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.location}</div>
-            <div>
-              <Pill label={r.empType} tone={ETYPE[r.empType]} />
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.joining}</div>
-          </div>
-        ))}
-        {rows.length === 0 && <EmptyRow text="No employees match your search." />}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <thead>
+            <tr>
+              <Th>Employee</Th>
+              <Th width="16%">Role</Th>
+              <Th width="11%">Team</Th>
+              <Th width="11%">Location</Th>
+              <Th width={110}>Type</Th>
+              <Th width="13%">Manager</Th>
+              <Th width={120}>Joined</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r) => (
+              <tr key={r.id} className="phm-row" onClick={() => setSelected(r)} style={{ cursor: 'pointer' }}>
+                <Td>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                    <Avatar name={r.name} size={34} font={13} />
+                    <span style={{ minWidth: 0 }}>
+                      <NameCell name={r.name} />
+                      <span style={{ display: 'block', fontSize: 13, color: '#9197A2', fontWeight: 600 }}>{r.employeeId}</span>
+                    </span>
+                  </span>
+                </Td>
+                <Td muted>{r.role}</Td>
+                <Td muted>{r.team}</Td>
+                <Td muted>{r.location}</Td>
+                <Td><Pill label={r.empType} tone={ETYPE[r.empType]} /></Td>
+                <Td muted>{r.manager}</Td>
+                <Td muted>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{r.joining}</span>
+                </Td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                  No employees match your search.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </Card>
 
       {rows.length > 0 && (
@@ -163,7 +133,7 @@ export function Employees() {
   );
 }
 
-const pageBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '7px 13px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
+const pageBtn: CSSProperties = { ...smallBtn };
 const pageBtnDisabled: CSSProperties = { color: '#9197A2', cursor: 'not-allowed', background: '#F7F7F9' };
 const pageNum: CSSProperties = { minWidth: 32, height: 32, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
 const pageNumActive: CSSProperties = { background: '#0571A6', color: '#fff', borderColor: '#0571A6' };

@@ -2,14 +2,19 @@
 // Surfaces everything captured in the Add-user wizard (Basic / Personal /
 // Salary / Payment), plus the person's shift, leave balance, any open requests
 // and their performance (PMS) snapshot.
-// Prototype: all per-person detail is derived deterministically from the row
-// (seeded by employee ID) — no API, mirrors our seed-data phase.
+// Identity, reporting line, department, KPIs and the performance review come
+// from the API. The salary, personal and leave-balance blocks are still derived
+// deterministically from the employee ID — those features are planned but not
+// wired to a backend yet, so the sections stand as placeholders rather than
+// being removed.
 import type { CSSProperties, ReactNode } from 'react';
-import type { MockEmp } from './Employees';
-import { MOCK_EMPS } from './Employees';
+import type { Emp } from '../seed';
+import { useStore } from '../store';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill } from '../ui';
+import { periodLabel, periodShort } from '../period';
+import { EmployeeKpiPanel } from './KpiAssign';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -31,15 +36,15 @@ const SHIFT_BY_TEAM: Record<string, string> = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const RATINGS = ['Outstanding', 'Exceeds expectations', 'Meets expectations', 'Developing'];
 
-function seedOf(emp: MockEmp): number {
-  const m = emp.id.match(/(\d+)/);
+function seedOf(emp: Emp): number {
+  const m = emp.employeeId.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 100;
 }
 function inr(n: number): string {
   return '₹' + Math.round(n).toLocaleString('en-IN');
 }
 
-function derive(emp: MockEmp) {
+function derive(emp: Emp) {
   const seed = seedOf(emp);
   const [first, last = ''] = emp.name.split(' ');
   const gender = GENDERS[seed % 2];
@@ -57,7 +62,7 @@ function derive(emp: MockEmp) {
   return {
     seed, gender, level, ctc, basicM, hraM, template, esi, age,
     firstName: first, middleName: '', lastName: last,
-    workEmail: `${first}.${last}`.toLowerCase() + '@convrse.ai',
+    workEmail: emp.email || '—',
     personalEmail: `${first}${seed}`.toLowerCase() + '@gmail.com',
     mobile: `+91 9${String(80000000 + (seed * 137) % 19999999).padStart(8, '0')}`,
     isDirector: seed % 25 === 0,
@@ -102,36 +107,31 @@ function openRequests(seed: number): OpenReq[] {
   return out;
 }
 
-// Performance (PMS) snapshot.
-function performance(seed: number) {
-  const goalsDone = 3 + (seed % 3);
-  return {
-    rating: RATINGS[seed % RATINGS.length],
-    score: (3.4 + (seed % 16) / 10).toFixed(1),
-    goalsDone,
-    goalsTotal: goalsDone + 1 + (seed % 2),
-    cycle: 'H1 2026 (Jan – Jun)',
-    lastReview: `${['12', '18', '24', '06'][seed % 4]} Jul 2026`,
-    nextReview: 'Jan 2027',
-  };
+function ratingWord(score: number): string {
+  if (score >= 4.5) return RATINGS[0];
+  if (score >= 4) return RATINGS[1];
+  if (score >= 2.5) return RATINGS[2];
+  return RATINGS[3];
 }
 
 // —— Component ——————————————————————————————————————————————————————————
-export function EmployeeProfile({ emp, onBack, onOpen }: { emp: MockEmp; onBack: () => void; onOpen?: (e: MockEmp) => void }) {
+export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () => void; onOpen?: (e: Emp) => void }) {
+  const s = useStore();
   const d = derive(emp);
   const bal = leaveBalance(d.seed);
   const reqs = openRequests(d.seed);
-  const pms = performance(d.seed);
+  // Review state for the current cycle, from the feedback managers actually submitted.
+  const review = s.fbEmps.find((f) => f.userId === emp.id);
   const basicA = d.basicM * 12;
   const hraA = d.hraM * 12;
 
   // Reporting line — manager above, direct reports below (from the roster).
   // Guard against a person being their own manager (seed-data quirk).
   const managerName = emp.manager && emp.manager !== emp.name ? emp.manager : '';
-  const manager = managerName ? MOCK_EMPS.find((e) => e.name === managerName) : undefined;
-  const reports = MOCK_EMPS.filter((e) => e.manager === emp.name && e.id !== emp.id);
-  const peers = managerName
-    ? MOCK_EMPS.filter((e) => e.manager === managerName && e.id !== emp.id).length
+  const manager = emp.managerId ? s.emps.find((e) => e.id === emp.managerId) : undefined;
+  const reports = s.emps.filter((e) => e.managerId === emp.id && e.id !== emp.id);
+  const peers = emp.managerId
+    ? s.emps.filter((e) => e.managerId === emp.managerId && e.id !== emp.id).length
     : 0;
 
   return (
@@ -297,17 +297,88 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: MockEmp; onBack:
           </Section>
 
           <Section title="Performance (PMS)">
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-1px' }}>{pms.score}</div>
-              <div style={{ fontSize: 14, color: '#9197A2', fontWeight: 700 }}>/ 5.0</div>
-              <Pill label={pms.rating} tone={{ bg: '#E4EDE0', fg: '#4F7A52' }} fontSize={12} />
-            </div>
-            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <MiniRow label="Goals completed" value={`${pms.goalsDone} / ${pms.goalsTotal}`} />
-              <MiniRow label="Review cycle" value={pms.cycle} />
-              <MiniRow label="Last review" value={pms.lastReview} />
-              <MiniRow label="Next review" value={pms.nextReview} />
-            </div>
+            {review && review.status !== 'none' ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-1px' }}>
+                    {review.overall > 0 ? review.overall.toFixed(1) : '—'}
+                  </div>
+                  <div style={{ fontSize: 14, color: '#9197A2', fontWeight: 700 }}>/ 5.0</div>
+                  {review.overall > 0 && (
+                    <Pill label={ratingWord(review.overall)} tone={{ bg: '#E4EDE0', fg: '#4F7A52' }} fontSize={12} />
+                  )}
+                </div>
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <MiniRow label="Review cycle" value={periodLabel(s.cycle.period)} />
+                  <MiniRow label="Reviewed by" value={review.managerName} />
+                  <MiniRow label="Last updated" value={review.date || '—'} />
+                </div>
+                {review.params.length > 0 && (
+                  <div style={{ marginTop: 16, borderTop: '1px solid #F0F0F2', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                    {review.params.map((p, i) => (
+                      <div key={`${p.name}-${i}`}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                          <span style={{ fontSize: 14.5, fontWeight: 700, flex: 1, minWidth: 0 }}>{p.name}</span>
+                          <span style={{ fontSize: 14.5, fontWeight: 800 }}>
+                            {p.score > 0 ? p.score.toFixed(1) : '—'}
+                          </span>
+                        </div>
+                        {p.note && (
+                          <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.5, marginTop: 3 }}>{p.note}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {review.extra && (
+                  <div style={{ marginTop: 14, borderTop: '1px solid #F0F0F2', paddingTop: 12, fontSize: 13.5, color: '#484848', lineHeight: 1.6 }}>
+                    {review.extra}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 14, color: '#717171', lineHeight: 1.55 }}>
+                No review submitted for {periodLabel(s.cycle.period)}
+                {review?.managerName && review.managerName !== '—' ? ` — ${review.managerName} has not started it yet.` : '.'}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Review history">
+            {review && review.history.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                {review.history.map((h) => (
+                  <div key={h.period} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                    <span style={{ fontSize: 13.5, color: '#717171', fontWeight: 600, width: 76, flexShrink: 0 }}>
+                      {periodShort(h.period)}
+                    </span>
+                    <span style={{ flex: 1, height: 7, borderRadius: 5, background: '#F0F0F2', overflow: 'hidden' }}>
+                      <span style={{ display: 'block', width: `${(h.overall / 5) * 100}%`, height: '100%', background: '#BFD8E8' }} />
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}>
+                      {h.overall.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 2, lineHeight: 1.5 }}>
+                  Sent reviews only. A cycle with no bar is one nobody submitted.
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, color: '#717171', lineHeight: 1.55 }}>
+                No earlier reviews yet.
+              </div>
+            )}
+          </Section>
+
+          <Section title="KPIs">
+            <EmployeeKpiPanel
+              userId={emp.id}
+              userName={emp.name}
+              designation={emp.role}
+              period={s.cycle.period}
+              nextPeriod={s.cycle.next}
+            />
           </Section>
 
           <Section title="Shift & attendance">
@@ -367,7 +438,7 @@ function Connector() {
   return <div style={{ width: 2, height: 26, background: '#E4E4E8', margin: '2px 0' }} />;
 }
 
-function OrgNode({ emp, caption, highlight, onOpen }: { emp: MockEmp; caption?: string; highlight?: boolean; onOpen?: (e: MockEmp) => void }) {
+function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: string; highlight?: boolean; onOpen?: (e: Emp) => void }) {
   const clickable = !highlight && !!onOpen;
   return (
     <button

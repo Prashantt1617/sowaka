@@ -44,6 +44,12 @@ export interface Company {
   weekoffDays?: number[];
   // Departments (User.department) for which the overtime feature is hidden/disabled.
   overtimeDisabledDepartments?: string[];
+  /**
+   * Day of the month review cycles open on (1-28). A value of 10 means the
+   * cycle runs 10 Sep - 10 Oct and is keyed `2026-09`. Absent means the 1st,
+   * i.e. plain calendar months, which is what existing records assume.
+   */
+  reviewCycleStartDay?: number;
   paySchedule?: PaySchedule;
   statutoryRegistration?: StatutoryRegistration;
   createdAt?: number;

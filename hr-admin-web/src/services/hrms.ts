@@ -115,13 +115,19 @@ export type CompanySettings = {
   weekoffDays: number[]; // 0 = Sunday .. 6 = Saturday
   overtimeDisabledDepartments: string[];
   departments: string[]; // all departments in the org, for building toggles
+  /** Day of month review cycles open on (1-28). */
+  reviewCycleStartDay: number;
+  /** Where that day currently puts the org — `YYYY-MM` plus its date bounds. */
+  currentCycle: { period: string; start: string; end: string };
 };
 
 export const getCompanySettings = () =>
   api<{ settings: CompanySettings }>('/admin/company/settings').then((r) => r.settings);
 
 export const updateCompanySettings = (
-  patch: Partial<Pick<CompanySettings, 'weekoffDays' | 'overtimeDisabledDepartments'>>,
+  patch: Partial<
+    Pick<CompanySettings, 'weekoffDays' | 'overtimeDisabledDepartments' | 'reviewCycleStartDay'>
+  >,
 ) =>
   api<{ settings: CompanySettings }>('/admin/company/settings', {
     method: 'PATCH',
@@ -145,7 +151,9 @@ export type FeedbackDTO = {
   period: string;
   status: 'saved' | 'sent';
   overallScore: number;
-  parameters: { name: string; score: number; note: string }[];
+  // `subtitle` is snapshotted onto the record when the review is saved, so a
+  // sent review keeps reading the way it did even if HR later renames the KPI.
+  parameters: { name: string; subtitle?: string; score: number; note: string }[];
   extra: string;
   updatedAt?: string;
   sentAt?: string;
@@ -167,6 +175,16 @@ export type EmployeeDTO = {
   managerUserId?: string;
   managerName?: string;
   lifecycleStatus?: string;
+  employeeId?: string;
+  location?: string;
+  branch?: string;
+  /** `User.recognition.label`, when they hold one. */
+  recognition?: string;
+  employeeType?: string;
+  /** YYYY-MM-DD */
+  joiningDate?: string;
+  /** YYYY-MM-DD */
+  birthday?: string;
 };
 
 export const getAllEmployees = () =>

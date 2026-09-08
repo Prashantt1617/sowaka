@@ -10,6 +10,8 @@ export type View =
   | 'attendance'
   | 'feedback'
   | 'kpi'
+  | 'kpitemplates'
+  | 'kpibulk'
   | 'shifttypes'
   | 'holidaybank'
   | 'policies'
@@ -106,6 +108,8 @@ export const TITLES: Record<View, [string, string]> = {
   attendance: ['Attendance', 'People'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
+  kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
+  kpibulk: ['Bulk Assign', 'Performance · put a template on everyone its rules select'],
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   policies: ['Policies', 'Shifts · attendance, leave, overtime, late & half-day policies'],

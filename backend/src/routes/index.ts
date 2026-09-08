@@ -13,6 +13,7 @@ import { notificationRouter } from './notification.routes';
 import { attendanceRouter } from './attendance.routes';
 import { mediaRouter } from './media.routes';
 import { payrollRouter } from './payroll.routes';
+import { kpiRouter } from './kpi.routes';
 
 export const router = Router();
 
@@ -32,3 +33,4 @@ router.use('/notifications', notificationRouter);
 router.use('/attendance', attendanceRouter);
 router.use('/admin/reporting', reportingRouter);
 router.use('/admin/payroll', payrollRouter);
+router.use('/admin/kpi', kpiRouter);

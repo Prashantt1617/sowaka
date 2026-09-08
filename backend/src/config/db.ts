@@ -26,6 +26,7 @@ import { StateStatutoryRule } from '../models/statutoryRule.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -152,6 +153,18 @@ export function payslips(): Collection<Payslip> {
   return getDb().collection<Payslip>('payslips');
 }
 
+export function kpiParameters(): Collection<KpiParameter> {
+  return getDb().collection<KpiParameter>('kpi_parameters');
+}
+
+export function kpiTemplates(): Collection<KpiTemplate> {
+  return getDb().collection<KpiTemplate>('kpi_templates');
+}
+
+export function kpiAssignments(): Collection<KpiAssignment> {
+  return getDb().collection<KpiAssignment>('kpi_assignments');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   await database
     .collection<OtpChallenge>('otp_challenges')
@@ -259,6 +272,17 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One run per org per period (a rejected run is replaced on recreate).
   await payrollRunsCollection.createIndex({ org: 1, period: 1 }, { unique: true });
   await payrollRunsCollection.createIndex({ org: 1, status: 1, period: -1 });
+
+  const kpiParametersCollection = database.collection<KpiParameter>('kpi_parameters');
+  await kpiParametersCollection.createIndex({ org: 1, archived: 1, title: 1 });
+
+  const kpiTemplatesCollection = database.collection<KpiTemplate>('kpi_templates');
+  await kpiTemplatesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
+
+  const kpiAssignmentsCollection = database.collection<KpiAssignment>('kpi_assignments');
+  // One assignment per employee per cycle; re-assigning replaces it.
+  await kpiAssignmentsCollection.createIndex({ org: 1, userId: 1, period: 1 }, { unique: true });
+  await kpiAssignmentsCollection.createIndex({ org: 1, period: 1 });
 
   const payslipsCollection = database.collection<Payslip>('payslips');
   await payslipsCollection.createIndex({ org: 1, runId: 1 });

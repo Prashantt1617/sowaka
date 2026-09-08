@@ -45,9 +45,49 @@ export type FbMgr = {
   id: string;
   name: string;
   scope: string;
-  done: number;
+  /** Direct reports on the roster — the denominator, whether or not a review exists. */
   total: number;
+  /** Reports whose review for the cycle has been sent. */
+  done: number;
   reminded: boolean;
+};
+
+/**
+ * One roster employee and the state of their review for the cycle. Built from
+ * the employee list rather than from feedback records, so people nobody has
+ * reviewed yet are present with `status: 'none'` instead of missing.
+ */
+export type FbEmp = {
+  userId: string;
+  name: string;
+  team: string;
+  designation: string;
+  managerId: string;
+  managerName: string;
+  /**
+   * Submitted or not. An unsent draft counts as `none` here: HR reads this page
+   * for reviews that have actually landed, and a half-filled form is not one.
+   */
+  status: 'sent' | 'none';
+  /** Mean across every parameter. Only meaningful once the review is sent. */
+  overall: number;
+  date: string;
+  params: FbCycleParam[];
+  extra: string;
+  /** Sent reviews from earlier cycles, newest first, in full so any of them can
+   *  be opened. Gaps are real — a cycle a manager missed simply has no entry. */
+  history: FbCycle[];
+};
+
+export type FbCycleParam = { name: string; subtitle: string; score: number; note: string };
+
+/** One completed review, as shown when a past cycle is opened. */
+export type FbCycle = {
+  period: string;
+  overall: number;
+  date: string;
+  params: FbCycleParam[];
+  extra: string;
 };
 
 export type Feedback = {
@@ -91,9 +131,13 @@ export type Reimb = {
 export type Emp = {
   id: string;
   name: string;
+  email: string;
+  employeeId: string;
   role: string;
   team: string;
   location: string;
+  branch: string;
+  recognition: string;
   empType: EmpType;
   manager: string;
   managerId: string;

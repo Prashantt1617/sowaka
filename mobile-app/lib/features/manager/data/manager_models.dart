@@ -14,22 +14,57 @@ enum LeaveDecision { pending, approved, declined }
 
 enum TeamPresenceStatus { present, notPunchedIn }
 
+/// One line on the feedback form.
+///
+/// [parameterId], [subtitle] and [description] come from the KPI parameter HR
+/// assigned. The copy used to live in the app keyed on [name]; it is data now,
+/// so an HR-authored parameter reads correctly instead of falling back to a
+/// blank line. Both stay nullable for reviews written before KPIs were
+/// configurable.
 class FeedbackParam {
   const FeedbackParam({
     required this.name,
     required this.score,
     required this.note,
+    this.parameterId,
+    this.subtitle,
+    this.description,
+    this.weight,
   });
 
   final String name;
   final double score;
   final String note;
+  final String? parameterId;
+  final String? subtitle;
+  final String? description;
+
+  /// Percentage this parameter contributes to the overall score. HR sets it per
+  /// template, and the weights across a set add up to 100, so the overall stays
+  /// out of 5. Null on reviews written before weighting existed.
+  final int? weight;
 
   FeedbackParam copyWith({String? name, double? score, String? note}) {
     return FeedbackParam(
       name: name ?? this.name,
       score: score ?? this.score,
       note: note ?? this.note,
+      parameterId: parameterId,
+      subtitle: subtitle,
+      description: description,
+      weight: weight,
+    );
+  }
+
+  factory FeedbackParam.fromJson(Map<String, dynamic> json) {
+    return FeedbackParam(
+      name: json['name'] as String? ?? '',
+      score: (json['score'] as num?)?.toDouble() ?? 0,
+      note: json['note'] as String? ?? '',
+      parameterId: json['parameterId'] as String?,
+      subtitle: json['subtitle'] as String?,
+      description: json['description'] as String?,
+      weight: (json['weight'] as num?)?.round(),
     );
   }
 }
@@ -54,14 +89,9 @@ class GrowthRecord {
     return GrowthRecord(
       period: json['period'] as String? ?? '',
       overallScore: (json['overallScore'] as num?)?.toDouble() ?? 0,
-      parameters: values.map((value) {
-        final item = value as Map<String, dynamic>;
-        return FeedbackParam(
-          name: item['name'] as String? ?? '',
-          score: (item['score'] as num?)?.toDouble() ?? 0,
-          note: item['note'] as String? ?? '',
-        );
-      }).toList(),
+      parameters: values
+          .map((value) => FeedbackParam.fromJson(value as Map<String, dynamic>))
+          .toList(),
       sentAt:
           DateTime.tryParse(json['sentAt'] as String? ?? '') ?? DateTime.now(),
       managerName: json['managerName'] as String? ?? 'Your manager',
@@ -204,14 +234,9 @@ class TeamMember {
       },
       missedMonths: (json['missedMonths'] as num?)?.toInt() ?? 0,
       avatarIndex: (id - 1) % 7,
-      params: values.map((value) {
-        final param = value as Map<String, dynamic>;
-        return FeedbackParam(
-          name: param['name'] as String? ?? '',
-          score: (param['score'] as num?)?.toDouble() ?? 0,
-          note: param['note'] as String? ?? '',
-        );
-      }).toList(),
+      params: values
+          .map((value) => FeedbackParam.fromJson(value as Map<String, dynamic>))
+          .toList(),
       extra: json['extra'] as String? ?? '',
       todayStatus: json['todayStatus'] == 'present'
           ? TeamPresenceStatus.present

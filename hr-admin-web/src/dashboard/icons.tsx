@@ -95,6 +95,18 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M20 11V7h-4" />
     </svg>
   ),
+  kpibulk: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 6h10M4 12h10M4 18h6" />
+      <path d="M17 15l2.5 2.5L23 13" />
+    </svg>
+  ),
+  kpitemplates: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M9 9v11" />
+    </svg>
+  ),
   shifttypes: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="8" />

@@ -27,6 +27,8 @@ const PEOPLE: NavItem[] = [
 ];
 const PERFORMANCE: NavItem[] = [
   { key: 'kpi', label: 'KPI Parameters' },
+  { key: 'kpitemplates', label: 'Templates' },
+  { key: 'kpibulk', label: 'Bulk Assign' },
   { key: 'feedback', label: 'Performance Reviews' },
 ];
 const SHIFTS: NavItem[] = [
@@ -42,6 +44,11 @@ const PAYROLL: NavItem[] = [
   { key: 'templates', label: 'Salary Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
 ];
+// Company-wide rules: week-offs, per-team overtime and the review cycle.
+// Top-level rather than in a section: sections start collapsed, which would
+// hide a group holding a single item.
+const SETTINGS_ITEM: NavItem = { key: 'settings', label: 'Settings' };
+
 const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'PEOPLE', items: PEOPLE },
@@ -268,6 +275,9 @@ export function Sidebar() {
             first={i === 0}
           />
         ))}
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #F0F0F2' }}>
+          <NavButton item={SETTINGS_ITEM} badge={badgeFor(SETTINGS_ITEM.key)} />
+        </div>
       </div>
 
       {/* Platform mark — bottom-left. The HRMS this workspace runs on. */}

@@ -25,6 +25,9 @@ import { Departments } from './views/Departments';
 import { Designations } from './views/Designations';
 import { OrgChart } from './views/OrgChart';
 import { Accesses } from './views/Accesses';
+import { KpiParameters } from './views/KpiParameters';
+import { KpiTemplates } from './views/KpiTemplates';
+import { KpiBulkAssign } from './views/KpiBulkAssign';
 
 function CurrentView() {
   const { view } = useStore();
@@ -37,6 +40,12 @@ function CurrentView() {
       return <LeaveRequests />;
     case 'overtime':
       return <Overtime />;
+    case 'kpi':
+      return <KpiParameters />;
+    case 'kpibulk':
+      return <KpiBulkAssign />;
+    case 'kpitemplates':
+      return <KpiTemplates />;
     case 'feedback':
       return <Feedback />;
     case 'reimbursements':
