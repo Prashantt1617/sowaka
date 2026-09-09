@@ -16,6 +16,7 @@ import { notifyUsers, queueBatchedNotification } from './notification.service';
 import { env } from '../config/env';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor } from './cycle';
+import { notifyFeedbackSubmitted } from './feedback-notifications.service';
 import {
   presignConnectMedia,
   resolveProfilePhoto,
@@ -453,18 +454,10 @@ export async function upsertFeedback(
     { upsert: true, returnDocument: 'after' },
   );
   if (status === 'sent' && existing?.status !== 'sent') {
-    const manager = await users().findOne({ userId: managerUserId });
-    const managerName = manager?.name ?? 'Your manager';
-    await notifyUsers([employeeUserId], {
-      scenario: 'feedback_shared', title: 'Feedback ready',
-      body: `${managerName} has shared your feedback for ${period}`,
-      data: { destination: 'grow_feedback', employeeUserId, period },
-      email: {
-        subject: `Your ${period} feedback from ${managerName} is ready`,
-        body: `Hi {firstName},\n\n${managerName} has shared your feedback for ${period}. `
-          + `View your scores and notes:\n${env.appWebUrl}\n\n- Sowaka Connect`,
-      },
-    });
+    // Notifies both sides: the manager gets their progress for the cycle, the
+    // employee gets the review. Only on the first send — re-editing a sent
+    // review should not re-announce it.
+    await notifyFeedbackSubmitted(managerUserId, employeeUserId, period, now);
   }
   return record;
 }

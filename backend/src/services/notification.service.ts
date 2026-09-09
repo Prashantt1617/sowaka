@@ -86,6 +86,8 @@ export interface NotificationEmail {
   subject: string;
   /** `{firstName}` is substituted per recipient. */
   body: string;
+  /** Copied recipients, e.g. HR on a manager's reminder. */
+  cc?: string[];
 }
 
 export interface NotificationInput {
@@ -125,6 +127,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
         user.email,
         email.subject,
         email.body.replaceAll('{firstName}', firstName(user.name)),
+        email.cc,
       );
     }
   }

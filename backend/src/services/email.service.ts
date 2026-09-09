@@ -103,8 +103,16 @@ export async function sendNotificationEmail(
   email: string,
   subject: string,
   body: string,
+  /** Copied recipients, filtered by the same allowlist as the primary one. */
+  cc: string[] = [],
 ): Promise<void> {
   if (!(await isAllowedRecipient(email))) return;
+  const allowedCc: string[] = [];
+  for (const address of [...new Set(cc.map((a) => a.trim().toLowerCase()).filter(Boolean))]) {
+    if (address !== email.trim().toLowerCase() && (await isAllowedRecipient(address))) {
+      allowedCc.push(address);
+    }
+  }
   if (!transporter) {
     logger.warn('SMTP is not configured; skipping notification email', {
       recipient: maskEmail(email),
@@ -117,6 +125,7 @@ export async function sendNotificationEmail(
     await transporter.sendMail({
       from: env.zohoSmtp.from,
       to: email,
+      ...(allowedCc.length ? { cc: allowedCc } : {}),
       subject,
       text: body,
       html: bodyToHtml(body),
