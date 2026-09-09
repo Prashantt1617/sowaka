@@ -3,6 +3,9 @@ import { connectPosts, gameScores, users } from '../config/db';
 import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
+import {
+  notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
+} from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { fetchLinkPreview } from './link-preview.service';
 import {
@@ -108,15 +111,13 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
     ? { $pull: { likedBy: viewerUserId } }
     : { $addToSet: { likedBy: viewerUserId } };
   await connectPosts().updateOne({ id: postId }, update);
-  if (!liked && post.author.userId && post.author.userId !== viewerUserId) {
-    const viewer = await users().findOne({ userId: viewerUserId });
-    await notifyUsers([post.author.userId], {
-      scenario: 'post_liked', title: 'New like',
-      body: `${viewer?.name ?? 'Someone'} liked your post`,
-      data: { destination: 'connect_post', postId: post.id },
-    });
-  }
   const updated = await connectPosts().findOne({ id: postId });
+  // Only on like, never on unlike: an unlike lowers the count that the next
+  // notification reports, and announces nothing of its own.
+  if (!liked) {
+    const viewer = await users().findOne({ userId: viewerUserId });
+    if (viewer) await notifyPostLiked(updated ?? post, viewer);
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -150,12 +151,10 @@ export async function addConnectComment(
     { id: post.id },
     { $push: { comments: comment }, $set: { updatedAt: new Date() } },
   );
-  if (post.author.userId && post.author.userId !== viewerUserId) {
-    await notifyUsers([post.author.userId], {
-      scenario: 'post_commented', title: 'New comment',
-      body: `${viewer?.name ?? 'Someone'} commented on your post: "${text.slice(0, 60)}"`,
-      data: { destination: 'connect_comment', postId: post.id, commentId: comment.id },
-    });
+  if (viewer) {
+    // `post` is the pre-insert copy on purpose: prior commenters are the people
+    // who had commented before this one.
+    await notifyPostCommented(post, comment, viewer, mentionedUserIdsIn(text, post));
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
@@ -178,6 +177,10 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
+  if (!liked) {
+    const viewer = await users().findOne({ userId: viewerUserId });
+    if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -195,17 +198,16 @@ export async function performConnectAction(
     );
     const optionId = String(input.optionId ?? '');
     if (!options.includes(optionId)) throw new ConnectError(400, 'Survey option is invalid');
+    const hadVoted = Boolean(post.pollVotes?.[viewerUserId]);
     await connectPosts().updateOne(
       { id: postId },
       { $set: { [`pollVotes.${viewerUserId}`]: optionId, updatedAt: now } },
     );
-    if (post.author.userId && post.author.userId !== viewerUserId) {
+    // Changing a vote is not a new voter, so it announces nothing.
+    if (!hadVoted) {
       const viewer = await users().findOne({ userId: viewerUserId });
-      await notifyUsers([post.author.userId], {
-        scenario: 'poll_voted', title: 'New vote',
-        body: `${viewer?.name ?? 'Someone'} voted on your poll "${String(post.body.title ?? 'Poll')}"`,
-        data: { destination: 'connect_post', postId: post.id },
-      });
+      const fresh = await connectPosts().findOne({ id: postId });
+      if (viewer) await notifyPollVoted(fresh ?? post, viewer);
     }
   } else {
     const existing = post.actionBy?.[viewerUserId];
@@ -292,6 +294,10 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     };
     await connectPosts().insertOne(post);
     announceChange(post, 'created', viewerUserId);
+    // One publication push per person in the audience. Awaited so a failure is
+    // logged against the request that caused it rather than surfacing later,
+    // and because notifyUsers already swallows its own delivery errors.
+    await notifyPostPublished(post);
     return viewPost(post, viewerUserId);
   } catch (error) {
     await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
@@ -494,6 +500,30 @@ async function viewPost(
     selectedPollOptionId,
     actionValue,
   };
+}
+
+/**
+ * `@Name` mentions inside a comment, resolved to the people already involved in
+ * the post — its author, anyone tagged, and anyone who has commented.
+ *
+ * Deliberately not matched against the whole roster: a comment mentioning a
+ * common first name should not notify a stranger, and the audience check in the
+ * notifier would drop them anyway.
+ */
+function mentionedUserIdsIn(text: string, post: ConnectPost): string[] {
+  const names = text.match(/@([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*)?)/gu) ?? [];
+  if (names.length === 0) return [];
+  const needles = names.map((n) => n.slice(1).trim().toLowerCase());
+  const candidates = new Map<string, string>();
+  for (const comment of post.comments) candidates.set(comment.name.toLowerCase(), comment.userId);
+  if (post.author.userId) candidates.set(post.author.name.toLowerCase(), post.author.userId);
+  const matched = new Set<string>();
+  for (const needle of needles) {
+    for (const [name, userId] of candidates) {
+      if (name === needle || name.split(' ')[0] === needle) matched.add(userId);
+    }
+  }
+  return [...matched];
 }
 
 function orgForUser(user: Pick<User, 'org' | 'email'>) {
