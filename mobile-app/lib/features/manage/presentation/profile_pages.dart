@@ -559,12 +559,25 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final file = result?.files.single;
     final path = file?.path;
     if (file == null || path == null || path.isEmpty) return;
+    if (!mounted) return;
+
+    // A profile photo is shown in a circle everywhere, so it is cropped square
+    // here rather than centre-cropped at render time and cut differently on
+    // every screen.
+    final cropped = await cropImageFile(
+      context,
+      path: path,
+      title: 'Crop your photo',
+      initial: CropShape.square,
+      allowShapeChange: false,
+    );
+    if (cropped == null || !mounted) return;
 
     setState(() => _uploadingPhoto = true);
     try {
       final photoUrl = await widget.bloc.service.updateProfilePhoto(
-        path: path,
-        filename: file.name,
+        path: cropped,
+        filename: file.name.replaceAll(RegExp(r'\.[^.]+$'), '.png'),
       );
       widget.bloc.setManagerPhoto(photoUrl);
       await widget.onProfilePhotoUpdated(photoUrl);

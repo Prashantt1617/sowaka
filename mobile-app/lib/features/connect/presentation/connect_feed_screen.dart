@@ -5,9 +5,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+
+import '../../shared/image_crop_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_api_service.dart';
+import '../../manager/data/manager_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../bloc/connect_bloc.dart';
 import '../data/connect_models.dart';
@@ -294,6 +297,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           viewerInitials: _viewerInitials,
           viewerColor: _viewerColor,
           viewerPhotoUrl: _viewerPhotoUrl,
+          resolveLinkPreview: (url) =>
+              ManagerApiService(session: widget.session).fetchLinkPreview(url),
         ),
       ),
     );
@@ -1248,16 +1253,16 @@ class _MediaPreview extends StatelessWidget {
       return _MediaGallery(urls: mediaUrls);
     }
     final isImage = mediaKind == 'image' && mediaUrl.isNotEmpty;
+    // A photo keeps its own shape. Everything else — video posters, the
+    // gradient placeholder — stays on the fixed frame it was designed for.
+    if (isImage) {
+      return _AdaptiveImage(url: mediaUrl);
+    }
     return Container(
       height: 200,
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: _ConnectColors.sand,
-        image: isImage
-            ? DecorationImage(image: _remoteImage(mediaUrl), fit: BoxFit.cover)
-            : null,
-      ),
+      decoration: const BoxDecoration(color: _ConnectColors.sand),
       child: Stack(
         children: [
           if (!isImage)
@@ -1295,11 +1300,14 @@ class _MediaPreview extends StatelessWidget {
                 child: const Icon(Icons.play_arrow_rounded, size: 34),
               ),
             ),
-          Positioned(
-            left: 12,
-            top: 12,
-            child: _DarkChip(label: _bodyString(post, 'mediaTitle')),
-          ),
+          // The media title is the uploaded file's name, which is worth showing
+          // over a video poster and never over a photo.
+          if (mediaKind == 'video' && _bodyString(post, 'mediaTitle').isNotEmpty)
+            Positioned(
+              left: 12,
+              top: 12,
+              child: _DarkChip(label: _bodyString(post, 'mediaTitle')),
+            ),
           if (_bodyString(post, 'mediaDuration').isNotEmpty)
             Positioned(
               right: 12,
@@ -1308,6 +1316,137 @@ class _MediaPreview extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// A photo is shown at the shape it was uploaded at. The crop step is where an
+/// author decides the framing, so second-guessing it here would only undo that
+/// choice — the one bound left is a sanity clamp for a degenerate file.
+const double _minAspect = 0.2;
+const double _maxAspect = 5.0;
+
+/// Resolves an image to learn its shape, then frames it at that aspect ratio.
+///
+/// The feed used to draw every photo into a fixed 200px landscape box with
+/// `BoxFit.cover`, so a portrait shot had its top and bottom cut off. Nothing
+/// tells us the dimensions up front, so they are read off the decoded image and
+/// the frame settles once they arrive.
+class _AspectFrame extends StatefulWidget {
+  const _AspectFrame({required this.provider, required this.child});
+
+  /// Local file or remote URL — the frame only needs something it can decode.
+  final ImageProvider provider;
+  final Widget child;
+
+  @override
+  State<_AspectFrame> createState() => _AspectFrameState();
+}
+
+class _AspectFrameState extends State<_AspectFrame> {
+  double? _aspect;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_AspectFrame old) {
+    super.didUpdateWidget(old);
+    if (old.provider != widget.provider) {
+      _aspect = null;
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    _detach();
+    final stream = widget.provider.resolve(createLocalImageConfiguration(context));
+    final listener = ImageStreamListener((info, _) {
+      if (!mounted) return;
+      final ratio = info.image.width / info.image.height;
+      setState(() => _aspect = ratio.clamp(_minAspect, _maxAspect));
+    }, onError: (error, stack) {
+      if (mounted) setState(() => _aspect = 16 / 9);
+    });
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  void _detach() {
+    if (_stream != null && _listener != null) _stream!.removeListener(_listener!);
+    _stream = null;
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Before the size is known the card holds the old fixed height, so the
+    // feed does not jump as images resolve above the fold.
+    if (_aspect == null) {
+      return Container(height: 200, color: _ConnectColors.sand, child: widget.child);
+    }
+    return AspectRatio(
+      aspectRatio: _aspect!,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: const BoxDecoration(color: _ConnectColors.sand),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// One photo at its own shape, filling the frame it just sized.
+class _AdaptiveImage extends StatelessWidget {
+  const _AdaptiveImage({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AspectFrame(
+      provider: _remoteImage(url),
+      child: Image(
+        image: _remoteImage(url),
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      ),
+    );
+  }
+}
+
+/// One picked file, previewed at the shape it was cropped to. Video keeps the
+/// fixed frame — there is no still to take a shape from.
+class _LocalMediaPreview extends StatelessWidget {
+  const _LocalMediaPreview({required this.attachment});
+
+  final ConnectMediaAttachment attachment;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!attachment.mimeType.startsWith('image/')) {
+      return SizedBox(
+        height: 200,
+        width: double.infinity,
+        child: _LocalMediaThumb(attachment: attachment),
+      );
+    }
+    return _AspectFrame(
+      provider: FileImage(File(attachment.path)),
+      child: _LocalMediaThumb(attachment: attachment),
     );
   }
 }
@@ -1335,8 +1474,8 @@ class _MediaGalleryState extends State<_MediaGallery> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 200,
+    return _AspectFrame(
+      provider: _remoteImage(widget.urls.first),
       child: Stack(
         children: [
           Positioned.fill(
@@ -1344,9 +1483,12 @@ class _MediaGalleryState extends State<_MediaGallery> {
               controller: _controller,
               itemCount: widget.urls.length,
               onPageChanged: (index) => setState(() => _page = index),
+              // Contain, not cover: the frame already matches the first image,
+              // and a set can mix shapes. Cropping the odd one out is worse
+              // than letting it sit inside the frame whole.
               itemBuilder: (context, index) => Image(
                 image: _remoteImage(widget.urls[index]),
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 width: double.infinity,
               ),
             ),
@@ -3185,6 +3327,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
     super.dispose();
   }
 
+
   bool get _canPost => _text.text.trim().isNotEmpty || _media.isNotEmpty;
 
   Future<void> _addMedia() async {
@@ -3197,18 +3340,33 @@ class _QuickPostPageState extends State<_QuickPostPage> {
     final files = result?.files ?? const [];
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
-      final path = file.path;
+      var path = file.path;
       if (path == null || path.isEmpty) continue;
+      final mime = _mimeTypeFor(file.extension);
+      // Each photo gets its own crop step; video has no frame to crop.
+      if (mime.startsWith('image/')) {
+        if (!mounted) return;
+        final cropped = await cropImageFile(
+          context,
+          path: path,
+          title: files.length > 1 ? 'Crop ${file.name}' : 'Crop your photo',
+          initial: CropShape.landscape,
+        );
+        // Skipping the crop skips that photo, rather than posting an uncropped
+        // one the author has just declined.
+        if (cropped == null) continue;
+        path = cropped;
+      }
       picked.add(
         ConnectMediaAttachment(
           path: path,
           name: file.name,
           size: file.size,
-          mimeType: _mimeTypeFor(file.extension),
+          mimeType: mime,
         ),
       );
     }
-    if (picked.isEmpty) return;
+    if (picked.isEmpty || !mounted) return;
     setState(() => _media.addAll(picked));
   }
 
@@ -3513,11 +3671,10 @@ class _QuickPostPageState extends State<_QuickPostPage> {
           borderRadius: BorderRadius.circular(16),
           child: Stack(
             children: [
-              SizedBox(
-                height: 200,
-                width: double.infinity,
-                child: _LocalMediaThumb(attachment: preview),
-              ),
+              // The author just chose this framing in the crop step, so the
+              // preview shows it at that shape rather than slicing it back
+              // into a fixed landscape box.
+              _LocalMediaPreview(attachment: preview),
               Positioned(
                 top: 8,
                 right: 8,
@@ -3900,6 +4057,7 @@ class _PostComposerPage extends StatefulWidget {
     this.viewerInitials = '',
     this.viewerColor = _ConnectColors.blue,
     this.viewerPhotoUrl = '',
+    this.resolveLinkPreview,
   });
 
   final ConnectPostType type;
@@ -3909,6 +4067,9 @@ class _PostComposerPage extends StatefulWidget {
 
   /// Everyone in the company — who can be tagged in a media post.
   final List<ConnectTeammate> taggablePeople;
+
+  /// Resolves a link's artwork so the composer can show it before posting.
+  final Future<Map<String, String>> Function(String url)? resolveLinkPreview;
   final _PollDraft? initialPoll;
   final String viewerInitials;
   final Color viewerColor;
@@ -3928,6 +4089,12 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   late final TextEditingController _prize;
   late final TextEditingController _acknowledgementMessage;
   _PollDraft? _pollDraft;
+  /// The link's resolved preview, shown under the URL field. Null until a
+  /// lookup has returned something.
+  Map<String, String>? _linkPreview;
+  bool _resolvingLink = false;
+  String _resolvedFor = '';
+  Timer? _linkDebounce;
   String _sendTo = 'all_company';
   String _newPostKind = 'media';
   final _taggedUserIds = <String>[];
@@ -3965,6 +4132,9 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     _title = TextEditingController(text: _bodyValue('title'));
     _person = TextEditingController(text: _bodyValue('personName'));
     _linkUrl = TextEditingController(text: _bodyValue('linkUrl'));
+    // Typing a URL is a stream of half-finished ones, so the lookup waits for
+    // a pause rather than firing on every keystroke.
+    _linkUrl.addListener(_onLinkChanged);
     _mediaTitle = TextEditingController(text: _bodyValue('mediaTitle'));
     _location = TextEditingController(text: _bodyValue('location'));
     _prize = TextEditingController(text: _bodyValue('prize'));
@@ -4038,11 +4208,51 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     if (mounted) setState(() {});
   }
 
+  void _onLinkChanged() {
+    _linkDebounce?.cancel();
+    final url = _linkUrl.text.trim();
+    if (url.isEmpty) {
+      if (_linkPreview != null || _resolvingLink) {
+        setState(() {
+          _linkPreview = null;
+          _resolvingLink = false;
+          _resolvedFor = '';
+        });
+      }
+      return;
+    }
+    if (url == _resolvedFor) return;
+    _linkDebounce = Timer(const Duration(milliseconds: 600), () => _resolveLink(url));
+  }
+
+  Future<void> _resolveLink(String url) async {
+    final resolve = widget.resolveLinkPreview;
+    if (resolve == null) return;
+    setState(() => _resolvingLink = true);
+    final preview = await resolve(url);
+    if (!mounted || _linkUrl.text.trim() != url) return;
+    setState(() {
+      _resolvingLink = false;
+      _resolvedFor = url;
+      _linkPreview = (preview['imageUrl'] ?? '').isEmpty && (preview['title'] ?? '').isEmpty
+          ? null
+          : preview;
+      // The title field is a convenience, not an override — only filled when
+      // the author has not written their own.
+      final resolvedTitle = preview['title'] ?? '';
+      if (resolvedTitle.isNotEmpty && _mediaTitle.text.trim().isEmpty) {
+        _mediaTitle.text = resolvedTitle;
+      }
+    });
+  }
+
   @override
   void dispose() {
     _text.dispose();
     _title.dispose();
     _person.dispose();
+    _linkDebounce?.cancel();
+    _linkUrl.removeListener(_onLinkChanged);
     _linkUrl.dispose();
     _mediaTitle.dispose();
     _location.dispose();
@@ -4332,6 +4542,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
           minLines: 1,
           keyboardType: TextInputType.url,
         ),
+        if (_resolvingLink || _linkPreview != null) ...[
+          const SizedBox(height: 12),
+          _LinkPreviewCard(preview: _linkPreview, loading: _resolvingLink),
+        ],
         const SizedBox(height: 18),
         _FieldLabel('TITLE'),
         _ComposerTextField(
@@ -4765,17 +4979,31 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     );
     final file = result?.files.single;
     if (file == null) return;
-    final path = file.path;
+    var path = file.path;
     if (path == null || path.isEmpty) {
       _showValidation('Could not read the selected file.');
       return;
     }
+    // Images get a crop step so the author decides what the card shows; video
+    // has no frame to crop and goes straight through.
+    final mime = _mimeTypeFor(file.extension);
+    if (mime.startsWith('image/') && mounted) {
+      final cropped = await cropImageFile(
+        context,
+        path: path,
+        title: 'Crop your photo',
+        initial: CropShape.landscape,
+      );
+      if (cropped == null) return;
+      path = cropped;
+    }
+    if (!mounted) return;
     setState(() {
       _selectedMedia = ConnectMediaAttachment(
-        path: path,
+        path: path!,
         name: file.name,
         size: file.size,
-        mimeType: _mimeTypeFor(file.extension),
+        mimeType: mime,
       );
       _mediaTitle.text = _mediaTitle.text.isEmpty
           ? file.name
@@ -4806,8 +5034,17 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     final files = result?.files.take(remaining) ?? const [];
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
-      final path = file.path;
+      var path = file.path;
       if (path == null || path.isEmpty) continue;
+      if (!mounted) return;
+      final cropped = await cropImageFile(
+        context,
+        path: path,
+        title: 'Crop ${file.name}',
+        initial: CropShape.landscape,
+      );
+      if (cropped == null) continue;
+      path = cropped;
       picked.add(
         ConnectMediaAttachment(
           path: path,
@@ -5743,6 +5980,88 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
+/// What the link resolved to, shown in the composer so the author sees the
+/// card before they post it rather than after.
+class _LinkPreviewCard extends StatelessWidget {
+  const _LinkPreviewCard({required this.preview, required this.loading});
+
+  final Map<String, String>? preview;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = preview?['imageUrl'] ?? '';
+    final title = preview?['title'] ?? '';
+    final site = preview?['siteName'] ?? '';
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F9),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: SizedBox(
+              width: 68,
+              height: 68,
+              child: loading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : imageUrl.isEmpty
+                      ? Container(
+                          color: _ConnectColors.sand,
+                          child: const Icon(Icons.link_rounded, color: Colors.white70),
+                        )
+                      : Image(image: _remoteImage(imageUrl), fit: BoxFit.cover),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  loading
+                      ? 'Fetching preview…'
+                      : (title.isNotEmpty ? title : 'Preview ready'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF222222),
+                  ),
+                ),
+                if (!loading && site.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    site,
+                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF717171)),
+                  ),
+                ],
+                if (!loading && imageUrl.isEmpty) ...[
+                  const SizedBox(height: 3),
+                  const Text(
+                    'This link has no artwork — the card will show without it.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF9197A2)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ComposerTextField extends StatelessWidget {
   const _ComposerTextField({
     required this.controller,
@@ -6514,17 +6833,20 @@ class _MediaToggle extends StatelessWidget {
   }
 
   Widget _preview() {
+    // A photo is shown at the shape it was cropped to. Forcing 16:9 here meant
+    // a square or portrait crop was sliced back into a wide strip, so what the
+    // author framed and what they were shown disagreed.
     final media = selectedMedia;
     if (media != null && media.mimeType.startsWith('image/')) {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
+      return _AspectFrame(
+        provider: FileImage(File(media.path)),
         child: Image.file(File(media.path), fit: BoxFit.cover),
       );
     }
     final url = existingMediaUrl;
     if (url != null && url.isNotEmpty && existingMediaKind == 'image') {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
+      return _AspectFrame(
+        provider: _remoteImage(url),
         child: Image(image: _remoteImage(url), fit: BoxFit.cover),
       );
     }
@@ -7026,8 +7348,16 @@ class _PollEditorPageState extends State<_PollEditorPage> {
       withData: false,
     );
     final path = result?.files.single.path;
-    if (path == null || path.isEmpty) return;
-    setState(() => _optionImages[index] = path);
+    if (path == null || path.isEmpty || !mounted) return;
+    final cropped = await cropImageFile(
+      context,
+      path: path,
+      title: 'Crop the option image',
+      initial: CropShape.square,
+      allowShapeChange: false,
+    );
+    if (cropped == null || !mounted) return;
+    setState(() => _optionImages[index] = cropped);
   }
 
   void _done() {

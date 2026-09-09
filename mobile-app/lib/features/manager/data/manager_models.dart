@@ -747,6 +747,7 @@ class ManagerDashboard {
     this.reimbursements = const [],
     this.weekoffDays = const [0],
     this.shift = const ShiftPolicy(),
+    this.reimbursementTypes = const [],
     this.overtimeEnabled = true,
     this.attendance = const [],
     this.regularizations = const [],
@@ -781,6 +782,9 @@ class ManagerDashboard {
   /// graded against, and the grace either side of the shift window. Set in the
   /// dashboard under Shifts › Templates — never hardcoded here.
   final ShiftPolicy shift;
+
+  /// What the org lets people claim against, and the cap on each.
+  final List<ReimbursementType> reimbursementTypes;
   final bool overtimeEnabled;
   final List<AttendanceRecord> attendance;
   final List<AttendanceRegularization> regularizations;
@@ -828,6 +832,7 @@ class ManagerDashboard {
       reimbursements: reimbursements ?? this.reimbursements,
       weekoffDays: weekoffDays,
       shift: shift,
+      reimbursementTypes: reimbursementTypes,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,
       regularizations: regularizations ?? this.regularizations,
@@ -840,6 +845,45 @@ class ManagerDashboard {
 /// How the org grades a working day. Comes from the shift template HR saved in
 /// the dashboard; the defaults here match what that form opens with, and only
 /// apply to an org that has never saved a shift.
+/// A kind of expense the org lets people claim, with its own cap.
+///
+/// HR owns this list; it used to be four values hardcoded in the app. The cap
+/// is checked here before submitting and again on the server, so a stale list
+/// cannot slip a claim past the limit.
+class ReimbursementType {
+  const ReimbursementType({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.maxLimit = 0,
+    this.backdateDays = 30,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+
+  /// Rupees. Zero means uncapped.
+  final double maxLimit;
+
+  /// How far back an expense may be dated. Zero means today only.
+  final int backdateDays;
+
+  bool allows(double amount) => maxLimit <= 0 || amount <= maxLimit;
+
+  /// The oldest date this type can still be claimed for.
+  DateTime earliestClaimableFrom(DateTime today) =>
+      today.subtract(Duration(days: backdateDays));
+
+  factory ReimbursementType.fromJson(Map<String, dynamic> json) => ReimbursementType(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    description: json['description'] as String? ?? '',
+    maxLimit: (json['maxLimit'] as num?)?.toDouble() ?? 0,
+    backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 30,
+  );
+}
+
 class ShiftPolicy {
   const ShiftPolicy({
     this.name = 'General',
