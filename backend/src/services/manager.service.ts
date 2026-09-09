@@ -1,7 +1,6 @@
 import {
   attendanceRecords,
   feedbackRecords,
-  holidays,
   recognitionNominations,
   users,
 } from '../config/db';
@@ -17,6 +16,7 @@ import { env } from '../config/env';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor } from './cycle';
 import { shiftPolicyFor } from './shift.service';
+import { holidaysForUser } from './holiday.service';
 import { notifyFeedbackSubmitted } from './feedback-notifications.service';
 import {
   presignConnectMedia,
@@ -320,13 +320,13 @@ export async function getManagerWorkspace(managerUserId: string) {
   const overtimeEnabled =
     manager.overtimeEligible !== false &&
     !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim());
-  const orgHolidays = manager.org
-    ? await holidays().find({ org: manager.org }).sort({ date: 1 }).toArray()
-    : [];
+  // Only the holidays this employee observes: their own work location's, plus
+  // the all-locations days. Another office's holiday is not a day off here.
+  const orgHolidays = await holidaysForUser(manager);
   // The shift the app grades a day against: half-day and full-day hour
   // thresholds, plus the grace either side of the shift window. HR sets these
   // per shift in the dashboard; the app must not carry its own copy.
-  const shift = await shiftPolicyFor(manager.org);
+  const shift = await shiftPolicyFor(manager.userId);
 
   return {
     period,

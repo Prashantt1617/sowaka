@@ -17,8 +17,11 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
 import {
   createShiftHandler,
+  assignShiftHandler,
   deleteShiftHandler,
   getShiftPolicyHandler,
+  shiftAudienceHandler,
+  unassignShiftHandler,
   listShiftsHandler,
   saveShiftPolicyHandler,
   updateShiftHandler,
@@ -57,6 +60,11 @@ adminRouter.get('/shifts', listShiftsHandler);
 adminRouter.post('/shifts', createShiftHandler);
 adminRouter.patch('/shifts/:shiftId', updateShiftHandler);
 adminRouter.delete('/shifts/:shiftId', deleteShiftHandler);
+// Bulk assignment: resolve a rule set to people, then move the chosen ones onto
+// the template. Everyone not on a template follows the org policy.
+adminRouter.post('/shifts/audience', shiftAudienceHandler);
+adminRouter.post('/shifts/:shiftId/assign', assignShiftHandler);
+adminRouter.post('/shifts/:shiftId/unassign', unassignShiftHandler);
 
 // Company settings: week-off days + per-team overtime toggle
 adminRouter.get('/company/settings', getCompanySettingsHandler);

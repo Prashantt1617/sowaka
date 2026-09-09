@@ -1,14 +1,22 @@
 import { ObjectId } from 'mongodb';
 import { shiftPolicies, shiftTemplates, users } from '../config/db';
 import {
+  CORRECTION_TRIGGERS,
   DayMark,
+  DEFAULT_LEAVE_TYPES,
   DEFAULT_ORG_SHIFT_POLICY,
+  LEAVE_TYPE_KEYS,
+  LeaveTypeKey,
+  LeaveTypeRule,
   DEFAULT_SHIFT_POLICY,
   OrgShiftPolicy,
   ShiftCorrectionRules,
   ShiftLeaveRules,
   ShiftOvertimeRules,
+  ShiftPolicyRules,
   ShiftTemplate,
+  PunchFormat,
+  PUNCH_FORMATS,
 } from '../models/shift.model';
 
 export class ShiftError extends Error {
@@ -103,38 +111,70 @@ function overtimeRules(value: unknown): ShiftOvertimeRules {
   const source = (value ?? {}) as Record<string, unknown>;
   return {
     eligible: flag(source.eligible, true),
-    onHoliday: flag(source.onHoliday, true),
-    onWeeklyOff: flag(source.onWeeklyOff, true),
-    beyondShift: flag(source.beyondShift, false),
-    beyondShiftHours: hours(source.beyondShiftHours, 'Overtime beyond shift hours', 1),
+    backdateDays: days(source.backdateDays, 'Overtime backdating window', 7),
   };
 }
 
 function correctionRules(value: unknown): ShiftCorrectionRules {
   const source = (value ?? {}) as Record<string, unknown>;
+  const triggers = strings(source.triggers, [...CORRECTION_TRIGGERS])
+    .filter((trigger) => CORRECTION_TRIGGERS.includes(trigger));
+  const format = String(source.punchFormat ?? '').trim();
+  if (format && !PUNCH_FORMATS.includes(format as PunchFormat)) {
+    throw new ShiftError(400, `Punch format must be one of: ${PUNCH_FORMATS.join(', ')}`);
+  }
   return {
-    triggers: strings(source.triggers, ['Missing punch', 'Half day']),
+    triggers,
+    punchFormat: (format || 'Present by default (Auto Punch)') as PunchFormat,
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
-    reasons: strings(source.reasons, []),
     managerWithoutEmployee: flag(source.managerWithoutEmployee, true),
     hrOverride: flag(source.hrOverride, true),
     skipLevel: flag(source.skipLevel, false),
-    backdateByEmployee: flag(source.backdateByEmployee, true),
-    backdateByManager: flag(source.backdateByManager, true),
     backdateDays: days(source.backdateDays, 'Backdating window', 7),
+  };
+}
+
+/** One leave type, validated. Unknown keys are refused rather than stored. */
+function leaveType(value: unknown): LeaveTypeRule {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const key = String(source.key ?? '').trim() as LeaveTypeKey;
+  if (!LEAVE_TYPE_KEYS.includes(key)) {
+    throw new ShiftError(400, `Leave type must be one of: ${LEAVE_TYPE_KEYS.join(', ')}`);
+  }
+  const encashment = String(source.encashment ?? 'none').trim();
+  if (!['none', 'all', 'limit'].includes(encashment)) {
+    throw new ShiftError(400, 'Encashment must be none, all or limit');
+  }
+  const resetOn = String(source.resetOn ?? 'calendar_year').trim();
+  if (!['calendar_year', 'financial_year'].includes(resetOn)) {
+    throw new ShiftError(400, 'Balance must reset on the calendar year or the financial year');
+  }
+  return {
+    key,
+    name: text(source.name, 'Leave type name', 40),
+    // Comp-off is earned by overtime, never accrued, so it has no monthly rate.
+    perMonth: key === 'comp_off' ? 0 : hours(source.perMonth, 'Leaves earned per month', 0),
+    resetOn: resetOn as LeaveTypeRule['resetOn'],
+    carryForwardDays: days(source.carryForwardDays, 'Carry-forward limit', 0),
+    encashment: encashment as LeaveTypeRule['encashment'],
+    encashLimitDays: days(source.encashLimitDays, 'Encashment limit', 0),
+    advanceDays: days(source.advanceDays, 'Advance window', 30),
+    allowBackdated: flag(source.allowBackdated, true),
+    backdatedDays: days(source.backdatedDays, 'Backdating window', 3),
   };
 }
 
 function leaveRules(value: unknown): ShiftLeaveRules {
   const source = (value ?? {}) as Record<string, unknown>;
+  const types = Array.isArray(source.types)
+    ? source.types.map(leaveType)
+    : DEFAULT_LEAVE_TYPES.map((type) => ({ ...type }));
+  const seen = new Set(types.map((type) => type.key));
+  if (seen.size !== types.length) throw new ShiftError(400, 'Each leave type may appear once');
   return {
-    advanceDays: days(source.advanceDays, 'Advance leave window', 30),
-    allowBackdated: flag(source.allowBackdated, true),
-    backdatedDays: days(source.backdatedDays, 'Backdated leave window', 3),
+    types,
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
-    managerOnBehalf: flag(source.managerOnBehalf, false),
     hrOverride: flag(source.hrOverride, true),
-    skipLevel: flag(source.skipLevel, false),
   };
 }
 
@@ -149,88 +189,107 @@ function days(value: unknown, field: string, fallback: number): number {
 
 type ShiftInput = Record<string, unknown>;
 
-/**
- * A template is its name, its working window and whether it is the default.
- * Every rule it is graded by comes from the org policy, so there is nothing
- * here to keep in step with Shifts › Policies.
- */
-function toDocument(input: ShiftInput, org: string) {
+function objectId(value: string): ObjectId {
+  if (!ObjectId.isValid(value)) throw new ShiftError(400, 'Shift ID is invalid');
+  return new ObjectId(value);
+}
+
+/** Every rule a template can override, validated the same way the org policy is. */
+function toPolicyRules(input: Record<string, unknown>, fallback: ShiftPolicyRules): ShiftPolicyRules {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(input, key);
+  const minHalfDayHours = has('minHalfDayHours')
+    ? hours(input.minHalfDayHours, 'Min hours for half day', fallback.minHalfDayHours)
+    : fallback.minHalfDayHours;
+  const minFullDayHours = has('minFullDayHours')
+    ? hours(input.minFullDayHours, 'Min hours for full day', fallback.minFullDayHours)
+    : fallback.minFullDayHours;
+  if (minFullDayHours < minHalfDayHours) {
+    throw new ShiftError(400, 'Min hours for a full day cannot be less than for a half day');
+  }
   return {
-    org,
-    name: text(input.name, 'Shift name', MAX_NAME),
-    active: flag(input.active, true),
-    startTime: time(input.startTime, 'Shift start time'),
-    endTime: time(input.endTime, 'Shift end time'),
-    isDefault: flag(input.isDefault, false),
+    startTime: has('startTime') ? time(input.startTime, 'Shift start time') : fallback.startTime,
+    endTime: has('endTime') ? time(input.endTime, 'Shift end time') : fallback.endTime,
+    minHalfDayHours,
+    minFullDayHours,
+    lateGraceMinutes: has('lateGraceMinutes') ? minutes(input.lateGraceMinutes, 'Late grace', fallback.lateGraceMinutes) : fallback.lateGraceMinutes,
+    earlyOutGraceMinutes: has('earlyOutGraceMinutes') ? minutes(input.earlyOutGraceMinutes, 'Early-out grace', fallback.earlyOutGraceMinutes) : fallback.earlyOutGraceMinutes,
+    missingPunchIn: has('missingPunchIn') ? mark(input.missingPunchIn, 'Punch-in missing', fallback.missingPunchIn) : fallback.missingPunchIn,
+    missingPunchOut: has('missingPunchOut') ? mark(input.missingPunchOut, 'Punch-out missing', fallback.missingPunchOut) : fallback.missingPunchOut,
+    missingBoth: has('missingBoth') ? mark(input.missingBoth, 'Both punches missing', fallback.missingBoth) : fallback.missingBoth,
+    weeklyOff: has('weeklyOff') ? weeklyOff(input.weeklyOff) : fallback.weeklyOff,
+    overtime: has('overtime') ? overtimeRules(input.overtime) : fallback.overtime,
+    correction: has('correction') ? correctionRules(input.correction) : fallback.correction,
+    leave: has('leave') ? leaveRules(input.leave) : fallback.leave,
   };
 }
 
 /**
- * Named field by field rather than spread, so a document written before the
- * rules moved to the org policy cannot leak a stale threshold back to a client
- * that would then disagree with Shifts › Policies.
+ * `fallback` covers templates written before a template carried a policy of its
+ * own: they read as the org policy rather than as an undefined one, which is
+ * what a client would otherwise have to guess at.
  */
-function shiftView(doc: ShiftTemplate & { _id?: ObjectId }) {
+function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPolicyRules) {
   return {
     id: doc._id!.toHexString(),
     name: doc.name,
     active: doc.active,
-    startTime: doc.startTime,
-    endTime: doc.endTime,
-    isDefault: doc.isDefault,
+    policy: doc.policy ?? fallback ?? { ...DEFAULT_ORG_SHIFT_POLICY },
+    assignedUserIds: doc.assignedUserIds ?? [],
+    assignedCount: (doc.assignedUserIds ?? []).length,
     createdAt: doc.createdAt?.toISOString(),
     updatedAt: doc.updatedAt?.toISOString(),
   };
-}
-
-function objectId(value: string): ObjectId {
-  if (!ObjectId.isValid(value)) throw new ShiftError(400, 'Shift ID is invalid');
-  return new ObjectId(value);
 }
 
 // ------------------------------------------------------------------ HR admin
 
 export async function listShifts(callerId: string) {
   const org = await requireOrg(callerId);
-  const docs = await shiftTemplates()
-    .find({ org })
-    .sort({ isDefault: -1, name: 1 })
-    .toArray();
-  return docs.map(shiftView);
+  const [docs, orgPolicy] = await Promise.all([
+    shiftTemplates().find({ org }).sort({ name: 1 }).toArray(),
+    getOrgShiftPolicy(org),
+  ]);
+  return docs.map((doc) => shiftView(doc, orgPolicy));
 }
 
+/**
+ * A new template starts as a copy of the org policy, so the form opens on
+ * something real. Anything the caller sends overrides that copy; anything it
+ * omits keeps the org's current value.
+ */
 export async function createShift(callerId: string, input: ShiftInput) {
   const org = await requireOrg(callerId);
-  const document = toDocument(input, org);
-  const existing = await shiftTemplates().findOne({ org, name: document.name });
-  if (existing) throw new ShiftError(409, 'A shift with that name already exists');
-  // The org's first shift becomes the default, so the app has something to
-  // grade against the moment HR saves once.
-  const count = await shiftTemplates().countDocuments({ org });
-  const isDefault = count === 0 ? true : document.isDefault;
-  if (isDefault) await shiftTemplates().updateMany({ org }, { $set: { isDefault: false } });
+  const name = text(input.name, 'Shift name', MAX_NAME);
+  if (await shiftTemplates().findOne({ org, name })) {
+    throw new ShiftError(409, 'A shift with that name already exists');
+  }
+  const orgPolicy = await getOrgShiftPolicy(org);
+  const policy = toPolicyRules((input.policy ?? {}) as Record<string, unknown>, orgPolicy);
   const now = new Date();
-  const result = await shiftTemplates().insertOne({
-    ...document,
-    isDefault,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return shiftView({ ...document, isDefault, createdAt: now, updatedAt: now, _id: result.insertedId });
+  const document: Omit<ShiftTemplate, '_id'> = {
+    org, name, active: flag(input.active, true), policy, assignedUserIds: [],
+    createdAt: now, updatedAt: now,
+  };
+  const result = await shiftTemplates().insertOne(document);
+  return shiftView({ ...document, _id: result.insertedId });
 }
 
+/** Edits land on the template alone — the org policy is a different document. */
 export async function updateShift(callerId: string, shiftId: string, input: ShiftInput) {
   const org = await requireOrg(callerId);
   const _id = objectId(shiftId);
-  const document = toDocument(input, org);
-  const clash = await shiftTemplates().findOne({ org, name: document.name, _id: { $ne: _id } });
-  if (clash) throw new ShiftError(409, 'A shift with that name already exists');
-  if (document.isDefault) {
-    await shiftTemplates().updateMany({ org, _id: { $ne: _id } }, { $set: { isDefault: false } });
+  const current = await shiftTemplates().findOne({ _id, org });
+  if (!current) throw new ShiftError(404, 'Shift not found');
+  const name = text(input.name, 'Shift name', MAX_NAME);
+  if (await shiftTemplates().findOne({ org, name, _id: { $ne: _id } })) {
+    throw new ShiftError(409, 'A shift with that name already exists');
   }
+  // A template saved before templates carried a policy edits from the org's.
+  const base = current.policy ?? (await getOrgShiftPolicy(org));
+  const policy = toPolicyRules((input.policy ?? {}) as Record<string, unknown>, base);
   const updated = await shiftTemplates().findOneAndUpdate(
     { _id, org },
-    { $set: { ...document, updatedAt: new Date() } },
+    { $set: { name, active: flag(input.active, current.active), policy, updatedAt: new Date() } },
     { returnDocument: 'after' },
   );
   if (!updated) throw new ShiftError(404, 'Shift not found');
@@ -242,15 +301,108 @@ export async function deleteShift(callerId: string, shiftId: string) {
   const _id = objectId(shiftId);
   const doc = await shiftTemplates().findOne({ _id, org });
   if (!doc) throw new ShiftError(404, 'Shift not found');
-  // Deleting the default would leave the app grading against the built-in
-  // fallback without anyone having chosen that, so it has to be handed over.
-  if (doc.isDefault) {
-    const others = await shiftTemplates().countDocuments({ org, _id: { $ne: _id } });
-    if (others > 0) {
-      throw new ShiftError(409, 'Make another shift the default before deleting this one');
-    }
+  // Deleting a template silently moves everyone on it back to the org policy,
+  // which is a change to how their days are graded — so it has to be deliberate.
+  if ((doc.assignedUserIds ?? []).length > 0) {
+    throw new ShiftError(
+      409,
+      `${doc.assignedUserIds.length} employee(s) are on this shift. Unassign them before deleting it.`,
+    );
   }
   await shiftTemplates().deleteOne({ _id, org });
+}
+
+// ------------------------------------------------------------- assignment
+
+const FACETS = ['locations', 'designations', 'departments', 'managerUserIds'] as const;
+
+function facet(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean))];
+}
+
+/**
+ * Who a set of targeting rules selects, and which template each of them is on
+ * today — so HR can see whose shift they are about to change before doing it.
+ */
+export async function resolveShiftAudience(callerId: string, input: Record<string, unknown>) {
+  const org = await requireOrg(callerId);
+  const rules = Object.fromEntries(FACETS.map((key) => [key, facet(input[key])]));
+  const roster = await users().find({ org }).sort({ name: 1 }).toArray();
+  const matched = roster.filter((u) => {
+    if (rules.locations.length && !rules.locations.includes(u.location ?? '')) return false;
+    if (rules.designations.length && !rules.designations.includes(u.designation ?? '')) return false;
+    if (rules.departments.length && !rules.departments.includes(u.department ?? '')) return false;
+    if (rules.managerUserIds.length && !rules.managerUserIds.includes(u.managerUserId ?? '')) return false;
+    return true;
+  });
+
+  const templates = await shiftTemplates().find({ org }).toArray();
+  const currentByUser = new Map<string, { id: string; name: string }>();
+  for (const template of templates) {
+    for (const userId of template.assignedUserIds ?? []) {
+      currentByUser.set(userId, { id: template._id!.toHexString(), name: template.name });
+    }
+  }
+  const nameById = new Map(roster.map((u) => [u.userId, u.name]));
+
+  return {
+    rules,
+    members: matched.map((u) => ({
+      userId: u.userId,
+      name: u.name,
+      employeeId: u.employeeId ?? '',
+      department: u.department ?? '',
+      designation: u.designation ?? '',
+      location: u.location ?? '',
+      managerName: u.managerUserId ? nameById.get(u.managerUserId) ?? '' : '',
+      // Present only when this person is already on a template — the ones whose
+      // shift would actually be replaced.
+      currentShift: currentByUser.get(u.userId) ?? null,
+    })),
+  };
+}
+
+/**
+ * Puts people on a template. An employee follows at most one, so this removes
+ * them from any other first — assigning is a move, not an addition.
+ */
+export async function assignShiftToUsers(callerId: string, shiftId: string, userIds: unknown) {
+  const org = await requireOrg(callerId);
+  const _id = objectId(shiftId);
+  const template = await shiftTemplates().findOne({ _id, org });
+  if (!template) throw new ShiftError(404, 'Shift not found');
+  const ids = facet(userIds);
+  if (!ids.length) throw new ShiftError(400, 'Select at least one employee');
+  const known = await users().find({ org, userId: { $in: ids } }).project<{ userId: string }>({ userId: 1 }).toArray();
+  const valid = known.map((u) => u.userId);
+  if (valid.length !== ids.length) {
+    throw new ShiftError(400, 'Some of those employees are not in this organisation');
+  }
+  await shiftTemplates().updateMany(
+    { org, _id: { $ne: _id } },
+    { $pull: { assignedUserIds: { $in: valid } } } as never,
+  );
+  const updated = await shiftTemplates().findOneAndUpdate(
+    { _id, org },
+    { $addToSet: { assignedUserIds: { $each: valid } }, $set: { updatedAt: new Date() } } as never,
+    { returnDocument: 'after' },
+  );
+  return shiftView(updated!);
+}
+
+/** Takes people off a template, returning them to the org policy. */
+export async function unassignShiftUsers(callerId: string, shiftId: string, userIds: unknown) {
+  const org = await requireOrg(callerId);
+  const _id = objectId(shiftId);
+  const ids = facet(userIds);
+  const updated = await shiftTemplates().findOneAndUpdate(
+    { _id, org },
+    { $pull: { assignedUserIds: { $in: ids } }, $set: { updatedAt: new Date() } } as never,
+    { returnDocument: 'after' },
+  );
+  if (!updated) throw new ShiftError(404, 'Shift not found');
+  return shiftView(updated);
 }
 
 // -------------------------------------------------- the org-wide shift policy
@@ -300,6 +452,8 @@ export async function saveOrgShiftPolicy(callerId: string, input: ShiftInput) {
   }
 
   const next: Omit<OrgShiftPolicy, '_id' | 'org'> = {
+    startTime: has('startTime') ? time(input.startTime, 'Shift start time') : current.startTime,
+    endTime: has('endTime') ? time(input.endTime, 'Shift end time') : current.endTime,
     missingPunchIn: has('missingPunchIn') ? mark(input.missingPunchIn, 'Punch-in missing', current.missingPunchIn) : current.missingPunchIn,
     missingPunchOut: has('missingPunchOut') ? mark(input.missingPunchOut, 'Punch-out missing', current.missingPunchOut) : current.missingPunchOut,
     missingBoth: has('missingBoth') ? mark(input.missingBoth, 'Both punches missing', current.missingBoth) : current.missingBoth,
@@ -325,6 +479,8 @@ export type ShiftPolicyView = {
   name: string;
   startTime: string;
   endTime: string;
+  /** Week of the month ("1".."5") -> weekday indexes off, 0 = Mon .. 6 = Sun. */
+  weeklyOff: Record<string, number[]>;
   minHalfDayHours: number;
   minFullDayHours: number;
   lateGraceMinutes: number;
@@ -332,34 +488,94 @@ export type ShiftPolicyView = {
 };
 
 /**
- * What the app grades an employee's day against.
- *
- * The thresholds and the grace come from the org policy HR fills in under
- * Shifts › Policies — that is where the setup lives. Only the working window
- * comes from the shift template, since a template is what says when the shift
- * opens and closes. There is no per-employee shift assignment yet, so everyone
- * is on the org's default template; when assignment arrives, only the template
- * lookup below changes.
+ * What the app grades this employee's day against — their template's policy if
+ * they are on one, otherwise the org policy.
  */
-export async function shiftPolicyFor(org: string | undefined): Promise<ShiftPolicyView> {
-  if (!org) return { ...DEFAULT_SHIFT_POLICY };
-  const [policy, template] = await Promise.all([
-    getOrgShiftPolicy(org),
-    shiftTemplates().find({ org, active: true }).sort({ isDefault: -1, name: 1 }).limit(1).next(),
-  ]);
+export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
+  const policy = await policyForUser(userId);
   return {
-    name: template?.name ?? DEFAULT_SHIFT_POLICY.name,
-    startTime: template?.startTime ?? DEFAULT_SHIFT_POLICY.startTime,
-    endTime: template?.endTime ?? DEFAULT_SHIFT_POLICY.endTime,
+    name: policy.shiftName ?? DEFAULT_SHIFT_POLICY.name,
+    startTime: policy.startTime,
+    endTime: policy.endTime,
     minHalfDayHours: policy.minHalfDayHours,
     minFullDayHours: policy.minFullDayHours,
     lateGraceMinutes: policy.lateGraceMinutes,
     earlyOutGraceMinutes: policy.earlyOutGraceMinutes,
+    weeklyOff: policy.weeklyOff,
   };
 }
 
-/** The same policy, for a user id — used by the attendance endpoints. */
-export async function shiftPolicyForUser(userId: string): Promise<ShiftPolicyView> {
-  const user = await users().findOne({ userId });
-  return shiftPolicyFor(user?.org);
+/**
+ * Whether a date is a weekly off, per the grid HR set under Shifts › Policies.
+ *
+ * The grid is per week of the month, so the 2nd Saturday can be off while the
+ * 1st is not. Weeks are counted from the 1st in blocks of seven; a 5th block
+ * covers the tail of a long month. Weekday indexes are 0 = Mon .. 6 = Sun,
+ * which is the order the dashboard's grid is drawn in.
+ */
+export function isWeekOffDay(date: Date, weeklyOff: Record<string, number[]>): boolean {
+  const week = Math.min(5, Math.floor((date.getUTCDate() - 1) / 7) + 1);
+  const weekday = (date.getUTCDay() + 6) % 7;
+  return (weeklyOff?.[String(week)] ?? []).includes(weekday);
 }
+
+/**
+ * The policy that actually governs one employee.
+ *
+ * A template assigned to them overrides the org policy wholesale; everyone else
+ * follows the org policy. This is the only place that decision is made, so the
+ * app, leave counting, overtime and approvals cannot disagree about it.
+ */
+export async function policyForUser(userId: string): Promise<ShiftPolicyRules & { shiftName: string | null }> {
+  const user = await users().findOne({ userId });
+  if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
+  const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
+  // A template with no policy of its own is not an override of anything.
+  if (template?.policy) return { ...template.policy, shiftName: template.name };
+  return { ...(await getOrgShiftPolicy(user.org)), shiftName: null };
+}
+
+/**
+ * Who may decide a request, per the approval flow HR configured.
+ *
+ * `approver` names who signs off. A reporting manager cannot decide something
+ * HR has taken ownership of, and HR cannot override a manager's call unless the
+ * org allows it — HR deciding is not an override when HR is the named approver,
+ * so that case stays open regardless of the switch.
+ */
+export type DecisionKind = 'leave' | 'correction';
+
+export async function approvalRulesFor(userId: string, kind: DecisionKind) {
+  const policy = await policyForUser(userId);
+  return kind === 'leave'
+    ? { approver: policy.leave.approver, hrOverride: policy.leave.hrOverride }
+    : { approver: policy.correction.approver, hrOverride: policy.correction.hrOverride };
+}
+
+/** A manager signs off unless HR alone is the named approver. */
+export function managerMayDecide(approver: string): boolean {
+  return approver.trim() !== 'HR';
+}
+
+/** HR signs off when it is named as an approver, or when override is allowed. */
+export function hrMayDecide(approver: string, hrOverride: boolean): boolean {
+  const named = approver.trim();
+  return named === 'HR' || named.toLowerCase().includes('then hr') || hrOverride;
+}
+
+/** The hours that make a full day for this employee. */
+export async function fullDayHoursFor(userId: string): Promise<number> {
+  return (await policyForUser(userId)).minFullDayHours;
+}
+
+/** The leave types this employee accrues, for the balance and the apply flow. */
+export async function leaveTypeRulesFor(userId: string): Promise<LeaveTypeRule[]> {
+  return (await policyForUser(userId)).leave.types;
+}
+
+/** The week-off grid this employee works to. */
+export async function weekOffGridFor(userId: string): Promise<Record<string, number[]>> {
+  return (await policyForUser(userId)).weeklyOff;
+}
+
+

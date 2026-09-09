@@ -222,25 +222,106 @@ export const getWorkspace = () => api<WorkspaceDTO>('/manager/workspace');
 // live records: what HR saves here is what the app reads.
 export type DayMark = 'Absent' | 'Half Day' | 'Present' | 'Pending Regularisation';
 
-// A template is a working window, nothing more. Every rule it is graded by
-// comes from the org policy below.
+export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
+
+/**
+ * One leave type's accrual and what happens to an unused balance at year end.
+ * Carry forward first, then encash what is left; anything still remaining
+ * lapses, which is why lapse is shown rather than set.
+ */
+export type LeaveTypeRule = {
+  key: LeaveTypeKey;
+  name: string;
+  /** Days earned per month. Always 0 for comp-off, which overtime credits. */
+  perMonth: number;
+  resetOn: 'calendar_year' | 'financial_year';
+  carryForwardDays: number;
+  encashment: 'none' | 'all' | 'limit';
+  encashLimitDays: number;
+  /** How far ahead this type can be applied for. */
+  advanceDays: number;
+  allowBackdated: boolean;
+  backdatedDays: number;
+};
+
+/** Year-end split for one balance — mirrors processYearEnd on the server. */
+export function processYearEnd(closing: number, rule: LeaveTypeRule) {
+  const balance = Math.max(0, closing);
+  const carried = Math.min(balance, Math.max(0, rule.carryForwardDays));
+  const remainder = balance - carried;
+  const encashed =
+    rule.encashment === 'all'
+      ? remainder
+      : rule.encashment === 'limit'
+        ? Math.min(remainder, Math.max(0, rule.encashLimitDays))
+        : 0;
+  return { carried, encashed, lapsed: remainder - encashed };
+}
+
+/** How an employee's punches are captured. */
+export type PunchFormat =
+  | 'Biometric'
+  | 'Geotag (powered by Sowaka)'
+  | 'Present by default (Auto Punch)';
+
+// A template is a named override of the org policy plus the people it covers.
+// It starts as a copy of the org policy and every field is editable; anyone it
+// is not assigned to stays on the org policy.
 export type ShiftDTO = {
   id: string;
   name: string;
   active: boolean;
-  /** "HH:MM". An end at or before the start means the shift runs overnight. */
-  startTime: string;
-  endTime: string;
-  /** The shift everyone without one of their own is graded against. */
-  isDefault: boolean;
+  policy: ShiftPolicyDTO;
+  assignedUserIds: string[];
+  assignedCount: number;
 };
 
-export type ShiftInput = Omit<ShiftDTO, 'id'>;
+export type ShiftInput = {
+  name: string;
+  active?: boolean;
+  /** Only the fields being changed; the rest keep the template's current values. */
+  policy?: Partial<ShiftPolicyDTO>;
+};
+
+/** One person a rule set selected, and the shift they are on today. */
+export type ShiftAudienceMember = {
+  userId: string;
+  name: string;
+  employeeId: string;
+  department: string;
+  designation: string;
+  location: string;
+  managerName: string;
+  currentShift: { id: string; name: string } | null;
+};
+
+export type ShiftRules = {
+  locations?: string[];
+  designations?: string[];
+  departments?: string[];
+  managerUserIds?: string[];
+};
+
+export const resolveShiftAudience = (rules: ShiftRules) =>
+  api<{ rules: Required<ShiftRules>; members: ShiftAudienceMember[] }>('/admin/shifts/audience', {
+    method: 'POST', body: rules,
+  });
+
+export const assignShift = (id: string, userIds: string[]) =>
+  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/assign`, { method: 'POST', body: { userIds } })
+    .then((r) => r.shift);
+
+export const unassignShift = (id: string, userIds: string[]) =>
+  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/unassign`, { method: 'POST', body: { userIds } })
+    .then((r) => r.shift);
 
 // The org-wide policy behind Shifts › Policies. This is the setup: what HR
 // saves here is what the app grades every attendance day against. Each tab
 // patches only the fields it owns.
 export type ShiftPolicyDTO = {
+  /** "HH:MM". An end at or before the start means the shift runs overnight. */
+  startTime: string;
+  endTime: string;
   missingPunchIn: DayMark;
   missingPunchOut: DayMark;
   missingBoth: DayMark;
@@ -251,17 +332,27 @@ export type ShiftPolicyDTO = {
   lateGraceMinutes: number;
   earlyOutGraceMinutes: number;
   overtime: {
-    eligible: boolean; onHoliday: boolean; onWeeklyOff: boolean;
-    beyondShift: boolean; beyondShiftHours: number;
+    /** Whether the org offers overtime at all — the per-employee and per-team
+     *  switches still apply on top. */
+    eligible: boolean;
+    /** How far back an overtime claim can reach, in days. */
+    backdateDays: number;
   };
   correction: {
-    triggers: string[]; approver: string; reasons: string[];
+    /** Which missing-punch outcomes an employee may correct. */
+    triggers: string[];
+    /** Where punch data comes from. */
+    punchFormat: PunchFormat;
+    approver: string;
     managerWithoutEmployee: boolean; hrOverride: boolean; skipLevel: boolean;
-    backdateByEmployee: boolean; backdateByManager: boolean; backdateDays: number;
+    /** How far back a correction may reach, in days. */
+    backdateDays: number;
   };
   leave: {
-    advanceDays: number; allowBackdated: boolean; backdatedDays: number;
-    approver: string; managerOnBehalf: boolean; hrOverride: boolean; skipLevel: boolean;
+    approver: string;
+    hrOverride: boolean;
+    /** Accrual, year-end handling and the application window, per leave type. */
+    types: LeaveTypeRule[];
   };
   updatedAt?: string;
 };
@@ -282,3 +373,27 @@ export const updateShift = (id: string, input: ShiftInput) =>
   api<{ shift: ShiftDTO }>(`/admin/shifts/${id}`, { method: 'PATCH', body: input }).then((r) => r.shift);
 
 export const deleteShift = (id: string) => api(`/admin/shifts/${id}`, { method: 'DELETE' });
+
+// ---- Holiday bank ----
+// A holiday is assigned to employees by their work location; `*` is everyone.
+export type HolidayType = 'Public' | 'Restricted' | 'Optional';
+export const ALL_LOCATIONS = '*';
+
+export type HolidayDTO = {
+  id: string;
+  /** Work location, or `*` for every location. */
+  state: string;
+  type: HolidayType;
+  /** YYYY-MM-DD */
+  date: string;
+  name: string;
+};
+
+/** The whole org's master list, across every location. */
+export const getHolidays = () =>
+  api<{ holidays: HolidayDTO[] }>('/holidays?state=*').then((r) => r.holidays);
+
+export const createHoliday = (input: { date: string; name: string; state: string; type: HolidayType }) =>
+  api<{ holiday: HolidayDTO }>('/holidays', { method: 'POST', body: input }).then((r) => r.holiday);
+
+export const deleteHoliday = (id: string) => api(`/holidays/${id}`, { method: 'DELETE' });

@@ -1,12 +1,17 @@
 import { inflateRawSync } from 'node:zlib';
 import { ObjectId } from 'mongodb';
 import { holidays, users } from '../config/db';
-import { Holiday } from '../models/holiday.model';
+import { Holiday, HolidayType } from '../models/holiday.model';
+
+/** The location value meaning "everyone", whatever their work location. */
+export const ALL_LOCATIONS = '*';
+const HOLIDAY_TYPES: HolidayType[] = ['Public', 'Restricted', 'Optional'];
 
 export interface HolidayView {
   id: string;
   org: string;
   state: string;
+  type: HolidayType;
   date: string;
   name: string;
 }
@@ -33,15 +38,25 @@ export async function listCompanyHolidays(
   const user = await users().findOne({ userId });
   if (!user) throw new HolidayError(404, 'User not found');
   const org = user.org ?? 'default';
-  const state = input.state?.trim() || stateForUser(user);
-  if (!state) throw new HolidayError(400, 'State is required');
-  const documents = await holidays().find({ org, state }).sort({ date: 1 }).toArray();
+  const requested = input.state?.trim();
+  // The dashboard's holiday master asks for every location at once with `*`;
+  // an employee's app asks for their own and gets the all-locations days too.
+  if (requested === '*') {
+    const all = await holidays().find({ org }).sort({ date: 1 }).toArray();
+    return all.map(toHolidayView);
+  }
+  const keys = requested ? [requested.toLowerCase()] : locationKeysFor(user);
+  if (!keys.length) throw new HolidayError(400, 'A work location is required');
+  const documents = await holidays()
+    .find({ org, $or: [{ state: { $in: keys } }, { state: ALL_LOCATIONS }] })
+    .sort({ date: 1 })
+    .toArray();
   return documents.map(toHolidayView);
 }
 
 export async function createCompanyHoliday(
   userId: string,
-  input: { date: string; name: string; state: string; org?: string },
+  input: { date: string; name: string; state: string; org?: string; type?: string },
 ): Promise<HolidayView> {
   const user = await users().findOne({ userId });
   if (!user) throw new HolidayError(404, 'User not found');
@@ -51,9 +66,14 @@ export async function createCompanyHoliday(
   const name = normalizeHolidayName(input.name);
 
   const now = Date.now();
+  const type = (input.type ?? 'Public').trim() as HolidayType;
+  if (!HOLIDAY_TYPES.includes(type)) {
+    throw new HolidayError(400, `Type must be one of: ${HOLIDAY_TYPES.join(', ')}`);
+  }
   const document: Holiday = {
     org,
     state,
+    type,
     date,
     name,
     createdByUserId: userId,
@@ -337,14 +357,51 @@ function normalizeHolidayName(value: string) {
 
 function normalizeState(value: string) {
   const state = value.trim();
+  // The all-locations marker is the one value shorter than two characters.
+  if (state === ALL_LOCATIONS) return ALL_LOCATIONS;
   if (state.length < 2) throw new HolidayError(400, 'State is required');
   if (state.length > 80) throw new HolidayError(400, 'State cannot exceed 80 characters');
   return state.toLowerCase();
 }
 
-function stateForUser(user: { state?: string; location?: string; branch?: string }) {
-  const state = user.state?.trim() || user.location?.trim() || user.branch?.trim() || '';
-  return state.toLowerCase();
+/**
+ * The holidays one employee actually observes: the ones targeted at their work
+ * location, plus the all-locations days. A holiday in another office is not a
+ * day off here, so it must not reach their calendar or their leave count.
+ */
+export async function holidaysForUser(
+  user: { org?: string; state?: string; location?: string; branch?: string },
+  range?: { from: Date; to: Date },
+) {
+  if (!user.org) return [];
+  const filter: Record<string, unknown> = {
+    org: user.org,
+    $or: [{ state: { $in: locationKeysFor(user) } }, { state: ALL_LOCATIONS }],
+  };
+  if (range) filter.date = { $gte: range.from, $lte: range.to };
+  return holidays().find(filter).sort({ date: 1 }).toArray();
+}
+
+/** The same, as a set of `YYYY-MM-DD` keys. */
+export async function holidayDatesForUser(
+  user: { org?: string; state?: string; location?: string; branch?: string },
+  range?: { from: Date; to: Date },
+): Promise<Set<string>> {
+  const rows = await holidaysForUser(user, range);
+  return new Set(rows.map((row) => row.date.toISOString().slice(0, 10)));
+}
+
+/**
+ * Every value a holiday for this employee might be keyed by. Rows written
+ * before holidays moved to work location may still carry a state or a branch,
+ * so all three are matched rather than only the winner.
+ */
+function locationKeysFor(user: { state?: string; location?: string; branch?: string }): string[] {
+  return [...new Set(
+    [user.location, user.state, user.branch]
+      .map((value) => (value ?? '').trim().toLowerCase())
+      .filter(Boolean),
+  )];
 }
 
 function normalizeHeader(value: string) {
@@ -360,6 +417,7 @@ function toHolidayView(holiday: Holiday & { _id: ObjectId }): HolidayView {
     id: holiday._id.toHexString(),
     org: holiday.org,
     state: holiday.state,
+    type: holiday.type ?? 'Public',
     date: holiday.date.toISOString().slice(0, 10),
     name: holiday.name,
   };

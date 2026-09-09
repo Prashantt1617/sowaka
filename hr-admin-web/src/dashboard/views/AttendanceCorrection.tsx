@@ -6,39 +6,59 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
-import { getShiftPolicy, saveShiftPolicy } from '../../services/hrms';
+import { getShiftPolicy, saveShiftPolicy, type DayMark, type PunchFormat } from '../../services/hrms';
 
-// Trigger statuses come from the shift Attendance Rules.
-const TRIGGERS = ['Missing punch', 'Half day', 'Absent', 'Marked late', 'Early check-out'];
+// Only a missing punch can be corrected: a short or late day is a fact about
+// the hours worked, not a gap in the record.
+const TRIGGERS = ['Missing punch-in', 'Missing punch-out', 'Both punches missing'];
 const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
-// Reasons are a controlled set (not free text) — each drives its own downstream action.
-const REASON_CATALOG = ['WFH', 'On duty', 'Site visit', 'Forgot to punch', 'Apply leave'];
+// What a day is marked as when a punch never arrived. This is what puts a day
+// in front of an employee to correct, so it belongs with the rest of the flow.
+const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+// Where punch data comes from. Auto Punch marks everyone present without a
+// device, which is why it is the default for an org with no hardware.
+const PUNCH_FORMATS: PunchFormat[] = [
+  'Biometric',
+  'Geotag (powered by Sowaka)',
+  'Present by default (Auto Punch)',
+];
 
 export function AttendanceCorrection() {
   const { flash } = useStore();
-  const [triggers, setTriggers] = useState<Record<string, boolean>>({ 'Missing punch': true, 'Half day': true });
+  const [triggers, setTriggers] = useState<Record<string, boolean>>(
+    Object.fromEntries(TRIGGERS.map((t) => [t, true])),
+  );
   const [approver, setApprover] = useState('Reporting manager');
-  const [selectedReasons, setSelectedReasons] = useState<string[]>([...REASON_CATALOG]);
+  const [punchFormat, setPunchFormat] = useState<PunchFormat>('Present by default (Auto Punch)');
   const [mgrWithoutEmployee, setMgrWithoutEmployee] = useState(true);
   const [hrOverride, setHrOverride] = useState(true);
   const [skipLevelOverride, setSkipLevelOverride] = useState(false);
-  const [backEmployee, setBackEmployee] = useState(true);
-  const [backManager, setBackManager] = useState(true);
   const [backDays, setBackDays] = useState('7');
+  const [punchIn, setPunchIn] = useState<DayMark>('Pending Regularisation');
+  const [punchOut, setPunchOut] = useState<DayMark>('Pending Regularisation');
+  const [bothMissing, setBothMissing] = useState<DayMark>('Absent');
+  // Read-only here: a complete day is graded by the Shift tab's thresholds, and
+  // this row shows what those currently are rather than restating them.
+  const [minHalfDay, setMinHalfDay] = useState<number | null>(null);
+  const [minFullDay, setMinFullDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getShiftPolicy()
-      .then(({ correction }) => {
+      .then((policy) => {
+        const { correction } = policy;
+        setPunchIn(policy.missingPunchIn);
+        setPunchOut(policy.missingPunchOut);
+        setBothMissing(policy.missingBoth);
+        setMinHalfDay(policy.minHalfDayHours);
+        setMinFullDay(policy.minFullDayHours);
         setTriggers(Object.fromEntries(TRIGGERS.map((t) => [t, correction.triggers.includes(t)])));
         setApprover(correction.approver);
-        setSelectedReasons(correction.reasons);
+        setPunchFormat(correction.punchFormat);
         setMgrWithoutEmployee(correction.managerWithoutEmployee);
         setHrOverride(correction.hrOverride);
         setSkipLevelOverride(correction.skipLevel);
-        setBackEmployee(correction.backdateByEmployee);
-        setBackManager(correction.backdateByManager);
         setBackDays(String(correction.backdateDays));
       })
       .catch((error: Error) => flash(error.message))
@@ -50,15 +70,16 @@ export function AttendanceCorrection() {
     setSaving(true);
     try {
       await saveShiftPolicy({
+        missingPunchIn: punchIn,
+        missingPunchOut: punchOut,
+        missingBoth: bothMissing,
         correction: {
           triggers: TRIGGERS.filter((t) => triggers[t]),
           approver,
-          reasons: selectedReasons,
+          punchFormat,
           managerWithoutEmployee: mgrWithoutEmployee,
           hrOverride,
           skipLevel: skipLevelOverride,
-          backdateByEmployee: backEmployee,
-          backdateByManager: backManager,
           backdateDays: Number(backDays),
         },
       });
@@ -71,8 +92,6 @@ export function AttendanceCorrection() {
   };
 
   const toggleTrigger = (t: string) => setTriggers((p) => ({ ...p, [t]: !p[t] }));
-  const toggleReason = (r: string) => setSelectedReasons((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
-  const canBackdate = backEmployee || backManager;
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -85,9 +104,40 @@ export function AttendanceCorrection() {
         </div>
       </div>
 
+      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <SectionHeader title="Missing punches" subtitle="What the day is marked as when a punch never arrived — which is what puts it up for correction." />
+        <div style={{ padding: '18px 22px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Punch-in missing — mark as"><Select value={punchIn} onChange={setPunchIn} options={MARK_OPTIONS} /></Field>
+            <Field label="Punch-out missing — mark as"><Select value={punchOut} onChange={setPunchOut} options={MARK_OPTIONS} /></Field>
+            <Field label="Both punches missing — mark as"><Select value={bothMissing} onChange={setBothMissing} options={MARK_OPTIONS} /></Field>
+            {/* Not a fixed mark: a complete day is half or full depending on the
+                hours worked against the Shift tab's thresholds. */}
+            <Field label="Both punches present — mark as">
+              <div style={fixedValue}>
+                <span>Half day or full day</span>
+                <span style={fixedTag}>by hours worked</span>
+              </div>
+            </Field>
+          </div>
+          <div style={note}>
+            {minFullDay == null || minHalfDay == null ? (
+              'A day with both punches is graded on the hours worked, against the thresholds on the Shift tab.'
+            ) : (
+              <>
+                A day with both punches is graded on the hours worked, against the{' '}
+                <strong>Shift</strong> tab’s thresholds: <strong>{minFullDay}h</strong> or more is a
+                full day, <strong>{minHalfDay}h</strong> up to {minFullDay}h is a half day, and
+                anything shorter is flagged for correction. Change the split there, not here.
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
+
       {/* When & why */}
       <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <SectionHeader title="When can a correction be raised?" subtitle="An employee gets the option when their day is auto-marked (from the shift’s Attendance Rules) as:" />
+        <SectionHeader title="When can a correction be raised?" subtitle="An employee raises one from their attendance calendar. They get the option when a day is auto-marked as:" />
         <div style={{ padding: '18px 22px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {TRIGGERS.map((t) => (
@@ -95,12 +145,24 @@ export function AttendanceCorrection() {
             ))}
           </div>
 
-          <SubLabel>Reasons an employee can pick</SubLabel>
-          <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Select from the standard set — each reason drives its own action (e.g. “Apply leave” starts a leave request).</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {REASON_CATALOG.map((r) => (
-              <button key={r} onClick={() => toggleReason(r)} style={chip(selectedReasons.includes(r))}>{r}</button>
-            ))}
+        </div>
+      </Card>
+
+      {/* Where the punches come from in the first place. */}
+      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <SectionHeader title="Punch format" subtitle="How punch-in and punch-out are captured for this org." />
+        <div style={{ padding: '18px 22px' }}>
+          <Field label="Punch in / punch out data comes from">
+            <select value={punchFormat} onChange={(e) => setPunchFormat(e.target.value as PunchFormat)} style={{ ...input, maxWidth: 340 }}>
+              {PUNCH_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </Field>
+          <div style={note}>
+            {punchFormat === 'Biometric'
+              ? 'Punches are imported from the biometric device. A day with no record is a missing punch, and can be corrected.'
+              : punchFormat === 'Geotag (powered by Sowaka)'
+              ? 'Employees punch in the app and the location is captured with the time.'
+              : 'Everyone is marked present without punching. Corrections still apply where a day needs adjusting.'}
           </div>
         </div>
       </Card>
@@ -114,27 +176,17 @@ export function AttendanceCorrection() {
               {APPROVERS.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </Field>
-          <QRow label="Can a manager correct attendance without the employee applying?"><YesNo value={mgrWithoutEmployee} onChange={setMgrWithoutEmployee} /></QRow>
           <QRow label="Can HR override the decision?"><YesNo value={hrOverride} onChange={setHrOverride} /></QRow>
-          <QRow label="Can the level above the manager override?"><YesNo value={skipLevelOverride} onChange={setSkipLevelOverride} /></QRow>
         </div>
       </Card>
 
       {/* Backdating */}
       <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <SectionHeader title="Backdating" subtitle="Whether past-dated corrections are allowed, and how far back." />
+        <SectionHeader title="Backdating" subtitle="How far back a correction can reach." />
         <div style={{ padding: '18px 22px' }}>
-          <Field label="Backdated corrections allowed for">
-            <div style={{ display: 'flex', gap: 18 }}>
-              <label style={checkRow}><input type="checkbox" checked={backEmployee} onChange={(e) => setBackEmployee(e.target.checked)} /> Employee</label>
-              <label style={checkRow}><input type="checkbox" checked={backManager} onChange={(e) => setBackManager(e.target.checked)} /> Manager</label>
-            </div>
+          <Field label="How far back can a correction be raised?">
+            <Suffixed value={backDays} onChange={setBackDays} suffix="days" />
           </Field>
-          <div style={{ opacity: canBackdate ? 1 : 0.5, pointerEvents: canBackdate ? 'auto' : 'none' }}>
-            <Field label="How far back can they backdate?">
-              <Suffixed value={backDays} onChange={setBackDays} suffix="days" />
-            </Field>
-          </div>
         </div>
       </Card>
     </div>
@@ -149,8 +201,12 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
     </div>
   );
 }
-function SubLabel({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9197A2', margin: '16px 0 8px' }}>{children}</div>;
+function Select<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: readonly T[] }) {
+  return (
+    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} style={selectStyle}>
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -191,5 +247,8 @@ function chip(active: boolean): CSSProperties {
   return { padding: '9px 15px', borderRadius: 10, border: `1px solid ${active ? '#0571A6' : '#EBEBEB'}`, background: active ? '#0571A6' : '#fff', color: active ? '#fff' : '#484848', fontWeight: 700, fontSize: 14, cursor: 'pointer' };
 }
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: '#333333', cursor: 'pointer' };
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
+const fixedValue: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
+const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
+const note: CSSProperties = { marginTop: 16, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };

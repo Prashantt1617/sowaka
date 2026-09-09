@@ -1,4 +1,5 @@
 import { generateDailyLifecyclePosts } from './connect.service';
+import { runLeaveYearEnd } from './leave-year-end.service';
 import { logger } from '../utils/logger';
 
 let timer: NodeJS.Timeout | undefined;
@@ -21,7 +22,15 @@ export function startConnectScheduler() {
         logger.info('Generated daily Connect lifecycle posts');
       } catch (error) {
         logger.error('Failed to generate daily Connect lifecycle posts', {}, error);
-      } finally { schedule(); }
+      }
+      try {
+        // Closes any leave year that ends today. A no-op on every other day,
+        // and idempotent, so a restart cannot double-process one.
+        await runLeaveYearEnd();
+      } catch (error) {
+        logger.error('Leave year-end run failed', {}, error);
+      }
+      schedule();
     }, millisecondsUntilNextSevenAmIst());
     timer.unref();
   };

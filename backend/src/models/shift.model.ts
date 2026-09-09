@@ -4,52 +4,177 @@ import { ObjectId } from 'mongodb';
 export type DayMark = 'Absent' | 'Half Day' | 'Present' | 'Pending Regularisation';
 
 export interface ShiftOvertimeRules {
+  /** How far back an overtime claim can reach, in days. */
+  backdateDays: number;
+  /**
+   * Whether the org offers overtime at all. HR can still switch it off for one
+   * employee (`User.overtimeEligible`) or a whole team
+   * (`Company.overtimeDisabledDepartments`); both gates have to pass.
+   */
   eligible: boolean;
-  onHoliday: boolean;
-  onWeeklyOff: boolean;
-  beyondShift: boolean;
-  beyondShiftHours: number;
 }
 
+/**
+ * Overtime is applied as a half day or a full day — nothing else, and not
+ * configurable. Anything finer would have to be reconciled against the shift's
+ * own hours, and comp-off is credited in half days regardless.
+ */
+export const OVERTIME_DURATIONS = ['half_day', 'full_day'] as const;
+export type OvertimeDuration = (typeof OVERTIME_DURATIONS)[number];
+
+/** Comp-off credited to the employee's balance per approved overtime. */
+export const COMP_OFF_CREDIT: Record<OvertimeDuration, number> = {
+  half_day: 0.5,
+  full_day: 1,
+};
+
 export interface ShiftCorrectionRules {
-  /** Auto-marked outcomes that let an employee raise a correction. */
+  /**
+   * Which missing-punch outcomes let an employee raise a correction. Only a
+   * missing punch can be corrected — a short or late day is a fact about hours
+   * worked, not a gap in the record.
+   */
   triggers: string[];
+  /** Where punch data comes from in the first place. */
+  punchFormat: PunchFormat;
   approver: string;
-  reasons: string[];
   managerWithoutEmployee: boolean;
   hrOverride: boolean;
   skipLevel: boolean;
-  backdateByEmployee: boolean;
-  backdateByManager: boolean;
   backdateDays: number;
 }
 
-export interface ShiftLeaveRules {
+/** How an employee's punches are captured. */
+export type PunchFormat = 'Biometric' | 'Geotag (powered by Sowaka)' | 'Present by default (Auto Punch)';
+
+export const PUNCH_FORMATS: PunchFormat[] = [
+  'Biometric',
+  'Geotag (powered by Sowaka)',
+  'Present by default (Auto Punch)',
+];
+
+/** The outcomes a correction can be raised against. */
+export const CORRECTION_TRIGGERS = [
+  'Missing punch-in',
+  'Missing punch-out',
+  'Both punches missing',
+];
+
+/** The leave types an org runs. Comp-off is earned, not accrued. */
+export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
+
+/**
+ * One leave type's accrual and what happens to an unused balance at year end.
+ *
+ * The year-end order is fixed and is the flow HR was asked for: carry forward
+ * up to a limit, then encash what is left (all of it, or up to a limit), and
+ * anything still remaining lapses. Lapse is not a setting — it is the tail of
+ * the other two, which is why the dashboard only displays it.
+ */
+export interface LeaveTypeRule {
+  key: LeaveTypeKey;
+  name: string;
+  /** Days earned per month. Ignored for comp-off, which overtime credits. */
+  perMonth: number;
+  /** When the balance is processed. */
+  resetOn: 'calendar_year' | 'financial_year';
+  /** Unused days carried into the next year, at most. */
+  carryForwardDays: number;
+  /** What happens to what is left after carry-forward. */
+  encashment: 'none' | 'all' | 'limit';
+  /** Days encashable when `encashment` is 'limit'. */
+  encashLimitDays: number;
+  /** How far ahead this type can be applied for. */
   advanceDays: number;
+  /** Whether this type can be applied for after the fact. */
   allowBackdated: boolean;
+  /** How far back, when backdating is allowed. */
   backdatedDays: number;
-  approver: string;
-  managerOnBehalf: boolean;
-  hrOverride: boolean;
-  skipLevel: boolean;
 }
 
+/**
+ * What a year-end run decided for one employee's balance of one leave type.
+ *
+ * Written once, when the year is closed. The next year's opening balance reads
+ * `carried` from here rather than re-deriving it, so a balance cannot change
+ * retroactively because someone edited the policy afterwards.
+ */
+export interface LeaveYearEnd {
+  _id?: ObjectId;
+  org: string;
+  userId: string;
+  /** The year that closed. */
+  year: number;
+  type: LeaveTypeKey;
+  closing: number;
+  carried: number;
+  encashed: number;
+  lapsed: number;
+  processedAt: Date;
+}
+
+export const LEAVE_TYPE_KEYS: LeaveTypeKey[] = ['sick', 'casual', 'earned', 'comp_off'];
+
+export const DEFAULT_LEAVE_TYPES: LeaveTypeRule[] = [
+  // Sick leave is usually taken first and applied for after; the others are planned.
+  { key: 'sick', name: 'Sick Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none', encashLimitDays: 0, advanceDays: 7, allowBackdated: true, backdatedDays: 7 },
+  { key: 'casual', name: 'Casual Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 15, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3 },
+  { key: 'earned', name: 'Earned Leave', perMonth: 1.5, resetOn: 'financial_year', carryForwardDays: 15, encashment: 'all', encashLimitDays: 0, advanceDays: 90, allowBackdated: false, backdatedDays: 0 },
+  { key: 'comp_off', name: 'Comp-off', perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 5, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: false, backdatedDays: 0 },
+];
+
+/**
+ * Year-end processing for one balance, in the order HR configured it.
+ *
+ * Carry forward first, then encash what is left, then whatever still remains
+ * lapses. With "carry up to 15, encash everything above that": a closing
+ * balance of 8 carries 8 and encashes 0; a closing balance of 20 carries 15
+ * and encashes 5.
+ */
+export function processYearEnd(closing: number, rule: LeaveTypeRule) {
+  const balance = Math.max(0, closing);
+  const carried = Math.min(balance, Math.max(0, rule.carryForwardDays));
+  const remainder = balance - carried;
+  const encashed =
+    rule.encashment === 'all'
+      ? remainder
+      : rule.encashment === 'limit'
+        ? Math.min(remainder, Math.max(0, rule.encashLimitDays))
+        : 0;
+  return { carried, encashed, lapsed: remainder - encashed };
+}
+
+export interface ShiftLeaveRules {
+  approver: string;
+  hrOverride: boolean;
+  /** Accrual, year-end handling and the application window, per leave type. */
+  types: LeaveTypeRule[];
+}
+
+/** The rule half of a policy — everything a template can override. */
+export type ShiftPolicyRules = Omit<OrgShiftPolicy, '_id' | 'org' | 'updatedAt' | 'updatedByUserId'>;
+
+/**
+ * A named override of the org policy, plus the people it applies to.
+ *
+ * A template is created by copying the org policy as it stands, so it opens
+ * pre-filled and HR edits from a working starting point. Editing a template
+ * never touches the org policy: the two are separate documents, and an
+ * employee follows whichever one reaches them.
+ *
+ * Everyone the template is *not* assigned to stays on the org policy. An
+ * employee belongs to at most one template — assigning them to a second moves
+ * them, so there is never a question of which override wins.
+ */
 export interface ShiftTemplate {
   _id?: ObjectId;
   org: string;
   name: string;
   active: boolean;
-  /** Local wall-clock "HH:MM". An end at or before the start means overnight. */
-  startTime: string;
-  endTime: string;
-  /**
-   * A template carries no rules of its own. The thresholds, the grace, the
-   * missing-punch marks and the weekly-off all come from the org's
-   * `OrgShiftPolicy`, saved under Shifts › Policies — a template is the window
-   * plus the vehicle that policy is assigned to people by.
-   */
-  /** The shift everyone without one of their own is graded against. */
-  isDefault: boolean;
+  /** The full policy this template applies to the people it covers. */
+  policy: ShiftPolicyRules;
+  /** Employees this template overrides the org policy for. */
+  assignedUserIds: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,7 +189,10 @@ export interface ShiftTemplate {
 export interface OrgShiftPolicy {
   _id?: ObjectId;
   org: string;
-  // Policies › Shift
+  // Policies › Shift — the working window, local wall-clock "HH:MM". An end at
+  // or before the start means the shift runs overnight.
+  startTime: string;
+  endTime: string;
   missingPunchIn: DayMark;
   missingPunchOut: DayMark;
   missingBoth: DayMark;
@@ -86,6 +214,8 @@ export interface OrgShiftPolicy {
 
 /** What an org sees on a policy tab it has never saved. */
 export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'> = {
+  startTime: '09:00',
+  endTime: '18:00',
   missingPunchIn: 'Pending Regularisation',
   missingPunchOut: 'Pending Regularisation',
   missingBoth: 'Absent',
@@ -94,17 +224,18 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
   minFullDayHours: 8,
   lateGraceMinutes: 10,
   earlyOutGraceMinutes: 10,
-  overtime: { eligible: true, onHoliday: true, onWeeklyOff: true, beyondShift: false, beyondShiftHours: 1 },
+  overtime: { eligible: true, backdateDays: 7 },
   correction: {
-    triggers: ['Missing punch', 'Half day'],
+    triggers: [...CORRECTION_TRIGGERS],
+    punchFormat: 'Present by default (Auto Punch)',
     approver: 'Reporting manager',
-    reasons: ['WFH', 'On duty', 'Site visit', 'Forgot to punch', 'Apply leave'],
     managerWithoutEmployee: true, hrOverride: true, skipLevel: false,
-    backdateByEmployee: true, backdateByManager: true, backdateDays: 7,
+    backdateDays: 7,
   },
   leave: {
-    advanceDays: 30, allowBackdated: true, backdatedDays: 3,
-    approver: 'Reporting manager', managerOnBehalf: false, hrOverride: true, skipLevel: false,
+    approver: 'Reporting manager',
+    hrOverride: true,
+    types: DEFAULT_LEAVE_TYPES.map((type) => ({ ...type })),
   },
 };
 

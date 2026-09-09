@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
-  createShift, deleteShift, listShifts, readOrgShiftPolicy, saveOrgShiftPolicy, updateShift,
+  assignShiftToUsers, createShift, deleteShift, listShifts, readOrgShiftPolicy,
+  resolveShiftAudience, saveOrgShiftPolicy, unassignShiftUsers, updateShift,
 } from '../services/shift.service';
 
 function callerId(req: Request): string {
@@ -44,5 +45,26 @@ export async function saveShiftPolicyHandler(req: Request, res: Response, next: 
   try {
     const policy = await saveOrgShiftPolicy(callerId(req), req.body ?? {});
     res.json({ success: true, policy });
+  } catch (error) { next(error); }
+}
+
+// Who a rule set selects, and whose shift would actually change.
+export async function shiftAudienceHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, ...(await resolveShiftAudience(callerId(req), req.body ?? {})) });
+  } catch (error) { next(error); }
+}
+
+export async function assignShiftHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shift = await assignShiftToUsers(callerId(req), String(req.params.shiftId ?? ''), req.body?.userIds);
+    res.json({ success: true, shift });
+  } catch (error) { next(error); }
+}
+
+export async function unassignShiftHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shift = await unassignShiftUsers(callerId(req), String(req.params.shiftId ?? ''), req.body?.userIds);
+    res.json({ success: true, shift });
   } catch (error) { next(error); }
 }

@@ -27,7 +27,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
-import { OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
+import { LeaveYearEnd, OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -136,6 +136,10 @@ export function shiftTemplates(): Collection<ShiftTemplate> {
 
 export function shiftPolicies(): Collection<OrgShiftPolicy> {
   return getDb().collection<OrgShiftPolicy>('shift_policies');
+}
+
+export function leaveYearEnds(): Collection<LeaveYearEnd> {
+  return getDb().collection<LeaveYearEnd>('leave_year_ends');
 }
 
 export function payHeads(): Collection<PayHead> {
@@ -295,6 +299,10 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One policy document per org — the Shifts › Policies setup.
   const shiftPoliciesCollection = database.collection<OrgShiftPolicy>('shift_policies');
   await shiftPoliciesCollection.createIndex({ org: 1 }, { unique: true });
+
+  // One row per employee, per leave type, per closed year.
+  const leaveYearEndsCollection = database.collection<LeaveYearEnd>('leave_year_ends');
+  await leaveYearEndsCollection.createIndex({ org: 1, userId: 1, year: 1, type: 1 }, { unique: true });
 
   const kpiAssignmentsCollection = database.collection<KpiAssignment>('kpi_assignments');
   // One assignment per employee per cycle; re-assigning replaces it.

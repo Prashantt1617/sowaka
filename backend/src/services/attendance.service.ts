@@ -4,6 +4,10 @@ import {
   AttendanceRegularization,
   RegularizationStatus,
 } from '../models/attendance.model';
+import { approvalRulesFor, managerMayDecide, policyForUser } from './shift.service';
+import {
+  notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
+} from './request-notifications.service';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
@@ -75,6 +79,20 @@ export async function recordPunch(userId: string, type: string) {
   }
 
   const updated = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  if (type === 'in') {
+    await notifyPunchedIn(userId, now);
+  } else if (updated?.punchIn && updated?.punchOut) {
+    // Grade the day the way the app does, so the message agrees with the
+    // calendar the employee is about to open.
+    const worked = (updated.punchOut.getTime() - updated.punchIn.getTime()) / 60_000;
+    const policy = await policyForUser(userId);
+    const band = worked >= policy.minFullDayHours * 60
+      ? 'full'
+      : worked >= policy.minHalfDayHours * 60
+        ? 'half'
+        : 'short';
+    await notifyPunchedOut(userId, now, worked, band);
+  }
   return {
     workDate,
     punchIn: updated?.punchIn?.toISOString(),
@@ -115,6 +133,7 @@ export async function requestRegularization(
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
     workDate, punchIn, punchOut, note, status: 'pending', createdAt,
   });
+  await notifyCorrectionSubmitted({ employeeUserId: userId, workDate, reason: note });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
     managerUserId: employee.managerUserId, workDate, punchIn, punchOut, note,
@@ -150,6 +169,19 @@ export async function decideRegularization(
   if (!decisions.has(decision)) throw new AttendanceError(400, 'Decision must be approved or declined');
   const managerNote = (input.managerNote ?? '').trim();
   if (managerNote.length > 500) throw new AttendanceError(400, 'Manager note cannot exceed 500 characters');
+  // Who signs off a correction is decided by the policy that governs this
+  // employee — their shift template's, or the org's.
+  const pending = await attendanceRegularizations().findOne({ _id: new ObjectId(id) });
+  if (pending) {
+    const rules = await approvalRulesFor(pending.userId, 'correction');
+    if (!managerMayDecide(rules.approver)) {
+      throw new AttendanceError(
+        403,
+        `Attendance corrections are approved by ${rules.approver}, not by the reporting manager`,
+      );
+    }
+  }
+
   const decidedAt = new Date();
   const result = await attendanceRegularizations().findOneAndUpdate(
     { _id: new ObjectId(id), managerUserId, status: 'pending' },
@@ -178,6 +210,12 @@ export async function decideRegularization(
     );
   }
 
+  await notifyCorrectionDecided({
+    employeeUserId: result.userId,
+    workDate: result.workDate,
+    approved: decision === 'approved',
+    comment: managerNote,
+  });
   return (await enrichRegularizations([result]))[0];
 }
 
