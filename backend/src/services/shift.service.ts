@@ -29,7 +29,9 @@ export class ShiftError extends Error {
 }
 
 const MAX_NAME = 60;
-const DAY_MARKS: DayMark[] = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+const DAY_MARKS: DayMark[] = ['Absent', 'Half Day', 'Present'];
+/** Retired: it duplicated the correction-allowed column. Read as Absent. */
+const RETIRED_MARKS: Record<string, DayMark> = { 'Pending Regularisation': 'Absent' };
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The caller's org. Every read and write below is scoped to it. */
@@ -75,6 +77,8 @@ function minutes(value: unknown, field: string, fallback: number): number {
 function mark(value: unknown, field: string, fallback: DayMark): DayMark {
   const trimmed = String(value ?? '').trim();
   if (!trimmed) return fallback;
+  // A policy saved before the mark was retired still round-trips.
+  if (RETIRED_MARKS[trimmed]) return RETIRED_MARKS[trimmed];
   if (!DAY_MARKS.includes(trimmed as DayMark)) {
     throw new ShiftError(400, `${field} must be one of: ${DAY_MARKS.join(', ')}`);
   }
@@ -416,9 +420,17 @@ export async function getOrgShiftPolicy(org: string): Promise<Omit<OrgShiftPolic
   if (!doc) return { ...DEFAULT_ORG_SHIFT_POLICY, updatedAt: new Date(0) };
   // Merged over the defaults so a policy saved before a field existed still
   // answers for it, rather than handing the app an undefined threshold.
+  const asMark = (value: unknown, fallback: DayMark): DayMark => {
+    const trimmed = String(value ?? '').trim();
+    if (RETIRED_MARKS[trimmed]) return RETIRED_MARKS[trimmed];
+    return DAY_MARKS.includes(trimmed as DayMark) ? (trimmed as DayMark) : fallback;
+  };
   return {
     ...DEFAULT_ORG_SHIFT_POLICY,
     ...doc,
+    missingPunchIn: asMark(doc.missingPunchIn, DEFAULT_ORG_SHIFT_POLICY.missingPunchIn),
+    missingPunchOut: asMark(doc.missingPunchOut, DEFAULT_ORG_SHIFT_POLICY.missingPunchOut),
+    missingBoth: asMark(doc.missingBoth, DEFAULT_ORG_SHIFT_POLICY.missingBoth),
     overtime: { ...DEFAULT_ORG_SHIFT_POLICY.overtime, ...(doc.overtime ?? {}) },
     correction: { ...DEFAULT_ORG_SHIFT_POLICY.correction, ...(doc.correction ?? {}) },
     leave: { ...DEFAULT_ORG_SHIFT_POLICY.leave, ...(doc.leave ?? {}) },

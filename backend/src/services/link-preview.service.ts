@@ -25,6 +25,12 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
   const url = normalizeUrl(rawUrl);
   if (!url) return empty;
 
+  // YouTube serves its OG tags inconsistently to unknown agents, and youtu.be
+  // links redirect before any of them are reached — but every video's poster
+  // is derivable from its id, so there is nothing to fetch.
+  const youTube = youTubeThumbnail(url);
+  if (youTube) return youTube;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -59,6 +65,35 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * A YouTube link's poster, straight from the video id. `hqdefault` exists for
+ * every video, including ones with no custom thumbnail, which the higher
+ * resolutions do not.
+ */
+function youTubeThumbnail(url: string): LinkPreview | null {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return null; }
+  const host = parsed.hostname.replace(/^www\./, '');
+  let id = '';
+  if (host === 'youtu.be') {
+    id = parsed.pathname.slice(1).split('/')[0];
+  } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+    if (parsed.pathname === '/watch') id = parsed.searchParams.get('v') ?? '';
+    else {
+      const match = /^\/(?:shorts|embed|v|live)\/([^/?#]+)/.exec(parsed.pathname);
+      id = match?.[1] ?? '';
+    }
+  }
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return null;
+  return {
+    imageUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
+    // The title still needs the page, which is often withheld; the card falls
+    // back to the URL, which is what it did before.
+    title: '',
+    siteName: 'YouTube',
+  };
 }
 
 /** Stops a huge or streaming page from being buffered in full. */

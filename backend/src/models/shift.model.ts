@@ -1,7 +1,14 @@
 import { ObjectId } from 'mongodb';
 
 /** How a day is marked when one or both punches never arrived. */
-export type DayMark = 'Absent' | 'Half Day' | 'Present' | 'Pending Regularisation';
+/**
+ * How a day is marked when one or both punches never arrived.
+ *
+ * There is deliberately no "pending regularisation": whether the day can be
+ * corrected is its own column now, so a mark that meant "awaiting a correction"
+ * said the same thing twice and could contradict it.
+ */
+export type DayMark = 'Absent' | 'Half Day' | 'Present';
 
 export interface ShiftOvertimeRules {
   /** How far back an overtime claim can reach, in days. */
@@ -53,11 +60,17 @@ export const PUNCH_FORMATS: PunchFormat[] = [
   'Present by default (Auto Punch)',
 ];
 
-/** The outcomes a correction can be raised against. */
+/**
+ * The four ways a day can come out, and what a correction may be raised
+ * against. "Both punches present" is included because a complete day can still
+ * be disputed — an employee who worked through and was graded a half day has
+ * something to contest, even though no punch is missing.
+ */
 export const CORRECTION_TRIGGERS = [
   'Missing punch-in',
   'Missing punch-out',
   'Both punches missing',
+  'Both punches present',
 ];
 
 /** The leave types an org runs. Comp-off is earned, not accrued. */
@@ -216,8 +229,8 @@ export interface OrgShiftPolicy {
 export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'> = {
   startTime: '09:00',
   endTime: '18:00',
-  missingPunchIn: 'Pending Regularisation',
-  missingPunchOut: 'Pending Regularisation',
+  missingPunchIn: 'Absent',
+  missingPunchOut: 'Absent',
   missingBoth: 'Absent',
   weeklyOff: { '1': [6], '2': [6], '3': [6], '4': [6], '5': [6] },
   minHalfDayHours: 4,
@@ -226,7 +239,9 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
   earlyOutGraceMinutes: 10,
   overtime: { eligible: true, backdateDays: 7 },
   correction: {
-    triggers: [...CORRECTION_TRIGGERS],
+    // A complete day is correct by default, so it is not up for correction
+    // unless HR turns it on.
+    triggers: CORRECTION_TRIGGERS.filter((trigger) => trigger !== 'Both punches present'),
     punchFormat: 'Present by default (Auto Punch)',
     approver: 'Reporting manager',
     managerWithoutEmployee: true, hrOverride: true, skipLevel: false,

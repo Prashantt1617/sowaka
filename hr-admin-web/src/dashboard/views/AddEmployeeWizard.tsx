@@ -1,23 +1,25 @@
-// People › Employees › Add employee — a 4-step wizard.
-//   1 Basic details · 2 Salary details · 3 Personal details · 4 Payment information
-// NOTE: frontend-capture phase — mock only, no API calls. Steps 2–4 are stubs
-// until their fields are defined.
-import { Fragment, useState } from 'react';
+// People › Employees › Add employee.
+//   1 Basic details · 2 Personal details · 3 Payment information
+//   · 4 Shift template · 5 Feedback parameters
+//
+// Basic details is where the employee record is actually created; the steps
+// after it attach things to a person who already exists, so each saves on its
+// own and a wizard abandoned halfway still leaves a usable record behind.
+//
+// Salary details is deliberately not in the flow — the step is kept below,
+// unrendered, until payroll is wired up.
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconPlus } from '../icons';
+import { createEmployee, getShifts, assignShift, type ShiftDTO } from '../../services/hrms';
+import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
+import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
+import { evenWeights, weightError, weightTotal } from '../weights';
 
-const STEPS = ['Basic details', 'Salary details', 'Personal details', 'Payment information'];
-const ORG_NAME = 'Convrse Spaces';
+const STEPS = ['Basic details', 'Personal details', 'Payment information', 'Shift template', 'Feedback parameters'];
 
-// —— Mock dropdown sources ————————————————————————————————————————————
-const WORK_LOCATIONS = ['Head Office — Bengaluru', 'Mumbai Sales Office', 'Delhi NCR Hub', 'Remote — India'];
-const DESIGNATIONS = ['Software Engineer', 'Senior Software Engineer', 'Engineering Manager', 'Product Designer', 'Product Manager', 'Account Executive', 'Sales Development Rep', 'Customer Success Manager', 'People Operations', 'Finance Analyst'];
-const DEPARTMENTS = ['Engineering', 'Design', 'Sales', 'Marketing', 'Customer Success', 'Finance', 'Human Resources'];
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
-const REPORTING_MANAGERS = ['Ananya Rao', 'Vikram Nair', 'Priya Iyer', 'Rahul Sharma', 'Meera Menon', 'Karan Kapoor'];
-const THIS_MONTH = 'August 2026';
-const NEXT_MONTH = 'September 2026';
 
 type Basic = {
   firstName: string;
@@ -42,13 +44,64 @@ const EMPTY_BASIC: Basic = {
   gender: '', workLocation: '', designation: '', department: '', manager: '',
 };
 
+/** Dropdown values taken from who is already on the roster. */
+type RosterOptions = {
+  locations: string[];
+  designations: string[];
+  departments: string[];
+  managers: { userId: string; name: string }[];
+  thisMonth: string;
+  nextMonth: string;
+};
+
 export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
-  const { flash } = useStore();
+  const { flash, emps, user, cycle, reload } = useStore();
   const [step, setStep] = useState(0);
   const [invite, setInvite] = useState(false);
   const [done, setDone] = useState(false);
   const [basic, setBasic] = useState<Basic>(EMPTY_BASIC);
   const [touched, setTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  /** Set once the employee exists on the server; every later step needs it. */
+  const [createdUserId, setCreatedUserId] = useState<string | null>(null);
+
+  // Step 4 and 5 attach to the person created in step 1.
+  const [shifts, setShifts] = useState<ShiftDTO[]>([]);
+  const [shiftId, setShiftId] = useState<string>('');
+  const [kpiTemplates, setKpiTemplates] = useState<KpiTemplateDTO[]>([]);
+  const [kpiParams, setKpiParams] = useState<KpiParameterDTO[]>([]);
+  const [kpiTemplateId, setKpiTemplateId] = useState<string>('');
+  const [pickedParams, setPickedParams] = useState<string[]>([]);
+  const [kpiWeights, setKpiWeights] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    getShifts().then(setShifts).catch(() => setShifts([]));
+    listKpiTemplates().then(setKpiTemplates).catch(() => setKpiTemplates([]));
+    listKpiParameters().then(setKpiParams).catch(() => setKpiParams([]));
+  }, []);
+
+  const options = useMemo<RosterOptions>(() => {
+    const uniq = (values: (string | undefined)[]) =>
+      [...new Set(values.map((v) => (v ?? '').trim()).filter(Boolean))].sort();
+    const monthName = (period: string) => {
+      const [y, m] = period.split('-').map(Number);
+      return `${new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' })
+        .format(new Date(Date.UTC(y, m - 1, 1)))} ${y}`;
+    };
+    return {
+      locations: uniq(emps.map((e) => e.location)),
+      designations: uniq(emps.map((e) => e.role)),
+      departments: uniq(emps.map((e) => e.team)),
+      // Anyone already managing someone is offered as a reporting manager.
+      managers: [...new Map(
+        emps.filter((e) => emps.some((other) => other.managerId === e.id))
+          .map((e) => [e.id, { userId: e.id, name: e.name }]),
+      ).values()].sort((a, b) => a.name.localeCompare(b.name)),
+      thisMonth: monthName(cycle.period),
+      nextMonth: monthName(cycle.next),
+    };
+  }, [emps, cycle]);
 
   const set = <K extends keyof Basic>(k: K, v: Basic[K]) => setBasic({ ...basic, [k]: v });
 
@@ -64,21 +117,76 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
   };
   const fullName = `${basic.firstName.trim()} ${basic.lastName.trim()}`.trim();
 
-  // Validation is disabled for now — asterisks still mark mandatory fields, but
-  // Save and Continue always advances so you can move through the flow.
-  const saveAndContinue = () => {
+  const saveAndContinue = async () => {
+    setError('');
     if (step === 0) {
-      // After Basic details → create-user / portal-access screen.
+      // Basic details is the only step that must be complete: everything after
+      // it attaches to a record that has to exist first.
+      setTouched(true);
+      if (Object.values(missing).some(Boolean)) {
+        setError('Fill the fields marked with an asterisk before continuing.');
+        return;
+      }
       setInvite(true);
       return;
     }
-    if (step < STEPS.length - 1) {
+    if (step === 3) {
+      // Shift template — assigning is a move, so skipping leaves them on the
+      // org policy, which is the correct default.
+      if (shiftId && createdUserId) {
+        setSaving(true);
+        try { await assignShift(shiftId, [createdUserId]); }
+        catch (e) { setError((e as Error).message); setSaving(false); return; }
+        setSaving(false);
+      }
       setStep(step + 1);
-      setTouched(false);
-    } else {
-      // Final step submitted → show the success confirmation.
-      setDone(true);
+      return;
     }
+    if (step === STEPS.length - 1) {
+      if (createdUserId && pickedParams.length > 0) {
+        const problem = weightError(pickedParams, kpiWeights);
+        if (problem) { setError(problem); return; }
+        setSaving(true);
+        try {
+          // Assignments land in the next cycle: the live one is frozen so a
+          // manager scoring right now never has the form change under them.
+          await assignKpis({
+            userId: createdUserId,
+            period: cycle.next,
+            parameterIds: pickedParams,
+            weights: kpiWeights,
+          });
+        } catch (e) { setError((e as Error).message); setSaving(false); return; }
+        setSaving(false);
+      }
+      await reload();
+      setDone(true);
+      return;
+    }
+    setStep(step + 1);
+    setTouched(false);
+  };
+
+  /** Picking a template pre-fills the set; it stays editable per employee. */
+  const applyTemplate = (templateId: string) => {
+    setKpiTemplateId(templateId);
+    const template = kpiTemplates.find((t) => t.id === templateId);
+    if (!template) { setPickedParams([]); setKpiWeights({}); return; }
+    setPickedParams(template.parameterIds);
+    setKpiWeights(
+      template.weights && Object.keys(template.weights).length
+        ? { ...template.weights }
+        : evenWeights(template.parameterIds),
+    );
+  };
+
+  const toggleParam = (id: string) => {
+    const next = pickedParams.includes(id)
+      ? pickedParams.filter((p) => p !== id)
+      : [...pickedParams, id];
+    setPickedParams(next);
+    // Re-spread evenly: a set whose weights no longer sum to 100 is refused.
+    setKpiWeights(evenWeights(next));
   };
 
   // Reset the whole wizard to add another employee from the success screen.
@@ -88,15 +196,41 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
     setInvite(false);
     setTouched(false);
     setDone(false);
+    setCreatedUserId(null);
+    setShiftId('');
+    setKpiTemplateId('');
+    setPickedParams([]);
+    setKpiWeights({});
+    setError('');
   };
 
   // Sending the invite is where the user is actually created; the wizard then
-  // continues into Salary / Personal / Payment for the now-created user.
-  const sendInvite = () => {
-    flash(`Invitation sent to ${basic.workEmail || fullName} — user created`);
-    setInvite(false);
-    setStep(1);
-    setTouched(false);
+  // continues into the steps that attach things to them.
+  const sendInvite = async () => {
+    setSaving(true); setError('');
+    try {
+      const created = await createEmployee({
+        name: fullName,
+        email: basic.workEmail.trim(),
+        employeeId: basic.employeeId.trim() || undefined,
+        designation: basic.designation || undefined,
+        department: basic.department || undefined,
+        location: basic.workLocation || undefined,
+        gender: basic.gender || undefined,
+        mobile: basic.mobile.trim() || undefined,
+        joiningDate: basic.doj || undefined,
+        managerUserId: options.managers.find((m) => m.name === basic.manager)?.userId,
+      });
+      setCreatedUserId(created.userId);
+      flash(`${created.name} created — invitation sent to ${created.email}`);
+      setInvite(false);
+      setStep(1);
+      setTouched(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -111,7 +245,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
         {done ? (
           <>
             <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
-              <SuccessScreen name={fullName || 'this employee'} employeeId={basic.employeeId} designation={basic.designation} department={basic.department} />
+              <SuccessScreen name={fullName || 'this employee'} employeeId={basic.employeeId} designation={basic.designation} department={basic.department} orgName={user?.company ?? 'your organisation'} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid #EBEBEB' }}>
               <button onClick={addAnother} style={ghostBtn}>Add another employee</button>
@@ -124,10 +258,13 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
               <InviteScreen name={fullName || 'this employee'} email={basic.workEmail} employeeId={basic.employeeId} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid #EBEBEB' }}>
-              <button onClick={() => setInvite(false)} style={ghostBtn}>← Back</button>
+              <button onClick={() => { setInvite(false); setError(''); }} style={ghostBtn}>← Back</button>
+              {error && <div style={{ fontSize: 14, fontWeight: 600, color: '#A32B2B' }}>{error}</div>}
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
                 <button onClick={onClose} style={ghostBtn}>Cancel</button>
-                <button onClick={sendInvite} style={primaryBtn}>Send invitation &amp; create user</button>
+                <button onClick={() => void sendInvite()} disabled={saving} style={primaryBtn}>
+                  {saving ? 'Creating…' : 'Send invitation & create user'}
+                </button>
               </div>
             </div>
           </>
@@ -142,25 +279,38 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
             <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
               <div style={{ width: '100%', maxWidth: 1040, margin: '0 auto' }}>
                 {step === 0 ? (
-                  <BasicStep basic={basic} set={set} touched={touched} missing={missing} />
+                  <BasicStep basic={basic} set={set} touched={touched} missing={missing} options={options} />
                 ) : step === 1 ? (
-                  <SalaryStep />
-                ) : step === 2 ? (
                   <PersonalStep />
-                ) : (
+                ) : step === 2 ? (
                   <PaymentStep holderName={fullName} />
+                ) : step === 3 ? (
+                  <ShiftTemplateStep shifts={shifts} chosen={shiftId} onChoose={setShiftId} name={fullName} />
+                ) : (
+                  <FeedbackParametersStep
+                    templates={kpiTemplates}
+                    parameters={kpiParams}
+                    templateId={kpiTemplateId}
+                    picked={pickedParams}
+                    weights={kpiWeights}
+                    period={cycle.next}
+                    onTemplate={applyTemplate}
+                    onToggle={toggleParam}
+                    onWeight={(id, value) => setKpiWeights({ ...kpiWeights, [id]: value })}
+                  />
                 )}
               </div>
             </div>
 
             {/* Footer */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid #EBEBEB' }}>
-              {step > 0 && <button onClick={() => { setStep(step - 1); setTouched(false); }} style={ghostBtn}>← Back</button>}
-              <button onClick={saveAndContinue} style={primaryBtn}>{step < STEPS.length - 1 ? 'Save and Continue' : 'Save & Finish'}</button>
-              {step >= 2 && <button onClick={saveAndContinue} style={ghostBtn}>Skip</button>}
+              {step > 0 && <button onClick={() => { setStep(step - 1); setTouched(false); setError(''); }} style={ghostBtn}>← Back</button>}
+              <button onClick={() => void saveAndContinue()} disabled={saving} style={primaryBtn}>
+                {saving ? 'Saving…' : step < STEPS.length - 1 ? 'Save and Continue' : 'Save & Finish'}
+              </button>
               <button onClick={onClose} style={ghostBtn}>Cancel</button>
-              <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 600, color: '#C4382E' }}>
-                <span style={{ color: '#C4382E' }}>*</span> indicates mandatory fields
+              <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 600, color: error ? '#A32B2B' : '#C4382E' }}>
+                {error || <><span style={{ color: '#C4382E' }}>*</span> indicates mandatory fields</>}
               </div>
             </div>
           </>
@@ -213,14 +363,158 @@ function InviteScreen({ name, email, employeeId }: { name: string; email: string
   );
 }
 
-function SuccessScreen({ name, employeeId, designation, department }: { name: string; employeeId: string; designation: string; department: string }) {
+// —— Shift template step —————————————————————————————————————————————
+// Skipping leaves them on the org policy, which is what everyone unassigned
+// follows — so "none" is a real answer, not an unfinished one.
+function ShiftTemplateStep({ shifts, chosen, onChoose, name }: {
+  shifts: ShiftDTO[];
+  chosen: string;
+  onChoose: (id: string) => void;
+  name: string;
+}) {
+  const withPolicy = shifts.filter((s) => s.policy && s.active);
+  return (
+    <div>
+      <StepHeading
+        title="Which shift is this employee on?"
+        sub={`A shift decides how ${name || 'their'} attendance is graded — the working window, what counts as a half or full day, and the grace before an arrival is late.`}
+      />
+      <button onClick={() => onChoose('')} style={pickRow(chosen === '')}>
+        <span style={pickDot(chosen === '')} />
+        <span style={{ flex: 1 }}>
+          <span style={pickTitle}>Follow the org policy</span>
+          <span style={pickSub}>The default in Shifts › Policies. Nothing to assign.</span>
+        </span>
+      </button>
+      {withPolicy.map((s) => (
+        <button key={s.id} onClick={() => onChoose(s.id)} style={pickRow(chosen === s.id)}>
+          <span style={pickDot(chosen === s.id)} />
+          <span style={{ flex: 1 }}>
+            <span style={pickTitle}>{s.name}</span>
+            <span style={pickSub}>
+              {s.policy.startTime}–{s.policy.endTime} · half day {s.policy.minHalfDayHours}h ·
+              full day {s.policy.minFullDayHours}h · {s.assignedCount} already on it
+            </span>
+          </span>
+        </button>
+      ))}
+      {withPolicy.length === 0 && (
+        <div style={emptyNote}>No shift templates yet — everyone follows the org policy.</div>
+      )}
+    </div>
+  );
+}
+
+// —— Feedback parameters step ————————————————————————————————————————
+// Starts from a template and stays editable for this one person, the same way
+// a per-employee assignment works everywhere else.
+function FeedbackParametersStep({
+  templates, parameters, templateId, picked, weights, period, onTemplate, onToggle, onWeight,
+}: {
+  templates: KpiTemplateDTO[];
+  parameters: KpiParameterDTO[];
+  templateId: string;
+  picked: string[];
+  weights: Record<string, number>;
+  period: string;
+  onTemplate: (id: string) => void;
+  onToggle: (id: string) => void;
+  onWeight: (id: string, value: number) => void;
+}) {
+  const total = weightTotal(picked, weights);
+  const byId = new Map(parameters.map((p) => [p.id, p]));
+  return (
+    <div>
+      <StepHeading
+        title="What will they be scored on?"
+        sub={`Start from a template, then adjust it for this person. Assignments take effect from the ${period} cycle — the live one is frozen.`}
+      />
+      <Field label="Start from a template">
+        <select value={templateId} onChange={(e) => onTemplate(e.target.value)} style={inputStyle}>
+          <option value="">No template — pick parameters yourself</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.name} ({t.parameterIds.length} parameters)</option>
+          ))}
+        </select>
+      </Field>
+
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9197A2', margin: '18px 0 8px' }}>
+        Parameters {picked.length > 0 && `· ${picked.length} chosen`}
+      </div>
+      {parameters.length === 0 ? (
+        <div style={emptyNote}>No KPI parameters exist yet — add them under Performance › KPI Parameters.</div>
+      ) : (
+        <div style={{ border: '1px solid #EDEDF0', borderRadius: 12, overflow: 'hidden' }}>
+          {parameters.map((p, i) => {
+            const on = picked.includes(p.id);
+            return (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderTop: i === 0 ? 'none' : '1px solid #F4F4F6', background: on ? '#F7FBFD' : '#fff' }}>
+                <input type="checkbox" checked={on} onChange={() => onToggle(p.id)} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{p.title}</div>
+                  {p.subtitle && <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{p.subtitle}</div>}
+                </div>
+                {on && (
+                  <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff', width: 108 }}>
+                    <input
+                      type="number" min="0" max="100"
+                      value={weights[p.id] ?? 0}
+                      onChange={(e) => onWeight(p.id, Number(e.target.value) || 0)}
+                      style={{ border: 'none', outline: 'none', padding: '7px 9px', fontSize: 15, width: '100%', background: 'transparent' }}
+                    />
+                    <span style={{ padding: '7px 9px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 13 }}>%</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {picked.length > 0 && (
+        <div style={{ ...emptyNote, marginTop: 12, color: total === 100 ? '#4F7A52' : '#9A6B25', background: total === 100 ? '#EAF3EA' : '#FBF3DD', borderColor: total === 100 ? '#D6E8D6' : '#EFE0BC' }}>
+          Weights total <strong>{total}%</strong>
+          {total === 100 ? ' — ready to assign.' : ' — they must add up to 100 before this can be saved.'}
+          {' '}Scored parameters: {picked.map((id) => byId.get(id)?.title).filter(Boolean).join(', ')}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StepHeading({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 19, fontWeight: 800, color: '#222222' }}>{title}</div>
+      <div style={{ fontSize: 14.5, color: '#717171', marginTop: 6, lineHeight: 1.55 }}>{sub}</div>
+    </div>
+  );
+}
+
+const pickRow = (on: boolean): CSSProperties => ({
+  display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%', textAlign: 'left',
+  padding: '14px 16px', marginBottom: 10, cursor: 'pointer',
+  border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`, borderRadius: 12,
+  background: on ? '#F1F8FC' : '#fff', font: 'inherit',
+});
+const pickDot = (on: boolean): CSSProperties => ({
+  width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 2,
+  border: `${on ? 5 : 1.5}px solid ${on ? '#0571A6' : '#C7CBD2'}`, background: '#fff',
+});
+const pickTitle: CSSProperties = { display: 'block', fontSize: 16, fontWeight: 700, color: '#222222' };
+const pickSub: CSSProperties = { display: 'block', fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.5 };
+const emptyNote: CSSProperties = {
+  fontSize: 13.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6',
+  borderRadius: 10, padding: '11px 14px', lineHeight: 1.55,
+};
+
+function SuccessScreen({ name, employeeId, designation, department, orgName }: { name: string; employeeId: string; designation: string; department: string; orgName: string }) {
   return (
     <div style={{ maxWidth: 560, margin: '18px auto', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
       <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#E4EDE0', color: '#4F7A52', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5 9.5 18 20 6.5" /></svg>
       </div>
       <div style={{ fontSize: 24, fontWeight: 800, color: '#222222' }}>
-        Successfully added {name} to {ORG_NAME}
+        Successfully added {name} to {orgName}
       </div>
       <div style={{ fontSize: 16, color: '#717171', marginTop: 10, lineHeight: 1.55, maxWidth: 480 }}>
         Their employee record is now live. You can review or edit it any time from the Employees list, and payroll will pick them up on their first eligible pay run.
@@ -275,11 +569,12 @@ function Progress({ step, onJump }: { step: number; onJump: (i: number) => void 
   );
 }
 
-function BasicStep({ basic, set, touched, missing }: {
+function BasicStep({ basic, set, touched, missing, options }: {
   basic: Basic;
   set: <K extends keyof Basic>(k: K, v: Basic[K]) => void;
   touched: boolean;
   missing: Record<string, boolean>;
+  options: RosterOptions;
 }) {
   return (
     <div>
@@ -312,8 +607,8 @@ function BasicStep({ basic, set, touched, missing }: {
           <div style={{ fontSize: 14, fontWeight: 700, color: '#484848', marginBottom: 3 }}>Include in payroll from</div>
           <div style={{ fontSize: 14, color: '#717171', marginBottom: 10 }}>This joining date falls in the current pay period — choose when payroll should start.</div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <RadioCard checked={basic.payrollInclusion === 'this'} onClick={() => set('payrollInclusion', 'this')} title={`This month · ${THIS_MONTH}`} sub="Employee is paid in the current run (pro-rated from joining date)." />
-            <RadioCard checked={basic.payrollInclusion === 'next'} onClick={() => set('payrollInclusion', 'next')} title={`Next month · ${NEXT_MONTH}`} sub="Employee starts in next month's payroll run." />
+            <RadioCard checked={basic.payrollInclusion === 'this'} onClick={() => set('payrollInclusion', 'this')} title={`This month · ${options.thisMonth}`} sub="Employee is paid in the current run (pro-rated from joining date)." />
+            <RadioCard checked={basic.payrollInclusion === 'next'} onClick={() => set('payrollInclusion', 'next')} title={`Next month · ${options.nextMonth}`} sub="Employee starts in next month's payroll run." />
           </div>
         </div>
       )}
@@ -347,24 +642,24 @@ function BasicStep({ basic, set, touched, missing }: {
           <Select value={basic.gender} onChange={(v) => set('gender', v)} placeholder="Select gender" options={GENDERS} />
         </Field>
         <Field label="Work Location" required>
-          <Select value={basic.workLocation} onChange={(v) => set('workLocation', v)} placeholder="Select location" options={WORK_LOCATIONS} />
+          <Select value={basic.workLocation} onChange={(v) => set('workLocation', v)} placeholder="Select location" options={options.locations} />
         </Field>
       </div>
 
       {/* Designation + department */}
       <div style={grid2}>
         <Field label="Designation" required error={touched && missing.designation}>
-          <Select value={basic.designation} onChange={(v) => set('designation', v)} placeholder="Select designation" options={DESIGNATIONS} />
+          <Select value={basic.designation} onChange={(v) => set('designation', v)} placeholder="Select designation" options={options.designations} />
         </Field>
         <Field label="Department" required error={touched && missing.department}>
-          <Select value={basic.department} onChange={(v) => set('department', v)} placeholder="Select department" options={DEPARTMENTS} />
+          <Select value={basic.department} onChange={(v) => set('department', v)} placeholder="Select department" options={options.departments} />
         </Field>
       </div>
 
       {/* Reporting manager */}
       <div style={grid2}>
         <Field label="Manager Name">
-          <Select value={basic.manager} onChange={(v) => set('manager', v)} placeholder="Select reporting manager" options={REPORTING_MANAGERS} />
+          <Select value={basic.manager} onChange={(v) => set('manager', v)} placeholder="Select reporting manager" options={options.managers.map((m) => m.name)} />
         </Field>
         <div />
       </div>
@@ -413,7 +708,12 @@ const SALARY_TEMPLATES: Record<string, TemplateStatutory> = {
   'Contract / Consultant': { epf: false, esi: false, lwf: false, statutoryBonus: false },
 };
 
-function SalaryStep() {
+/**
+ * Kept, unrendered, until payroll is wired up: the design is finished and
+ * throwing it away would mean rebuilding it. Exported so it stays compiled
+ * rather than rotting behind a lint suppression.
+ */
+export function SalaryStep() {
   const [open, setOpen] = useState<SalaryGroup | ''>('statutory');
   const [saved, setSaved] = useState<Record<SalaryGroup, boolean>>({ statutory: false, structure: false, benefits: false });
   const [sal, setSal] = useState<SalaryData>(EMPTY_SALARY);
@@ -848,14 +1148,11 @@ function CheckRow({ checked, onChange, label }: { checked: boolean; onChange: (v
 const subPanel: CSSProperties = { marginTop: 14, marginLeft: 26, padding: '16px 18px', background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 12 };
 
 // —— Payment information step ————————————————————————————————————————
-type PayMode = 'direct' | 'bank' | 'cheque' | 'cash';
+// No Direct Deposit: Sowaka does not move money, so offering an "automated
+// process" would promise a disbursement that never happens. The remaining
+// three record how the employee was paid elsewhere.
+type PayMode = 'bank' | 'cheque' | 'cash';
 const PAY_MODES: { key: PayMode; title: string; sub: string; icon: ReactNode }[] = [
-  {
-    key: 'direct',
-    title: 'Direct Deposit (Automated Process)',
-    sub: "Transfer the employee's pay directly to their bank account.",
-    icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M2.5 10h19" /><path d="M6 14.5h4" /></svg>,
-  },
   {
     key: 'bank',
     title: 'Bank Transfer (Manual Process)',
@@ -876,8 +1173,7 @@ const PAY_MODES: { key: PayMode; title: string; sub: string; icon: ReactNode }[]
   },
 ];
 function PaymentStep({ holderName }: { holderName: string }) {
-  const [mode, setMode] = useState<PayMode>('direct');
-  const [configuring, setConfiguring] = useState(false);
+  const [mode, setMode] = useState<PayMode>('bank');
 
   return (
     <div>
@@ -889,13 +1185,12 @@ function PaymentStep({ holderName }: { holderName: string }) {
       <div style={{ border: '1px solid #EBEBEB', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
         {PAY_MODES.map((m, i) => {
           const selected = mode === m.key;
-          // Direct Deposit reveals bank details behind a "Configure Now" link;
-          // Bank Transfer needs the same account details, shown inline on select.
-          const showBank = selected && (m.key === 'bank' || (m.key === 'direct' && configuring));
+          // Bank Transfer needs account details, shown inline once selected.
+          const showBank = selected && m.key === 'bank';
           return (
             <div key={m.key}>
               <button
-                onClick={() => { setMode(m.key); if (m.key !== 'direct') setConfiguring(false); }}
+                onClick={() => setMode(m.key)}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', cursor: 'pointer',
                   background: selected ? '#F7F7F9' : '#fff', border: 'none',
@@ -912,22 +1207,13 @@ function PaymentStep({ holderName }: { holderName: string }) {
                   <span style={{ display: 'block', fontSize: 16, fontWeight: 700, color: '#222222' }}>{m.title}</span>
                   <span style={{ display: 'block', fontSize: 14, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{m.sub}</span>
                 </span>
-                {selected && m.key === 'direct' ? (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); setConfiguring((c) => !c); }}
-                    style={{ flexShrink: 0, fontSize: 14, fontWeight: 700, color: '#0571A6', cursor: 'pointer' }}
-                  >
-                    {configuring ? 'Hide' : 'Configure Now'}
-                  </span>
-                ) : (
-                  <span style={{
-                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: `2px solid ${selected ? '#0571A6' : '#EBEBEB'}`,
-                    background: selected ? '#0571A6' : '#fff', color: '#fff',
-                  }}>
-                    {selected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17.5 19 7" /></svg>}
-                  </span>
-                )}
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `2px solid ${selected ? '#0571A6' : '#EBEBEB'}`,
+                  background: selected ? '#0571A6' : '#fff', color: '#fff',
+                }}>
+                  {selected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17.5 19 7" /></svg>}
+                </span>
               </button>
 
               {showBank && (
@@ -994,7 +1280,8 @@ function BankDetailsForm({ holderName }: { holderName: string }) {
   );
 }
 
-function StepStub({ title }: { title: string }) {
+/** Placeholder body for a step whose fields are not defined yet. */
+export function StepStub({ title }: { title: string }) {
   return (
     <div style={{ padding: '48px 20px', textAlign: 'center', color: '#717171' }}>
       <div style={{ fontSize: 20, fontWeight: 800, color: '#484848' }}>{title}</div>

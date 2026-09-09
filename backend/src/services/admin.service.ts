@@ -75,6 +75,7 @@ export interface CreateEmployeeInput {
   name?: string; email?: string; designation?: string; department?: string;
   location?: string; employeeType?: string; managerUserId?: string;
   birthday?: string; joiningDate?: string;
+  employeeId?: string; gender?: string; mobile?: string; branch?: string;
 }
 
 export async function createEmployeeForAdmin(adminUserId: string, input: CreateEmployeeInput) {
@@ -91,8 +92,18 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     if (Number.isNaN(date.valueOf())) throw new AdminError(400, `${label} is invalid`);
     return date;
   };
+  // An employee id is what attendance records are keyed by, so a duplicate
+  // would silently merge two people's punches.
+  const employeeId = input.employeeId?.trim() || undefined;
+  if (employeeId && await users().findOne({ org: admin.org, employeeId })) {
+    throw new AdminError(409, `Employee ID ${employeeId} is already in use`);
+  }
   const employee: User = {
     userId: randomUUID(), name, email, org: admin.org,
+    employeeId,
+    gender: input.gender?.trim() || undefined,
+    phone: input.mobile?.trim() || undefined,
+    branch: input.branch?.trim() || undefined,
     designation: input.designation?.trim() || undefined,
     department: input.department?.trim() || undefined,
     location: input.location?.trim() || undefined,

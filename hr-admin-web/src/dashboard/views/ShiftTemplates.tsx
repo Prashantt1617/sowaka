@@ -13,7 +13,7 @@ import {
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
 
-const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
 const PUNCH_FORMATS: PunchFormat[] = ['Biometric', 'Geotag (powered by Sowaka)', 'Present by default (Auto Punch)'];
 const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
 const TRIGGERS = ['Missing punch-in', 'Missing punch-out', 'Both punches missing'];

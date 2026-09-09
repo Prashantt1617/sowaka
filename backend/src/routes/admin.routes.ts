@@ -26,6 +26,12 @@ import {
   saveShiftPolicyHandler,
   updateShiftHandler,
 } from '../controllers/shift.controller';
+import {
+  createReimbursementTypeHandler,
+  deleteReimbursementTypeHandler,
+  listReimbursementTypesHandler,
+  updateReimbursementTypeHandler,
+} from '../controllers/reimbursement-type.controller';
 import { adminCreateGame, adminDeleteGame, adminListGames, adminPublishGame, adminUpdateGame } from '../controllers/game.controller';
 
 // HR dashboard surface: org-wide reads + request overrides. Every route requires
@@ -65,6 +71,13 @@ adminRouter.delete('/shifts/:shiftId', deleteShiftHandler);
 adminRouter.post('/shifts/audience', shiftAudienceHandler);
 adminRouter.post('/shifts/:shiftId/assign', assignShiftHandler);
 adminRouter.post('/shifts/:shiftId/unassign', unassignShiftHandler);
+
+// Claims — the expense types an org lets people claim against, and what each
+// is capped at. The cap is enforced when a claim is created, not just shown.
+adminRouter.get('/reimbursement-types', listReimbursementTypesHandler);
+adminRouter.post('/reimbursement-types', createReimbursementTypeHandler);
+adminRouter.patch('/reimbursement-types/:typeId', updateReimbursementTypeHandler);
+adminRouter.delete('/reimbursement-types/:typeId', deleteReimbursementTypeHandler);
 
 // Company settings: week-off days + per-team overtime toggle
 adminRouter.get('/company/settings', getCompanySettingsHandler);

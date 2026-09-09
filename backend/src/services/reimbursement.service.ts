@@ -9,13 +9,8 @@ import {
   uploadReimbursementReceipt,
 } from './s3-receipt.service';
 import { orgUsers } from './admin-scope';
+import { resolveTypeForClaim } from './reimbursement-type.service';
 
-const categories = new Set<ReimbursementClaim['category']>([
-  'travel',
-  'meals',
-  'internet',
-  'other',
-]);
 const decisions = new Set<ReimbursementStatus>(['approved', 'declined', 'paid']);
 
 export async function createReimbursementClaim(
@@ -43,8 +38,29 @@ export async function createReimbursementClaim(
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
     throw new ReimbursementError(400, 'Amount must be greater than zero');
   }
-  const category = input.category.trim().toLowerCase() as ReimbursementClaim['category'];
-  if (!categories.has(category)) throw new ReimbursementError(400, 'Expense category is invalid');
+  // The type must be one this org actually offers, and the claim must fit
+  // under its cap. Checked here as well as in the app, because the app's copy
+  // of the list is fetched once and can be stale by the time someone submits.
+  const type = await resolveTypeForClaim(employee.org, input.category);
+  if (!type) throw new ReimbursementError(400, 'Expense category is invalid');
+  const daysBack = Math.round(
+    (startOfUtcDay(new Date()).getTime() - expenseDate.getTime()) / 86_400_000,
+  );
+  if (daysBack > type.backdateDays) {
+    throw new ReimbursementError(
+      400,
+      type.backdateDays === 0
+        ? `${type.name} can only be claimed for today`
+        : `${type.name} can be claimed up to ${type.backdateDays} days back`,
+    );
+  }
+  if (type.maxLimit > 0 && amount > type.maxLimit) {
+    throw new ReimbursementError(
+      400,
+      `${type.name} claims are capped at ₹${type.maxLimit.toLocaleString('en-IN')}`,
+    );
+  }
+  const category = type.name.toLowerCase();
   const receiptName = input.receipt?.originalName.trim() ?? input.receiptName?.trim();
   const note = input.note?.trim();
   if (receiptName && receiptName.length > 255)

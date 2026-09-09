@@ -10,11 +10,24 @@ import { getShiftPolicy, saveShiftPolicy, type DayMark, type PunchFormat } from 
 
 // Only a missing punch can be corrected: a short or late day is a fact about
 // the hours worked, not a gap in the record.
-const TRIGGERS = ['Missing punch-in', 'Missing punch-out', 'Both punches missing'];
+// The four ways a day can come out, in the order the punches happen. A
+// complete day is on the list because it can still be disputed — someone
+// graded a half day has something to contest even with both punches present.
+const TRIGGERS = [
+  'Missing punch-in',
+  'Missing punch-out',
+  'Both punches missing',
+  'Both punches present',
+];
+const YES_NO = ['Yes', 'No'] as const;
+
+/** Stored values keep their meaning; the labels say it in day terms. */
+const markLabel = (mark: DayMark) =>
+  mark === 'Present' ? 'Full day' : mark === 'Half Day' ? 'Half day' : mark;
 const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
 // What a day is marked as when a punch never arrived. This is what puts a day
 // in front of an employee to correct, so it belongs with the rest of the flow.
-const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
 // Where punch data comes from. Auto Punch marks everyone present without a
 // device, which is why it is the default for an org with no hardware.
 const PUNCH_FORMATS: PunchFormat[] = [
@@ -34,8 +47,8 @@ export function AttendanceCorrection() {
   const [hrOverride, setHrOverride] = useState(true);
   const [skipLevelOverride, setSkipLevelOverride] = useState(false);
   const [backDays, setBackDays] = useState('7');
-  const [punchIn, setPunchIn] = useState<DayMark>('Pending Regularisation');
-  const [punchOut, setPunchOut] = useState<DayMark>('Pending Regularisation');
+  const [punchIn, setPunchIn] = useState<DayMark>('Absent');
+  const [punchOut, setPunchOut] = useState<DayMark>('Absent');
   const [bothMissing, setBothMissing] = useState<DayMark>('Absent');
   // Read-only here: a complete day is graded by the Shift tab's thresholds, and
   // this row shows what those currently are rather than restating them.
@@ -66,6 +79,19 @@ export function AttendanceCorrection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const CASES: {
+    trigger: string;
+    hasIn: boolean;
+    hasOut: boolean;
+    value?: DayMark;
+    set?: (v: DayMark) => void;
+  }[] = [
+    { trigger: 'Missing punch-in', hasIn: false, hasOut: true, value: punchIn, set: setPunchIn },
+    { trigger: 'Missing punch-out', hasIn: true, hasOut: false, value: punchOut, set: setPunchOut },
+    { trigger: 'Both punches missing', hasIn: false, hasOut: false, value: bothMissing, set: setBothMissing },
+    { trigger: 'Both punches present', hasIn: true, hasOut: true },
+  ];
+
   const save = async () => {
     setSaving(true);
     try {
@@ -91,7 +117,6 @@ export function AttendanceCorrection() {
     }
   };
 
-  const toggleTrigger = (t: string) => setTriggers((p) => ({ ...p, [t]: !p[t] }));
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -105,21 +130,48 @@ export function AttendanceCorrection() {
       </div>
 
       <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <SectionHeader title="Missing punches" subtitle="What the day is marked as when a punch never arrived — which is what puts it up for correction." />
-        <div style={{ padding: '18px 22px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Field label="Punch-in missing — mark as"><Select value={punchIn} onChange={setPunchIn} options={MARK_OPTIONS} /></Field>
-            <Field label="Punch-out missing — mark as"><Select value={punchOut} onChange={setPunchOut} options={MARK_OPTIONS} /></Field>
-            <Field label="Both punches missing — mark as"><Select value={bothMissing} onChange={setBothMissing} options={MARK_OPTIONS} /></Field>
-            {/* Not a fixed mark: a complete day is half or full depending on the
-                hours worked against the Shift tab's thresholds. */}
-            <Field label="Both punches present — mark as">
-              <div style={fixedValue}>
-                <span>Half day or full day</span>
-                <span style={fixedTag}>by hours worked</span>
-              </div>
-            </Field>
-          </div>
+        <SectionHeader
+          title="How a day comes out"
+          subtitle="The four ways a day can land, what each is marked as, and whether the employee may raise a correction against it."
+        />
+        <div style={{ padding: '4px 22px 18px', overflowX: 'auto' }}>
+          <table style={caseTable}>
+            <thead>
+              <tr>
+                <Th center width={110}>Punch in</Th>
+                <Th center width={110}>Punch out</Th>
+                <Th>Marked as</Th>
+                <Th width={190}>Correction allowed?</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {CASES.map((row) => (
+                <tr key={row.trigger}>
+                  <Td center><Mark on={row.hasIn} /></Td>
+                  <Td center><Mark on={row.hasOut} /></Td>
+                  <Td>
+                    {row.trigger === 'Both punches present' ? (
+                      // Not a choice: a complete day is half or full on the
+                      // hours worked, against the Shift tab's thresholds.
+                      <div style={fixedValue}>
+                        <span>Half day or full day</span>
+                        <span style={fixedTag}>by hours worked</span>
+                      </div>
+                    ) : (
+                      <Select value={row.value!} onChange={row.set!} options={MARK_OPTIONS} render={markLabel} />
+                    )}
+                  </Td>
+                  <Td>
+                    <Select
+                      value={triggers[row.trigger] ? 'Yes' : 'No'}
+                      onChange={(v) => setTriggers((p) => ({ ...p, [row.trigger]: v === 'Yes' }))}
+                      options={YES_NO}
+                    />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div style={note}>
             {minFullDay == null || minHalfDay == null ? (
               'A day with both punches is graded on the hours worked, against the thresholds on the Shift tab.'
@@ -130,21 +182,9 @@ export function AttendanceCorrection() {
                 full day, <strong>{minHalfDay}h</strong> up to {minFullDay}h is a half day, and
                 anything shorter is flagged for correction. Change the split there, not here.
               </>
-            )}
+            )}{' '}
+            An employee raises a correction from their attendance calendar.
           </div>
-        </div>
-      </Card>
-
-      {/* When & why */}
-      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <SectionHeader title="When can a correction be raised?" subtitle="An employee raises one from their attendance calendar. They get the option when a day is auto-marked as:" />
-        <div style={{ padding: '18px 22px' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {TRIGGERS.map((t) => (
-              <button key={t} onClick={() => toggleTrigger(t)} style={chip(!!triggers[t])}>{t}</button>
-            ))}
-          </div>
-
         </div>
       </Card>
 
@@ -201,11 +241,44 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
     </div>
   );
 }
-function Select<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: readonly T[] }) {
+function Select<T extends string>({ value, onChange, options, render }: {
+  value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string;
+}) {
   return (
     <select value={value} onChange={(ev) => onChange(ev.target.value as T)} style={selectStyle}>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
     </select>
+  );
+}
+
+/** A tick or a cross for whether that punch is there in this case. */
+function Mark({ on }: { on: boolean }) {
+  return on ? (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F7A52" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="present">
+      <path d="M4 12.5 9.5 18 20 6.5" />
+    </svg>
+  ) : (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C4382E" strokeWidth="3" strokeLinecap="round" aria-label="missing">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+function Th({ children, center, width }: { children: ReactNode; center?: boolean; width?: number }) {
+  return (
+    <th style={{
+      textAlign: center ? 'center' : 'left', width,
+      fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171',
+      fontWeight: 700, padding: '11px 12px', borderBottom: '1px solid #EBEBEB',
+    }}>{children}</th>
+  );
+}
+function Td({ children, center }: { children: ReactNode; center?: boolean }) {
+  return (
+    <td style={{
+      padding: '12px', borderBottom: '1px solid #F0F0F2',
+      textAlign: center ? 'center' : 'left', verticalAlign: 'middle',
+    }}>{children}</td>
   );
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -243,12 +316,10 @@ function Suffixed({ value, onChange, suffix }: { value: string; onChange: (v: st
   );
 }
 
-function chip(active: boolean): CSSProperties {
-  return { padding: '9px 15px', borderRadius: 10, border: `1px solid ${active ? '#0571A6' : '#EBEBEB'}`, background: active ? '#0571A6' : '#fff', color: active ? '#fff' : '#484848', fontWeight: 700, fontSize: 14, cursor: 'pointer' };
-}
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
 const fixedValue: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
 const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
 const note: CSSProperties = { marginTop: 16, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
+const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };

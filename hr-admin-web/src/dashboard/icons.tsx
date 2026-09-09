@@ -226,6 +226,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M12 8v4M5.5 16v-2.5h13V16" />
     </svg>
   ),
+  reimbursementtypes: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="M2 10h20M6 15h4" />
+    </svg>
+  ),
   cycle: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="3" />

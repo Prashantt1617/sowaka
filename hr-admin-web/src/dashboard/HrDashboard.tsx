@@ -16,6 +16,7 @@ import { SalaryTemplates } from './views/SalaryTemplates';
 import { StatutoryComponents } from './views/StatutoryComponents';
 import { PayrollRuns } from './views/PayrollRuns';
 import { PaySchedule, TaxDetails } from './views/OrgSetup';
+import { ReimbursementTypes } from './views/ReimbursementTypes';
 import { ReviewCycle } from './views/ReviewCycle';
 import { ShiftBulkAssign } from './views/ShiftBulkAssign';
 import { ShiftTemplates } from './views/ShiftTemplates';
@@ -61,6 +62,8 @@ function CurrentView() {
       return <OrgChart />;
     case 'usersroles':
       return <Accesses />;
+    case 'reimbursementtypes':
+      return <ReimbursementTypes />;
     case 'cycle':
       return <ReviewCycle />;
     case 'games':

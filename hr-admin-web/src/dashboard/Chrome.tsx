@@ -47,12 +47,18 @@ const PAYROLL: NavItem[] = [
   { key: 'payruns', label: 'Payroll Runs' },
 ];
 
+// Claims sits below Payroll: what can be claimed and what it is capped at is a
+// policy decision, made once, not part of running a pay cycle.
+const CLAIMS: NavItem[] = [
+  { key: 'reimbursementtypes', label: 'Reimbursement Types' },
+];
 const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
+  { title: 'CLAIMS', items: CLAIMS },
 ];
 const SOON: Partial<Record<View, boolean>> = { attendance: true, onboarding: true, exit: true };
 

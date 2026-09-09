@@ -1,7 +1,6 @@
 import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
 import {
   sendConsecutiveMissedFlags,
-  sendDailyAttendanceSummary,
   sendFeedbackDueReminders,
   sendFeedbackOverdueReminders,
   sendLeavePlanningReport,
@@ -57,7 +56,6 @@ export function startNotificationScheduler() {
           }
           if (weekday === 'Mon') await run('sendWeeklyAttendanceReport', sendWeeklyAttendanceReport);
         }
-        if (istHour === 18) await run('sendDailyAttendanceSummary', sendDailyAttendanceSummary);
         if (istHour === 16 && weekday === 'Fri') await run('sendLeavePlanningReport', sendLeavePlanningReport);
       }
       catch (error) { logger.error('Notification scheduler tick failed', {}, error); }

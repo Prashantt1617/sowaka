@@ -194,6 +194,7 @@ export type CreateEmployeeInput = {
   name: string; email: string; designation?: string; department?: string;
   location?: string; employeeType?: string; managerUserId?: string;
   birthday?: string; joiningDate?: string;
+  employeeId?: string; gender?: string; mobile?: string; branch?: string;
 };
 
 export const createEmployee = (input: CreateEmployeeInput) =>
@@ -220,7 +221,7 @@ export const getWorkspace = () => api<WorkspaceDTO>('/manager/workspace');
 // ---- Shift templates ----
 // A shift carries the thresholds attendance is graded against, so these are
 // live records: what HR saves here is what the app reads.
-export type DayMark = 'Absent' | 'Half Day' | 'Present' | 'Pending Regularisation';
+export type DayMark = 'Absent' | 'Half Day' | 'Present';
 
 export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
 
@@ -397,3 +398,33 @@ export const createHoliday = (input: { date: string; name: string; state: string
   api<{ holiday: HolidayDTO }>('/holidays', { method: 'POST', body: input }).then((r) => r.holiday);
 
 export const deleteHoliday = (id: string) => api(`/holidays/${id}`, { method: 'DELETE' });
+
+// ---- Claims › reimbursement types ----
+// The expense types an org lets people claim against. Each carries its own cap,
+// which the app checks before submitting and the server enforces on save.
+export type ReimbursementTypeDTO = {
+  id: string;
+  name: string;
+  description: string;
+  /** Rupees. Zero means uncapped. */
+  maxLimit: number;
+  /** How far back a claim may be dated, in days. Zero means today only. */
+  backdateDays: number;
+  active: boolean;
+};
+
+export type ReimbursementTypeInput = Omit<ReimbursementTypeDTO, 'id'>;
+
+export const getReimbursementTypes = () =>
+  api<{ types: ReimbursementTypeDTO[] }>('/admin/reimbursement-types').then((r) => r.types);
+
+export const createReimbursementType = (input: ReimbursementTypeInput) =>
+  api<{ type: ReimbursementTypeDTO }>('/admin/reimbursement-types', { method: 'POST', body: input })
+    .then((r) => r.type);
+
+export const updateReimbursementType = (id: string, input: ReimbursementTypeInput) =>
+  api<{ type: ReimbursementTypeDTO }>(`/admin/reimbursement-types/${id}`, { method: 'PATCH', body: input })
+    .then((r) => r.type);
+
+export const deleteReimbursementType = (id: string) =>
+  api(`/admin/reimbursement-types/${id}`, { method: 'DELETE' });

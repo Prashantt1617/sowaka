@@ -22,6 +22,7 @@ import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { OrgSetupError } from '../services/orgSetup.service';
 import { KpiError } from '../services/kpi.service';
 import { ShiftError } from '../services/shift.service';
+import { ReimbursementTypeError } from '../services/reimbursement-type.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
   logger.warn('Route not found', requestLogContext(request, 404));
@@ -81,6 +82,7 @@ function getStatusCode(error: unknown): number {
     || error instanceof OrgSetupError
     || error instanceof KpiError
     || error instanceof ShiftError
+    || error instanceof ReimbursementTypeError
   ) {
     return error.statusCode;
   }

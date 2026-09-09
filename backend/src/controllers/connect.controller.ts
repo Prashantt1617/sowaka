@@ -11,6 +11,7 @@ import {
   toggleConnectReaction,
   updateConnectPost,
 } from '../services/connect.service';
+import { fetchLinkPreview } from '../services/link-preview.service';
 
 export async function connectFeed(req: Request, res: Response, next: NextFunction) {
   try {
@@ -28,6 +29,19 @@ export async function connectPost(req: Request, res: Response, next: NextFunctio
   } catch (error) {
     handleConnectError(error, next);
   }
+}
+
+/**
+ * The preview a link resolves to, so the composer can show it before the post
+ * exists. Same resolver the post itself uses, so what is previewed is what
+ * gets saved.
+ */
+export async function connectLinkPreview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const url = String(req.query.url ?? '').trim();
+    if (!url) { res.json({ success: true, preview: { imageUrl: '', title: '', siteName: '' } }); return; }
+    res.json({ success: true, preview: await fetchLinkPreview(url) });
+  } catch (error) { next(error); }
 }
 
 export async function createPost(req: Request, res: Response, next: NextFunction) {

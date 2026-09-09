@@ -33,6 +33,7 @@ export type View =
   | 'orgchart'
   | 'usersroles'
   | 'cycle'
+  | 'reimbursementtypes'
   | 'shiftbulk'
   | 'games';
 
@@ -132,6 +133,7 @@ export const TITLES: Record<View, [string, string]> = {
   orgchart: ['Org chart', 'People'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
+  reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
   shiftbulk: ['Bulk Assign', 'Shifts · put employees on a shift'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
 };

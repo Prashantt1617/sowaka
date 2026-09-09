@@ -28,6 +28,7 @@ import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
+import { ReimbursementType } from '../models/reimbursement-type.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -140,6 +141,10 @@ export function shiftPolicies(): Collection<OrgShiftPolicy> {
 
 export function leaveYearEnds(): Collection<LeaveYearEnd> {
   return getDb().collection<LeaveYearEnd>('leave_year_ends');
+}
+
+export function reimbursementTypes(): Collection<ReimbursementType> {
+  return getDb().collection<ReimbursementType>('reimbursement_types');
 }
 
 export function payHeads(): Collection<PayHead> {
@@ -299,6 +304,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One policy document per org — the Shifts › Policies setup.
   const shiftPoliciesCollection = database.collection<OrgShiftPolicy>('shift_policies');
   await shiftPoliciesCollection.createIndex({ org: 1 }, { unique: true });
+
+  const reimbursementTypesCollection = database.collection<ReimbursementType>('reimbursement_types');
+  await reimbursementTypesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
 
   // One row per employee, per leave type, per closed year.
   const leaveYearEndsCollection = database.collection<LeaveYearEnd>('leave_year_ends');
