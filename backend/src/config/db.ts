@@ -27,6 +27,8 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
+import { LeaveYearEnd, OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
+import { ReimbursementType } from '../models/reimbursement-type.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -127,6 +129,22 @@ export function attendanceRecords(): Collection<AttendanceRecord> {
 
 export function attendanceRegularizations(): Collection<AttendanceRegularization> {
   return getDb().collection<AttendanceRegularization>('attendance_regularizations');
+}
+
+export function shiftTemplates(): Collection<ShiftTemplate> {
+  return getDb().collection<ShiftTemplate>('shift_templates');
+}
+
+export function shiftPolicies(): Collection<OrgShiftPolicy> {
+  return getDb().collection<OrgShiftPolicy>('shift_policies');
+}
+
+export function leaveYearEnds(): Collection<LeaveYearEnd> {
+  return getDb().collection<LeaveYearEnd>('leave_year_ends');
+}
+
+export function reimbursementTypes(): Collection<ReimbursementType> {
+  return getDb().collection<ReimbursementType>('reimbursement_types');
 }
 
 export function payHeads(): Collection<PayHead> {
@@ -278,6 +296,21 @@ async function ensureIndexes(database: Db): Promise<void> {
 
   const kpiTemplatesCollection = database.collection<KpiTemplate>('kpi_templates');
   await kpiTemplatesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
+
+  const shiftTemplatesCollection = database.collection<ShiftTemplate>('shift_templates');
+  await shiftTemplatesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
+  await shiftTemplatesCollection.createIndex({ org: 1, active: 1, isDefault: -1 });
+
+  // One policy document per org — the Shifts › Policies setup.
+  const shiftPoliciesCollection = database.collection<OrgShiftPolicy>('shift_policies');
+  await shiftPoliciesCollection.createIndex({ org: 1 }, { unique: true });
+
+  const reimbursementTypesCollection = database.collection<ReimbursementType>('reimbursement_types');
+  await reimbursementTypesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
+
+  // One row per employee, per leave type, per closed year.
+  const leaveYearEndsCollection = database.collection<LeaveYearEnd>('leave_year_ends');
+  await leaveYearEndsCollection.createIndex({ org: 1, userId: 1, year: 1, type: 1 }, { unique: true });
 
   const kpiAssignmentsCollection = database.collection<KpiAssignment>('kpi_assignments');
   // One assignment per employee per cycle; re-assigning replaces it.

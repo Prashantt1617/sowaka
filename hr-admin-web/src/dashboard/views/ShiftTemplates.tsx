@@ -1,169 +1,201 @@
-// Templates — a shift template is created by COPYING the org-wide policies
-// (Policies section) as a starting point, then editing them for this shift.
-// Each policy is a collapsed section here ("Shift Policy", "Overtime Policy", …)
-// and every subsection inside a policy is itself a collapsed sub-section, so HR
-// expands only what they want to override for this particular shift.
-import { useState } from 'react';
+// Shifts › Templates — a named override of the org policy, and the people it
+// covers. A template opens as a copy of the policy in Shifts › Policies and
+// every field is editable from there; saving writes to the template alone, so
+// the org policy is never touched. Anyone the template is not assigned to stays
+// on the org policy.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
-import { LeaveTypes } from './LeaveTypes';
+import {
+  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShiftPolicy, getShifts, updateShift,
+  type DayMark, type EmployeeDTO, type LeaveTypeRule, type PunchFormat, type ShiftDTO, type ShiftPolicyDTO,
+} from '../../services/hrms';
+import { downloadCsv } from '../export';
 
-/** "HH:MM" -> minutes since midnight, or null if malformed. */
+const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
+const PUNCH_FORMATS: PunchFormat[] = ['Biometric', 'Geotag (powered by Sowaka)', 'Present by default (Auto Punch)'];
+const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
+const TRIGGERS = ['Missing punch-in', 'Missing punch-out', 'Both punches missing'];
+const DOW = [
+  { key: 0, label: 'M', long: 'Mon' }, { key: 1, label: 'T', long: 'Tue' },
+  { key: 2, label: 'W', long: 'Wed' }, { key: 3, label: 'T', long: 'Thu' },
+  { key: 4, label: 'F', long: 'Fri' }, { key: 5, label: 'S', long: 'Sat' },
+  { key: 6, label: 'S', long: 'Sun' },
+];
+const WEEKS = [1, 2, 3, 4, 5];
+
 function toMinutes(t: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(t);
   if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
+  const h = Number(m[1]); const min = Number(m[2]);
+  return h > 23 || min > 59 ? null : h * 60 + min;
 }
-/** Minutes -> "9h 00m". */
 function formatDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h ${String(m).padStart(2, '0')}m`;
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+function clock(base: string, delta: number): string {
+  const at = toMinutes(base);
+  if (at == null) return '—';
+  const m = (at + delta + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-const MARK_OPTIONS = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
-const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
-const TRIGGERS = ['Missing punch', 'Half day', 'Absent', 'Marked late', 'Early check-out'];
-const REASON_CATALOG = ['WFH', 'On duty', 'Site visit', 'Forgot to punch', 'Apply leave'];
-const SHIFT_TEMPLATES = [
-  { name: 'Tech', start: '09:30', end: '18:30', active: true },
-  { name: 'Sales', start: '10:00', end: '19:00', active: true },
-  { name: 'Gurgaon 3D', start: '09:00', end: '18:00', active: true },
-  { name: 'Kolkata 3D Team', start: '11:00', end: '20:00', active: true },
-];
-const DOW = [
-  { key: 0, label: 'M', long: 'Mon' },
-  { key: 1, label: 'T', long: 'Tue' },
-  { key: 2, label: 'W', long: 'Wed' },
-  { key: 3, label: 'T', long: 'Thu' },
-  { key: 4, label: 'F', long: 'Fri' },
-  { key: 5, label: 'S', long: 'Sat' },
-  { key: 6, label: 'S', long: 'Sun' },
-];
-const WEEK_ROWS = [1, 2, 3, 4, 5];
-
-function cellBtn(active: boolean): CSSProperties {
-  return {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    border: `1px solid ${active ? '#0571A6' : '#DADFE4'}`,
-    background: active ? '#0571A6' : '#fff',
-    cursor: 'pointer',
-    display: 'inline-block',
-  };
-}
-const rowHead: CSSProperties = { fontSize: 14, fontWeight: 700, color: '#333333', paddingRight: 14, whiteSpace: 'nowrap' };
+type Mode = { kind: 'list' } | { kind: 'edit'; id: string | null };
 
 export function ShiftTemplates() {
-  const { flash } = useStore();
-  const [mode, setMode] = useState<'list' | 'edit'>('list');
-  // Shift name (always visible)
+  const { flash, setView } = useStore();
+  const [mode, setMode] = useState<Mode>({ kind: 'list' });
+  const [shifts, setShifts] = useState<ShiftDTO[]>([]);
+  const [orgPolicy, setOrgPolicy] = useState<ShiftPolicyDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
-  // ── Shift Policy ──────────────────────────────────────────────
-  const [start, setStart] = useState('09:00');
-  const [end, setEnd] = useState('18:00');
-  const [minHalfDay, setMinHalfDay] = useState('4');
-  const [minFullDay, setMinFullDay] = useState('8');
-  const [punchInMissing, setPunchInMissing] = useState('Pending Regularisation');
-  const [punchOutMissing, setPunchOutMissing] = useState('Pending Regularisation');
-  const [bothMissing, setBothMissing] = useState('Absent');
-  const [lateAfter, setLateAfter] = useState('10');
-  const [earlyOut, setEarlyOut] = useState('10');
-  const [weekGrid, setWeekGrid] = useState<Record<number, Set<number>>>({
-    1: new Set([6]), 2: new Set([6]), 3: new Set([6]), 4: new Set([6]), 5: new Set([6]), // Sunday off by default
-  });
-  // ── Overtime Policy ───────────────────────────────────────────
-  const [otEligible, setOtEligible] = useState(true);
-  const [otHoliday, setOtHoliday] = useState(true);
-  const [otWeeklyOff, setOtWeeklyOff] = useState(true);
-  const [otBeyondShift, setOtBeyondShift] = useState(false);
-  const [otBeyondHours, setOtBeyondHours] = useState('1');
-  // ── Attendance Policy ─────────────────────────────────────────
-  const [triggers, setTriggers] = useState<Record<string, boolean>>({ 'Missing punch': true, 'Half day': true });
-  const [attApprover, setAttApprover] = useState('Reporting manager');
-  const [selectedReasons, setSelectedReasons] = useState<string[]>([...REASON_CATALOG]);
-  const [mgrWithoutEmployee, setMgrWithoutEmployee] = useState(true);
-  const [attHrOverride, setAttHrOverride] = useState(true);
-  const [attSkipLevel, setAttSkipLevel] = useState(false);
-  const [backEmployee, setBackEmployee] = useState(true);
-  const [backManager, setBackManager] = useState(true);
-  const [backDays, setBackDays] = useState('7');
-  // ── Leave Policy ──────────────────────────────────────────────
-  const [advanceDays, setAdvanceDays] = useState('30');
-  const [allowBackdated, setAllowBackdated] = useState(true);
-  const [backdatedDays, setBackdatedDays] = useState('3');
-  const [leaveApprover, setLeaveApprover] = useState('Reporting manager');
-  const [mgrOnBehalf, setMgrOnBehalf] = useState(false);
-  const [leaveHrOverride, setLeaveHrOverride] = useState(true);
-  const [leaveSkipLevel, setLeaveSkipLevel] = useState(false);
+  const [active, setActive] = useState(true);
+  const [policy, setPolicy] = useState<ShiftPolicyDTO | null>(null);
+  /** The roster, so an export can name the people a shift covers. */
+  const [roster, setRoster] = useState<EmployeeDTO[]>([]);
 
-  const toggleWeekCell = (w: number, d: number) =>
-    setWeekGrid((prev) => {
-      const cur = new Set(prev[w] ?? []);
-      if (cur.has(d)) cur.delete(d);
-      else cur.add(d);
-      return { ...prev, [w]: cur };
-    });
-  const cellActive = (w: number, d: number) => weekGrid[w]?.has(d) ?? false;
-  const toggleTrigger = (t: string) => setTriggers((p) => ({ ...p, [t]: !p[t] }));
-  const toggleReason = (r: string) => setSelectedReasons((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
-  const canBackdate = backEmployee || backManager;
+  const reload = () =>
+    Promise.all([getShifts(), getShiftPolicy()])
+      .then(([rows, org]) => { setShifts(rows); setOrgPolicy(org); })
+      .catch((error: Error) => flash(error.message))
+      .finally(() => setLoading(false));
 
-  const openTemplate = (t: { name: string; start: string; end: string }) => {
-    setName(t.name);
-    setStart(t.start);
-    setEnd(t.end);
-    setMode('edit');
+  useEffect(() => {
+    void reload();
+    getAllEmployees().then(setRoster).catch(() => setRoster([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const open = (shift: ShiftDTO) => {
+    setName(shift.name); setActive(shift.active); setPolicy(shift.policy);
+    setMode({ kind: 'edit', id: shift.id });
   };
-  const newTemplate = () => {
-    setName('');
-    setStart('09:00');
-    setEnd('18:00');
-    setMode('edit');
+  const create = () => {
+    if (!orgPolicy) { flash('The org policy has not loaded yet'); return; }
+    setName(''); setActive(true);
+    // A new template starts as a copy of the policy everyone is on today.
+    setPolicy(JSON.parse(JSON.stringify(orgPolicy)) as ShiftPolicyDTO);
+    setMode({ kind: 'edit', id: null });
   };
 
-  const s = toMinutes(start);
-  const e = toMinutes(end);
-  let durationMins: number | null = null;
-  let overnight = false;
-  if (s != null && e != null) {
-    durationMins = e - s;
-    if (durationMins <= 0) {
-      durationMins += 24 * 60;
-      overnight = true;
-    }
-  }
+  const patch = (change: Partial<ShiftPolicyDTO>) =>
+    setPolicy((p) => (p ? { ...p, ...change } : p));
 
-  if (mode === 'list') {
+  const save = async () => {
+    if (!name.trim()) { flash('Give the shift a name'); return; }
+    if (!policy) return;
+    setSaving(true);
+    try {
+      const input = { name: name.trim(), active, policy };
+      const saved = mode.kind === 'edit' && mode.id
+        ? await updateShift(mode.id, input)
+        : await createShift(input);
+      await reload();
+      flash(`${saved.name} saved — it does not change the org policy`);
+      setMode({ kind: 'list' });
+    } catch (error) {
+      flash((error as Error).message);
+    } finally { setSaving(false); }
+  };
+
+  const exportTemplate = (shift: ShiftDTO) => {
+    const p = shift.policy;
+    const rows = roster.filter((person) => shift.assignedUserIds.includes(person.userId));
+    downloadCsv(`${shift.name.replace(/\s+/g, '-').toLowerCase()}-employees`, [
+      { header: 'Employee ID', value: (e: EmployeeDTO) => e.employeeId ?? '' },
+      { header: 'Name', value: (e: EmployeeDTO) => e.name },
+      { header: 'Department', value: (e: EmployeeDTO) => e.department ?? '' },
+      { header: 'Designation', value: (e: EmployeeDTO) => e.designation ?? '' },
+      { header: 'Location', value: (e: EmployeeDTO) => e.location ?? '' },
+      { header: 'Reports to', value: (e: EmployeeDTO) => e.managerName ?? '' },
+      { header: 'Shift', value: () => shift.name },
+      { header: 'Window', value: () => `${p.startTime}-${p.endTime}` },
+      { header: 'Half day (hrs)', value: () => p.minHalfDayHours },
+      { header: 'Full day (hrs)', value: () => p.minFullDayHours },
+      { header: 'Late grace (min)', value: () => p.lateGraceMinutes },
+      { header: 'Early-out grace (min)', value: () => p.earlyOutGraceMinutes },
+      { header: 'Punch format', value: () => p.correction.punchFormat },
+      { header: 'Leave approver', value: () => p.leave.approver },
+      { header: 'Overtime eligible', value: () => (p.overtime.eligible ? 'Yes' : 'No') },
+    ], rows);
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    try {
+      await deleteShiftApi(id);
+      await reload();
+      flash('Shift deleted');
+      setMode({ kind: 'list' });
+    } catch (error) { flash((error as Error).message); }
+  };
+
+  if (mode.kind === 'list') {
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-          <button onClick={newTemplate} style={primaryBtn}>+ Create New</button>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: '#717171', maxWidth: 620, lineHeight: 1.5 }}>
+            A template overrides the org policy for the people it is assigned to. Everyone else
+            follows Shifts › Policies. Assigning is done from{' '}
+            <button onClick={() => setView('shiftbulk')} style={linkBtn}>Bulk Assign</button>.
+          </div>
+          <button onClick={create} style={{ ...primaryBtn, marginLeft: 'auto' }}>+ Create New</button>
         </div>
         <Card>
           <table style={tableStyle}>
             <thead>
-              <tr><Th>Template Name</Th><Th>Shift window</Th><Th>Status</Th></tr>
+              <tr>
+                <Th>Template</Th>
+                <Th width={230}>Shift window</Th>
+                <Th width={200}>Employees using it</Th>
+                <Th width={120} right>{' '}</Th>
+              </tr>
             </thead>
             <tbody>
-              {SHIFT_TEMPLATES.map((t) => {
-                const sm = toMinutes(t.start);
-                const em = toMinutes(t.end);
+              {shifts.filter((t) => t.policy).map((t) => {
+                const sm = toMinutes(t.policy.startTime); const em = toMinutes(t.policy.endTime);
                 let d = sm != null && em != null ? em - sm : 0;
                 if (d <= 0) d += 24 * 60;
                 return (
-                  <tr key={t.name} onClick={() => openTemplate(t)} style={{ cursor: 'pointer' }}>
-                    <Td><strong style={{ color: '#0571A6' }}>{t.name}</strong></Td>
-                    <Td muted>{t.start} – {t.end} · {formatDuration(d)}</Td>
-                    <Td><StatusText on={t.active} /></Td>
+                  <tr key={t.id} className="phm-row" onClick={() => open(t)} style={{ cursor: 'pointer' }}>
+                    <Td>
+                      <span style={{ fontWeight: 800, color: '#0571A6' }}>{t.name}</span>
+                      {!t.active && <span style={inactivePill}>Inactive</span>}
+                      <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>
+                        half day {t.policy.minHalfDayHours}h · full day {t.policy.minFullDayHours}h ·
+                        grace {t.policy.lateGraceMinutes}/{t.policy.earlyOutGraceMinutes} min
+                      </div>
+                    </Td>
+                    <Td muted>{t.policy.startTime} – {t.policy.endTime} · {formatDuration(d)}</Td>
+                    <Td>
+                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: t.assignedCount ? '#222222' : '#9197A2' }}>
+                        {t.assignedCount}
+                      </span>
+                      <span style={{ fontSize: 14, color: '#9197A2' }}>
+                        {t.assignedCount === 1 ? ' employee' : ' employees'}
+                      </span>
+                    </Td>
+                    <Td right>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); exportTemplate(t); }}
+                        disabled={t.assignedCount === 0}
+                        title={t.assignedCount === 0 ? 'Nobody is on this shift yet' : 'Export the people on it'}
+                        style={{ ...smallBtn, opacity: t.assignedCount === 0 ? 0.45 : 1 }}
+                      >
+                        Export
+                      </button>
+                    </Td>
                   </tr>
                 );
               })}
+              {!loading && shifts.length === 0 && (
+                <tr><td colSpan={4} style={emptyCell}>
+                  No templates yet. Everyone follows the org policy in Shifts › Policies.
+                </td></tr>
+              )}
+              {loading && <tr><td colSpan={4} style={emptyCell}>Loading…</td></tr>}
             </tbody>
           </table>
         </Card>
@@ -171,258 +203,307 @@ export function ShiftTemplates() {
     );
   }
 
+  if (!policy) return <div style={emptyCell}>Loading policy…</div>;
+
+  const win = (() => {
+    const s = toMinutes(policy.startTime); const e = toMinutes(policy.endTime);
+    if (s == null || e == null) return { label: '—', overnight: false };
+    let d = e - s; let overnight = false;
+    if (d <= 0) { d += 1440; overnight = true; }
+    return { label: formatDuration(d), overnight };
+  })();
+
   return (
     <div style={{ maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <button onClick={() => setMode('list')} style={ghostBtn}>← All templates</button>
+        <button onClick={() => setMode({ kind: 'list' })} style={ghostBtn}>← All templates</button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
-          <button onClick={() => { flash('Shift template saved (prototype)'); setMode('list'); }} style={primaryBtn}>Save template</button>
+          {mode.id && <button onClick={() => void remove(mode.id!)} style={dangerBtn}>Delete</button>}
+          <button onClick={() => void save()} disabled={saving} style={primaryBtn}>
+            {saving ? 'Saving…' : 'Save template'}
+          </button>
         </div>
       </div>
 
-      {/* Shift name — always visible, outside the collapsible policies */}
+      <div style={banner}>
+        <span style={{ fontSize: 16, lineHeight: 1.3 }}>ℹ️</span>
+        <div style={{ fontSize: 14, color: '#3A5A6B', lineHeight: 1.55 }}>
+          This started as a copy of your <strong>org policy</strong> and every field below is
+          editable. Saving writes to <strong>this template only</strong> — the org policy is a
+          separate document and is not changed. It applies to the employees you assign it to;
+          everyone else stays on the org policy.
+        </div>
+      </div>
+
       <Card style={{ padding: '16px 20px', marginBottom: 14 }}>
         <Field label="Shift Name" required>
-          <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="e.g. General Day, Night Shift" style={input} />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Night Shift" style={input} />
         </Field>
+        <label style={checkRow}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
+        </label>
       </Card>
 
-      {/* Inheritance banner */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 12, padding: '13px 16px', marginBottom: 14 }}>
-        <span style={{ fontSize: 16, lineHeight: 1.3 }}>ℹ️</span>
-        <div style={{ fontSize: 14, color: '#3A5A6B', lineHeight: 1.55 }}>
-          These policies were <strong>copied from your global Policies</strong> when the template was created. Each one below currently follows the global policy — expand a policy (and its sections) to override it <strong>for this shift only</strong>.
-        </div>
-      </div>
-
-      {/* ── Shift Policy ──────────────────────────────────────── */}
-      <PolicySection title="Shift Policy" subtitle="Working window, missing punches & weekly-off.">
-        <SubSection title="Working window">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 16, alignItems: 'end' }}>
-            <Field label="Shift Start Time"><input type="time" value={start} onChange={(ev) => setStart(ev.target.value)} style={input} /></Field>
-            <Field label="Shift End Time"><input type="time" value={end} onChange={(ev) => setEnd(ev.target.value)} style={input} /></Field>
-            <div style={{ marginBottom: 12 }}>
-              <label style={fieldLabel}>Duration</label>
-              <div style={durationBox}>
-                <span style={{ fontSize: 20, fontWeight: 800, color: '#0571A6', fontVariantNumeric: 'tabular-nums' }}>{durationMins != null ? formatDuration(durationMins) : '—'}</span>
-                {overnight && <span style={overnightTag}>overnight · +1 day</span>}
-              </div>
+      <Section title="Working window" subtitle="When this shift opens and closes.">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 16, alignItems: 'end' }}>
+          <Field label="Shift start time (in)">
+            <input type="time" value={policy.startTime} onChange={(e) => patch({ startTime: e.target.value })} style={input} />
+          </Field>
+          <Field label="Shift end time (out)">
+            <input type="time" value={policy.endTime} onChange={(e) => patch({ endTime: e.target.value })} style={input} />
+          </Field>
+          <div style={{ marginBottom: 12 }}>
+            <label style={fieldLabel}>Duration</label>
+            <div style={durationBox}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: '#0571A6', fontVariantNumeric: 'tabular-nums' }}>{win.label}</span>
+              {win.overnight && <span style={overnightTag}>overnight · +1 day</span>}
             </div>
           </div>
-        </SubSection>
+        </div>
+      </Section>
 
-        <SubSection title="Missing punches">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Field label="Punch-in missing — mark as"><Select value={punchInMissing} onChange={setPunchInMissing} options={MARK_OPTIONS} /></Field>
-            <Field label="Punch-out missing — mark as"><Select value={punchOutMissing} onChange={setPunchOutMissing} options={MARK_OPTIONS} /></Field>
-            <Field label="Both punches missing — mark as"><Select value={bothMissing} onChange={setBothMissing} options={MARK_OPTIONS} /></Field>
-          </div>
-        </SubSection>
+      <Section title="Day thresholds" subtitle="Worked hours that earn a half day and a full day.">
+        <Grid2>
+          <Field label="Min hours for half day">
+            <Num value={policy.minHalfDayHours} onChange={(v) => patch({ minHalfDayHours: v })} suffix="hrs" step="0.5" />
+          </Field>
+          <Field label="Min hours for full day">
+            <Num value={policy.minFullDayHours} onChange={(v) => patch({ minFullDayHours: v })} suffix="hrs" step="0.5" />
+          </Field>
+        </Grid2>
+        <div style={note}>
+          {policy.minFullDayHours}h or more is a full day; {policy.minHalfDayHours}h up to{' '}
+          {policy.minFullDayHours}h is a half day; anything shorter is flagged for correction.
+        </div>
+      </Section>
 
-        <SubSection title="Weekly-off">
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'separate', borderSpacing: '8px 8px' }}>
-              <thead>
-                <tr>
-                  <th />
-                  {DOW.map((dw) => (
-                    <th key={dw.long} title={dw.long} style={{ fontSize: 13, fontWeight: 800, color: '#717171', width: 34 }}>{dw.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {WEEK_ROWS.map((w) => (
-                  <tr key={w}>
-                    <td style={rowHead}>Week {w}</td>
-                    {DOW.map((dw) => (
-                      <td key={dw.long} style={{ textAlign: 'center' }}>
-                        <button onClick={() => toggleWeekCell(w, dw.key)} style={cellBtn(cellActive(w, dw.key))} title={`${dw.long} — week ${w}`} />
+      <Section title="Late & early grace" subtitle="Measured against this shift's own start and end.">
+        <Grid2>
+          <Field label="Mark as late if late by">
+            <Num value={policy.lateGraceMinutes} onChange={(v) => patch({ lateGraceMinutes: v })} suffix="min" />
+          </Field>
+          <Field label="Mark early-out if leaves early by">
+            <Num value={policy.earlyOutGraceMinutes} onChange={(v) => patch({ earlyOutGraceMinutes: v })} suffix="min" />
+          </Field>
+        </Grid2>
+        <div style={note}>
+          On this {policy.startTime}–{policy.endTime} shift, arriving after{' '}
+          {clock(policy.startTime, policy.lateGraceMinutes)} is late, and leaving before{' '}
+          {clock(policy.endTime, -policy.earlyOutGraceMinutes)} is an early-out.
+        </div>
+      </Section>
+
+      <Section title="Weekly-off" subtitle="Per week of the month — the 2nd Saturday can be off while the 1st is not.">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: '8px 8px' }}>
+            <thead>
+              <tr><th />{DOW.map((d) => <th key={d.long} title={d.long} style={{ fontSize: 13, fontWeight: 800, color: '#717171', width: 34 }}>{d.label}</th>)}</tr>
+            </thead>
+            <tbody>
+              {WEEKS.map((w) => (
+                <tr key={w}>
+                  <td style={rowHead}>Week {w}</td>
+                  {DOW.map((d) => {
+                    const on = (policy.weeklyOff?.[String(w)] ?? []).includes(d.key);
+                    return (
+                      <td key={d.long} style={{ textAlign: 'center' }}>
+                        <button
+                          title={`${d.long} — week ${w}`}
+                          onClick={() => {
+                            const current = new Set(policy.weeklyOff?.[String(w)] ?? []);
+                            if (current.has(d.key)) current.delete(d.key); else current.add(d.key);
+                            patch({ weeklyOff: { ...policy.weeklyOff, [String(w)]: [...current].sort((a, b) => a - b) } });
+                          }}
+                          style={{
+                            width: 30, height: 30, borderRadius: 8, cursor: 'pointer', display: 'inline-block',
+                            border: `1px solid ${on ? '#0571A6' : '#DADFE4'}`, background: on ? '#0571A6' : '#fff',
+                          }}
+                        />
                       </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SubSection>
-      </PolicySection>
-
-      {/* ── Late Policy ───────────────────────────────────────── */}
-      <PolicySection title="Late Policy" subtitle="Grace before an arrival is late or a departure is an early-out.">
-        <SubSection title="Late & early grace">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Field label="Mark as late if late by"><Suffixed value={lateAfter} onChange={setLateAfter} suffix="min" /></Field>
-            <Field label="Mark early-out if leaves early by"><Suffixed value={earlyOut} onChange={setEarlyOut} suffix="min" /></Field>
-          </div>
-        </SubSection>
-      </PolicySection>
-
-      {/* ── Half day Policy ───────────────────────────────────── */}
-      <PolicySection title="Half day Policy" subtitle="Worked-hour thresholds for a half day vs a full day.">
-        <SubSection title="Day thresholds">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Field label="Min hours for half day"><Suffixed value={minHalfDay} onChange={setMinHalfDay} suffix="hrs" /></Field>
-            <Field label="Min hours for full day"><Suffixed value={minFullDay} onChange={setMinFullDay} suffix="hrs" /></Field>
-          </div>
-        </SubSection>
-      </PolicySection>
-
-      {/* ── Overtime Policy ───────────────────────────────────── */}
-      <PolicySection title="Overtime Policy" subtitle="Whether this shift qualifies for overtime, and when it applies.">
-        <SubSection title="Eligibility">
-          <Field label="Are employees on this shift eligible for overtime?">
-            <YesNo value={otEligible} onChange={setOtEligible} />
-          </Field>
-        </SubSection>
-        <SubSection title="Counts as overtime when…">
-          <div style={{ opacity: otEligible ? 1 : 0.5, pointerEvents: otEligible ? 'auto' : 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {!otEligible && <div style={{ fontSize: 13, color: '#9197A2' }}>This shift isn’t eligible for overtime.</div>}
-            <label style={checkRow}><input type="checkbox" checked={otHoliday} onChange={(ev) => setOtHoliday(ev.target.checked)} /> On a holiday</label>
-            <label style={checkRow}><input type="checkbox" checked={otWeeklyOff} onChange={(ev) => setOtWeeklyOff(ev.target.checked)} /> On a weekly-off</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <label style={checkRow}><input type="checkbox" checked={otBeyondShift} onChange={(ev) => setOtBeyondShift(ev.target.checked)} /> Beyond shift hours by</label>
-              <div style={{ opacity: otBeyondShift ? 1 : 0.5, pointerEvents: otBeyondShift ? 'auto' : 'none' }}>
-                <Suffixed value={otBeyondHours} onChange={setOtBeyondHours} suffix="hrs" width={120} />
-              </div>
-            </div>
-          </div>
-        </SubSection>
-      </PolicySection>
-
-      {/* ── Attendance Policy ─────────────────────────────────── */}
-      <PolicySection title="Attendance Correction Policy" subtitle="When corrections can be raised, who approves, and backdating limits.">
-        <SubSection title="When can a correction be raised?">
-          <div style={{ fontSize: 13, color: '#717171', marginBottom: 10 }}>An employee gets the option when their day is auto-marked (from the Shift Policy) as:</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {TRIGGERS.map((t) => (
-              <button key={t} onClick={() => toggleTrigger(t)} style={chip(!!triggers[t])}>{t}</button>
-            ))}
-          </div>
-          <SubLabel>Reasons an employee can pick</SubLabel>
-          <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Select from the standard set — each reason drives its own action (e.g. “Apply leave” starts a leave request).</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {REASON_CATALOG.map((r) => (
-              <button key={r} onClick={() => toggleReason(r)} style={chip(selectedReasons.includes(r))}>{r}</button>
-            ))}
-          </div>
-        </SubSection>
-
-        <SubSection title="Approval & overrides">
-          <Field label="Who approves a correction?">
-            <select value={attApprover} onChange={(ev) => setAttApprover(ev.target.value)} style={{ ...input, maxWidth: 340 }}>
-              {APPROVERS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Field>
-          <QRow label="Can a manager correct attendance without the employee applying?"><YesNo value={mgrWithoutEmployee} onChange={setMgrWithoutEmployee} /></QRow>
-          <QRow label="Can HR override the decision?"><YesNo value={attHrOverride} onChange={setAttHrOverride} /></QRow>
-          <QRow label="Can the level above the manager override?"><YesNo value={attSkipLevel} onChange={setAttSkipLevel} /></QRow>
-        </SubSection>
-
-        <SubSection title="Backdating">
-          <Field label="Backdated corrections allowed for">
-            <div style={{ display: 'flex', gap: 18 }}>
-              <label style={checkRow}><input type="checkbox" checked={backEmployee} onChange={(ev) => setBackEmployee(ev.target.checked)} /> Employee</label>
-              <label style={checkRow}><input type="checkbox" checked={backManager} onChange={(ev) => setBackManager(ev.target.checked)} /> Manager</label>
-            </div>
-          </Field>
-          <div style={{ opacity: canBackdate ? 1 : 0.5, pointerEvents: canBackdate ? 'auto' : 'none' }}>
-            <Field label="How far back can they backdate?">
-              <Suffixed value={backDays} onChange={setBackDays} suffix="days" width={200} />
-            </Field>
-          </div>
-        </SubSection>
-      </PolicySection>
-
-      {/* ── Leave Policy ──────────────────────────────────────── */}
-      <PolicySection title="Leave Policy" subtitle="Leave types & accrual, the application window and the approval flow.">
-        <SubSection title="Leave types">
-          <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 12 }}>
-            Monthly accrual and reset (lapse / carry-forward / encash) per leave type. Copied from the global Leave policy — edit for this shift only.
-          </div>
-          <LeaveTypes />
-        </SubSection>
-
-        <SubSection title="When can leave be applied?">
-          <Field label="How far in advance can leave be applied?">
-            <Suffixed value={advanceDays} onChange={setAdvanceDays} suffix="days ahead" width={220} />
-          </Field>
-          <QRow label="Allow backdated leave applications?"><YesNo value={allowBackdated} onChange={setAllowBackdated} /></QRow>
-          <div style={{ opacity: allowBackdated ? 1 : 0.5, pointerEvents: allowBackdated ? 'auto' : 'none', marginTop: 14 }}>
-            <Field label="How far backdated can leave be applied?">
-              <Suffixed value={backdatedDays} onChange={setBackdatedDays} suffix="days back" width={220} />
-            </Field>
-          </div>
-        </SubSection>
-
-        <SubSection title="Approval & overrides">
-          <Field label="Who approves a leave request?">
-            <select value={leaveApprover} onChange={(ev) => setLeaveApprover(ev.target.value)} style={{ ...input, maxWidth: 340 }}>
-              {APPROVERS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Field>
-          <QRow label="Can a manager apply leave on behalf of the employee?"><YesNo value={mgrOnBehalf} onChange={setMgrOnBehalf} /></QRow>
-          <QRow label="Can HR override the decision?"><YesNo value={leaveHrOverride} onChange={setLeaveHrOverride} /></QRow>
-          <QRow label="Can the level above the manager override?"><YesNo value={leaveSkipLevel} onChange={setLeaveSkipLevel} /></QRow>
-        </SubSection>
-      </PolicySection>
-
-      {/* Holidays are not configured on the shift — they come from the Holiday Bank master, by location. */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 12, padding: '14px 16px', marginTop: 16 }}>
-        <span style={{ fontSize: 16, lineHeight: 1.3 }}>ℹ️</span>
-        <div style={{ fontSize: 14, color: '#3A5A6B', lineHeight: 1.55 }}>
-          <strong>Holidays aren’t set on the shift.</strong> They’re assigned automatically from the <strong>Holiday Bank</strong> master based on each employee’s work location — so the same shift observes different holidays across locations.
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
+      </Section>
+
+      <Section title="Attendance correction" subtitle="Missing punches, what can be corrected, and by whom.">
+        <SubLabel>Missing punches</SubLabel>
+        <Grid2>
+          <Field label="Punch-in missing — mark as">
+            <Select value={policy.missingPunchIn} onChange={(v) => patch({ missingPunchIn: v })} options={MARK_OPTIONS} />
+          </Field>
+          <Field label="Punch-out missing — mark as">
+            <Select value={policy.missingPunchOut} onChange={(v) => patch({ missingPunchOut: v })} options={MARK_OPTIONS} />
+          </Field>
+          <Field label="Both punches missing — mark as">
+            <Select value={policy.missingBoth} onChange={(v) => patch({ missingBoth: v })} options={MARK_OPTIONS} />
+          </Field>
+        </Grid2>
+
+        <SubLabel>Punch format</SubLabel>
+        <Select
+          value={policy.correction.punchFormat}
+          onChange={(v) => patch({ correction: { ...policy.correction, punchFormat: v } })}
+          options={PUNCH_FORMATS}
+        />
+
+        <SubLabel>A correction can be raised when a day is marked</SubLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {TRIGGERS.map((t) => {
+            const on = policy.correction.triggers.includes(t);
+            return (
+              <button
+                key={t}
+                onClick={() => patch({
+                  correction: {
+                    ...policy.correction,
+                    triggers: on ? policy.correction.triggers.filter((x) => x !== t) : [...policy.correction.triggers, t],
+                  },
+                })}
+                style={chip(on)}
+              >{t}</button>
+            );
+          })}
+        </div>
+
+        <SubLabel>Approval</SubLabel>
+        <Field label="Who approves a correction?">
+          <Select
+            value={policy.correction.approver}
+            onChange={(v) => patch({ correction: { ...policy.correction, approver: v } })}
+            options={APPROVERS}
+          />
+        </Field>
+        <QRow label="Can HR override the decision?">
+          <YesNo value={policy.correction.hrOverride} onChange={(v) => patch({ correction: { ...policy.correction, hrOverride: v } })} />
+        </QRow>
+        <QRow label="Can a manager correct attendance without the employee applying?">
+          <YesNo value={policy.correction.managerWithoutEmployee} onChange={(v) => patch({ correction: { ...policy.correction, managerWithoutEmployee: v } })} />
+        </QRow>
+        <Field label="How far back can a correction be raised?">
+          <Num value={policy.correction.backdateDays} onChange={(v) => patch({ correction: { ...policy.correction, backdateDays: v } })} suffix="days" width={220} />
+        </Field>
+      </Section>
+
+      <Section title="Overtime" subtitle="Whether this shift qualifies, and how far back a claim can reach.">
+        <QRow label="Are employees on this shift eligible for overtime?">
+          <YesNo value={policy.overtime.eligible} onChange={(v) => patch({ overtime: { ...policy.overtime, eligible: v } })} />
+        </QRow>
+        <Field label="How far back can overtime be claimed?">
+          <Num value={policy.overtime.backdateDays} onChange={(v) => patch({ overtime: { ...policy.overtime, backdateDays: v } })} suffix="days" width={220} />
+        </Field>
+        <div style={note}>
+          Overtime is claimed as a full day or a half day. Approved overtime earns comp-off —
+          a full day adds 1, a half day 0.5.
+        </div>
+      </Section>
+
+      <Section title="Leave" subtitle="Approval, and each type's accrual, window and year-end handling.">
+        <Field label="Who approves a leave request?">
+          <Select
+            value={policy.leave.approver}
+            onChange={(v) => patch({ leave: { ...policy.leave, approver: v } })}
+            options={APPROVERS}
+          />
+        </Field>
+        <QRow label="Can HR override the decision?">
+          <YesNo value={policy.leave.hrOverride} onChange={(v) => patch({ leave: { ...policy.leave, hrOverride: v } })} />
+        </QRow>
+        {policy.leave.types.map((type, index) => (
+          <LeaveTypeBlock
+            key={type.key}
+            type={type}
+            onChange={(change) => patch({
+              leave: {
+                ...policy.leave,
+                types: policy.leave.types.map((t, i) => (i === index ? { ...t, ...change } : t)),
+              },
+            })}
+          />
+        ))}
+      </Section>
     </div>
   );
 }
 
-/** Outer collapsible — one org policy, copied into the template. Collapsed by default. */
-function PolicySection({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+function LeaveTypeBlock({ type, onChange }: { type: LeaveTypeRule; onChange: (c: Partial<LeaveTypeRule>) => void }) {
+  const isCompOff = type.key === 'comp_off';
+  return (
+    <div style={{ border: '1px solid #EDEDF0', borderRadius: 10, padding: '14px 16px', marginTop: 12 }}>
+      <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10 }}>{type.name}</div>
+      <Grid2>
+        {!isCompOff && (
+          <Field label="Leaves earned per month">
+            <Num value={type.perMonth} onChange={(v) => onChange({ perMonth: v })} suffix="/ month" step="0.5" />
+          </Field>
+        )}
+        <Field label="Balance processed at">
+          <Select
+            value={type.resetOn}
+            onChange={(v) => onChange({ resetOn: v })}
+            options={['calendar_year', 'financial_year'] as const}
+            render={(v) => (v === 'calendar_year' ? 'End of calendar year' : 'End of financial year')}
+          />
+        </Field>
+        <Field label="Carry forward up to">
+          <Num value={type.carryForwardDays} onChange={(v) => onChange({ carryForwardDays: v })} suffix="days" />
+        </Field>
+        <Field label="What happens to the rest">
+          <Select
+            value={type.encashment}
+            onChange={(v) => onChange({ encashment: v })}
+            options={['all', 'limit', 'none'] as const}
+            render={(v) => (v === 'all' ? 'Encash all of it' : v === 'limit' ? 'Encash up to a limit' : 'Nothing — it lapses')}
+          />
+        </Field>
+        {type.encashment === 'limit' && (
+          <Field label="Encashment limit">
+            <Num value={type.encashLimitDays} onChange={(v) => onChange({ encashLimitDays: v })} suffix="days" />
+          </Field>
+        )}
+        <Field label="Can be applied up to">
+          <Num value={type.advanceDays} onChange={(v) => onChange({ advanceDays: v })} suffix="days ahead" />
+        </Field>
+      </Grid2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+        <div style={fieldLabel}>Allow backdated applications</div>
+        <YesNo value={type.allowBackdated} onChange={(v) => onChange({ allowBackdated: v })} />
+        {type.allowBackdated && (
+          <Num value={type.backdatedDays} onChange={(v) => onChange({ backdatedDays: v })} suffix="days back" width={160} />
+        )}
+      </div>
+      <div style={{ ...note, marginTop: 12 }}>Any balance still left after that will lapse.</div>
+    </div>
+  );
+}
+
+function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 14 }}>
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: '#FBFBFC', border: 'none', borderBottom: open ? '1px solid #EBEBEB' : 'none', padding: '16px 22px', cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: '#FBFBFC', border: 'none', borderBottom: open ? '1px solid #EBEBEB' : 'none', padding: '15px 20px', cursor: 'pointer' }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.2px' }}>{title}</div>
           {subtitle && <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{subtitle}</div>}
         </div>
-        {!open && <span style={followingPill}>Following global policy</span>}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform .18s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-      {open && <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>}
+      {open && <div style={{ padding: '16px 20px' }}>{children}</div>}
     </Card>
   );
 }
 
-/** Inner collapsible — one subsection of a policy. Collapsed by default. */
-function SubSection({ title, children }: { title: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ border: '1px solid #EDEDF0', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: '#FCFCFD', border: 'none', borderBottom: open ? '1px solid #EDEDF0' : 'none', padding: '12px 16px', cursor: 'pointer' }}
-      >
-        <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, color: '#333333' }}>{title}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B0B4BC" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform .18s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && <div style={{ padding: '16px' }}>{children}</div>}
-    </div>
-  );
-}
-
-function SubLabel({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9197A2', margin: '16px 0 8px' }}>{children}</div>;
+function Grid2({ children }: { children: ReactNode }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>{children}</div>;
 }
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
@@ -440,64 +521,58 @@ function QRow({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-function Suffixed({ value, onChange, suffix, width }: { value: string; onChange: (v: string) => void; suffix: string; width?: number }) {
+function SubLabel({ children }: { children: ReactNode }) {
+  return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9197A2', margin: '18px 0 8px' }}>{children}</div>;
+}
+function Num({ value, onChange, suffix, width, step }: { value: number; onChange: (v: number) => void; suffix: string; width?: number; step?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff', width: width ?? '100%' }}>
-      <input type="number" min="0" value={value} onChange={(ev) => onChange(ev.target.value)} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent' }} />
+      <input type="number" min="0" step={step ?? '1'} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent' }} />
       <span style={{ padding: '9px 12px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 14, whiteSpace: 'nowrap' }}>{suffix}</span>
     </div>
   );
 }
+function Select<T extends string>({ value, onChange, options, render }: { value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{ ...input, cursor: 'pointer' }}>
+      {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
+    </select>
+  );
+}
 function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  const opts: { v: boolean; l: string }[] = [{ v: true, l: 'Yes' }, { v: false, l: 'No' }];
   return (
     <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
-      {opts.map((o) => (
-        <button
-          key={o.l}
-          onClick={() => onChange(o.v)}
-          style={{
-            padding: '8px 22px',
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: 'pointer',
-            border: 'none',
-            borderLeft: o.v ? 'none' : '1px solid #EBEBEB',
-            background: value === o.v ? '#0571A6' : '#fff',
-            color: value === o.v ? '#fff' : '#484848',
-          }}
-        >
-          {o.l}
-        </button>
+      {[{ v: true, l: 'Yes' }, { v: false, l: 'No' }].map((o) => (
+        <button key={o.l} onClick={() => onChange(o.v)} style={{
+          padding: '7px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none',
+          borderLeft: o.v ? 'none' : '1px solid #EBEBEB',
+          background: value === o.v ? '#0571A6' : '#fff', color: value === o.v ? '#fff' : '#484848',
+        }}>{o.l}</button>
       ))}
     </div>
   );
 }
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <select value={value} onChange={(ev) => onChange(ev.target.value)} style={{ ...input, cursor: 'pointer' }}>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
+function Th({ children, width, right }: { children: ReactNode; width?: number; right?: boolean }) {
+  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
 }
-
-function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
-}
-function Td({ children, muted }: { children: ReactNode; muted?: boolean }) {
-  return <td style={{ padding: '13px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
-}
-function StatusText({ on }: { on: boolean }) {
-  return <span style={{ fontSize: 14, fontWeight: 700, color: on ? '#4F7A52' : '#9197A2' }}>{on ? 'Active' : 'Inactive'}</span>;
+function Td({ children, muted, right }: { children: ReactNode; muted?: boolean; right?: boolean }) {
+  return <td style={{ padding: '13px 16px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
 }
 
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const emptyCell: CSSProperties = { padding: '44px 20px', textAlign: 'center', color: '#9197A2', fontSize: 15 };
 const fieldLabel: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' };
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const rowHead: CSSProperties = { fontSize: 14, fontWeight: 700, color: '#333333', paddingRight: 14, whiteSpace: 'nowrap' };
 const durationBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', minHeight: 40, border: '1px solid #E7F0F5', borderRadius: 9, background: '#F1F8FC', whiteSpace: 'nowrap' };
 const overnightTag: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#8A6D1F', background: '#FBF3DD', borderRadius: 20, padding: '2px 9px' };
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: '#333333', cursor: 'pointer' };
-const followingPill: CSSProperties = { flexShrink: 0, fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#4F7A52', background: '#EAF3EA', border: '1px solid #D6E8D6', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' };
-const chip = (active: boolean): CSSProperties => ({ padding: '9px 15px', borderRadius: 10, border: `1px solid ${active ? '#0571A6' : '#EBEBEB'}`, background: active ? '#0571A6' : '#fff', color: active ? '#fff' : '#484848', fontWeight: 700, fontSize: 14, cursor: 'pointer' });
+const banner: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 12, padding: '13px 16px', marginBottom: 14 };
+const note: CSSProperties = { marginTop: 12, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
+const chip = (on: boolean): CSSProperties => ({ padding: '9px 15px', borderRadius: 10, border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`, background: on ? '#0571A6' : '#fff', color: on ? '#fff' : '#484848', fontWeight: 700, fontSize: 14, cursor: 'pointer' });
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '8px 14px', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' };
+const smallBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
+const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px' };
+const dangerBtn: CSSProperties = { background: '#fff', color: '#C4382E', border: '1px solid #F0D6D3', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: '#0571A6', cursor: 'pointer' };
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };

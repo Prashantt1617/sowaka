@@ -5,7 +5,13 @@ export interface ReimbursementClaim {
   managerUserId: string;
   expenseDate: Date;
   amount: number;
-  category: 'travel' | 'meals' | 'internet' | 'other';
+  /**
+   * The reimbursement type this claim is against, stored lowercased by name.
+   * The list is per-org and HR-owned (see `ReimbursementType`), so this is a
+   * free string rather than a union — a claim keeps reading correctly even
+   * after the type behind it is renamed or switched off.
+   */
+  category: string;
   receiptName?: string;
   receiptObjectKey?: string;
   receiptContentType?: string;

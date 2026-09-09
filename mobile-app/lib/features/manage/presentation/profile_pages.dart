@@ -559,12 +559,25 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final file = result?.files.single;
     final path = file?.path;
     if (file == null || path == null || path.isEmpty) return;
+    if (!mounted) return;
+
+    // A profile photo is shown in a circle everywhere, so it is cropped square
+    // here rather than centre-cropped at render time and cut differently on
+    // every screen.
+    final cropped = await cropImageFile(
+      context,
+      path: path,
+      title: 'Crop your photo',
+      initial: CropShape.square,
+      allowShapeChange: false,
+    );
+    if (cropped == null || !mounted) return;
 
     setState(() => _uploadingPhoto = true);
     try {
       final photoUrl = await widget.bloc.service.updateProfilePhoto(
-        path: path,
-        filename: file.name,
+        path: cropped,
+        filename: file.name.replaceAll(RegExp(r'\.[^.]+$'), '.png'),
       );
       widget.bloc.setManagerPhoto(photoUrl);
       await widget.onProfilePhotoUpdated(photoUrl);
@@ -1461,7 +1474,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
       leaves: memberLeaves,
       holidays: widget.data.holidays,
       overtime: memberOvertime,
-      weekoffDays: widget.data.weekoffDays,
+      shift: widget.data.shift,
     );
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1535,14 +1548,6 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                       AttendanceFilterChips(
                         selected: _filter,
                         onChanged: (filter) => setState(() => _filter = filter),
-                        onLateTapped: () =>
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Late arrivals aren't tracked yet — no threshold is configured.",
-                                ),
-                              ),
-                            ),
                       ),
                       const SizedBox(height: 20),
                       if (_listView)
@@ -1556,7 +1561,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                                 DateTime.now(),
                               ),
                               dimmed: !matchesAttendanceFilter(
-                                day.kind,
+                                day,
                                 _filter,
                               ),
                               selected: _isSameCalendarDay(

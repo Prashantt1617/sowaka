@@ -32,7 +32,9 @@ export type View =
   | 'employees'
   | 'orgchart'
   | 'usersroles'
-  | 'settings'
+  | 'cycle'
+  | 'reimbursementtypes'
+  | 'shiftbulk'
   | 'games';
 
 export type LeaveType = 'Sick' | 'Casual' | 'Earned' | 'WFH' | 'Unpaid';
@@ -130,7 +132,9 @@ export const TITLES: Record<View, [string, string]> = {
   employees: ['Employees', 'People'],
   orgchart: ['Org chart', 'People'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
-  settings: ['Settings', 'Organisation'],
+  cycle: ['Cycle', 'Performance · the monthly review cycle'],
+  reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
+  shiftbulk: ['Bulk Assign', 'Shifts · put employees on a shift'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
 };
 

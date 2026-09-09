@@ -1,7 +1,6 @@
-import { attendanceRecords, feedbackRecords, leaves, users } from '../config/db';
+import { feedbackRecords, leaves, users } from '../config/db';
 import { env } from '../config/env';
 import { User } from '../models/user.model';
-import { getCompanyConfig, getOrgHolidayDates, isWeekoffDay } from './company-settings.service';
 import { notifyUsers } from './notification.service';
 
 /**
@@ -202,70 +201,6 @@ export async function sendConsecutiveMissedFlags(now = new Date()): Promise<void
   }
 }
 
-/** #23 — 6:00 PM: who was present, on leave, and unaccounted for today. */
-export async function sendDailyAttendanceSummary(now = new Date()): Promise<void> {
-  const workDate = now.toISOString().slice(0, 10);
-  // Week-offs and company holidays are skipped: nobody punches in on a day they
-  // are not working, so every report would otherwise be counted as an unplanned
-  // absence and each manager would get a full-team "absent" list every weekend.
-  const settingsByOrg = new Map<string, { weekoffDays: number[]; holidayDates: Set<string> }>();
-  for (const { manager, reports } of (await managersWithReports()).values()) {
-    const orgKey = manager.org ?? '';
-    let settings = settingsByOrg.get(orgKey);
-    if (!settings) {
-      const [config, holidayDates] = await Promise.all([
-        getCompanyConfig(manager.org),
-        getOrgHolidayDates(manager.org),
-      ]);
-      settings = { weekoffDays: config.weekoffDays, holidayDates };
-      settingsByOrg.set(orgKey, settings);
-    }
-    if (isWeekoffDay(now, settings.weekoffDays) || settings.holidayDates.has(workDate)) continue;
-
-    const reportIds = reports.map((report) => report.userId);
-    const employeeIds = reports.map((report) => report.employeeId).filter(Boolean) as string[];
-    const [records, onLeave] = await Promise.all([
-      attendanceRecords().find({
-        workDate,
-        $or: [
-          { userId: { $in: reportIds } },
-          ...(employeeIds.length ? [{ employeeId: { $in: employeeIds } }] : []),
-        ],
-      }).toArray(),
-      leaves().find({
-        userId: { $in: reportIds },
-        status: 'approved',
-        startDate: { $lte: endOfDay(now) },
-        endDate: { $gte: startOfDay(now) },
-      }).toArray(),
-    ]);
-
-    const present = new Set(records
-      .filter((record) => record.punchIn)
-      .map((record) => record.userId
-        ?? reports.find((report) => report.employeeId === record.employeeId)?.userId)
-      .filter(Boolean) as string[]);
-    const leaveIds = new Set(onLeave.map((leave) => leave.userId));
-    const leaveNames = reports.filter((report) => leaveIds.has(report.userId)).map((report) => report.name);
-    const absentNames = reports
-      .filter((report) => !present.has(report.userId) && !leaveIds.has(report.userId))
-      .map((report) => report.name);
-
-    await notifyUsers([manager.userId], {
-      scenario: 'attendance_summary', title: 'Team attendance',
-      body: `Team attendance today: ${present.size}/${reports.length} present`,
-      data: { destination: 'manage_attendance', workDate },
-      email: {
-        subject: `Team attendance today: ${present.size}/${reports.length}`,
-        body: `Hi {firstName},\n\nYour team's attendance for ${workDate}:\n`
-          + `Present: ${present.size}/${reports.length}\n`
-          + `On leave: ${leaveNames.length ? leaveNames.join(', ') : 'none'}\n`
-          + `Absent (unplanned): ${absentNames.length ? absentNames.join(', ') : 'none'}\n\n`
-          + `Full view:\n${link()}\n\n- Sowaka Connect`,
-      },
-    });
-  }
-}
 
 /** #24 — Monday 9:00 AM: pointer to last week's report. */
 export async function sendWeeklyAttendanceReport(now = new Date()): Promise<void> {

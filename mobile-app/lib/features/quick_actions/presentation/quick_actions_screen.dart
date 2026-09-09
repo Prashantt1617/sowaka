@@ -78,6 +78,8 @@ class AttendanceDayView {
     this.regularization,
     this.leave,
     this.holiday,
+    this.late = false,
+    this.earlyOut = false,
   });
 
   final DateTime date;
@@ -88,6 +90,12 @@ class AttendanceDayView {
   final AttendanceRegularization? regularization;
   final LeaveRequest? leave;
   final CompanyHoliday? holiday;
+
+  /// Arrived after the shift start plus its grace, per the org's shift policy.
+  final bool late;
+
+  /// Left before the shift end less its grace.
+  final bool earlyOut;
 }
 
 List<AttendanceDayView> buildAttendanceDays({
@@ -97,7 +105,7 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<LeaveRequest> leaves,
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
-  required List<int> weekoffDays,
+  required ShiftPolicy shift,
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -137,7 +145,7 @@ List<AttendanceDayView> buildAttendanceDays({
       }
     }
     final future = date.isAfter(_dateOnly(now));
-    final weekoff = weekoffDays.contains(date.weekday % 7);
+    final weekoff = shift.isWeekOff(date);
     final complete = record?.punchIn != null && record?.punchOut != null;
     final duration = complete
         ? record!.punchOut!.difference(record.punchIn!)
@@ -184,6 +192,8 @@ List<AttendanceDayView> buildAttendanceDays({
         punchIn: record?.punchIn ?? regularization?.requestedPunchIn,
         punchOut: record?.punchOut ?? regularization?.requestedPunchOut,
       );
+      final punchIn = displayRecord.punchIn;
+      final punchOut = displayRecord.punchOut;
       return AttendanceDayView(
         date: date,
         kind: AttendanceKind.present,
@@ -191,6 +201,8 @@ List<AttendanceDayView> buildAttendanceDays({
         cellLabel: '',
         record: displayRecord,
         regularization: regularization,
+        late: punchIn != null && shift.isLate(punchIn),
+        earlyOut: punchOut != null && shift.isEarlyOut(punchOut),
       );
     }
     if (pendingRegularization) {
@@ -204,14 +216,40 @@ List<AttendanceDayView> buildAttendanceDays({
       );
     }
     if (complete) {
-      final halfDay = duration! < const Duration(hours: 6);
+      // Three bands, all from the shift HR configured: a full day, a half day,
+      // and below that a day short enough to need a correction.
+      final fullDay = duration! >= shift.minFullDay;
+      final halfDay = !fullDay && duration >= shift.minHalfDay;
+      final short = !fullDay && !halfDay;
+      final late = shift.isLate(record!.punchIn!);
+      final earlyOut = shift.isEarlyOut(record.punchOut!);
+      final flags = [
+        if (late) 'Late',
+        if (earlyOut) 'Early out',
+      ].join(' · ');
+      final label = short
+          ? 'Short day'
+          : halfDay
+          ? 'Half day'
+          : 'Present';
       return AttendanceDayView(
         date: date,
-        kind: halfDay ? AttendanceKind.halfDay : AttendanceKind.present,
+        kind: short
+            ? AttendanceKind.attention
+            : halfDay
+            ? AttendanceKind.halfDay
+            : AttendanceKind.present,
         title:
-            '${halfDay ? 'Half day' : 'Present'} · ${_QuickActionsScreenState._duration(duration)}$overtimeSuffix',
-        cellLabel: halfDay ? 'Half day' : (overtimeItem == null ? '' : 'OT'),
+            '$label · ${_QuickActionsScreenState._duration(duration)}'
+            '${flags.isEmpty ? '' : ' · $flags'}$overtimeSuffix',
+        cellLabel: short
+            ? 'Short'
+            : halfDay
+            ? 'Half day'
+            : (late ? 'Late' : (overtimeItem == null ? '' : 'OT')),
         record: record,
+        late: late,
+        earlyOut: earlyOut,
       );
     }
     if (record != null || (!future && !weekoff)) {
@@ -298,8 +336,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   AttendanceDayView? _selectedCalendarDay;
   bool _overtimeHistoryView = false;
   DateTime? _overtimeDate;
-  TimeOfDay? _overtimeStartTime;
-  TimeOfDay? _overtimeEndTime;
+  /// 'Full day' or 'Half day' — the only two durations overtime is claimed as,
+  /// matching what HR configured. The hours behind them come from the shift.
+  String? _overtimeDuration;
   final _overtimeNote = TextEditingController();
   bool _reimbursementHistoryView = false;
   DateTime? _reimbursementDate;
@@ -342,13 +381,37 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (_page == _QuickPage.applyReimbursement) setState(() {});
   }
 
-  /// Every field on the reimbursement form is required.
+  /// The types this org offers, from the dashboard payload.
+  List<ReimbursementType> get _reimbursementTypes =>
+      widget.dashboard.reimbursementTypes;
+
+  /// The chosen type, or null before one is picked.
+  ReimbursementType? get _pickedReimbursementType {
+    for (final type in _reimbursementTypes) {
+      if (type.name == _reimbursementCategory) return type;
+    }
+    return null;
+  }
+
+  /// Set when the amount is over the chosen type's cap — the server refuses
+  /// this too, so catching it here saves a round trip and a rejected claim.
+  String? get _reimbursementCapError {
+    final type = _pickedReimbursementType;
+    final amount = double.tryParse(_reimbursementAmount.text.trim());
+    if (type == null || amount == null || amount <= 0) return null;
+    if (type.allows(amount)) return null;
+    return '${type.name} claims are capped at ₹${formatDays(type.maxLimit)}.';
+  }
+
+  /// Every field on the reimbursement form is required, and the amount has to
+  /// sit under the cap on the type that was chosen.
   bool get _reimbursementComplete {
     final amount = double.tryParse(_reimbursementAmount.text.trim());
     return _reimbursementCategory != null &&
         _reimbursementDate != null &&
         amount != null &&
         amount > 0 &&
+        _reimbursementCapError == null &&
         _reimbursementDescription.text.trim().isNotEmpty &&
         _reimbursementReceiptBytes != null;
   }
@@ -385,7 +448,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _restoreStepInput(_FlowStep step) {
-    _choice = step.kind == _StepKind.choice ? _answers[step.label] : null;
+    _choice = step.kind == _StepKind.choice || step.kind == _StepKind.dropdown
+        ? _answers[step.label]
+        : null;
     _text.text = step.kind == _StepKind.text
         ? (_answers[step.label] ?? '')
         : '';
@@ -430,7 +495,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         .firstOrNull;
     final punchIn = todayRecord?.punchIn;
     final punchOut = todayRecord?.punchOut;
-    const standardShift = Duration(hours: 9);
+    // How long the shift runs, from the org's shift policy — never a fixed day.
+    final standardShift = widget.dashboard.shift.window;
     final expectedOut = punchIn?.add(standardShift);
     final progress = punchIn == null
         ? 0.0
@@ -447,9 +513,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               record.workDate.isBefore(todayOnly) &&
               record.punchIn != null &&
               record.punchOut == null &&
-              !widget.dashboard.weekoffDays.contains(
-                record.workDate.weekday % 7,
-              ) &&
+              !widget.dashboard.shift.isWeekOff(record.workDate) &&
               !widget.dashboard.holidays.any(
                 (holiday) => _sameDay(holiday.date, record.workDate),
               ),
@@ -650,10 +714,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Widget _applyLeaveForm() {
     final balance = widget.dashboard.leaveBalance;
-    final balanceForType = switch (_leaveType) {
+    final double? balanceForType = switch (_leaveType) {
       'Casual Leave' => balance.casual.remaining,
       'Sick Leave' => balance.sick.remaining,
       'Earned Leave' => balance.earned.remaining,
+      'Comp-off' => balance.compOff.remaining,
       _ => null,
     };
     return _HubScaffold(
@@ -678,11 +743,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              'Available balance: $balanceForType ${_leaveType == 'Casual Leave'
-                  ? 'casual'
-                  : _leaveType == 'Sick Leave'
-                  ? 'sick'
-                  : 'earned'} days',
+              'Available balance: ${formatDays(balanceForType)} '
+              '${switch (_leaveType) {
+                'Casual Leave' => 'casual',
+                'Sick Leave' => 'sick',
+                'Earned Leave' => 'earned',
+                _ => 'comp-off',
+              }} days',
               style: const TextStyle(
                 color: Color(0xFF2563EB),
                 fontSize: 12,
@@ -778,7 +845,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Future<void> _pickLeaveType() async {
     final balance = widget.dashboard.leaveBalance;
-    String left(LeaveBalanceItem item) => '${item.remaining}/${item.total}';
+    String left(LeaveBalanceItem item) =>
+        '${formatDays(item.remaining)}/${formatDays(item.total)}';
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -786,12 +854,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _LeavePickerSheet(
-        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave'],
+        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Comp-off'],
         selected: _leaveType,
         trailingLabels: {
           'Casual Leave': left(balance.casual),
           'Sick Leave': left(balance.sick),
           'Earned Leave': left(balance.earned),
+          'Comp-off': left(balance.compOff),
         },
       ),
     );
@@ -1023,8 +1092,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void _openOvertimeForm() {
     setState(() {
       _overtimeDate = null;
-      _overtimeStartTime = null;
-      _overtimeEndTime = null;
+      _overtimeDuration = null;
       _overtimeNote.clear();
       _page = _QuickPage.applyOvertime;
     });
@@ -1056,23 +1124,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               onTap: _pickOvertimeDate,
             ),
             const SizedBox(height: 16),
-            _LeaveFieldLabel('Start Time'),
+            _LeaveFieldLabel('Duration'),
             _LeaveDropdownField(
-              value: _overtimeStartTime == null
-                  ? 'Select time'
-                  : _overtimeStartTime!.format(context),
-              filled: _overtimeStartTime != null,
-              onTap: () => _pickOvertimeTime(isStart: true),
+              value: _overtimeDuration ?? 'Select duration',
+              filled: _overtimeDuration != null,
+              onTap: _pickOvertimeDuration,
             ),
-            const SizedBox(height: 16),
-            _LeaveFieldLabel('End Time'),
-            _LeaveDropdownField(
-              value: _overtimeEndTime == null
-                  ? 'Select time'
-                  : _overtimeEndTime!.format(context),
-              filled: _overtimeEndTime != null,
-              onTap: () => _pickOvertimeTime(isStart: false),
-            ),
+            if (_overtimeDuration != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _overtimeDuration == 'Full day'
+                    ? 'A full day of overtime earns 1 comp-off day.'
+                    : 'A half day of overtime earns 0.5 comp-off days.',
+                style: const TextStyle(
+                  color: Color(0xFF717171),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             _LeaveFieldLabel('Reason'),
             _FormTextArea(controller: _overtimeNote, height: 85.6),
@@ -1080,6 +1150,32 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _pickOvertimeDuration() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Full day', 'Half day'],
+        selected: _overtimeDuration,
+        trailingLabels: const {
+          'Full day': 'comp-off +1',
+          'Half day': 'comp-off +0.5',
+        },
+      ),
+    );
+    if (picked == null || !mounted) return;
+    // A full day is only claimable on a week-off or holiday, so a date already
+    // chosen may no longer be valid for the new duration.
+    setState(() {
+      _overtimeDuration = picked;
+      final date = _overtimeDate;
+      if (date != null && !_canSelectOvertimeFormDay(date)) _overtimeDate = null;
+    });
   }
 
   Future<void> _pickOvertimeDate() async {
@@ -1098,100 +1194,41 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     setState(() => _overtimeDate = picked);
   }
 
-  Future<void> _pickOvertimeTime({required bool isStart}) async {
-    final initial =
-        (isStart ? _overtimeStartTime : _overtimeEndTime) ??
-        const TimeOfDay(hour: 19, minute: 0);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      builder: _pickerTheme,
-    );
-    if (picked == null || !mounted) return;
-    final start = isStart ? picked : _overtimeStartTime;
-    final end = isStart ? _overtimeEndTime : picked;
-    if (start != null && end != null) {
-      final hours = _overtimeHoursBetween(start, end);
-      if (hours <= 0 || hours > 12) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
-            ),
-          ),
-        );
-        return;
-      }
-    }
-    setState(() {
-      if (isStart) {
-        _overtimeStartTime = picked;
-      } else {
-        _overtimeEndTime = picked;
-      }
-    });
-  }
-
-  double? get _overtimeComputedHours {
-    final start = _overtimeStartTime;
-    final end = _overtimeEndTime;
-    if (start == null || end == null) return null;
-    return _overtimeHoursBetween(start, end);
-  }
+  /// The hours a duration is worth, from the shift the employee is on — never
+  /// a fixed eight.
+  Duration get _overtimeWorked => _overtimeDuration == 'Full day'
+      ? widget.dashboard.shift.minFullDay
+      : widget.dashboard.shift.minHalfDay;
 
   bool _canSelectOvertimeFormDay(DateTime day) {
     final today = _dateOnly(DateTime.now());
     if (!day.isBefore(today)) return false;
-    final hours = _overtimeComputedHours;
-    if (hours == null || hours < 8) return true;
+    // Full-day overtime is only claimable on a day nobody was due to work.
+    if (_overtimeDuration != 'Full day') return true;
     return _isWeekoffDay(day) || _isCompanyHoliday(day);
   }
 
   Future<void> _submitOvertimeApplication() async {
     final date = _overtimeDate;
-    final start = _overtimeStartTime;
-    final end = _overtimeEndTime;
-    if (date == null || start == null || end == null) {
+    final duration = _overtimeDuration;
+    if (date == null || duration == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pick a date, start time, and end time to continue.'),
-        ),
+        const SnackBar(content: Text('Pick a date and a duration to continue.')),
       );
       return;
     }
-    final hours = _overtimeHoursBetween(start, end);
-    if (hours <= 0 || hours > 12) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'That time range doesn\'t look right — end time should be after start time, within a 12-hour stretch.',
-          ),
-        ),
-      );
-      return;
-    }
+    // The claim carries the hours the duration is worth on this employee's own
+    // shift, so the server classifies it as the same thing they picked.
+    final worked = _overtimeWorked;
+    final start = widget.dashboard.shift.startMinutes ?? 9 * 60;
     final startDateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      start.hour,
-      start.minute,
+      date.year, date.month, date.day, start ~/ 60, start % 60,
     );
-    var endDateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      end.hour,
-      end.minute,
-    );
-    if (!endDateTime.isAfter(startDateTime)) {
-      endDateTime = endDateTime.add(const Duration(days: 1));
-    }
     final sent = await widget.bloc.add(
       SubmitOvertimeApplication(
         workDate: date,
         startTime: startDateTime,
-        endTime: endDateTime,
+        endTime: startDateTime.add(worked),
         note: _overtimeNote.text.trim(),
       ),
     );
@@ -1319,8 +1356,34 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 decimal: true,
               ),
             ),
+            if (_reimbursementCapError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _reimbursementCapError!,
+                style: const TextStyle(
+                  color: Color(0xFFC4382E),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             _LeaveFieldLabel('Date'),
+            if (_pickedReimbursementType != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  _pickedReimbursementType!.backdateDays == 0
+                      ? 'Can only be claimed for today.'
+                      : 'Can be claimed up to ${_pickedReimbursementType!.backdateDays} days back.',
+                  style: const TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
             _LeaveDropdownField(
               value: _reimbursementDate == null
                   ? 'Select date'
@@ -1358,21 +1421,42 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _LeavePickerSheet(
-        options: const ['Travel', 'Meals', 'Internet', 'Other'],
+        options: _reimbursementTypes.map((type) => type.name).toList(),
         selected: _reimbursementCategory,
+        trailingLabels: {
+          for (final type in _reimbursementTypes)
+            type.name: [
+              if (type.maxLimit > 0) 'up to ₹${formatDays(type.maxLimit)}',
+              type.backdateDays == 0
+                  ? 'today only'
+                  : '${type.backdateDays}d back',
+            ].join(' · '),
+        },
       ),
     );
     if (picked == null || !mounted) return;
-    setState(() => _reimbursementCategory = picked);
+    setState(() {
+      _reimbursementCategory = picked;
+      // The new type may not reach back as far as the date already chosen.
+      final date = _reimbursementDate;
+      final type = _pickedReimbursementType;
+      if (date != null && type != null &&
+          date.isBefore(type.earliestClaimableFrom(_dateOnly(DateTime.now())))) {
+        _reimbursementDate = null;
+      }
+    });
   }
 
   Future<void> _pickReimbursementDate() async {
     final today = _dateOnly(DateTime.now());
     final initial = _reimbursementDate ?? today;
+    // Only as far back as this type allows — the server refuses anything older.
+    final earliest = _pickedReimbursementType?.earliestClaimableFrom(today)
+        ?? today.subtract(const Duration(days: 365));
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial.isAfter(today) ? today : initial,
-      firstDate: today.subtract(const Duration(days: 365)),
+      initialDate: initial.isAfter(today) || initial.isBefore(earliest) ? today : initial,
+      firstDate: earliest,
       lastDate: today,
       builder: _pickerTheme,
     );
@@ -1515,13 +1599,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         AttendanceFilterChips(
           selected: _attendanceFilter,
           onChanged: (filter) => setState(() => _attendanceFilter = filter),
-          onLateTapped: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Late arrivals aren\'t tracked yet — no threshold is configured.',
-              ),
-            ),
-          ),
         ),
         const SizedBox(height: 20),
         Text(
@@ -1538,7 +1615,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               child: AttendanceListCard(
                 day: day,
                 today: _sameDay(day.date, DateTime.now()),
-                dimmed: !matchesAttendanceFilter(day.kind, _attendanceFilter),
+                dimmed: !matchesAttendanceFilter(day, _attendanceFilter),
                 selected: _sameDay(day.date, _selectedCalendarDay?.date),
                 onTap: () => _openAttendanceDay(day),
               ),
@@ -1593,7 +1670,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     leaves: widget.dashboard.myLeaves,
     holidays: widget.dashboard.holidays,
     overtime: widget.dashboard.myOvertime,
-    weekoffDays: widget.dashboard.weekoffDays,
+    shift: widget.dashboard.shift,
   );
 
   Future<void> _changeAttendanceMonth(int delta) async {
@@ -1928,20 +2005,37 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   bool _canContinue(_FlowStep step) {
     return switch (step.kind) {
-      _StepKind.choice => _choice != null,
-      _StepKind.text when step.money =>
-        (double.tryParse(_text.text.replaceAll(',', '').trim()) ?? 0) > 0,
+      _StepKind.choice || _StepKind.dropdown => _choice != null,
+      _StepKind.text when step.money => _wizardAmountAllowed(),
       _StepKind.text => _text.text.trim().isNotEmpty || step.optional,
       _StepKind.dates || _StepKind.date => _dateChosen,
       _StepKind.upload => true,
     };
   }
 
+  /// The reimbursement type picked on the wizard's first step, if any.
+  ReimbursementType? get _wizardReimbursementType {
+    final name = _answers['Type'] ?? _choice;
+    for (final type in _reimbursementTypes) {
+      if (type.name == name) return type;
+    }
+    return null;
+  }
+
+  /// A money step is complete when it parses and, for a reimbursement, sits
+  /// under the cap on the type that was chosen.
+  bool _wizardAmountAllowed() {
+    final amount = double.tryParse(_text.text.replaceAll(',', '').trim()) ?? 0;
+    if (amount <= 0) return false;
+    if (_flow != _QuickFlow.reimbursement) return true;
+    return _wizardReimbursementType?.allows(amount) ?? true;
+  }
+
   bool _hasStepValue(_FlowStep step) {
     return switch (step.kind) {
       _StepKind.upload => _uploadBytes != null && _uploadName != null,
       _StepKind.text => _text.text.trim().isNotEmpty,
-      _StepKind.choice => _choice != null,
+      _StepKind.choice || _StepKind.dropdown => _choice != null,
       _StepKind.dates || _StepKind.date => _dateChosen,
     };
   }
@@ -1961,11 +2055,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
         );
       } else if (_flow == _QuickFlow.overtime) {
+        // The claim has to carry the duration that was chosen — a full day
+        // submitted as a half day is filed, and paid back, as the wrong thing.
+        // The hours come from the org's shift policy, never a fixed day.
+        final shift = widget.dashboard.shift;
+        final worked = (_answers['Duration'] ?? _choice) == 'Full day'
+            ? shift.minFullDay
+            : shift.minHalfDay;
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
             startTime: _from,
-            endTime: _from.add(const Duration(hours: 4)),
+            endTime: _from.add(worked),
             note: _answers['Note'] ?? '',
           ),
         );
@@ -1974,7 +2075,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           SubmitReimbursementApplication(
             expenseDate: _from,
             amount: _answers['Amount'] ?? '',
-            category: _answers['Type'] ?? 'Other',
+            category: _answers['Type'] ?? '',
             receiptName: _answers['Bill'] ?? '',
             receiptBytes: _uploadBytes,
             note: _answers['Note'] ?? '',
@@ -1992,6 +2093,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (!skip) {
       switch (step.kind) {
         case _StepKind.choice:
+        case _StepKind.dropdown:
           _answers[step.label] = _choice!;
         case _StepKind.text:
           _answers[step.label] = _text.text.trim();
@@ -2032,6 +2134,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               ),
             )
             .toList(),
+      ),
+      _StepKind.dropdown => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE6E6EA)),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _choice,
+            isExpanded: true,
+            hint: const Text('Select'),
+            borderRadius: BorderRadius.circular(14),
+            items: step.options!
+                .map(
+                  (option) => DropdownMenuItem(
+                    value: option.label,
+                    child: Text(
+                      option.label,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _choice = value),
+          ),
+        ),
       ),
       _StepKind.text => TextField(
         controller: _text,
@@ -2077,9 +2211,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               ? _canSelectOvertimeDay
               : _flow == _QuickFlow.reimbursement
               ? (day) {
-                  final now = DateTime.now();
-                  final today = DateTime(now.year, now.month, now.day);
-                  return !day.isAfter(today);
+                  final today = _dateOnly(DateTime.now());
+                  if (day.isAfter(today)) return false;
+                  // Only as far back as this type allows.
+                  final type = _wizardReimbursementType;
+                  if (type == null) return true;
+                  return !day.isBefore(type.earliestClaimableFrom(today));
                 }
               : null,
           onPick: (day) => setState(() {
@@ -2384,6 +2521,56 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   List<_FlowStep> _stepsForCurrentFlow() {
+    if (_flow == _QuickFlow.reimbursement) {
+      final steps = _flowSteps[_QuickFlow.reimbursement]!;
+      // The expense types are HR's list, not a fixed four. Each option carries
+      // its cap and its backdating window, and the two steps that follow say
+      // what the chosen one allows rather than making people find out on
+      // submit.
+      final chosen = _wizardReimbursementType;
+      return [
+        for (final step in steps)
+          if (step.label == 'Type')
+            _FlowStep(
+              label: step.label,
+              kind: step.kind,
+              question: step.question,
+              subtitle: _reimbursementTypes.isEmpty
+                  ? 'No expense types are configured yet.'
+                  : 'Pick a category.',
+              options: [
+                for (final type in _reimbursementTypes)
+                  _FlowOption(
+                    type.name,
+                    Icons.receipt_long_rounded,
+                    [
+                      if (type.maxLimit > 0) 'up to ₹${formatDays(type.maxLimit)}',
+                      type.backdateDays == 0 ? 'today only' : '${type.backdateDays}d back',
+                    ].join(' · '),
+                  ),
+              ],
+            )
+          else if (step.label == 'Date' && chosen != null)
+            _FlowStep(
+              label: step.label,
+              kind: step.kind,
+              question: step.question,
+              subtitle: chosen.backdateDays == 0
+                  ? '${chosen.name} can only be claimed for today.'
+                  : '${chosen.name} can be claimed up to ${chosen.backdateDays} days back.',
+            )
+          else if (step.label == 'Amount' && chosen != null && chosen.maxLimit > 0)
+            _FlowStep(
+              label: step.label,
+              kind: step.kind,
+              question: step.question,
+              subtitle: '${chosen.name} is capped at ₹${formatDays(chosen.maxLimit)}.',
+              money: true,
+            )
+          else
+            step,
+      ];
+    }
     if (_flow != _QuickFlow.leave) return _flowSteps[_flow]!;
     final leaveSteps = _flowSteps[_QuickFlow.leave]!;
     return [
@@ -2429,11 +2616,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
-  // dashboard.weekoffDays uses 0=Sun..6=Sat (JS getDay); Dart weekday is
-  // 1=Mon..7=Sun, so `weekday % 7` maps Sun(7)->0 and the rest 1:1.
-  /// A company week-off (Sunday unless HR configured otherwise).
-  bool _isWeekoffDay(DateTime day) =>
-      widget.dashboard.weekoffDays.contains(day.weekday % 7);
+  /// A week-off, from the grid HR set under Shifts › Policies. Per week of the
+  /// month, so the 2nd Saturday can be off while the 1st is not.
+  bool _isWeekoffDay(DateTime day) => widget.dashboard.shift.isWeekOff(day);
 
   // Overtime day rules: any *past* day for half-day; only a week-off or
   // company holiday for full-day. Duration was chosen on the previous step.
@@ -2470,12 +2655,10 @@ class AttendanceFilterChips extends StatelessWidget {
   const AttendanceFilterChips({
     required this.selected,
     required this.onChanged,
-    required this.onLateTapped,
   });
 
   final AttendanceFilter? selected;
   final ValueChanged<AttendanceFilter?> onChanged;
-  final VoidCallback onLateTapped;
 
   @override
   Widget build(BuildContext context) {
@@ -2494,8 +2677,8 @@ class AttendanceFilterChips extends StatelessWidget {
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Late',
-            selected: false,
-            onTap: onLateTapped,
+            selected: selected == AttendanceFilter.late,
+            onTap: () => toggle(AttendanceFilter.late),
             leading: SvgPicture.asset(
               'assets/icons/filter_late_clock.svg',
               width: 12,
@@ -2832,7 +3015,7 @@ class AttendanceMonthGrid extends StatelessWidget {
             return _AttendanceMonthCell(
               day: day,
               today: _sameDay(day.date, DateTime.now()),
-              dimmed: !matchesAttendanceFilter(day.kind, filter),
+              dimmed: !matchesAttendanceFilter(day, filter),
               selected: _sameDay(day.date, selectedDate),
               onTap: () => onTap(day),
             );
@@ -2937,12 +3120,6 @@ String _hoursMinutesLabel(double hours) {
   return m == 0 ? '${h}h' : '${h}h ${m}m';
 }
 
-double _overtimeHoursBetween(TimeOfDay start, TimeOfDay end) {
-  final startMinutes = start.hour * 60 + start.minute;
-  var endMinutes = end.hour * 60 + end.minute;
-  if (endMinutes <= startMinutes) endMinutes += 24 * 60;
-  return (endMinutes - startMinutes) / 60;
-}
 
 Widget _pickerTheme(BuildContext context, Widget? child) {
   final base = Theme.of(context);
@@ -3509,7 +3686,7 @@ class _LeaveBalanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${item.remaining}/${item.total}',
+            '${formatDays(item.remaining)}/${formatDays(item.total)}',
             style: const TextStyle(
               color: Color(0xFF222222),
               fontSize: 16,
@@ -5125,7 +5302,7 @@ class _IconTile extends StatelessWidget {
   );
 }
 
-enum _StepKind { choice, dates, date, text, upload }
+enum _StepKind { choice, dropdown, dates, date, text, upload }
 
 class _FlowStep {
   const _FlowStep({
@@ -5196,12 +5373,12 @@ const _flowSteps = <_QuickFlow, List<_FlowStep>>{
   _QuickFlow.overtime: [
     _FlowStep(
       label: 'Duration',
-      kind: _StepKind.choice,
+      kind: _StepKind.dropdown,
       question: 'How long?',
-      subtitle: 'Half day is 4h, full day is 8h.',
+      subtitle: 'Overtime is claimed as a full day or a half day.',
       options: [
-        _FlowOption('Full day', Icons.schedule_rounded, '8 hours'),
-        _FlowOption('Half day', Icons.timelapse_rounded, '4 hours'),
+        _FlowOption('Full day', Icons.schedule_rounded, 'Comp-off +1 day'),
+        _FlowOption('Half day', Icons.timelapse_rounded, 'Comp-off +0.5 day'),
       ],
     ),
     _FlowStep(
@@ -5226,7 +5403,18 @@ const _flowSteps = <_QuickFlow, List<_FlowStep>>{
       optional: true,
     ),
   ],
+  // Type comes first because everything after it depends on which one was
+  // picked: how far back the date may go, and what the amount is capped at.
   _QuickFlow.reimbursement: [
+    _FlowStep(
+      label: 'Type',
+      kind: _StepKind.choice,
+      question: 'What type of expense?',
+      subtitle: 'Pick a category.',
+      // Replaced at render time with the org's own types, their caps and
+      // their backdating windows — see _stepsForCurrentFlow.
+      options: [],
+    ),
     _FlowStep(
       label: 'Date',
       kind: _StepKind.date,
@@ -5239,18 +5427,6 @@ const _flowSteps = <_QuickFlow, List<_FlowStep>>{
       question: 'How much?',
       subtitle: 'Amount you paid.',
       money: true,
-    ),
-    _FlowStep(
-      label: 'Type',
-      kind: _StepKind.choice,
-      question: 'What type of expense?',
-      subtitle: 'Pick a category.',
-      options: [
-        _FlowOption('Travel', Icons.directions_car_rounded),
-        _FlowOption('Meals', Icons.restaurant_rounded),
-        _FlowOption('Internet', Icons.wifi_rounded),
-        _FlowOption('Other', Icons.more_horiz_rounded),
-      ],
     ),
     _FlowStep(
       label: 'Bill',
@@ -5304,7 +5480,7 @@ const _policiesData = <_Policy>[
     Icons.schedule_rounded,
     _Q.sage,
     _Q.sageTint,
-    'Overtime needs prior manager approval. Full day = 8h, half day = 4h. Comp-off or pay-out is settled the following month at 1.5× the hourly rate.',
+    'Overtime needs prior manager approval and is claimed as a full day or a half day. Approved overtime earns comp-off — a full day adds 1 day to your comp-off balance, a half day adds 0.5.',
   ),
 ];
 
@@ -5414,11 +5590,12 @@ String _monthName(int month) {
   return months[month - 1];
 }
 
-bool matchesAttendanceFilter(AttendanceKind kind, AttendanceFilter? filter) {
+bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
   if (filter == null) return true;
+  final kind = day.kind;
   return switch (filter) {
     AttendanceFilter.present => kind == AttendanceKind.present,
-    AttendanceFilter.late => false,
+    AttendanceFilter.late => day.late,
     AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
     AttendanceFilter.leave => kind == AttendanceKind.leaveApproved,
     AttendanceFilter.leaveApplied => kind == AttendanceKind.leavePending,

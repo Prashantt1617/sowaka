@@ -8,7 +8,6 @@ import { Overtime } from './views/Overtime';
 import { Feedback } from './views/Feedback';
 import { Reimbursements } from './views/Reimbursements';
 import { Employees } from './views/Employees';
-import { Settings } from './views/Settings';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { Games } from './views/Games';
@@ -17,6 +16,9 @@ import { SalaryTemplates } from './views/SalaryTemplates';
 import { StatutoryComponents } from './views/StatutoryComponents';
 import { PayrollRuns } from './views/PayrollRuns';
 import { PaySchedule, TaxDetails } from './views/OrgSetup';
+import { ReimbursementTypes } from './views/ReimbursementTypes';
+import { ReviewCycle } from './views/ReviewCycle';
+import { ShiftBulkAssign } from './views/ShiftBulkAssign';
 import { ShiftTemplates } from './views/ShiftTemplates';
 import { HolidayBank } from './views/HolidayBank';
 import { Policies } from './views/Policies';
@@ -60,8 +62,10 @@ function CurrentView() {
       return <OrgChart />;
     case 'usersroles':
       return <Accesses />;
-    case 'settings':
-      return <Settings />;
+    case 'reimbursementtypes':
+      return <ReimbursementTypes />;
+    case 'cycle':
+      return <ReviewCycle />;
     case 'games':
       return <Games />;
     case 'payheads':
@@ -76,6 +80,8 @@ function CurrentView() {
       return <PaySchedule />;
     case 'taxdetails':
       return <TaxDetails />;
+    case 'shiftbulk':
+      return <ShiftBulkAssign />;
     case 'shifttypes':
       return <ShiftTemplates />;
     case 'holidaybank':

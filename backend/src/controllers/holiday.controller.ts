@@ -26,6 +26,7 @@ export async function createHoliday(req: Request, res: Response, next: NextFunct
       date: String(req.body.date ?? ''),
       name: String(req.body.name ?? ''),
       state: String(req.body.state ?? ''),
+      type: req.body.type == null ? undefined : String(req.body.type),
       org: req.body.org == null ? undefined : String(req.body.org),
     });
     res.status(201).json({ success: true, holiday });

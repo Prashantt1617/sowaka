@@ -3,13 +3,18 @@
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { AttendanceCorrection } from './AttendanceCorrection';
-import { HalfDayPolicy } from './HalfDayPolicy';
-import { LatePolicy } from './LatePolicy';
 import { LeaveControls } from './LeaveControls';
 import { OvertimePolicy } from './OvertimePolicy';
 import { ShiftPolicy } from './ShiftPolicy';
 
-const TABS = ['Shift', 'Attendance correction', 'Leaves', 'Overtime', 'Late', 'Half day'] as const;
+// This is where the shift setup is done. The org saves one policy here and
+// every shift inherits it; a Shift Template only adds the working window it
+// opens and closes on, and is how the policy gets assigned to people.
+//
+// The day thresholds and the late / early grace sit on the Shift tab rather
+// than on tabs of their own: they are one rule about one shift, and splitting
+// them across three Save buttons only invited them to drift apart.
+const TABS = ['Shift', 'Attendance correction', 'Leaves', 'Overtime'] as const;
 type Tab = (typeof TABS)[number];
 
 export function Policies() {
@@ -21,7 +26,7 @@ export function Policies() {
           <button key={t} onClick={() => setTab(t)} style={tabStyle(tab === t)}>{t}</button>
         ))}
       </div>
-      {tab === 'Shift' ? <ShiftPolicy /> : tab === 'Attendance correction' ? <AttendanceCorrection /> : tab === 'Leaves' ? <LeaveControls /> : tab === 'Overtime' ? <OvertimePolicy /> : tab === 'Late' ? <LatePolicy /> : tab === 'Half day' ? <HalfDayPolicy /> : <ComingSoon tab={tab} />}
+      {tab === 'Shift' ? <ShiftPolicy /> : tab === 'Attendance correction' ? <AttendanceCorrection /> : tab === 'Leaves' ? <LeaveControls /> : tab === 'Overtime' ? <OvertimePolicy /> : <ComingSoon tab={tab} />}
     </div>
   );
 }
