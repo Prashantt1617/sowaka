@@ -1,10 +1,11 @@
 // Policies › Overtime — the GLOBAL overtime defaults every Shift Template
 // inherits: whether a shift is OT-eligible and what counts as overtime.
-// Prototype: local state only.
-import { useState } from 'react';
+// Live: saved to the org's shift policy.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
+import { getShiftPolicy, saveShiftPolicy } from '../../services/hrms';
 
 export function OvertimePolicy() {
   const { flash } = useStore();
@@ -13,13 +14,48 @@ export function OvertimePolicy() {
   const [onWeeklyOff, setOnWeeklyOff] = useState(true);
   const [beyondShift, setBeyondShift] = useState(false);
   const [beyondHours, setBeyondHours] = useState('1');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getShiftPolicy()
+      .then(({ overtime }) => {
+        setEligible(overtime.eligible);
+        setOnHoliday(overtime.onHoliday);
+        setOnWeeklyOff(overtime.onWeeklyOff);
+        setBeyondShift(overtime.beyondShift);
+        setBeyondHours(String(overtime.beyondShiftHours));
+      })
+      .catch((error: Error) => flash(error.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveShiftPolicy({
+        overtime: {
+          eligible, onHoliday, onWeeklyOff, beyondShift,
+          beyondShiftHours: Number(beyondHours),
+        },
+      });
+      flash('Overtime policy saved');
+    } catch (error) {
+      flash((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 15, color: '#717171', fontWeight: 600 }}>Overtime policy</div>
         <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => flash('Overtime policy saved (prototype)')} style={primaryBtn}>Save policy</button>
+          <button onClick={() => void save()} disabled={saving || loading} style={primaryBtn}>
+            {saving ? 'Saving…' : 'Save policy'}
+          </button>
         </div>
       </div>
 

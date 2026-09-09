@@ -9,6 +9,9 @@ import { LeaveControls } from './LeaveControls';
 import { OvertimePolicy } from './OvertimePolicy';
 import { ShiftPolicy } from './ShiftPolicy';
 
+// This is where the shift setup is done. The org saves one policy here and
+// every shift inherits it; a Shift Template only adds the working window it
+// opens and closes on, and is how the policy gets assigned to people.
 const TABS = ['Shift', 'Attendance correction', 'Leaves', 'Overtime', 'Late', 'Half day'] as const;
 type Tab = (typeof TABS)[number];
 

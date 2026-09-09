@@ -732,6 +732,7 @@ class ManagerDashboard {
     required this.myReimbursements,
     this.reimbursements = const [],
     this.weekoffDays = const [0],
+    this.shift = const ShiftPolicy(),
     this.overtimeEnabled = true,
     this.attendance = const [],
     this.regularizations = const [],
@@ -761,6 +762,11 @@ class ManagerDashboard {
   // Company config (from /manager/workspace): week-off weekdays (0=Sun..6=Sat)
   // and whether the overtime feature is enabled for this user's team.
   final List<int> weekoffDays;
+
+  /// The shift HR configured for the org: the worked-hour thresholds a day is
+  /// graded against, and the grace either side of the shift window. Set in the
+  /// dashboard under Shifts › Templates — never hardcoded here.
+  final ShiftPolicy shift;
   final bool overtimeEnabled;
   final List<AttendanceRecord> attendance;
   final List<AttendanceRegularization> regularizations;
@@ -807,11 +813,94 @@ class ManagerDashboard {
       myReimbursements: myReimbursements ?? this.myReimbursements,
       reimbursements: reimbursements ?? this.reimbursements,
       weekoffDays: weekoffDays,
+      shift: shift,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,
       regularizations: regularizations ?? this.regularizations,
       managerRegularizations:
           managerRegularizations ?? this.managerRegularizations,
+    );
+  }
+}
+
+/// How the org grades a working day. Comes from the shift template HR saved in
+/// the dashboard; the defaults here match what that form opens with, and only
+/// apply to an org that has never saved a shift.
+class ShiftPolicy {
+  const ShiftPolicy({
+    this.name = 'General',
+    this.startTime = '09:00',
+    this.endTime = '18:00',
+    this.minHalfDayHours = 4,
+    this.minFullDayHours = 8,
+    this.lateGraceMinutes = 10,
+    this.earlyOutGraceMinutes = 10,
+  });
+
+  final String name;
+
+  /// Local wall-clock "HH:MM". An end at or before the start means overnight.
+  final String startTime;
+  final String endTime;
+  final double minHalfDayHours;
+  final double minFullDayHours;
+  final int lateGraceMinutes;
+  final int earlyOutGraceMinutes;
+
+  Duration get minHalfDay => _hours(minHalfDayHours);
+  Duration get minFullDay => _hours(minFullDayHours);
+  static Duration _hours(double value) =>
+      Duration(minutes: (value * 60).round());
+
+  /// Minutes past midnight for [startTime] / [endTime], or null if malformed.
+  int? get startMinutes => _minutes(startTime);
+  int? get endMinutes => _minutes(endTime);
+  static int? _minutes(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  /// Whether [punchIn] landed after the shift start plus its grace.
+  bool isLate(DateTime punchIn) {
+    final start = startMinutes;
+    if (start == null) return false;
+    return punchIn.hour * 60 + punchIn.minute > start + lateGraceMinutes;
+  }
+
+  /// Whether [punchOut] came before the shift end less its grace. Overnight
+  /// shifts end on the next calendar day, so they are left out rather than
+  /// flagged wrongly against a same-day clock.
+  bool isEarlyOut(DateTime punchOut) {
+    final start = startMinutes;
+    final end = endMinutes;
+    if (start == null || end == null || end <= start) return false;
+    return punchOut.hour * 60 + punchOut.minute < end - earlyOutGraceMinutes;
+  }
+
+  factory ShiftPolicy.fromJson(Map<String, dynamic> json) {
+    double hours(String key, double fallback) {
+      final value = json[key];
+      return value is num ? value.toDouble() : fallback;
+    }
+
+    int minutes(String key, int fallback) {
+      final value = json[key];
+      return value is num ? value.toInt() : fallback;
+    }
+
+    return ShiftPolicy(
+      name: json['name'] as String? ?? 'General',
+      startTime: json['startTime'] as String? ?? '09:00',
+      endTime: json['endTime'] as String? ?? '18:00',
+      minHalfDayHours: hours('minHalfDayHours', 4),
+      minFullDayHours: hours('minFullDayHours', 8),
+      lateGraceMinutes: minutes('lateGraceMinutes', 10),
+      earlyOutGraceMinutes: minutes('earlyOutGraceMinutes', 10),
     );
   }
 }

@@ -78,6 +78,8 @@ class AttendanceDayView {
     this.regularization,
     this.leave,
     this.holiday,
+    this.late = false,
+    this.earlyOut = false,
   });
 
   final DateTime date;
@@ -88,6 +90,12 @@ class AttendanceDayView {
   final AttendanceRegularization? regularization;
   final LeaveRequest? leave;
   final CompanyHoliday? holiday;
+
+  /// Arrived after the shift start plus its grace, per the org's shift policy.
+  final bool late;
+
+  /// Left before the shift end less its grace.
+  final bool earlyOut;
 }
 
 List<AttendanceDayView> buildAttendanceDays({
@@ -98,6 +106,7 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
   required List<int> weekoffDays,
+  required ShiftPolicy shift,
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -184,6 +193,8 @@ List<AttendanceDayView> buildAttendanceDays({
         punchIn: record?.punchIn ?? regularization?.requestedPunchIn,
         punchOut: record?.punchOut ?? regularization?.requestedPunchOut,
       );
+      final punchIn = displayRecord.punchIn;
+      final punchOut = displayRecord.punchOut;
       return AttendanceDayView(
         date: date,
         kind: AttendanceKind.present,
@@ -191,6 +202,8 @@ List<AttendanceDayView> buildAttendanceDays({
         cellLabel: '',
         record: displayRecord,
         regularization: regularization,
+        late: punchIn != null && shift.isLate(punchIn),
+        earlyOut: punchOut != null && shift.isEarlyOut(punchOut),
       );
     }
     if (pendingRegularization) {
@@ -204,14 +217,40 @@ List<AttendanceDayView> buildAttendanceDays({
       );
     }
     if (complete) {
-      final halfDay = duration! < const Duration(hours: 6);
+      // Three bands, all from the shift HR configured: a full day, a half day,
+      // and below that a day short enough to need a correction.
+      final fullDay = duration! >= shift.minFullDay;
+      final halfDay = !fullDay && duration >= shift.minHalfDay;
+      final short = !fullDay && !halfDay;
+      final late = shift.isLate(record!.punchIn!);
+      final earlyOut = shift.isEarlyOut(record.punchOut!);
+      final flags = [
+        if (late) 'Late',
+        if (earlyOut) 'Early out',
+      ].join(' · ');
+      final label = short
+          ? 'Short day'
+          : halfDay
+          ? 'Half day'
+          : 'Present';
       return AttendanceDayView(
         date: date,
-        kind: halfDay ? AttendanceKind.halfDay : AttendanceKind.present,
+        kind: short
+            ? AttendanceKind.attention
+            : halfDay
+            ? AttendanceKind.halfDay
+            : AttendanceKind.present,
         title:
-            '${halfDay ? 'Half day' : 'Present'} · ${_QuickActionsScreenState._duration(duration)}$overtimeSuffix',
-        cellLabel: halfDay ? 'Half day' : (overtimeItem == null ? '' : 'OT'),
+            '$label · ${_QuickActionsScreenState._duration(duration)}'
+            '${flags.isEmpty ? '' : ' · $flags'}$overtimeSuffix',
+        cellLabel: short
+            ? 'Short'
+            : halfDay
+            ? 'Half day'
+            : (late ? 'Late' : (overtimeItem == null ? '' : 'OT')),
         record: record,
+        late: late,
+        earlyOut: earlyOut,
       );
     }
     if (record != null || (!future && !weekoff)) {
@@ -1515,13 +1554,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         AttendanceFilterChips(
           selected: _attendanceFilter,
           onChanged: (filter) => setState(() => _attendanceFilter = filter),
-          onLateTapped: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Late arrivals aren\'t tracked yet — no threshold is configured.',
-              ),
-            ),
-          ),
         ),
         const SizedBox(height: 20),
         Text(
@@ -1538,7 +1570,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               child: AttendanceListCard(
                 day: day,
                 today: _sameDay(day.date, DateTime.now()),
-                dimmed: !matchesAttendanceFilter(day.kind, _attendanceFilter),
+                dimmed: !matchesAttendanceFilter(day, _attendanceFilter),
                 selected: _sameDay(day.date, _selectedCalendarDay?.date),
                 onTap: () => _openAttendanceDay(day),
               ),
@@ -1594,6 +1626,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     holidays: widget.dashboard.holidays,
     overtime: widget.dashboard.myOvertime,
     weekoffDays: widget.dashboard.weekoffDays,
+    shift: widget.dashboard.shift,
   );
 
   Future<void> _changeAttendanceMonth(int delta) async {
@@ -2470,12 +2503,10 @@ class AttendanceFilterChips extends StatelessWidget {
   const AttendanceFilterChips({
     required this.selected,
     required this.onChanged,
-    required this.onLateTapped,
   });
 
   final AttendanceFilter? selected;
   final ValueChanged<AttendanceFilter?> onChanged;
-  final VoidCallback onLateTapped;
 
   @override
   Widget build(BuildContext context) {
@@ -2494,8 +2525,8 @@ class AttendanceFilterChips extends StatelessWidget {
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Late',
-            selected: false,
-            onTap: onLateTapped,
+            selected: selected == AttendanceFilter.late,
+            onTap: () => toggle(AttendanceFilter.late),
             leading: SvgPicture.asset(
               'assets/icons/filter_late_clock.svg',
               width: 12,
@@ -2832,7 +2863,7 @@ class AttendanceMonthGrid extends StatelessWidget {
             return _AttendanceMonthCell(
               day: day,
               today: _sameDay(day.date, DateTime.now()),
-              dimmed: !matchesAttendanceFilter(day.kind, filter),
+              dimmed: !matchesAttendanceFilter(day, filter),
               selected: _sameDay(day.date, selectedDate),
               onTap: () => onTap(day),
             );
@@ -5414,11 +5445,12 @@ String _monthName(int month) {
   return months[month - 1];
 }
 
-bool matchesAttendanceFilter(AttendanceKind kind, AttendanceFilter? filter) {
+bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
   if (filter == null) return true;
+  final kind = day.kind;
   return switch (filter) {
     AttendanceFilter.present => kind == AttendanceKind.present,
-    AttendanceFilter.late => false,
+    AttendanceFilter.late => day.late,
     AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
     AttendanceFilter.leave => kind == AttendanceKind.leaveApproved,
     AttendanceFilter.leaveApplied => kind == AttendanceKind.leavePending,

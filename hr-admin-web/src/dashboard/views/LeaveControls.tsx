@@ -2,12 +2,14 @@
 //   1. Leave types — monthly accrual + what happens at reset (lapse / carry / encash).
 //   2. Application window — how far ahead / backdated a request can be.
 //   3. Approval & overrides — who signs off and who can step in.
-// Prototype: local state only, no API.
-import { useState } from 'react';
+// The application window and approval flow are live: saved to the org's shift
+// policy. Leave types below are still local.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
 import { LeaveTypes } from './LeaveTypes';
+import { getShiftPolicy, saveShiftPolicy } from '../../services/hrms';
 
 const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
 
@@ -22,13 +24,55 @@ export function LeaveControls() {
   const [mgrOnBehalf, setMgrOnBehalf] = useState(false);
   const [hrOverride, setHrOverride] = useState(true);
   const [skipLevelOverride, setSkipLevelOverride] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getShiftPolicy()
+      .then(({ leave }) => {
+        setAdvanceDays(String(leave.advanceDays));
+        setAllowBackdated(leave.allowBackdated);
+        setBackdatedDays(String(leave.backdatedDays));
+        setApprover(leave.approver);
+        setMgrOnBehalf(leave.managerOnBehalf);
+        setHrOverride(leave.hrOverride);
+        setSkipLevelOverride(leave.skipLevel);
+      })
+      .catch((error: Error) => flash(error.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveShiftPolicy({
+        leave: {
+          advanceDays: Number(advanceDays),
+          allowBackdated,
+          backdatedDays: Number(backdatedDays),
+          approver,
+          managerOnBehalf: mgrOnBehalf,
+          hrOverride,
+          skipLevel: skipLevelOverride,
+        },
+      });
+      flash('Leave policy saved');
+    } catch (error) {
+      flash((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 15, color: '#717171', fontWeight: 600 }}>Leave policy</div>
         <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => flash('Leave policy saved (prototype)')} style={primaryBtn}>Save policy</button>
+          <button onClick={() => void save()} disabled={saving || loading} style={primaryBtn}>
+            {saving ? 'Saving…' : 'Save policy'}
+          </button>
         </div>
       </div>
 

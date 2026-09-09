@@ -16,6 +16,7 @@ import { notifyUsers, queueBatchedNotification } from './notification.service';
 import { env } from '../config/env';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor } from './cycle';
+import { shiftPolicyFor } from './shift.service';
 import { notifyFeedbackSubmitted } from './feedback-notifications.service';
 import {
   presignConnectMedia,
@@ -322,12 +323,17 @@ export async function getManagerWorkspace(managerUserId: string) {
   const orgHolidays = manager.org
     ? await holidays().find({ org: manager.org }).sort({ date: 1 }).toArray()
     : [];
+  // The shift the app grades a day against: half-day and full-day hour
+  // thresholds, plus the grace either side of the shift window. HR sets these
+  // per shift in the dashboard; the app must not carry its own copy.
+  const shift = await shiftPolicyFor(manager.org);
 
   return {
     period,
     approverName: approver?.name ?? 'Your manager',
     managerScore: Number((ownFeedback?.overallScore ?? 0).toFixed(1)),
     weekoffDays: companyConfig.weekoffDays,
+    shift,
     overtimeEnabled,
     holidays: orgHolidays.map((holiday) => ({
       date: holiday.date.toISOString().slice(0, 10),

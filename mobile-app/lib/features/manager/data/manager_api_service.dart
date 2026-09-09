@@ -121,6 +121,9 @@ class ManagerApiService {
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
+      shift: ShiftPolicy.fromJson(
+        workspace['shift'] as Map<String, dynamic>? ?? const {},
+      ),
       overtimeEnabled: workspace['overtimeEnabled'] as bool? ?? true,
       attendance: attendanceData.$1,
       regularizations: attendanceData.$2,

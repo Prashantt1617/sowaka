@@ -1,21 +1,55 @@
-// Policies › Shift — the GLOBAL shift-rule defaults every Shift Template inherits.
-// (Per-shift start/end times & weekly-off live on the template; these are the
-// org-wide rule defaults that a template can override.) Prototype: local state.
-import { useState } from 'react';
+// Policies › Shift — the org-wide shift rules every Shift Template inherits.
+// (Per-shift start/end times live on the template.) Live: saved to the org's
+// shift policy, the same document the Half day and Late tabs write to.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
+import { getShiftPolicy, saveShiftPolicy, type DayMark } from '../../services/hrms';
 
-const MARK_OPTIONS = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present', 'Pending Regularisation'];
+const WEEKS = [1, 2, 3, 4, 5];
 
 export function ShiftPolicy() {
   const { flash } = useStore();
-  const [punchIn, setPunchIn] = useState('Pending Regularisation');
-  const [punchOut, setPunchOut] = useState('Pending Regularisation');
-  const [bothMissing, setBothMissing] = useState('Absent');
+  const [punchIn, setPunchIn] = useState<DayMark>('Pending Regularisation');
+  const [punchOut, setPunchOut] = useState<DayMark>('Pending Regularisation');
+  const [bothMissing, setBothMissing] = useState<DayMark>('Absent');
   const [weekGrid, setWeekGrid] = useState<Record<number, Set<number>>>({
     1: new Set([6]), 2: new Set([6]), 3: new Set([6]), 4: new Set([6]), 5: new Set([6]),
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getShiftPolicy()
+      .then((policy) => {
+        setPunchIn(policy.missingPunchIn);
+        setPunchOut(policy.missingPunchOut);
+        setBothMissing(policy.missingBoth);
+        setWeekGrid(Object.fromEntries(WEEKS.map((w) => [w, new Set(policy.weeklyOff?.[String(w)] ?? [])])));
+      })
+      .catch((error: Error) => flash(error.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveShiftPolicy({
+        missingPunchIn: punchIn,
+        missingPunchOut: punchOut,
+        missingBoth: bothMissing,
+        weeklyOff: Object.fromEntries(WEEKS.map((w) => [String(w), [...(weekGrid[w] ?? [])]])),
+      });
+      flash('Shift policy saved');
+    } catch (error) {
+      flash((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
   const toggleWeekCell = (w: number, d: number) =>
     setWeekGrid((prev) => {
       const cur = new Set(prev[w] ?? []);
@@ -30,14 +64,16 @@ export function ShiftPolicy() {
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 15, color: '#717171', fontWeight: 600 }}>Global shift policy</div>
         <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => flash('Shift policy saved (prototype)')} style={primaryBtn}>Save policy</button>
+          <button onClick={() => void save()} disabled={saving || loading} style={primaryBtn}>
+            {saving ? 'Saving…' : 'Save policy'}
+          </button>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 12, padding: '13px 16px', marginBottom: 16 }}>
         <span style={{ fontSize: 16, lineHeight: 1.3 }}>ℹ️</span>
         <div style={{ fontSize: 14, color: '#3A5A6B', lineHeight: 1.55 }}>
-          These are the org-wide defaults every <strong>Shift Template</strong> inherits. A template can override any of them for that shift only. Day thresholds, late/early grace and overtime live on their own policy tabs; shift start/end times are set on each template.
+          These are the org-wide rules every <strong>Shift Template</strong> inherits — this is where the setup is done. Day thresholds, late/early grace and overtime live on their own policy tabs; shift start/end times are set on each template.
         </div>
       </div>
 
@@ -97,9 +133,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+function Select<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: readonly T[] }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+    <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{ ...input, cursor: 'pointer' }}>
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   );

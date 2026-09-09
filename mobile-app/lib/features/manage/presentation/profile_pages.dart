@@ -1462,6 +1462,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
       holidays: widget.data.holidays,
       overtime: memberOvertime,
       weekoffDays: widget.data.weekoffDays,
+      shift: widget.data.shift,
     );
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1535,14 +1536,6 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                       AttendanceFilterChips(
                         selected: _filter,
                         onChanged: (filter) => setState(() => _filter = filter),
-                        onLateTapped: () =>
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Late arrivals aren't tracked yet — no threshold is configured.",
-                                ),
-                              ),
-                            ),
                       ),
                       const SizedBox(height: 20),
                       if (_listView)
@@ -1556,7 +1549,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                                 DateTime.now(),
                               ),
                               dimmed: !matchesAttendanceFilter(
-                                day.kind,
+                                day,
                                 _filter,
                               ),
                               selected: _isSameCalendarDay(

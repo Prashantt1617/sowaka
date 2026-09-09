@@ -1,11 +1,12 @@
 // Controls › Attendance Correction — org policy for how attendance corrections
 // work: when they can be raised (tied to the shift's Attendance Rules), the
 // reasons, who approves, override rights, and backdating limits.
-// Prototype: local state only, no API.
-import { useState } from 'react';
+// Live: saved to the org's shift policy.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
+import { getShiftPolicy, saveShiftPolicy } from '../../services/hrms';
 
 // Trigger statuses come from the shift Attendance Rules.
 const TRIGGERS = ['Missing punch', 'Half day', 'Absent', 'Marked late', 'Early check-out'];
@@ -24,6 +25,50 @@ export function AttendanceCorrection() {
   const [backEmployee, setBackEmployee] = useState(true);
   const [backManager, setBackManager] = useState(true);
   const [backDays, setBackDays] = useState('7');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getShiftPolicy()
+      .then(({ correction }) => {
+        setTriggers(Object.fromEntries(TRIGGERS.map((t) => [t, correction.triggers.includes(t)])));
+        setApprover(correction.approver);
+        setSelectedReasons(correction.reasons);
+        setMgrWithoutEmployee(correction.managerWithoutEmployee);
+        setHrOverride(correction.hrOverride);
+        setSkipLevelOverride(correction.skipLevel);
+        setBackEmployee(correction.backdateByEmployee);
+        setBackManager(correction.backdateByManager);
+        setBackDays(String(correction.backdateDays));
+      })
+      .catch((error: Error) => flash(error.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveShiftPolicy({
+        correction: {
+          triggers: TRIGGERS.filter((t) => triggers[t]),
+          approver,
+          reasons: selectedReasons,
+          managerWithoutEmployee: mgrWithoutEmployee,
+          hrOverride,
+          skipLevel: skipLevelOverride,
+          backdateByEmployee: backEmployee,
+          backdateByManager: backManager,
+          backdateDays: Number(backDays),
+        },
+      });
+      flash('Attendance correction policy saved');
+    } catch (error) {
+      flash((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggleTrigger = (t: string) => setTriggers((p) => ({ ...p, [t]: !p[t] }));
   const toggleReason = (r: string) => setSelectedReasons((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
@@ -34,7 +79,9 @@ export function AttendanceCorrection() {
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 15, color: '#717171', fontWeight: 600 }}>Attendance correction policy</div>
         <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => flash('Attendance correction controls saved (prototype)')} style={primaryBtn}>Save controls</button>
+          <button onClick={() => void save()} disabled={saving || loading} style={primaryBtn}>
+            {saving ? 'Saving…' : 'Save controls'}
+          </button>
         </div>
       </div>
 

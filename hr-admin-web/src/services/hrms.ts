@@ -216,3 +216,69 @@ export const publishGame = (id: string) => api(`/admin/games/${id}/publish`, { m
 
 // ---- Manager workspace (the dashboard user's own feedback-giving context) ----
 export const getWorkspace = () => api<WorkspaceDTO>('/manager/workspace');
+
+// ---- Shift templates ----
+// A shift carries the thresholds attendance is graded against, so these are
+// live records: what HR saves here is what the app reads.
+export type DayMark = 'Absent' | 'Half Day' | 'Present' | 'Pending Regularisation';
+
+// A template is a working window, nothing more. Every rule it is graded by
+// comes from the org policy below.
+export type ShiftDTO = {
+  id: string;
+  name: string;
+  active: boolean;
+  /** "HH:MM". An end at or before the start means the shift runs overnight. */
+  startTime: string;
+  endTime: string;
+  /** The shift everyone without one of their own is graded against. */
+  isDefault: boolean;
+};
+
+export type ShiftInput = Omit<ShiftDTO, 'id'>;
+
+// The org-wide policy behind Shifts › Policies. This is the setup: what HR
+// saves here is what the app grades every attendance day against. Each tab
+// patches only the fields it owns.
+export type ShiftPolicyDTO = {
+  missingPunchIn: DayMark;
+  missingPunchOut: DayMark;
+  missingBoth: DayMark;
+  /** Week of month ("1".."5") -> weekday indexes off, 0 = Mon .. 6 = Sun. */
+  weeklyOff: Record<string, number[]>;
+  minHalfDayHours: number;
+  minFullDayHours: number;
+  lateGraceMinutes: number;
+  earlyOutGraceMinutes: number;
+  overtime: {
+    eligible: boolean; onHoliday: boolean; onWeeklyOff: boolean;
+    beyondShift: boolean; beyondShiftHours: number;
+  };
+  correction: {
+    triggers: string[]; approver: string; reasons: string[];
+    managerWithoutEmployee: boolean; hrOverride: boolean; skipLevel: boolean;
+    backdateByEmployee: boolean; backdateByManager: boolean; backdateDays: number;
+  };
+  leave: {
+    advanceDays: number; allowBackdated: boolean; backdatedDays: number;
+    approver: string; managerOnBehalf: boolean; hrOverride: boolean; skipLevel: boolean;
+  };
+  updatedAt?: string;
+};
+
+export const getShiftPolicy = () =>
+  api<{ policy: ShiftPolicyDTO }>('/admin/shift-policy').then((r) => r.policy);
+
+export const saveShiftPolicy = (patch: Partial<ShiftPolicyDTO>) =>
+  api<{ policy: ShiftPolicyDTO }>('/admin/shift-policy', { method: 'PATCH', body: patch })
+    .then((r) => r.policy);
+
+export const getShifts = () => api<{ shifts: ShiftDTO[] }>('/admin/shifts').then((r) => r.shifts);
+
+export const createShift = (input: ShiftInput) =>
+  api<{ shift: ShiftDTO }>('/admin/shifts', { method: 'POST', body: input }).then((r) => r.shift);
+
+export const updateShift = (id: string, input: ShiftInput) =>
+  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}`, { method: 'PATCH', body: input }).then((r) => r.shift);
+
+export const deleteShift = (id: string) => api(`/admin/shifts/${id}`, { method: 'DELETE' });
