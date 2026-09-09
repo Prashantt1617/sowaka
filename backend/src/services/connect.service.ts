@@ -1228,8 +1228,12 @@ async function insertSystemPost(post: ConnectPost) {
     { upsert: true },
   );
   // These run daily and are deliberately repeatable, so only a genuinely new
-  // insert is worth announcing — a no-op upsert would spam every client.
-  if (result.upsertedCount > 0) announceChange(post, 'created');
+  // insert is worth announcing — a no-op upsert would spam every client, and
+  // re-push a birthday every morning until the date changed.
+  if (result.upsertedCount > 0) {
+    announceChange(post, 'created');
+    await notifyPostPublished(post);
+  }
 }
 
 /** Generate today's birthday and work-anniversary posts, safely repeatable. */
@@ -1260,6 +1264,9 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
     const org = orgForUser(employee);
     if (employee.birthday && employee.birthday.getUTCMonth() + 1 === month && employee.birthday.getUTCDate() === day) {
       await insertSystemPost(systemPost(org, 'birthday', `birthday:${employee.userId}:${dateKey}`, {
+        // Whose day it is: the notifier needs it to spare them the push about
+        // themselves and to greet them differently when someone comments.
+        personUserId: employee.userId,
         personName: employee.name,
         personInitials: initialsFor(employee.name),
         photoKey: employee.profilePhotoKey,
@@ -1272,6 +1279,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
       const years = year - employee.joiningDate.getUTCFullYear();
       if (years > 0) {
         await insertSystemPost(systemPost(org, 'anniversary', `anniversary:${employee.userId}:${dateKey}`, {
+          personUserId: employee.userId,
           personName: employee.name,
           personInitials: initialsFor(employee.name),
           photoKey: employee.profilePhotoKey,

@@ -16,7 +16,7 @@
  * set of currently active likers, so an unlike lowers the next notification's
  * count without any separate bookkeeping.
  */
-import { connectPosts, users } from '../config/db';
+import { companies, connectPosts, users } from '../config/db';
 import { ConnectComment, ConnectPost } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -68,6 +68,12 @@ export const kudosRecipients = (post: ConnectPost): string[] =>
   post.type === 'kudos'
     ? [...new Set([...idsFrom(post.body.recipientUserIds), ...idsFrom(post.body.taggedUserIds)])]
     : [];
+
+/** The person a birthday or anniversary card is about, when it names one. */
+export const celebrantOf = (post: ConnectPost): string =>
+  post.type === 'birthday' || post.type === 'anniversary'
+    ? String((post.body as { personUserId?: unknown }).personUserId ?? '')
+    : '';
 
 const titleOf = (post: ConnectPost): string =>
   String(post.body.title ?? post.body.text ?? 'a post').slice(0, 80);
@@ -144,6 +150,8 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
   const isPoll = post.type === 'survey';
   const isAnnouncement = post.type === 'hr_announcement' || post.type === 'leadership';
   const title = titleOf(post);
+  const celebrant = celebrantOf(post);
+  const lifecycle = celebrant ? await lifecycleCopy(post) : null;
 
   const recipients = audience.map((user) => {
     const role = creatorTypeFor(post, author, user);
@@ -153,6 +161,9 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
     const otherTagged = tagged.filter((id) => id !== user.userId).length;
 
     const copy = pick([
+      // The person whose day it is gets no push about their own card. The rest
+      // of the audience is being asked to go and say something.
+      lifecycle ? (user.userId === celebrant ? null : lifecycle) : undefined,
       // Kudos about me outranks everything, including a tag on the same post.
       iAmKudosRecipient && {
         title: otherKudos > 0
@@ -188,6 +199,23 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
   );
   logger.info('Feed publication notified', { postId: post.id, type: post.type, recipients: count });
   return count;
+}
+
+/** Birthday and work-anniversary cards, which the daily job publishes. */
+async function lifecycleCopy(post: ConnectPost): Promise<Copy> {
+  const name = String(post.body.personName ?? 'A teammate');
+  if (post.type === 'anniversary') {
+    const years = Number(post.body.years ?? 0);
+    const company = (await companies().findOne({ id: post.org }))?.name ?? 'the company';
+    return {
+      title: `🎉 ${name} completes ${plural(years, 'year')} today`,
+      body: `Celebrate their journey at ${company}`,
+    };
+  }
+  return {
+    title: `🎂 It's ${name}'s birthday!`,
+    body: 'Drop a wish and make their day',
+  };
 }
 
 function kudosNames(ids: string[], audience: User[]): string {
@@ -339,10 +367,12 @@ export async function notifyPostCommented(
     : undefined;
   const priorCommenters = commenterIds(post, actor.userId);
   const mentions = mentionedUserIds.filter((id) => id !== actor.userId);
+  const celebrant = celebrantOf(post);
 
   const targets = new Set(
     [
       post.author.userId,
+      celebrant,
       parent?.userId,
       ...mentions,
       ...kudos,
@@ -359,6 +389,14 @@ export async function notifyPostCommented(
       // A reply that also mentions you is still just a reply.
       parent?.userId === userId && {
         title: `${actor.name} replied to your comment`,
+        body: 'See what they said',
+      },
+      // On your own birthday or anniversary card, a comment is a wish — not a
+      // comment on a post that happens to be about you.
+      userId === celebrant && {
+        title: post.type === 'anniversary'
+          ? `${actor.name} congratulated you on your work anniversary 🎉`
+          : `${actor.name} wished you a happy birthday 🎂`,
         body: 'See what they said',
       },
       mentions.includes(userId) && {
