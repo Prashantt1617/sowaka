@@ -17,6 +17,13 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+/** `"a, b"` -> `['a','b']`; `*` or `all` means unrestricted, i.e. empty. */
+function orgList(raw: string | undefined): string[] {
+  const value = String(raw ?? '').trim();
+  if (value === '*' || value.toLowerCase() === 'all') return [];
+  return value.split(',').map((org) => org.trim()).filter(Boolean);
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
@@ -29,17 +36,27 @@ export const env = {
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
   otpDevBypass: process.env.OTP_DEV_BYPASS === 'true',
   /**
-   * Orgs this process may contact, from `NOTIFY_ORGS` (comma-separated).
+   * Orgs that may receive push and in-app notifications, from `NOTIFY_ORGS`
+   * (comma-separated). Empty means unrestricted.
    *
    * Local and production share one Atlas cluster, so an unguarded dev server
-   * can reach every real employee in the database — a scheduled digest once
-   * emailed an entire other company. Empty means unrestricted, which is what
-   * production wants; a dev `.env` names the org being worked on.
+   * can reach every real employee in the database. A dev `.env` names the org
+   * being worked on; production leaves it unset.
    */
-  notifyOrgs: String(process.env.NOTIFY_ORGS ?? '')
-    .split(',')
-    .map((org) => org.trim())
-    .filter(Boolean),
+  notifyOrgs: orgList(process.env.NOTIFY_ORGS),
+
+  /**
+   * Orgs that may receive email, from `EMAIL_ORGS`.
+   *
+   * Defaults to sowaka rather than to unrestricted, because email is the one
+   * channel that reaches people outside the app and cannot be taken back. Only
+   * sowaka is meant to receive mail for now, in every environment — so the safe
+   * state is the one that needs no deployment config to hold. Set `EMAIL_ORGS`
+   * to a list to widen it, or to `*` to lift the restriction entirely.
+   */
+  emailOrgs: process.env.EMAIL_ORGS === undefined
+    ? ['sowaka']
+    : orgList(process.env.EMAIL_ORGS),
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
   notificationTestEndpointEnabled:

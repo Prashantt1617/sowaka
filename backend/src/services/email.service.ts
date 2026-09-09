@@ -24,18 +24,21 @@ const transporter =
  * Checked here rather than at each caller so every route out — OTP,
  * notifications, anything added later — passes the same gate. An address with
  * no user record is refused while an allowlist is set: unrecognised is not the
- * same as safe, and the only reason to run restricted is that the database is
- * shared with production.
+ * same as safe, and email is the one channel that leaves the app and cannot be
+ * recalled.
+ *
+ * Gated on `emailOrgs`, not `notifyOrgs`: push and in-app notifications are a
+ * separate decision, and restricting mail must not silently mute an org's app.
  */
 export async function isAllowedRecipient(email: string): Promise<boolean> {
-  if (env.notifyOrgs.length === 0) return true;
+  if (env.emailOrgs.length === 0) return true;
   const user = await users().findOne({ email: email.trim().toLowerCase() });
-  const allowed = Boolean(user?.org && env.notifyOrgs.includes(user.org));
+  const allowed = Boolean(user?.org && env.emailOrgs.includes(user.org));
   if (!allowed) {
-    logger.info('Email suppressed: recipient is outside NOTIFY_ORGS', {
+    logger.info('Email suppressed: recipient is outside EMAIL_ORGS', {
       recipient: maskEmail(email),
       org: user?.org ?? 'unknown',
-      allowed: env.notifyOrgs,
+      allowed: env.emailOrgs,
     });
   }
   return allowed;
