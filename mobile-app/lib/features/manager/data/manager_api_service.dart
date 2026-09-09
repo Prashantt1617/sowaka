@@ -482,6 +482,8 @@ List<OvertimeRequest> _parseOvertime(Map<String, dynamic> json) {
 /// but the API only accepts the bare tokens `casual` / `sick` / `earned`.
 String _leaveTypeToken(String label) {
   final lower = label.trim().toLowerCase();
+  // Comp-off first: it is the one label that is not a single leading word.
+  if (lower.startsWith('comp')) return 'comp_off';
   for (final token in const ['sick', 'casual', 'earned']) {
     if (lower.startsWith(token)) return token;
   }

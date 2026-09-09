@@ -1461,7 +1461,6 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
       leaves: memberLeaves,
       holidays: widget.data.holidays,
       overtime: memberOvertime,
-      weekoffDays: widget.data.weekoffDays,
       shift: widget.data.shift,
     );
     return Scaffold(

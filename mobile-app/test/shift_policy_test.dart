@@ -63,6 +63,33 @@ void main() {
     expect(ShiftPolicy.fromJson(const {}).minFullDayHours, 8);
   });
 
+  test('the shift window is derived, not assumed to be 9 hours', () {
+    expect(shift.window, const Duration(hours: 9)); // 10:00-19:00
+    expect(
+      ShiftPolicy.fromJson(const {'startTime': '09:30', 'endTime': '18:00'}).window,
+      const Duration(hours: 8, minutes: 30),
+    );
+    expect(
+      ShiftPolicy.fromJson(const {'startTime': '22:00', 'endTime': '06:00'}).window,
+      const Duration(hours: 8),
+    );
+  });
+
+  test('week-offs come from the grid, per week of the month', () {
+    // 1st and 2nd Saturday off, every Sunday off. 0 = Mon .. 6 = Sun.
+    final policy = ShiftPolicy.fromJson(const {
+      'weeklyOff': {'1': [5, 6], '2': [5, 6], '3': [6], '4': [6], '5': [6]},
+    });
+    // September 2026: 5th is the 1st Saturday, 12th the 2nd, 19th the 3rd.
+    expect(policy.isWeekOff(DateTime(2026, 9, 5)), isTrue);
+    expect(policy.isWeekOff(DateTime(2026, 9, 12)), isTrue);
+    expect(policy.isWeekOff(DateTime(2026, 9, 19)), isFalse, reason: '3rd Saturday works');
+    expect(policy.isWeekOff(DateTime(2026, 9, 6)), isTrue, reason: 'Sunday');
+    expect(policy.isWeekOff(DateTime(2026, 9, 7)), isFalse, reason: 'Monday');
+    // A 31-day month has a 5th block covering the tail.
+    expect(policy.isWeekOff(DateTime(2026, 8, 30)), isTrue, reason: '30 Aug is a Sunday');
+  });
+
   test('half-hour thresholds survive the trip', () {
     final half = ShiftPolicy.fromJson(const {'minHalfDayHours': 4.5});
     expect(half.minHalfDay, const Duration(hours: 4, minutes: 30));

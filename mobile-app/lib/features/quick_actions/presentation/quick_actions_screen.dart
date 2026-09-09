@@ -105,7 +105,6 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<LeaveRequest> leaves,
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
-  required List<int> weekoffDays,
   required ShiftPolicy shift,
 }) {
   final recordsByDate = {
@@ -146,7 +145,7 @@ List<AttendanceDayView> buildAttendanceDays({
       }
     }
     final future = date.isAfter(_dateOnly(now));
-    final weekoff = weekoffDays.contains(date.weekday % 7);
+    final weekoff = shift.isWeekOff(date);
     final complete = record?.punchIn != null && record?.punchOut != null;
     final duration = complete
         ? record!.punchOut!.difference(record.punchIn!)
@@ -424,7 +423,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _restoreStepInput(_FlowStep step) {
-    _choice = step.kind == _StepKind.choice ? _answers[step.label] : null;
+    _choice = step.kind == _StepKind.choice || step.kind == _StepKind.dropdown
+        ? _answers[step.label]
+        : null;
     _text.text = step.kind == _StepKind.text
         ? (_answers[step.label] ?? '')
         : '';
@@ -469,7 +470,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         .firstOrNull;
     final punchIn = todayRecord?.punchIn;
     final punchOut = todayRecord?.punchOut;
-    const standardShift = Duration(hours: 9);
+    // How long the shift runs, from the org's shift policy — never a fixed day.
+    final standardShift = widget.dashboard.shift.window;
     final expectedOut = punchIn?.add(standardShift);
     final progress = punchIn == null
         ? 0.0
@@ -486,9 +488,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               record.workDate.isBefore(todayOnly) &&
               record.punchIn != null &&
               record.punchOut == null &&
-              !widget.dashboard.weekoffDays.contains(
-                record.workDate.weekday % 7,
-              ) &&
+              !widget.dashboard.shift.isWeekOff(record.workDate) &&
               !widget.dashboard.holidays.any(
                 (holiday) => _sameDay(holiday.date, record.workDate),
               ),
@@ -689,10 +689,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Widget _applyLeaveForm() {
     final balance = widget.dashboard.leaveBalance;
-    final balanceForType = switch (_leaveType) {
+    final double? balanceForType = switch (_leaveType) {
       'Casual Leave' => balance.casual.remaining,
       'Sick Leave' => balance.sick.remaining,
       'Earned Leave' => balance.earned.remaining,
+      'Comp-off' => balance.compOff.remaining,
       _ => null,
     };
     return _HubScaffold(
@@ -717,11 +718,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              'Available balance: $balanceForType ${_leaveType == 'Casual Leave'
-                  ? 'casual'
-                  : _leaveType == 'Sick Leave'
-                  ? 'sick'
-                  : 'earned'} days',
+              'Available balance: ${formatDays(balanceForType)} '
+              '${switch (_leaveType) {
+                'Casual Leave' => 'casual',
+                'Sick Leave' => 'sick',
+                'Earned Leave' => 'earned',
+                _ => 'comp-off',
+              }} days',
               style: const TextStyle(
                 color: Color(0xFF2563EB),
                 fontSize: 12,
@@ -817,7 +820,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Future<void> _pickLeaveType() async {
     final balance = widget.dashboard.leaveBalance;
-    String left(LeaveBalanceItem item) => '${item.remaining}/${item.total}';
+    String left(LeaveBalanceItem item) =>
+        '${formatDays(item.remaining)}/${formatDays(item.total)}';
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -825,12 +829,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _LeavePickerSheet(
-        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave'],
+        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Comp-off'],
         selected: _leaveType,
         trailingLabels: {
           'Casual Leave': left(balance.casual),
           'Sick Leave': left(balance.sick),
           'Earned Leave': left(balance.earned),
+          'Comp-off': left(balance.compOff),
         },
       ),
     );
@@ -1625,7 +1630,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     leaves: widget.dashboard.myLeaves,
     holidays: widget.dashboard.holidays,
     overtime: widget.dashboard.myOvertime,
-    weekoffDays: widget.dashboard.weekoffDays,
     shift: widget.dashboard.shift,
   );
 
@@ -1961,7 +1965,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   bool _canContinue(_FlowStep step) {
     return switch (step.kind) {
-      _StepKind.choice => _choice != null,
+      _StepKind.choice || _StepKind.dropdown => _choice != null,
       _StepKind.text when step.money =>
         (double.tryParse(_text.text.replaceAll(',', '').trim()) ?? 0) > 0,
       _StepKind.text => _text.text.trim().isNotEmpty || step.optional,
@@ -1974,7 +1978,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return switch (step.kind) {
       _StepKind.upload => _uploadBytes != null && _uploadName != null,
       _StepKind.text => _text.text.trim().isNotEmpty,
-      _StepKind.choice => _choice != null,
+      _StepKind.choice || _StepKind.dropdown => _choice != null,
       _StepKind.dates || _StepKind.date => _dateChosen,
     };
   }
@@ -1994,11 +1998,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
         );
       } else if (_flow == _QuickFlow.overtime) {
+        // The claim has to carry the duration that was chosen — a full day
+        // submitted as a half day is filed, and paid back, as the wrong thing.
+        // The hours come from the org's shift policy, never a fixed day.
+        final shift = widget.dashboard.shift;
+        final worked = (_answers['Duration'] ?? _choice) == 'Full day'
+            ? shift.minFullDay
+            : shift.minHalfDay;
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
             startTime: _from,
-            endTime: _from.add(const Duration(hours: 4)),
+            endTime: _from.add(worked),
             note: _answers['Note'] ?? '',
           ),
         );
@@ -2025,6 +2036,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (!skip) {
       switch (step.kind) {
         case _StepKind.choice:
+        case _StepKind.dropdown:
           _answers[step.label] = _choice!;
         case _StepKind.text:
           _answers[step.label] = _text.text.trim();
@@ -2065,6 +2077,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               ),
             )
             .toList(),
+      ),
+      _StepKind.dropdown => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE6E6EA)),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _choice,
+            isExpanded: true,
+            hint: const Text('Select'),
+            borderRadius: BorderRadius.circular(14),
+            items: step.options!
+                .map(
+                  (option) => DropdownMenuItem(
+                    value: option.label,
+                    child: Text(
+                      option.label,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _choice = value),
+          ),
+        ),
       ),
       _StepKind.text => TextField(
         controller: _text,
@@ -2462,11 +2506,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
-  // dashboard.weekoffDays uses 0=Sun..6=Sat (JS getDay); Dart weekday is
-  // 1=Mon..7=Sun, so `weekday % 7` maps Sun(7)->0 and the rest 1:1.
-  /// A company week-off (Sunday unless HR configured otherwise).
-  bool _isWeekoffDay(DateTime day) =>
-      widget.dashboard.weekoffDays.contains(day.weekday % 7);
+  /// A week-off, from the grid HR set under Shifts › Policies. Per week of the
+  /// month, so the 2nd Saturday can be off while the 1st is not.
+  bool _isWeekoffDay(DateTime day) => widget.dashboard.shift.isWeekOff(day);
 
   // Overtime day rules: any *past* day for half-day; only a week-off or
   // company holiday for full-day. Duration was chosen on the previous step.
@@ -3540,7 +3582,7 @@ class _LeaveBalanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${item.remaining}/${item.total}',
+            '${formatDays(item.remaining)}/${formatDays(item.total)}',
             style: const TextStyle(
               color: Color(0xFF222222),
               fontSize: 16,
@@ -5156,7 +5198,7 @@ class _IconTile extends StatelessWidget {
   );
 }
 
-enum _StepKind { choice, dates, date, text, upload }
+enum _StepKind { choice, dropdown, dates, date, text, upload }
 
 class _FlowStep {
   const _FlowStep({
@@ -5227,12 +5269,12 @@ const _flowSteps = <_QuickFlow, List<_FlowStep>>{
   _QuickFlow.overtime: [
     _FlowStep(
       label: 'Duration',
-      kind: _StepKind.choice,
+      kind: _StepKind.dropdown,
       question: 'How long?',
-      subtitle: 'Half day is 4h, full day is 8h.',
+      subtitle: 'Overtime is claimed as a full day or a half day.',
       options: [
-        _FlowOption('Full day', Icons.schedule_rounded, '8 hours'),
-        _FlowOption('Half day', Icons.timelapse_rounded, '4 hours'),
+        _FlowOption('Full day', Icons.schedule_rounded, 'Comp-off +1 day'),
+        _FlowOption('Half day', Icons.timelapse_rounded, 'Comp-off +0.5 day'),
       ],
     ),
     _FlowStep(
@@ -5335,7 +5377,7 @@ const _policiesData = <_Policy>[
     Icons.schedule_rounded,
     _Q.sage,
     _Q.sageTint,
-    'Overtime needs prior manager approval. Full day = 8h, half day = 4h. Comp-off or pay-out is settled the following month at 1.5× the hourly rate.',
+    'Overtime needs prior manager approval and is claimed as a full day or a half day. Approved overtime earns comp-off — a full day adds 1 day to your comp-off balance, a half day adds 0.5.',
   ),
 ];
 

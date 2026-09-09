@@ -305,16 +305,23 @@ class TeamMember {
 
 class LeaveBalanceItem {
   const LeaveBalanceItem({required this.remaining, required this.total});
-  final int remaining;
-  final int total;
+
+  /// Days, which can be fractional — comp-off is credited in halves and a
+  /// half-day leave spends half a day.
+  final double remaining;
+  final double total;
 
   factory LeaveBalanceItem.fromJson(Map<String, dynamic> json) {
     return LeaveBalanceItem(
-      remaining: (json['remaining'] as num?)?.toInt() ?? 0,
-      total: (json['total'] as num?)?.toInt() ?? 0,
+      remaining: (json['remaining'] as num?)?.toDouble() ?? 0,
+      total: (json['total'] as num?)?.toDouble() ?? 0,
     );
   }
 }
+
+/// Trims a trailing `.0` so 12 reads as "12" and 0.5 as "0.5".
+String formatDays(double value) =>
+    value == value.roundToDouble() ? value.toInt().toString() : value.toString();
 
 class LeaveBalance {
   const LeaveBalance({
@@ -322,12 +329,16 @@ class LeaveBalance {
     required this.sick,
     required this.casual,
     required this.earned,
+    this.compOff = const LeaveBalanceItem(remaining: 0, total: 0),
   });
 
   final int year;
   final LeaveBalanceItem sick;
   final LeaveBalanceItem casual;
   final LeaveBalanceItem earned;
+
+  /// Earned by approved overtime rather than accrued monthly.
+  final LeaveBalanceItem compOff;
 
   factory LeaveBalance.fromJson(Map<String, dynamic> json) {
     return LeaveBalance(
@@ -340,6 +351,9 @@ class LeaveBalance {
       ),
       earned: LeaveBalanceItem.fromJson(
         json['earned'] as Map<String, dynamic>? ?? const {},
+      ),
+      compOff: LeaveBalanceItem.fromJson(
+        json['comp_off'] as Map<String, dynamic>? ?? const {},
       ),
     );
   }
@@ -835,6 +849,7 @@ class ShiftPolicy {
     this.minFullDayHours = 8,
     this.lateGraceMinutes = 10,
     this.earlyOutGraceMinutes = 10,
+    this.weeklyOff = const {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
   });
 
   final String name;
@@ -846,6 +861,28 @@ class ShiftPolicy {
   final double minFullDayHours;
   final int lateGraceMinutes;
   final int earlyOutGraceMinutes;
+
+  /// Week of the month ('1'..'5') -> weekday indexes that are off,
+  /// 0 = Mon .. 6 = Sun. Set under Shifts › Policies.
+  final Map<String, List<int>> weeklyOff;
+
+  /// How long the shift runs. An end at or before the start is overnight.
+  Duration get window {
+    final from = startMinutes;
+    final to = endMinutes;
+    if (from == null || to == null) return const Duration(hours: 9);
+    final span = to - from;
+    return Duration(minutes: span <= 0 ? span + 24 * 60 : span);
+  }
+
+  /// Whether [date] is a weekly off. The grid is per week of the month, so the
+  /// 2nd Saturday can be off while the 1st is not; weeks are counted from the
+  /// 1st in blocks of seven, and a 5th block covers the tail of a long month.
+  bool isWeekOff(DateTime date) {
+    final week = ((date.day - 1) ~/ 7) + 1;
+    final weekday = date.weekday - 1; // Dart: Mon = 1 .. Sun = 7
+    return (weeklyOff[(week > 5 ? 5 : week).toString()] ?? const []).contains(weekday);
+  }
 
   Duration get minHalfDay => _hours(minHalfDayHours);
   Duration get minFullDay => _hours(minFullDayHours);
@@ -901,6 +938,13 @@ class ShiftPolicy {
       minFullDayHours: hours('minFullDayHours', 8),
       lateGraceMinutes: minutes('lateGraceMinutes', 10),
       earlyOutGraceMinutes: minutes('earlyOutGraceMinutes', 10),
+      weeklyOff: {
+        for (final entry in (json['weeklyOff'] as Map<dynamic, dynamic>? ?? const {}).entries)
+          entry.key.toString(): [
+            for (final day in (entry.value as List<dynamic>? ?? const []))
+              (day as num).toInt(),
+          ],
+      },
     );
   }
 }
