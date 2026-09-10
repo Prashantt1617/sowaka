@@ -1837,41 +1837,37 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
-/// The footnote under the logout button, linking out to the published policy.
+/// The footnotes under the logout button: the published privacy policy, and
+/// the page where someone asks for their account and data to be deleted.
 ///
-/// The hosted page is the same URL the store listing points at, so there is one
-/// version of the policy rather than a copy in here drifting from it. The sheet
-/// below is the fallback for a device that cannot open a browser.
+/// Both link out to the hosted pages rather than carrying a copy of the text,
+/// so what people read here is the same thing the store listings point at.
+/// Deletion gets its own link rather than living inside the policy: someone
+/// looking for it should not have to read a policy to find it.
 class _PrivacyAndDataRow extends StatelessWidget {
   const _PrivacyAndDataRow();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: GestureDetector(
-        onTap: () => _open(context),
-        behavior: HitTestBehavior.opaque,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-          child: Text(
-            'Sowaka data and privacy policy',
-            style: TextStyle(
-              color: Color(0xFF9CA3AF),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              decoration: TextDecoration.underline,
-              decorationColor: Color(0xFFD1D5DB),
-            ),
-          ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _FootnoteLink(
+          label: 'Privacy policy',
+          url: ApiConfig.privacyPolicyUrl,
+          onFallback: _showFallback,
         ),
-      ),
+        const Text(
+          '  ·  ',
+          style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 11.5),
+        ),
+        _FootnoteLink(
+          label: 'Delete my account',
+          url: ApiConfig.dataDeletionUrl,
+          onFallback: _showFallback,
+        ),
+      ],
     );
-  }
-
-  static Future<void> _open(BuildContext context) async {
-    final opened = await openExternalLink(ApiConfig.privacyPolicyUrl);
-    if (opened || !context.mounted) return;
-    _showFallback(context);
   }
 
   static void _showFallback(BuildContext context) {
@@ -1948,12 +1944,51 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 ApiConfig.privacyPolicyUrl,
-                style: const TextStyle(
-                  color: Color(0xFF0571A6),
-                  fontSize: 12.5,
-                ),
+                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+              ),
+              Text(
+                ApiConfig.dataDeletionUrl,
+                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One small underlined link, falling back to the sheet when no browser opens.
+class _FootnoteLink extends StatelessWidget {
+  const _FootnoteLink({
+    required this.label,
+    required this.url,
+    required this.onFallback,
+  });
+
+  final String label;
+  final String url;
+  final void Function(BuildContext context) onFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () async {
+        final opened = await openExternalLink(url);
+        if (opened || !context.mounted) return;
+        onFallback(context);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 11.5,
+            fontWeight: FontWeight.w500,
+            decoration: TextDecoration.underline,
+            decorationColor: Color(0xFFD1D5DB),
           ),
         ),
       ),

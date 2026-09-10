@@ -23,6 +23,20 @@ class ApiConfig {
     return configured.isNotEmpty ? configured : _defaultPrivacyPolicyUrl;
   }
 
+  /// Where someone asks for their account and data to be deleted.
+  ///
+  /// A separate page from the policy because the stores ask for a route a
+  /// person can use without the app installed, and because someone looking for
+  /// it should not have to read a policy to find it. Override with
+  /// `--dart-define=DATA_DELETION_URL=...`.
+  static const String _defaultDataDeletionUrl =
+      'https://legal.getsowaka.com/data-deletion.html';
+
+  static String get dataDeletionUrl {
+    const configured = String.fromEnvironment('DATA_DELETION_URL');
+    return configured.isNotEmpty ? configured : _defaultDataDeletionUrl;
+  }
+
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
