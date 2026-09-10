@@ -16,7 +16,7 @@ class ApiConfig {
   /// there is only ever one version of it. Override per environment with
   /// `--dart-define=PRIVACY_POLICY_URL=...`.
   static const String _defaultPrivacyPolicyUrl =
-      'https://dikcsyvq9i7v1.cloudfront.net/privacy-policy.html';
+      'https://legal.getsowaka.com/privacy-policy.html';
 
   static String get privacyPolicyUrl {
     const configured = String.fromEnvironment('PRIVACY_POLICY_URL');
