@@ -1,13 +1,19 @@
 import { ObjectId } from 'mongodb';
-import { holidays, leaves, users } from '../config/db';
+import { attendanceRecords, leaves, overtimeRequests, users } from '../config/db';
 import { Leave, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
-import { notifyUsers } from './notification.service';
-import { getCompanyConfig } from './company-settings.service';
+import { notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
+import { holidayDatesForUser } from './holiday.service';
+import {
+  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveTypeRulesFor,
+  managerMayDecide, weekOffGridFor,
+} from './shift.service';
+import { COMP_OFF_CREDIT, LeaveTypeKey, LeaveTypeRule, processYearEnd } from '../models/shift.model';
+import { carriedFromRun as carriedFromYearEndRun } from './leave-year-end.service';
 
 const maxLeaveDays = 30;
-const leaveTypes = new Set<Leave['type']>(['sick', 'casual', 'earned']);
+const leaveTypes = new Set<Leave['type']>(['sick', 'casual', 'earned', 'comp_off']);
 const decisionStatuses = new Set<LeaveStatus>(['approved', 'declined']);
 
 export interface LeaveView {
@@ -61,7 +67,7 @@ export async function applyForLeave(
 
   const type = input.type.trim().toLowerCase() as Leave['type'];
   if (!leaveTypes.has(type)) {
-    throw new LeaveError(400, 'Leave type must be sick, casual, or earned');
+    throw new LeaveError(400, `Leave type must be one of: ${[...leaveTypes].join(', ')}`);
   }
 
   const startDate = parseDateOnly(input.startDate, 'startDate');
@@ -76,24 +82,90 @@ export async function applyForLeave(
     throw new LeaveError(400, 'A half day can only be applied for a single date');
   }
 
+  // The application window is per leave type: sick leave is usually applied for
+  // after the fact, earned leave is planned well ahead.
+  const rules = await leaveTypeRulesFor(employee.userId);
+  const rule = rules.find((item) => item.key === type);
+  // A type this org does not run at all.
+  if (!rule) {
+    throw new LeaveError(400, 'That leave type is not available in this organisation');
+  }
+  {
+    const todayOnly = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const aheadDays = Math.floor((startDate.getTime() - todayOnly.getTime()) / 86_400_000);
+    if (aheadDays > rule.advanceDays) {
+      throw new LeaveError(
+        400,
+        `${rule.name} can be applied for at most ${rule.advanceDays} days ahead`,
+      );
+    }
+    if (aheadDays < 0) {
+      if (!rule.allowBackdated) {
+        throw new LeaveError(400, `${rule.name} cannot be applied for a past date`);
+      }
+      if (-aheadDays > rule.backdatedDays) {
+        throw new LeaveError(
+          400,
+          `${rule.name} can be backdated by at most ${rule.backdatedDays} days`,
+        );
+      }
+    }
+  }
+
   // A range may span week-offs and holidays, but neither is charged as leave.
-  const [holidayDates, companyConfig] = await Promise.all([
-    holidayDatesInRange(
-      employee.org ?? 'default',
-      employee.state ?? employee.location ?? employee.branch ?? '',
-      startDate,
-      endDate,
-    ),
-    getCompanyConfig(employee.org),
-  ]);
+  // Resolved through the shared helper so leave counts the same holidays the
+  // employee's calendar shows: their work location's, plus all-locations days.
+  const holidayDates = await holidayDatesForUser(employee, { from: startDate, to: endDate });
+  // Week-offs come from the shift policy, the same grid the app greys out on
+  // the calendar — so what is charged matches what the employee was shown.
+  const weeklyOff = await weekOffGridFor(employee.userId);
   const days = halfDay
     ? 0.5
-    : countLeaveDays(startDate, endDate, holidayDates, companyConfig.weekoffDays);
+    : countLeaveDays(startDate, endDate, holidayDates, weeklyOff);
   if (days === 0) {
     throw new LeaveError(400, 'These dates are all week-offs or company holidays');
   }
   if (days > maxLeaveDays) {
     throw new LeaveError(400, `Leave cannot exceed ${maxLeaveDays} days`);
+  }
+
+  // You cannot spend leave you do not have. Checked against the balance for the
+  // year the leave starts in, counting what is already approved *and* what is
+  // still pending — two pending requests that each fit the balance must not be
+  // able to overdraw it together.
+  // A range that crosses new year is charged to both years, so each one is
+  // checked against its own balance rather than the start year's alone.
+  const years = [...new Set([startDate.getUTCFullYear(), endDate.getUTCFullYear()])];
+  const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
+  for (const year of years) {
+    const balance = await getMyLeaveBalance(userId, year);
+    const forType = balance[type] as { total: number; used: number } | undefined;
+    if (!forType) continue;
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const daysInYear = years.length === 1
+      ? days
+      : halfDay
+        ? 0.5
+        : countLeaveDays(
+            startDate < yearStart ? yearStart : startDate,
+            endDate > yearEnd ? yearEnd : endDate,
+            holidayDates,
+            weeklyOff,
+          );
+    if (daysInYear <= 0) continue;
+    const held = pending
+      .filter((row) => row.startDate <= yearEnd && row.endDate >= yearStart)
+      .reduce((total, row) => total + (row.days ?? 0), 0);
+    const available = Math.max(0, forType.total - forType.used - held);
+    if (daysInYear > available) {
+      throw new LeaveError(
+        400,
+        held > 0
+          ? `Only ${available} day(s) of ${type} leave left in ${year} — ${forType.total - forType.used} in balance, ${held} already requested`
+          : `Only ${available} day(s) of ${type} leave left in ${year}`,
+      );
+    }
   }
 
   const reason = input.reason.trim();
@@ -125,14 +197,13 @@ export async function applyForLeave(
     updatedAt: new Date(createdAt),
   });
 
-  const hrUsers = await users().find({ org: employee.org, dashboardAccess: true }).toArray();
-  const dateLabel = startDate.toISOString().slice(0, 10) === endDate.toISOString().slice(0, 10)
-    ? startDate.toISOString().slice(0, 10)
-    : `${startDate.toISOString().slice(0, 10)} to ${endDate.toISOString().slice(0, 10)}`;
-  await notifyUsers([manager.userId, ...hrUsers.map((user) => user.userId)], {
-    scenario: 'leave_requested', title: 'Leave request',
-    body: `${employee.name} requested ${type} leave for ${dateLabel}: "${reason}"`,
-    data: { destination: 'manage_leave', leaveId: result.insertedId.toHexString() },
+  await notifyLeaveSubmitted({
+    employeeUserId: employee.userId,
+    type,
+    startDate,
+    endDate,
+    days,
+    reason,
   });
 
   return toLeaveView(
@@ -168,6 +239,9 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     throw new LeaveError(400, 'Invalid balance year');
   }
+  // Entitlements come from the leave types HR configured under Shifts ›
+  // Policies › Leaves, never from a table in here.
+  const rules = await leaveTypeRulesFor(employee.userId);
   const yearStart = new Date(Date.UTC(year, 0, 1));
   const yearEnd = new Date(Date.UTC(year, 11, 31));
   const approved = await leaves()
@@ -178,8 +252,7 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
       endDate: { $gte: yearStart },
     })
     .toArray();
-  const totals: Record<Leave['type'], number> = { sick: 12, casual: 12, earned: 18 };
-  const used: Record<Leave['type'], number> = { sick: 0, casual: 0, earned: 0 };
+  const used: Record<Leave['type'], number> = { sick: 0, casual: 0, earned: 0, comp_off: 0 };
   for (const leave of approved) {
     const withinYear = leave.startDate >= yearStart && leave.endDate <= yearEnd;
     if (leave.days != null && withinYear) {
@@ -193,12 +266,140 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
     const end = leave.endDate > yearEnd ? yearEnd : leave.endDate;
     used[leave.type] += inclusiveDays(start, end);
   }
+  // Comp-off is not accrued: the balance is what approved overtime earned.
+  const compOffEarned = await compOffCreditedIn(userId, yearStart, yearEnd);
+  const openingFor = await openingBalances(userId, employee.org, year, rules, compOffEarned);
+  const entitlement = (key: Leave['type']) => {
+    const rule = rules.find((item) => item.key === key);
+    const accrued = key === 'comp_off' ? compOffEarned : (rule?.perMonth ?? 0) * 12;
+    return round(accrued + (openingFor[key] ?? 0));
+  };
+
   return {
     year,
-    sick: balanceItem(totals.sick, used.sick),
-    casual: balanceItem(totals.casual, used.casual),
-    earned: balanceItem(totals.earned, used.earned),
+    sick: balanceItem(entitlement('sick'), used.sick),
+    casual: balanceItem(entitlement('casual'), used.casual),
+    earned: balanceItem(entitlement('earned'), used.earned),
+    comp_off: balanceItem(entitlement('comp_off'), used.comp_off),
   };
+}
+
+/**
+ * Days of comp-off earned by approved overtime in a window.
+ *
+ * An overtime record stores the hours worked, so which of the two durations it
+ * was is decided against the org's own full-day threshold — the same figure the
+ * attendance calendar grades a day by, never a fixed eight hours.
+ */
+async function compOffCreditedIn(userId: string, from: Date, to: Date): Promise<number> {
+  const [approved, fullDayHours] = await Promise.all([
+    overtimeRequests().find({ userId, status: 'approved', workDate: { $gte: from, $lte: to } }).toArray(),
+    fullDayHoursFor(userId),
+  ]);
+  return round(
+    approved.reduce(
+      (total, request) =>
+        total + COMP_OFF_CREDIT[request.hours >= fullDayHours ? 'full_day' : 'half_day'],
+      0,
+    ),
+  );
+}
+
+/**
+ * What last year's closing balance carries into this one, per the carry-forward
+ * limit HR set.
+ *
+ * Only from a year the system actually tracked. Without that guard an org
+ * adopting Sowaka mid-life hands every employee the full carry-forward on day
+ * one: with no records for last year, "accrued minus used" reads as a whole
+ * year accrued and nothing taken. A year counts as tracked for an employee once
+ * there is any leave or attendance record of theirs inside it.
+ *
+ * Looks back exactly one year: going further would need every prior year's
+ * usage, and an opening balance older than that cannot be reconstructed.
+ */
+/**
+ * The opening balance for each type.
+ *
+ * If a year-end run has closed last year, that run's `carried` is the answer —
+ * a recorded fact that cannot move because someone edited the policy since.
+ * Only when no run exists does this fall back to deriving it.
+ */
+async function openingBalances(
+  userId: string,
+  org: string | undefined,
+  year: number,
+  rules: LeaveTypeRule[],
+  compOffThisYear: number,
+): Promise<Partial<Record<Leave['type'], number>>> {
+  const recorded: Partial<Record<Leave['type'], number>> = {};
+  const missing: LeaveTypeRule[] = [];
+  for (const rule of rules) {
+    const carried = await carriedFromYearEndRun(userId, rule.key as LeaveTypeKey, year);
+    if (carried != null) recorded[rule.key as Leave['type']] = carried;
+    else missing.push(rule);
+  }
+  if (missing.length === 0) return recorded;
+  // Per type, not all-or-nothing: a type whose year-end has been recorded uses
+  // that figure, and one that has not is still derived. Short-circuiting on
+  // the first recorded type left every other type opening at zero — a
+  // financial-year type looked emptied the moment a calendar-year one closed.
+  const derived = await carriedForwardInto(userId, org, year, missing, compOffThisYear);
+  return { ...derived, ...recorded };
+}
+
+async function carriedForwardInto(
+  userId: string,
+  org: string | undefined,
+  year: number,
+  rules: LeaveTypeRule[],
+  _compOffThisYear: number,
+): Promise<Partial<Record<Leave['type'], number>>> {
+  void _compOffThisYear;
+  const priorStart = new Date(Date.UTC(year - 1, 0, 1));
+  const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
+  if (!(await yearWasTracked(userId, priorStart, priorEnd))) return {};
+  const prior = await leaves()
+    .find({ userId, status: 'approved', startDate: { $lte: priorEnd }, endDate: { $gte: priorStart } })
+    .toArray();
+  const usedLastYear: Record<string, number> = {};
+  for (const leave of prior) {
+    const start = leave.startDate < priorStart ? priorStart : leave.startDate;
+    const end = leave.endDate > priorEnd ? priorEnd : leave.endDate;
+    const days = leave.days != null && leave.startDate >= priorStart && leave.endDate <= priorEnd
+      ? leave.days
+      : inclusiveDays(start, end);
+    usedLastYear[leave.type] = (usedLastYear[leave.type] ?? 0) + days;
+  }
+  const priorCompOff = await compOffCreditedIn(userId, priorStart, priorEnd);
+
+  const opening: Partial<Record<Leave['type'], number>> = {};
+  for (const rule of rules) {
+    const accrued = rule.key === 'comp_off' ? priorCompOff : rule.perMonth * 12;
+    const closing = accrued - (usedLastYear[rule.key] ?? 0);
+    opening[rule.key as Leave['type']] = round(processYearEnd(closing, rule).carried);
+  }
+  return opening;
+}
+
+/**
+ * Whether the system holds anything for this employee in a given year. A year
+ * with no leave and no attendance was not being tracked, so nothing can be
+ * carried out of it.
+ */
+async function yearWasTracked(userId: string, from: Date, to: Date): Promise<boolean> {
+  const [leaveCount, attendanceCount] = await Promise.all([
+    leaves().countDocuments({ userId, startDate: { $lte: to }, endDate: { $gte: from } }, { limit: 1 }),
+    attendanceRecords().countDocuments(
+      { userId, workDate: { $gte: from.toISOString().slice(0, 10), $lte: to.toISOString().slice(0, 10) } },
+      { limit: 1 },
+    ),
+  ]);
+  return leaveCount > 0 || attendanceCount > 0;
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 export async function getManagerLeaveInbox(managerUserId: string): Promise<LeaveView[]> {
@@ -253,6 +454,11 @@ export async function decideLeave(
   }
 
   const employee = await users().findOne({ userId: leave.userId });
+  // Who signs off is the org's call, from Policies › Leaves.
+  const rules = await approvalRulesFor(leave.userId, 'leave');
+  if (!managerMayDecide(rules.approver)) {
+    throw new LeaveError(403, `Leave is approved by ${rules.approver}, not by the reporting manager`);
+  }
   if (!employee || employee.managerUserId !== managerUserId) {
     throw new LeaveError(403, 'Only the employee’s current manager can decide this leave');
   }
@@ -288,11 +494,13 @@ export async function decideLeave(
     throw new LeaveError(409, 'Leave request has already been decided');
   }
 
-  const approver = await users().findOne({ userId: managerUserId });
-  await notifyUsers([employee.userId], {
-    scenario: 'leave_decided', title: `Leave ${decision}`,
-    body: `Your ${leave.type} leave for ${leave.startDate.toISOString().slice(0, 10)} was ${decision}`,
-    data: { destination: 'profile_leaves', leaveId: leaveIdInput, approverName: approver?.name ?? 'Manager' },
+  await notifyLeaveDecided({
+    employeeUserId: employee.userId,
+    type: leave.type,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    approved: decision === 'approved',
+    comment: input.managerNote?.trim() ?? '',
   });
 
   return toLeaveView(updated, employee);
@@ -339,6 +547,11 @@ export async function adminDecideLeave(
   }
   const employee = await users().findOne({ userId: leave.userId });
   if (!employee) throw new LeaveError(409, 'Leave has an invalid employee reference');
+  // HR deciding is only an override when someone else is the named approver.
+  const rules = await approvalRulesFor(leave.userId, 'leave');
+  if (!hrMayDecide(rules.approver, rules.hrOverride)) {
+    throw new LeaveError(403, 'HR override is switched off for leave in this organisation');
+  }
 
   const managerNote = input.managerNote?.trim();
   if (managerNote && managerNote.length > 500) {
@@ -359,14 +572,18 @@ export async function adminDecideLeave(
     { returnDocument: 'after' },
   );
   if (!updated) throw new LeaveError(409, 'Leave request has already been decided');
-  const approver = await users().findOne({ userId: adminUserId });
-  await notifyUsers([employee.userId], {
-    scenario: 'leave_decided', title: `Leave ${decision}`,
-    body: `Your ${leave.type} leave for ${leave.startDate.toISOString().slice(0, 10)} was ${decision}`,
-    data: { destination: 'profile_leaves', leaveId: leaveIdInput, approverName: approver?.name ?? 'HR' },
+  await notifyLeaveDecided({
+    employeeUserId: employee.userId,
+    type: leave.type,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    approved: decision === 'approved',
+    comment: input.managerNote?.trim() ?? '',
   });
   return toLeaveView(updated, employee);
 }
+
+/** Shared by the manager and HR decision paths, which send identical copy. */
 
 function parseDateOnly(value: string, field: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -384,33 +601,22 @@ function inclusiveDays(startDate: Date, endDate: Date): number {
 }
 
 /** YYYY-MM-DD company holidays for the employee's state inside a date range. */
-async function holidayDatesInRange(
-  org: string,
-  state: string,
-  startDate: Date,
-  endDate: Date,
-): Promise<Set<string>> {
-  const holidayDocuments = await holidays()
-    .find({ org, state: state.trim().toLowerCase(), date: { $gte: startDate, $lte: endDate } })
-    .project<{ date: Date }>({ date: 1 })
-    .toArray();
-  return new Set(holidayDocuments.map((holiday) => holiday.date.toISOString().slice(0, 10)));
-}
 
 /**
  * Leave days consumed by a range: every calendar day in it, less the company's
- * week-off days (Sunday by default) and any company holiday. Both may sit
+ * week-offs — from the grid HR set under Shifts › Policies, so the 2nd Saturday
+ * can be off while the 1st is not — and any company holiday. Both may sit
  * inside a range without being charged as leave.
  */
 function countLeaveDays(
   startDate: Date,
   endDate: Date,
   holidayDates: Set<string>,
-  weekoffDays: number[],
+  weeklyOff: Record<string, number[]>,
 ): number {
   let days = 0;
   for (let cursor = startDate; cursor <= endDate; cursor = addUtcDays(cursor, 1)) {
-    if (weekoffDays.includes(cursor.getUTCDay())) continue;
+    if (isWeekOffDay(cursor, weeklyOff)) continue;
     if (holidayDates.has(cursor.toISOString().slice(0, 10))) continue;
     days += 1;
   }

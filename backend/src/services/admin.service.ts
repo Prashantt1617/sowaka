@@ -57,6 +57,17 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     managerUserId: e.managerUserId,
     managerName: e.managerUserId ? nameById.get(e.managerUserId) : undefined,
     lifecycleStatus: e.lifecycleStatus,
+    // Present on the user record already; the dashboard's employee table and
+    // profile show these, and without them every row reads as a dash.
+    employeeId: e.employeeId,
+    location: e.location ?? e.branch,
+    // Kept separate from `location` as well as merged into it: KPI template
+    // targeting filters on branch and location independently.
+    branch: e.branch,
+    recognition: e.recognition?.label,
+    employeeType: e.employeeType,
+    joiningDate: e.joiningDate ? e.joiningDate.toISOString().slice(0, 10) : undefined,
+    birthday: e.birthday ? e.birthday.toISOString().slice(0, 10) : undefined,
   }));
 }
 
@@ -64,6 +75,7 @@ export interface CreateEmployeeInput {
   name?: string; email?: string; designation?: string; department?: string;
   location?: string; employeeType?: string; managerUserId?: string;
   birthday?: string; joiningDate?: string;
+  employeeId?: string; gender?: string; mobile?: string; branch?: string;
 }
 
 export async function createEmployeeForAdmin(adminUserId: string, input: CreateEmployeeInput) {
@@ -80,8 +92,18 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     if (Number.isNaN(date.valueOf())) throw new AdminError(400, `${label} is invalid`);
     return date;
   };
+  // An employee id is what attendance records are keyed by, so a duplicate
+  // would silently merge two people's punches.
+  const employeeId = input.employeeId?.trim() || undefined;
+  if (employeeId && await users().findOne({ org: admin.org, employeeId })) {
+    throw new AdminError(409, `Employee ID ${employeeId} is already in use`);
+  }
   const employee: User = {
     userId: randomUUID(), name, email, org: admin.org,
+    employeeId,
+    gender: input.gender?.trim() || undefined,
+    phone: input.mobile?.trim() || undefined,
+    branch: input.branch?.trim() || undefined,
     designation: input.designation?.trim() || undefined,
     department: input.department?.trim() || undefined,
     location: input.location?.trim() || undefined,

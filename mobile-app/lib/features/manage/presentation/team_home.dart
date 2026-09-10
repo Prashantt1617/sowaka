@@ -633,15 +633,39 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
   Widget build(BuildContext context) {
     final data = widget.data;
     final bloc = widget.bloc;
-    final entries = <(DateTime date, String who, String kind, Widget card)>[
-      for (final leave in data.leaves.where(
-        (l) => l.decision == LeaveDecision.pending,
-      ))
+    final entries =
+        <(DateTime date, String who, String kind, Widget card, bool pending)>[
+      for (final leave in data.leaves)
         (
           leave.requestedOn,
           leave.who,
           'leave',
           _TeamRequestCard(
+            onViewDetails: () => showRequestDetailsSheet(
+              context,
+              title: '${leave.type} leave · ${leave.who}',
+              statusLabel: switch (leave.decision) {
+                LeaveDecision.approved => 'Approved',
+                LeaveDecision.declined => 'Declined',
+                LeaveDecision.pending => 'Pending',
+              },
+              statusColor: _decisionInk(leave.decision),
+              statusTint: _decisionTint(leave.decision),
+              rows: [
+                ('Employee', '${leave.who} · ${leave.team}'),
+                ('Type', leave.type),
+                ('Dates', _leaveDateRange(leave)),
+                ('Days', leave.daysLabel),
+                ('Applied on', _managerDate(leave.requestedOn)),
+                ('Reason', leave.reason),
+              ],
+              responseLabel: switch (leave.decision) {
+                LeaveDecision.pending => '',
+                LeaveDecision.approved => 'You approved this',
+                LeaveDecision.declined => 'You declined this',
+              },
+              responseNote: leave.managerNote,
+            ),
             initial: leave.initial,
             avatarIndex: leave.avatarIndex,
             name: leave.who,
@@ -651,7 +675,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ('Date:', _leaveDateRange(leave)),
               ('Comment:', leave.reason),
             ],
-            decision: LeaveDecision.pending,
+            decision: leave.decision,
+            responseNote: leave.managerNote,
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
             onReject: () async {
@@ -666,15 +691,39 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               );
             },
           ),
+          leave.decision == LeaveDecision.pending,
         ),
-      for (final request in data.overtime.where(
-        (o) => o.decision == LeaveDecision.pending,
-      ))
+      for (final request in data.overtime)
         (
           request.requestedOn,
           request.who,
           'overtime',
           _TeamRequestCard(
+            onViewDetails: () => showRequestDetailsSheet(
+              context,
+              title: 'Overtime · ${request.who}',
+              statusLabel: switch (request.decision) {
+                LeaveDecision.approved => 'Approved',
+                LeaveDecision.declined => 'Declined',
+                LeaveDecision.pending => 'Pending',
+              },
+              statusColor: _decisionInk(request.decision),
+              statusTint: _decisionTint(request.decision),
+              rows: [
+                ('Employee', '${request.who} · ${request.team}'),
+                ('Work date', _managerDate(request.workDate)),
+                ('Hours', request.hoursLabel),
+                ('Time', request.timeRangeLabel),
+                ('Applied on', _managerDate(request.requestedOn)),
+                ('Note', request.note),
+              ],
+              responseLabel: switch (request.decision) {
+                LeaveDecision.pending => '',
+                LeaveDecision.approved => 'You approved this',
+                LeaveDecision.declined => 'You declined this',
+              },
+              responseNote: request.managerNote,
+            ),
             initial: request.initial,
             avatarIndex: request.avatarIndex,
             name: request.who,
@@ -688,7 +737,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 request.note.isEmpty ? request.timeRangeLabel : request.note,
               ),
             ],
-            decision: LeaveDecision.pending,
+            decision: request.decision,
+            responseNote: request.managerNote,
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
             onReject: () async {
@@ -703,15 +753,38 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               );
             },
           ),
+          request.decision == LeaveDecision.pending,
         ),
-      for (final request in data.managerRegularizations.where(
-        (r) => r.decision == LeaveDecision.pending,
-      ))
+      for (final request in data.managerRegularizations)
         (
           request.createdAt,
           request.who,
           'correction',
           _TeamRequestCard(
+            onViewDetails: () => showRequestDetailsSheet(
+              context,
+              title: 'Attendance correction · ${request.who}',
+              statusLabel: switch (request.decision) {
+                LeaveDecision.approved => 'Approved',
+                LeaveDecision.declined => 'Declined',
+                LeaveDecision.pending => 'Pending',
+              },
+              statusColor: _decisionInk(request.decision),
+              statusTint: _decisionTint(request.decision),
+              rows: [
+                ('Employee', '${request.who} · ${request.team}'),
+                ('Work date', _shortAttendanceDate(request.workDate)),
+                ('Punches asked for', _attendancePeriod(request)),
+                ('Raised on', _managerDate(request.createdAt)),
+                ('Reason', request.note),
+              ],
+              responseLabel: switch (request.decision) {
+                LeaveDecision.pending => '',
+                LeaveDecision.approved => 'You approved this',
+                LeaveDecision.declined => 'You declined this',
+              },
+              responseNote: request.managerNote,
+            ),
             initial: request.initial,
             avatarIndex: request.avatarIndex,
             name: request.who,
@@ -722,7 +795,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ('Correction:', _attendancePeriod(request)),
               ('Comment:', request.note),
             ],
-            decision: LeaveDecision.pending,
+            decision: request.decision,
+            responseNote: request.managerNote,
             onApprove: () => bloc.add(
               DecideAttendanceRegularization(
                 request.id,
@@ -736,6 +810,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ),
             ),
           ),
+          request.decision == LeaveDecision.pending,
         ),
     ];
 
@@ -756,11 +831,17 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           )
           .toList();
     }
-    filtered.sort(
-      (a, b) => _mode == _RequestViewMode.oldestFirst
+    // One comparator, not two passes: List.sort is not stable, so sorting by
+    // date and then by status threw away the date order within each group.
+    // Anything still waiting on this manager sits above what they have already
+    // decided, and dates order within that.
+    filtered.sort((a, b) {
+      final byStatus = (a.$5 ? 0 : 1).compareTo(b.$5 ? 0 : 1);
+      if (byStatus != 0) return byStatus;
+      return _mode == _RequestViewMode.oldestFirst
           ? a.$1.compareTo(b.$1)
-          : b.$1.compareTo(a.$1),
-    );
+          : b.$1.compareTo(a.$1);
+    });
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
@@ -785,6 +866,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ),
             ],
           ),
+
           const SizedBox(height: 14),
           _FeedbackSearchField(
             query: _query,
@@ -806,7 +888,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                   const SizedBox(height: 12),
                   Text(
                     entries.isEmpty
-                        ? 'No requests waiting on you.'
+                        ? 'No requests from your team yet.'
                         : _query.isNotEmpty
                         ? 'No requests match "$_query".'
                         : 'No requests match this filter.',
@@ -946,6 +1028,7 @@ void _showViewBySheet(
 
 class _TeamRequestCard extends StatelessWidget {
   const _TeamRequestCard({
+    this.onViewDetails,
     required this.initial,
     required this.avatarIndex,
     required this.name,
@@ -954,7 +1037,7 @@ class _TeamRequestCard extends StatelessWidget {
     required this.decision,
     this.onApprove,
     this.onReject,
-    this.readOnly = false,
+    this.responseNote = '',
   });
 
   final String initial;
@@ -965,7 +1048,13 @@ class _TeamRequestCard extends StatelessWidget {
   final LeaveDecision decision;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
-  final bool readOnly;
+
+  /// The note left with the decision, shown once a request has been reviewed.
+  final String responseNote;
+
+  /// Opens the request in full — everything the employee filled in, and the
+  /// response if it has been decided.
+  final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -1044,16 +1133,15 @@ class _TeamRequestCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
+          if (onViewDetails case final open?) ...[
+            _ManagerViewDetailsLink(onTap: open),
+            const SizedBox(height: 6),
+          ],
           const SizedBox(height: 8),
-          if (readOnly)
-            const Text(
-              'Awaiting HR review',
-              style: TextStyle(
-                color: Color(0xFF9CA3AF),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            )
+          // Once a request has been decided, the card reports the outcome
+          // instead of offering buttons that would do nothing.
+          if (decision != LeaveDecision.pending)
+            _RequestResponseBlock(decision: decision, note: responseNote)
           else
             Row(
               children: [
@@ -1080,6 +1168,108 @@ class _TeamRequestCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What happened to a request, for the Reviewed list: the decision, who made
+/// it when that was not this manager, and the note that went with it.
+class _RequestResponseBlock extends StatelessWidget {
+  const _RequestResponseBlock({required this.decision, required this.note});
+
+  final LeaveDecision decision;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = decision == LeaveDecision.approved;
+    final foreground = approved
+        ? const Color(0xFF2F7A4F)
+        : const Color(0xFFB3261E);
+    final background = approved
+        ? const Color(0xFFE6F4EA)
+        : const Color(0xFFFDECEA);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            approved ? 'Approved' : 'Declined',
+            style: TextStyle(
+              color: foreground,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (note.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              note.trim(),
+              style: TextStyle(
+                color: foreground.withValues(alpha: .85),
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+Color _decisionInk(LeaveDecision decision) => switch (decision) {
+  LeaveDecision.approved => const Color(0xFF2F7A4F),
+  LeaveDecision.declined => const Color(0xFFB3261E),
+  LeaveDecision.pending => const Color(0xFF8A6218),
+};
+
+Color _decisionTint(LeaveDecision decision) => switch (decision) {
+  LeaveDecision.approved => const Color(0xFFE6F4EA),
+  LeaveDecision.declined => const Color(0xFFFDECEA),
+  LeaveDecision.pending => const Color(0xFFFBEFD2),
+};
+
+/// The "View details" line on a team request card.
+class _ManagerViewDetailsLink extends StatelessWidget {
+  const _ManagerViewDetailsLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'View details',
+              style: TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(width: 3),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+              color: Color(0xFF0571A6),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _TeamDecisionButton extends StatelessWidget {

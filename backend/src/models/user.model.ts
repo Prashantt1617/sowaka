@@ -48,6 +48,10 @@ export interface User {
   profilePhotoUrl?: string;
   location?: string;
   state?: string;
+  /** Free text: the roster records what people tell HR, not a fixed set. */
+  gender?: string;
+  /** Personal mobile, captured when HR adds the employee. */
+  phone?: string;
   designation?: string;
   department?: string;
   teamDescription?: string;

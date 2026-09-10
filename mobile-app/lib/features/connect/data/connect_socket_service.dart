@@ -70,6 +70,10 @@ class ConnectSocketService {
       _baseUrl,
       io.OptionBuilder()
           .setPath('/connect/socket')
+          // WebSocket first: the proxy in front of the API passes the upgrade
+          // through, so this connects directly without a polling handshake.
+          // Polling stays listed purely as a fallback for networks that block
+          // WebSocket outright.
           .setTransports(['websocket', 'polling'])
           .setAuth({'token': session.token})
           .enableReconnection()

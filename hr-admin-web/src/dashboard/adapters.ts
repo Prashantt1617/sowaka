@@ -1,6 +1,6 @@
 // Map backend DTOs to the dashboard's view-model types.
 import type { EmpType, FeedbackStatus, LeaveType, OtDuration, ReqStatus } from './theme';
-import type { Emp, Feedback, FbMgr, Leave, Overtime, Reimb } from './seed';
+import type { Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb } from './seed';
 import type { AuthUser } from '../services/auth';
 import type {
   ClaimDTO,
@@ -127,26 +127,57 @@ const FB_STATUS: Record<string, FeedbackStatus> = {
 };
 
 /** Org-wide employee directory (rule 5). */
+/** Backend stores snake-ish values; the table's pill expects these labels. */
+function empTypeOf(value?: string): EmpType {
+  if (value === 'intern') return 'Intern';
+  if (value === 'contract') return 'Contract';
+  return 'Full-time';
+}
+
+/** `2024-10-01` -> `01 Oct 2024`; an em dash when the field is unset. */
+function fmtDate(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
 export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
   return dtos.map((e) => ({
     id: e.userId,
     name: e.name,
-    role: e.isLeadership ? 'Leadership' : cap(e.role),
-    team: e.department || 'Team',
-    location: '—',
-    empType: 'Full-time' as EmpType,
-    manager: e.managerName || (e.isLeadership ? '—' : '—'),
+    email: e.email || '',
+    employeeId: e.employeeId || '—',
+    // Designation is the person's actual job title; `role` is only the
+    // manager/employee reporting flag, which is not what the table means by Role.
+    role: e.designation || (e.isLeadership ? 'Leadership' : cap(e.role)),
+    team: e.department || '—',
+    location: e.location || '—',
+    // Unlike `location`, these stay empty rather than dashed: they feed KPI
+    // template targeting, where a placeholder would become a filter option.
+    branch: e.branch || '',
+    recognition: e.recognition || '',
+    empType: empTypeOf(e.employeeType),
+    manager: e.managerName || '—',
     managerId: e.managerUserId || '',
-    dob: '—',
-    joining: '—',
+    dob: fmtDate(e.birthday),
+    joining: fmtDate(e.joiningDate),
     docs: 0,
   }));
 }
 
-/** Org-wide feedback list + per-manager rollup (rule 5).
+/** Org-wide feedback list + per-manager rollup + per-employee cycle state (rule 5).
  *  Each record expands into one row per rated parameter plus an Overall row,
- *  so the table shows feedback against every parameter with its rating label. */
-export function adaptFeedbackList(records: FeedbackDTO[]): { fbs: Feedback[]; fbMgrs: FbMgr[] } {
+ *  so the table shows feedback against every parameter with its rating label.
+ *  The roster is needed as well as the records: completion is measured against
+ *  who reports to whom, not against which reviews happen to exist. */
+export function adaptFeedbackList(
+  records: FeedbackDTO[],
+  employees: EmployeeDTO[],
+  /** The org's live cycle key. Passed in because it depends on the company's
+   *  configured start day, which the browser cannot derive. */
+  period: string,
+): { fbs: Feedback[]; fbMgrs: FbMgr[]; fbEmps: FbEmp[] } {
   const fbs: Feedback[] = [];
   records.forEach((r, i) => {
     const base = {
@@ -182,29 +213,92 @@ export function adaptFeedbackList(records: FeedbackDTO[]): { fbs: Feedback[]; fb
     }
   });
 
-  const byMgr = new Map<string, { name: string; done: number; total: number; scopes: Set<string> }>();
+  // The cycle's record per employee. Records arrive newest-first, so the first
+  // one seen for an employee in the current period is the one that counts.
+  const currentByEmployee = new Map<string, FeedbackDTO>();
+  const historyByEmployee = new Map<string, FbEmp['history']>();
   for (const r of records) {
-    const g = byMgr.get(r.managerUserId) ?? {
-      name: r.managerName || '—',
+    if (r.period === period) {
+      // Drafts are not results: an unsent form is treated as no review at all.
+      if (r.status === 'sent' && !currentByEmployee.has(r.employeeUserId)) {
+        currentByEmployee.set(r.employeeUserId, r);
+      }
+      continue;
+    }
+    // Only sent reviews are history: an abandoned draft from a past cycle is
+    // not a result anyone should read a trend from.
+    if (r.status !== 'sent') continue;
+    const list = historyByEmployee.get(r.employeeUserId) ?? [];
+    list.push({
+      period: r.period,
+      overall: r.overallScore,
+      date: fmtDay(r.sentAt || r.updatedAt || ''),
+      params: (r.parameters ?? []).map((p) => ({
+        name: p.name,
+        subtitle: p.subtitle ?? '',
+        score: p.score,
+        note: p.note || '',
+      })),
+      extra: r.extra || '',
+    });
+    historyByEmployee.set(r.employeeUserId, list);
+  }
+  for (const list of historyByEmployee.values()) list.sort((a, b) => b.period.localeCompare(a.period));
+
+  const fbEmps: FbEmp[] = employees.map((e) => {
+    const record = currentByEmployee.get(e.userId);
+    return {
+      userId: e.userId,
+      name: e.name,
+      team: e.department || e.designation || 'Team',
+      designation: e.designation || '—',
+      managerId: e.managerUserId ?? '',
+      managerName: e.managerName || '—',
+      status: record ? 'sent' : 'none',
+      overall: record?.overallScore ?? 0,
+      date: record ? fmtDay(record.sentAt || record.updatedAt || '') : '',
+      params: (record?.parameters ?? []).map((p) => ({
+        name: p.name,
+        subtitle: p.subtitle ?? '',
+        score: p.score,
+        note: p.note || '',
+      })),
+      extra: record?.extra || '',
+      history: historyByEmployee.get(e.userId) ?? [],
+    };
+  });
+
+  // Denominators come from the roster: a manager with five reports and no
+  // reviews yet is 0/5, not absent. Counting records would hide exactly the
+  // managers this page exists to chase.
+  const empByUser = new Map(fbEmps.map((e) => [e.userId, e]));
+  const byMgr = new Map<string, { name: string; done: number; total: number; scopes: Set<string> }>();
+  for (const e of employees) {
+    const managerId = e.managerUserId;
+    if (!managerId || !empByUser.has(managerId)) continue;
+    const g = byMgr.get(managerId) ?? {
+      name: empByUser.get(managerId)?.name ?? e.managerName ?? '—',
       done: 0,
       total: 0,
       scopes: new Set<string>(),
     };
     g.total += 1;
-    if (r.status === 'sent') g.done += 1;
-    if (r.department) g.scopes.add(r.department);
-    byMgr.set(r.managerUserId, g);
+    if (empByUser.get(e.userId)?.status === 'sent') g.done += 1;
+    if (e.department) g.scopes.add(e.department);
+    byMgr.set(managerId, g);
   }
-  const fbMgrs: FbMgr[] = [...byMgr.entries()].map(([id, g]) => ({
-    id,
-    name: g.name,
-    scope: g.scopes.size ? [...g.scopes].join(' · ') : 'Team',
-    done: g.done,
-    total: g.total,
-    reminded: false,
-  }));
+  const fbMgrs: FbMgr[] = [...byMgr.entries()]
+    .map(([id, g]) => ({
+      id,
+      name: g.name,
+      scope: g.scopes.size ? [...g.scopes].join(' · ') : 'Team',
+      done: g.done,
+      total: g.total,
+      reminded: false,
+    }))
+    .sort((a, b) => a.done / a.total - b.done / b.total || b.total - a.total);
 
-  return { fbs, fbMgrs };
+  return { fbs, fbMgrs, fbEmps };
 }
 
 export function adaptWorkspace(ws: WorkspaceDTO, user: AuthUser): {
@@ -247,9 +341,13 @@ export function adaptWorkspace(ws: WorkspaceDTO, user: AuthUser): {
   const emps: Emp[] = team.map((t) => ({
     id: t.userId,
     name: t.name,
+    email: '',
+    employeeId: '—',
     role: '—',
     team: t.department || 'Team',
     location: '—',
+    branch: '',
+    recognition: '',
     empType: 'Full-time' as EmpType,
     manager: user.name,
     managerId: user.id,

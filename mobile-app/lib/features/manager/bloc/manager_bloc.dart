@@ -788,22 +788,40 @@ class ManagerBloc {
     });
   }
 
+  /// The policy is re-read on the same poll, but only once a minute — it
+  /// changes rarely, and the app should not need a restart when it does.
+  DateTime? _policyReadAt;
+
   Future<void> _refreshLeavesSilently() async {
     final data = _state.dashboard;
     if (data == null || _refreshingLeaves) return;
     _refreshingLeaves = true;
     try {
+      final readPolicy =
+          _policyReadAt == null ||
+          DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 1);
+      // Kept separate from the leave calls: an older server without this
+      // route must not stop the leaves refreshing too.
+      final policyFuture = readPolicy
+          ? _service.fetchShiftPolicy().catchError((_) => data.shift)
+          : Future<ShiftPolicy>.value(data.shift);
       final myLeavesFuture = _service.fetchMyLeaves();
       final managerLeavesFuture = _state.canManage
           ? _service.fetchManagerLeaves()
           : Future<List<LeaveRequest>>.value(data.leaves);
       final myLeaves = await myLeavesFuture;
       final managerLeaves = await managerLeavesFuture;
+      final shift = await policyFuture;
+      if (readPolicy) _policyReadAt = DateTime.now();
       final latest = _state.dashboard;
       if (latest == null || _controller.isClosed) return;
       _emit(
         _state.copyWith(
-          dashboard: latest.copyWith(leaves: managerLeaves, myLeaves: myLeaves),
+          dashboard: latest.copyWith(
+            leaves: managerLeaves,
+            myLeaves: myLeaves,
+            shift: shift,
+          ),
         ),
       );
     } catch (_) {

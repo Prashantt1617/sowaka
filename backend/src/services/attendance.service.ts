@@ -4,6 +4,11 @@ import {
   AttendanceRegularization,
   RegularizationStatus,
 } from '../models/attendance.model';
+import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { holidayDatesForUser } from './holiday.service';
+import {
+  notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
+} from './request-notifications.service';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
@@ -75,11 +80,50 @@ export async function recordPunch(userId: string, type: string) {
   }
 
   const updated = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  if (type === 'in') {
+    await notifyPunchedIn(userId, now);
+  } else if (updated?.punchIn && updated?.punchOut) {
+    // Grade the day the way the app does, so the message agrees with the
+    // calendar the employee is about to open.
+    const worked = (updated.punchOut.getTime() - updated.punchIn.getTime()) / 60_000;
+    const policy = await policyForUser(userId);
+    const band = worked >= policy.minFullDayHours * 60
+      ? 'full'
+      : worked >= policy.minHalfDayHours * 60
+        ? 'half'
+        : 'short';
+    await notifyPunchedOut(userId, now, worked, band);
+  }
   return {
     workDate,
     punchIn: updated?.punchIn?.toISOString(),
     punchOut: updated?.punchOut?.toISOString(),
   };
+}
+
+/**
+ * Whether a date is a day this employee was not due to work — their shift's
+ * week-off grid, or one of their location's company holidays.
+ */
+async function isNonWorkingDay(
+  weeklyOff: Record<string, number[]>,
+  employee: { org?: string } & Record<string, unknown>,
+  date: Date,
+): Promise<boolean> {
+  if (isWeekOffDay(date, weeklyOff)) return true;
+  const holidays = await holidayDatesForUser(employee as never);
+  return holidays.has(date.toISOString().slice(0, 10));
+}
+
+/**
+ * Which of the four correction cases a day falls into, named exactly as the
+ * Attendance correction page names them, so the policy's list can be checked
+ * against it directly.
+ */
+export function correctionTriggerFor(punchIn: Date | null, punchOut: Date | null): string {
+  if (punchIn && punchOut) return 'Both punches present';
+  if (!punchIn && !punchOut) return 'Both punches missing';
+  return punchIn ? 'Missing punch-out' : 'Missing punch-in';
 }
 
 export async function requestRegularization(
@@ -91,8 +135,15 @@ export async function requestRegularization(
   const today = new Date();
   const todayText = today.toISOString().slice(0, 10);
   if (workDate > todayText) throw new AttendanceError(400, 'Future dates cannot be regularized');
-  if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > 45) {
-    throw new AttendanceError(400, 'Regularization window is 45 days');
+  // Both limits come from the policy HR saved — how far back a correction may
+  // reach, and which of the four day outcomes may be corrected at all.
+  const policy = await policyForUser(userId);
+  const correction = policy.correction;
+  if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > correction.backdateDays) {
+    throw new AttendanceError(
+      400,
+      `Regularization can be raised up to ${correction.backdateDays} days back`,
+    );
   }
   const punchIn = parsePunch(input.punchIn, workDate, 'punchIn');
   const punchOut = parsePunch(input.punchOut, workDate, 'punchOut');
@@ -108,6 +159,24 @@ export async function requestRegularization(
   const employee = await users().findOne({ userId });
   if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
   if (!employee.managerUserId) throw new AttendanceError(409, 'A manager must be assigned');
+  // Nothing to correct on a day nobody was due to work: a week-off or a
+  // company holiday that was worked is an overtime claim, not a correction.
+  if (await isNonWorkingDay(policy.weeklyOff, employee, date)) {
+    throw new AttendanceError(
+      400,
+      'This day is a week-off or a company holiday — claim overtime instead',
+    );
+  }
+  // What the day actually looks like decides whether it can be corrected: HR
+  // switches each of the four outcomes on or off under Attendance correction.
+  const record = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  const trigger = correctionTriggerFor(record?.punchIn ?? null, record?.punchOut ?? null);
+  if (!correction.triggers.includes(trigger)) {
+    throw new AttendanceError(
+      400,
+      `${trigger} cannot be regularized — your company does not allow a correction for this case`,
+    );
+  }
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) throw new AttendanceError(409, 'A regularization request is already pending for this date');
   const createdAt = new Date();
@@ -115,6 +184,7 @@ export async function requestRegularization(
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
     workDate, punchIn, punchOut, note, status: 'pending', createdAt,
   });
+  await notifyCorrectionSubmitted({ employeeUserId: userId, workDate, reason: note });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
     managerUserId: employee.managerUserId, workDate, punchIn, punchOut, note,
@@ -150,6 +220,19 @@ export async function decideRegularization(
   if (!decisions.has(decision)) throw new AttendanceError(400, 'Decision must be approved or declined');
   const managerNote = (input.managerNote ?? '').trim();
   if (managerNote.length > 500) throw new AttendanceError(400, 'Manager note cannot exceed 500 characters');
+  // Who signs off a correction is decided by the policy that governs this
+  // employee — their shift template's, or the org's.
+  const pending = await attendanceRegularizations().findOne({ _id: new ObjectId(id) });
+  if (pending) {
+    const rules = await approvalRulesFor(pending.userId, 'correction');
+    if (!managerMayDecide(rules.approver)) {
+      throw new AttendanceError(
+        403,
+        `Attendance corrections are approved by ${rules.approver}, not by the reporting manager`,
+      );
+    }
+  }
+
   const decidedAt = new Date();
   const result = await attendanceRegularizations().findOneAndUpdate(
     { _id: new ObjectId(id), managerUserId, status: 'pending' },
@@ -178,6 +261,12 @@ export async function decideRegularization(
     );
   }
 
+  await notifyCorrectionDecided({
+    employeeUserId: result.userId,
+    workDate: result.workDate,
+    approved: decision === 'approved',
+    comment: managerNote,
+  });
   return (await enrichRegularizations([result]))[0];
 }
 

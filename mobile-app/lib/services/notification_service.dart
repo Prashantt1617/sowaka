@@ -48,7 +48,12 @@ class AppNotificationService {
     }
   }
 
-  Future<NotificationSettings> requestPermission() async {
+  /// No-op where Firebase never came up — macOS has no entry in
+  /// [DefaultFirebaseOptions], so touching `FirebaseMessaging.instance` there
+  /// throws `[core/no-app]`. Sign-in calls this before anything else, so an
+  /// unguarded throw here surfaces as an unhandled exception on every launch.
+  Future<void> requestPermission() async {
+    if (Firebase.apps.isEmpty) return;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _local
           .resolvePlatformSpecificImplementation<
@@ -68,7 +73,6 @@ class AppNotificationService {
         settings.authorizationStatus == AuthorizationStatus.provisional) {
       await _registerCurrentToken();
     }
-    return settings;
   }
 
   Future<void> _initializeLocalNotifications() async {

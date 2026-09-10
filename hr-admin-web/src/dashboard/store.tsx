@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
 import { emptyForm } from './seed';
-import type { Emp, Feedback, FbMgr, Leave, Overtime, Reimb, UserForm } from './seed';
+import type { Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb, UserForm } from './seed';
 import { adaptEmployees, adaptFeedbackList, adaptLeave, adaptOvertime, adaptReimb } from './adapters';
 import {
   decideLeave,
@@ -17,6 +17,9 @@ import {
   getOvertimeInbox,
   getReimbInbox,
 } from '../services/hrms';
+import type { EmployeeDTO, FeedbackDTO } from '../services/hrms';
+import { getKpiCycle } from '../services/kpi';
+import type { KpiCycleDTO } from '../services/kpi';
 import { ApiError } from '../services/http';
 import { useAuth } from './auth/AuthContext';
 
@@ -69,6 +72,45 @@ function useProvideStore() {
   const [fbMgrs, setFbMgrs] = useState<FbMgr[]>([]);
   const [fbFrom, setFbFrom] = useState('');
   const [fbTo, setFbTo] = useState('');
+  // Roster-wide review state: the employee cards below the manager rollup.
+  const [fbEmps, setFbEmps] = useState<FbEmp[]>([]);
+  /**
+   * The raw records behind the adapted view, kept so Performance Reviews can
+   * re-derive any past cycle without another round trip — `getAllFeedback`
+   * already returns every cycle, not just the live one.
+   */
+  const [fbRaw, setFbRaw] = useState<FeedbackDTO[]>([]);
+  const [empRaw, setEmpRaw] = useState<EmployeeDTO[]>([]);
+  const [fbEmpSearch, setFbEmpSearch] = useState('');
+  /** Manager card currently drilled into — null shows the whole org. */
+  const [fbMgrFilter, setFbMgrFilter] = useState<string | null>(null);
+  /** Employee whose review card is open. */
+  const [fbEmpId, setFbEmpId] = useState<string | null>(null);
+  /**
+   * The org's live review cycle, from the server.
+   *
+   * It depends on the company's configured start day, so the browser cannot
+   * derive it — an org opening cycles on the 10th is in `2026-08` on 8 Sep.
+   * Every KPI and feedback view reads this so they cannot disagree about which
+   * cycle is live.
+   *
+   * Seeded with the calendar month so nothing has to handle null, but that seed
+   * is a guess — on a 5th-of-month org it names the wrong dates. `cycleLoaded`
+   * says whether the real one has arrived, and views wait on it rather than
+   * showing the guess.
+   */
+  const [cycleLoaded, setCycleLoaded] = useState(false);
+  const [cycle, setCycle] = useState<KpiCycleDTO>(() => {
+    const period = new Date().toISOString().slice(0, 7);
+    const [y, m] = period.split('-').map(Number);
+    return {
+      period,
+      next: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7),
+      startDay: 1,
+      start: `${period}-01`,
+      end: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10),
+    };
+  });
 
   // reimbursements
   const [rbs, setRbs] = useState<Reimb[]>([]);
@@ -127,22 +169,28 @@ function useProvideStore() {
     if (!user) return;
     setLoading(true);
     try {
-      const [lv, ot, rb, fb, emp] = await Promise.all([
+      const [lv, ot, rb, fb, emp, live] = await Promise.all([
         getLeaveInbox(),
         getOvertimeInbox(),
         getReimbInbox(),
         getAllFeedback(),
         getAllEmployees(),
+        getKpiCycle(),
       ]);
+      setCycle(live);
+      setCycleLoaded(true);
+      setFbRaw(fb);
+      setEmpRaw(emp);
       // Resolve each request's real manager (org-wide data spans many managers).
       const mgrByUser = new Map(emp.map((e) => [e.userId, e.managerName ?? '']));
       const mgrName = (userId: string) => mgrByUser.get(userId) || '—';
       setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))));
       setOts(ot.map((d) => adaptOvertime(d, mgrName(d.userId))));
       setRbs(rb.map((d) => adaptReimb(d, mgrName(d.userId))));
-      const { fbs: fbRows, fbMgrs: fbManagers } = adaptFeedbackList(fb);
+      const { fbs: fbRows, fbMgrs: fbManagers, fbEmps: fbEmployees } = adaptFeedbackList(fb, emp, live.period);
       setFbMgrs(fbManagers);
       setFbs(fbRows);
+      setFbEmps(fbEmployees);
       setEmps(adaptEmployees(emp));
       setLoaded(true);
     } catch (e) {
@@ -160,6 +208,7 @@ function useProvideStore() {
     setDrawerId(null);
     setDeclineId(null);
     setFbDrawerId(null);
+    setFbEmpId(null);
     setRbDrawerId(null);
     setRbDeclineId(null);
     setRbConfirm(null);
@@ -417,6 +466,8 @@ function useProvideStore() {
     // feedback
     fbs, fbSearch, setFbSearch, fbStatus, setFbStatus, fbDrawerId, setFbDrawerId, fbMgrs,
     remindMgr, remindAll, fbFrom, setFbFrom, fbTo, setFbTo,
+    fbEmps, fbEmpSearch, setFbEmpSearch, fbMgrFilter, setFbMgrFilter, fbEmpId, setFbEmpId, cycle, cycleLoaded,
+    fbRaw, empRaw,
     // reimbursements
     rbs, rbSearch, setRbSearch, rbStatus, setRbStatus, rbType, setRbType, rbSort, setRbSort,
     rbDrawerId, setRbDrawerId, rbDeclineId, rbDeclineText, setRbDeclineText,

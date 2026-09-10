@@ -122,13 +122,14 @@ class _GrowTabState extends State<_GrowTab> {
                   photoUrl: data.managerPhotoUrl,
                   reviewed: data.growthHistory.isNotEmpty,
                   approverName: data.approverName,
-                  onOpen: data.growthHistory.isEmpty
-                      ? null
-                      : () => openGrowth(
-                          name: data.managerName,
-                          designation: data.managerTeam,
-                          history: data.growthHistory,
-                        ),
+                  // Opens either way: with no reviews yet the page says who
+                  // it is waiting on, which beats a snackbar that says the
+                  // same and leaves nowhere to go.
+                  onOpen: () => openGrowth(
+                    name: data.managerName,
+                    designation: data.managerTeam,
+                    history: data.growthHistory,
+                  ),
                 ),
               ),
               for (final member in filtered)
@@ -883,11 +884,16 @@ class _GrowthMonthCard extends StatelessWidget {
     required this.record,
     required this.expanded,
     required this.onToggle,
+    this.collapsible = true,
   });
 
   final GrowthRecord record;
   final bool expanded;
   final VoidCallback onToggle;
+
+  /// False where the page shows one month at a time and the month is chosen
+  /// above — there is nothing to collapse into, so the chevron would lie.
+  final bool collapsible;
 
   @override
   Widget build(BuildContext context) {
@@ -905,7 +911,7 @@ class _GrowthMonthCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: onToggle,
+            onTap: collapsible ? onToggle : null,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
@@ -918,16 +924,18 @@ class _GrowthMonthCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: const Icon(
-                      Icons.expand_more_rounded,
-                      size: 20,
-                      color: Color(0xFF6A7282),
+                  if (collapsible) ...[
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: const Icon(
+                        Icons.expand_more_rounded,
+                        size: 20,
+                        color: Color(0xFF6A7282),
+                      ),
                     ),
-                  ),
+                  ],
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(

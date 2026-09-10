@@ -3,7 +3,10 @@ import { overtimeRequests, users } from '../config/db';
 import { OvertimeRequest, OvertimeStatus } from '../models/overtime.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
-import { getCompanyConfig, getOrgHolidayDates, isWeekoffDay } from './company-settings.service';
+import { getCompanyConfig } from './company-settings.service';
+import { holidayDatesForUser } from './holiday.service';
+import { fullDayHoursFor, isWeekOffDay, policyForUser, weekOffGridFor } from './shift.service';
+import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 
 const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
@@ -15,6 +18,19 @@ export async function createOvertimeRequest(
   const workDate = parseDateOnly(input.workDate, 'workDate');
   if (workDate >= startOfUtcDay(new Date())) {
     throw new OvertimeError(400, 'Overtime can only be submitted for a past date');
+  }
+  // How far back a claim may reach is the org's call, from Policies › Overtime.
+  // It was configurable but never consulted, so a claim for a day six months
+  // ago was accepted.
+  const overtimeRules = (await policyForUser(userId)).overtime;
+  const daysBack = Math.round(
+    (startOfUtcDay(new Date()).getTime() - workDate.getTime()) / 86_400_000,
+  );
+  if (daysBack > overtimeRules.backdateDays) {
+    throw new OvertimeError(
+      400,
+      `Overtime can be claimed up to ${overtimeRules.backdateDays} days back`,
+    );
   }
   const startTime = parseDateTime(input.startTime, 'startTime');
   const endTime = parseDateTime(input.endTime, 'endTime');
@@ -33,9 +49,12 @@ export async function createOvertimeRequest(
     throw new OvertimeError(403, 'Overtime is not enabled for your team');
   }
   if (hours >= 8) {
-    const holidayDates = await getOrgHolidayDates(employee.org);
+    const holidayDates = await holidayDatesForUser(employee);
     const isHoliday = holidayDates.has(workDate.toISOString().slice(0, 10));
-    if (!isHoliday && !isWeekoffDay(workDate, companyConfig.weekoffDays)) {
+    // Week-offs come from the shift policy's grid, the same one leave and the
+    // attendance calendar read.
+    const weeklyOff = await weekOffGridFor(employee.userId);
+    if (!isHoliday && !isWeekOffDay(workDate, weeklyOff)) {
       throw new OvertimeError(
         400,
         'A full day (8h+) of overtime can only be logged on a week-off or holiday',
@@ -66,6 +85,12 @@ export async function createOvertimeRequest(
     updatedAt: now,
   };
   const result = await overtimeRequests().insertOne(request);
+  await notifyOvertimeSubmitted({
+    employeeUserId: userId,
+    workDate,
+    duration: await durationLabel(userId, hours),
+    reason: note ?? '',
+  });
   return toView({ ...request, _id: result.insertedId }, employee);
 }
 
@@ -136,7 +161,22 @@ export async function decideOvertime(
     { returnDocument: 'after' },
   );
   if (!updated) throw new OvertimeError(409, 'Overtime request has already been decided');
+  await notifyOvertimeDecided({
+    employeeUserId: request.userId,
+    workDate: request.workDate,
+    duration: await durationLabel(request.userId, request.hours),
+    approved: decision === 'approved',
+    comment: managerNote ?? '',
+  });
   return toView(updated, employee);
+}
+
+/**
+ * "Full day" or "Half day", against the org's own full-day threshold — the
+ * same figure the attendance calendar grades a day by.
+ */
+async function durationLabel(userId: string, hours: number): Promise<string> {
+  return hours >= (await fullDayHoursFor(userId)) ? 'Full day' : 'Half day';
 }
 
 /** Org-wide list of every overtime request, for the HR dashboard. */
@@ -196,6 +236,13 @@ export async function adminDecideOvertime(
     { returnDocument: 'after' },
   );
   if (!updated) throw new OvertimeError(409, 'Overtime request has already been decided');
+  await notifyOvertimeDecided({
+    employeeUserId: request.userId,
+    workDate: request.workDate,
+    duration: await durationLabel(request.userId, request.hours),
+    approved: decision === 'approved',
+    comment: managerNote ?? '',
+  });
   return toView(updated, employee);
 }
 

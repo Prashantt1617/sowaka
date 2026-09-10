@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { connectPosts, gameScores, users } from '../config/db';
 import { ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
-import { notifyUsers, queueBatchedNotification } from './notification.service';
+import { notifyUsers } from './notification.service';
+import {
+  notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
+} from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { fetchLinkPreview } from './link-preview.service';
 import {
@@ -108,12 +111,13 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
     ? { $pull: { likedBy: viewerUserId } }
     : { $addToSet: { likedBy: viewerUserId } };
   await connectPosts().updateOne({ id: postId }, update);
-  if (!liked && post.author.userId && post.author.userId !== viewerUserId) {
-    const viewer = await users().findOne({ userId: viewerUserId });
-    await queueBatchedNotification(post.author.userId, 'post_liked', post.id,
-      viewer?.name ?? 'Someone', '', { destination: 'connect_post', postId: post.id });
-  }
   const updated = await connectPosts().findOne({ id: postId });
+  // Only on like, never on unlike: an unlike lowers the count that the next
+  // notification reports, and announces nothing of its own.
+  if (!liked) {
+    const viewer = await users().findOne({ userId: viewerUserId });
+    if (viewer) await notifyPostLiked(updated ?? post, viewer);
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -147,12 +151,10 @@ export async function addConnectComment(
     { id: post.id },
     { $push: { comments: comment }, $set: { updatedAt: new Date() } },
   );
-  if (post.author.userId && post.author.userId !== viewerUserId) {
-    await notifyUsers([post.author.userId], {
-      scenario: 'post_commented', title: 'New comment',
-      body: `${viewer?.name ?? 'Someone'} commented on your post: "${text.slice(0, 60)}"`,
-      data: { destination: 'connect_comment', postId: post.id, commentId: comment.id },
-    });
+  if (viewer) {
+    // `post` is the pre-insert copy on purpose: prior commenters are the people
+    // who had commented before this one.
+    await notifyPostCommented(post, comment, viewer, mentionedUserIdsIn(text, post));
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
@@ -175,6 +177,10 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
+  if (!liked) {
+    const viewer = await users().findOne({ userId: viewerUserId });
+    if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -192,15 +198,16 @@ export async function performConnectAction(
     );
     const optionId = String(input.optionId ?? '');
     if (!options.includes(optionId)) throw new ConnectError(400, 'Survey option is invalid');
+    const hadVoted = Boolean(post.pollVotes?.[viewerUserId]);
     await connectPosts().updateOne(
       { id: postId },
       { $set: { [`pollVotes.${viewerUserId}`]: optionId, updatedAt: now } },
     );
-    if (post.author.userId && post.author.userId !== viewerUserId) {
+    // Changing a vote is not a new voter, so it announces nothing.
+    if (!hadVoted) {
       const viewer = await users().findOne({ userId: viewerUserId });
-      await queueBatchedNotification(post.author.userId, 'poll_voted', post.id,
-        viewer?.name ?? 'Someone', String(post.body.title ?? 'Poll'),
-        { destination: 'connect_post', postId: post.id });
+      const fresh = await connectPosts().findOne({ id: postId });
+      if (viewer) await notifyPollVoted(fresh ?? post, viewer);
     }
   } else {
     const existing = post.actionBy?.[viewerUserId];
@@ -253,6 +260,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const meta = postMeta(type);
   const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
   const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
+  let published = false;
   try {
     const normalizedBody = normalizePostBody(
       type,
@@ -286,10 +294,20 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       updatedAt: now,
     };
     await connectPosts().insertOne(post);
+    published = true;
     announceChange(post, 'created', viewerUserId);
+    // One publication push per person in the audience. Awaited so a failure is
+    // logged against the request that caused it rather than surfacing later,
+    // and because notifyUsers already swallows its own delivery errors.
+    await notifyPostPublished(post);
     return viewPost(post, viewerUserId);
   } catch (error) {
-    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
+    // Only for a post that never made it into the collection. Once the row is
+    // in, its media belongs to a live post: a transient failure while
+    // announcing it must not leave the post standing with its images deleted.
+    if (!published) {
+      await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
+    }
     throw error;
   }
 }
@@ -489,6 +507,30 @@ async function viewPost(
     selectedPollOptionId,
     actionValue,
   };
+}
+
+/**
+ * `@Name` mentions inside a comment, resolved to the people already involved in
+ * the post — its author, anyone tagged, and anyone who has commented.
+ *
+ * Deliberately not matched against the whole roster: a comment mentioning a
+ * common first name should not notify a stranger, and the audience check in the
+ * notifier would drop them anyway.
+ */
+function mentionedUserIdsIn(text: string, post: ConnectPost): string[] {
+  const names = text.match(/@([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*)?)/gu) ?? [];
+  if (names.length === 0) return [];
+  const needles = names.map((n) => n.slice(1).trim().toLowerCase());
+  const candidates = new Map<string, string>();
+  for (const comment of post.comments) candidates.set(comment.name.toLowerCase(), comment.userId);
+  if (post.author.userId) candidates.set(post.author.name.toLowerCase(), post.author.userId);
+  const matched = new Set<string>();
+  for (const needle of needles) {
+    for (const [name, userId] of candidates) {
+      if (name === needle || name.split(' ')[0] === needle) matched.add(userId);
+    }
+  }
+  return [...matched];
 }
 
 function orgForUser(user: Pick<User, 'org' | 'email'>) {
@@ -1193,8 +1235,12 @@ async function insertSystemPost(post: ConnectPost) {
     { upsert: true },
   );
   // These run daily and are deliberately repeatable, so only a genuinely new
-  // insert is worth announcing — a no-op upsert would spam every client.
-  if (result.upsertedCount > 0) announceChange(post, 'created');
+  // insert is worth announcing — a no-op upsert would spam every client, and
+  // re-push a birthday every morning until the date changed.
+  if (result.upsertedCount > 0) {
+    announceChange(post, 'created');
+    await notifyPostPublished(post);
+  }
 }
 
 /** Generate today's birthday and work-anniversary posts, safely repeatable. */
@@ -1225,6 +1271,9 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
     const org = orgForUser(employee);
     if (employee.birthday && employee.birthday.getUTCMonth() + 1 === month && employee.birthday.getUTCDate() === day) {
       await insertSystemPost(systemPost(org, 'birthday', `birthday:${employee.userId}:${dateKey}`, {
+        // Whose day it is: the notifier needs it to spare them the push about
+        // themselves and to greet them differently when someone comments.
+        personUserId: employee.userId,
         personName: employee.name,
         personInitials: initialsFor(employee.name),
         photoKey: employee.profilePhotoKey,
@@ -1237,6 +1286,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
       const years = year - employee.joiningDate.getUTCFullYear();
       if (years > 0) {
         await insertSystemPost(systemPost(org, 'anniversary', `anniversary:${employee.userId}:${dateKey}`, {
+          personUserId: employee.userId,
           personName: employee.name,
           personInitials: initialsFor(employee.name),
           photoKey: employee.profilePhotoKey,

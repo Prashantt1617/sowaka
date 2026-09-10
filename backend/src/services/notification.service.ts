@@ -3,7 +3,13 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { deviceTokens, getDb, leaves, notifications, users } from '../config/db';
 import { env } from '../config/env';
+import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
+
+/** Greeting name for email copy; falls back to a neutral form when unset. */
+function firstName(name?: string): string {
+  return name?.trim().split(/\s+/).at(0) || 'there';
+}
 
 export class NotificationError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -76,18 +82,60 @@ export async function markNotificationRead(userId: string, id: string) {
   return { id, read: true };
 }
 
+export interface NotificationEmail {
+  subject: string;
+  /** `{firstName}` is substituted per recipient. */
+  body: string;
+  /** Copied recipients, e.g. HR on a manager's reminder. */
+  cc?: string[];
+}
+
 export interface NotificationInput {
   scenario: string; title: string; body: string; data: Record<string, string>;
+  /** Email copy to send alongside the push. Omit for in-app-only scenarios. */
+  email?: NotificationEmail;
 }
 
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
-  const recipients = await users().find({ userId: { $in: uniqueIds } }).toArray();
+  const all = await users().find({ userId: { $in: uniqueIds } }).toArray();
+  // Same allowlist the mail transport enforces — see `env.notifyOrgs`. Applied
+  // here too so a suppressed org gets no push and no stored notification
+  // either, not just no email.
+  const recipients = env.notifyOrgs.length
+    ? all.filter((user) => env.notifyOrgs.includes(user.org ?? ''))
+    : all;
+  if (recipients.length !== all.length) {
+    logger.info('Notification suppressed for orgs outside NOTIFY_ORGS', {
+      allowed: env.notifyOrgs, suppressed: all.length - recipients.length, scenario: input.scenario,
+    });
+  }
+  if (!recipients.length) return;
   const now = new Date();
+  // `email` is copy for delivery, not part of the stored notification record.
+  const { email, ...record } = input;
   await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
-    org: user.org ?? user.email.split('@').at(1) ?? 'default', ...input, createdAt: now })));
-  const tokens = await deviceTokens().find({ userId: { $in: uniqueIds } }).toArray();
+    org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, createdAt: now })));
+  // Fire-and-forget: sendNotificationEmail never throws, but callers of
+  // notifyUsers (leave/feedback request handlers) must not block on SMTP.
+  // Iterates `recipients`, so NOTIFY_ORGS gates email as well as push.
+  if (email) {
+    for (const user of recipients) {
+      if (!user.email) continue;
+      void sendNotificationEmail(
+        user.email,
+        email.subject,
+        email.body.replaceAll('{firstName}', firstName(user.name)),
+        email.cc,
+      );
+    }
+  }
+  // Scoped to the filtered recipients rather than every id asked for —
+  // otherwise a suppressed org still gets the push.
+  const tokens = await deviceTokens()
+    .find({ userId: { $in: recipients.map((user) => user.userId) } })
+    .toArray();
   const firebase = messaging();
   if (!firebase || !tokens.length) return;
   const result = await firebase.sendEachForMulticast({

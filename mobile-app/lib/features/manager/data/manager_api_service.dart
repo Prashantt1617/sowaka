@@ -32,6 +32,7 @@ class ManagerApiService {
     final myOvertimeFuture = fetchMyOvertime();
     final overtimeFuture = fetchManagerOvertime();
     final reimbursementsFuture = fetchMyReimbursements();
+    final reimbursementTypesFuture = fetchReimbursementTypes();
     final managerReimbursementsFuture = session.user.role == 'manager'
         ? fetchManagerReimbursements()
         : Future<List<ReimbursementClaim>>.value(const []);
@@ -88,6 +89,10 @@ class ManagerApiService {
       managerPhotoUrl: session.user.profilePhotoUrl,
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
+      cycleEndsOn: switch (workspace['cycleEndsOn']) {
+        final String value when value.isNotEmpty => DateTime.tryParse(value),
+        _ => null,
+      },
       managerScore: (workspace['managerScore'] as num?)?.toDouble() ?? 0,
       growthHistory: (workspace['growthHistory'] as List<dynamic>? ?? const [])
           .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))
@@ -117,10 +122,17 @@ class ManagerApiService {
       overtime: await overtimeFuture,
       myOvertime: await myOvertimeFuture,
       myReimbursements: await reimbursementsFuture,
+      reimbursementTypes: await reimbursementTypesFuture,
       reimbursements: await managerReimbursementsFuture,
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
+      myOrgChart: (workspace['myOrgChart'] as List<dynamic>? ?? const [])
+          .map((value) => OrgChartNode.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      shift: ShiftPolicy.fromJson(
+        workspace['shift'] as Map<String, dynamic>? ?? const {},
+      ),
       overtimeEnabled: workspace['overtimeEnabled'] as bool? ?? true,
       attendance: attendanceData.$1,
       regularizations: attendanceData.$2,
@@ -224,6 +236,16 @@ class ManagerApiService {
     );
   }
 
+  /// The signed-in employee's shift policy on its own. Re-read while the app
+  /// runs so an HR change — a leave type switched off, a new backdating
+  /// window — lands without signing out.
+  Future<ShiftPolicy> fetchShiftPolicy() async {
+    final body = await _request('GET', '/manager/shift-policy');
+    return ShiftPolicy.fromJson(
+      body['shift'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
   Future<List<LeaveRequest>> fetchMyLeaves() async {
     final json = await _request('GET', '/leaves/mine');
     return _parseLeaves(json);
@@ -248,6 +270,9 @@ class ManagerApiService {
         'parameters': params
             .map(
               (param) => {
+                // The id lets the server reject a form built against an older
+                // assignment rather than scoring the wrong parameter.
+                if (param.parameterId != null) 'parameterId': param.parameterId,
                 'name': param.name,
                 'score': param.score,
                 'note': param.note,
@@ -345,6 +370,42 @@ class ManagerApiService {
       body: {'decision': decision.name, 'managerNote': managerNote},
     );
     return OvertimeRequest.fromJson(json['overtime'] as Map<String, dynamic>);
+  }
+
+  /// What a link resolves to — the artwork, title and site the composer shows
+  /// before the post exists. Empty on failure: a preview that will not load is
+  /// not a reason to block posting.
+  Future<Map<String, String>> fetchLinkPreview(String url) async {
+    if (url.trim().isEmpty) return const {};
+    try {
+      final json = await _request(
+        'GET',
+        '/connect/link-preview?url=${Uri.encodeQueryComponent(url.trim())}',
+      );
+      final preview = json['preview'] as Map<String, dynamic>? ?? const {};
+      return {
+        'imageUrl': preview['imageUrl'] as String? ?? '',
+        'title': preview['title'] as String? ?? '',
+        'siteName': preview['siteName'] as String? ?? '',
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// The expense types this org offers. An empty list on failure rather than a
+  /// throw: a claim form with no categories is recoverable, a crashed dashboard
+  /// is not.
+  Future<List<ReimbursementType>> fetchReimbursementTypes() async {
+    try {
+      final json = await _request('GET', '/reimbursements/types');
+      return (json['types'] as List<dynamic>? ?? const [])
+          .map((value) => ReimbursementType.fromJson(value as Map<String, dynamic>))
+          .where((type) => type.name.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<List<ReimbursementClaim>> fetchMyReimbursements() async {
@@ -476,6 +537,8 @@ List<OvertimeRequest> _parseOvertime(Map<String, dynamic> json) {
 /// but the API only accepts the bare tokens `casual` / `sick` / `earned`.
 String _leaveTypeToken(String label) {
   final lower = label.trim().toLowerCase();
+  // Comp-off first: it is the one label that is not a single leading word.
+  if (lower.startsWith('comp')) return 'comp_off';
   for (final token in const ['sick', 'casual', 'earned']) {
     if (lower.startsWith(token)) return token;
   }

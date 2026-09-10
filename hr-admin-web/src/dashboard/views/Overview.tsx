@@ -24,7 +24,7 @@ function StatCard({
         textAlign: 'left',
         cursor: 'pointer',
         background: '#fff',
-        border: '1px solid #EFE6D8',
+        border: '1px solid #EBEBEB',
         borderRadius: 18,
         padding: 20,
         display: 'flex',
@@ -37,15 +37,15 @@ function StatCard({
         <IconChevronRight />
       </div>
       <div>
-        <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 13, color: '#8B8378', fontWeight: 600, marginTop: 5 }}>{label}</div>
+        <div style={{ fontSize: 34.5, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 5 }}>{label}</div>
       </div>
     </button>
   );
 }
 
 const leaveGlyph = (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#BE5A36" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0571A6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
     <path d="M3 9h18M8 2.5v4M16 2.5v4" />
   </svg>
@@ -74,24 +74,24 @@ export function Overview() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 22 }}>
-        <StatCard icon={leaveGlyph} iconBg="#F7E7DE" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
+        <StatCard icon={leaveGlyph} iconBg="#E7F4FB" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
         <StatCard icon={claimGlyph} iconBg="#EEF0E6" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
         <StatCard icon={feedbackGlyph} iconBg="#EFE7F2" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
         {/* On leave this week */}
-        <div style={{ background: '#fff', border: '1px solid #EFE6D8', borderRadius: 18, padding: '18px 20px' }}>
+        <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 800 }}>On leave this week</div>
-            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#BE5A36' }}>View all</button>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>On leave this week</div>
+            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#0571A6' }}>View all</button>
           </div>
           {weekRows.map((w) => (
-            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F4EEE3' }}>
-              <Avatar name={w.name} size={34} font={12.5} />
+            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2' }}>
+              <Avatar name={w.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{w.name}</div>
-                <div style={{ fontSize: 11.5, color: '#9B9082', fontWeight: 500, marginTop: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{w.name}</div>
+                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 1 }}>
                   {w.from === w.to ? w.from : `${w.from} – ${w.to}`} · {w.days}
                 </div>
               </div>
@@ -101,17 +101,17 @@ export function Overview() {
         </div>
 
         {/* Overtime requests */}
-        <div style={{ background: '#fff', border: '1px solid #EFE6D8', borderRadius: 18, padding: '18px 20px' }}>
+        <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 800 }}>Overtime requests</div>
-            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#BE5A36' }}>View all</button>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>Overtime requests</div>
+            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#0571A6' }}>View all</button>
           </div>
           {ovOvertime.map((o) => (
-            <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F4EEE3', cursor: 'pointer' }}>
-              <Avatar name={o.name} size={34} font={12.5} />
+            <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2', cursor: 'pointer' }}>
+              <Avatar name={o.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{o.name}</div>
-                <div style={{ fontSize: 11.5, color: '#9B9082', fontWeight: 500, marginTop: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{o.name}</div>
+                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 1 }}>
                   {o.duration} · {o.otDate} ({o.day})
                 </div>
               </div>

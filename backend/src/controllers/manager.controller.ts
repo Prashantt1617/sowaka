@@ -6,11 +6,22 @@ import {
   updateProfilePhoto,
   upsertFeedback,
 } from '../services/manager.service';
+import { shiftPolicyFor } from '../services/shift.service';
 
 export async function managerWorkspace(req: Request, res: Response, next: NextFunction) {
   try {
     const workspace = await getManagerWorkspace(requireUserId(req));
     res.status(200).json({ success: true, ...workspace });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** The shift policy the signed-in employee is graded and bounded by. */
+export async function myShiftPolicy(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shift = await shiftPolicyFor(requireUserId(req));
+    res.status(200).json({ success: true, shift });
   } catch (error) {
     next(error);
   }

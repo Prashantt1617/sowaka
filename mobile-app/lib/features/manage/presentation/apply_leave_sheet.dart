@@ -11,7 +11,7 @@ class _ApplyLeaveSheet extends StatefulWidget {
 }
 
 class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
-  String _type = 'Casual';
+  String _type = '';
   late DateTime _startDate;
   late DateTime _endDate;
   int _step = 0;
@@ -23,7 +23,22 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = _startDate;
+    // Only the types HR has switched on, named as the policy names them.
+    _type = _leaveTypeLabels.isEmpty ? 'Casual' : _leaveTypeLabels.first;
   }
+
+  /// The short labels for the types this employee may apply for.
+  List<String> get _leaveTypeLabels => [
+    for (final label in _shift.applicableLeaveLabels)
+      if (_shift.windowForLeave(label)?.key != 'comp_off')
+        label.replaceAll(' Leave', ''),
+  ];
+
+  ShiftPolicy get _shift =>
+      widget.state.dashboard?.shift ?? const ShiftPolicy();
+
+  /// The window HR set for the type currently chosen.
+  LeaveTypeWindow? get _window => _shift.windowForLeave(_type);
 
   @override
   void dispose() {
@@ -36,9 +51,17 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     final today = DateTime(now.year, now.month, now.day);
     final selected = await showDatePicker(
       context: context,
-      initialDate: start ? _startDate : _endDate,
-      firstDate: today.subtract(const Duration(days: 365)),
-      lastDate: today.add(const Duration(days: 365)),
+      initialDate: _canSelectLeaveDay(start ? _startDate : _endDate)
+          ? (start ? _startDate : _endDate)
+          : (_window?.allowBackdated ?? true)
+          ? today
+          : today,
+      firstDate: _window == null
+          ? today.subtract(const Duration(days: 365))
+          : _window!.earliestFrom(today),
+      lastDate: _window == null
+          ? today.add(const Duration(days: 365))
+          : _window!.latestFrom(today),
       selectableDayPredicate: (day) {
         final date = DateTime(day.year, day.month, day.day);
         if (!_canSelectLeaveDay(date)) return false;
@@ -61,10 +84,55 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     });
   }
 
+  /// The same rule the quick-actions form and the server use.
+  String? get _datesBlockedReason => leaveRangeProblem(
+    policy: _shift,
+    holidayDates: _holidayKeys,
+    typeLabel: _type,
+    from: _startDate,
+    to: _endDate,
+    today: DateTime.now(),
+    maxDays: _maxLeaveApplyDays,
+    availableDays: _remainingFor(_type),
+  );
+
+  /// What is left of this type, by key, so a renamed type still matches.
+  double? _remainingFor(String label) {
+    final balance = widget.state.dashboard?.leaveBalance;
+    if (balance == null) return null;
+    return switch (_shift.windowForLeave(label)?.key ?? label.toLowerCase()) {
+      'casual' => balance.casual.remaining,
+      'sick' => balance.sick.remaining,
+      'earned' => balance.earned.remaining,
+      'comp_off' => balance.compOff.remaining,
+      _ => null,
+    };
+  }
+
+  bool get _datesApplicable => _datesBlockedReason == null;
+
+  /// Company holidays this employee observes, as yyyy-mm-dd keys.
+  Set<String> get _holidayKeys => {
+    for (final holiday
+        in widget.state.dashboard?.holidays ?? const <CompanyHoliday>[])
+      '${holiday.date.year.toString().padLeft(4, '0')}-'
+          '${holiday.date.month.toString().padLeft(2, '0')}-'
+          '${holiday.date.day.toString().padLeft(2, '0')}',
+  };
+
+  /// A day that can be picked at all: a working day inside the type's window.
   bool _canSelectLeaveDay(DateTime day) {
-    return day.weekday != DateTime.saturday &&
-        day.weekday != DateTime.sunday &&
-        !_isCompanyHoliday(day);
+    if (_shift.isWeekOff(day) || _isCompanyHoliday(day)) return false;
+    final window = _shift.windowForLeave(_type);
+    if (window == null) return true;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final earliest = window.earliestFrom(today);
+    final latest = window.latestFrom(today);
+    return !day.isBefore(
+          DateTime(earliest.year, earliest.month, earliest.day),
+        ) &&
+        !day.isAfter(DateTime(latest.year, latest.month, latest.day));
   }
 
   bool _isCompanyHoliday(DateTime day) {
@@ -90,24 +158,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   void _continueFromDates() {
-    if (_endDate.isBefore(_startDate)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('End date cannot be before start date')),
-      );
-      return;
-    }
-    if (_endDate.difference(_startDate).inDays + 1 > _maxLeaveApplyDays) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Leave cannot exceed 30 days')),
-      );
-      return;
-    }
-    if (_rangeHasBlockedDay()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Leave cannot include weekends or holidays'),
-        ),
-      );
+    // The same rule the button follows, so the message cannot contradict the
+    // reason the button was disabled.
+    final problem = _datesBlockedReason;
+    if (problem != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
       return;
     }
     setState(() => _step = 1);
@@ -257,7 +312,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                           ] else ...[
                             Wrap(
                               spacing: 8,
-                              children: ['Sick', 'Casual', 'Earned'].map((
+                              children: _leaveTypeLabels.map((
                                 type,
                               ) {
                                 final selected = _type == type;
@@ -286,14 +341,42 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                               decoration: _fieldDecoration('Reason'),
                             ),
                           ],
+                          if (_step == 0)
+                            if (_datesBlockedReason case final reason?) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                reason,
+                                style: const TextStyle(
+                                  color: Color(0xFFB3261E),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           ActionButton(
                             label: _step == 0
                                 ? 'Apply leave'
                                 : 'Submit request',
-                            background: MColors.terra,
-                            foreground: Colors.white,
-                            onTap: _step == 0 ? _continueFromDates : _submit,
+                            // Off for dates the policy will not accept, so the
+                            // form never opens on a request that cannot be made.
+                            background: _step == 0 && !_datesApplicable
+                                ? const Color(0xFFE5E7EB)
+                                : MColors.terra,
+                            foreground: _step == 0 && !_datesApplicable
+                                ? const Color(0xFF9CA3AF)
+                                : Colors.white,
+                            onTap: _step == 0
+                                ? (_datesApplicable ? _continueFromDates : null)
+                                : _submit,
                           ),
                           if (_step == 1)
                             TextButton(

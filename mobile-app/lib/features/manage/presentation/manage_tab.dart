@@ -720,18 +720,33 @@ class _GivenFeedbackRows extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    member.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: MColors.inkFaint,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      decoration: TextDecoration.lineThrough,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        member.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: MColors.inkFaint,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      // A sent review stays open until the cycle closes, so
+                      // this row is a way back in, not a closed item.
+                      const Text(
+                        'Submitted · tap to edit',
+                        style: TextStyle(
+                          color: MColors.inkFaint,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   member.score.toStringAsFixed(1),
                   style: TextStyle(
@@ -1211,9 +1226,10 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final member = state.selectedMember;
     if (member == null) return const SizedBox.shrink();
 
-    final locked =
-        member.status == FeedbackStatus.sent ||
-        member.status == FeedbackStatus.missed;
+    // A review that has been sent stays editable until the cycle closes —
+    // sending shares it, it does not close it. Only a missed cycle is shut.
+    final locked = member.status == FeedbackStatus.missed;
+    final alreadySent = member.status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
     final complete = scored.length == state.recordParams.length;
     // Average only what has been rated. Dividing by every parameter made a
@@ -1253,10 +1269,32 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
         ),
         Expanded(
           child: state.recordParams.isEmpty
+              // There is no default parameter set: HR assigns one per person
+              // per cycle, and the server refuses feedback without it.
               ? const Center(
-                  child: Text(
-                    'No feedback parameters configured.',
-                    style: TextStyle(color: MColors.inkSoft),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 40),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'No KPIs assigned',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: MColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'HR has not assigned feedback parameters for this '
+                          'person this cycle, so there is nothing to score yet.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : ListView(
@@ -1266,6 +1304,29 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                       overall: overall,
                       previousScore: member.previousScore,
                     ),
+                    if (alreadySent) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3FAF5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBFE3CC)),
+                        ),
+                        child: const Text(
+                          'Submitted — editable until the cycle ends. Updating '
+                          'replaces the review this person sees.',
+                          style: TextStyle(
+                            color: Color(0xFF2F7A4F),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     for (final (index, param) in state.recordParams.indexed)
                       Padding(
@@ -1309,7 +1370,7 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: _FeedbackActionButton(
-                                label: 'Send',
+                                label: alreadySent ? 'Update' : 'Send',
                                 background: complete
                                     ? const Color(0xFF0571A6)
                                     : const Color(0xFF96B7C7),
