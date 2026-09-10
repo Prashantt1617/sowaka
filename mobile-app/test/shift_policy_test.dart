@@ -239,4 +239,45 @@ void main() {
     // Two months out: past casual's 30 days, but earned reaches 90.
     expect(anyTypeAccepts(DateTime(2026, 11, 10)), isTrue);
   });
+
+  group('the balance is part of the same rule', () {
+    final policy = ShiftPolicy.fromJson(const {
+      'weeklyOff': {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
+      'leaveTypes': [
+        {'key': 'casual', 'name': 'Casual Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 3},
+      ],
+    });
+    final today = DateTime(2026, 9, 10);
+
+    String? problem(int days, {double? available, bool halfDay = false}) => leaveRangeProblem(
+      policy: policy,
+      holidayDates: const {},
+      typeLabel: 'Casual Leave',
+      from: DateTime(2026, 9, 14),
+      to: DateTime(2026, 9, 14).add(Duration(days: days - 1)),
+      today: today,
+      availableDays: available,
+      halfDay: halfDay,
+    );
+
+    test('a request inside the balance is fine', () {
+      expect(problem(2, available: 5), isNull);
+    });
+
+    test('a request larger than the balance is refused', () {
+      expect(problem(4, available: 2), contains('2 day(s) of Casual Leave are left'));
+    });
+
+    test('an empty balance is refused outright', () {
+      expect(problem(1, available: 0), contains('no Casual Leave left'));
+    });
+
+    test('a half day costs half a day', () {
+      expect(problem(1, available: 0.5, halfDay: true), isNull);
+    });
+
+    test('an unknown balance does not block anything', () {
+      expect(problem(4), isNull);
+    });
+  });
 }

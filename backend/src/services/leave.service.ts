@@ -90,7 +90,7 @@ export async function applyForLeave(
   if (!rule || rule.active === false) {
     throw new LeaveError(400, `${rule?.name ?? 'That leave type'} is not available in this organisation`);
   }
-  if (rule) {
+  {
     const todayOnly = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
     const aheadDays = Math.floor((startDate.getTime() - todayOnly.getTime()) / 86_400_000);
     if (aheadDays > rule.advanceDays) {

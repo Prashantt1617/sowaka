@@ -914,6 +914,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     to: _leaveTo ?? from,
                     today: DateTime.now(),
                     maxDays: _maxLeaveApplyDays,
+                    availableDays: _balanceFor(label)?.remaining,
                   )
                   case final reason?)
                 label: reason,
@@ -1028,6 +1029,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       today: DateTime.now(),
       maxDays: _maxLeaveApplyDays,
       halfDay: _leaveDuration == 'Half Day',
+      availableDays: _balanceFor(type)?.remaining,
     );
   }
 
@@ -1066,6 +1068,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             to: _dateOnly(date),
             today: DateTime.now(),
             maxDays: _maxLeaveApplyDays,
+            availableDays: _balanceFor(label)?.remaining,
           ) ==
           null)
         label,
@@ -1088,6 +1091,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         to: date,
         today: DateTime.now(),
         maxDays: _maxLeaveApplyDays,
+        availableDays: _balanceFor(label)?.remaining,
       );
       if (reason == null) return null;
       firstReason ??= reason;
@@ -2418,6 +2422,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           to: _to,
           today: DateTime.now(),
           maxDays: _maxLeaveApplyDays,
+          availableDays: _balanceFor(type)?.remaining,
         ) ==
         null;
   }

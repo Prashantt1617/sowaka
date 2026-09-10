@@ -1038,9 +1038,7 @@ class _TeamRequestCard extends StatelessWidget {
     required this.decision,
     this.onApprove,
     this.onReject,
-    this.readOnly = false,
     this.responseNote = '',
-    this.decidedBy = '',
   });
 
   final String initial;
@@ -1051,7 +1049,6 @@ class _TeamRequestCard extends StatelessWidget {
   final LeaveDecision decision;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
-  final bool readOnly;
 
   /// The note left with the decision, shown once a request has been reviewed.
   final String responseNote;
@@ -1059,10 +1056,6 @@ class _TeamRequestCard extends StatelessWidget {
   /// Opens the request in full — everything the employee filled in, and the
   /// response if it has been decided.
   final VoidCallback? onViewDetails;
-
-  /// Who decided it, when that is not the manager themselves — claims are
-  /// decided from the HR dashboard.
-  final String decidedBy;
 
   @override
   Widget build(BuildContext context) {
@@ -1149,20 +1142,7 @@ class _TeamRequestCard extends StatelessWidget {
           // Once a request has been decided, the card reports the outcome
           // instead of offering buttons that would do nothing.
           if (decision != LeaveDecision.pending)
-            _RequestResponseBlock(
-              decision: decision,
-              note: responseNote,
-              decidedBy: decidedBy,
-            )
-          else if (readOnly)
-            const Text(
-              'Awaiting HR review',
-              style: TextStyle(
-                color: Color(0xFF9CA3AF),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            )
+            _RequestResponseBlock(decision: decision, note: responseNote)
           else
             Row(
               children: [
@@ -1194,15 +1174,10 @@ class _TeamRequestCard extends StatelessWidget {
 /// What happened to a request, for the Reviewed list: the decision, who made
 /// it when that was not this manager, and the note that went with it.
 class _RequestResponseBlock extends StatelessWidget {
-  const _RequestResponseBlock({
-    required this.decision,
-    required this.note,
-    required this.decidedBy,
-  });
+  const _RequestResponseBlock({required this.decision, required this.note});
 
   final LeaveDecision decision;
   final String note;
-  final String decidedBy;
 
   @override
   Widget build(BuildContext context) {
@@ -1224,9 +1199,7 @@ class _RequestResponseBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            decidedBy.isEmpty
-                ? (approved ? 'Approved' : 'Declined')
-                : '${approved ? 'Approved' : 'Declined'} by $decidedBy',
+            approved ? 'Approved' : 'Declined',
             style: TextStyle(
               color: foreground,
               fontSize: 13,
@@ -1294,43 +1267,6 @@ class _ManagerViewDetailsLink extends StatelessWidget {
               color: Color(0xFF0571A6),
             ),
           ],
-        ),
-      ),
-    ),
-  );
-}
-
-/// Pending / Reviewed switch above the team's requests.
-class _RequestStatusButton extends StatelessWidget {
-  const _RequestStatusButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(12),
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      decoration: BoxDecoration(
-        color: selected ? MColors.terra : Colors.white,
-        border: Border.all(color: selected ? MColors.terra : MColors.line),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? Colors.white : MColors.inkSoft,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w800,
         ),
       ),
     ),

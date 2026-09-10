@@ -93,7 +93,21 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     to: _endDate,
     today: DateTime.now(),
     maxDays: _maxLeaveApplyDays,
+    availableDays: _remainingFor(_type),
   );
+
+  /// What is left of this type, by key, so a renamed type still matches.
+  double? _remainingFor(String label) {
+    final balance = widget.state.dashboard?.leaveBalance;
+    if (balance == null) return null;
+    return switch (_shift.windowForLeave(label)?.key ?? label.toLowerCase()) {
+      'casual' => balance.casual.remaining,
+      'sick' => balance.sick.remaining,
+      'earned' => balance.earned.remaining,
+      'comp_off' => balance.compOff.remaining,
+      _ => null,
+    };
+  }
 
   bool get _datesApplicable => _datesBlockedReason == null;
 

@@ -106,12 +106,11 @@ export async function recordPunch(userId: string, type: string) {
  * week-off grid, or one of their location's company holidays.
  */
 async function isNonWorkingDay(
-  userId: string,
+  weeklyOff: Record<string, number[]>,
   employee: { org?: string } & Record<string, unknown>,
   date: Date,
 ): Promise<boolean> {
-  const policy = await policyForUser(userId);
-  if (isWeekOffDay(date, policy.weeklyOff)) return true;
+  if (isWeekOffDay(date, weeklyOff)) return true;
   const holidays = await holidayDatesForUser(employee as never);
   return holidays.has(date.toISOString().slice(0, 10));
 }
@@ -138,7 +137,8 @@ export async function requestRegularization(
   if (workDate > todayText) throw new AttendanceError(400, 'Future dates cannot be regularized');
   // Both limits come from the policy HR saved — how far back a correction may
   // reach, and which of the four day outcomes may be corrected at all.
-  const correction = (await policyForUser(userId)).correction;
+  const policy = await policyForUser(userId);
+  const correction = policy.correction;
   if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > correction.backdateDays) {
     throw new AttendanceError(
       400,
@@ -161,7 +161,7 @@ export async function requestRegularization(
   if (!employee.managerUserId) throw new AttendanceError(409, 'A manager must be assigned');
   // Nothing to correct on a day nobody was due to work: a week-off or a
   // company holiday that was worked is an overtime claim, not a correction.
-  if (await isNonWorkingDay(userId, employee, date)) {
+  if (await isNonWorkingDay(policy.weeklyOff, employee, date)) {
     throw new AttendanceError(
       400,
       'This day is a week-off or a company holiday — claim overtime instead',

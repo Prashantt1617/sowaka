@@ -954,7 +954,9 @@ class CorrectionRules {
 /// server enforces. Returns null when the range is fine.
 ///
 /// [holidayDates] are the company holidays this employee observes; days off in
-/// the shift's week-off grid are read from [policy].
+/// the shift's week-off grid are read from [policy]. [availableDays] is the
+/// balance left for this type when the caller knows it — the server counts
+/// pending requests against it too, so it is the stricter authority.
 String? leaveRangeProblem({
   required ShiftPolicy policy,
   required Set<String> holidayDates,
@@ -964,6 +966,7 @@ String? leaveRangeProblem({
   required DateTime today,
   int maxDays = 30,
   bool halfDay = false,
+  double? availableDays,
 }) {
   DateTime dayOf(DateTime value) =>
       DateTime(value.year, value.month, value.day);
@@ -1017,6 +1020,15 @@ String? leaveRangeProblem({
         ? 'That day is a week-off or a company holiday — no leave is needed.'
         : 'Those dates are all week-offs or company holidays — no leave would '
               'be used.';
+  }
+
+  final cost = halfDay ? 0.5 : chargeable.toDouble();
+  if (availableDays != null && cost > availableDays) {
+    return availableDays <= 0
+        ? 'You have no $typeLabel left this year.'
+        : 'That is $cost days, and only '
+              '${availableDays == availableDays.roundToDouble() ? availableDays.toStringAsFixed(0) : availableDays.toStringAsFixed(1)} '
+              'day(s) of $typeLabel are left.';
   }
   return null;
 }
