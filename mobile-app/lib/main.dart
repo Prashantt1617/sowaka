@@ -19,7 +19,7 @@ class HrmsMobileApp extends StatelessWidget {
     const seedColor = Color(0xFF0571A6);
 
     return MaterialApp(
-      title: 'Sowaka Connect',
+      title: 'Sowaka',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Plus Jakarta Sans',

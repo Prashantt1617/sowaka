@@ -69,6 +69,23 @@ class FeedbackParam {
   }
 }
 
+/// What the app re-reads to keep feedback current while it runs.
+class FeedbackSnapshot {
+  const FeedbackSnapshot({
+    required this.managerScore,
+    required this.growthHistory,
+    required this.team,
+    this.cycleEndsOn,
+  });
+
+  final double managerScore;
+  final List<GrowthRecord> growthHistory;
+  final DateTime? cycleEndsOn;
+
+  /// The review for each report this cycle, by their userId.
+  final Map<String, Map<String, dynamic>> team;
+}
+
 class GrowthRecord {
   const GrowthRecord({
     required this.period,
@@ -829,6 +846,8 @@ class ManagerDashboard {
     List<AttendanceRegularization>? regularizations,
     List<AttendanceRegularization>? managerRegularizations,
     ShiftPolicy? shift,
+    List<GrowthRecord>? growthHistory,
+    DateTime? cycleEndsOn,
   }) {
     return ManagerDashboard(
       managerName: managerName,
@@ -836,9 +855,9 @@ class ManagerDashboard {
       managerPhotoUrl: managerPhotoUrl ?? this.managerPhotoUrl,
       managerTeam: managerTeam,
       approverName: approverName,
-      cycleEndsOn: cycleEndsOn,
-      managerScore: managerScore,
-      growthHistory: growthHistory,
+      cycleEndsOn: cycleEndsOn ?? this.cycleEndsOn,
+      managerScore: managerScore ?? this.managerScore,
+      growthHistory: growthHistory ?? this.growthHistory,
       today: today,
       team: team ?? this.team,
       recognitionCandidates:

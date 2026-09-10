@@ -6331,6 +6331,27 @@ const _policiesData = <_Policy>[
     _Q.sageTint,
     'Overtime needs prior manager approval and is claimed as a full day or a half day. Approved overtime earns comp-off — a full day adds 1 day to your comp-off balance, a half day adds 0.5.',
   ),
+  // Play requires an in-app route to account deletion, and people ask where
+  // their data goes anyway — so it is a policy page like any other.
+  _Policy(
+    'Your data',
+    Icons.privacy_tip_rounded,
+    _Q.teal,
+    _Q.tealTint,
+    'Sowaka holds what your employer needs to run HR: your name, work email '
+        'and employee ID, your attendance and leave records, reimbursement '
+        'claims and receipts, performance reviews, and anything you post on '
+        'Connect.\n\n'
+        'Your account belongs to your employer, so it is closed when you '
+        'leave. To have your account and personal data deleted sooner, email '
+        'your HR team and privacy@getsowaka.com from your work address. We '
+        'confirm within 7 working days and delete within 30, except for '
+        'records your employer must keep by law — attendance and payroll '
+        'history, which are retained for the statutory period and then '
+        'removed.\n\n'
+        'You can ask for a copy of your data the same way. Sowaka does not '
+        'sell your data or use it for advertising.',
+  ),
 ];
 
 class _Q {
