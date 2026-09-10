@@ -9,6 +9,20 @@ class ApiConfig {
   //   flutter run --dart-define=API_BASE_URL=http://localhost:4000
   static const String _defaultBaseUrl = 'https://d3lwup4rvo6csf.cloudfront.net';
 
+  /// Where the privacy policy is published.
+  ///
+  /// The app links out to the hosted page rather than carrying its own copy,
+  /// so the policy people read is the same one the store listing points at and
+  /// there is only ever one version of it. Override per environment with
+  /// `--dart-define=PRIVACY_POLICY_URL=...`.
+  static const String _defaultPrivacyPolicyUrl =
+      'https://dikcsyvq9i7v1.cloudfront.net/privacy-policy.html';
+
+  static String get privacyPolicyUrl {
+    const configured = String.fromEnvironment('PRIVACY_POLICY_URL');
+    return configured.isNotEmpty ? configured : _defaultPrivacyPolicyUrl;
+  }
+
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;

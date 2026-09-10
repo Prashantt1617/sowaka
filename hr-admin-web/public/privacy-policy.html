@@ -12,180 +12,292 @@
     color: #2A2A2A;
     font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  main { max-width: 740px; margin: 0 auto; padding: 48px 24px 96px; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
   h1 { font-size: 30px; letter-spacing: -0.4px; margin: 0 0 6px; }
-  h2 { font-size: 19px; margin: 38px 0 10px; letter-spacing: -0.2px; }
-  .meta { color: #717171; font-size: 14px; margin: 0 0 34px; }
+  h2 { font-size: 19px; margin: 40px 0 10px; letter-spacing: -0.2px; }
+  h3 { font-size: 15.5px; margin: 22px 0 6px; }
+  .meta { color: #717171; font-size: 14px; margin: 0 0 30px; }
   p, li { color: #333; }
   ul { padding-left: 20px; }
   li { margin-bottom: 6px; }
-  table { border-collapse: collapse; width: 100%; margin: 14px 0 8px; font-size: 15px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0 8px; font-size: 14.5px; }
   th, td { border: 1px solid #EBEBEB; padding: 9px 12px; text-align: left; vertical-align: top; }
   th { background: #FBFBFC; font-weight: 700; }
   .card {
     background: #fff; border: 1px solid #EBEBEB; border-radius: 14px;
     padding: 18px 20px; margin: 18px 0;
   }
+  .lead {
+    background: #fff; border: 1px solid #EBEBEB; border-left: 3px solid #0571A6;
+    border-radius: 12px; padding: 16px 20px; margin: 0 0 26px;
+  }
   a { color: #0571A6; }
-  footer { margin-top: 44px; color: #717171; font-size: 14px; }
+  code { background: #F1F1F4; padding: 1px 5px; border-radius: 4px; font-size: 13.5px; }
+  footer { margin-top: 46px; color: #717171; font-size: 14px; }
 </style>
 </head>
 <body>
 <main>
   <h1>Privacy Policy</h1>
-  <p class="meta">Sowaka (the &ldquo;app&rdquo;) &middot; Last updated 10 September 2026</p>
-
-  <p>
-    Sowaka is a workplace HR app. Your employer licenses it to manage attendance,
-    leave, overtime, reimbursements, performance reviews and internal
-    communication. Your account is created by your employer&rsquo;s HR team and
-    belongs to them; we process your information on their behalf as a data
-    processor, and they decide what is collected and how long it is kept.
+  <p class="meta">
+    Sowaka &middot; Android package <code>com.sowaka.connect</code> &middot;
+    iOS <code>com.tanvijadhav.sowaka</code><br />
+    Effective 10 September 2026 &middot; Last updated 10 September 2026
   </p>
 
-  <h2>What we collect</h2>
+  <div class="lead">
+    <strong>Sowaka is a human resource management system (HRMS)</strong> — a
+    workplace app licensed to employers to run attendance, leave, overtime,
+    reimbursements, performance reviews and internal communication for their
+    staff. It is not a consumer product and is not available to the general
+    public. This policy explains what Sowaka collects, who sees it, how long it
+    is kept, and how an account and its data are deleted.
+  </div>
+
+  <h2>Who is responsible for your data</h2>
+  <p>
+    Your employer decides what is collected in Sowaka and why; they are the
+    <strong>data controller</strong>. Sowaka operates the app and processes that
+    information on their instructions as the <strong>data processor</strong>.
+    Requests about your own records are usually fastest through your HR team,
+    and you may also write to us directly at the address at the end of this
+    policy.
+  </p>
+
+  <h2 id="accounts">How your account is created</h2>
+  <p>
+    <strong>You cannot create a Sowaka account yourself.</strong> There is no
+    public sign-up, and the app cannot be used without an employer.
+  </p>
+  <ul>
+    <li>
+      Your employer's HR team creates your account from their own employment
+      records, entering your name, work email address, employee ID, department,
+      designation, reporting manager, work location and joining date.
+    </li>
+    <li>
+      You sign in with your <strong>work email address</strong> only. Sowaka
+      emails you a one-time six-digit code; there is no password to set or
+      remember, and we do not use social sign-in.
+    </li>
+    <li>
+      Your employer decides who has an account, and what each person can see —
+      an employee, a manager and an HR administrator see different things.
+    </li>
+    <li>
+      Adding your profile photo, and everything you post on the Connect feed, is
+      voluntary.
+    </li>
+  </ul>
+
+  <h2>What Sowaka collects</h2>
   <table>
-    <tr><th>Category</th><th>What it includes</th><th>Why</th></tr>
+    <tr><th>Category</th><th>What it includes</th><th>Source</th><th>Why</th></tr>
     <tr>
       <td>Identity &amp; contact</td>
       <td>Name, work email, employee ID, department, designation, reporting
-          manager, work location, date of joining, date of birth, profile photo</td>
-      <td>To sign you in and show you to colleagues in the directory and org chart</td>
+          manager, work location, joining date, date of birth, profile photo</td>
+      <td>Your employer; photo from you</td>
+      <td>To sign you in, and to show you in the directory and org chart</td>
     </tr>
     <tr>
       <td>Attendance</td>
-      <td>Punch-in and punch-out times, correction requests and their approvals</td>
+      <td>Punch-in and punch-out times, correction requests and their outcomes</td>
+      <td>You, and your employer's records</td>
       <td>To record hours worked and process corrections</td>
     </tr>
     <tr>
       <td>Leave &amp; overtime</td>
-      <td>Requests, dates, reasons you type, balances, manager decisions and notes</td>
+      <td>Requests, dates, reasons you type, balances, manager decisions and
+          notes</td>
+      <td>You and your manager</td>
       <td>To run the leave and overtime process</td>
     </tr>
     <tr>
       <td>Reimbursements</td>
-      <td>Claim amounts, expense dates, notes and receipt images you upload</td>
+      <td>Claim amounts, expense dates, notes, and receipt images you upload</td>
+      <td>You</td>
       <td>To process expense claims</td>
     </tr>
     <tr>
       <td>Performance</td>
       <td>Review scores, written feedback, recognition nominations</td>
-      <td>To run your employer&rsquo;s review cycle</td>
+      <td>Your manager and HR</td>
+      <td>To run your employer's review cycle</td>
     </tr>
     <tr>
       <td>Connect posts</td>
       <td>Posts, comments, reactions, poll responses, photos and videos you
-          upload, and people you tag</td>
+          upload, and colleagues you tag</td>
+      <td>You</td>
       <td>To run the internal feed</td>
     </tr>
     <tr>
-      <td>Device &amp; technical</td>
+      <td>App activity &amp; device</td>
       <td>Push notification token, app version, device model and OS version,
-          and server logs of requests (including IP address)</td>
+          and server logs of requests including IP address</td>
+      <td>Your device</td>
       <td>To deliver notifications, and to keep the service secure and working</td>
     </tr>
   </table>
 
+  <h3>What Sowaka does not collect</h3>
   <p>
-    We do <strong>not</strong> collect precise location, contacts, calendar,
-    health data, or anything from other apps on your device. The app requests
-    microphone access only when you use voice input to dictate feedback; audio is
-    converted to text on your device by the operating system and the recording is
-    not sent to us or stored.
+    No precise or background location, no contacts, no calendar, no SMS or call
+    logs, no health or financial account data, no biometric identifiers, and
+    nothing from other apps on your device. Sowaka contains no advertising and
+    no third-party analytics or advertising SDKs.
+  </p>
+  <p>
+    <strong>Microphone:</strong> the app asks for microphone access only when
+    you choose voice input to dictate feedback. Speech is converted to text by
+    your device's operating system; the audio is not sent to us, and no
+    recording is stored.
   </p>
 
   <h2>How it is used</h2>
   <ul>
-    <li>To provide the features above to you and your employer.</li>
-    <li>To send you notifications about things that concern you — a leave
-        decision, a review, a request awaiting you — by push and by email.</li>
-    <li>To keep the service secure, diagnose faults and prevent misuse.</li>
+    <li>To provide the HR features described above to you and your employer.</li>
+    <li>To notify you about things that concern you — a leave decision, a review
+        shared with you, a request awaiting you — by push notification, in-app
+        message and email.</li>
+    <li>To keep the service secure, diagnose faults, and prevent misuse.</li>
   </ul>
   <p>
-    We do not sell your personal data. We do not use it for advertising, and we
-    do not profile you for any purpose outside the features described here.
+    Sowaka does <strong>not</strong> sell personal data, does not share it with
+    data brokers, and does not use it for advertising or for any purpose beyond
+    the features described here.
   </p>
 
-  <h2>Who can see it</h2>
+  <h2>Who it is shared with</h2>
   <ul>
-    <li><strong>Your colleagues</strong> see your name, photo, designation, team
-        and anything you post on Connect.</li>
-    <li><strong>Your manager</strong> sees your attendance, leave, overtime and
-        reimbursement requests, and writes your reviews.</li>
-    <li><strong>Your HR team</strong> sees the above across the organisation.</li>
-    <li><strong>Service providers</strong> we use to run the app: cloud hosting
-        and database (Amazon Web Services, MongoDB Atlas), push notifications
-        (Google Firebase Cloud Messaging), and email delivery. They process data
-        only to provide those services to us.</li>
-    <li><strong>Nobody else</strong>, unless the law requires it.</li>
+    <li><strong>Colleagues at your employer</strong> — your name, photo,
+        designation, team, and anything you post on Connect.</li>
+    <li><strong>Your manager</strong> — your attendance, leave, overtime and
+        reimbursement requests, and your performance reviews.</li>
+    <li><strong>Your HR administrators</strong> — the above, across the
+        organisation.</li>
+    <li><strong>Service providers</strong> that run the app on our behalf, under
+        contract and only for that purpose:
+      <ul>
+        <li>Amazon Web Services — application hosting and file storage</li>
+        <li>MongoDB Atlas — database hosting</li>
+        <li>Google Firebase Cloud Messaging — push notification delivery</li>
+        <li>Our email provider — one-time sign-in codes and notification email</li>
+      </ul>
+    </li>
+    <li><strong>Nobody else</strong>, unless we are required to by law, or to
+        protect the rights and safety of users.</li>
   </ul>
-
-  <h2>Where it is kept, and for how long</h2>
   <p>
-    Data is stored on servers operated by our cloud providers. Your employer sets
-    retention; as a rule, your records are kept while your account is active and
-    for as long afterwards as employment law requires them to be — typically
-    attendance and payroll-related records for the statutory period.
+    Data is processed on servers operated by those providers. Where information
+    is transferred across borders, it is protected by the contractual safeguards
+    those providers offer.
   </p>
 
-  <h2 id="deletion">Deleting your account and data</h2>
+  <h2>How it is protected</h2>
+  <ul>
+    <li>Access requires a one-time code sent to your work email; there are no
+        reusable passwords.</li>
+    <li>All traffic between the app and our servers is encrypted in transit
+        using HTTPS.</li>
+    <li>Data at rest is stored on encrypted infrastructure at our hosting
+        providers.</li>
+    <li>Access inside the app follows your role — colleagues see only what is
+        shared with everyone, managers see their own team, HR sees the
+        organisation.</li>
+    <li>Sowaka staff access production data only when needed to operate or
+        support the service.</li>
+  </ul>
+
+  <h2>How long it is kept</h2>
+  <p>
+    Your records are kept while your account is active, and afterwards for as
+    long as your employer must retain them — employment, attendance and payroll
+    records are generally kept for the statutory period that applies to your
+    employer, and are then deleted. Server logs are kept for a short operational
+    period and then discarded. Your employer sets retention within these limits.
+  </p>
+
+  <h2 id="deletion">How your account and data are deleted</h2>
   <div class="card">
     <p>
-      Your account is your employer&rsquo;s, so it is normally closed when you
-      leave. To have it closed and your personal data deleted sooner:
+      Because accounts are created by your employer, they are also closed by
+      your employer — normally when you leave the organisation. You can also ask
+      for your account and personal data to be deleted at any time:
     </p>
+    <h3>How to request deletion</h3>
     <ul>
-      <li>Email your HR team, copying
-          <a href="mailto:privacy@getsowaka.com">privacy@getsowaka.com</a>, from
-          your work address.</li>
-      <li>We acknowledge within <strong>7 working days</strong> and delete within
-          <strong>30 days</strong> of your employer confirming the request.</li>
-      <li>Records your employer must keep by law — attendance and payroll history
-          — are retained for the statutory period and then deleted.</li>
-      <li>You can request a copy of your data the same way.</li>
+      <li>
+        <strong>In the app:</strong> open <em>Profile</em> and tap
+        <em>&ldquo;Sowaka data and privacy policy&rdquo;</em> at the bottom,
+        which explains the request and the address to write to.
+      </li>
+      <li>
+        <strong>By email:</strong> write to
+        <a href="mailto:privacy@getsowaka.com">privacy@getsowaka.com</a> from
+        your work address, copying your HR team. Say that you want your Sowaka
+        account and data deleted.
+      </li>
+    </ul>
+    <h3>What happens next</h3>
+    <ul>
+      <li>We acknowledge your request within <strong>7 working days</strong>.</li>
+      <li>Because your employer controls the records, we confirm the request
+          with them, and then delete within <strong>30 days</strong>.</li>
+      <li>
+        <strong>Deleted:</strong> your account and sign-in access, profile and
+        photo, Connect posts, comments and uploads, reimbursement receipts,
+        performance reviews and written feedback, notification history and your
+        device's push token.
+      </li>
+      <li>
+        <strong>Retained:</strong> attendance and payroll-related records that
+        your employer is legally required to keep, for the statutory retention
+        period, after which they are deleted. These are kept for legal
+        compliance only and are not used for anything else.
+      </li>
     </ul>
     <p>
-      In the app, the same instructions are under <em>Actions &rsquo; Policies
-      &rsquo; Your data</em>.
+      You can request a copy of your data by the same route, and we will provide
+      it in a machine-readable form.
     </p>
   </div>
 
   <h2>Your rights</h2>
   <p>
-    Depending on where you live, you may have the right to access, correct,
-    export or delete your personal data, and to object to or restrict certain
-    processing. Because your employer controls this data, please raise these
-    requests with your HR team; we will support them in meeting the request. You
-    can also write to us directly at the address below.
-  </p>
-
-  <h2>Security</h2>
-  <p>
-    Access requires a one-time code sent to your work email. Data is encrypted in
-    transit. Access within the app follows your role — your manager and HR see
-    what their role allows, colleagues see only what is shared with everyone.
+    Depending on where you live, you may have rights to access, correct, export
+    or delete your personal data, to object to or restrict certain processing,
+    and to complain to a data protection authority. Since your employer controls
+    this data, please raise these requests with your HR team; we support them in
+    meeting the request, and you can also contact us directly.
   </p>
 
   <h2>Children</h2>
   <p>
-    Sowaka is a workplace tool and is not directed at anyone under 18. We do not
-    knowingly collect data from children.
+    Sowaka is a workplace tool intended for employed adults. It is not directed
+    at children, and we do not knowingly collect data from anyone under 18.
   </p>
 
-  <h2>Changes</h2>
+  <h2>Changes to this policy</h2>
   <p>
-    If this policy changes materially, we will update the date at the top and
-    notify your employer, who will inform staff.
+    If this policy changes in a way that materially affects you, we will update
+    the date at the top of this page and notify your employer, who will inform
+    their staff. Continued use of the app after a change means the updated
+    policy applies.
   </p>
 
   <h2>Contact</h2>
   <p>
-    Questions about this policy or your data:
-    <a href="mailto:privacy@getsowaka.com">privacy@getsowaka.com</a>.
-    For anything about your own records, your HR team is the fastest route.
+    Sowaka &mdash; privacy enquiries:
+    <a href="mailto:privacy@getsowaka.com">privacy@getsowaka.com</a><br />
+    For anything about your own records, your employer's HR team is the fastest
+    route.
   </p>
 
-  <footer>Sowaka &middot; Privacy Policy &middot; 10 September 2026</footer>
+  <footer>
+    Sowaka &middot; Privacy Policy &middot; Effective 10 September 2026
+  </footer>
 </main>
 </body>
 </html>

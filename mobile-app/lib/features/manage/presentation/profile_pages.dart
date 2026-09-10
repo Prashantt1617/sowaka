@@ -859,13 +859,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         _OrgChartCard(nodes: dashboard.myOrgChart),
                       ],
                       const SizedBox(height: 18),
-                      // Privacy and account deletion live here rather than
-                      // among the company's HR policies — this is where people
-                      // look for their own account, and it is not a policy the
-                      // company sets.
-                      const _PrivacyAndDataRow(),
-                      const SizedBox(height: 18),
                       _LogoutButton(onPressed: onLogout),
+                      // Below the logout button and deliberately small: it is
+                      // a footnote about this person's own account, not a
+                      // company policy competing for attention.
+                      const SizedBox(height: 14),
+                      const _PrivacyAndDataRow(),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -1838,52 +1837,44 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
-/// Quiet row above the logout button: what Sowaka holds about this person,
-/// and how to have it deleted.
+/// The footnote under the logout button, linking out to the published policy.
+///
+/// The hosted page is the same URL the store listing points at, so there is one
+/// version of the policy rather than a copy in here drifting from it. The sheet
+/// below is the fallback for a device that cannot open a browser.
 class _PrivacyAndDataRow extends StatelessWidget {
   const _PrivacyAndDataRow();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _show(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.privacy_tip_outlined,
-                size: 18,
-                color: MColors.inkSoft,
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Privacy and your data',
-                  style: TextStyle(
-                    color: MColors.ink,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: Color(0xFF9CA3AF),
-              ),
-            ],
+    return Center(
+      child: GestureDetector(
+        onTap: () => _open(context),
+        behavior: HitTestBehavior.opaque,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+          child: Text(
+            'Sowaka data and privacy policy',
+            style: TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              decoration: TextDecoration.underline,
+              decorationColor: Color(0xFFD1D5DB),
+            ),
           ),
         ),
       ),
     );
   }
 
-  static void _show(BuildContext context) {
+  static Future<void> _open(BuildContext context) async {
+    final opened = await openExternalLink(ApiConfig.privacyPolicyUrl);
+    if (opened || !context.mounted) return;
+    _showFallback(context);
+  }
+
+  static void _showFallback(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -1911,7 +1902,7 @@ class _PrivacyAndDataRow extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               const Text(
-                'Privacy and your data',
+                'Sowaka data and privacy',
                 style: TextStyle(
                   color: MColors.ink,
                   fontSize: 18,
@@ -1941,7 +1932,7 @@ class _PrivacyAndDataRow extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Your account belongs to your employer, so it closes when you '
+                'Your account is created by your employer and closes when you '
                 'leave. To have it closed and your personal data deleted '
                 'sooner, email your HR team and privacy@getsowaka.com from '
                 'your work address. We confirm within 7 working days and '
@@ -1954,14 +1945,12 @@ class _PrivacyAndDataRow extends StatelessWidget {
                   height: 1.55,
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'You can ask for a copy of your data the same way. Sowaka does '
-                'not sell your data or use it for advertising.',
-                style: TextStyle(
-                  color: MColors.inkSoft,
-                  fontSize: 13.5,
-                  height: 1.55,
+              const SizedBox(height: 12),
+              Text(
+                ApiConfig.privacyPolicyUrl,
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 12.5,
                 ),
               ),
             ],

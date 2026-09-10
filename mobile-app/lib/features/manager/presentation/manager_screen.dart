@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../routes/app_routes.dart';
 import '../../../services/api_config.dart';
+import '../../../services/linkified_text.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';
