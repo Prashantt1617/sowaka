@@ -105,6 +105,7 @@ class OrgChartNode {
     required this.name,
     required this.designation,
     required this.isSelf,
+    this.isReport = false,
   });
 
   final String userId;
@@ -112,11 +113,16 @@ class OrgChartNode {
   final String designation;
   final bool isSelf;
 
+  /// Someone who reports to the person the chart is about. They hang below the
+  /// highlighted card rather than continuing the line above it.
+  final bool isReport;
+
   factory OrgChartNode.fromJson(Map<String, dynamic> json) => OrgChartNode(
     userId: json['userId'] as String? ?? '',
     name: json['name'] as String? ?? '',
     designation: json['designation'] as String? ?? '',
     isSelf: json['isSelf'] as bool? ?? false,
+    isReport: json['isReport'] as bool? ?? false,
   );
 }
 
@@ -646,6 +652,7 @@ class ReimbursementClaim {
     required this.status,
     required this.createdAt,
     this.decidedByRole = '',
+    this.managerNote = '',
   });
 
   final String id;
@@ -663,6 +670,10 @@ class ReimbursementClaim {
   final DateTime createdAt;
   final String
   decidedByRole; // reimbursements are always decided from the dashboard ('admin')
+
+  /// The note left with the decision, so the manager and the employee can both
+  /// read why a claim went the way it did.
+  final String managerNote;
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
@@ -690,6 +701,7 @@ class ReimbursementClaim {
       expenseDate: DateTime.parse(json['expenseDate'] as String),
       receiptName: json['receiptName'] as String? ?? '',
       note: json['note'] as String? ?? '',
+      managerNote: json['managerNote'] as String? ?? '',
       status: switch (json['status']) {
         'approved' => 'Approved',
         'declined' => 'Declined',
@@ -748,6 +760,7 @@ class ManagerDashboard {
     this.weekoffDays = const [0],
     this.shift = const ShiftPolicy(),
     this.reimbursementTypes = const [],
+    this.myOrgChart = const [],
     this.overtimeEnabled = true,
     this.attendance = const [],
     this.regularizations = const [],
@@ -785,6 +798,9 @@ class ManagerDashboard {
 
   /// What the org lets people claim against, and the cap on each.
   final List<ReimbursementType> reimbursementTypes;
+
+  /// The viewer's own reporting line, top of the chain down to them.
+  final List<OrgChartNode> myOrgChart;
   final bool overtimeEnabled;
   final List<AttendanceRecord> attendance;
   final List<AttendanceRegularization> regularizations;
@@ -807,6 +823,7 @@ class ManagerDashboard {
     List<AttendanceRecord>? attendance,
     List<AttendanceRegularization>? regularizations,
     List<AttendanceRegularization>? managerRegularizations,
+    ShiftPolicy? shift,
   }) {
     return ManagerDashboard(
       managerName: managerName,
@@ -831,8 +848,9 @@ class ManagerDashboard {
       myReimbursements: myReimbursements ?? this.myReimbursements,
       reimbursements: reimbursements ?? this.reimbursements,
       weekoffDays: weekoffDays,
-      shift: shift,
+      shift: shift ?? this.shift,
       reimbursementTypes: reimbursementTypes,
+      myOrgChart: myOrgChart,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,
       regularizations: regularizations ?? this.regularizations,
@@ -884,6 +902,156 @@ class ReimbursementType {
   );
 }
 
+/// When one leave type may be applied for, as HR configured it.
+/// What a regularisation may be raised against, straight from HR's Attendance
+/// correction page: which of the four day outcomes are allowed, and how far
+/// back a request may reach.
+class CorrectionRules {
+  const CorrectionRules({
+    this.triggers = const [
+      'Missing punch-in',
+      'Missing punch-out',
+      'Both punches missing',
+    ],
+    this.backdateDays = 7,
+    this.punchFormat = '',
+  });
+
+  final List<String> triggers;
+  final int backdateDays;
+  final String punchFormat;
+
+  /// The case a day falls into, named the way the policy names it.
+  static String triggerFor({DateTime? punchIn, DateTime? punchOut}) {
+    if (punchIn != null && punchOut != null) return 'Both punches present';
+    if (punchIn == null && punchOut == null) return 'Both punches missing';
+    return punchIn != null ? 'Missing punch-out' : 'Missing punch-in';
+  }
+
+  bool allows(String trigger) => triggers.contains(trigger);
+
+  /// The earliest day a correction can still be raised for.
+  DateTime earliestFrom(DateTime today) =>
+      today.subtract(Duration(days: backdateDays));
+
+  factory CorrectionRules.fromJson(Map<String, dynamic> json) => CorrectionRules(
+    triggers:
+        (json['triggers'] as List<dynamic>? ??
+                const [
+                  'Missing punch-in',
+                  'Missing punch-out',
+                  'Both punches missing',
+                ])
+            .map((value) => value.toString())
+            .toList(),
+    backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 7,
+    punchFormat: json['punchFormat'] as String? ?? '',
+  );
+}
+
+/// Whether a leave range can be applied for, and if not, why — one rule, used
+/// by every apply-leave surface so none of them can drift from the policy the
+/// server enforces. Returns null when the range is fine.
+///
+/// [holidayDates] are the company holidays this employee observes; days off in
+/// the shift's week-off grid are read from [policy].
+String? leaveRangeProblem({
+  required ShiftPolicy policy,
+  required Set<String> holidayDates,
+  required String typeLabel,
+  required DateTime from,
+  required DateTime to,
+  required DateTime today,
+  int maxDays = 30,
+  bool halfDay = false,
+}) {
+  DateTime dayOf(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+  String key(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+
+  final start = dayOf(from);
+  final end = dayOf(to);
+  final now = dayOf(today);
+
+  if (end.isBefore(start)) return 'The end date is before the start date.';
+  if (end.difference(start).inDays + 1 > maxDays) {
+    return 'Leave cannot exceed $maxDays days.';
+  }
+  if (halfDay && start != end) {
+    return 'A half day can only be applied for a single date.';
+  }
+
+  if (!policy.allowsLeave(typeLabel)) {
+    return '$typeLabel is not available in your organisation.';
+  }
+
+  final window = policy.windowForLeave(typeLabel);
+  if (window != null) {
+    final earliest = dayOf(window.earliestFrom(now));
+    final latest = dayOf(window.latestFrom(now));
+    if (start.isBefore(earliest) || end.isAfter(latest)) {
+      return window.allowBackdated && window.backdatedDays > 0
+          ? '$typeLabel can be applied for '
+                '${key(earliest)} to ${key(latest)}.'
+          : '$typeLabel cannot be applied for a day already past, and only up '
+                'to ${window.advanceDays} days ahead.';
+    }
+  }
+
+  // A week-off or a company holiday costs no leave, so a range made only of
+  // those is not a leave request at all.
+  var chargeable = 0;
+  for (
+    var day = start;
+    !day.isAfter(end);
+    day = day.add(const Duration(days: 1))
+  ) {
+    if (policy.isWeekOff(day) || holidayDates.contains(key(day))) continue;
+    chargeable += 1;
+  }
+  if (chargeable == 0) {
+    return start == end
+        ? 'That day is a week-off or a company holiday — no leave is needed.'
+        : 'Those dates are all week-offs or company holidays — no leave would '
+              'be used.';
+  }
+  return null;
+}
+
+class LeaveTypeWindow {
+  const LeaveTypeWindow({
+    required this.key,
+    required this.name,
+    this.advanceDays = 30,
+    this.allowBackdated = true,
+    this.backdatedDays = 3,
+  });
+
+  final String key;
+  final String name;
+  final int advanceDays;
+  final bool allowBackdated;
+  final int backdatedDays;
+
+  /// The furthest ahead this type can be applied for.
+  DateTime latestFrom(DateTime today) => today.add(Duration(days: advanceDays));
+
+  /// The earliest date this type can still be applied for.
+  DateTime earliestFrom(DateTime today) =>
+      allowBackdated ? today.subtract(Duration(days: backdatedDays)) : today;
+
+  factory LeaveTypeWindow.fromJson(Map<String, dynamic> json) => LeaveTypeWindow(
+    key: json['key'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    advanceDays: (json['advanceDays'] as num?)?.toInt() ?? 30,
+    allowBackdated: json['allowBackdated'] as bool? ?? true,
+    backdatedDays: (json['backdatedDays'] as num?)?.toInt() ?? 3,
+  );
+}
+
 class ShiftPolicy {
   const ShiftPolicy({
     this.name = 'General',
@@ -894,6 +1062,9 @@ class ShiftPolicy {
     this.lateGraceMinutes = 10,
     this.earlyOutGraceMinutes = 10,
     this.weeklyOff = const {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
+    this.overtimeBackdateDays = 7,
+    this.leaveTypes = const [],
+    this.correction = const CorrectionRules(),
   });
 
   final String name;
@@ -910,6 +1081,45 @@ class ShiftPolicy {
   /// 0 = Mon .. 6 = Sun. Set under Shifts › Policies.
   final Map<String, List<int>> weeklyOff;
 
+  /// How far back an overtime claim may reach, in days.
+  final int overtimeBackdateDays;
+
+  /// The application window for each leave type, so the pickers can be bounded
+  /// rather than letting someone fill a form the server will refuse.
+  final List<LeaveTypeWindow> leaveTypes;
+
+  /// What a correction may be raised against, so the calendar can grey the
+  /// button out rather than opening a form the server will refuse.
+  final CorrectionRules correction;
+
+  /// The leave types someone may actually apply for, by display name. HR can
+  /// switch a type off in the dashboard, and the server then leaves it out of
+  /// this list — so it disappears from the picker, the balance strip and the
+  /// day counts here as well. An empty list means an older server that does not
+  /// send the policy yet, so fall back to the four standard types.
+  List<String> get applicableLeaveLabels => leaveTypes.isEmpty
+      ? const ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Comp-off']
+      : [for (final type in leaveTypes) type.name];
+
+  /// Whether a leave type, by display name, is switched on.
+  bool allowsLeave(String label) =>
+      leaveTypes.isEmpty || windowForLeave(label) != null;
+
+  /// The window for one leave type by its display name, or null if unknown.
+  LeaveTypeWindow? windowForLeave(String label) {
+    for (final type in leaveTypes) {
+      if (type.name == label || type.key == label.toLowerCase().replaceAll(' ', '_')) {
+        return type;
+      }
+      // 'Casual Leave' in the app's picker is the 'casual' type here.
+      if (label.toLowerCase().startsWith(type.key.replaceAll('_', '-')) ||
+          label.toLowerCase().startsWith(type.key)) {
+        return type;
+      }
+    }
+    return null;
+  }
+
   /// How long the shift runs. An end at or before the start is overnight.
   Duration get window {
     final from = startMinutes;
@@ -922,6 +1132,11 @@ class ShiftPolicy {
   /// Whether [date] is a weekly off. The grid is per week of the month, so the
   /// 2nd Saturday can be off while the 1st is not; weeks are counted from the
   /// 1st in blocks of seven, and a 5th block covers the tail of a long month.
+  /// Whether a weekday (0 = Mon .. 6 = Sun) is off in any week of the month —
+  /// for describing the policy in words rather than grading a date.
+  bool isWeekOffWeekday(int weekday) =>
+      weeklyOff.values.any((days) => days.contains(weekday));
+
   bool isWeekOff(DateTime date) {
     final week = ((date.day - 1) ~/ 7) + 1;
     final weekday = date.weekday - 1; // Dart: Mon = 1 .. Sun = 7
@@ -989,6 +1204,13 @@ class ShiftPolicy {
               (day as num).toInt(),
           ],
       },
+      overtimeBackdateDays: (json['overtimeBackdateDays'] as num?)?.toInt() ?? 7,
+      correction: CorrectionRules.fromJson(
+        json['correction'] as Map<String, dynamic>? ?? const {},
+      ),
+      leaveTypes: (json['leaveTypes'] as List<dynamic>? ?? const [])
+          .map((value) => LeaveTypeWindow.fromJson(value as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

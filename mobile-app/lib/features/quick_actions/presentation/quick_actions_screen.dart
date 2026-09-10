@@ -522,10 +522,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           (request) => request.decision == LeaveDecision.pending,
         );
 
-    final leaveDaysAvailable =
-        widget.dashboard.leaveBalance.sick.remaining +
-        widget.dashboard.leaveBalance.casual.remaining +
-        widget.dashboard.leaveBalance.earned.remaining;
+    final leaveDaysAvailable = _accruingLeaveLabels.fold<double>(
+      0,
+      (total, label) => total + _balanceFor(label)!.remaining,
+    );
 
     return Column(
       key: const ValueKey('quick-home'),
@@ -624,7 +624,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Widget _leaveHub() {
-    final balance = widget.dashboard.leaveBalance;
     final today = _dateOnly(DateTime.now());
     final requests = [...widget.dashboard.myLeaves]
       ..sort((a, b) => b.start.compareTo(a.start));
@@ -652,11 +651,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
-              _LeaveBalanceCard(label: 'Casual Leave', item: balance.casual),
-              const SizedBox(width: 8),
-              _LeaveBalanceCard(label: 'Sick Leave', item: balance.sick),
-              const SizedBox(width: 8),
-              _LeaveBalanceCard(label: 'Earned Leave', item: balance.earned),
+              for (final label in _accruingLeaveLabels) ...[
+                _LeaveBalanceCard(label: label, item: _balanceFor(label)!),
+                const SizedBox(width: 8),
+              ],
             ],
           ),
         ),
@@ -712,15 +710,46 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
-  Widget _applyLeaveForm() {
+  /// The leave types HR has left switched on, in the order the policy lists
+  /// them. Switching a type off in the dashboard takes it out of the picker,
+  /// the balance strip and the day counts here.
+  List<String> get _leaveLabels => widget.dashboard.shift.applicableLeaveLabels;
+
+  /// The same list without comp-off, which is earned from overtime rather than
+  /// accrued, so it does not belong in the balance strip.
+  List<String> get _accruingLeaveLabels => [
+    for (final label in _leaveLabels)
+      if (_balanceFor(label) != null && _leaveKeyFor(label) != 'comp_off')
+        label,
+  ];
+
+  /// The policy key behind a display name, so a type HR renames still finds
+  /// its balance and its window.
+  String _leaveKeyFor(String label) =>
+      widget.dashboard.shift.windowForLeave(label)?.key ??
+      switch (label) {
+        'Casual Leave' => 'casual',
+        'Sick Leave' => 'sick',
+        'Earned Leave' => 'earned',
+        'Comp-off' => 'comp_off',
+        _ => '',
+      };
+
+  LeaveBalanceItem? _balanceFor(String label) {
     final balance = widget.dashboard.leaveBalance;
-    final double? balanceForType = switch (_leaveType) {
-      'Casual Leave' => balance.casual.remaining,
-      'Sick Leave' => balance.sick.remaining,
-      'Earned Leave' => balance.earned.remaining,
-      'Comp-off' => balance.compOff.remaining,
+    return switch (_leaveKeyFor(label)) {
+      'casual' => balance.casual,
+      'sick' => balance.sick,
+      'earned' => balance.earned,
+      'comp_off' => balance.compOff,
       _ => null,
     };
+  }
+
+  Widget _applyLeaveForm() {
+    final double? balanceForType = _leaveType == null
+        ? null
+        : _balanceFor(_leaveType!)?.remaining;
     return _HubScaffold(
       key: const ValueKey('apply-leave'),
       title: 'Leave',
@@ -734,6 +763,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
+        if (_leaveFormBlockedReason case final reason?) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEE2E2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              reason,
+              style: const TextStyle(
+                color: Color(0xFFB3261E),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (balanceForType != null) ...[
           Container(
             width: double.infinity,
@@ -844,7 +892,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _pickLeaveType() async {
-    final balance = widget.dashboard.leaveBalance;
     String left(LeaveBalanceItem item) =>
         '${formatDays(item.remaining)}/${formatDays(item.total)}';
     final picked = await showModalBottomSheet<String>(
@@ -854,13 +901,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _LeavePickerSheet(
-        options: const ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Comp-off'],
+        options: _leaveLabels,
         selected: _leaveType,
+        unavailable: {
+          if (_leaveFrom case final from?)
+            for (final label in _leaveLabels)
+              if (leaveRangeProblem(
+                    policy: widget.dashboard.shift,
+                    holidayDates: _holidayKeys,
+                    typeLabel: label,
+                    from: from,
+                    to: _leaveTo ?? from,
+                    today: DateTime.now(),
+                    maxDays: _maxLeaveApplyDays,
+                  )
+                  case final reason?)
+                label: reason,
+        },
         trailingLabels: {
-          'Casual Leave': left(balance.casual),
-          'Sick Leave': left(balance.sick),
-          'Earned Leave': left(balance.earned),
-          'Comp-off': left(balance.compOff),
+          for (final label in _leaveLabels)
+            if (_balanceFor(label) != null) label: left(_balanceFor(label)!),
         },
       ),
     );
@@ -898,11 +958,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final initial = isStart
         ? (_leaveFrom ?? today)
         : (_leaveTo ?? _leaveFrom ?? today);
+    final window = _leaveWindow;
+    final first = window == null ? today : _dateOnly(window.earliestFrom(today));
+    final last = window == null
+        ? today.add(const Duration(days: 365))
+        : _dateOnly(window.latestFrom(today));
+    final start = initial.isBefore(first)
+        ? first
+        : initial.isAfter(last)
+        ? last
+        : initial;
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial.isBefore(today) ? today : initial,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
+      initialDate: start,
+      firstDate: first,
+      lastDate: last,
       selectableDayPredicate: _canSelectLeaveDay,
       builder: _pickerTheme,
     );
@@ -936,12 +1006,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Every leave field except the attachment, which stays optional. The range
   /// must also cost at least one day — an all-week-off range is not a leave.
   bool get _leaveFormComplete {
-    final from = _leaveFrom;
-    if (_leaveType == null || from == null) return false;
+    if (_leaveType == null || _leaveFrom == null) return false;
     if (_leaveReason.text.trim().isEmpty) return false;
-    if (_leaveDuration == 'Half Day') return _isSingleDayLeave;
-    return _leaveDaysBetween(from, _leaveTo ?? from) > 0;
+    // One rule, shared with every other apply-leave surface: the Apply button
+    // is off for anything the server would refuse.
+    return _leaveFormBlockedReason == null;
   }
+
+  /// Why the leave form cannot be submitted yet, for the line at the top of
+  /// the form. Null once everything is in order.
+  String? get _leaveFormBlockedReason {
+    final from = _leaveFrom;
+    final type = _leaveType;
+    if (type == null || from == null) return null;
+    return leaveRangeProblem(
+      policy: widget.dashboard.shift,
+      holidayDates: _holidayKeys,
+      typeLabel: type,
+      from: from,
+      to: _leaveTo ?? from,
+      today: DateTime.now(),
+      maxDays: _maxLeaveApplyDays,
+      halfDay: _leaveDuration == 'Half Day',
+    );
+  }
+
+  /// The company holidays this employee observes, as yyyy-mm-dd keys.
+  Set<String> get _holidayKeys => {
+    for (final holiday in widget.dashboard.holidays)
+      '${holiday.date.year.toString().padLeft(4, '0')}-'
+          '${holiday.date.month.toString().padLeft(2, '0')}-'
+          '${holiday.date.day.toString().padLeft(2, '0')}',
+  };
 
   /// True when the leave covers exactly one date — the only case where a half
   /// day can be applied.
@@ -952,11 +1048,68 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return _sameDay(from, to);
   }
 
+  /// Whether the day selected on the calendar can be applied for under any
+  /// leave type the org runs. No type is chosen at this point, so a day counts
+  /// as applicable if at least one type's window covers it.
+  bool get _calendarDayApplicable => _calendarDayBlockedReason == null &&
+      _selectedCalendarDay != null;
+
+  /// The leave types that would accept [date] — the windows differ per type,
+  /// so a day can be too far ahead for casual and fine for earned.
+  List<String> _leaveTypesFor(DateTime date) => [
+    for (final label in _leaveLabels)
+      if (leaveRangeProblem(
+            policy: widget.dashboard.shift,
+            holidayDates: _holidayKeys,
+            typeLabel: label,
+            from: _dateOnly(date),
+            to: _dateOnly(date),
+            today: DateTime.now(),
+            maxDays: _maxLeaveApplyDays,
+          ) ==
+          null)
+        label,
+  ];
+
+  /// Why the selected day cannot be applied for, or null when it can.
+  String? get _calendarDayBlockedReason {
+    final selected = _selectedCalendarDay;
+    if (selected == null) return 'no day is selected.';
+    final date = _dateOnly(selected.date);
+    final labels = _leaveLabels;
+    if (labels.isEmpty) return 'no leave types are set up.';
+    String? firstReason;
+    for (final label in labels) {
+      final reason = leaveRangeProblem(
+        policy: widget.dashboard.shift,
+        holidayDates: _holidayKeys,
+        typeLabel: label,
+        from: date,
+        to: date,
+        today: DateTime.now(),
+        maxDays: _maxLeaveApplyDays,
+      );
+      if (reason == null) return null;
+      firstReason ??= reason;
+    }
+    // Every type refused it. A week-off or holiday refusal is the same
+    // whichever type asked, so that message reads correctly; otherwise it is
+    // a window, and the windows differ per type.
+    return firstReason != null &&
+            (firstReason.contains('week-off') || firstReason.contains('holiday'))
+        ? firstReason.replaceFirst('That day is a ', 'this is a ')
+        : 'this day is outside the window for every leave type.';
+  }
+
   void _applyLeaveFor(DateTime date) {
+    // Opens on a type this day can be applied for. Landing on the form with
+    // no type, then discovering casual does not reach the date, was the
+    // long way round to the same answer.
+    final types = _leaveTypesFor(date);
     setState(() {
       _leaveFrom = date;
       _leaveTo = date;
-      _leaveType = null;
+      _leaveType = types.length == 1 ? types.first : null;
       _leaveDuration = 'Full Day';
       _leaveReason.clear();
       _leaveAttachmentName = null;
@@ -1082,6 +1235,34 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   _ => const Color(0xFFFB2C36),
                 },
                 footerText: request.hoursLabel,
+                onViewDetails: () => showRequestDetailsSheet(
+                  context,
+                  title: 'Overtime',
+                  statusLabel: _decision(request.decision),
+                  statusColor: switch (request.decision) {
+                    LeaveDecision.approved => const Color(0xFF16A34A),
+                    LeaveDecision.declined => const Color(0xFF6B7280),
+                    LeaveDecision.pending => const Color(0xFFFB2C36),
+                  },
+                  statusTint: switch (request.decision) {
+                    LeaveDecision.approved => const Color(0xFFDCFCE7),
+                    LeaveDecision.declined => const Color(0xFFF3F4F6),
+                    LeaveDecision.pending => const Color(0xFFFEE2E2),
+                  },
+                  rows: [
+                    ('Work date', _short(request.workDate)),
+                    ('Hours', request.hoursLabel),
+                    ('Time', request.timeRangeLabel),
+                    ('Applied on', _short(request.requestedOn)),
+                    ('Note', request.note),
+                  ],
+                  responseLabel: switch (request.decision) {
+                    LeaveDecision.pending => '',
+                    LeaveDecision.approved => 'Approved by your manager',
+                    LeaveDecision.declined => 'Declined by your manager',
+                  },
+                  responseNote: request.managerNote,
+                ),
               ),
             ),
           ),
@@ -1109,6 +1290,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(
         label: 'Apply Overtime',
+        // Off until the date and duration are both valid for the policy.
+        enabled: _overtimeFormComplete,
         onTap: _submitOvertimeApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1180,7 +1363,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Future<void> _pickOvertimeDate() async {
     final today = _dateOnly(DateTime.now());
-    final lastSelectable = today.subtract(const Duration(days: 1));
+    // Today is claimable: a day worked today is overtime like any other.
+    final lastSelectable = today;
     final initial = _overtimeDate ?? lastSelectable;
     final picked = await showDatePicker(
       context: context,
@@ -1202,10 +1386,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   bool _canSelectOvertimeFormDay(DateTime day) {
     final today = _dateOnly(DateTime.now());
-    if (!day.isBefore(today)) return false;
-    // Full-day overtime is only claimable on a day nobody was due to work.
-    if (_overtimeDuration != 'Full day') return true;
-    return _isWeekoffDay(day) || _isCompanyHoliday(day);
+    // Today counts — only a future day is out. How far back is the policy's.
+    if (day.isAfter(today)) return false;
+    return !day.isBefore(_overtimeWindowStart);
+  }
+
+  /// Whether the overtime form holds something the server would accept: a
+  /// duration, and a date inside the backdating window.
+  bool get _overtimeFormComplete {
+    final date = _overtimeDate;
+    if (date == null || _overtimeDuration == null) return false;
+    return _canSelectOvertimeFormDay(date);
   }
 
   Future<void> _submitOvertimeApplication() async {
@@ -1304,6 +1495,36 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   'Paid' || 'Approved' => const Color(0xFF16A34A),
                   _ => const Color(0xFFFB2C36),
                 },
+                onViewDetails: () => showRequestDetailsSheet(
+                  context,
+                  title: '${claim.category} claim',
+                  statusLabel: claim.statusLabel,
+                  statusColor: switch (claim.status) {
+                    'Paid' || 'Approved' => const Color(0xFF16A34A),
+                    'Declined' => const Color(0xFF6B7280),
+                    _ => const Color(0xFFFB2C36),
+                  },
+                  statusTint: switch (claim.status) {
+                    'Paid' || 'Approved' => const Color(0xFFDCFCE7),
+                    'Declined' => const Color(0xFFF3F4F6),
+                    _ => const Color(0xFFFEE2E2),
+                  },
+                  rows: [
+                    ('Type', claim.category),
+                    ('Amount', _money(claim.amount)),
+                    ('Expense date', _short(claim.expenseDate)),
+                    ('Claimed on', _short(claim.createdAt)),
+                    if (claim.receiptName.isNotEmpty)
+                      ('Receipt', claim.receiptName),
+                    ('Note', claim.note),
+                  ],
+                  responseLabel: switch (claim.status) {
+                    'Paid' || 'Approved' => 'Approved by HR',
+                    'Declined' => 'Declined by HR',
+                    _ => '',
+                  },
+                  responseNote: claim.managerNote,
+                ),
               ),
             ),
           ),
@@ -1492,18 +1713,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
+        // One list, one treatment — the coloured icon tiles made four policies
+        // read as four unrelated products.
         ..._policiesData.map(
-          (policy) => _ActionCard(
-            icon: policy.icon,
-            color: policy.color,
-            tint: policy.tint,
-            title: policy.title,
-            subtitle: null,
-            onTap: () => setState(() {
-              _policy = policy;
-              _page = _QuickPage.policy;
-            }),
+          (policy) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _PolicyRow(
+              title: policy.title,
+              onTap: () => setState(() {
+                _policy = policy;
+                _page = _QuickPage.policy;
+              }),
+            ),
           ),
         ),
       ],
@@ -1512,6 +1735,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Widget _policyDetail() {
     final policy = _policy!;
+    // Written from what HR saved, so the app never states a rule the policy
+    // does not. Paragraphs are separated by blank lines in the source text.
+    final body = switch (policy.title) {
+      'Leave' => _leavePolicyText(),
+      'Attendance' => _attendancePolicyText(),
+      'Overtime' => _overtimePolicyText(),
+      'Reimbursement' || 'Claims' => _claimsPolicyText(),
+      _ => policy.body,
+    };
+    final paragraphs = body
+        .split('\n\n')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
     return _HubScaffold(
       key: ValueKey('policy-${policy.title}'),
       title: '${policy.title} policy',
@@ -1519,33 +1756,126 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
-      footer: _SingleActionFooter(
-        color: policy.color,
-        label: 'Open full document',
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${policy.title} policy opened')),
-        ),
-        outlined: true,
-      ),
+      backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            color: policy.tint,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Icon(policy.icon, color: policy.color, size: 30),
-        ),
-        const SizedBox(height: 18),
         Text(policy.title, style: _QText.heroSmall),
-        const SizedBox(height: 14),
-        Text(
-          policy.body,
-          style: const TextStyle(color: _Q.ink, fontSize: 15, height: 1.65),
+        const SizedBox(height: 6),
+        const Text(
+          'As your company has it set up today.',
+          style: TextStyle(color: _Q.inkSoft, fontSize: 13),
         ),
+        const SizedBox(height: 16),
+        for (final paragraph in paragraphs) ...[
+          _FormCard(
+            children: [
+              Text(
+                paragraph,
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 14.5,
+                  height: 1.6,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
       ],
     );
+  }
+
+  /// The leave policy in words, from the types HR runs and the windows set.
+  String _leavePolicyText() {
+    final types = widget.dashboard.shift.leaveTypes;
+    if (types.isEmpty) {
+      return 'Your leave types and balances are set by HR. Check the Leave '
+          'screen for what you have left this year.';
+    }
+    final lines = <String>[];
+    for (final type in types) {
+      final balance = _balanceFor(type.name);
+      final allowance = balance == null
+          ? type.name
+          : '${type.name} — ${formatDays(balance.total)} days a year, '
+                '${formatDays(balance.remaining)} left';
+      final window = type.allowBackdated && type.backdatedDays > 0
+          ? 'Can be applied up to ${type.advanceDays} days ahead, or up to '
+                '${type.backdatedDays} days after the fact.'
+          : 'Can be applied up to ${type.advanceDays} days ahead, and not for '
+                'a day already past.';
+      lines.add('$allowance.\n$window');
+    }
+    return '${lines.join('\n\n')}\n\nWeek-offs and company holidays inside a '
+        'leave range are not counted against your balance.';
+  }
+
+  /// Attendance in words, from the shift HR saved for this employee.
+  String _attendancePolicyText() {
+    final shift = widget.dashboard.shift;
+    final correction = shift.correction;
+    final days = <String>[
+      for (var index = 0; index < 7; index++)
+        if (shift.isWeekOffWeekday(index)) _fullWeekdayNames[index],
+    ];
+    return [
+      if (shift.startTime.isNotEmpty && shift.endTime.isNotEmpty)
+        'Your shift runs ${shift.startTime}–${shift.endTime}'
+            '${shift.name.isEmpty ? '' : ' (${shift.name})'}.',
+      'A day counts as a full day at ${formatDays(shift.minFullDayHours)} '
+          'hours and as a half day at ${formatDays(shift.minHalfDayHours)}.',
+      'You are marked late after ${shift.lateGraceMinutes} minutes past the '
+          'start, and as an early-out if you leave more than '
+          '${shift.earlyOutGraceMinutes} minutes before the end.',
+      if (days.isNotEmpty) 'Week-offs: ${days.join(', ')}.',
+      if (correction.punchFormat.isNotEmpty)
+        'Punches are captured by ${correction.punchFormat}.',
+      if (correction.triggers.isNotEmpty)
+        'A correction can be raised for: '
+            '${correction.triggers.join(', ').toLowerCase()} — up to '
+            '${correction.backdateDays} days back.',
+      'Week-offs and company holidays are not up for correction; claim '
+          'overtime if you worked one.',
+    ].join('\n\n');
+  }
+
+  /// Overtime in words: whether it is open to this employee, what each
+  /// duration is worth as comp-off, and how far back it may go.
+  String _overtimePolicyText() {
+    final shift = widget.dashboard.shift;
+    if (!widget.dashboard.overtimeEnabled) {
+      return 'Overtime is not enabled for your team. Speak to HR if you think '
+          'it should be.';
+    }
+    return [
+      'Overtime is claimed as a full day or a half day, and needs your '
+          "manager's approval.",
+      'A full day is ${formatDays(shift.minFullDayHours)} hours and credits 1 '
+          'day of comp-off. A half day is '
+          '${formatDays(shift.minHalfDayHours)} hours and credits 0.5.',
+      'Claims reach back up to ${shift.overtimeBackdateDays} days.',
+    ].join('\n\n');
+  }
+
+  /// Claims in words, from the reimbursement types HR set up.
+  String _claimsPolicyText() {
+    final types = widget.dashboard.reimbursementTypes;
+    if (types.isEmpty) {
+      return 'Your company has not set up reimbursement types yet.';
+    }
+    return [
+      for (final type in types)
+        [
+          type.name,
+          if (type.description.isNotEmpty) type.description,
+          type.maxLimit > 0
+              ? 'Capped at ${_money(type.maxLimit)} per claim.'
+              : 'No cap per claim.',
+          type.backdateDays > 0
+              ? 'Can be claimed up to ${type.backdateDays} days after the '
+                    'expense.'
+              : 'Must be claimed on the day of the expense.',
+        ].join(' — '),
+    ].join('\n\n');
   }
 
   Widget _calendar() {
@@ -1559,10 +1889,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       backgroundColor: const Color(0xFFF7F7F9),
       trailing: _LeaveHeaderButton(
-        enabled: _selectedCalendarDay != null,
-        onTap: _selectedCalendarDay == null
-            ? null
-            : () => _applyLeaveFor(_selectedCalendarDay!.date),
+        // Off unless the selected day is one some leave type can actually be
+        // applied for — opening the form on a day the policy refuses only
+        // moves the disappointment one screen later.
+        enabled: _calendarDayApplicable,
+        onTap: _calendarDayApplicable
+            ? () => _applyLeaveFor(_selectedCalendarDay!.date)
+            : null,
       ),
       children: [
         Row(
@@ -1602,9 +1935,23 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
         const SizedBox(height: 20),
         Text(
-          _selectedCalendarDay == null
-              ? 'Tap a future working day, then Apply Leave.'
-              : 'Selected ${_short(_selectedCalendarDay!.date)} — tap Apply Leave, or tap the date again to clear.',
+          switch (_selectedCalendarDay) {
+            null => 'Tap a working day you can still apply for, then Apply '
+                'Leave.',
+            final day when !_calendarDayApplicable =>
+              '${_short(day.date)} — ${_calendarDayBlockedReason ?? 'this day '
+                  'cannot be applied for.'}',
+            final day => switch (_leaveTypesFor(day.date)) {
+              // Naming the types matters when only some of them reach this
+              // far: casual runs out long before earned does.
+              final types when types.length < _leaveLabels.length =>
+                'Selected ${_short(day.date)} — can be applied as '
+                    '${types.join(' or ')}.',
+              _ =>
+                'Selected ${_short(day.date)} — tap Apply Leave, or tap the '
+                    'date again to clear.',
+            },
+          },
           style: _QText.subtitle,
         ),
         const SizedBox(height: 20),
@@ -1633,12 +1980,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             const SizedBox(height: 16),
             AttendanceDayDetail(
               day: detail,
-              onRequestCorrection:
-                  detail.kind == AttendanceKind.attention ||
-                      detail.record?.punchIn == null ||
-                      detail.record?.punchOut == null
+              onRequestCorrection: _correctionBlockedReason(detail) == null
                   ? () => _showRegularization(detail.date)
                   : null,
+              correctionBlockedReason: _correctionBlockedReason(detail),
             ),
           ],
         ],
@@ -1697,6 +2042,51 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ? null
           : day;
     });
+  }
+
+  /// Why this day cannot be regularised, or null when it can. Everything here
+  /// mirrors what the server enforces, so the button is never a dead end: HR
+  /// chooses which of the four cases may be corrected and how far back a
+  /// request may reach, both under Shifts › Attendance correction.
+  String? _correctionBlockedReason(AttendanceDayView day) {
+    final rules = widget.dashboard.shift.correction;
+    final today = _dateOnly(DateTime.now());
+    final date = _dateOnly(day.date);
+
+    if (date.isAfter(today)) return 'A future day cannot be regularised.';
+    if (day.kind == AttendanceKind.regularizationPending) {
+      return 'A correction for this day is already with your manager.';
+    }
+    if (day.regularization?.status.toLowerCase() == 'approved') {
+      return 'This day has already been corrected.';
+    }
+    // Nothing to correct on a day nobody was due to work. Overtime is the
+    // route for a week-off or holiday that was actually worked.
+    if (day.kind == AttendanceKind.weekoff) {
+      return 'This is a week-off — claim overtime if you worked it.';
+    }
+    if (day.kind == AttendanceKind.holiday) {
+      return 'This is a company holiday — claim overtime if you worked it.';
+    }
+    if (day.kind == AttendanceKind.leaveApproved ||
+        day.kind == AttendanceKind.leavePending) {
+      return 'This day is booked as leave.';
+    }
+    if (date.isBefore(rules.earliestFrom(today))) {
+      return 'Corrections can only be raised up to '
+          '${rules.backdateDays} days back.';
+    }
+    final trigger = CorrectionRules.triggerFor(
+      punchIn: day.record?.punchIn,
+      punchOut: day.record?.punchOut,
+    );
+    if (!rules.allows(trigger)) {
+      return trigger == 'Both punches present'
+          ? 'Both punches are recorded — your company does not allow a '
+                'correction for a complete day.'
+          : '$trigger cannot be corrected under your company policy.';
+    }
+    return null;
   }
 
   /// Correction request: the employee supplies the punch times they believe
@@ -2008,10 +2398,44 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _StepKind.choice || _StepKind.dropdown => _choice != null,
       _StepKind.text when step.money => _wizardAmountAllowed(),
       _StepKind.text => _text.text.trim().isNotEmpty || step.optional,
-      _StepKind.dates || _StepKind.date => _dateChosen,
+      _StepKind.dates => _dateChosen && _wizardLeaveDatesAllowed,
+      _StepKind.date => _dateChosen && _wizardSingleDateAllowed,
       _StepKind.upload => true,
     };
   }
+
+  /// A leave range the policy would accept: the right type, inside its window,
+  /// and with at least one day that actually costs leave.
+  bool get _wizardLeaveDatesAllowed {
+    if (_flow != _QuickFlow.leave) return true;
+    final type = _answers['Type'] ?? _choice;
+    if (type == null) return false;
+    return leaveRangeProblem(
+          policy: widget.dashboard.shift,
+          holidayDates: _holidayKeys,
+          typeLabel: type,
+          from: _from,
+          to: _to,
+          today: DateTime.now(),
+          maxDays: _maxLeaveApplyDays,
+        ) ==
+        null;
+  }
+
+  /// The single date an overtime claim or a reimbursement is for.
+  bool get _wizardSingleDateAllowed => switch (_flow) {
+    _QuickFlow.overtime => _canSelectOvertimeDay(_from),
+    _QuickFlow.reimbursement =>
+      _wizardReimbursementType == null ||
+          !_from.isBefore(
+            _dateOnly(
+              _wizardReimbursementType!.earliestClaimableFrom(
+                _dateOnly(DateTime.now()),
+              ),
+            ),
+          ),
+    _ => true,
+  };
 
   /// The reimbursement type picked on the wizard's first step, if any.
   ReimbursementType? get _wizardReimbursementType {
@@ -2183,6 +2607,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         child: _MonthCalendar(
           from: _dateChosen ? _from : null,
           to: _dateChosen ? _to : null,
+          firstDate: _leaveWindowStart,
+          lastDate: _leaveWindowEnd,
           selectableDayPredicate: _canSelectLeaveDay,
           onPick: (day) => setState(() {
             if (!_dateChosen || !_sameDay(_from, _to)) {
@@ -2207,6 +2633,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _StepKind.date => _PaperCard(
         child: _MonthCalendar(
           from: _dateChosen ? _from : null,
+          firstDate: switch (_flow) {
+            _QuickFlow.overtime => _overtimeWindowStart,
+            _QuickFlow.reimbursement => _reimbursementWindowStart,
+            _ => null,
+          },
+          lastDate: switch (_flow) {
+            _QuickFlow.overtime || _QuickFlow.reimbursement => _dateOnly(
+              DateTime.now(),
+            ),
+            _ => null,
+          },
           selectableDayPredicate: _flow == _QuickFlow.overtime
               ? _canSelectOvertimeDay
               : _flow == _QuickFlow.reimbursement
@@ -2579,20 +3016,80 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         kind: leaveSteps.first.kind,
         question: leaveSteps.first.question,
         subtitle: leaveSteps.first.subtitle,
+        // Straight from the policy: a type HR switched off — or dropped
+        // entirely — never reaches the app, so it is not offered here.
         options: [
-          _FlowOption('Sick', Icons.thermostat_rounded),
-          _FlowOption('Casual', Icons.coffee_rounded),
-          _FlowOption('Earned', Icons.flight_takeoff_rounded),
+          for (final label in _leaveLabels)
+            _FlowOption(_shortLeaveLabel(label), _leaveIcon(label)),
         ],
       ),
       ...leaveSteps.skip(1),
     ];
   }
 
-  /// Weekends and company holidays are selectable — they can sit inside a
-  /// leave range. Holidays simply don't count towards the days used.
+  /// 'Casual Leave' reads as 'Casual' in the wizard, where 'leave' is already
+  /// the question. Anything HR names differently is shown as they named it.
+  static String _shortLeaveLabel(String label) {
+    const known = {
+      'Casual Leave': 'Casual',
+      'Sick Leave': 'Sick',
+      'Earned Leave': 'Earned',
+    };
+    return known[label] ?? label;
+  }
+
+  static IconData _leaveIcon(String label) => switch (label) {
+    'Sick Leave' => Icons.thermostat_rounded,
+    'Casual Leave' => Icons.coffee_rounded,
+    'Earned Leave' => Icons.flight_takeoff_rounded,
+    'Comp-off' => Icons.swap_horiz_rounded,
+    _ => Icons.event_available_rounded,
+  };
+
+  /// The first and last day the chosen leave type can be applied for.
+  DateTime? get _leaveWindowStart {
+    final window = _leaveWindow;
+    final today = _dateOnly(DateTime.now());
+    return window == null ? today : _dateOnly(window.earliestFrom(today));
+  }
+
+  DateTime? get _leaveWindowEnd {
+    final window = _leaveWindow;
+    return window == null
+        ? null
+        : _dateOnly(window.latestFrom(_dateOnly(DateTime.now())));
+  }
+
+  /// Overtime is claimed for a day already worked, so the window runs back
+  /// from today by however many days the policy allows.
+  DateTime get _overtimeWindowStart {
+    final today = _dateOnly(DateTime.now());
+    return today.subtract(
+      Duration(days: widget.dashboard.shift.overtimeBackdateDays),
+    );
+  }
+
+  /// The same for a claim, from the type's own backdating window.
+  DateTime? get _reimbursementWindowStart {
+    final today = _dateOnly(DateTime.now());
+    final type = _wizardReimbursementType;
+    return type == null ? null : _dateOnly(type.earliestClaimableFrom(today));
+  }
+
+  LeaveTypeWindow? get _leaveWindow {
+    final label = _leaveType ?? _answers['Type'] ?? _choice;
+    return label == null ? null : widget.dashboard.shift.windowForLeave(label);
+  }
+
+  /// Applying is bounded by what HR configured for that type — how far ahead,
+  /// and whether it can be backdated at all. Without this the form accepted
+  /// dates the server then refused.
   bool _canSelectLeaveDay(DateTime day) {
-    return !day.isBefore(_dateOnly(DateTime.now()));
+    final today = _dateOnly(DateTime.now());
+    final window = _leaveWindow;
+    if (window == null) return !day.isBefore(today);
+    return !day.isBefore(_dateOnly(window.earliestFrom(today))) &&
+        !day.isAfter(_dateOnly(window.latestFrom(today)));
   }
 
   /// Calendar days in the range, less the company's week-off days (Sunday by
@@ -2624,10 +3121,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   // company holiday for full-day. Duration was chosen on the previous step.
   bool _canSelectOvertimeDay(DateTime day) {
     final today = _dateOnly(DateTime.now());
-    if (!day.isBefore(today)) return false;
-    final fullDay = (_answers['Duration'] ?? _choice) == 'Full day';
-    if (!fullDay) return true;
-    return _isWeekoffDay(day) || _isCompanyHoliday(day);
+    // Today counts: a week-off worked today is overtime like any other. Only
+    // a future day is out.
+    if (day.isAfter(today)) return false;
+    return !day.isBefore(_overtimeWindowStart);
+  }
+
+  /// Whether the window holds any day the current choice can be claimed for.
+  /// A full day is week-offs and holidays only, so a short backdating window
+  /// can contain none — better said out loud than left as a dead calendar.
+  bool get _overtimeWindowHasADay {
+    final today = _dateOnly(DateTime.now());
+    for (
+      var day = _overtimeWindowStart;
+      !day.isAfter(today);
+      day = day.add(const Duration(days: 1))
+    ) {
+      if (_canSelectOvertimeDay(day)) return true;
+    }
+    return false;
   }
 }
 
@@ -3202,6 +3714,7 @@ class AttendanceDayDetail extends StatelessWidget {
     super.key,
     required this.day,
     this.onRequestCorrection,
+    this.correctionBlockedReason,
   });
 
   final AttendanceDayView day;
@@ -3209,6 +3722,11 @@ class AttendanceDayDetail extends StatelessWidget {
   /// Shown as the "Apply for a correction" link on days that need one. Omitted
   /// on the manager's read-only view of a report.
   final VoidCallback? onRequestCorrection;
+
+  /// Why a correction cannot be raised for this day — outside the backdating
+  /// window, or a case HR does not allow. Shown in place of the link, so the
+  /// answer is on the day itself rather than at the end of a form.
+  final String? correctionBlockedReason;
 
   @override
   Widget build(BuildContext context) {
@@ -3302,6 +3820,29 @@ class AttendanceDayDetail extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
+          ),
+        ] else if (correctionBlockedReason case final reason?) ...[
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 13,
+                color: Color(0xFF929292),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  reason,
+                  style: const TextStyle(
+                    color: Color(0xFF929292),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ],
@@ -3890,6 +4431,232 @@ class _LeaveRequestCard extends StatelessWidget {
   }
 }
 
+/// Everything a request was filled in with, plus what came back. Opened from
+/// the "View details" line on any history card, so the employee can read their
+/// own submission and the response without asking their manager.
+Future<void> showRequestDetailsSheet(
+  BuildContext context, {
+  required String title,
+  required String statusLabel,
+  required Color statusColor,
+  required Color statusTint,
+  required List<(String label, String value)> rows,
+  String responseLabel = '',
+  String responseNote = '',
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFF111827),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusTint,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            for (final row in rows)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 116,
+                      child: Text(
+                        row.$1,
+                        style: const TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        row.$2.trim().isEmpty ? '—' : row.$2,
+                        style: const TextStyle(
+                          color: Color(0xFF111827),
+                          fontSize: 13.5,
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (responseLabel.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: statusTint,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      responseLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (responseNote.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        responseNote.trim(),
+                        style: TextStyle(
+                          color: statusColor.withValues(alpha: .85),
+                          fontSize: 12.5,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// The "View details" line every history card carries.
+class _ViewDetailsLink extends StatelessWidget {
+  const _ViewDetailsLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'View details',
+              style: TextStyle(
+                color: Color(0xFF0571A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(width: 3),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+              color: Color(0xFF0571A6),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// A policy in the list: its name and nothing else, in the app's own palette.
+class _PolicyRow extends StatelessWidget {
+  const _PolicyRow({required this.title, required this.onTap});
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$title policy',
+                style: const TextStyle(
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: Color(0xFF9CA3AF),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _QuickStatsCard extends StatelessWidget {
   const _QuickStatsCard({required this.label, required this.stats});
 
@@ -3951,6 +4718,7 @@ class _QuickRequestCard extends StatelessWidget {
     required this.status,
     required this.statusColor,
     this.footerText,
+    this.onViewDetails,
   });
 
   final String title;
@@ -3958,6 +4726,9 @@ class _QuickRequestCard extends StatelessWidget {
   final String status;
   final Color statusColor;
   final String? footerText;
+
+  /// Opens everything the request was filled in with, plus the response.
+  final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -4036,6 +4807,10 @@ class _QuickRequestCard extends StatelessWidget {
                 ),
               ],
             ),
+          ],
+          if (onViewDetails case final open?) ...[
+            const SizedBox(height: 4),
+            _ViewDetailsLink(onTap: open),
           ],
         ],
       ),
@@ -4277,10 +5052,16 @@ class _LeavePickerSheet extends StatelessWidget {
     required this.options,
     required this.selected,
     this.trailingLabels = const {},
+    this.unavailable = const {},
   });
 
   final List<String> options;
   final String? selected;
+
+  /// Types that cannot cover the dates already chosen, mapped to why. They are
+  /// shown greyed rather than hidden, so the reason is visible where the
+  /// choice is made.
+  final Map<String, String> unavailable;
 
   /// Optional right-aligned note per option — the leave picker uses it to show
   /// the remaining balance ("10/12") next to each type.
@@ -4306,7 +5087,9 @@ class _LeavePickerSheet extends StatelessWidget {
             const SizedBox(height: 12),
             for (final option in options) ...[
               InkWell(
-                onTap: () => Navigator.of(context).pop(option),
+                onTap: unavailable.containsKey(option)
+                    ? null
+                    : () => Navigator.of(context).pop(option),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -4315,22 +5098,41 @@ class _LeavePickerSheet extends StatelessWidget {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          option,
-                          style: TextStyle(
-                            color: const Color(0xFF222222),
-                            fontSize: 16,
-                            fontWeight: option == selected
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              option,
+                              style: TextStyle(
+                                color: unavailable.containsKey(option)
+                                    ? const Color(0xFF9CA3AF)
+                                    : const Color(0xFF222222),
+                                fontSize: 16,
+                                fontWeight: option == selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                            if (unavailable[option] case final reason?) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                reason,
+                                style: const TextStyle(
+                                  color: Color(0xFF9CA3AF),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       if (trailingLabels[option] case final label?)
                         Text(
                           label,
-                          style: const TextStyle(
-                            color: Color(0xFF6B7280),
+                          style: TextStyle(
+                            color: unavailable.containsKey(option)
+                                ? const Color(0xFFB6BCC6)
+                                : const Color(0xFF6B7280),
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -4882,6 +5684,8 @@ class _MonthCalendar extends StatefulWidget {
     this.to,
     this.selectionLabel,
     this.selectableDayPredicate,
+    this.firstDate,
+    this.lastDate,
   });
 
   final DateTime? from;
@@ -4890,15 +5694,39 @@ class _MonthCalendar extends StatefulWidget {
   final String? selectionLabel;
   final bool Function(DateTime day)? selectableDayPredicate;
 
+  /// The window HR allows for this request. Days outside it are left blank
+  /// rather than drawn greyed out, and the month arrows stop at its edges —
+  /// so the calendar only ever offers days that can actually be applied for.
+  final DateTime? firstDate;
+  final DateTime? lastDate;
+
   @override
   State<_MonthCalendar> createState() => _MonthCalendarState();
 }
 
 class _MonthCalendarState extends State<_MonthCalendar> {
-  late DateTime _month = DateTime(
-    widget.from?.year ?? DateTime.now().year,
-    widget.from?.month ?? DateTime.now().month,
-  );
+  late DateTime _month = _openingMonth();
+
+  DateTime _openingMonth() {
+    final start = widget.from ?? widget.firstDate ?? DateTime.now();
+    return DateTime(start.year, start.month);
+  }
+
+  bool get _canGoBack {
+    final first = widget.firstDate;
+    if (first == null) return true;
+    return DateTime(_month.year, _month.month - 1, 1).isAfter(
+      DateTime(first.year, first.month, 0),
+    );
+  }
+
+  bool get _canGoForward {
+    final last = widget.lastDate;
+    if (last == null) return true;
+    return DateTime(_month.year, _month.month + 1, 1).isBefore(
+      DateTime(last.year, last.month + 1, 1),
+    );
+  }
 
   void _shift(int delta) {
     setState(() => _month = DateTime(_month.year, _month.month + delta));
@@ -4913,9 +5741,12 @@ class _MonthCalendarState extends State<_MonthCalendar> {
       children: [
         Row(
           children: [
-            _CalendarArrow(
-              icon: Icons.chevron_left_rounded,
-              onTap: () => _shift(-1),
+            Opacity(
+              opacity: _canGoBack ? 1 : .25,
+              child: _CalendarArrow(
+                icon: Icons.chevron_left_rounded,
+                onTap: _canGoBack ? () => _shift(-1) : null,
+              ),
             ),
             Expanded(
               child: Text(
@@ -4924,9 +5755,12 @@ class _MonthCalendarState extends State<_MonthCalendar> {
                 style: _QText.cardTitle,
               ),
             ),
-            _CalendarArrow(
-              icon: Icons.chevron_right_rounded,
-              onTap: () => _shift(1),
+            Opacity(
+              opacity: _canGoForward ? 1 : .25,
+              child: _CalendarArrow(
+                icon: Icons.chevron_right_rounded,
+                onTap: _canGoForward ? () => _shift(1) : null,
+              ),
             ),
           ],
         ),
@@ -4959,6 +5793,14 @@ class _MonthCalendarState extends State<_MonthCalendar> {
             final number = index - leading + 1;
             if (number < 1 || number > count) return const SizedBox();
             final day = DateTime(_month.year, _month.month, number);
+            // Outside the window: not drawn at all, so the only dates on show
+            // are ones this request can actually be made for.
+            if (widget.firstDate != null && day.isBefore(widget.firstDate!)) {
+              return const SizedBox();
+            }
+            if (widget.lastDate != null && day.isAfter(widget.lastDate!)) {
+              return const SizedBox();
+            }
             final enabled = widget.selectableDayPredicate?.call(day) ?? true;
             final selected =
                 _sameDay(day, widget.from) || _sameDay(day, widget.to);
@@ -5015,7 +5857,9 @@ class _MonthCalendarState extends State<_MonthCalendar> {
 class _CalendarArrow extends StatelessWidget {
   const _CalendarArrow({required this.icon, required this.onTap});
   final IconData icon;
-  final VoidCallback onTap;
+
+  /// Null at the edge of the allowed window, which greys the arrow out.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -5385,7 +6229,7 @@ const _flowSteps = <_QuickFlow, List<_FlowStep>>{
       label: 'Day',
       kind: _StepKind.date,
       question: 'Which day did you work overtime?',
-      subtitle: 'Full day: week-offs & holidays only. Half day: any past day.',
+      subtitle: 'The day you worked the extra hours.',
     ),
     _FlowStep(
       label: 'Project',

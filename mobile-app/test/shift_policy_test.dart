@@ -94,4 +94,149 @@ void main() {
     final half = ShiftPolicy.fromJson(const {'minHalfDayHours': 4.5});
     expect(half.minHalfDay, const Duration(hours: 4, minutes: 30));
   });
+
+  test('a leave type the server leaves out is not offered anywhere', () {
+    // The server sends only the types HR has switched on.
+    final policy = ShiftPolicy.fromJson(const {
+      'leaveTypes': [
+        {'key': 'casual', 'name': 'Casual Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 3},
+        {'key': 'earned', 'name': 'Earned Leave', 'advanceDays': 90, 'allowBackdated': false, 'backdatedDays': 0},
+      ],
+    });
+    expect(policy.applicableLeaveLabels, ['Casual Leave', 'Earned Leave']);
+    expect(policy.allowsLeave('Sick Leave'), isFalse);
+    expect(policy.allowsLeave('Casual Leave'), isTrue);
+    expect(policy.windowForLeave('Sick Leave'), isNull);
+  });
+
+  test('an older server that sends no policy still offers the standard types', () {
+    const policy = ShiftPolicy();
+    expect(policy.applicableLeaveLabels, [
+      'Casual Leave',
+      'Sick Leave',
+      'Earned Leave',
+      'Comp-off',
+    ]);
+    expect(policy.allowsLeave('Sick Leave'), isTrue);
+  });
+
+  group('the apply-leave rule the button follows', () {
+    // Casual: 30 days ahead, 3 days back. Sundays off, 2 Oct is a holiday.
+    final policy = ShiftPolicy.fromJson(const {
+      'weeklyOff': {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
+      'leaveTypes': [
+        {'key': 'casual', 'name': 'Casual Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 3},
+        {'key': 'earned', 'name': 'Earned Leave', 'advanceDays': 90, 'allowBackdated': false, 'backdatedDays': 0},
+      ],
+    });
+    final holidays = {'2026-10-02'};
+    final today = DateTime(2026, 9, 10);
+
+    String? problem(DateTime from, DateTime to, {String type = 'Casual Leave', bool halfDay = false}) =>
+        leaveRangeProblem(
+          policy: policy,
+          holidayDates: holidays,
+          typeLabel: type,
+          from: from,
+          to: to,
+          today: today,
+          halfDay: halfDay,
+        );
+
+    test('a normal working day is fine', () {
+      expect(problem(DateTime(2026, 9, 15), DateTime(2026, 9, 16)), isNull);
+    });
+
+    test('a day past the backdating window is refused', () {
+      expect(problem(DateTime(2026, 9, 1), DateTime(2026, 9, 1)), contains('Casual Leave'));
+    });
+
+    test('a day inside the backdating window is allowed', () {
+      expect(problem(DateTime(2026, 9, 8), DateTime(2026, 9, 8)), isNull);
+    });
+
+    test('a day beyond the advance window is refused', () {
+      expect(problem(DateTime(2026, 11, 30), DateTime(2026, 11, 30)), isNotNull);
+    });
+
+    test('a type that cannot be backdated refuses any past day', () {
+      expect(
+        problem(DateTime(2026, 9, 9), DateTime(2026, 9, 9), type: 'Earned Leave'),
+        contains('already past'),
+      );
+    });
+
+    test('a company holiday alone is refused', () {
+      expect(problem(DateTime(2026, 10, 2), DateTime(2026, 10, 2)), contains('holiday'));
+    });
+
+    test('a week-off alone is refused', () {
+      // 13 Sep 2026 is a Sunday.
+      expect(problem(DateTime(2026, 9, 13), DateTime(2026, 9, 13)), contains('week-off'));
+    });
+
+    test('a range that spans a week-off is fine', () {
+      expect(problem(DateTime(2026, 9, 11), DateTime(2026, 9, 14)), isNull);
+    });
+
+    test('a switched-off type is refused', () {
+      expect(problem(DateTime(2026, 9, 15), DateTime(2026, 9, 15), type: 'Sick Leave'), contains('not available'));
+    });
+
+    test('a half day over two dates is refused', () {
+      expect(
+        problem(DateTime(2026, 9, 15), DateTime(2026, 9, 16), halfDay: true),
+        contains('single date'),
+      );
+    });
+
+    test('an end before the start is refused', () {
+      expect(problem(DateTime(2026, 9, 16), DateTime(2026, 9, 15)), contains('before the start'));
+    });
+
+    test('a range longer than the cap is refused', () {
+      expect(problem(DateTime(2026, 9, 11), DateTime(2026, 10, 20)), isNotNull);
+    });
+  });
+
+  test('the calendar button is off when no type accepts the day', () {
+    // Sowaka today: casual 3 back / 30 ahead, earned no backdating / 90 ahead,
+    // comp-off 30 ahead. Sundays off.
+    final policy = ShiftPolicy.fromJson(const {
+      'weeklyOff': {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
+      'leaveTypes': [
+        {'key': 'casual', 'name': 'Casual Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 3},
+        {'key': 'earned', 'name': 'Earned Leave', 'advanceDays': 90, 'allowBackdated': false, 'backdatedDays': 0},
+        {'key': 'comp_off', 'name': 'Comp-off', 'advanceDays': 30, 'allowBackdated': false, 'backdatedDays': 0},
+      ],
+    });
+    final today = DateTime(2026, 9, 10);
+
+    // The rule the calendar's button follows: a day is applicable only if at
+    // least one type accepts it.
+    bool anyTypeAccepts(DateTime day) => policy.applicableLeaveLabels.any(
+      (label) =>
+          leaveRangeProblem(
+            policy: policy,
+            holidayDates: const {'2026-10-02'},
+            typeLabel: label,
+            from: day,
+            to: day,
+            today: today,
+          ) ==
+          null,
+    );
+
+    // 8 Aug 2026 — the day from the report: a month back, outside every window.
+    expect(anyTypeAccepts(DateTime(2026, 8, 8)), isFalse);
+    // A Sunday, and a company holiday.
+    expect(anyTypeAccepts(DateTime(2026, 9, 13)), isFalse);
+    expect(anyTypeAccepts(DateTime(2026, 10, 2)), isFalse);
+    // Yesterday: casual can still be backdated three days.
+    expect(anyTypeAccepts(DateTime(2026, 9, 9)), isTrue);
+    // A working day next week.
+    expect(anyTypeAccepts(DateTime(2026, 9, 16)), isTrue);
+    // Two months out: past casual's 30 days, but earned reaches 90.
+    expect(anyTypeAccepts(DateTime(2026, 11, 10)), isTrue);
+  });
 }

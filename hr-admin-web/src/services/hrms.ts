@@ -243,6 +243,8 @@ export type LeaveTypeRule = {
   advanceDays: number;
   allowBackdated: boolean;
   backdatedDays: number;
+  /** Off means nobody can apply for it; leave already taken keeps reading. */
+  active: boolean;
 };
 
 /** Year-end split for one balance — mirrors processYearEnd on the server. */

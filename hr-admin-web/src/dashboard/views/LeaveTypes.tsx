@@ -81,6 +81,9 @@ export function LeaveTypes() {
 
 function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void }) {
   const isCompOff = row.key === 'comp_off';
+  // A policy saved before this switch existed has no flag at all, and those
+  // types are on — only an explicit false means switched off.
+  const isOn = row.active !== false;
   const annual = +(row.perMonth * 12).toFixed(1);
 
   return (
@@ -88,12 +91,14 @@ function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' }}>
         <span style={{ width: 11, height: 11, borderRadius: 3, background: SWATCH[row.key], flexShrink: 0 }} />
         <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.2px' }}>{row.name}</div>
-        <span style={annualPill}>
+        {!isOn && <span style={offPill}>Off</span>}
+        <span style={{ ...annualPill, marginLeft: isOn ? 'auto' : 8 }}>
           {isCompOff ? 'earned from overtime' : `${annual} days / year`}
         </span>
       </div>
 
       <div style={{ padding: '18px 20px' }}>
+
         <MiniLabel>Accrual</MiniLabel>
         {isCompOff ? (
           <div style={note}>
@@ -186,6 +191,7 @@ function Suffixed({ value, onChange, suffix, width, step }: { value: string; onC
 
 const input: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const fieldLabel: CSSProperties = { fontSize: 14, fontWeight: 700, color: '#484848' };
+const offPill: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px' };
 const annualPill: CSSProperties = { marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#4A6FA5', background: '#EEF3FA', border: '1px solid #DEE8F4', borderRadius: 20, padding: '3px 11px' };
 const note: CSSProperties = { fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
 const lapseRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 14, color: '#717171' };

@@ -165,6 +165,7 @@ function leaveType(value: unknown): LeaveTypeRule {
     advanceDays: days(source.advanceDays, 'Advance window', 30),
     allowBackdated: flag(source.allowBackdated, true),
     backdatedDays: days(source.backdatedDays, 'Backdating window', 3),
+    active: flag(source.active, true),
   };
 }
 
@@ -433,7 +434,16 @@ export async function getOrgShiftPolicy(org: string): Promise<Omit<OrgShiftPolic
     missingBoth: asMark(doc.missingBoth, DEFAULT_ORG_SHIFT_POLICY.missingBoth),
     overtime: { ...DEFAULT_ORG_SHIFT_POLICY.overtime, ...(doc.overtime ?? {}) },
     correction: { ...DEFAULT_ORG_SHIFT_POLICY.correction, ...(doc.correction ?? {}) },
-    leave: { ...DEFAULT_ORG_SHIFT_POLICY.leave, ...(doc.leave ?? {}) },
+    leave: {
+      ...DEFAULT_ORG_SHIFT_POLICY.leave,
+      ...(doc.leave ?? {}),
+      // Types saved before the on/off switch existed carry no flag, and those
+      // are on — only an explicit false switches a type off.
+      types: (doc.leave?.types ?? DEFAULT_ORG_SHIFT_POLICY.leave.types).map((type) => ({
+        ...type,
+        active: type.active !== false,
+      })),
+    },
   };
 }
 
@@ -497,6 +507,31 @@ export type ShiftPolicyView = {
   minFullDayHours: number;
   lateGraceMinutes: number;
   earlyOutGraceMinutes: number;
+  /** How far back an overtime claim may reach, in days. */
+  overtimeBackdateDays: number;
+  /**
+   * The application window for each leave type, so the app can bound its date
+   * picker instead of letting someone fill a form the server will refuse.
+   */
+  leaveTypes: {
+    key: string;
+    name: string;
+    advanceDays: number;
+    allowBackdated: boolean;
+    backdatedDays: number;
+  }[];
+  /**
+   * What a regularisation may be raised against, so the app can grey out the
+   * button on a day HR does not allow one for, rather than letting someone
+   * fill a form the server will refuse.
+   */
+  correction: {
+    /** Which of the four day outcomes can be corrected. */
+    triggers: string[];
+    /** How far back a correction may reach, in days. */
+    backdateDays: number;
+    punchFormat: string;
+  };
 };
 
 /**
@@ -514,6 +549,23 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
     lateGraceMinutes: policy.lateGraceMinutes,
     earlyOutGraceMinutes: policy.earlyOutGraceMinutes,
     weeklyOff: policy.weeklyOff,
+    overtimeBackdateDays: policy.overtime.backdateDays,
+    // Only the types people may actually apply for — a switched-off type
+    // should not appear in the app's picker at all.
+    leaveTypes: policy.leave.types
+      .filter((type) => type.active !== false)
+      .map((type) => ({
+        key: type.key,
+        name: type.name,
+        advanceDays: type.advanceDays,
+        allowBackdated: type.allowBackdated,
+        backdatedDays: type.backdatedDays,
+      })),
+    correction: {
+      triggers: policy.correction.triggers,
+      backdateDays: policy.correction.backdateDays,
+      punchFormat: policy.correction.punchFormat,
+    },
   };
 }
 
@@ -542,9 +594,26 @@ export async function policyForUser(userId: string): Promise<ShiftPolicyRules & 
   const user = await users().findOne({ userId });
   if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
   const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
+  const orgPolicy = await getOrgShiftPolicy(user.org);
   // A template with no policy of its own is not an override of anything.
-  if (template?.policy) return { ...template.policy, shiftName: template.name };
-  return { ...(await getOrgShiftPolicy(user.org)), shiftName: null };
+  if (!template?.policy) return { ...orgPolicy, shiftName: null };
+  // A template overrides every rule except one: a leave type switched off for
+  // the whole organisation stays off. A template may switch a type off for its
+  // own people, but it cannot switch one back on that HR has withdrawn.
+  const orgOff = new Set(
+    orgPolicy.leave.types.filter((type) => type.active === false).map((type) => type.key),
+  );
+  return {
+    ...template.policy,
+    leave: {
+      ...template.policy.leave,
+      types: template.policy.leave.types.map((type) => ({
+        ...type,
+        active: type.active !== false && !orgOff.has(type.key),
+      })),
+    },
+    shiftName: template.name,
+  };
 }
 
 /**

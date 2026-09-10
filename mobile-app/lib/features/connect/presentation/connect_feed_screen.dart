@@ -189,13 +189,36 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       );
     }
     if (state.posts.isEmpty) {
-      return _ConnectEmptyState(
-        icon: Icons.forum_rounded,
-        title: 'No posts yet',
-        body: 'Company updates, kudos and events will appear here.',
-        actionLabel: 'Refresh',
-        onAction: _bloc.refresh,
-        illustrationAsset: 'assets/icons/connect_empty_state_illustration.png',
+      // The composer lives inside the list, so an empty feed has to carry it
+      // too — otherwise clearing the feed leaves no way to post again.
+      return RefreshIndicator(
+        color: _ConnectColors.terra,
+        onRefresh: _bloc.refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+          children: [
+            _StartAPostCard(
+              initials: _viewerInitials,
+              color: _viewerColor,
+              photoUrl: _viewerPhotoUrl,
+              onTap: _openPostTypePicker,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.55,
+              child: _ConnectEmptyState(
+                icon: Icons.forum_rounded,
+                title: 'No posts yet',
+                body: 'Start the conversation — company updates, kudos and '
+                    'events you post will appear here.',
+                actionLabel: 'Write a post',
+                onAction: _openPostTypePicker,
+                illustrationAsset:
+                    'assets/icons/connect_empty_state_illustration.png',
+              ),
+            ),
+          ],
+        ),
       );
     }
     final posts = state.posts;
@@ -761,9 +784,10 @@ class _PostMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!canManage) {
-      return const Icon(Icons.more_vert_rounded, color: _ConnectColors.faint);
-    }
+    // Nothing to offer on someone else's post: editing and deleting are the
+    // only entries. It used to render the same three dots with no menu behind
+    // them, which read as a button that did not work.
+    if (!canManage) return const SizedBox.shrink();
     return PopupMenuButton<_PostMenuAction>(
       icon: const Icon(Icons.more_vert_rounded, color: _ConnectColors.faint),
       color: Colors.white,
@@ -5256,7 +5280,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           maxChildSize: 0.92,
           expand: false,
           builder: (context, scrollController) {
-            return Container(
+            // The sheet has to give the keyboard its space, or the composer and
+            // the emoji row sit behind it — the keyboard came up and there was
+            // nowhere to see what you were typing.
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+              child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -5508,6 +5537,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     ),
                   ),
                 ],
+              ),
               ),
             );
           },

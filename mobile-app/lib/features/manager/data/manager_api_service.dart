@@ -123,6 +123,9 @@ class ManagerApiService {
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
+      myOrgChart: (workspace['myOrgChart'] as List<dynamic>? ?? const [])
+          .map((value) => OrgChartNode.fromJson(value as Map<String, dynamic>))
+          .toList(),
       shift: ShiftPolicy.fromJson(
         workspace['shift'] as Map<String, dynamic>? ?? const {},
       ),
@@ -226,6 +229,16 @@ class ManagerApiService {
     );
     return AttendanceRegularization.fromJson(
       json['regularization'] as Map<String, dynamic>,
+    );
+  }
+
+  /// The signed-in employee's shift policy on its own. Re-read while the app
+  /// runs so an HR change — a leave type switched off, a new backdating
+  /// window — lands without signing out.
+  Future<ShiftPolicy> fetchShiftPolicy() async {
+    final body = await _request('GET', '/manager/shift-policy');
+    return ShiftPolicy.fromJson(
+      body['shift'] as Map<String, dynamic>? ?? const {},
     );
   }
 

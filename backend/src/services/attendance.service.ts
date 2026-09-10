@@ -4,7 +4,8 @@ import {
   AttendanceRegularization,
   RegularizationStatus,
 } from '../models/attendance.model';
-import { approvalRulesFor, managerMayDecide, policyForUser } from './shift.service';
+import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { holidayDatesForUser } from './holiday.service';
 import {
   notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
 } from './request-notifications.service';
@@ -100,6 +101,32 @@ export async function recordPunch(userId: string, type: string) {
   };
 }
 
+/**
+ * Whether a date is a day this employee was not due to work — their shift's
+ * week-off grid, or one of their location's company holidays.
+ */
+async function isNonWorkingDay(
+  userId: string,
+  employee: { org?: string } & Record<string, unknown>,
+  date: Date,
+): Promise<boolean> {
+  const policy = await policyForUser(userId);
+  if (isWeekOffDay(date, policy.weeklyOff)) return true;
+  const holidays = await holidayDatesForUser(employee as never);
+  return holidays.has(date.toISOString().slice(0, 10));
+}
+
+/**
+ * Which of the four correction cases a day falls into, named exactly as the
+ * Attendance correction page names them, so the policy's list can be checked
+ * against it directly.
+ */
+export function correctionTriggerFor(punchIn: Date | null, punchOut: Date | null): string {
+  if (punchIn && punchOut) return 'Both punches present';
+  if (!punchIn && !punchOut) return 'Both punches missing';
+  return punchIn ? 'Missing punch-out' : 'Missing punch-in';
+}
+
 export async function requestRegularization(
   userId: string,
   input: { workDate?: string; punchIn?: string; punchOut?: string; note?: string },
@@ -109,8 +136,14 @@ export async function requestRegularization(
   const today = new Date();
   const todayText = today.toISOString().slice(0, 10);
   if (workDate > todayText) throw new AttendanceError(400, 'Future dates cannot be regularized');
-  if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > 45) {
-    throw new AttendanceError(400, 'Regularization window is 45 days');
+  // Both limits come from the policy HR saved — how far back a correction may
+  // reach, and which of the four day outcomes may be corrected at all.
+  const correction = (await policyForUser(userId)).correction;
+  if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > correction.backdateDays) {
+    throw new AttendanceError(
+      400,
+      `Regularization can be raised up to ${correction.backdateDays} days back`,
+    );
   }
   const punchIn = parsePunch(input.punchIn, workDate, 'punchIn');
   const punchOut = parsePunch(input.punchOut, workDate, 'punchOut');
@@ -126,6 +159,24 @@ export async function requestRegularization(
   const employee = await users().findOne({ userId });
   if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
   if (!employee.managerUserId) throw new AttendanceError(409, 'A manager must be assigned');
+  // Nothing to correct on a day nobody was due to work: a week-off or a
+  // company holiday that was worked is an overtime claim, not a correction.
+  if (await isNonWorkingDay(userId, employee, date)) {
+    throw new AttendanceError(
+      400,
+      'This day is a week-off or a company holiday — claim overtime instead',
+    );
+  }
+  // What the day actually looks like decides whether it can be corrected: HR
+  // switches each of the four outcomes on or off under Attendance correction.
+  const record = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  const trigger = correctionTriggerFor(record?.punchIn ?? null, record?.punchOut ?? null);
+  if (!correction.triggers.includes(trigger)) {
+    throw new AttendanceError(
+      400,
+      `${trigger} cannot be regularized — your company does not allow a correction for this case`,
+    );
+  }
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) throw new AttendanceError(409, 'A regularization request is already pending for this date');
   const createdAt = new Date();

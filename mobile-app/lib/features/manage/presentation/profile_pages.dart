@@ -253,12 +253,6 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       ),
                   ],
                 ),
-                if (member.orgChart.length > 1) ...[
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: 'Org Chart'),
-                  const SizedBox(height: 8),
-                  _OrgChartCard(nodes: member.orgChart),
-                ],
                 const SizedBox(height: 22),
                 const _SectionTitle(title: 'Work Role'),
                 const SizedBox(height: 8),
@@ -282,6 +276,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       ),
                   ],
                 ),
+                if (member.orgChart.length > 1) ...[
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: 'Org Chart'),
+                  const SizedBox(height: 8),
+                  _OrgChartCard(nodes: member.orgChart),
+                ],
                 if (member.documents.isNotEmpty) ...[
                   const SizedBox(height: 22),
                   const _SectionTitle(title: 'Documentation'),
@@ -293,6 +293,16 @@ class _TeamMemberProfilePage extends StatelessWidget {
                 if (canManage && !member.isManager) ...[
                   const SizedBox(height: 22),
                   _GiveFeedbackButton(
+                    // A review already sent this cycle is still editable, so
+                    // the button says so rather than inviting a second one.
+                    label:
+                        member.history.any(
+                          (record) =>
+                              record.period ==
+                              _EmployeeGrowthPage._currentPeriod(),
+                        )
+                        ? 'Edit Feedback'
+                        : 'Give Feedback',
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -350,7 +360,27 @@ class _OrgChartCard extends StatelessWidget {
           for (final (index, node) in nodes.indexed) ...[
             if (index > 0)
               Container(width: 1, height: 12, color: const Color(0xFFDDDDDD)),
+            if (node.isReport && !nodes[index - 1].isReport) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 6),
+                  child: Text(
+                    nodes.where((item) => item.isReport).length == 1
+                        ? 'REPORTS TO THEM'
+                        : '${nodes.where((item) => item.isReport).length} REPORT TO THEM',
+                    style: const TextStyle(
+                      color: Color(0xFF929292),
+                      fontSize: 10,
+                      letterSpacing: .5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
             Container(
+              margin: EdgeInsets.only(left: node.isReport ? 18 : 0),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: node.isSelf ? const Color(0xFFF0F7FC) : Colors.white,
@@ -492,9 +522,13 @@ class _DocumentationCard extends StatelessWidget {
 }
 
 class _GiveFeedbackButton extends StatelessWidget {
-  const _GiveFeedbackButton({required this.onTap});
+  const _GiveFeedbackButton({
+    required this.onTap,
+    this.label = 'Give Feedback',
+  });
 
   final VoidCallback onTap;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -504,12 +538,12 @@ class _GiveFeedbackButton extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(28),
         onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
           child: Text(
-            'Give Feedback',
+            label,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -768,43 +802,6 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            if (dashboard.growthHistory.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 13,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF7F7F9),
-                                  borderRadius: BorderRadius.circular(99),
-                                  border: Border.all(
-                                    color: const Color(0xFFEBEBEB),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SvgPicture.asset(
-                                      'assets/icons/profile_rating_star.svg',
-                                      width: 16,
-                                      height: 16,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      dashboard.growthHistory.last.overallScore
-                                          .toStringAsFixed(1),
-                                      style: const TextStyle(
-                                        color: Color(0xFF717171),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
@@ -855,6 +852,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                           ),
                         ],
                       ),
+                      if (dashboard.myOrgChart.length > 1) ...[
+                        const SizedBox(height: 22),
+                        const _SectionTitle(title: 'Org Chart'),
+                        const SizedBox(height: 8),
+                        _OrgChartCard(nodes: dashboard.myOrgChart),
+                      ],
                       const SizedBox(height: 18),
                       _LogoutButton(onPressed: onLogout),
                       const SizedBox(height: 24),
@@ -1560,10 +1563,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                                 day.date,
                                 DateTime.now(),
                               ),
-                              dimmed: !matchesAttendanceFilter(
-                                day,
-                                _filter,
-                              ),
+                              dimmed: !matchesAttendanceFilter(day, _filter),
                               selected: _isSameCalendarDay(
                                 day.date,
                                 _selectedDay?.date ?? _month,
@@ -2065,15 +2065,67 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                _GrowthScoreSection(
-                  history: history,
-                  selectedIndex: _selectedIndex,
-                  onSelect: (index) => setState(() => _selectedIndex = index),
-                ),
-                const SizedBox(height: 16),
+                // Picking a month here, tapping a point on the chart, and
+                // opening a month card below all drive the same selection —
+                // so the highlighted point always names the month on show.
+                if (history.length > 1) ...[
+                  _GrowthMonthPicker(
+                    history: history,
+                    selectedIndex: effectiveIndex,
+                    onSelect: (index) => setState(() => _selectedIndex = index),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // With nothing to chart, an empty score card and a separate
+                // due card just look broken — the empty state below carries
+                // the explanation and the Give Feedback button instead.
+                if (history.isNotEmpty) ...[
+                  _GrowthScoreSection(
+                    history: history,
+                    selectedIndex: _selectedIndex,
+                    onSelect: (index) => setState(() => _selectedIndex = index),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // The viewer's own page, or their own manager's: the same
+                // cards, without the write actions — this cycle is either
+                // shared or still with the approver.
+                if (widget.memberId == null || _isOwnManager) ...[
+                  if (currentDone)
+                    _FeedbackSubmittedCard(period: period, onEdit: null)
+                  else
+                    _FeedbackAwaitedCard(
+                      period: period,
+                      approverName: widget.data.approverName,
+                    ),
+                  const SizedBox(height: 4),
+                ],
+                // A review that has been sent stays open until the cycle
+                // closes — status stays Submitted, the manager can keep
+                // editing it until then.
+                if (history.isNotEmpty &&
+                    currentDone &&
+                    widget.memberId != null &&
+                    !_isOwnManager) ...[
+                  _FeedbackSubmittedCard(
+                    period: period,
+                    onEdit: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _FeedbackFormPage(
+                          bloc: widget.bloc,
+                          memberId: widget.memberId!,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 // Never offered for the viewer's own manager: feedback only
                 // flows downward.
-                if (!currentDone && widget.memberId != null && !_isOwnManager)
+                if (history.isNotEmpty &&
+                    !currentDone &&
+                    widget.memberId != null &&
+                    !_isOwnManager)
                   _FeedbackDuePeriodCard(
                     period: period,
                     onGiveFeedback: () => Navigator.of(context).push(
@@ -2085,26 +2137,41 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                       ),
                     ),
                   ),
-                for (final (index, record) in history.reversed.indexed) ...[
+                // One month at a time: the picker above and the chart point
+                // choose which, so stacking every month here only repeated
+                // what the selection already says.
+                if (history.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  // Kept in sync with the chart above: selecting a chart
-                  // point opens its card, and opening a card selects its
-                  // chart point.
                   _GrowthMonthCard(
-                    record: record,
-                    expanded: history.length - 1 - index == effectiveIndex,
-                    onToggle: () => setState(
-                      () => _selectedIndex = history.length - 1 - index,
-                    ),
+                    record: history[effectiveIndex],
+                    expanded: true,
+                    collapsible: false,
+                    onToggle: () {},
                   ),
                 ],
-                if (history.isEmpty && currentDone) ...[
-                  const SizedBox(height: 40),
-                  const Center(
-                    child: Text(
-                      'No reviews have been sent yet.',
-                      style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
-                    ),
+                // Shown whenever there is nothing to chart. This used to be
+                // gated on a review existing for the current period, which
+                // cannot be true when the history is empty — so someone with no
+                // feedback at all got a blank page.
+                if (history.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  _NoGrowthYet(
+                    approverName: widget.data.approverName,
+                    currentDone: currentDone,
+                    period: period,
+                    onGiveFeedback:
+                        (!currentDone &&
+                            widget.memberId != null &&
+                            !_isOwnManager)
+                        ? () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => _FeedbackFormPage(
+                                bloc: widget.bloc,
+                                memberId: widget.memberId!,
+                              ),
+                            ),
+                          )
+                        : null,
                   ),
                 ],
               ],
@@ -2116,6 +2183,222 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
               bloc: widget.bloc,
               onBeforeChange: () =>
                   Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Chooses which reviewed month the chart and the cards below are showing.
+///
+/// The screen already synced the chart point with the open month card; this
+/// adds the third way in, for when the dots are too close together to hit.
+class _GrowthMonthPicker extends StatelessWidget {
+  const _GrowthMonthPicker({
+    required this.history,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<GrowthRecord> history;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  static const _months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  /// '2026-09' as 'September 2026'.
+  static String label(String period) {
+    final parts = period.split('-');
+    if (parts.length != 2) return period;
+    final month = int.tryParse(parts[1]);
+    if (month == null || month < 1 || month > 12) return period;
+    return '${_months[month - 1]} ${parts[0]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.calendar_month_rounded,
+            size: 18,
+            color: MColors.inkSoft,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: selectedIndex,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(14),
+                items: [
+                  for (final (index, record) in history.indexed)
+                    DropdownMenuItem(
+                      value: index,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label(record.period),
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                                color: MColors.ink,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            record.overallScore.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: MColors.inkSoft,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+                onChanged: (index) {
+                  if (index != null) onSelect(index);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the growth screen says before anyone has been reviewed.
+///
+/// The screen is a chart of scores over time, so with no reviews there is
+/// nothing to draw. Rather than leave it blank, say what the screen is for,
+/// what has to happen before it fills, and who it depends on.
+class _NoGrowthYet extends StatelessWidget {
+  const _NoGrowthYet({
+    required this.approverName,
+    required this.currentDone,
+    this.period,
+    this.onGiveFeedback,
+  });
+
+  final String approverName;
+  final bool currentDone;
+
+  /// The cycle waiting on a review, shown when the viewer can write one.
+  final String? period;
+
+  /// Set for a manager who still owes this person a review this cycle; null
+  /// for anyone who can only watch the page fill in.
+  final VoidCallback? onGiveFeedback;
+
+  @override
+  Widget build(BuildContext context) {
+    final by = approverName.trim().isEmpty ? 'your manager' : approverName;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: MColors.line),
+      ),
+      child: Column(
+        children: [
+          const IconBox(
+            icon: Icons.show_chart_rounded,
+            color: MColors.plum,
+            tint: MColors.plumTint,
+            size: 52,
+            iconSize: 25,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No reviews yet',
+            style: TextStyle(
+              color: MColors.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            currentDone
+                ? 'A review for this cycle has been started but not sent. It will appear here once $by submits it.'
+                : 'Your growth chart fills in as reviews are sent. $by reviews you once a cycle, and each one adds a point here with your score on every parameter.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: MColors.inkSoft,
+              fontSize: 13.5,
+              height: 1.55,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (onGiveFeedback != null) ...[
+            Material(
+              color: const Color(0xFFE8862B),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onGiveFeedback,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                  child: Text(
+                    'Give Feedback',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (period != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Open for ${_periodTitle(period!)}',
+                style: const TextStyle(color: MColors.inkSoft, fontSize: 12.5),
+              ),
+            ],
+          ] else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: MColors.plumTint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Nothing to do here yet — this page fills itself in.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: MColors.plum,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
         ],
       ),
@@ -2263,6 +2546,176 @@ class _GrowthPageTopBar extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The counterpart for a period whose review has been sent. It stays editable
+/// until the cycle closes, and the status stays Submitted throughout — a later
+/// edit replaces the review rather than starting a new one.
+class _FeedbackSubmittedCard extends StatelessWidget {
+  const _FeedbackSubmittedCard({required this.period, required this.onEdit});
+
+  final String period;
+
+  /// Null on a page the viewer cannot write to — their own, or their own
+  /// manager's — where the card only reports the status.
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3FAF5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFE3CC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _periodTitle(period),
+                  style: const TextStyle(
+                    color: MColors.ink,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCF0E3),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Submitted',
+                  style: TextStyle(
+                    color: Color(0xFF2F7A4F),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            onEdit == null
+                ? 'This cycle\'s review has been shared with you.'
+                : 'You can keep editing this review until the cycle ends.',
+            style: const TextStyle(color: MColors.inkSoft, fontSize: 13),
+          ),
+          if (onEdit != null) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: onEdit,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBFE3CC)),
+                    ),
+                    child: const Text(
+                      'Edit feedback',
+                      style: TextStyle(
+                        color: Color(0xFF2F7A4F),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The same card for a cycle whose review has not arrived yet, on a page the
+/// viewer cannot write to — so a manager's own Grow page reads the same way a
+/// team member's does, instead of showing nothing at all.
+class _FeedbackAwaitedCard extends StatelessWidget {
+  const _FeedbackAwaitedCard({
+    required this.period,
+    required this.approverName,
+  });
+
+  final String period;
+  final String approverName;
+
+  @override
+  Widget build(BuildContext context) {
+    final by = approverName.trim().isEmpty ? 'Your manager' : approverName;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5C86B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _periodTitle(period),
+                  style: const TextStyle(
+                    color: MColors.ink,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFBEFD2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Awaited',
+                  style: TextStyle(
+                    color: Color(0xFF8A6218),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$by has not shared this cycle\'s review yet. It will appear here '
+            'as soon as it is sent.',
+            style: const TextStyle(color: MColors.inkSoft, fontSize: 13),
           ),
         ],
       ),

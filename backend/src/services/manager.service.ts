@@ -37,6 +37,12 @@ export interface OrgChartNode {
   name: string;
   designation: string;
   isSelf: boolean;
+  /**
+   * True for someone who reports to the person the chart is about. The chain
+   * above them is a single line; their own reports hang below it, so a chart
+   * still says something for someone at the top of the tree.
+   */
+  isReport?: boolean;
 }
 
 export interface TeamMemberDocumentView {
@@ -115,6 +121,11 @@ export async function getManagerWorkspace(managerUserId: string) {
   // across orgs, and without this another company's employees can appear in
   // the team list.
   const orgFilter = manager.org ? { org: manager.org } : {};
+
+  // The whole org, so each report's own reporting line can be walked rather
+  // than assumed to run through whoever is looking at it.
+  const orgRoster = await users().find(orgFilter).toArray();
+  const orgUsersById = new Map(orgRoster.map((user) => [user.userId, user]));
 
   const directReports = await users()
     .find({
@@ -297,7 +308,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       managerName: manager.name,
       // Reporting line from the top of the chain down to this report. The chain
       // is walked from `managerUserId` links already loaded above.
-      orgChart: buildOrgChart(report, manager, approver),
+      orgChart: buildOrgChart(report, orgUsersById),
       history: (historyByEmployee.get(report.userId) ?? []).map((record) => ({
         period: record.period,
         overallScore: Number(record.overallScore.toFixed(1)),
@@ -331,6 +342,9 @@ export async function getManagerWorkspace(managerUserId: string) {
   return {
     period,
     approverName: approver?.name ?? 'Your manager',
+    // The viewer's own reporting line, so their profile shows the same chart
+    // their team members' profiles do.
+    myOrgChart: buildOrgChart(manager, orgUsersById),
     managerScore: Number((ownFeedback?.overallScore ?? 0).toFixed(1)),
     weekoffDays: companyConfig.weekoffDays,
     shift,
@@ -392,6 +406,11 @@ export async function upsertFeedback(
   // blocking until HR decides.
   const org = employee.org ?? '';
   const period = await currentPeriodFor(org);
+  // A review already sent this cycle stays sent: editing it until the cycle
+  // closes is allowed, but a later Save must not quietly pull it back to a
+  // draft the employee can no longer see.
+  const previous = await feedbackRecords().findOne({ managerUserId, employeeUserId, period });
+  const effectiveStatus: FeedbackRecordStatus = previous?.status === 'sent' ? 'sent' : status;
   const assigned = await assignedParametersFor(org, employeeUserId, period);
   if (!assigned.length) {
     throw new ManagerError(
@@ -416,7 +435,7 @@ export async function upsertFeedback(
     if (!Number.isFinite(score) || score < 0 || score > 5) {
       throw new ManagerError(400, 'Feedback scores must be between 0 and 5');
     }
-    if (status === 'sent' && score === 0) {
+    if (effectiveStatus === 'sent' && score === 0) {
       throw new ManagerError(400, 'A score is required for every parameter before sending');
     }
     if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
@@ -442,24 +461,25 @@ export async function upsertFeedback(
     ? parameters.reduce((sum, p) => sum + p.score * (p.weight ?? 0), 0) / totalWeight
     : parameters.reduce((sum, p) => sum + p.score, 0) / parameters.length;
   const now = new Date();
-  const existing = await feedbackRecords().findOne({ managerUserId, employeeUserId, period });
+  const existing = previous;
   const record = await feedbackRecords().findOneAndUpdate(
     { managerUserId, employeeUserId, period },
     {
       $set: {
-        status,
+        status: effectiveStatus,
         parameters,
         extra,
         overallScore,
         updatedAt: now,
-        ...(status === 'sent' ? { sentAt: now } : {}),
+        // The first send stamps the time; a later edit keeps that stamp, so
+        // the review reads as submitted when it was, not when it was tweaked.
+        ...(effectiveStatus === 'sent' && !existing?.sentAt ? { sentAt: now } : {}),
       },
       $setOnInsert: { managerUserId, employeeUserId, period, createdAt: now },
-      ...(status === 'saved' && existing?.sentAt ? { $unset: { sentAt: '' } } : {}),
     },
     { upsert: true, returnDocument: 'after' },
   );
-  if (status === 'sent' && existing?.status !== 'sent') {
+  if (effectiveStatus === 'sent' && existing?.status !== 'sent') {
     // Notifies both sides: the manager gets their progress for the cycle, the
     // employee gets the review. Only on the first send — re-editing a sent
     // review should not re-announce it.
@@ -537,21 +557,48 @@ async function requireRecognitionCandidate(managerUserId: string, employeeUserId
  * Reporting line shown on a report's profile, ordered top-down:
  * the manager's own manager (when there is one), the manager, then the report.
  */
-function buildOrgChart(
-  report: User,
-  manager: User,
-  approver: User | null,
-): OrgChartNode[] {
+/**
+ * This employee's own reporting line, top of the chain down to them.
+ *
+ * It used to be assembled from the *viewer's* line — [viewer's manager, viewer,
+ * employee] — which was right only when the viewer happened to be that person's
+ * manager. Anyone else looking at the profile saw their own chain with a
+ * stranger pinned on the end, so two people under different managers appeared
+ * to share one, and a viewer could show up twice in their own chart.
+ *
+ * Walked from `managerUserId`, with each id visited once: a reporting loop in
+ * the data stops the walk instead of looping forever.
+ */
+function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[] {
   const node = (user: User, isSelf: boolean): OrgChartNode => ({
     userId: user.userId,
     name: user.name,
     designation: user.designation ?? user.department ?? '',
     isSelf,
   });
+
+  const chain: User[] = [];
+  const seen = new Set<string>([report.userId]);
+  let current: User | undefined = report.managerUserId
+    ? byUserId.get(report.managerUserId)
+    : undefined;
+  while (current && !seen.has(current.userId)) {
+    seen.add(current.userId);
+    chain.unshift(current);
+    current = current.managerUserId ? byUserId.get(current.managerUserId) : undefined;
+  }
+
+  // Whoever reports to them, so the head of the tree — who has no chain above
+  // them at all — still gets a chart worth showing.
+  const directReports = [...byUserId.values()]
+    .filter((user) => user.managerUserId === report.userId && user.userId !== report.userId)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((user) => ({ ...node(user, false), isReport: true }));
+
   return [
-    ...(approver ? [node(approver, false)] : []),
-    node(manager, false),
+    ...chain.map((user) => node(user, false)),
     node(report, true),
+    ...directReports,
   ];
 }
 

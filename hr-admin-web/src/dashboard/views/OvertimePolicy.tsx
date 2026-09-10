@@ -17,7 +17,6 @@ export function OvertimePolicy() {
   const [eligible, setEligible] = useState(true);
   const [backdateDays, setBackdateDays] = useState('7');
   // Per-team switch, from company settings — the second of the three gates.
-  const [departments, setDepartments] = useState<string[]>([]);
   const [disabled, setDisabled] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,7 +30,9 @@ export function OvertimePolicy() {
       .catch((error: Error) => flash(error.message))
       .finally(() => setLoading(false));
     getCompanySettings()
-      .then((s) => { setDepartments(s.departments); setDisabled(s.overtimeDisabledDepartments); })
+      // The per-team switch was removed; the saved list is still round-tripped
+      // so an org that set one before is not silently re-enabled.
+      .then((s) => setDisabled(s.overtimeDisabledDepartments))
       .catch((error: Error) => flash(error.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -85,39 +86,6 @@ export function OvertimePolicy() {
               it. There are no other durations.
             </span>
           </div>
-        </div>
-      </Card>
-
-      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <SectionHeader title="Overtime by team" subtitle="Turn overtime off for particular teams — those employees won’t see the option in the app." />
-        <div style={{ padding: '18px 22px', opacity: eligible ? 1 : 0.5, pointerEvents: eligible ? 'auto' : 'none' }}>
-          {!eligible && <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 10 }}>Overtime is off for the whole org.</div>}
-          {departments.length === 0 ? (
-            <div style={{ fontSize: 15, color: '#717171' }}>No teams found in your organisation yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {departments.map((dep) => {
-                const on = !disabled.includes(dep);
-                return (
-                  <div key={dep} style={teamRow}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: '#333333' }}>{dep}</div>
-                    <button
-                      onClick={() => setDisabled((prev) => (on ? [...prev, dep] : prev.filter((d) => d !== dep)))}
-                      style={{
-                        marginLeft: 'auto', padding: '6px 16px', fontSize: 14, fontWeight: 700,
-                        cursor: 'pointer', borderRadius: 20,
-                        border: `1px solid ${on ? '#D6E8D6' : '#EBEBEB'}`,
-                        background: on ? '#EAF3EA' : '#F7F7F9',
-                        color: on ? '#4F7A52' : '#9197A2',
-                      }}
-                    >
-                      {on ? 'On' : 'Off'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </Card>
 
@@ -221,4 +189,3 @@ const note: CSSProperties = { marginTop: 16, fontSize: 13, color: '#3A5A6B', bac
 const fixedRow: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, fontSize: 13, color: '#717171', lineHeight: 1.55 };
 const fixedTag: CSSProperties = { flexShrink: 0, fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: '#0571A6', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' };
-const teamRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', border: '1px solid #F0F0F2', borderRadius: 12, background: '#FBFBFC' };

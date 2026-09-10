@@ -5,7 +5,7 @@ import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { getCompanyConfig } from './company-settings.service';
 import { holidayDatesForUser } from './holiday.service';
-import { fullDayHoursFor, isWeekOffDay, weekOffGridFor } from './shift.service';
+import { fullDayHoursFor, isWeekOffDay, policyForUser, weekOffGridFor } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 
 const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
@@ -18,6 +18,19 @@ export async function createOvertimeRequest(
   const workDate = parseDateOnly(input.workDate, 'workDate');
   if (workDate >= startOfUtcDay(new Date())) {
     throw new OvertimeError(400, 'Overtime can only be submitted for a past date');
+  }
+  // How far back a claim may reach is the org's call, from Policies › Overtime.
+  // It was configurable but never consulted, so a claim for a day six months
+  // ago was accepted.
+  const overtimeRules = (await policyForUser(userId)).overtime;
+  const daysBack = Math.round(
+    (startOfUtcDay(new Date()).getTime() - workDate.getTime()) / 86_400_000,
+  );
+  if (daysBack > overtimeRules.backdateDays) {
+    throw new OvertimeError(
+      400,
+      `Overtime can be claimed up to ${overtimeRules.backdateDays} days back`,
+    );
   }
   const startTime = parseDateTime(input.startTime, 'startTime');
   const endTime = parseDateTime(input.endTime, 'endTime');

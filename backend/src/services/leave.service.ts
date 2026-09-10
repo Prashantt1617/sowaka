@@ -86,6 +86,10 @@ export async function applyForLeave(
   // after the fact, earned leave is planned well ahead.
   const rules = await leaveTypeRulesFor(employee.userId);
   const rule = rules.find((item) => item.key === type);
+  // A type the org does not run — switched off, or no longer offered at all.
+  if (!rule || rule.active === false) {
+    throw new LeaveError(400, `${rule?.name ?? 'That leave type'} is not available in this organisation`);
+  }
   if (rule) {
     const todayOnly = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
     const aheadDays = Math.floor((startDate.getTime() - todayOnly.getTime()) / 86_400_000);
@@ -123,6 +127,28 @@ export async function applyForLeave(
   }
   if (days > maxLeaveDays) {
     throw new LeaveError(400, `Leave cannot exceed ${maxLeaveDays} days`);
+  }
+
+  // You cannot spend leave you do not have. Checked against the balance for the
+  // year the leave starts in, counting what is already approved *and* what is
+  // still pending — two pending requests that each fit the balance must not be
+  // able to overdraw it together.
+  const balance = await getMyLeaveBalance(userId, startDate.getUTCFullYear());
+  const forType = balance[type] as { total: number; used: number } | undefined;
+  if (forType) {
+    const pending = await leaves()
+      .find({ userId, type, status: 'pending' })
+      .toArray();
+    const held = pending.reduce((total, row) => total + (row.days ?? 0), 0);
+    const available = Math.max(0, forType.total - forType.used - held);
+    if (days > available) {
+      throw new LeaveError(
+        400,
+        held > 0
+          ? `Only ${available} day(s) of ${type} leave left — ${forType.total - forType.used} in balance, ${held} already requested`
+          : `Only ${available} day(s) of ${type} leave left`,
+      );
+    }
   }
 
   const reason = input.reason.trim();
