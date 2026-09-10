@@ -800,8 +800,10 @@ class ManagerBloc {
       final readPolicy =
           _policyReadAt == null ||
           DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 1);
+      // Kept separate from the leave calls: an older server without this
+      // route must not stop the leaves refreshing too.
       final policyFuture = readPolicy
-          ? _service.fetchShiftPolicy()
+          ? _service.fetchShiftPolicy().catchError((_) => data.shift)
           : Future<ShiftPolicy>.value(data.shift);
       final myLeavesFuture = _service.fetchMyLeaves();
       final managerLeavesFuture = _state.canManage
