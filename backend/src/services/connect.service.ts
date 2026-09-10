@@ -260,6 +260,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const meta = postMeta(type);
   const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
   const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
+  let published = false;
   try {
     const normalizedBody = normalizePostBody(
       type,
@@ -293,6 +294,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       updatedAt: now,
     };
     await connectPosts().insertOne(post);
+    published = true;
     announceChange(post, 'created', viewerUserId);
     // One publication push per person in the audience. Awaited so a failure is
     // logged against the request that caused it rather than surfacing later,
@@ -300,7 +302,12 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     await notifyPostPublished(post);
     return viewPost(post, viewerUserId);
   } catch (error) {
-    await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
+    // Only for a post that never made it into the collection. Once the row is
+    // in, its media belongs to a live post: a transient failure while
+    // announcing it must not leave the post standing with its images deleted.
+    if (!published) {
+      await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
+    }
     throw error;
   }
 }

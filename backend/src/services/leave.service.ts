@@ -86,9 +86,9 @@ export async function applyForLeave(
   // after the fact, earned leave is planned well ahead.
   const rules = await leaveTypeRulesFor(employee.userId);
   const rule = rules.find((item) => item.key === type);
-  // A type the org does not run — switched off, or no longer offered at all.
-  if (!rule || rule.active === false) {
-    throw new LeaveError(400, `${rule?.name ?? 'That leave type'} is not available in this organisation`);
+  // A type this org does not run at all.
+  if (!rule) {
+    throw new LeaveError(400, 'That leave type is not available in this organisation');
   }
   {
     const todayOnly = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
@@ -133,20 +133,37 @@ export async function applyForLeave(
   // year the leave starts in, counting what is already approved *and* what is
   // still pending — two pending requests that each fit the balance must not be
   // able to overdraw it together.
-  const balance = await getMyLeaveBalance(userId, startDate.getUTCFullYear());
-  const forType = balance[type] as { total: number; used: number } | undefined;
-  if (forType) {
-    const pending = await leaves()
-      .find({ userId, type, status: 'pending' })
-      .toArray();
-    const held = pending.reduce((total, row) => total + (row.days ?? 0), 0);
+  // A range that crosses new year is charged to both years, so each one is
+  // checked against its own balance rather than the start year's alone.
+  const years = [...new Set([startDate.getUTCFullYear(), endDate.getUTCFullYear()])];
+  const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
+  for (const year of years) {
+    const balance = await getMyLeaveBalance(userId, year);
+    const forType = balance[type] as { total: number; used: number } | undefined;
+    if (!forType) continue;
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const daysInYear = years.length === 1
+      ? days
+      : halfDay
+        ? 0.5
+        : countLeaveDays(
+            startDate < yearStart ? yearStart : startDate,
+            endDate > yearEnd ? yearEnd : endDate,
+            holidayDates,
+            weeklyOff,
+          );
+    if (daysInYear <= 0) continue;
+    const held = pending
+      .filter((row) => row.startDate <= yearEnd && row.endDate >= yearStart)
+      .reduce((total, row) => total + (row.days ?? 0), 0);
     const available = Math.max(0, forType.total - forType.used - held);
-    if (days > available) {
+    if (daysInYear > available) {
       throw new LeaveError(
         400,
         held > 0
-          ? `Only ${available} day(s) of ${type} leave left — ${forType.total - forType.used} in balance, ${held} already requested`
-          : `Only ${available} day(s) of ${type} leave left`,
+          ? `Only ${available} day(s) of ${type} leave left in ${year} — ${forType.total - forType.used} in balance, ${held} already requested`
+          : `Only ${available} day(s) of ${type} leave left in ${year}`,
       );
     }
   }
@@ -316,13 +333,19 @@ async function openingBalances(
   compOffThisYear: number,
 ): Promise<Partial<Record<Leave['type'], number>>> {
   const recorded: Partial<Record<Leave['type'], number>> = {};
-  let anyRecorded = false;
+  const missing: LeaveTypeRule[] = [];
   for (const rule of rules) {
     const carried = await carriedFromYearEndRun(userId, rule.key as LeaveTypeKey, year);
-    if (carried != null) { recorded[rule.key as Leave['type']] = carried; anyRecorded = true; }
+    if (carried != null) recorded[rule.key as Leave['type']] = carried;
+    else missing.push(rule);
   }
-  if (anyRecorded) return recorded;
-  return carriedForwardInto(userId, org, year, rules, compOffThisYear);
+  if (missing.length === 0) return recorded;
+  // Per type, not all-or-nothing: a type whose year-end has been recorded uses
+  // that figure, and one that has not is still derived. Short-circuiting on
+  // the first recorded type left every other type opening at zero — a
+  // financial-year type looked emptied the moment a calendar-year one closed.
+  const derived = await carriedForwardInto(userId, org, year, missing, compOffThisYear);
+  return { ...derived, ...recorded };
 }
 
 async function carriedForwardInto(

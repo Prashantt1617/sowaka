@@ -24,6 +24,21 @@ function orgList(raw: string | undefined): string[] {
   return value.split(',').map((org) => org.trim()).filter(Boolean);
 }
 
+/**
+ * The email allowlist, which only an explicit `*` (or `all`) may lift.
+ *
+ * An unset or empty `EMAIL_ORGS` falls back to the safe default rather than to
+ * "everyone": a blank value in a deploy config is far more likely to be a
+ * mistake than a decision to start mailing every org.
+ */
+function emailOrgList(raw: string | undefined): string[] {
+  if (raw === undefined) return ['sowaka'];
+  const value = raw.trim().toLowerCase();
+  if (value === '*' || value === 'all') return [];
+  const orgs = orgList(raw);
+  return orgs.length > 0 ? orgs : ['sowaka'];
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
@@ -54,9 +69,7 @@ export const env = {
    * state is the one that needs no deployment config to hold. Set `EMAIL_ORGS`
    * to a list to widen it, or to `*` to lift the restriction entirely.
    */
-  emailOrgs: process.env.EMAIL_ORGS === undefined
-    ? ['sowaka']
-    : orgList(process.env.EMAIL_ORGS),
+  emailOrgs: emailOrgList(process.env.EMAIL_ORGS),
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
   notificationTestEndpointEnabled:

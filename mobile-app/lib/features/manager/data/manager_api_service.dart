@@ -89,6 +89,10 @@ class ManagerApiService {
       managerPhotoUrl: session.user.profilePhotoUrl,
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
+      cycleEndsOn: switch (workspace['cycleEndsOn']) {
+        final String value when value.isNotEmpty => DateTime.tryParse(value),
+        _ => null,
+      },
       managerScore: (workspace['managerScore'] as num?)?.toDouble() ?? 0,
       growthHistory: (workspace['growthHistory'] as List<dynamic>? ?? const [])
           .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))

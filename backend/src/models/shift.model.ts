@@ -74,8 +74,8 @@ export const CORRECTION_TRIGGERS = [
 ];
 
 /**
- * The leave types an org can run. 'sick' is no longer offered — it stays in
- * the union so leave already taken against it still reads and validates.
+ * The leave types an org runs. 'sick' is no longer offered — it stays in the
+ * union so leave already taken against it still reads and validates.
  */
 export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
 
@@ -106,12 +106,6 @@ export interface LeaveTypeRule {
   allowBackdated: boolean;
   /** How far back, when backdating is allowed. */
   backdatedDays: number;
-  /**
-   * Whether this type can be applied for. Switched off rather than deleted, so
-   * leave already taken against it keeps reading correctly and the balance
-   * history stays intact.
-   */
-  active: boolean;
 }
 
 /**
@@ -139,9 +133,9 @@ export const LEAVE_TYPE_KEYS: LeaveTypeKey[] = ['sick', 'casual', 'earned', 'com
 
 export const DEFAULT_LEAVE_TYPES: LeaveTypeRule[] = [
   // Sick leave was dropped — the org runs these three.
-  { key: 'casual', name: 'Casual Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 15, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3, active: true },
-  { key: 'earned', name: 'Earned Leave', perMonth: 1.5, resetOn: 'financial_year', carryForwardDays: 15, encashment: 'all', encashLimitDays: 0, advanceDays: 90, allowBackdated: false, backdatedDays: 0, active: true },
-  { key: 'comp_off', name: 'Comp-off', perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 5, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: false, backdatedDays: 0, active: true },
+  { key: 'casual', name: 'Casual Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 15, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3 },
+  { key: 'earned', name: 'Earned Leave', perMonth: 1.5, resetOn: 'financial_year', carryForwardDays: 15, encashment: 'all', encashLimitDays: 0, advanceDays: 90, allowBackdated: false, backdatedDays: 0 },
+  { key: 'comp_off', name: 'Comp-off', perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 5, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: false, backdatedDays: 0 },
 ];
 
 /**

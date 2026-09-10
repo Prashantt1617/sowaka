@@ -118,10 +118,6 @@ export function ShiftTemplates() {
       { header: 'Early-out grace (min)', value: () => p.earlyOutGraceMinutes },
       { header: 'Punch format', value: () => p.correction.punchFormat },
       { header: 'Leave approver', value: () => p.leave.approver },
-      {
-        header: 'Leave types on',
-        value: () => p.leave.types.filter((t) => t.active !== false).map((t) => t.name).join(' | '),
-      },
       { header: 'Overtime eligible', value: () => (p.overtime.eligible ? 'Yes' : 'No') },
     ], rows);
   };
@@ -437,14 +433,7 @@ function LeaveTypeBlock({ type, onChange }: { type: LeaveTypeRule; onChange: (c:
   const isCompOff = type.key === 'comp_off';
   return (
     <div style={{ border: '1px solid #EDEDF0', borderRadius: 10, padding: '14px 16px', marginTop: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ fontSize: 15, fontWeight: 800 }}>{type.name}</div>
-        {type.active === false && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px' }}>
-            Off
-          </span>
-        )}
-      </div>
+      <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10 }}>{type.name}</div>
       <Grid2>
         {!isCompOff && (
           <Field label="Leaves earned per month">

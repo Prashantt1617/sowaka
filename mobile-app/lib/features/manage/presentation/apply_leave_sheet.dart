@@ -158,24 +158,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   void _continueFromDates() {
-    if (_endDate.isBefore(_startDate)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('End date cannot be before start date')),
-      );
-      return;
-    }
-    if (_endDate.difference(_startDate).inDays + 1 > _maxLeaveApplyDays) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Leave cannot exceed 30 days')),
-      );
-      return;
-    }
-    if (_rangeHasBlockedDay()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Leave cannot include weekends or holidays'),
-        ),
-      );
+    // The same rule the button follows, so the message cannot contradict the
+    // reason the button was disabled.
+    final problem = _datesBlockedReason;
+    if (problem != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
       return;
     }
     setState(() => _step = 1);

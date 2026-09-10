@@ -742,6 +742,7 @@ class ManagerDashboard {
     this.managerPhotoUrl,
     required this.managerTeam,
     required this.approverName,
+    this.cycleEndsOn,
     required this.managerScore,
     required this.growthHistory,
     required this.today,
@@ -772,6 +773,10 @@ class ManagerDashboard {
   final String? managerPhotoUrl;
   final String managerTeam;
   final String approverName;
+
+  /// The day the review cycle closes. Until then a manager can still edit a
+  /// review they have already shared, which the Grow page says out loud.
+  final DateTime? cycleEndsOn;
   final double managerScore;
   final List<GrowthRecord> growthHistory;
   final DateTime today;
@@ -831,6 +836,7 @@ class ManagerDashboard {
       managerPhotoUrl: managerPhotoUrl ?? this.managerPhotoUrl,
       managerTeam: managerTeam,
       approverName: approverName,
+      cycleEndsOn: cycleEndsOn,
       managerScore: managerScore,
       growthHistory: growthHistory,
       today: today,

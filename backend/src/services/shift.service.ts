@@ -165,7 +165,6 @@ function leaveType(value: unknown): LeaveTypeRule {
     advanceDays: days(source.advanceDays, 'Advance window', 30),
     allowBackdated: flag(source.allowBackdated, true),
     backdatedDays: days(source.backdatedDays, 'Backdating window', 3),
-    active: flag(source.active, true),
   };
 }
 
@@ -437,12 +436,7 @@ export async function getOrgShiftPolicy(org: string): Promise<Omit<OrgShiftPolic
     leave: {
       ...DEFAULT_ORG_SHIFT_POLICY.leave,
       ...(doc.leave ?? {}),
-      // Types saved before the on/off switch existed carry no flag, and those
-      // are on — only an explicit false switches a type off.
-      types: (doc.leave?.types ?? DEFAULT_ORG_SHIFT_POLICY.leave.types).map((type) => ({
-        ...type,
-        active: type.active !== false,
-      })),
+      types: doc.leave?.types ?? DEFAULT_ORG_SHIFT_POLICY.leave.types,
     },
   };
 }
@@ -550,10 +544,8 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
     earlyOutGraceMinutes: policy.earlyOutGraceMinutes,
     weeklyOff: policy.weeklyOff,
     overtimeBackdateDays: policy.overtime.backdateDays,
-    // Only the types people may actually apply for — a switched-off type
-    // should not appear in the app's picker at all.
+    // The types this employee may apply for, as HR has them configured.
     leaveTypes: policy.leave.types
-      .filter((type) => type.active !== false)
       .map((type) => ({
         key: type.key,
         name: type.name,
@@ -594,26 +586,9 @@ export async function policyForUser(userId: string): Promise<ShiftPolicyRules & 
   const user = await users().findOne({ userId });
   if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
   const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
-  const orgPolicy = await getOrgShiftPolicy(user.org);
   // A template with no policy of its own is not an override of anything.
-  if (!template?.policy) return { ...orgPolicy, shiftName: null };
-  // A template overrides every rule except one: a leave type switched off for
-  // the whole organisation stays off. A template may switch a type off for its
-  // own people, but it cannot switch one back on that HR has withdrawn.
-  const orgOff = new Set(
-    orgPolicy.leave.types.filter((type) => type.active === false).map((type) => type.key),
-  );
-  return {
-    ...template.policy,
-    leave: {
-      ...template.policy.leave,
-      types: template.policy.leave.types.map((type) => ({
-        ...type,
-        active: type.active !== false && !orgOff.has(type.key),
-      })),
-    },
-    shiftName: template.name,
-  };
+  if (template?.policy) return { ...template.policy, shiftName: template.name };
+  return { ...(await getOrgShiftPolicy(user.org)), shiftName: null };
 }
 
 /**

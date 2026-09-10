@@ -831,17 +831,16 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           )
           .toList();
     }
-    filtered.sort(
-      (a, b) => _mode == _RequestViewMode.oldestFirst
-          ? a.$1.compareTo(b.$1)
-          : b.$1.compareTo(a.$1),
-    );
-    // Anything still waiting on this manager sits above what they have
-    // already decided, whichever order the dates are in.
+    // One comparator, not two passes: List.sort is not stable, so sorting by
+    // date and then by status threw away the date order within each group.
+    // Anything still waiting on this manager sits above what they have already
+    // decided, and dates order within that.
     filtered.sort((a, b) {
-      final aPending = a.$5 ? 0 : 1;
-      final bPending = b.$5 ? 0 : 1;
-      return aPending.compareTo(bPending);
+      final byStatus = (a.$5 ? 0 : 1).compareTo(b.$5 ? 0 : 1);
+      if (byStatus != 0) return byStatus;
+      return _mode == _RequestViewMode.oldestFirst
+          ? a.$1.compareTo(b.$1)
+          : b.$1.compareTo(a.$1);
     });
 
     return ColoredBox(

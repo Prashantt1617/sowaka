@@ -95,7 +95,7 @@ void main() {
     expect(half.minHalfDay, const Duration(hours: 4, minutes: 30));
   });
 
-  test('a leave type the server leaves out is not offered anywhere', () {
+  test('a leave type the org does not run is not offered anywhere', () {
     // The server sends only the types HR has switched on.
     final policy = ShiftPolicy.fromJson(const {
       'leaveTypes': [

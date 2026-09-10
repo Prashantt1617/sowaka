@@ -2092,7 +2092,11 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                 // shared or still with the approver.
                 if (widget.memberId == null || _isOwnManager) ...[
                   if (currentDone)
-                    _FeedbackSubmittedCard(period: period, onEdit: null)
+                    _FeedbackSubmittedCard(
+                      period: period,
+                      onEdit: null,
+                      editableUntil: widget.data.cycleEndsOn,
+                    )
                   else
                     _FeedbackAwaitedCard(
                       period: period,
@@ -2557,13 +2561,21 @@ class _GrowthPageTopBar extends StatelessWidget {
 /// until the cycle closes, and the status stays Submitted throughout — a later
 /// edit replaces the review rather than starting a new one.
 class _FeedbackSubmittedCard extends StatelessWidget {
-  const _FeedbackSubmittedCard({required this.period, required this.onEdit});
+  const _FeedbackSubmittedCard({
+    required this.period,
+    required this.onEdit,
+    this.editableUntil,
+  });
 
   final String period;
 
   /// Null on a page the viewer cannot write to — their own, or their own
   /// manager's — where the card only reports the status.
   final VoidCallback? onEdit;
+
+  /// When the cycle closes. A shared review stays open to edits until then,
+  /// which the employee is told rather than left to discover a changed score.
+  final DateTime? editableUntil;
 
   @override
   Widget build(BuildContext context) {
@@ -2616,6 +2628,35 @@ class _FeedbackSubmittedCard extends StatelessWidget {
                 : 'You can keep editing this review until the cycle ends.',
             style: const TextStyle(color: MColors.inkSoft, fontSize: 13),
           ),
+          if (onEdit == null) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: Color(0xFF6B7280),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    editableUntil == null
+                        ? 'Your manager can still change it before the cycle '
+                              'closes, so the scores below may yet move.'
+                        : 'Your manager can still change it until '
+                              '${_joiningDateLabel(editableUntil!)}, so the '
+                              'scores below may yet move.',
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 12,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (onEdit != null) ...[
             const SizedBox(height: 14),
             Align(

@@ -14,7 +14,7 @@ import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers, queueBatchedNotification } from './notification.service';
 import { env } from '../config/env';
 import { assignedParametersFor } from './kpi.service';
-import { currentPeriodFor } from './cycle';
+import { currentPeriodFor, cycleInfoFor } from './cycle';
 import { shiftPolicyFor } from './shift.service';
 import { holidaysForUser } from './holiday.service';
 import { notifyFeedbackSubmitted } from './feedback-notifications.service';
@@ -119,8 +119,10 @@ export async function getManagerWorkspace(managerUserId: string) {
 
   // Scoped to the manager's own company: `managerUserId` alone is not unique
   // across orgs, and without this another company's employees can appear in
-  // the team list.
-  const orgFilter = manager.org ? { org: manager.org } : {};
+  // the team list. A user with no org is scoped to their own org — which is
+  // no org — rather than falling back to an unscoped query that would hand
+  // them every company's roster.
+  const orgFilter = { org: manager.org ?? '' };
 
   // The whole org, so each report's own reporting line can be walked rather
   // than assumed to run through whoever is looking at it.
@@ -159,7 +161,8 @@ export async function getManagerWorkspace(managerUserId: string) {
   // Recognition is limited to the manager's own direct reports — never the
   // peer/manager fallback above.
   const recognitionCandidates = directReports;
-  const period = await currentPeriodFor(manager.org ?? '');
+  const cycle = await cycleInfoFor(manager.org ?? '');
+  const period = cycle.period;
   const reportIds = reports.map((report) => report.userId);
   const reportEmployeeIds = reports
     .map((report) => report.employeeId)
@@ -293,8 +296,14 @@ export async function getManagerWorkspace(managerUserId: string) {
       nextDate,
       feedbackStatus: current?.status ?? 'pending',
       missedMonths: current ? 0 : monthsSince(latest?.period, period),
-      parameters: current?.parameters
-        ?? blankParameters(assignedByUser.get(report.userId) ?? []),
+      // Always the parameters HR has assigned for this cycle, with whatever
+      // was already scored carried across. A draft saved before HR changed
+      // the assignment used to be sent back as-is, and the form then posted a
+      // set the server refuses — leaving that person unreviewable.
+      parameters: reconcileParameters(
+        assignedByUser.get(report.userId) ?? [],
+        current?.parameters,
+      ),
       extra: current?.extra ?? '',
       todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
       birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
@@ -341,6 +350,9 @@ export async function getManagerWorkspace(managerUserId: string) {
 
   return {
     period,
+    // The day the cycle closes, so the app can say how long a review it has
+    // already shared stays open to edits.
+    cycleEndsOn: cycle.end,
     approverName: approver?.name ?? 'Your manager',
     // The viewer's own reporting line, so their profile shows the same chart
     // their team members' profiles do.
@@ -426,10 +438,13 @@ export async function upsertFeedback(
     const expected = assigned[index];
     const score = Number(parameter.score);
     const note = String(parameter.note ?? '').trim();
-    // Positional, but the id is checked when the client sends one, so a stale
-    // form built against an older assignment is rejected rather than silently
-    // scoring the wrong parameter.
-    if (parameter.parameterId && parameter.parameterId !== expected.id) {
+    // The id has to be sent and has to match: a client that omitted it used to
+    // skip this check entirely and be trusted positionally, which is exactly
+    // how a stale form scores the wrong parameter.
+    if (!parameter.parameterId) {
+      throw new ManagerError(400, 'Each feedback parameter must carry its parameterId');
+    }
+    if (parameter.parameterId !== expected.id) {
       throw new ManagerError(409, 'These parameters have changed. Reload before saving.');
     }
     if (!Number.isFinite(score) || score < 0 || score > 5) {
@@ -627,6 +642,27 @@ function monthsSince(previous: string | undefined, current: string): number {
  * assigned any — the app shows the "no KPIs assigned" state rather than an
  * arbitrary default set.
  */
+/**
+ * The current assignment, carrying over scores and notes from a draft written
+ * against an older one. Matched on the parameter id, falling back to the name
+ * for drafts written before ids were stored.
+ */
+function reconcileParameters(
+  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+  saved: FeedbackParameter[] | undefined,
+): FeedbackParameter[] {
+  const blanks = blankParameters(assigned);
+  if (!saved?.length) return blanks;
+  const byId = new Map(saved.map((p) => [p.parameterId, p]));
+  const byName = new Map(saved.map((p) => [p.name, p]));
+  return blanks.map((blank) => {
+    const previous = byId.get(blank.parameterId) ?? byName.get(blank.name);
+    return previous
+      ? { ...blank, score: previous.score, note: previous.note }
+      : blank;
+  });
+}
+
 function blankParameters(
   assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
 ): FeedbackParameter[] {
