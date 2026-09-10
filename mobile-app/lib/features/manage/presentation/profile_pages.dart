@@ -1934,7 +1934,7 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const Text(
                 'Your account is created by your employer and closes when you '
                 'leave. To have it closed and your personal data deleted '
-                'sooner, email your HR team and privacy@getsowaka.com from '
+                'sooner, email your HR team and support@getsowaka.com from '
                 'your work address. We confirm within 7 working days and '
                 'delete within 30 — except records your employer must keep by '
                 'law, such as attendance and payroll history, which are kept '
