@@ -859,6 +859,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         _OrgChartCard(nodes: dashboard.myOrgChart),
                       ],
                       const SizedBox(height: 18),
+                      // Privacy and account deletion live here rather than
+                      // among the company's HR policies — this is where people
+                      // look for their own account, and it is not a policy the
+                      // company sets.
+                      const _PrivacyAndDataRow(),
+                      const SizedBox(height: 18),
                       _LogoutButton(onPressed: onLogout),
                       const SizedBox(height: 24),
                     ],
@@ -1827,6 +1833,140 @@ class _ProfileRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Quiet row above the logout button: what Sowaka holds about this person,
+/// and how to have it deleted.
+class _PrivacyAndDataRow extends StatelessWidget {
+  const _PrivacyAndDataRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _show(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.privacy_tip_outlined,
+                size: 18,
+                color: MColors.inkSoft,
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Privacy and your data',
+                  style: TextStyle(
+                    color: MColors.ink,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Color(0xFF9CA3AF),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static void _show(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Privacy and your data',
+                style: TextStyle(
+                  color: MColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Sowaka holds what your employer needs to run HR: your name, '
+                'work email and employee ID, your attendance and leave '
+                'records, reimbursement claims and receipts, performance '
+                'reviews, and anything you post on Connect.',
+                style: TextStyle(
+                  color: MColors.inkSoft,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Deleting your account',
+                style: TextStyle(
+                  color: MColors.ink,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Your account belongs to your employer, so it closes when you '
+                'leave. To have it closed and your personal data deleted '
+                'sooner, email your HR team and privacy@getsowaka.com from '
+                'your work address. We confirm within 7 working days and '
+                'delete within 30 — except records your employer must keep by '
+                'law, such as attendance and payroll history, which are kept '
+                'for the statutory period and then removed.',
+                style: TextStyle(
+                  color: MColors.inkSoft,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'You can ask for a copy of your data the same way. Sowaka does '
+                'not sell your data or use it for advertising.',
+                style: TextStyle(
+                  color: MColors.inkSoft,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
