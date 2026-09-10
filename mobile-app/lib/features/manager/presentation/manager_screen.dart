@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../routes/app_routes.dart';
 import '../../../services/api_config.dart';
+import '../../manager_shell/presentation/tablet_shell.dart';
 import '../../../services/linkified_text.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
@@ -70,12 +71,18 @@ class _ManagerScreenState extends State<ManagerScreen> {
       _handleNotificationDestination,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // The tablet rail lives above the navigator, so it reads the bloc from
+      // here rather than from a context it cannot see. Published after the
+      // frame: assigning during initState rebuilds an ancestor mid-build, and
+      // the rail silently never appears.
+      activeManagerBloc.value = _bloc;
       AppNotificationService.instance.consumePending();
     });
   }
 
   @override
   void dispose() {
+    activeManagerBloc.value = null;
     _quickActionsController
       ..removeListener(_refreshBackState)
       ..dispose();

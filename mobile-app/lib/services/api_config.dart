@@ -16,7 +16,7 @@ class ApiConfig {
   /// there is only ever one version of it. Override per environment with
   /// `--dart-define=PRIVACY_POLICY_URL=...`.
   static const String _defaultPrivacyPolicyUrl =
-      'https://legal.getsowaka.com/privacy-policy.html';
+      'https://www.getsowaka.com/privacy-policy.index';
 
   static String get privacyPolicyUrl {
     const configured = String.fromEnvironment('PRIVACY_POLICY_URL');
@@ -30,7 +30,7 @@ class ApiConfig {
   /// it should not have to read a policy to find it. Override with
   /// `--dart-define=DATA_DELETION_URL=...`.
   static const String _defaultDataDeletionUrl =
-      'https://legal.getsowaka.com/data-deletion.html';
+      'https://www.getsowaka.com/datadeletion.index';
 
   static String get dataDeletionUrl {
     const configured = String.fromEnvironment('DATA_DELETION_URL');
