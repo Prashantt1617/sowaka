@@ -255,6 +255,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             onPlayGame: () => _openGame(post),
             onEdit: () => _openComposer(post.type, existing: post),
             onDelete: () => _confirmDelete(post),
+            onReport: () => _reportContent(
+              postId: post.id,
+              authorName: post.author.name,
+              isComment: false,
+            ),
+            onBlock: () => _confirmBlock(
+              post.author.userId,
+              post.author.name,
+            ),
             onOpenComments: () => _openComments(post.id),
             viewerInitials: _viewerInitials,
             viewerColor: _viewerColor,
@@ -346,6 +355,40 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     if (confirmed == true) await _bloc.deletePost(post.id);
   }
 
+  /// Asks why, then sends the report. Used for a post and for a single
+  /// comment — the only difference is what the sheet says it is reporting.
+  Future<void> _reportContent({
+    required String postId,
+    required String authorName,
+    required bool isComment,
+    String? commentId,
+  }) async {
+    final result = await showModalBottomSheet<_ReportOutcome>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReportSheet(authorName: authorName, isComment: isComment),
+    );
+    if (!mounted || result == null) return;
+    await _bloc.reportContent(
+      postId,
+      reason: result.reason,
+      commentId: commentId,
+      note: result.note,
+    );
+  }
+
+  Future<void> _confirmBlock(String userId, String name) async {
+    if (userId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x76000000),
+      builder: (_) => _BlockPersonSheet(name: name),
+    );
+    if (confirmed == true) await _bloc.blockPerson(userId, name);
+  }
+
   Future<void> _openComments(String postId) {
     return showModalBottomSheet<void>(
       context: context,
@@ -355,9 +398,18 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       builder: (_) => _CommentsSheet(
         bloc: _bloc,
         postId: postId,
+        viewerUserId: widget.session.user.id,
         viewerInitials: _viewerInitials,
         viewerColor: _viewerColor,
         viewerPhotoUrl: _viewerPhotoUrl,
+        onReportComment: (comment) => _reportContent(
+          postId: postId,
+          authorName: comment.name,
+          isComment: true,
+          commentId: comment.id,
+        ),
+        onBlockCommenter: (comment) =>
+            _confirmBlock(comment.userId, comment.name),
       ),
     );
   }
@@ -393,6 +445,8 @@ class _ConnectPostCard extends StatefulWidget {
     required this.onPlayGame,
     required this.onEdit,
     required this.onDelete,
+    required this.onReport,
+    required this.onBlock,
     required this.onOpenComments,
     required this.viewerInitials,
     required this.viewerColor,
@@ -409,6 +463,8 @@ class _ConnectPostCard extends StatefulWidget {
   final VoidCallback onPlayGame;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onReport;
+  final VoidCallback onBlock;
   final VoidCallback onOpenComments;
   final String viewerInitials;
   final Color viewerColor;
@@ -435,6 +491,24 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
     final post = widget.post;
     final showHeader = _postShowsHeader(post.type);
     final cardGradient = _celebrationCardGradient(post.type);
+    // Reporting and blocking are offered from the same three-dot menu as edit
+    // and delete, which is drawn several widgets deep and in two different
+    // places. Handing them down through every one of those constructors would
+    // be a lot of plumbing for two callbacks, so the card publishes them here
+    // and `_PostMenuButton` picks them up wherever it happens to be.
+    return _PostActions(
+      post: post,
+      onReport: widget.onReport,
+      onBlock: widget.onBlock,
+      child: _buildCard(post, showHeader, cardGradient),
+    );
+  }
+
+  Widget _buildCard(
+    ConnectPost post,
+    bool showHeader,
+    Gradient? cardGradient,
+  ) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cardGradient == null
@@ -767,10 +841,36 @@ class _TypeBadge extends StatelessWidget {
   }
 }
 
-/// Shared edit/delete popup trigger used both by `_PostHeader` (for post
-/// types that show the standard author header) and by `_BodyTopStrip` (for
-/// system-generated post types that render their own compact header inside
-/// the body widget).
+/// Carries the post and its moderation callbacks down to whichever widget
+/// draws the three-dot menu, which sits several levels deep and in two
+/// different places (`_PostHeader` and `_BodyTopStrip`).
+class _PostActions extends InheritedWidget {
+  const _PostActions({
+    required this.post,
+    required this.onReport,
+    required this.onBlock,
+    required super.child,
+  });
+
+  final ConnectPost post;
+  final VoidCallback onReport;
+  final VoidCallback onBlock;
+
+  static _PostActions? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PostActions>();
+
+  @override
+  bool updateShouldNotify(_PostActions oldWidget) =>
+      oldWidget.post.id != post.id;
+}
+
+/// Shared post menu used both by `_PostHeader` (for post types that show the
+/// standard author header) and by `_BodyTopStrip` (for system-generated post
+/// types that render their own compact header inside the body widget).
+///
+/// Your own post offers edit and delete; a colleague's offers reporting it to
+/// HR and muting them. System-generated posts — birthdays, anniversaries —
+/// have no human author and so offer nothing.
 class _PostMenuButton extends StatelessWidget {
   const _PostMenuButton({
     required this.canManage,
@@ -784,10 +884,14 @@ class _PostMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Nothing to offer on someone else's post: editing and deleting are the
-    // only entries. It used to render the same three dots with no menu behind
-    // them, which read as a button that did not work.
-    if (!canManage) return const SizedBox.shrink();
+    final actions = _PostActions.maybeOf(context);
+    final authorName = actions?.post.author.name ?? '';
+    // Nothing written by a person, so nothing to report or mute. It used to
+    // render the same three dots with no menu behind them, which read as a
+    // button that did not work.
+    final canModerate =
+        !canManage && actions != null && actions.post.author.userId.isNotEmpty;
+    if (!canManage && !canModerate) return const SizedBox.shrink();
     return PopupMenuButton<_PostMenuAction>(
       icon: const Icon(Icons.more_vert_rounded, color: _ConnectColors.faint),
       color: Colors.white,
@@ -798,30 +902,62 @@ class _PostMenuButton extends StatelessWidget {
             onEdit();
           case _PostMenuAction.delete:
             onDelete();
+          case _PostMenuAction.report:
+            actions?.onReport();
+          case _PostMenuAction.block:
+            actions?.onBlock();
         }
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: _PostMenuAction.edit,
-          child: Row(
-            children: [
-              Icon(Icons.edit_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Edit post'),
+      itemBuilder: (context) => canManage
+          ? const [
+              PopupMenuItem(
+                value: _PostMenuAction.edit,
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_rounded, size: 18),
+                    SizedBox(width: 10),
+                    Text('Edit post'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: _PostMenuAction.delete,
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded, size: 18),
+                    SizedBox(width: 10),
+                    Text('Delete post'),
+                  ],
+                ),
+              ),
+            ]
+          : [
+              const PopupMenuItem(
+                value: _PostMenuAction.report,
+                child: Row(
+                  children: [
+                    Icon(Icons.flag_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Text('Report post'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: _PostMenuAction.block,
+                child: Row(
+                  children: [
+                    const Icon(Icons.block_rounded, size: 18),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        'Block ${authorName.split(' ').first}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-          ),
-        ),
-        PopupMenuItem(
-          value: _PostMenuAction.delete,
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Delete post'),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -899,7 +1035,7 @@ class _BodyTopStrip extends StatelessWidget {
   }
 }
 
-enum _PostMenuAction { edit, delete }
+enum _PostMenuAction { edit, delete, report, block }
 
 class _PostBody extends StatelessWidget {
   const _PostBody({
@@ -5175,16 +5311,22 @@ class _CommentsSheet extends StatefulWidget {
   const _CommentsSheet({
     required this.bloc,
     required this.postId,
+    required this.viewerUserId,
     required this.viewerInitials,
     required this.viewerColor,
+    required this.onReportComment,
+    required this.onBlockCommenter,
     this.viewerPhotoUrl = '',
   });
 
   final ConnectBloc bloc;
   final String postId;
+  final String viewerUserId;
   final String viewerInitials;
   final Color viewerColor;
   final String viewerPhotoUrl;
+  final ValueChanged<ConnectComment> onReportComment;
+  final ValueChanged<ConnectComment> onBlockCommenter;
 
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
@@ -5609,6 +5751,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       fontSize: 12,
                     ),
                   ),
+                  const Spacer(),
+                  _CommentMenuButton(comment: comment, sheet: widget),
                 ],
               ),
               const SizedBox(height: 2),
@@ -5701,6 +5845,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         color: Color(0xFF717171),
                         fontSize: 10,
                       ),
+                    ),
+                    const Spacer(),
+                    _CommentMenuButton(
+                      comment: reply,
+                      sheet: widget,
+                      iconSize: 14,
                     ),
                   ],
                 ),
@@ -5913,6 +6063,366 @@ class _DeletePostSheet extends StatelessWidget {
                 ),
                 onPressed: () => Navigator.of(context).pop(true),
                 child: Text(confirmLabel),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1A1C1E),
+                  side: const BorderSide(color: Color(0xFFE8E8EC), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The three-dot menu on a colleague's comment: report it, or stop seeing
+/// them. Absent on your own comments, and on anything without a real author.
+class _CommentMenuButton extends StatelessWidget {
+  const _CommentMenuButton({
+    required this.comment,
+    required this.sheet,
+    this.iconSize = 16,
+  });
+
+  final ConnectComment comment;
+  final _CommentsSheet sheet;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    if (comment.userId.isEmpty || comment.userId == sheet.viewerUserId) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      width: iconSize + 12,
+      height: iconSize + 12,
+      child: PopupMenuButton<_PostMenuAction>(
+        padding: EdgeInsets.zero,
+        iconSize: iconSize,
+        tooltip: 'Comment options',
+        icon: const Icon(Icons.more_horiz_rounded, color: Color(0xFF9CA3AF)),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        onSelected: (action) {
+          if (action == _PostMenuAction.report) {
+            sheet.onReportComment(comment);
+          } else if (action == _PostMenuAction.block) {
+            sheet.onBlockCommenter(comment);
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: _PostMenuAction.report,
+            child: Row(
+              children: [
+                Icon(Icons.flag_outlined, size: 18),
+                SizedBox(width: 10),
+                Text('Report comment'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: _PostMenuAction.block,
+            child: Row(
+              children: [
+                const Icon(Icons.block_rounded, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    'Block ${comment.name.split(' ').first}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the reporter picked, and anything they added.
+class _ReportOutcome {
+  const _ReportOutcome({required this.reason, this.note});
+
+  final ConnectReportReason reason;
+  final String? note;
+}
+
+/// Asks why something is being reported.
+///
+/// The sheet says plainly where the report goes: to the reporter's own HR
+/// team, not to Sowaka. In a workplace app that is the honest answer, and it
+/// sets the right expectation about who will read it.
+class _ReportSheet extends StatefulWidget {
+  const _ReportSheet({required this.authorName, required this.isComment});
+
+  final String authorName;
+  final bool isComment;
+
+  @override
+  State<_ReportSheet> createState() => _ReportSheetState();
+}
+
+class _ReportSheetState extends State<_ReportSheet> {
+  final _noteController = TextEditingController();
+  ConnectReportReason? _reason;
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final what = widget.isComment ? 'comment' : 'post';
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: _SheetShell(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SheetHandle(),
+              Text(
+                'Report this $what',
+                style: const TextStyle(
+                  color: Color(0xFF1A1C1E),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'This goes to your HR team, who can see the $what and decide '
+                'what to do. ${widget.authorName} is not told who reported it.',
+                style: const TextStyle(
+                  color: Color(0xFF6C727A),
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const _FieldLabel('WHY ARE YOU REPORTING IT?'),
+              for (final reason in ConnectReportReason.values)
+                _ReasonRow(
+                  label: connectReportReasonLabel(reason),
+                  selected: _reason == reason,
+                  onTap: () => setState(() => _reason = reason),
+                ),
+              const SizedBox(height: 14),
+              const _FieldLabel('ANYTHING TO ADD? (OPTIONAL)'),
+              TextField(
+                controller: _noteController,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  hintText: 'Context that would help HR review this',
+                  counterText: '',
+                ),
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0571A6),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFD8DDE3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  // A reason is what makes a report reviewable, so there is
+                  // nothing to send until one is picked.
+                  onPressed: _reason == null
+                      ? null
+                      : () => Navigator.of(context).pop(
+                          _ReportOutcome(
+                            reason: _reason!,
+                            note: _noteController.text,
+                          ),
+                        ),
+                  child: const Text('Send report'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF6C727A),
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReasonRow extends StatelessWidget {
+  const _ReasonRow({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: selected
+                  ? const Color(0xFF0571A6)
+                  : const Color(0xFFB9BFC6),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: const Color(0xFF1A1C1E),
+                  fontSize: 14.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirms a block, and is careful to say what it does not do — this is a
+/// personal mute inside Connect, not an HR action against a colleague.
+class _BlockPersonSheet extends StatelessWidget {
+  const _BlockPersonSheet({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 16,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0x120571A6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.block_rounded,
+                color: Color(0xFF0571A6),
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Block $name?',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF1A1C1E),
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Their posts and comments stop appearing in your Connect feed. '
+              'They are not told, nothing changes about your work together, '
+              'and you will still see official company announcements. You can '
+              'undo this from Profile.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF6C727A),
+                fontSize: 13.5,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF0571A6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Block'),
               ),
             ),
             const SizedBox(height: 10),

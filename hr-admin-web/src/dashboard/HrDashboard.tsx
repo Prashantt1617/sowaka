@@ -11,6 +11,7 @@ import { Employees } from './views/Employees';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { Games } from './views/Games';
+import { ContentReports } from './views/ContentReports';
 import { PayHeadMaster } from './views/PayHeadMaster';
 import { SalaryTemplates } from './views/SalaryTemplates';
 import { StatutoryComponents } from './views/StatutoryComponents';
@@ -68,6 +69,8 @@ function CurrentView() {
       return <ReviewCycle />;
     case 'games':
       return <Games />;
+    case 'contentreports':
+      return <ContentReports />;
     case 'payheads':
       return <PayHeadMaster />;
     case 'templates':

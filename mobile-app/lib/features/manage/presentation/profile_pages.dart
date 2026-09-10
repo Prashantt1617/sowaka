@@ -864,7 +864,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       // a footnote about this person's own account, not a
                       // company policy competing for attention.
                       const SizedBox(height: 14),
-                      const _PrivacyAndDataRow(),
+                      _PrivacyAndDataRow(session: session),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -1845,26 +1845,39 @@ class _ProfileRow extends StatelessWidget {
 /// Deletion gets its own link rather than living inside the policy: someone
 /// looking for it should not have to read a policy to find it.
 class _PrivacyAndDataRow extends StatelessWidget {
-  const _PrivacyAndDataRow();
+  const _PrivacyAndDataRow({required this.session});
+
+  final AuthSession session;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrapped rather than a Row: three footnotes do not fit on one line on a
+    // small phone, and a second centred line reads better than a squeeze.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         _FootnoteLink(
           label: 'Privacy policy',
           url: ApiConfig.privacyPolicyUrl,
           onFallback: _showFallback,
         ),
-        const Text(
-          '  ·  ',
-          style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 11.5),
-        ),
+        const _FootnoteDot(),
         _FootnoteLink(
           label: 'Delete my account',
           url: ApiConfig.dataDeletionUrl,
           onFallback: _showFallback,
+        ),
+        const _FootnoteDot(),
+        // The only way back from a block, which is why the block dialog
+        // points here.
+        _FootnoteLink(
+          label: 'Blocked people',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => BlockedPeopleScreen(session: session),
+            ),
+          ),
         ),
       ],
     );
@@ -1958,26 +1971,46 @@ class _PrivacyAndDataRow extends StatelessWidget {
   }
 }
 
-/// One small underlined link, falling back to the sheet when no browser opens.
+class _FootnoteDot extends StatelessWidget {
+  const _FootnoteDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      '  ·  ',
+      style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 11.5),
+    );
+  }
+}
+
+/// One small underlined link. Given a `url` it opens the browser and falls
+/// back to the sheet when nothing opens; given an `onTap` it just runs that.
 class _FootnoteLink extends StatelessWidget {
   const _FootnoteLink({
     required this.label,
-    required this.url,
-    required this.onFallback,
+    this.url,
+    this.onFallback,
+    this.onTap,
   });
 
   final String label;
-  final String url;
-  final void Function(BuildContext context) onFallback;
+  final String? url;
+  final void Function(BuildContext context)? onFallback;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
-        final opened = await openExternalLink(url);
+        final target = url;
+        if (target == null) {
+          onTap?.call();
+          return;
+        }
+        final opened = await openExternalLink(target);
         if (opened || !context.mounted) return;
-        onFallback(context);
+        onFallback?.call(context);
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),

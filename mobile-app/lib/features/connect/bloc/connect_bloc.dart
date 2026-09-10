@@ -229,6 +229,54 @@ class ConnectBloc {
     }
   }
 
+  /// Sends a report to HR. The feed is untouched — reporting something does
+  /// not hide it, and saying otherwise would be a promise the app can't keep.
+  Future<void> reportContent(
+    String postId, {
+    required ConnectReportReason reason,
+    String? commentId,
+    String? note,
+  }) async {
+    try {
+      final isNew = await _api.reportContent(
+        postId,
+        reason: reason,
+        commentId: commentId,
+        note: note,
+      );
+      _emit(
+        _state.copyWith(
+          message: isNew
+              ? 'Reported. Your HR team will review it.'
+              : 'You have already reported this — HR is looking at it.',
+        ),
+      );
+    } catch (error) {
+      _emit(_state.copyWith(message: error.toString()));
+    }
+  }
+
+  /// Mutes a colleague, then drops what they wrote out of the loaded feed so
+  /// the change is visible immediately rather than at the next refresh.
+  Future<void> blockPerson(String userId, String name) async {
+    try {
+      await _api.blockPerson(userId);
+      _emit(
+        _state.copyWith(
+          posts: _state.posts
+              .where((post) => post.author.userId != userId)
+              .toList(),
+          message: "You won't see $name's posts in Connect.",
+        ),
+      );
+      // Their comments live inside posts that stay, so those come back
+      // filtered from the server.
+      await refresh();
+    } catch (error) {
+      _emit(_state.copyWith(message: error.toString()));
+    }
+  }
+
   void clearMessage() {
     _emit(_state.copyWith(clearMessage: true));
   }

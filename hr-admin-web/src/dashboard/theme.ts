@@ -35,7 +35,8 @@ export type View =
   | 'cycle'
   | 'reimbursementtypes'
   | 'shiftbulk'
-  | 'games';
+  | 'games'
+  | 'contentreports';
 
 export type LeaveType = 'Sick' | 'Casual' | 'Earned' | 'WFH' | 'Unpaid';
 export type ReqStatus = 'Pending' | 'Approved' | 'Declined' | 'Paid';
@@ -136,6 +137,7 @@ export const TITLES: Record<View, [string, string]> = {
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
   shiftbulk: ['Bulk Assign', 'Shifts · put employees on a shift'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
+  contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
 };
 
 export type Placeholder = {

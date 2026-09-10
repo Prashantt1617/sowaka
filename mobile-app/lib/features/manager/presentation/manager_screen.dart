@@ -17,6 +17,7 @@ import '../../../services/linkified_text.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';
+import '../../connect/presentation/blocked_people_screen.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
