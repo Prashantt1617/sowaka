@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
+import { stablePresignDate } from '../utils/presign.util';
 
 type ReceiptFile = {
   originalName: string;
@@ -52,7 +53,10 @@ export async function presignReceiptDownload(objectKey: string, fileName?: strin
       ? { ResponseContentDisposition: `inline; filename="${fileName.replace(/"/g, '')}"` }
       : {}),
   });
-  return getSignedUrl(getClient(), command, { expiresIn: env.s3.presignTtl });
+  return getSignedUrl(getClient(), command, {
+    expiresIn: env.s3.presignTtl,
+    signingDate: stablePresignDate(),
+  });
 }
 
 function getClient() {

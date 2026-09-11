@@ -139,12 +139,17 @@ class ConnectComment {
     required this.name,
     required this.text,
     required this.createdAt,
+    this.userId = '',
     this.parentId,
     this.likeCount = 0,
     this.liked = false,
   });
 
   final String id;
+
+  /// Who wrote it — needed to tell your own comment from someone else's, which
+  /// is what decides whether reporting and blocking are offered on it.
+  final String userId;
   final String name;
   final String text;
   final DateTime? createdAt;
@@ -155,6 +160,7 @@ class ConnectComment {
   factory ConnectComment.fromJson(Map<String, dynamic> json) {
     return ConnectComment(
       id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
       name: json['name'] as String? ?? 'Teammate',
       text: json['text'] as String? ?? '',
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
@@ -288,4 +294,69 @@ ConnectPostType _parseType(String? value) {
     'recommendation' => ConnectPostType.recommendation,
     _ => ConnectPostType.leadership,
   };
+}
+
+/// Why someone is reporting a post or a comment.
+///
+/// The list is fixed and matches the backend's — a report goes to the
+/// reporter's own HR team, and these are the categories they act on.
+enum ConnectReportReason {
+  harassment,
+  hate,
+  sexual,
+  violence,
+  confidential,
+  spam,
+  other,
+}
+
+String connectReportReasonToWire(ConnectReportReason reason) {
+  return switch (reason) {
+    ConnectReportReason.harassment => 'harassment',
+    ConnectReportReason.hate => 'hate',
+    ConnectReportReason.sexual => 'sexual',
+    ConnectReportReason.violence => 'violence',
+    ConnectReportReason.confidential => 'confidential',
+    ConnectReportReason.spam => 'spam',
+    ConnectReportReason.other => 'other',
+  };
+}
+
+String connectReportReasonLabel(ConnectReportReason reason) {
+  return switch (reason) {
+    ConnectReportReason.harassment => 'Harassment or bullying',
+    ConnectReportReason.hate => 'Hate speech or discrimination',
+    ConnectReportReason.sexual => 'Sexual or explicit content',
+    ConnectReportReason.violence => 'Violence or threats',
+    ConnectReportReason.confidential => 'Confidential information',
+    ConnectReportReason.spam => 'Spam or irrelevant content',
+    ConnectReportReason.other => 'Something else',
+  };
+}
+
+/// A colleague this person has chosen not to see in Connect.
+class BlockedPerson {
+  const BlockedPerson({
+    required this.userId,
+    required this.name,
+    this.designation = '',
+    this.photoUrl,
+    this.blockedAt,
+  });
+
+  final String userId;
+  final String name;
+  final String designation;
+  final String? photoUrl;
+  final DateTime? blockedAt;
+
+  factory BlockedPerson.fromJson(Map<String, dynamic> json) {
+    return BlockedPerson(
+      userId: json['userId'] as String? ?? '',
+      name: json['name'] as String? ?? 'Colleague',
+      designation: json['designation'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String?,
+      blockedAt: DateTime.tryParse(json['blockedAt'] as String? ?? ''),
+    );
+  }
 }

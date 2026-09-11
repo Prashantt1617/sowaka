@@ -5,6 +5,7 @@ import {
   nominateForRecognition,
   updateProfilePhoto,
   upsertFeedback,
+  getFeedbackSnapshot,
 } from '../services/manager.service';
 import { shiftPolicyFor } from '../services/shift.service';
 
@@ -12,6 +13,15 @@ export async function managerWorkspace(req: Request, res: Response, next: NextFu
   try {
     const workspace = await getManagerWorkspace(requireUserId(req));
     res.status(200).json({ success: true, ...workspace });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Feedback as it stands now — re-read while the app runs. */
+export async function myFeedbackSnapshot(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await getFeedbackSnapshot(requireUserId(req))) });
   } catch (error) {
     next(error);
   }

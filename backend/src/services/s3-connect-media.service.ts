@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
+import { stablePresignDate } from '../utils/presign.util';
 import { connectMedia } from '../config/db';
 
 export type ConnectMediaFile = {
@@ -89,7 +90,7 @@ export async function presignConnectMedia(objectKey: string) {
   return getSignedUrl(
     getClient(),
     new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }),
-    { expiresIn: env.s3.presignTtl },
+    { expiresIn: env.s3.presignTtl, signingDate: stablePresignDate() },
   );
 }
 

@@ -29,6 +29,7 @@ import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
+import { ConnectBlock, ContentReport } from '../models/moderation.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -105,6 +106,14 @@ export function connectMedia(): Collection<{
   createdAt: Date;
 }> {
   return getDb().collection('connect_media');
+}
+
+export function contentReports(): Collection<ContentReport> {
+  return getDb().collection<ContentReport>('content_reports');
+}
+
+export function connectBlocks(): Collection<ConnectBlock> {
+  return getDb().collection<ConnectBlock>('connect_blocks');
 }
 
 export function games(): Collection<Game> {
@@ -244,6 +253,19 @@ async function ensureIndexes(database: Db): Promise<void> {
   await connectCollection.createIndex({ systemKey: 1 }, { unique: true, sparse: true });
   await connectCollection.createIndex({ org: 1, publishedAt: -1 });
   await connectCollection.createIndex({ org: 1, 'audience.department': 1, publishedAt: -1 });
+
+  const reportsCollection = database.collection<ContentReport>('content_reports');
+  await reportsCollection.createIndex({ id: 1 }, { unique: true });
+  await reportsCollection.createIndex({ org: 1, status: 1, createdAt: -1 });
+  // One open report per person per piece of content: reporting twice should
+  // not put the same complaint in HR's queue twice. `commentId` is absent on
+  // post reports, and a sparse-free compound index treats that as null, which
+  // is exactly the distinction wanted.
+  await reportsCollection.createIndex({ reporterUserId: 1, postId: 1, commentId: 1 });
+
+  const blocksCollection = database.collection<ConnectBlock>('connect_blocks');
+  await blocksCollection.createIndex({ userId: 1, blockedUserId: 1 }, { unique: true });
+  await blocksCollection.createIndex({ userId: 1, createdAt: -1 });
 
   const gamesCollection = database.collection<Game>('games');
   await gamesCollection.createIndex({ id: 1 }, { unique: true });

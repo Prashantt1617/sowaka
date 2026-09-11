@@ -792,6 +792,32 @@ class ManagerBloc {
   /// changes rarely, and the app should not need a restart when it does.
   DateTime? _policyReadAt;
 
+  /// The team list with each report's review brought up to date, leaving
+  /// everything else about them untouched.
+  static List<TeamMember> _mergeFeedback(
+    List<TeamMember> team,
+    FeedbackSnapshot feedback,
+  ) {
+    return [
+      for (final member in team)
+        if (feedback.team[member.userId] case final row?)
+          member.copyWith(
+            score: (row['score'] as num?)?.toDouble(),
+            status: switch (row['feedbackStatus']) {
+              'sent' => FeedbackStatus.sent,
+              'saved' => FeedbackStatus.saved,
+              _ => null,
+            },
+            params: (row['parameters'] as List<dynamic>?)
+                ?.map((v) => FeedbackParam.fromJson(v as Map<String, dynamic>))
+                .toList(),
+            extra: row['extra'] as String?,
+          )
+        else
+          member,
+    ];
+  }
+
   Future<void> _refreshLeavesSilently() async {
     final data = _state.dashboard;
     if (data == null || _refreshingLeaves) return;
@@ -800,6 +826,12 @@ class ManagerBloc {
       final readPolicy =
           _policyReadAt == null ||
           DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 1);
+      // Feedback rides the same throttle: a review stays editable until the
+      // cycle closes, so an employee holding the page open should see a
+      // revision without signing out.
+      final feedbackFuture = readPolicy
+          ? _service.fetchFeedbackSnapshot().then<FeedbackSnapshot?>((v) => v).catchError((_) => null)
+          : Future<FeedbackSnapshot?>.value(null);
       // Kept separate from the leave calls: an older server without this
       // route must not stop the leaves refreshing too.
       final policyFuture = readPolicy
@@ -812,6 +844,7 @@ class ManagerBloc {
       final myLeaves = await myLeavesFuture;
       final managerLeaves = await managerLeavesFuture;
       final shift = await policyFuture;
+      final feedback = await feedbackFuture;
       if (readPolicy) _policyReadAt = DateTime.now();
       final latest = _state.dashboard;
       if (latest == null || _controller.isClosed) return;
@@ -821,6 +854,9 @@ class ManagerBloc {
             leaves: managerLeaves,
             myLeaves: myLeaves,
             shift: shift,
+            growthHistory: feedback?.growthHistory,
+            cycleEndsOn: feedback?.cycleEndsOn,
+            team: feedback == null ? null : _mergeFeedback(latest.team, feedback),
           ),
         ),
       );

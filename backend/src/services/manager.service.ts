@@ -110,6 +110,65 @@ export async function updateProfilePhoto(userId: string, file: ConnectMediaFile)
   return photoUrl;
 }
 
+/**
+ * The feedback the app has to re-read while it runs: the viewer's own growth
+ * history, and where each of their reports stands this cycle.
+ *
+ * A review stays editable until the cycle closes, so what the app loaded at
+ * sign-in goes stale the moment a manager revises one. Kept small and separate
+ * from the workspace, which aggregates far more than this needs.
+ */
+export async function getFeedbackSnapshot(managerUserId: string) {
+  const viewer = await users().findOne({ userId: managerUserId });
+  if (!viewer) throw new ManagerError(404, 'User not found');
+  const approver = viewer.managerUserId
+    ? await users().findOne({ userId: viewer.managerUserId })
+    : null;
+  const cycle = await cycleInfoFor(viewer.org ?? '');
+  const reportIds = (
+    await users()
+      .find({
+        managerUserId,
+        org: viewer.org ?? '',
+        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+      })
+      .project({ userId: 1 })
+      .toArray()
+  ).map((row) => (row as { userId: string }).userId);
+
+  const [ownHistory, reportRecords] = await Promise.all([
+    feedbackRecords()
+      .find({ employeeUserId: managerUserId, status: 'sent' })
+      .sort({ period: 1 })
+      .toArray(),
+    reportIds.length
+      ? feedbackRecords()
+          .find({ managerUserId, employeeUserId: { $in: reportIds }, period: cycle.period })
+          .toArray()
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    period: cycle.period,
+    cycleEndsOn: cycle.end,
+    managerScore: Number((ownHistory.at(-1)?.overallScore ?? 0).toFixed(1)),
+    growthHistory: ownHistory.map((record) => ({
+      period: record.period,
+      overallScore: Number(record.overallScore.toFixed(1)),
+      parameters: record.parameters,
+      sentAt: record.sentAt ?? record.updatedAt,
+      managerName: approver?.name ?? 'Your manager',
+    })),
+    team: reportRecords.map((record) => ({
+      userId: record.employeeUserId,
+      feedbackStatus: record.status,
+      score: Number(record.overallScore.toFixed(1)),
+      parameters: record.parameters,
+      extra: record.extra ?? '',
+    })),
+  };
+}
+
 export async function getManagerWorkspace(managerUserId: string) {
   const manager = await users().findOne({ userId: managerUserId });
   if (!manager) throw new ManagerError(404, 'Manager not found');

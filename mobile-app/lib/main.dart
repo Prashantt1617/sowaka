@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'features/manager_shell/presentation/tablet_shell.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'routes/app_routes.dart';
 import 'services/notification_service.dart';
@@ -19,7 +21,8 @@ class HrmsMobileApp extends StatelessWidget {
     const seedColor = Color(0xFF0571A6);
 
     return MaterialApp(
-      title: 'Sowaka Connect',
+      title: 'Sowaka',
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Plus Jakarta Sans',
@@ -80,7 +83,10 @@ class HrmsMobileApp extends StatelessWidget {
       // regardless of who ultimately handles it.
       builder: (context, child) => Listener(
         onPointerDown: _dismissKeyboardUnlessOnField,
-        child: child,
+        // Tablets get a rail and a readable content column; phones get exactly
+        // what they had. Wrapped here, above the navigator, so both hold for
+        // screens pushed over the shell too.
+        child: TabletShell(child: child ?? const SizedBox()),
       ),
       home: const AuthGate(),
       routes: AppRoutes.routes,

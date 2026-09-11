@@ -104,6 +104,53 @@ class ConnectApiService {
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 
+  /// Reports a post, or one comment on it when `commentId` is given. Returns
+  /// true when this is a new report, false when the same thing was already
+  /// reported by this person and is still open.
+  Future<bool> reportContent(
+    String postId, {
+    required ConnectReportReason reason,
+    String? commentId,
+    String? note,
+  }) async {
+    final json = await _request(
+      'POST',
+      '/connect/posts/$postId/report',
+      body: {
+        'reason': connectReportReasonToWire(reason),
+        'commentId': ?commentId,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return json['alreadyReported'] != true;
+  }
+
+  Future<List<BlockedPerson>> fetchBlocked() async {
+    final json = await _request('GET', '/connect/blocks');
+    return _blockedFrom(json);
+  }
+
+  Future<List<BlockedPerson>> blockPerson(String userId) async {
+    final json = await _request(
+      'POST',
+      '/connect/blocks',
+      body: {'userId': userId},
+    );
+    return _blockedFrom(json);
+  }
+
+  Future<List<BlockedPerson>> unblockPerson(String userId) async {
+    final json = await _request('DELETE', '/connect/blocks/$userId');
+    return _blockedFrom(json);
+  }
+
+  List<BlockedPerson> _blockedFrom(Map<String, dynamic> json) {
+    final values = json['blocked'] as List<dynamic>? ?? const [];
+    return values
+        .map((value) => BlockedPerson.fromJson(value as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {

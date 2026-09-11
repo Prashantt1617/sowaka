@@ -246,6 +246,28 @@ class ManagerApiService {
     );
   }
 
+  /// Feedback as it stands now: the viewer's own growth history, and where
+  /// each report's review sits this cycle. A sent review stays editable until
+  /// the cycle closes, so what sign-in loaded goes stale as soon as a manager
+  /// revises one.
+  Future<FeedbackSnapshot> fetchFeedbackSnapshot() async {
+    final body = await _request('GET', '/manager/feedback-snapshot');
+    return FeedbackSnapshot(
+      managerScore: (body['managerScore'] as num?)?.toDouble() ?? 0,
+      cycleEndsOn: switch (body['cycleEndsOn']) {
+        final String value when value.isNotEmpty => DateTime.tryParse(value),
+        _ => null,
+      },
+      growthHistory: (body['growthHistory'] as List<dynamic>? ?? const [])
+          .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      team: {
+        for (final row in body['team'] as List<dynamic>? ?? const [])
+          (row as Map<String, dynamic>)['userId'] as String: row,
+      },
+    );
+  }
+
   Future<List<LeaveRequest>> fetchMyLeaves() async {
     final json = await _request('GET', '/leaves/mine');
     return _parseLeaves(json);

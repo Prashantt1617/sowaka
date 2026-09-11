@@ -21,6 +21,9 @@ class _BottomTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On a tablet the rail down the left is the navigation, and a second copy
+    // along the bottom would be two answers to the same question.
+    if (isTabletLayout(context)) return const SizedBox.shrink();
     // Per node 638:14376. SafeArea sits *inside* the white container so the
     // home-indicator inset stays white instead of exposing the page behind it.
     return Container(

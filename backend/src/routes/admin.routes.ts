@@ -32,6 +32,7 @@ import {
   listReimbursementTypesHandler,
   updateReimbursementTypeHandler,
 } from '../controllers/reimbursement-type.controller';
+import { adminListReports, adminReviewReport } from '../controllers/moderation.controller';
 import { adminCreateGame, adminDeleteGame, adminListGames, adminPublishGame, adminUpdateGame } from '../controllers/game.controller';
 
 // HR dashboard surface: org-wide reads + request overrides. Every route requires
@@ -53,6 +54,12 @@ adminRouter.post('/games', adminCreateGame);
 adminRouter.patch('/games/:gameId', adminUpdateGame);
 adminRouter.delete('/games/:gameId', adminDeleteGame);
 adminRouter.post('/games/:gameId/publish', adminPublishGame);
+
+// Connect moderation: what employees have reported, and closing those reports.
+// Removing the content itself goes through the existing Connect delete route,
+// which dashboard access already allows.
+adminRouter.get('/connect/reports', adminListReports);
+adminRouter.patch('/connect/reports/:reportId', adminReviewReport);
 
 // Shifts › Policies — the org-wide setup. The half-day and full-day hour
 // thresholds and the late / early-out grace live here, and the app grades every

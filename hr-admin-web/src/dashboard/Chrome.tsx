@@ -52,6 +52,11 @@ const PAYROLL: NavItem[] = [
 const CLAIMS: NavItem[] = [
   { key: 'reimbursementtypes', label: 'Reimbursement Types' },
 ];
+// Connect's own section: moderation is not an HR request queue like leave, and
+// filing it under one would bury it.
+const CONNECT: NavItem[] = [
+  { key: 'contentreports', label: 'Moderate feed' },
+];
 const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'PEOPLE', items: PEOPLE },
@@ -59,6 +64,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
   { title: 'CLAIMS', items: CLAIMS },
+  { title: 'CONNECT', items: CONNECT },
 ];
 const SOON: Partial<Record<View, boolean>> = { attendance: true, onboarding: true, exit: true };
 
