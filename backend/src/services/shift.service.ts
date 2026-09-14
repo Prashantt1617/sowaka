@@ -585,10 +585,31 @@ export function isWeekOffDay(date: Date, weeklyOff: Record<string, number[]>): b
 export async function policyForUser(userId: string): Promise<ShiftPolicyRules & { shiftName: string | null }> {
   const user = await users().findOne({ userId });
   if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
+  const orgPolicy = await getOrgShiftPolicy(user.org);
   const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
   // A template with no policy of its own is not an override of anything.
-  if (template?.policy) return { ...template.policy, shiftName: template.name };
-  return { ...(await getOrgShiftPolicy(user.org)), shiftName: null };
+  if (!template?.policy) return { ...orgPolicy, shiftName: null };
+  // A template overrides the working day — when the shift runs, what counts as
+  // a half or full day, the grace, the week-off grid. The rules below it
+  // (leave windows, correction and overtime backdating) always come from
+  // Shifts › Policies, so HR changes one figure in one place and every
+  // employee follows it. A template used to hold a frozen copy of these, taken
+  // when it was created, which is why editing Policies appeared to do nothing
+  // for anyone assigned to one.
+  return {
+    ...orgPolicy,
+    startTime: template.policy.startTime,
+    endTime: template.policy.endTime,
+    missingPunchIn: template.policy.missingPunchIn,
+    missingPunchOut: template.policy.missingPunchOut,
+    missingBoth: template.policy.missingBoth,
+    weeklyOff: template.policy.weeklyOff,
+    minHalfDayHours: template.policy.minHalfDayHours,
+    minFullDayHours: template.policy.minFullDayHours,
+    lateGraceMinutes: template.policy.lateGraceMinutes,
+    earlyOutGraceMinutes: template.policy.earlyOutGraceMinutes,
+    shiftName: template.name,
+  };
 }
 
 /**

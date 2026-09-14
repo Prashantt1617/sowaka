@@ -419,6 +419,9 @@ class LeaveRequest {
     required this.decision,
     required this.managerNote,
     this.decidedByRole = '',
+    this.halfDay = false,
+    this.documentName,
+    this.documentUrl,
   });
 
   final String id;
@@ -442,6 +445,14 @@ class LeaveRequest {
   final LeaveDecision decision;
   final String managerNote;
   final String decidedByRole; // 'admin' = overridden from the HR dashboard
+
+  /// Half a day off — only ever true on a single-date request.
+  final bool halfDay;
+
+  /// The supporting document, when one was attached, and a short-lived signed
+  /// link to it.
+  final String? documentName;
+  final String? documentUrl;
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
@@ -468,6 +479,9 @@ class LeaveRequest {
           (json['days'] as num?)?.toDouble() ??
           (end.difference(start).inDays + 1).toDouble(),
       reason: json['reason'] as String? ?? '',
+      halfDay: json['halfDay'] as bool? ?? false,
+      documentName: json['documentName'] as String?,
+      documentUrl: json['documentUrl'] as String?,
       requestedOn:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
@@ -668,6 +682,7 @@ class ReimbursementClaim {
     required this.note,
     required this.status,
     required this.createdAt,
+    this.receiptUrl,
     this.decidedByRole = '',
     this.managerNote = '',
   });
@@ -682,6 +697,9 @@ class ReimbursementClaim {
   final double amount;
   final DateTime expenseDate;
   final String receiptName;
+
+  /// Short-lived signed link to the stored receipt, when there is one.
+  final String? receiptUrl;
   final String note;
   final String status;
   final DateTime createdAt;
@@ -717,6 +735,7 @@ class ReimbursementClaim {
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       expenseDate: DateTime.parse(json['expenseDate'] as String),
       receiptName: json['receiptName'] as String? ?? '',
+      receiptUrl: json['receiptUrl'] as String?,
       note: json['note'] as String? ?? '',
       managerNote: json['managerNote'] as String? ?? '',
       status: switch (json['status']) {
@@ -744,6 +763,7 @@ class ReimbursementClaim {
       amount: amount,
       expenseDate: expenseDate,
       receiptName: receiptName,
+      receiptUrl: receiptUrl,
       note: note,
       status: status ?? this.status,
       createdAt: createdAt,
@@ -1198,6 +1218,33 @@ class ShiftPolicy {
     return hour * 60 + minute;
   }
 
+  /// The hours a corrected day is recorded as, from this shift's own times —
+  /// the same rule the server applies when it approves a correction.
+  ///
+  /// A full day and a work-from-home day both run the whole shift; a half day
+  /// runs from the start for as long as the policy says a half day lasts.
+  /// Leave records no hours at all: it is time off, not time worked.
+  (DateTime?, DateTime?) punchWindowFor(String dayType, DateTime date) {
+    final start = startMinutes;
+    if (start == null || dayType.isEmpty || dayType == 'leave') {
+      return (null, null);
+    }
+    final day = DateTime(date.year, date.month, date.day);
+    final from = day.add(Duration(minutes: start));
+    if (dayType == 'half_day') {
+      final hours = minHalfDayHours > 0 ? minHalfDayHours : 4;
+      return (from, from.add(Duration(minutes: (hours * 60).round())));
+    }
+    if (dayType != 'full_day' && dayType != 'wfh') return (null, null);
+    final end = endMinutes;
+    if (end == null) return (null, null);
+    // An end at or before the start means the shift runs overnight.
+    return (
+      from,
+      day.add(Duration(minutes: end <= start ? end + 24 * 60 : end)),
+    );
+  }
+
   /// Whether [punchIn] landed after the shift start plus its grace.
   bool isLate(DateTime punchIn) {
     final start = startMinutes;
@@ -1253,10 +1300,31 @@ class ShiftPolicy {
 }
 
 class AttendanceRecord {
-  const AttendanceRecord({required this.workDate, this.punchIn, this.punchOut});
+  const AttendanceRecord({
+    required this.workDate,
+    this.punchIn,
+    this.punchOut,
+    this.dayType = '',
+  });
   final DateTime workDate;
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// What an approved correction recorded the day as: full_day, half_day, wfh
+  /// or leave. Empty on a day nobody has corrected. A day corrected to leave
+  /// carries no punches by design, so without this the calendar read it as a
+  /// present day with its times missing.
+  final String dayType;
+
+  /// The day type in the words the calendar uses, or empty when there is none.
+  String get dayTypeLabel => switch (dayType) {
+    'full_day' => 'Full Day',
+    'half_day' => 'Half Day',
+    'wfh' => 'Work from home',
+    'leave' => 'Leave',
+    _ => '',
+  };
+
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) =>
       AttendanceRecord(
         workDate: DateTime.parse(json['workDate'] as String),
@@ -1264,6 +1332,7 @@ class AttendanceRecord {
         punchOut: DateTime.tryParse(
           json['punchOut'] as String? ?? '',
         )?.toLocal(),
+        dayType: json['dayType'] as String? ?? '',
       );
 }
 
@@ -1281,6 +1350,7 @@ class AttendanceRegularization {
     this.punchOut,
     this.requestedPunchIn,
     this.requestedPunchOut,
+    this.requestedDayType = '',
     this.managerNote = '',
   });
   final String id;
@@ -1296,10 +1366,23 @@ class AttendanceRegularization {
   final DateTime? punchIn;
   final DateTime? punchOut;
 
-  /// The times the employee is asking to be recorded.
+  /// @deprecated The times older corrections asked to be recorded.
   final DateTime? requestedPunchIn;
   final DateTime? requestedPunchOut;
+
+  /// What the employee is asking the day to be recorded as: full_day,
+  /// half_day, wfh or leave. Empty on corrections raised before day types.
+  final String requestedDayType;
   final String managerNote;
+
+  /// The day type in the words the screens use.
+  String get dayTypeLabel => switch (requestedDayType) {
+    'full_day' => 'Full Day',
+    'half_day' => 'Half Day',
+    'wfh' => 'Work from home',
+    'leave' => 'Leave',
+    _ => '',
+  };
   String get initial => who.isEmpty ? '?' : who[0].toUpperCase();
   int get avatarIndex => who.hashCode.abs() % 7;
   LeaveDecision get decision => switch (status) {
@@ -1331,6 +1414,7 @@ class AttendanceRegularization {
     requestedPunchOut: DateTime.tryParse(
       json['requestedPunchOut'] as String? ?? '',
     )?.toLocal(),
+    requestedDayType: json['requestedDayType'] as String? ?? '',
     managerNote: json['managerNote'] as String? ?? '',
   );
 }

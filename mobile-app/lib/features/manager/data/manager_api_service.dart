@@ -191,8 +191,7 @@ class ManagerApiService {
 
   Future<AttendanceRegularization> submitAttendanceRegularization({
     required DateTime workDate,
-    required DateTime? punchIn,
-    required DateTime? punchOut,
+    required String dayType,
     required String note,
   }) async {
     final json = await _request(
@@ -200,8 +199,7 @@ class ManagerApiService {
       '/attendance/regularizations',
       body: {
         'workDate': _dateOnly(workDate),
-        if (punchIn != null) 'punchIn': punchIn.toUtc().toIso8601String(),
-        if (punchOut != null) 'punchOut': punchOut.toUtc().toIso8601String(),
+        'dayType': dayType,
         'note': note,
       },
     );
@@ -337,7 +335,34 @@ class ManagerApiService {
     required DateTime endDate,
     required String reason,
     bool halfDay = false,
+    String? documentName,
+    Uint8List? documentBytes,
   }) async {
+    // A supporting document turns this into a multipart post; without one the
+    // plain JSON body is kept, which is what every existing caller sends.
+    if (documentBytes != null && documentName != null) {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/leaves'),
+      )
+        ..headers['Authorization'] = 'Bearer ${session.token}'
+        ..fields.addAll({
+          'type': _leaveTypeToken(type),
+          'startDate': _dateOnly(startDate),
+          'endDate': _dateOnly(endDate),
+          'reason': reason,
+          'halfDay': halfDay ? 'true' : 'false',
+        })
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'document',
+            documentBytes,
+            filename: documentName,
+          ),
+        );
+      final json = await _send(request);
+      return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
+    }
     final json = await _request(
       'POST',
       '/leaves',

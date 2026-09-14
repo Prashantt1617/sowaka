@@ -23,6 +23,7 @@ import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../games/presentation/web_game_screen.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
+import '../../requests/presentation/request_summary.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
 import '../data/manager_models.dart';
