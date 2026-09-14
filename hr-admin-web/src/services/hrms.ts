@@ -430,3 +430,41 @@ export const updateReimbursementType = (id: string, input: ReimbursementTypeInpu
 
 export const deleteReimbursementType = (id: string) =>
   api(`/admin/reimbursement-types/${id}`, { method: 'DELETE' });
+
+// ---- Connect moderation (what employees reported from the app's feed) ----
+export type ContentReportDTO = {
+  id: string;
+  postId: string;
+  commentId?: string;
+  target: 'post' | 'comment';
+  reason: string;
+  reasonLabel: string;
+  note?: string;
+  reporterUserId: string;
+  reporterName: string;
+  authorUserId?: string;
+  authorName: string;
+  excerpt: string;
+  currentText: string;
+  postTag: string;
+  postType: string;
+  /** False once the post or comment has been deleted. */
+  stillPresent: boolean;
+  status: 'open' | 'actioned' | 'dismissed';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedByName?: string;
+  reviewNote?: string;
+};
+
+export const getContentReports = (status?: string) =>
+  api<{ reports: ContentReportDTO[] }>(
+    `/admin/connect/reports${status && status !== 'all' ? `?status=${status}` : ''}`,
+  ).then((r) => r.reports);
+
+export const reviewContentReport = (id: string, input: { status: string; note?: string }) =>
+  api(`/admin/connect/reports/${id}`, { method: 'PATCH', body: input });
+
+/** Takes the reported post down. Comments are removed by editing the post. */
+export const removeReportedPost = (postId: string) =>
+  api(`/connect/posts/${postId}`, { method: 'DELETE' });

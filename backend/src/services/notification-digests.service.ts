@@ -1,4 +1,4 @@
-import { feedbackRecords, leaves, users } from '../config/db';
+import { attendanceRecords, feedbackRecords, leaves, users } from '../config/db';
 import { env } from '../config/env';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -6,6 +6,12 @@ import { notifyUsers } from './notification.service';
 /**
  * Scheduled notification digests: the feedback-cycle reminders and the
  * attendance/leave reports from the notification spec.
+ *
+ * These reach the bell icon and the device, and deliberately send no email.
+ * Scheduled mail is the kind that piles up unread in an inbox nobody asked to
+ * fill; a notification the person sees when they next open the app carries the
+ * same information without that cost. Mail is kept for the things that happen
+ * *to* someone — a leave decided, a review shared.
  *
  * Every one of these is derived from records that already exist — there is no
  * separate reminder state to keep. The scheduler decides *when* each runs; the
@@ -75,24 +81,14 @@ export async function sendFeedbackDueReminders(now = new Date()): Promise<void> 
   for (const { manager, reports } of await pendingFeedback(current)) {
     for (const report of reports) {
       await notifyUsers([manager.userId], {
-        scenario: 'feedback_due', title: 'Feedback due',
-        body: `Feedback for ${report.name} is due ${day}. Prepare now.`,
+        scenario: 'feedback_due', title: 'Feedback due in 2 days',
+        body: `Only 2 days left to send ${report.name}'s feedback — it closes ${day}.`,
         data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-        email: {
-          subject: `Feedback for ${report.name} due ${day}`,
-          body: `Hi {firstName},\n\nYour feedback session with ${report.name} is on ${day}. `
-            + `Draft and save the feedback before the session:\n${link()}\n\n- Sowaka Connect`,
-        },
       });
       await notifyUsers([report.userId], {
-        scenario: 'feedback_due', title: 'Feedback session',
-        body: `Your feedback session with ${manager.name} is on ${day}.`,
+        scenario: 'feedback_due', title: 'Feedback in 2 days',
+        body: `${manager.name} reviews you on ${day} — 2 days away. Worth thinking about the month.`,
         data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-        email: {
-          subject: `Your feedback session with ${manager.name} is on ${day}`,
-          body: `Hi {firstName},\n\nYour feedback session with ${manager.name} is on ${day}. `
-            + `Take a few minutes to think about the month.\n\n- Sowaka Connect`,
-        },
       });
     }
   }
@@ -109,22 +105,11 @@ export async function sendFeedbackOverdueReminders(now = new Date()): Promise<vo
         scenario: 'feedback_overdue', title: 'Feedback overdue',
         body: `Feedback for ${report.name} is overdue - send it before month end.`,
         data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-        email: {
-          subject: `Overdue: feedback for ${report.name}`,
-          body: `Hi {firstName},\n\nYour feedback session with ${report.name} hasn't been sent. `
-            + `Send it before ${end} or it will be marked Missed - permanently for this month:\n`
-            + `${link()}\n\n- Sowaka Connect`,
-        },
       });
       await notifyUsers([report.userId], {
         scenario: 'feedback_overdue', title: 'Feedback pending',
         body: `Your ${month} feedback from ${manager.name} is pending.`,
         data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-        email: {
-          subject: `Your ${month} feedback is pending`,
-          body: `Hi {firstName},\n\nYour ${month} feedback session with ${manager.name} hasn't `
-            + `happened yet. It's still pending for this month.\n\n- Sowaka Connect`,
-        },
       });
     }
   }
@@ -141,81 +126,42 @@ export async function sendMissedFeedbackSummaries(now = new Date()): Promise<voi
       scenario: 'feedback_missed', title: 'Missed feedback',
       body: `You missed ${names.length} feedback session${names.length === 1 ? '' : 's'} in ${month}: ${names.join(', ')}`,
       data: { destination: 'grow_feedback', period: closed },
-      email: {
-        subject: `${month}: ${names.length} missed feedback session${names.length === 1 ? '' : 's'}`,
-        body: `Hi {firstName},\n\nThese feedback sessions were not completed in ${month} and are `
-          + `now marked Missed:\n${names.map((name) => `- ${name}`).join('\n')}\n\n`
-          + `Missed records are permanent for the month. ${next}'s sessions are already scheduled:\n`
-          + `${link()}\n\n- Sowaka Connect`,
-      },
     });
   }
 }
 
 /**
- * #16 — 1st of the month: flags to HR where the same manager/employee pair has
- * gone two or more consecutive months without feedback.
+ * #24 — Monday 9:00 AM: last week's attendance, summarised.
+ *
+ * The figures are in the notification itself. A line saying a report "is ready"
+ * asks the manager to go and look before they know whether anything happened.
  */
-export async function sendConsecutiveMissedFlags(now = new Date()): Promise<void> {
-  const closed = period(previousMonth(now));
-  const grouped = await managersWithReports();
-  // Bounded to the window the walk-back below can reach, rather than every
-  // review ever sent.
-  const sent = await feedbackRecords()
-    .find({ status: 'sent', period: { $gte: period(monthsBack(now, 13)) } })
-    .toArray();
-  const sentPairs = new Set(sent.map((record) => `${record.managerUserId}:${record.employeeUserId}:${record.period}`));
-
-  for (const { manager, reports } of grouped.values()) {
-    // Guarded, and resolved once per manager: an unset `org` would match every
-    // other org-less user, sending one company's flags to another company's HR.
-    const hr = manager.org
-      ? await users().find({ org: manager.org, dashboardAccess: true }).toArray()
-      : [];
-    if (!hr.length) continue;
-    const hrIds = hr.map((user) => user.userId);
-
-    for (const report of reports) {
-      // Walk back from the month that just closed for as long as it was missed.
-      const missed: string[] = [];
-      for (let back = 0; back < 12; back += 1) {
-        const month = period(monthsBack(now, back + 1));
-        if (sentPairs.has(`${manager.userId}:${report.userId}:${month}`)) break;
-        missed.unshift(month);
-      }
-      if (missed.length < 2 || missed.at(-1) !== closed) continue;
-
-      const monthList = missed.map(monthLabel).join(', ');
-      await notifyUsers(hrIds, {
-        scenario: 'consecutive_missed_feedback', title: 'Missed feedback flag',
-        body: `${manager.name} has missed feedback for ${report.name} ${missed.length} months in a row`,
-        data: { destination: 'grow_feedback', employeeUserId: report.userId, managerUserId: manager.userId },
-        email: {
-          subject: `Flag: ${report.name} - ${missed.length} consecutive months of missed feedback`,
-          body: `Hi {firstName},\n\n${manager.name} has now missed feedback for ${report.name} `
-            + `${missed.length} months in a row (${monthList}).\n\nReview on the dashboard:\n`
-            + `${link()}\n\n- Sowaka Connect`,
-        },
-      });
-    }
-  }
-}
-
-
-/** #24 — Monday 9:00 AM: pointer to last week's report. */
 export async function sendWeeklyAttendanceReport(now = new Date()): Promise<void> {
-  const weekStart = addDays(startOfDay(now), -7).toISOString().slice(0, 10);
-  for (const { manager } of (await managersWithReports()).values()) {
+  const weekStartDate = addDays(startOfDay(now), -7);
+  const weekStart = weekStartDate.toISOString().slice(0, 10);
+  const weekEnd = addDays(weekStartDate, 6);
+  for (const { manager, reports } of (await managersWithReports()).values()) {
+    const employeeIds = reports.map((report) => report.employeeId).filter(Boolean) as string[];
+    if (!employeeIds.length) continue;
+    const records = await attendanceRecords()
+      .find({
+        employeeId: { $in: employeeIds },
+        workDate: { $gte: weekStart, $lte: weekEnd.toISOString().slice(0, 10) },
+      })
+      .toArray();
+    const present = records.filter((record) => record.punchIn).length;
+    const onLeave = await leaves().countDocuments({
+      userId: { $in: reports.map((report) => report.userId) },
+      status: 'approved',
+      startDate: { $lte: weekEnd },
+      endDate: { $gte: weekStartDate },
+    });
     await notifyUsers([manager.userId], {
-      scenario: 'weekly_attendance_report', title: 'Attendance report',
-      body: `Your team's attendance report for last week is ready`,
+      scenario: 'weekly_attendance_report', title: 'Last week at a glance',
+      body: `${present} day${present === 1 ? '' : 's'} attended across ${reports.length} `
+        + `team member${reports.length === 1 ? '' : 's'}`
+        + (onLeave ? `, ${onLeave} leave${onLeave === 1 ? '' : 's'} taken.` : '.'),
       data: { destination: 'manage_attendance', weekStart },
-      email: {
-        subject: `Your team's attendance report - week of ${weekStart}`,
-        body: `Hi {firstName},\n\nYour team's attendance report for last week is ready: `
-          + `attendance rate, late arrivals, and leaves taken.\n\nView the report:\n`
-          + `${link()}\n\n- Sowaka Connect`,
-      },
     });
   }
 }
@@ -245,13 +191,10 @@ export async function sendLeavePlanningReport(now = new Date()): Promise<void> {
 
     await notifyUsers([manager.userId], {
       scenario: 'leave_planning', title: 'Leave next week',
-      body: `${people} team member${people === 1 ? '' : 's'} on leave next week - plan ahead`,
+      // Who and when, in the notification. "Plan ahead" with a link to go and
+      // find out who was a instruction, not information.
+      body: `${people} on leave next week — ${lines.map((line) => line.slice(2)).join('; ')}`,
       data: { destination: 'manage_leave' },
-      email: {
-        subject: `Next week: ${people} team member${people === 1 ? '' : 's'} on leave`,
-        body: `Hi {firstName},\n\n${people} team member${people === 1 ? ' is' : 's are'} on approved `
-          + `leave next week:\n${lines.join('\n')}\n\nPlan ahead:\n${link()}\n\n- Sowaka Connect`,
-      },
     });
   }
 }

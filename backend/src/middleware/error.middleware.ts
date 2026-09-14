@@ -11,6 +11,7 @@ import { ReimbursementError } from '../services/reimbursement.service';
 import { logger } from '../utils/logger';
 import { AdminError } from '../services/admin.service';
 import { ConnectError } from '../services/connect.service';
+import { ConnectBlockError } from '../services/connect-blocks.service';
 import { GameError } from '../services/game.service';
 import { NotificationError } from '../services/notification.service';
 import { PayHeadError } from '../services/payHead.service';
@@ -71,6 +72,7 @@ function getStatusCode(error: unknown): number {
     error instanceof ReimbursementError
     || error instanceof AdminError
     || error instanceof ConnectError
+    || error instanceof ConnectBlockError
     || error instanceof GameError
     || error instanceof NotificationError
     || error instanceof PayHeadError

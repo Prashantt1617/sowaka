@@ -7,6 +7,7 @@ import {
   notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
+import { blockedUserIdsFor } from './connect-blocks.service';
 import { fetchLinkPreview } from './link-preview.service';
 import {
   deleteConnectMedia,
@@ -24,6 +25,12 @@ export class ConnectError extends Error {
     super(message);
   }
 }
+
+/**
+ * Posts that carry company communication rather than one colleague's voice.
+ * A personal block never hides these — see the block filter in the feed.
+ */
+const ANNOUNCEMENT_POST_TYPES: ConnectPostType[] = ['leadership', 'hr_announcement'];
 
 /**
  * Tells every other client in the post's audience that it changed. Fire-and-
@@ -50,9 +57,27 @@ export async function getConnectFeed(viewerUserId: string) {
   const org = orgForUser(viewer);
   await ensureDefaultConnectPosts(org);
 
+  // Blocking is a personal mute: a blocked colleague's own posts drop out of
+  // this viewer's feed. Official announcements are exempt — an employee who
+  // has muted a colleague who happens to work in HR must still see what the
+  // company tells everyone.
+  const blockedUserIds = await blockedUserIdsFor(viewerUserId);
+  const blockFilter =
+    blockedUserIds.length > 0
+      ? {
+          $nor: [
+            {
+              'author.userId': { $in: blockedUserIds },
+              type: { $nin: ANNOUNCEMENT_POST_TYPES },
+            },
+          ],
+        }
+      : {};
+
   const posts = await connectPosts()
     .find({
       org,
+      ...blockFilter,
       $or: [
         // MongoDB's driver stores `undefined` as BSON null rather than
         // dropping the key, so company-wide posts persist with an explicit
@@ -92,7 +117,9 @@ export async function getConnectFeed(viewerUserId: string) {
     ),
   );
 
-  return Promise.all(posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls)));
+  return Promise.all(
+    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds)),
+  );
 }
 
 /**
@@ -381,7 +408,12 @@ export async function deleteConnectPost(viewerUserId: string, postId: string) {
   return { id: post.id };
 }
 
-async function requireVisiblePost(viewerUserId: string, postId: string) {
+/**
+ * The post, if this viewer is allowed to see it at all. Exported so the
+ * moderation service can apply exactly the same audience check before letting
+ * someone report something.
+ */
+export async function requireVisiblePost(viewerUserId: string, postId: string) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
@@ -411,7 +443,11 @@ async function viewPost(
   post: ConnectPost,
   viewerUserId: string,
   authorPhotoUrls?: Map<string, string | undefined>,
+  knownBlockedUserIds?: string[],
 ) {
+  // The feed resolves this once for the whole page; every other caller renders
+  // a single post after a write and looks it up here.
+  const blockedUserIds = knownBlockedUserIds ?? (await blockedUserIdsFor(viewerUserId));
   let authorPhotoUrl = post.author.photoUrl;
   if (post.author.userId) {
     if (authorPhotoUrls) {
@@ -490,12 +526,25 @@ async function viewPost(
       score: entry.score,
     }));
   }
-  const comments = post.comments.map((comment) => ({
-    ...comment,
-    likedBy: comment.likedBy ?? [],
-    likeCount: (comment.likedBy ?? []).length,
-    liked: (comment.likedBy ?? []).includes(viewerUserId),
-  }));
+  // A blocked colleague's comments go too, and the replies underneath them —
+  // a reply left on its own reads as an answer to nothing.
+  const hiddenCommentIds = new Set(
+    post.comments
+      .filter((comment) => blockedUserIds.includes(comment.userId))
+      .map((comment) => comment.id),
+  );
+  const comments = post.comments
+    .filter(
+      (comment) =>
+        !hiddenCommentIds.has(comment.id) &&
+        !(comment.parentId && hiddenCommentIds.has(comment.parentId)),
+    )
+    .map((comment) => ({
+      ...comment,
+      likedBy: comment.likedBy ?? [],
+      likeCount: (comment.likedBy ?? []).length,
+      liked: (comment.likedBy ?? []).includes(viewerUserId),
+    }));
   return {
     ...post,
     author: { ...post.author, photoUrl: authorPhotoUrl },
@@ -503,7 +552,7 @@ async function viewPost(
     comments,
     liked,
     likeCount: post.likedBy.length,
-    commentCount: post.comments.length,
+    commentCount: comments.length,
     selectedPollOptionId,
     actionValue,
   };
@@ -533,7 +582,7 @@ function mentionedUserIdsIn(text: string, post: ConnectPost): string[] {
   return [...matched];
 }
 
-function orgForUser(user: Pick<User, 'org' | 'email'>) {
+export function orgForUser(user: Pick<User, 'org' | 'email'>) {
   return user.org ?? user.email.split('@').at(1) ?? 'default';
 }
 

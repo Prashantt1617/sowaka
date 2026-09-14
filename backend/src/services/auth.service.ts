@@ -6,6 +6,7 @@ import { AuthUser } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
 import { sendOtpEmail } from './email.service';
+import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 
 const defaultCompany = 'Sowaka';
@@ -68,8 +69,18 @@ export async function verifyLoginOtp(
 
   const expectedHash = challenge.otpHash;
   const actualHash = hashOtp(email, otp);
-  const valid =
-    env.otpDevBypass && otp === '123456' ? true : timingSafeEqualHex(expectedHash, actualHash);
+  // A store reviewer cannot receive a mailed code, so a named few accounts may
+  // use a fixed one. Scoped to the allowlist and logged every time; the older
+  // blanket dev bypass stays for local work only.
+  const testAccount = otp === '123456' && env.otpTestEmails.includes(email);
+  if (testAccount) {
+    logger.warn('Login with the fixed test code', {
+      email: `${email.slice(0, 2)}***@${email.split('@')[1] ?? ''}`,
+    });
+  }
+  const valid = testAccount || (env.otpDevBypass && otp === '123456')
+    ? true
+    : timingSafeEqualHex(expectedHash, actualHash);
 
   if (!valid) {
     await otpChallenges().updateOne({ email }, { $inc: { attempts: 1 } });

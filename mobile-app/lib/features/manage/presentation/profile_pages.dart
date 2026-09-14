@@ -860,6 +860,11 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       ],
                       const SizedBox(height: 18),
                       _LogoutButton(onPressed: onLogout),
+                      // Below the logout button and deliberately small: it is
+                      // a footnote about this person's own account, not a
+                      // company policy competing for attention.
+                      const SizedBox(height: 14),
+                      _PrivacyAndDataRow(session: session),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -1827,6 +1832,198 @@ class _ProfileRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The footnotes under the logout button: the published privacy policy, and
+/// the page where someone asks for their account and data to be deleted.
+///
+/// Both link out to the hosted pages rather than carrying a copy of the text,
+/// so what people read here is the same thing the store listings point at.
+/// Deletion gets its own link rather than living inside the policy: someone
+/// looking for it should not have to read a policy to find it.
+class _PrivacyAndDataRow extends StatelessWidget {
+  const _PrivacyAndDataRow({required this.session});
+
+  final AuthSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    // Wrapped rather than a Row: three footnotes do not fit on one line on a
+    // small phone, and a second centred line reads better than a squeeze.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _FootnoteLink(
+          label: 'Privacy policy',
+          url: ApiConfig.privacyPolicyUrl,
+          onFallback: _showFallback,
+        ),
+        const _FootnoteDot(),
+        _FootnoteLink(
+          label: 'Delete my account',
+          url: ApiConfig.dataDeletionUrl,
+          onFallback: _showFallback,
+        ),
+        const _FootnoteDot(),
+        // The only way back from a block, which is why the block dialog
+        // points here.
+        _FootnoteLink(
+          label: 'Blocked people',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => BlockedPeopleScreen(session: session),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static void _showFallback(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Sowaka data and privacy',
+                style: TextStyle(
+                  color: MColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Sowaka holds what your employer needs to run HR: your name, '
+                'work email and employee ID, your attendance and leave '
+                'records, reimbursement claims and receipts, performance '
+                'reviews, and anything you post on Connect.',
+                style: TextStyle(
+                  color: MColors.inkSoft,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Deleting your account',
+                style: TextStyle(
+                  color: MColors.ink,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Your account is created by your employer and closes when you '
+                'leave. To have it closed and your personal data deleted '
+                'sooner, email your HR team and support@getsowaka.com from '
+                'your work address. We confirm within 7 working days and '
+                'delete within 30 — except records your employer must keep by '
+                'law, such as attendance and payroll history, which are kept '
+                'for the statutory period and then removed.',
+                style: TextStyle(
+                  color: MColors.inkSoft,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                ApiConfig.privacyPolicyUrl,
+                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+              ),
+              Text(
+                ApiConfig.dataDeletionUrl,
+                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FootnoteDot extends StatelessWidget {
+  const _FootnoteDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      '  ·  ',
+      style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 11.5),
+    );
+  }
+}
+
+/// One small underlined link. Given a `url` it opens the browser and falls
+/// back to the sheet when nothing opens; given an `onTap` it just runs that.
+class _FootnoteLink extends StatelessWidget {
+  const _FootnoteLink({
+    required this.label,
+    this.url,
+    this.onFallback,
+    this.onTap,
+  });
+
+  final String label;
+  final String? url;
+  final void Function(BuildContext context)? onFallback;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () async {
+        final target = url;
+        if (target == null) {
+          onTap?.call();
+          return;
+        }
+        final opened = await openExternalLink(target);
+        if (opened || !context.mounted) return;
+        onFallback?.call(context);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 11.5,
+            fontWeight: FontWeight.w500,
+            decoration: TextDecoration.underline,
+            decorationColor: Color(0xFFD1D5DB),
+          ),
+        ),
       ),
     );
   }

@@ -1,6 +1,5 @@
 import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
 import {
-  sendConsecutiveMissedFlags,
   sendFeedbackDueReminders,
   sendFeedbackOverdueReminders,
   sendLeavePlanningReport,
@@ -50,10 +49,7 @@ export function startNotificationScheduler() {
           await run('sendPendingLeaveReminders', sendPendingLeaveReminders);
           if (daysLeftInMonth === 2) await run('sendFeedbackDueReminders', sendFeedbackDueReminders);
           if (daysLeftInMonth === 0) await run('sendFeedbackOverdueReminders', sendFeedbackOverdueReminders);
-          if (istDay === 1) {
-            await run('sendMissedFeedbackSummaries', sendMissedFeedbackSummaries);
-            await run('sendConsecutiveMissedFlags', sendConsecutiveMissedFlags);
-          }
+          if (istDay === 1) await run('sendMissedFeedbackSummaries', sendMissedFeedbackSummaries);
           if (weekday === 'Mon') await run('sendWeeklyAttendanceReport', sendWeeklyAttendanceReport);
         }
         if (istHour === 16 && weekday === 'Fri') await run('sendLeavePlanningReport', sendLeavePlanningReport);

@@ -31,12 +31,14 @@ function orgList(raw: string | undefined): string[] {
  * "everyone": a blank value in a deploy config is far more likely to be a
  * mistake than a decision to start mailing every org.
  */
+const DEFAULT_EMAIL_ORGS = ['sowaka', 'convrse'];
+
 function emailOrgList(raw: string | undefined): string[] {
-  if (raw === undefined) return ['sowaka'];
+  if (raw === undefined) return [...DEFAULT_EMAIL_ORGS];
   const value = raw.trim().toLowerCase();
   if (value === '*' || value === 'all') return [];
   const orgs = orgList(raw);
-  return orgs.length > 0 ? orgs : ['sowaka'];
+  return orgs.length > 0 ? orgs : [...DEFAULT_EMAIL_ORGS];
 }
 
 export const env = {
@@ -51,6 +53,19 @@ export const env = {
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
   otpDevBypass: process.env.OTP_DEV_BYPASS === 'true',
   /**
+   * Accounts that may sign in with the fixed code `123456`, from
+   * `OTP_TEST_EMAILS` (comma-separated).
+   *
+   * For store-review accounts, which cannot receive a mailed code. Deliberately
+   * an allowlist rather than a flag: `OTP_DEV_BYPASS` opens every account in
+   * every org to one guessable code, which is survivable on a laptop and not in
+   * production. Each use is logged.
+   */
+  otpTestEmails: String(process.env.OTP_TEST_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+  /**
    * Orgs that may receive push and in-app notifications, from `NOTIFY_ORGS`
    * (comma-separated). Empty means unrestricted.
    *
@@ -63,11 +78,10 @@ export const env = {
   /**
    * Orgs that may receive email, from `EMAIL_ORGS`.
    *
-   * Defaults to sowaka rather than to unrestricted, because email is the one
-   * channel that reaches people outside the app and cannot be taken back. Only
-   * sowaka is meant to receive mail for now, in every environment — so the safe
-   * state is the one that needs no deployment config to hold. Set `EMAIL_ORGS`
-   * to a list to widen it, or to `*` to lift the restriction entirely.
+   * Defaults to a named list rather than to unrestricted, because email is the
+   * one channel that reaches people outside the app and cannot be taken back —
+   * so the safe state is the one that needs no deployment config to hold. Set
+   * `EMAIL_ORGS` to a list to change it, or to `*` to lift the restriction.
    */
   emailOrgs: emailOrgList(process.env.EMAIL_ORGS),
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),

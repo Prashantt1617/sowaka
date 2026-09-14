@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyA_az1jQ9sgnMAhUDOXvQPks9W5nWZNRfM',
-    appId: '1:344927444374:android:e63e525f3dc167e65851b7',
+    appId: '1:344927444374:android:cc1ccd45f6a5050f5851b7',
     messagingSenderId: '344927444374',
     projectId: 'people-management-tool',
     storageBucket: 'people-management-tool.firebasestorage.app',

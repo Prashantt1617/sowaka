@@ -12,6 +12,15 @@ import {
   updateConnectPost,
 } from '../services/connect.service';
 import { fetchLinkPreview } from '../services/link-preview.service';
+import {
+  blockConnectPerson,
+  listConnectBlocks,
+  unblockConnectPerson,
+} from '../services/connect-blocks.service';
+import {
+  closeReportsForRemovedPost,
+  reportConnectContent,
+} from '../services/connect-moderation.service';
 
 export async function connectFeed(req: Request, res: Response, next: NextFunction) {
   try {
@@ -115,8 +124,51 @@ export async function updatePost(req: Request, res: Response, next: NextFunction
 
 export async function deletePost(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await deleteConnectPost(requireUserId(req), String(req.params.postId ?? ''));
+    const userId = requireUserId(req);
+    const postId = String(req.params.postId ?? '');
+    const result = await deleteConnectPost(userId, postId);
+    // Taking the post down answers every open report about it.
+    await closeReportsForRemovedPost(postId, userId);
     res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function reportPost(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await reportConnectContent(requireUserId(req), String(req.params.postId ?? ''), {
+      reason: String(req.body.reason ?? ''),
+      note: req.body.note == null ? undefined : String(req.body.note),
+      commentId: req.body.commentId == null ? undefined : String(req.body.commentId),
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function blockPerson(req: Request, res: Response, next: NextFunction) {
+  try {
+    const blocked = await blockConnectPerson(requireUserId(req), String(req.body.userId ?? ''));
+    res.status(201).json({ success: true, blocked });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function unblockPerson(req: Request, res: Response, next: NextFunction) {
+  try {
+    const blocked = await unblockConnectPerson(requireUserId(req), String(req.params.userId ?? ''));
+    res.status(200).json({ success: true, blocked });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function listBlockedPeople(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, blocked: await listConnectBlocks(requireUserId(req)) });
   } catch (error) {
     handleConnectError(error, next);
   }

@@ -9,6 +9,34 @@ class ApiConfig {
   //   flutter run --dart-define=API_BASE_URL=http://localhost:4000
   static const String _defaultBaseUrl = 'https://d3lwup4rvo6csf.cloudfront.net';
 
+  /// Where the privacy policy is published.
+  ///
+  /// The app links out to the hosted page rather than carrying its own copy,
+  /// so the policy people read is the same one the store listing points at and
+  /// there is only ever one version of it. Override per environment with
+  /// `--dart-define=PRIVACY_POLICY_URL=...`.
+  static const String _defaultPrivacyPolicyUrl =
+      'https://www.getsowaka.com/privacy-policy.index';
+
+  static String get privacyPolicyUrl {
+    const configured = String.fromEnvironment('PRIVACY_POLICY_URL');
+    return configured.isNotEmpty ? configured : _defaultPrivacyPolicyUrl;
+  }
+
+  /// Where someone asks for their account and data to be deleted.
+  ///
+  /// A separate page from the policy because the stores ask for a route a
+  /// person can use without the app installed, and because someone looking for
+  /// it should not have to read a policy to find it. Override with
+  /// `--dart-define=DATA_DELETION_URL=...`.
+  static const String _defaultDataDeletionUrl =
+      'https://www.getsowaka.com/datadeletion.index';
+
+  static String get dataDeletionUrl {
+    const configured = String.fromEnvironment('DATA_DELETION_URL');
+    return configured.isNotEmpty ? configured : _defaultDataDeletionUrl;
+  }
+
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;

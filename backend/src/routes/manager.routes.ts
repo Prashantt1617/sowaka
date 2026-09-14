@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   managerWorkspace,
   myShiftPolicy,
+  myFeedbackSnapshot as feedbackSnapshot,
   saveManagerFeedback,
   saveRecognitionNomination,
   updateMyProfilePhoto,
@@ -16,6 +17,9 @@ managerRouter.get('/workspace', managerWorkspace);
 // while it runs, so an HR change to shifts, leave types, overtime or
 // corrections lands without a restart.
 managerRouter.get('/shift-policy', myShiftPolicy);
+// Feedback moves while the app is open — a review stays editable until the
+// cycle closes — so the app re-reads this rather than trusting sign-in.
+managerRouter.get('/feedback-snapshot', feedbackSnapshot);
 managerRouter.patch('/photo', uploadProfilePhoto, updateMyProfilePhoto);
 managerRouter.put('/feedback/:employeeUserId', saveManagerFeedback);
 managerRouter.put('/recognition/:category', saveRecognitionNomination);

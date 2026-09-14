@@ -32,6 +32,11 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M9 9h.01M12 9h.01M15 9h.01M9 13h.01M12 13h.01M15 13h.01M10 21v-4h4v4" />
     </svg>
   ),
+  contentreports: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 21V4M4 5h11l-1.5 3L15 11H4" />
+    </svg>
+  ),
   games: (
     <svg {...base(18, 'currentColor')}>
       <path d="M7 8h10a4 4 0 0 1 3.7 5.5l-1.2 3a2 2 0 0 1-3.2.8L14.8 16H9.2l-1.5 1.3a2 2 0 0 1-3.2-.8l-1.2-3A4 4 0 0 1 7 8z" />
