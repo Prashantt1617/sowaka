@@ -125,47 +125,6 @@ class ConnectApiService {
     return json['alreadyReported'] != true;
   }
 
-  /// Submits (or replaces) this viewer's entry to a photo challenge.
-  Future<ConnectPost> submitChallengeEntry(
-    String postId, {
-    required String caption,
-    required ConnectMediaAttachment photo,
-  }) async {
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$_baseUrl/connect/posts/$postId/challenge/entries'),
-    );
-    request.headers['Authorization'] = 'Bearer ${session.token}';
-    request.fields['caption'] = caption;
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'entryPhoto',
-        photo.path,
-        filename: photo.name,
-        contentType: _mediaType(photo.mimeType),
-      ),
-    );
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
-    final decoded = _decodeResponse(response);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return ConnectPost.fromJson(decoded['post'] as Map<String, dynamic>);
-    }
-    final message = decoded['message'] as String? ?? 'Connect request failed';
-    throw ConnectApiException(message, response.statusCode);
-  }
-
-  /// Votes for an entry, or takes the vote back when the same one is sent
-  /// again — the server treats a repeat as a toggle.
-  Future<ConnectPost> voteChallengeEntry(String postId, String entryId) async {
-    final json = await _request(
-      'POST',
-      '/connect/posts/$postId/challenge/vote',
-      body: {'entryId': entryId},
-    );
-    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
-  }
-
   Future<List<BlockedPerson>> fetchBlocked() async {
     final json = await _request('GET', '/connect/blocks');
     return _blockedFrom(json);

@@ -255,99 +255,6 @@ export async function performConnectAction(
   return viewPost(updated ?? post, viewerUserId);
 }
 
-/**
- * Adds this person's entry to a photo challenge. One entry each — posting
- * again replaces the previous photo rather than filling the carousel with the
- * same face, and the old image is deleted so it does not linger in storage.
- */
-export async function addChallengeEntry(
-  viewerUserId: string,
-  postId: string,
-  input: { caption: string; photo?: ConnectMediaFile },
-) {
-  const post = await requireVisiblePost(viewerUserId, postId);
-  if (post.type !== 'photo_challenge') {
-    throw new ConnectError(400, 'That post is not a photo challenge');
-  }
-  const viewer = await users().findOne({ userId: viewerUserId });
-  if (!viewer) throw new ConnectError(404, 'User not found');
-  if (!input.photo) throw new ConnectError(400, 'Add a photo to enter');
-  if (!input.photo.contentType.startsWith('image/')) {
-    throw new ConnectError(400, 'Entries must be a photo');
-  }
-  const limit = Number(post.body.captionLimit ?? 200);
-  const caption = input.caption.trim().slice(0, limit);
-
-  const uploaded = await storeConnectMediaMany(viewerUserId, [input.photo]);
-  const previous = (post.challengeEntries ?? []).find((entry) => entry.userId === viewerUserId);
-  try {
-    const entry = {
-      id: previous?.id ?? randomUUID(),
-      userId: viewerUserId,
-      name: viewer.name,
-      initials: initialsFor(viewer.name),
-      caption,
-      photoObjectKey: uploaded[0].objectKey,
-      createdAt: new Date(),
-    };
-    if (previous) {
-      await connectPosts().updateOne(
-        { id: postId },
-        { $set: { 'challengeEntries.$[e]': entry, updatedAt: new Date() } },
-        { arrayFilters: [{ 'e.id': previous.id }] },
-      );
-      await deleteConnectMediaByKeys([previous.photoObjectKey]);
-    } else {
-      await connectPosts().updateOne(
-        { id: postId },
-        { $push: { challengeEntries: entry }, $set: { updatedAt: new Date() } },
-      );
-    }
-  } catch (error) {
-    await deleteConnectMediaMany(uploaded);
-    throw error;
-  }
-  const updated = await connectPosts().findOne({ id: postId });
-  announceChange(post, 'updated', viewerUserId);
-  return viewPost(updated ?? post, viewerUserId);
-}
-
-/**
- * One vote per person, changeable — voting again moves the vote rather than
- * adding one, which is what the brief on the post promises. Voting for your
- * own entry is refused.
- */
-export async function voteOnChallengeEntry(
-  viewerUserId: string,
-  postId: string,
-  entryId: string,
-) {
-  const post = await requireVisiblePost(viewerUserId, postId);
-  if (post.type !== 'photo_challenge') {
-    throw new ConnectError(400, 'That post is not a photo challenge');
-  }
-  const entry = (post.challengeEntries ?? []).find((item) => item.id === entryId);
-  if (!entry) throw new ConnectError(404, 'Entry not found');
-  if (entry.userId === viewerUserId) {
-    throw new ConnectError(400, 'You cannot vote for your own entry');
-  }
-  // Tapping the entry you already voted for takes the vote back.
-  if (post.challengeVotes?.[viewerUserId] === entryId) {
-    await connectPosts().updateOne(
-      { id: postId },
-      { $unset: { [`challengeVotes.${viewerUserId}`]: true }, $set: { updatedAt: new Date() } },
-    );
-  } else {
-    await connectPosts().updateOne(
-      { id: postId },
-      { $set: { [`challengeVotes.${viewerUserId}`]: entryId, updatedAt: new Date() } },
-    );
-  }
-  const updated = await connectPosts().findOne({ id: postId });
-  announceChange(post, 'updated', viewerUserId);
-  return viewPost(updated ?? post, viewerUserId);
-}
-
 export interface ConnectPostInput {
   type?: string;
   body?: Record<string, unknown>;
@@ -606,44 +513,6 @@ async function viewPost(
     const baseCount = typeof body.baseCount === 'number' ? body.baseCount : 0;
     body.registeredCount = baseCount + Object.keys(post.actionBy ?? {}).length;
   }
-  if (post.type === 'photo_challenge') {
-    const votes = post.challengeVotes ?? {};
-    const tally = new Map<string, number>();
-    for (const entryId of Object.values(votes)) {
-      tally.set(entryId, (tally.get(entryId) ?? 0) + 1);
-    }
-    const pointsPerVote = Number(body.pointsPerVote ?? 10);
-    const entries = await Promise.all(
-      (post.challengeEntries ?? [])
-        // A blocked colleague's entry goes with their posts and comments.
-        .filter((entry) => !blockedUserIds.includes(entry.userId))
-        .map(async (entry) => {
-          const likes = tally.get(entry.id) ?? 0;
-          return {
-            id: entry.id,
-            userId: entry.userId,
-            name: entry.name,
-            initials: entry.initials,
-            caption: entry.caption,
-            createdAt: entry.createdAt,
-            photoUrl: await presignConnectMedia(entry.photoObjectKey).catch(() => undefined),
-            likes,
-            points: likes * pointsPerVote,
-            votedByViewer: votes[viewerUserId] === entry.id,
-            isMine: entry.userId === viewerUserId,
-          };
-        }),
-    );
-    body.entries = entries;
-    body.entryCount = entries.length;
-    // The post shows entries as submitted; the leaderboard ranks them. Ties
-    // keep submission order, so an earlier entry is not demoted by a later one.
-    body.leaderboard = [...entries]
-      .sort((a, b) => b.likes - a.likes)
-      .map((entry, index) => ({ ...entry, rank: index + 1 }));
-    body.myEntryId = entries.find((entry) => entry.isMine)?.id ?? null;
-    body.myVoteEntryId = votes[viewerUserId] ?? null;
-  }
   if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
       .find({ gameId: body.gameId, org: post.org })
@@ -760,7 +629,6 @@ function parsePostType(value: string | undefined): ConnectPostType {
     'live_game',
     'new_joinee',
     'recommendation',
-    'photo_challenge',
   ];
   if (allowed.includes(value as ConnectPostType)) return value as ConnectPostType;
   throw new ConnectError(400, 'Post type is invalid');
@@ -835,18 +703,6 @@ function normalizePostBody(
         options: normalizePollOptions(input.options, pollOptionImageKeys),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
-      };
-    case 'photo_challenge':
-      // Entries and votes are never taken from the client: they are written by
-      // their own endpoints, so an edit to the brief cannot quietly rewrite
-      // who submitted what or how the voting stands.
-      return {
-        title: normalizeText(input.title, '', 120),
-        task: normalizeText(input.task, '', 200),
-        description: normalizeText(input.description, '', 400),
-        pointsPerVote: normalizePoints(input.pointsPerVote),
-        closesAt: normalizeText(input.closesAt, '', 40),
-        captionLimit: 200,
       };
     case 'event':
       return {
@@ -1095,14 +951,6 @@ function normalizePollOptions(value: unknown, imageKeys: (string | undefined)[] 
   }));
 }
 
-/** Points awarded per vote. Whole numbers only, and capped so a typo in the
- * composer cannot mint a thousand points a vote. */
-function normalizePoints(value: unknown): number {
-  const points = Math.floor(Number(value));
-  if (!Number.isFinite(points) || points <= 0) return 10;
-  return Math.min(points, 100);
-}
-
 function postMeta(type: ConnectPostType) {
   const meta = {
     leadership: ['Leadership', '👑', '#C98A2E', '#F4ECDD'],
@@ -1117,7 +965,6 @@ function postMeta(type: ConnectPostType) {
     live_game: ['Live Game', '🎮', '#E0483B', '#FBE2DE'],
     new_joinee: ['New Joinee', '👋', '#C26B8A', '#F5E4EC'],
     recommendation: ['Must Watch/Read', '🎬', '#4F6F8C', '#E4EBF0'],
-    photo_challenge: ['Photo Challenge', '📸', '#6D28D9', '#EFE9FB'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };

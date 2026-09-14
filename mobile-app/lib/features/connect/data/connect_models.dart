@@ -11,7 +11,6 @@ enum ConnectPostType {
   liveGame,
   newJoinee,
   recommendation,
-  photoChallenge,
 }
 
 class ConnectTeammate {
@@ -121,7 +120,6 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.liveGame => 'live_game',
     ConnectPostType.newJoinee => 'new_joinee',
     ConnectPostType.recommendation => 'recommendation',
-    ConnectPostType.photoChallenge => 'photo_challenge',
   };
 }
 
@@ -196,56 +194,6 @@ class ConnectPollOption {
   }
 }
 
-/// One person's submission to a photo challenge.
-class ConnectChallengeEntry {
-  const ConnectChallengeEntry({
-    required this.id,
-    required this.userId,
-    required this.name,
-    required this.initials,
-    required this.caption,
-    required this.likes,
-    required this.points,
-    required this.votedByViewer,
-    required this.isMine,
-    this.photoUrl,
-    this.createdAt,
-    this.rank,
-  });
-
-  final String id;
-  final String userId;
-  final String name;
-  final String initials;
-  final String caption;
-  final String? photoUrl;
-  final DateTime? createdAt;
-  final int likes;
-  final int points;
-  final bool votedByViewer;
-  final bool isMine;
-
-  /// Set only on the leaderboard's own copy of an entry.
-  final int? rank;
-
-  factory ConnectChallengeEntry.fromJson(Map<String, dynamic> json) {
-    return ConnectChallengeEntry(
-      id: json['id'] as String? ?? '',
-      userId: json['userId'] as String? ?? '',
-      name: json['name'] as String? ?? 'Teammate',
-      initials: json['initials'] as String? ?? '?',
-      caption: json['caption'] as String? ?? '',
-      photoUrl: json['photoUrl'] as String?,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
-      likes: (json['likes'] as num?)?.toInt() ?? 0,
-      points: (json['points'] as num?)?.toInt() ?? 0,
-      votedByViewer: json['votedByViewer'] as bool? ?? false,
-      isMine: json['isMine'] as bool? ?? false,
-      rank: (json['rank'] as num?)?.toInt(),
-    );
-  }
-}
-
 class ConnectPost {
   const ConnectPost({
     required this.id,
@@ -298,29 +246,6 @@ class ConnectPost {
     return pollOptions.fold(0, (sum, option) => sum + option.votes);
   }
 
-  List<ConnectChallengeEntry> get challengeEntries {
-    final values = body['entries'] as List<dynamic>? ?? const [];
-    return values
-        .map(
-          (value) =>
-              ConnectChallengeEntry.fromJson(value as Map<String, dynamic>),
-        )
-        .toList();
-  }
-
-  List<ConnectChallengeEntry> get challengeLeaderboard {
-    final values = body['leaderboard'] as List<dynamic>? ?? const [];
-    return values
-        .map(
-          (value) =>
-              ConnectChallengeEntry.fromJson(value as Map<String, dynamic>),
-        )
-        .toList();
-  }
-
-  String? get myChallengeEntryId => body['myEntryId'] as String?;
-  String? get myChallengeVoteEntryId => body['myVoteEntryId'] as String?;
-
   factory ConnectPost.fromJson(Map<String, dynamic> json) {
     return ConnectPost(
       id: json['id'] as String? ?? '',
@@ -367,7 +292,6 @@ ConnectPostType _parseType(String? value) {
     'live_game' => ConnectPostType.liveGame,
     'new_joinee' => ConnectPostType.newJoinee,
     'recommendation' => ConnectPostType.recommendation,
-    'photo_challenge' => ConnectPostType.photoChallenge,
     _ => ConnectPostType.leadership,
   };
 }

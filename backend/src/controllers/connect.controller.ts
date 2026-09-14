@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
 import {
-  addChallengeEntry,
   addConnectComment,
   ConnectError,
   createConnectPost,
@@ -11,7 +10,6 @@ import {
   toggleConnectCommentReaction,
   toggleConnectReaction,
   updateConnectPost,
-  voteOnChallengeEntry,
 } from '../services/connect.service';
 import { fetchLinkPreview } from '../services/link-preview.service';
 import {
@@ -132,38 +130,6 @@ export async function deletePost(req: Request, res: Response, next: NextFunction
     // Taking the post down answers every open report about it.
     await closeReportsForRemovedPost(postId, userId);
     res.status(200).json({ success: true, ...result });
-  } catch (error) {
-    handleConnectError(error, next);
-  }
-}
-
-export async function submitChallengeEntry(req: Request, res: Response, next: NextFunction) {
-  try {
-    const files = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
-    const photo = (files.entryPhoto ?? [])[0];
-    const post = await addChallengeEntry(requireUserId(req), String(req.params.postId ?? ''), {
-      caption: String(req.body.caption ?? ''),
-      photo: photo && {
-        originalName: photo.originalname,
-        contentType: photo.mimetype,
-        size: photo.size,
-        bytes: photo.buffer,
-      },
-    });
-    res.status(201).json({ success: true, post });
-  } catch (error) {
-    handleConnectError(error, next);
-  }
-}
-
-export async function voteChallengeEntry(req: Request, res: Response, next: NextFunction) {
-  try {
-    const post = await voteOnChallengeEntry(
-      requireUserId(req),
-      String(req.params.postId ?? ''),
-      String(req.body.entryId ?? ''),
-    );
-    res.status(200).json({ success: true, post });
   } catch (error) {
     handleConnectError(error, next);
   }

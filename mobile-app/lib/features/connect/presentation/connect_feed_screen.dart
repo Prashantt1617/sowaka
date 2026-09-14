@@ -252,14 +252,6 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             onComment: (text) => _bloc.addComment(post.id, text),
             onAction: ({optionId}) =>
                 _bloc.performAction(post.id, optionId: optionId),
-            onSubmitChallengeEntry: ({required caption, required photo}) =>
-                _bloc.submitChallengeEntry(
-                  post.id,
-                  caption: caption,
-                  photo: photo,
-                ),
-            onVoteChallengeEntry: (entryId) =>
-                _bloc.voteChallengeEntry(post.id, entryId),
             onPlayGame: () => _openGame(post),
             onEdit: () => _openComposer(post.type, existing: post),
             onDelete: () => _confirmDelete(post),
@@ -460,8 +452,6 @@ class _ConnectPostCard extends StatefulWidget {
     required this.viewerColor,
     this.viewerPhotoUrl = '',
     this.onOpenPerson,
-    this.onSubmitChallengeEntry,
-    this.onVoteChallengeEntry,
   });
 
   final ConnectPost post;
@@ -479,17 +469,6 @@ class _ConnectPostCard extends StatefulWidget {
   final String viewerInitials;
   final Color viewerColor;
   final String viewerPhotoUrl;
-
-  /// Photo challenge only: submit (or replace) this viewer's entry.
-  final Future<void> Function({
-    required String caption,
-    required ConnectMediaAttachment photo,
-  })?
-  onSubmitChallengeEntry;
-
-  /// Photo challenge only: vote for an entry (tapping the same one again
-  /// takes the vote back).
-  final Future<void> Function(String entryId)? onVoteChallengeEntry;
 
   /// Opens a tagged person's profile.
   final ValueChanged<String>? onOpenPerson;
@@ -579,8 +558,6 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               onCommentPrefill: (text) =>
                   setState(() => _commentController.text = text),
               onOpenPerson: widget.onOpenPerson,
-              onSubmitChallengeEntry: widget.onSubmitChallengeEntry,
-              onVoteChallengeEntry: widget.onVoteChallengeEntry,
             ),
             _PostFooter(
               post: post,
@@ -615,7 +592,6 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.survey:
     case ConnectPostType.hrAnnouncement:
     case ConnectPostType.recommendation:
-    case ConnectPostType.photoChallenge:
       return true;
     case ConnectPostType.birthday:
     case ConnectPostType.anniversary:
@@ -682,10 +658,6 @@ _TypeBadge? _typeBadgeFor(ConnectPostType type) => switch (type) {
   ConnectPostType.recommendation => const _TypeBadge(
     label: 'Recommendation',
     asset: 'assets/icons/post_type_recommend.png',
-  ),
-  ConnectPostType.photoChallenge => const _TypeBadge(
-    label: 'Photo Challenge',
-    icon: '📸',
   ),
   _ => null,
 };
@@ -1075,8 +1047,6 @@ class _PostBody extends StatelessWidget {
     required this.onDelete,
     required this.onCommentPrefill,
     this.onOpenPerson,
-    this.onSubmitChallengeEntry,
-    this.onVoteChallengeEntry,
   });
 
   final ConnectPost post;
@@ -1089,13 +1059,6 @@ class _PostBody extends StatelessWidget {
 
   /// Opens a tagged person's profile. Null where the host can't navigate.
   final ValueChanged<String>? onOpenPerson;
-
-  final Future<void> Function({
-    required String caption,
-    required ConnectMediaAttachment photo,
-  })?
-  onSubmitChallengeEntry;
-  final Future<void> Function(String entryId)? onVoteChallengeEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -1156,11 +1119,6 @@ class _PostBody extends StatelessWidget {
         canManage: canManage,
         onEdit: onEdit,
         onDelete: onDelete,
-      ),
-      ConnectPostType.photoChallenge => _PhotoChallengeBody(
-        post: post,
-        onSubmitEntry: onSubmitChallengeEntry,
-        onVote: onVoteChallengeEntry,
       ),
     };
   }
@@ -2559,505 +2517,6 @@ class _SurveyBody extends StatelessWidget {
               fontSize: 14,
               height: 21 / 14,
               fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A photo challenge: a brief, everyone's submitted entry, and a leaderboard
-/// ranked by votes. Submitting replaces your own entry rather than adding a
-/// second one — the brief promises one photo per person.
-class _PhotoChallengeBody extends StatelessWidget {
-  const _PhotoChallengeBody({
-    required this.post,
-    required this.onSubmitEntry,
-    required this.onVote,
-  });
-
-  final ConnectPost post;
-  final Future<void> Function({
-    required String caption,
-    required ConnectMediaAttachment photo,
-  })?
-  onSubmitEntry;
-  final Future<void> Function(String entryId)? onVote;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = _bodyString(post, 'title');
-    final task = _bodyString(post, 'task');
-    final description = _bodyString(post, 'description');
-    final entries = post.challengeEntries;
-    final leaderboard = post.challengeLeaderboard.take(3).toList();
-    final myEntryId = post.myChallengeEntryId;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (title.isNotEmpty)
-            Text(
-              title,
-              style: const TextStyle(
-                color: _ConnectColors.ink,
-                fontSize: 20,
-                height: 24 / 20,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.4,
-              ),
-            ),
-          if (task.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              task,
-              style: const TextStyle(
-                color: _ConnectColors.terra,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-          if (description.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              description,
-              style: const TextStyle(
-                color: _ConnectColors.inkSoft,
-                fontSize: 13.5,
-                height: 1.5,
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          _ChallengeEntryAction(
-            entered: myEntryId != null,
-            onTap: onSubmitEntry == null
-                ? null
-                : () => _openChallengeEntrySheet(context, post, onSubmitEntry!),
-          ),
-          if (leaderboard.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text(
-              'LEADERBOARD',
-              style: TextStyle(
-                color: _ConnectColors.faint,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...leaderboard.map(
-              (entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      child: Text(
-                        '#${entry.rank}',
-                        style: const TextStyle(
-                          color: _ConnectColors.gold,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        entry.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _ConnectColors.ink,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${entry.likes} vote${entry.likes == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        color: _ConnectColors.inkSoft,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (entries.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              '${entries.length} ${entries.length == 1 ? 'entry' : 'entries'}',
-              style: const TextStyle(
-                color: _ConnectColors.faint,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 0.86,
-              ),
-              itemCount: entries.length,
-              itemBuilder: (context, index) => _ChallengeEntryTile(
-                entry: entries[index],
-                onVote: onVote == null || entries[index].isMine
-                    ? null
-                    : () => onVote!(entries[index].id),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ChallengeEntryAction extends StatelessWidget {
-  const _ChallengeEntryAction({required this.entered, required this.onTap});
-
-  final bool entered;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: entered ? const Color(0xFFEFE9FB) : _ConnectColors.terra,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              entered ? Icons.refresh_rounded : Icons.camera_alt_rounded,
-              size: 18,
-              color: entered ? const Color(0xFF6D28D9) : Colors.white,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              entered ? 'Replace your entry' : 'Enter your photo',
-              style: TextStyle(
-                color: entered ? const Color(0xFF6D28D9) : Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChallengeEntryTile extends StatelessWidget {
-  const _ChallengeEntryTile({required this.entry, required this.onVote});
-
-  final ConnectChallengeEntry entry;
-  final VoidCallback? onVote;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPhoto = (entry.photoUrl ?? '').isNotEmpty;
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onVote,
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: entry.votedByViewer
-                ? const Color(0xFF6D28D9)
-                : _ConnectColors.cardBorder,
-            width: entry.votedByViewer ? 1.6 : 1.114,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: hasPhoto
-                  ? Image(image: _remoteImage(entry.photoUrl!), fit: BoxFit.cover)
-                  : const ColoredBox(
-                      color: Color(0xFFF2F2F5),
-                      child: Icon(
-                        Icons.image_outlined,
-                        color: _ConnectColors.faint,
-                      ),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entry.isMine ? '${entry.name} (you)' : entry.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _ConnectColors.ink,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (entry.caption.isNotEmpty)
-                    Text(
-                      entry.caption,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ConnectColors.inkSoft,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Icon(
-                        entry.votedByViewer
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 13,
-                        color: entry.votedByViewer
-                            ? const Color(0xFF6D28D9)
-                            : _ConnectColors.faint,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${entry.likes}',
-                        style: const TextStyle(
-                          color: _ConnectColors.inkSoft,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Picks a photo, crops it, writes a caption, and submits the entry.
-Future<void> _openChallengeEntrySheet(
-  BuildContext context,
-  ConnectPost post,
-  Future<void> Function({
-    required String caption,
-    required ConnectMediaAttachment photo,
-  })
-  onSubmit,
-) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (sheetContext) =>
-        _ChallengeEntrySheet(captionLimit: (post.body['captionLimit'] as num?)?.toInt() ?? 200, onSubmit: onSubmit),
-  );
-}
-
-class _ChallengeEntrySheet extends StatefulWidget {
-  const _ChallengeEntrySheet({required this.captionLimit, required this.onSubmit});
-
-  final int captionLimit;
-  final Future<void> Function({
-    required String caption,
-    required ConnectMediaAttachment photo,
-  })
-  onSubmit;
-
-  @override
-  State<_ChallengeEntrySheet> createState() => _ChallengeEntrySheetState();
-}
-
-class _ChallengeEntrySheetState extends State<_ChallengeEntrySheet> {
-  final _caption = TextEditingController();
-  ConnectMediaAttachment? _photo;
-  bool _submitting = false;
-
-  @override
-  void dispose() {
-    _caption.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickPhoto() async {
-    final file = await pickImageFrom(
-      context,
-      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-    );
-    if (file == null) return;
-    var path = file.path;
-    if (path.isEmpty) return;
-    if (!mounted) return;
-    final cropped = await cropImageFile(
-      context,
-      path: path,
-      title: 'Crop your photo',
-      initial: CropShape.square,
-      allowShapeChange: false,
-    );
-    if (cropped == null) return;
-    path = cropped;
-    setState(() {
-      _photo = ConnectMediaAttachment(
-        path: path!,
-        name: file.name,
-        size: file.size,
-        mimeType: _mimeTypeFor(file.extension),
-      );
-    });
-  }
-
-  Future<void> _submit() async {
-    final photo = _photo;
-    if (photo == null) return;
-    setState(() => _submitting = true);
-    try {
-      await widget.onSubmit(caption: _caption.text.trim(), photo: photo);
-      if (mounted) Navigator.of(context).pop();
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final photo = _photo;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        14,
-        20,
-        20 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Enter your photo',
-            style: TextStyle(
-              color: _ConnectColors.ink,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-          InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: _pickPhoto,
-            child: Container(
-              height: 180,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F9),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _ConnectColors.cardBorder),
-              ),
-              child: photo == null
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.add_a_photo_outlined,
-                            color: _ConnectColors.faint,
-                          ),
-                          SizedBox(height: 6),
-                          Text(
-                            'Tap to choose a photo',
-                            style: TextStyle(
-                              color: _ConnectColors.faint,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Image.file(File(photo.path), fit: BoxFit.cover),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _caption,
-            maxLength: widget.captionLimit,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Add a caption (optional)',
-              fillColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 6),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: photo == null || _submitting ? null : _submit,
-              style: FilledButton.styleFrom(
-                backgroundColor: _ConnectColors.terra,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Submit entry',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
             ),
           ),
         ],

@@ -156,21 +156,6 @@ class ConnectBloc {
     );
   }
 
-  Future<void> submitChallengeEntry(
-    String postId, {
-    required String caption,
-    required ConnectMediaAttachment photo,
-  }) async {
-    await _mutatePost(
-      postId,
-      () => _api.submitChallengeEntry(postId, caption: caption, photo: photo),
-    );
-  }
-
-  Future<void> voteChallengeEntry(String postId, String entryId) async {
-    await _mutatePost(postId, () => _api.voteChallengeEntry(postId, entryId));
-  }
-
   Future<bool> createPost(ConnectPostDraft draft) async {
     _emit(_state.copyWith(busyPostId: '__create__', clearMessage: true));
     try {
