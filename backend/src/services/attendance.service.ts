@@ -129,9 +129,26 @@ export function correctionTriggerFor(punchIn: Date | null, punchOut: Date | null
   return punchIn ? 'Missing punch-out' : 'Missing punch-in';
 }
 
+/**
+ * Raise a correction for a day.
+ *
+ * Current clients say what the day *should be* — a day type a manager can
+ * actually vouch for. Versions already on the stores instead send the punch
+ * times the person believed they worked, and know nothing about day types, so
+ * those are still accepted and stored in the deprecated punch fields. One
+ * backend serves both: a request carrying neither is the only one refused.
+ */
 export async function requestRegularization(
   userId: string,
-  input: { workDate?: string; dayType?: string; note?: string },
+  input: {
+    workDate?: string;
+    dayType?: string;
+    note?: string;
+    /** @deprecated Sent by app versions that predate day types. */
+    punchIn?: string;
+    /** @deprecated */
+    punchOut?: string;
+  },
 ) {
   const workDate = input.workDate ?? '';
   const date = parseDate(workDate, 'workDate');
@@ -148,9 +165,22 @@ export async function requestRegularization(
       `Regularization can be raised up to ${correction.backdateDays} days back`,
     );
   }
-  const dayType = (input.dayType ?? '').trim() as RegularizationDayType;
-  if (!REGULARIZATION_DAY_TYPES.includes(dayType)) {
-    throw new AttendanceError(400, 'Choose what this day should be');
+  const requestedDayType = (input.dayType ?? '').trim() as RegularizationDayType;
+  const legacyPunchIn = parsePunch(input.punchIn, 'punchIn');
+  const legacyPunchOut = parsePunch(input.punchOut, 'punchOut');
+  const hasDayType = REGULARIZATION_DAY_TYPES.includes(requestedDayType);
+  if (!hasDayType) {
+    // An older client sends punch times and no day type. Refuse only when it
+    // sent neither — an empty request is a bug on any version.
+    if (!legacyPunchIn && !legacyPunchOut) {
+      throw new AttendanceError(400, 'Choose what this day should be');
+    }
+    if (input.dayType?.trim()) {
+      throw new AttendanceError(400, 'Choose what this day should be');
+    }
+    if (legacyPunchIn && legacyPunchOut && legacyPunchOut <= legacyPunchIn) {
+      throw new AttendanceError(400, 'Punch-out must be after punch-in');
+    }
   }
   const note = (input.note ?? '').trim();
   if (note.length > 500) throw new AttendanceError(400, 'Note cannot exceed 500 characters');
@@ -179,14 +209,19 @@ export async function requestRegularization(
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) throw new AttendanceError(409, 'A regularization request is already pending for this date');
   const createdAt = new Date();
+  // Whichever shape the request arrived in is what gets stored: a day type, or
+  // the punch times an older client asked for. Never both.
+  const requested = hasDayType
+    ? { requestedDayType }
+    : { punchIn: legacyPunchIn, punchOut: legacyPunchOut };
   const result = await attendanceRegularizations().insertOne({
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
-    workDate, requestedDayType: dayType, note, status: 'pending', createdAt,
+    workDate, ...requested, note, status: 'pending', createdAt,
   });
   await notifyCorrectionSubmitted({ employeeUserId: userId, workDate, reason: note });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
-    managerUserId: employee.managerUserId, workDate, requestedDayType: dayType, note,
+    managerUserId: employee.managerUserId, workDate, ...requested, note,
     status: 'pending', createdAt,
   });
 }
@@ -309,6 +344,20 @@ async function enrichRegularizations(values: AttendanceRegularization[]) {
  * A corrected punch arrives as an ISO instant from the client. It must land on
  * the work date being corrected, so a mistyped day can't be smuggled through.
  */
+/**
+ * A punch time from an app version that predates day types. Kept only so those
+ * builds keep working against this backend — nothing sends these any more.
+ */
+function parsePunch(value: string | undefined, field: string): Date | undefined {
+  const raw = (value ?? '').trim();
+  if (!raw) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new AttendanceError(400, `${field} is not a valid time`);
+  }
+  return parsed;
+}
+
 function parseDate(value: string, field: string): Date {
   if (!datePattern.test(value)) throw new AttendanceError(400, `${field} must use YYYY-MM-DD format`);
   const parsed = new Date(`${value}T00:00:00.000Z`);
