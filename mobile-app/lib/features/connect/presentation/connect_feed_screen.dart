@@ -4,9 +4,9 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 
 import '../../shared/image_crop_sheet.dart';
+import '../../shared/image_source_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_api_service.dart';
@@ -3491,17 +3491,14 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   bool get _canPost => _text.text.trim().isNotEmpty || _media.isNotEmpty;
 
   Future<void> _addMedia() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final files = await pickImagesFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
-      withData: false,
-      allowMultiple: true,
     );
-    final files = result?.files ?? const [];
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
       var path = file.path;
-      if (path == null || path.isEmpty) continue;
+      if (path.isEmpty) continue;
       final mime = _mimeTypeFor(file.extension);
       // Each photo gets its own crop step; video has no frame to crop.
       if (mime.startsWith('image/')) {
@@ -5132,15 +5129,13 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   }
 
   Future<void> _pickMedia() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final file = await pickImageFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
-      withData: false,
     );
-    final file = result?.files.single;
     if (file == null) return;
     var path = file.path;
-    if (path == null || path.isEmpty) {
+    if (path.isEmpty) {
       _showValidation('Could not read the selected file.');
       return;
     }
@@ -5185,17 +5180,14 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   Future<void> _pickExtraMedia() async {
     final remaining = _maxMediaCount - 1 - _extraMedia.length;
     if (remaining <= 0) return;
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final files = (await pickImagesFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-      withData: false,
-      allowMultiple: true,
-    );
-    final files = result?.files.take(remaining) ?? const [];
+    )).take(remaining);
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
       var path = file.path;
-      if (path == null || path.isEmpty) continue;
+      if (path.isEmpty) continue;
       if (!mounted) return;
       final cropped = await cropImageFile(
         context,
@@ -7882,12 +7874,11 @@ class _PollEditorPageState extends State<_PollEditorPage> {
   }
 
   Future<void> _pickOptionImage(int index) async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final picked = await pickImageFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-      withData: false,
     );
-    final path = result?.files.single.path;
+    final path = picked?.path;
     if (path == null || path.isEmpty || !mounted) return;
     final cropped = await cropImageFile(
       context,
