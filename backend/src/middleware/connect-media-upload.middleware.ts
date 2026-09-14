@@ -8,13 +8,19 @@ const upload = multer({
 }).fields([
   { name: 'media', maxCount: 6 },
   { name: 'pollOptionImages', maxCount: 4 },
+  // A photo-challenge entry: one image, sniffed like every other upload.
+  { name: 'entryPhoto', maxCount: 1 },
 ]);
 
 export function uploadConnectPostMedia(request: Request, response: Response, next: NextFunction) {
   upload(request, response, (error) => {
     if (!error) {
       const files = (request.files ?? {}) as Record<string, Express.Multer.File[]>;
-      for (const file of [...(files.media ?? []), ...(files.pollOptionImages ?? [])]) {
+      for (const file of [
+        ...(files.media ?? []),
+        ...(files.pollOptionImages ?? []),
+        ...(files.entryPhoto ?? []),
+      ]) {
         const contentType = detectContentType(file.buffer);
         if (!contentType) {
           next(new ConnectError(400, 'Media must be a JPEG, PNG, WEBP, MP4, or MOV file'));
