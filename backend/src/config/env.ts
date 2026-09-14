@@ -51,7 +51,18 @@ export const env = {
   mongoUri: process.env.MONGODB_URI ?? '',
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
-  otpDevBypass: process.env.OTP_DEV_BYPASS === 'true',
+  /**
+   * Lets `123456` stand in for any mailed code — for local work only.
+   *
+   * Refused outright in production however the environment is set. This was a
+   * plain flag, and production was running with it on: the fixed code opened
+   * every account in every org, including HR and other tenants. A deployment
+   * mistake should not be able to do that again, so the guard lives here
+   * rather than in whatever `.env` a host happens to load. Store-review
+   * accounts use `OTP_TEST_EMAILS`, which is an allowlist and is logged.
+   */
+  otpDevBypass:
+    process.env.OTP_DEV_BYPASS === 'true' && process.env.NODE_ENV !== 'production',
   /**
    * Accounts that may sign in with the fixed code `123456`, from
    * `OTP_TEST_EMAILS` (comma-separated).
@@ -111,3 +122,15 @@ export const env = {
     from: process.env.ZOHO_SMTP_FROM ?? process.env.ZOHO_SMTP_USER ?? '',
   },
 };
+
+// Say so loudly rather than ignoring it quietly: a production host carrying
+// this flag is a deployment that believed the fixed code was live, and whoever
+// set it should find out from the boot log, not from someone signing in as
+// another tenant.
+if (process.env.OTP_DEV_BYPASS === 'true' && env.nodeEnv === 'production') {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[security] OTP_DEV_BYPASS is set on a production host and has been ignored. ' +
+      'The fixed code 123456 will not be accepted. Use OTP_TEST_EMAILS for store-review accounts.',
+  );
+}
