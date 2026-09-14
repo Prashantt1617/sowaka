@@ -4,8 +4,7 @@ import { OvertimeRequest, OvertimeStatus } from '../models/overtime.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { getCompanyConfig } from './company-settings.service';
-import { holidayDatesForUser } from './holiday.service';
-import { fullDayHoursFor, isWeekOffDay, policyForUser, weekOffGridFor } from './shift.service';
+import { fullDayHoursFor, policyForUser } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 
 const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
@@ -38,9 +37,10 @@ export async function createOvertimeRequest(
   if (hours <= 0) throw new OvertimeError(400, 'End time must be after start time');
   if (hours > 16) throw new OvertimeError(400, 'Overtime duration looks too long — check the times');
 
-  // Team gate + full-day eligibility. A full day's worth (8h+) of overtime is
-  // only allowed on a week-off or a company holiday; shorter stretches may be
-  // logged for any past day.
+  // Team gate. Overtime of any length may be logged for any past day: a long
+  // stretch on a working day is exactly what overtime is for, and refusing it
+  // unless the day was a week-off only pushed people to log it as something
+  // else.
   if (employee.overtimeEligible === false) {
     throw new OvertimeError(403, 'You are not eligible to apply for overtime');
   }
@@ -48,20 +48,6 @@ export async function createOvertimeRequest(
   if (companyConfig.overtimeDisabledDepartments.includes((employee.department ?? '').trim())) {
     throw new OvertimeError(403, 'Overtime is not enabled for your team');
   }
-  if (hours >= 8) {
-    const holidayDates = await holidayDatesForUser(employee);
-    const isHoliday = holidayDates.has(workDate.toISOString().slice(0, 10));
-    // Week-offs come from the shift policy's grid, the same one leave and the
-    // attendance calendar read.
-    const weeklyOff = await weekOffGridFor(employee.userId);
-    if (!isHoliday && !isWeekOffDay(workDate, weeklyOff)) {
-      throw new OvertimeError(
-        400,
-        'A full day (8h+) of overtime can only be logged on a week-off or holiday',
-      );
-    }
-  }
-
   const note = input.note?.trim();
   if (note && note.length > 500) throw new OvertimeError(400, 'Note is too long');
   const duplicate = await overtimeRequests().findOne({

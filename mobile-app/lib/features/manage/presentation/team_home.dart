@@ -641,30 +641,11 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           leave.who,
           'leave',
           _TeamRequestCard(
-            onViewDetails: () => showRequestDetailsSheet(
-              context,
-              title: '${leave.type} leave · ${leave.who}',
-              statusLabel: switch (leave.decision) {
-                LeaveDecision.approved => 'Approved',
-                LeaveDecision.declined => 'Declined',
-                LeaveDecision.pending => 'Pending',
-              },
-              statusColor: _decisionInk(leave.decision),
-              statusTint: _decisionTint(leave.decision),
-              rows: [
-                ('Employee', '${leave.who} · ${leave.team}'),
-                ('Type', leave.type),
-                ('Dates', _leaveDateRange(leave)),
-                ('Days', leave.daysLabel),
-                ('Applied on', _managerDate(leave.requestedOn)),
-                ('Reason', leave.reason),
-              ],
-              responseLabel: switch (leave.decision) {
-                LeaveDecision.pending => '',
-                LeaveDecision.approved => 'You approved this',
-                LeaveDecision.declined => 'You declined this',
-              },
-              responseNote: leave.managerNote,
+            onViewDetails: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    _LeaveRequestDetailPage(leave: leave, bloc: bloc),
+              ),
             ),
             initial: leave.initial,
             avatarIndex: leave.avatarIndex,
@@ -699,30 +680,11 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           request.who,
           'overtime',
           _TeamRequestCard(
-            onViewDetails: () => showRequestDetailsSheet(
-              context,
-              title: 'Overtime · ${request.who}',
-              statusLabel: switch (request.decision) {
-                LeaveDecision.approved => 'Approved',
-                LeaveDecision.declined => 'Declined',
-                LeaveDecision.pending => 'Pending',
-              },
-              statusColor: _decisionInk(request.decision),
-              statusTint: _decisionTint(request.decision),
-              rows: [
-                ('Employee', '${request.who} · ${request.team}'),
-                ('Work date', _managerDate(request.workDate)),
-                ('Hours', request.hoursLabel),
-                ('Time', request.timeRangeLabel),
-                ('Applied on', _managerDate(request.requestedOn)),
-                ('Note', request.note),
-              ],
-              responseLabel: switch (request.decision) {
-                LeaveDecision.pending => '',
-                LeaveDecision.approved => 'You approved this',
-                LeaveDecision.declined => 'You declined this',
-              },
-              responseNote: request.managerNote,
+            onViewDetails: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    _OvertimeRequestDetailPage(request: request, bloc: bloc),
+              ),
             ),
             initial: request.initial,
             avatarIndex: request.avatarIndex,
@@ -761,29 +723,11 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           request.who,
           'correction',
           _TeamRequestCard(
-            onViewDetails: () => showRequestDetailsSheet(
-              context,
-              title: 'Attendance correction · ${request.who}',
-              statusLabel: switch (request.decision) {
-                LeaveDecision.approved => 'Approved',
-                LeaveDecision.declined => 'Declined',
-                LeaveDecision.pending => 'Pending',
-              },
-              statusColor: _decisionInk(request.decision),
-              statusTint: _decisionTint(request.decision),
-              rows: [
-                ('Employee', '${request.who} · ${request.team}'),
-                ('Work date', _shortAttendanceDate(request.workDate)),
-                ('Punches asked for', _attendancePeriod(request)),
-                ('Raised on', _managerDate(request.createdAt)),
-                ('Reason', request.note),
-              ],
-              responseLabel: switch (request.decision) {
-                LeaveDecision.pending => '',
-                LeaveDecision.approved => 'You approved this',
-                LeaveDecision.declined => 'You declined this',
-              },
-              responseNote: request.managerNote,
+            onViewDetails: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    _AttendanceCorrectionDetailPage(request: request, bloc: bloc),
+              ),
             ),
             initial: request.initial,
             avatarIndex: request.avatarIndex,

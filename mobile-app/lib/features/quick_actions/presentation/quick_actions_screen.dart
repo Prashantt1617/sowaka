@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
+import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 
 class QuickActionsController extends ChangeNotifier {
@@ -41,6 +41,7 @@ enum _QuickPage {
   calendar,
   wizard,
   success,
+  submitted,
 }
 
 enum _QuickFlow { leave, overtime, reimbursement }
@@ -187,17 +188,43 @@ List<AttendanceDayView> buildAttendanceDays({
     if (approvedRegularization) {
       // The device record may not reflect the correction yet, so fall back
       // to the approved request's own requested times for display.
+      final dayType = record?.dayType.isNotEmpty == true
+          ? record!.dayType
+          : regularization?.requestedDayType ?? '';
+      // The hours the day type implies, for a day the server approved without
+      // writing them — an approval taken on a build that predates day types
+      // leaves the record blank, and the calendar then shows two dashes
+      // against a day the manager has just confirmed was worked.
+      final (plannedIn, plannedOut) = shift.punchWindowFor(dayType, date);
       final displayRecord = AttendanceRecord(
         workDate: date,
-        punchIn: record?.punchIn ?? regularization?.requestedPunchIn,
-        punchOut: record?.punchOut ?? regularization?.requestedPunchOut,
+        punchIn:
+            record?.punchIn ?? regularization?.requestedPunchIn ?? plannedIn,
+        punchOut:
+            record?.punchOut ?? regularization?.requestedPunchOut ?? plannedOut,
+        dayType: dayType,
       );
       final punchIn = displayRecord.punchIn;
       final punchOut = displayRecord.punchOut;
+      // A day corrected to leave is a leave day, and carries no punches by
+      // design — calling it "Present" with two dashes was the calendar
+      // reading a missing punch as a missing record.
+      if (dayType == 'leave') {
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.leaveApproved,
+          title: 'Leave (regularised)',
+          cellLabel: 'Leave',
+          record: displayRecord,
+          regularization: regularization,
+        );
+      }
       return AttendanceDayView(
         date: date,
         kind: AttendanceKind.present,
-        title: 'Present (regularised)',
+        title: displayRecord.dayTypeLabel.isEmpty
+            ? 'Present (regularised)'
+            : '${displayRecord.dayTypeLabel} (regularised)',
         cellLabel: '',
         record: displayRecord,
         regularization: regularization,
@@ -308,6 +335,13 @@ class QuickActionsScreen extends StatefulWidget {
 
 class _QuickActionsScreenState extends State<QuickActionsScreen> {
   _QuickPage _page = _QuickPage.home;
+
+  /// What the summary screen is showing, and where closing it returns to.
+  RequestSummary? _submittedSummary;
+  _QuickPage _submittedReturnPage = _QuickPage.home;
+
+  /// False when the summary is being looked at later rather than just sent.
+  bool _submittedSuccess = true;
   _QuickFlow _flow = _QuickFlow.leave;
   int _step = 0;
   String? _choice;
@@ -320,6 +354,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   bool _leaveHistoryView = false;
   final _leaveReason = TextEditingController();
   String? _leaveAttachmentName;
+  Uint8List? _leaveAttachmentBytes;
   bool _dateChosen = false;
   String? _uploadName;
   Uint8List? _uploadBytes;
@@ -434,6 +469,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
+      } else if (_page == _QuickPage.submitted) {
+        _page = _submittedReturnPage;
+        _submittedSummary = null;
       } else if (_page == _QuickPage.wizard || _page == _QuickPage.success) {
         _page = switch (_flow) {
           _QuickFlow.leave => _QuickPage.leave,
@@ -484,6 +522,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.calendar => _calendar(),
         _QuickPage.wizard => _wizard(),
         _QuickPage.success => _success(),
+        _QuickPage.submitted => _submittedPage(),
       },
     );
   }
@@ -703,7 +742,38 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...visible.map(
             (request) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _LeaveRequestCard(request: request),
+              child: _LeaveRequestCard(
+                request: request,
+                onViewDetails: () => _showRequestDetail(
+                  RequestSummary(
+                    screenTitle: 'Leave',
+                    successTitle: '',
+                    successBody: '',
+                    rows: [
+                      SummaryRow('Leave Type', request.type),
+                      SummaryRow('Start Date', _summaryDate(request.start)),
+                      SummaryRow('End Date', _summaryDate(request.end)),
+                      SummaryRow(
+                        'Duration',
+                        request.halfDay
+                            ? 'Half Day'
+                            : '${request.daysLabel} day'
+                                  '${request.days == 1 ? '' : 's'}',
+                      ),
+                      SummaryRow(
+                        'Applied On',
+                        _summaryDate(request.requestedOn),
+                      ),
+                      SummaryRow('Status', _decision(request.decision)),
+                      if (request.managerNote.isNotEmpty)
+                        SummaryRow('Manager Note', request.managerNote),
+                    ],
+                    reason: request.reason,
+                    documentName: request.documentName,
+                    documentUrl: request.documentUrl,
+                  ),
+                ),
+              ),
             ),
           ),
       ],
@@ -882,7 +952,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               _LeaveFieldLabel('Attachment (Optional)'),
               _LeaveAttachmentField(
                 fileName: _leaveAttachmentName,
-                onPicked: (name) => setState(() => _leaveAttachmentName = name),
+                onPicked: (file) => setState(() {
+                  _leaveAttachmentName = file?.name;
+                  _leaveAttachmentBytes = file?.bytes;
+                }),
               ),
             ],
           ),
@@ -1050,12 +1123,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return _sameDay(from, to);
   }
 
-  /// Whether the day selected on the calendar can be applied for under any
-  /// leave type the org runs. No type is chosen at this point, so a day counts
-  /// as applicable if at least one type's window covers it.
-  bool get _calendarDayApplicable => _calendarDayBlockedReason == null &&
-      _selectedCalendarDay != null;
-
   /// The leave types that would accept [date] — the windows differ per type,
   /// so a day can be too far ahead for casual and fine for earned.
   List<String> _leaveTypesFor(DateTime date) => [
@@ -1074,35 +1141,46 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         label,
   ];
 
-  /// Why the selected day cannot be applied for, or null when it can.
-  String? get _calendarDayBlockedReason {
-    final selected = _selectedCalendarDay;
-    if (selected == null) return 'no day is selected.';
-    final date = _dateOnly(selected.date);
+  /// Why leave cannot be applied for [date], or null when it can. Every type
+  /// is tried: a day can be out of casual's window and inside earned's.
+  ///
+  /// When they all refuse, the reason quoted is the one from the type that
+  /// reaches closest to the day. Reporting whichever type happened to be
+  /// checked first named a narrower window than the org actually offers, and
+  /// sent people looking for a setting they had already changed.
+  String? _leaveBlockedReasonFor(DateTime date) {
     final labels = _leaveLabels;
-    if (labels.isEmpty) return 'no leave types are set up.';
-    String? firstReason;
+    if (labels.isEmpty) return 'No leave types are set up.';
+    final day = _dateOnly(date);
+    final today = DateTime.now();
+    String? closestReason;
+    Duration? closestGap;
     for (final label in labels) {
       final reason = leaveRangeProblem(
         policy: widget.dashboard.shift,
         holidayDates: _holidayKeys,
         typeLabel: label,
-        from: date,
-        to: date,
-        today: DateTime.now(),
+        from: day,
+        to: day,
+        today: today,
         maxDays: _maxLeaveApplyDays,
         availableDays: _balanceFor(label)?.remaining,
       );
       if (reason == null) return null;
-      firstReason ??= reason;
+      final window = widget.dashboard.shift.windowForLeave(label);
+      // A type with no window of its own can't be ranked, so it only stands in
+      // until one that can is found.
+      final gap = window == null
+          ? const Duration(days: 1 << 20)
+          : day.isBefore(_dateOnly(window.earliestFrom(today)))
+          ? _dateOnly(window.earliestFrom(today)).difference(day)
+          : day.difference(_dateOnly(window.latestFrom(today)));
+      if (closestGap == null || gap < closestGap) {
+        closestGap = gap;
+        closestReason = reason;
+      }
     }
-    // Every type refused it. A week-off or holiday refusal is the same
-    // whichever type asked, so that message reads correctly; otherwise it is
-    // a window, and the windows differ per type.
-    return firstReason != null &&
-            (firstReason.contains('week-off') || firstReason.contains('holiday'))
-        ? firstReason.replaceFirst('That day is a ', 'this is a ')
-        : 'this day is outside the window for every leave type.';
+    return closestReason;
   }
 
   void _applyLeaveFor(DateTime date) {
@@ -1117,6 +1195,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _leaveDuration = 'Full Day';
       _leaveReason.clear();
       _leaveAttachmentName = null;
+      _leaveAttachmentBytes = null;
       _selectedCalendarDay = null;
       _page = _QuickPage.applyLeave;
     });
@@ -1135,6 +1214,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       _leaveDuration = 'Full Day';
       _leaveReason.clear();
       _leaveAttachmentName = null;
+      _leaveAttachmentBytes = null;
       _page = _QuickPage.applyLeave;
     });
     widget.controller._navigationChanged();
@@ -1152,14 +1232,44 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         endDate: to,
         reason: _leaveReason.text.trim(),
         halfDay: _leaveDuration == 'Half Day' && _isSingleDayLeave,
+        documentName: _leaveAttachmentName,
+        documentBytes: _leaveAttachmentBytes,
       ),
     );
     if (!mounted || !sent) return;
-    setState(() {
-      _leaveHistoryView = false;
-      _page = _QuickPage.leave;
-    });
-    widget.controller._navigationChanged();
+    _leaveHistoryView = false;
+    _showSubmitted(
+      RequestSummary(
+        screenTitle: 'Leave',
+        successTitle: 'Leave Applied',
+        successBody: 'Leave has been sent to your manager for review',
+        rows: [
+          SummaryRow('Leave Type', type.replaceAll(' Leave', '')),
+          SummaryRow('Start Date', _summaryDate(from)),
+          SummaryRow('End Date', _summaryDate(to)),
+          SummaryRow(
+            'Duration',
+            _leaveDuration == 'Half Day' && _isSingleDayLeave
+                ? 'Half Day'
+                : 'Full Day',
+          ),
+        ],
+        reason: _leaveReason.text.trim(),
+        documentName: _leaveAttachmentName,
+      ),
+      _QuickPage.leave,
+    );
+  }
+
+  /// "Friday, 21 Aug" — the date format the summary screens use.
+  static String _summaryDate(DateTime value) =>
+      '${_fullWeekdayNames[value.weekday - 1]}, ${value.day} '
+      '${_shortMonthNames[value.month - 1]}';
+
+  static String _summaryClock(DateTime value) {
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    return '$hour:${value.minute.toString().padLeft(2, '0')} '
+        '${value.hour >= 12 ? 'PM' : 'AM'}';
   }
 
   Widget _overtimeHub() {
@@ -1239,33 +1349,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   _ => const Color(0xFFFB2C36),
                 },
                 footerText: request.hoursLabel,
-                onViewDetails: () => showRequestDetailsSheet(
-                  context,
-                  title: 'Overtime',
-                  statusLabel: _decision(request.decision),
-                  statusColor: switch (request.decision) {
-                    LeaveDecision.approved => const Color(0xFF16A34A),
-                    LeaveDecision.declined => const Color(0xFF6B7280),
-                    LeaveDecision.pending => const Color(0xFFFB2C36),
-                  },
-                  statusTint: switch (request.decision) {
-                    LeaveDecision.approved => const Color(0xFFDCFCE7),
-                    LeaveDecision.declined => const Color(0xFFF3F4F6),
-                    LeaveDecision.pending => const Color(0xFFFEE2E2),
-                  },
-                  rows: [
-                    ('Work date', _short(request.workDate)),
-                    ('Hours', request.hoursLabel),
-                    ('Time', request.timeRangeLabel),
-                    ('Applied on', _short(request.requestedOn)),
-                    ('Note', request.note),
-                  ],
-                  responseLabel: switch (request.decision) {
-                    LeaveDecision.pending => '',
-                    LeaveDecision.approved => 'Approved by your manager',
-                    LeaveDecision.declined => 'Declined by your manager',
-                  },
-                  responseNote: request.managerNote,
+                onViewDetails: () => _showRequestDetail(
+                  RequestSummary(
+                    screenTitle: 'Overtime',
+                    successTitle: '',
+                    successBody: '',
+                    rows: [
+                      SummaryRow('Work Date', _summaryDate(request.workDate)),
+                      SummaryRow('Duration', request.hoursLabel),
+                      SummaryRow('Time', request.timeRangeLabel),
+                      SummaryRow(
+                        'Applied On',
+                        _summaryDate(request.requestedOn),
+                      ),
+                      SummaryRow('Status', _decision(request.decision)),
+                      if (request.managerNote.isNotEmpty)
+                        SummaryRow('Manager Note', request.managerNote),
+                    ],
+                    reason: request.note,
+                  ),
                 ),
               ),
             ),
@@ -1428,8 +1530,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
     );
     if (!mounted || !sent) return;
-    setState(() => _page = _QuickPage.overtime);
-    widget.controller._navigationChanged();
+    _showSubmitted(
+      RequestSummary(
+        screenTitle: 'Overtime',
+        successTitle: 'Overtime Applied',
+        successBody: 'Overtime has been sent to your manager for review',
+        rows: [
+          SummaryRow('Date', _summaryDate(date)),
+          SummaryRow('Start Time', _summaryClock(startDateTime)),
+          SummaryRow('End Time', _summaryClock(startDateTime.add(worked))),
+        ],
+        reason: _overtimeNote.text.trim(),
+      ),
+      _QuickPage.overtime,
+    );
   }
 
   Widget _reimbursementHub() {
@@ -1499,35 +1613,29 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   'Paid' || 'Approved' => const Color(0xFF16A34A),
                   _ => const Color(0xFFFB2C36),
                 },
-                onViewDetails: () => showRequestDetailsSheet(
-                  context,
-                  title: '${claim.category} claim',
-                  statusLabel: claim.statusLabel,
-                  statusColor: switch (claim.status) {
-                    'Paid' || 'Approved' => const Color(0xFF16A34A),
-                    'Declined' => const Color(0xFF6B7280),
-                    _ => const Color(0xFFFB2C36),
-                  },
-                  statusTint: switch (claim.status) {
-                    'Paid' || 'Approved' => const Color(0xFFDCFCE7),
-                    'Declined' => const Color(0xFFF3F4F6),
-                    _ => const Color(0xFFFEE2E2),
-                  },
-                  rows: [
-                    ('Type', claim.category),
-                    ('Amount', _money(claim.amount)),
-                    ('Expense date', _short(claim.expenseDate)),
-                    ('Claimed on', _short(claim.createdAt)),
-                    if (claim.receiptName.isNotEmpty)
-                      ('Receipt', claim.receiptName),
-                    ('Note', claim.note),
-                  ],
-                  responseLabel: switch (claim.status) {
-                    'Paid' || 'Approved' => 'Approved by HR',
-                    'Declined' => 'Declined by HR',
-                    _ => '',
-                  },
-                  responseNote: claim.managerNote,
+                onViewDetails: () => _showRequestDetail(
+                  RequestSummary(
+                    screenTitle: 'Reimbursement',
+                    successTitle: '',
+                    successBody: '',
+                    rows: [
+                      SummaryRow('Category', claim.category),
+                      SummaryRow('Amount', _money(claim.amount)),
+                      SummaryRow(
+                        'Expense Date',
+                        _summaryDate(claim.expenseDate),
+                      ),
+                      SummaryRow('Claimed On', _summaryDate(claim.createdAt)),
+                      SummaryRow('Status', claim.statusLabel),
+                      if (claim.managerNote.isNotEmpty)
+                        SummaryRow('HR Note', claim.managerNote),
+                    ],
+                    reason: claim.note,
+                    documentName: claim.receiptName.isEmpty
+                        ? null
+                        : claim.receiptName,
+                    documentUrl: claim.receiptUrl,
+                  ),
                 ),
               ),
             ),
@@ -1705,8 +1813,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
     );
     if (!mounted || !sent) return;
-    setState(() => _page = _QuickPage.reimbursements);
-    widget.controller._navigationChanged();
+    _showSubmitted(
+      RequestSummary(
+        screenTitle: 'Reimbursement',
+        successTitle: 'Reimbursement Applied',
+        successBody: 'Your claim has been sent for review',
+        rows: [
+          SummaryRow('Category', category),
+          SummaryRow('Expense Date', _summaryDate(date)),
+          SummaryRow('Amount', _money(amount)),
+        ],
+        reason: _reimbursementDescription.text.trim(),
+        documentName: _reimbursementReceiptName,
+      ),
+      _QuickPage.reimbursements,
+    );
   }
 
   Widget _policies() {
@@ -1892,15 +2013,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
       backgroundColor: const Color(0xFFF7F7F9),
-      trailing: _LeaveHeaderButton(
-        // Off unless the selected day is one some leave type can actually be
-        // applied for — opening the form on a day the policy refuses only
-        // moves the disappointment one screen later.
-        enabled: _calendarDayApplicable,
-        onTap: _calendarDayApplicable
-            ? () => _applyLeaveFor(_selectedCalendarDay!.date)
-            : null,
-      ),
       children: [
         Row(
           children: [
@@ -1940,26 +2052,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         const SizedBox(height: 20),
         Text(
           switch (_selectedCalendarDay) {
-            null => 'Tap a working day you can still apply for, then Apply '
-                'Leave.',
-            final day when !_calendarDayApplicable =>
-              '${_short(day.date)} — ${_calendarDayBlockedReason ?? 'this day '
-                  'cannot be applied for.'}',
+            null => 'Tap a day to see what you can do with it.',
             final day => switch (_leaveTypesFor(day.date)) {
               // Naming the types matters when only some of them reach this
               // far: casual runs out long before earned does.
-              final types when types.length < _leaveLabels.length =>
-                'Selected ${_short(day.date)} — can be applied as '
+              final types
+                  when types.isNotEmpty && types.length < _leaveLabels.length =>
+                'Selected ${_short(day.date)} — leave can be applied as '
                     '${types.join(' or ')}.',
-              _ =>
-                'Selected ${_short(day.date)} — tap Apply Leave, or tap the '
-                    'date again to clear.',
+              _ => 'Selected ${_short(day.date)} — tap the date again to '
+                  'clear.',
             },
           },
           style: _QText.subtitle,
         ),
         const SizedBox(height: 20),
-        if (_attendanceListView)
+        if (_attendanceListView) ...[
           ...days.map(
             (day) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -1971,8 +2079,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 onTap: () => _openAttendanceDay(day),
               ),
             ),
-          )
-        else ...[
+          ),
+          if (_calendarDetailDay(days) case final detail?) ...[
+            const SizedBox(height: 16),
+            AttendanceDayDetail(
+              day: detail,
+              actions: _actionsForDay(detail),
+              pendingNotice: _pendingNoticeFor(detail),
+              blockedReason: _correctionBlockedReason(detail),
+            ),
+          ],
+        ] else ...[
           AttendanceMonthGrid(
             month: _attendanceMonth,
             days: days,
@@ -1984,10 +2101,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             const SizedBox(height: 16),
             AttendanceDayDetail(
               day: detail,
-              onRequestCorrection: _correctionBlockedReason(detail) == null
-                  ? () => _showRegularization(detail.date)
-                  : null,
-              correctionBlockedReason: _correctionBlockedReason(detail),
+              actions: _actionsForDay(detail),
+              pendingNotice: _pendingNoticeFor(detail),
+              blockedReason: _correctionBlockedReason(detail),
             ),
           ],
         ],
@@ -2052,6 +2168,32 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// mirrors what the server enforces, so the button is never a dead end: HR
   /// chooses which of the four cases may be corrected and how far back a
   /// request may reach, both under Shifts › Attendance correction.
+  /// What the tapped day lets you do, in the order they are offered. Each
+  /// entry is gated by the same policy the server enforces, so a button never
+  /// opens a form that the request would be refused from.
+  List<AttendanceDayAction> _actionsForDay(AttendanceDayView day) {
+    // A request already with the manager replaces every action.
+    if (_pendingNoticeFor(day) != null) return const [];
+    return [
+      if (_correctionBlockedReason(day) == null)
+        AttendanceDayAction(
+          label: 'Request Correction',
+          onTap: () => _showRegularization(day),
+        ),
+    ];
+  }
+
+  /// The amber line shown while a request for this day is with the manager.
+  String? _pendingNoticeFor(AttendanceDayView day) => switch (day.kind) {
+    AttendanceKind.regularizationPending =>
+      'Your missed punched request is currently under review by your manager '
+          'for this day.',
+    AttendanceKind.leavePending =>
+      'Your leave request is currently under review by your manager for this '
+          'day.',
+    _ => null,
+  };
+
   String? _correctionBlockedReason(AttendanceDayView day) {
     final rules = widget.dashboard.shift.correction;
     final today = _dateOnly(DateTime.now());
@@ -2096,203 +2238,33 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Correction request: the employee supplies the punch times they believe
   /// should be recorded. At least one of the two is required. Routed to their
   /// manager for approval by the backend.
-  Future<void> _showRegularization(DateTime day) async {
-    final note = TextEditingController();
-    TimeOfDay? punchIn;
-    TimeOfDay? punchOut;
-    await showModalBottomSheet<void>(
+  /// Opens the correction sheet for [dayView].
+  ///
+  /// The sheet owns its own controller — building it inline meant disposing the
+  /// controller the moment the future completed, while the sheet was still
+  /// animating out and its field still mounted, which tripped a framework
+  /// assertion and put a red screen over the app.
+  Future<void> _showRegularization(AttendanceDayView dayView) async {
+    final day = _dateOnly(dayView.date);
+    final result = await showModalBottomSheet<_CorrectionOutcome>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          Future<void> pick(bool isStart) async {
-            final current = isStart ? punchIn : punchOut;
-            final picked = await showTimePicker(
-              context: context,
-              initialTime: current ?? const TimeOfDay(hour: 9, minute: 0),
-              builder: _pickerTheme,
-            );
-            if (picked == null) return;
-            setSheetState(() {
-              if (isStart) {
-                punchIn = picked;
-              } else {
-                punchOut = picked;
-              }
-            });
-          }
-
-          void toggleMeridiem(bool isStart) {
-            final current = isStart ? punchIn : punchOut;
-            if (current == null) return;
-            final shifted = TimeOfDay(
-              hour: (current.hour + 12) % 24,
-              minute: current.minute,
-            );
-            setSheetState(() {
-              if (isStart) {
-                punchIn = shifted;
-              } else {
-                punchOut = shifted;
-              }
-            });
-          }
-
-          return Container(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              12,
-              16,
-              24 + MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SheetHandle(),
-                const SizedBox(height: 12),
-                const Text(
-                  'Request Correction',
-                  style: TextStyle(
-                    color: Color(0xFF2A2A2A),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
-                  style: const TextStyle(
-                    color: Color(0xFF6A6A6A),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _CorrectionTimeField(
-                  label: 'Punch-in',
-                  value: punchIn,
-                  onPickTime: () => pick(true),
-                  onToggleMeridiem: () => toggleMeridiem(true),
-                ),
-                const SizedBox(height: 16),
-                _CorrectionTimeField(
-                  label: 'Punch-out',
-                  value: punchOut,
-                  onPickTime: () => pick(false),
-                  onToggleMeridiem: () => toggleMeridiem(false),
-                ),
-                const SizedBox(height: 16),
-                const Row(
-                  children: [
-                    Text(
-                      'Notes ',
-                      style: TextStyle(
-                        color: Color(0xFF2A2A2A),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '(optional)',
-                      style: TextStyle(color: Color(0xFF929292), fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: note,
-                  minLines: 3,
-                  maxLines: 3,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF2A2A2A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Add a note for your manager...',
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF929292),
-                      fontSize: 13,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 15,
-                      vertical: 13,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF0571A6),
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 26),
-                _SheetPrimaryButton(
-                  label: 'Submit for review',
-                  color: const Color(0xFF0571A6),
-                  onPressed: () async {
-                    if (punchIn == null && punchOut == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Enter a punch-in or punch-out time'),
-                        ),
-                      );
-                      return;
-                    }
-                    DateTime? at(TimeOfDay? time) => time == null
-                        ? null
-                        : DateTime(
-                            day.year,
-                            day.month,
-                            day.day,
-                            time.hour,
-                            time.minute,
-                          );
-                    final from = at(punchIn);
-                    final to = at(punchOut);
-                    if (from != null && to != null && !to.isAfter(from)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Punch-out must be after punch-in'),
-                        ),
-                      );
-                      return;
-                    }
-                    final ok = await widget.bloc.add(
-                      SubmitAttendanceRegularization(
-                        workDate: day,
-                        punchIn: from,
-                        punchOut: to,
-                        note: note.text.trim(),
-                      ),
-                    );
-                    if (ok && dialogContext.mounted) {
-                      Navigator.pop(dialogContext);
-                    }
-                  },
-                ),
-              ],
-            ),
-          );
-        },
+      builder: (dialogContext) => _CorrectionSheet(
+        day: day,
+        dayView: dayView,
+        shift: widget.dashboard.shift,
+        leaveBlockedReason: _leaveBlockedReasonFor(day),
+        onSubmit: (dayType, note) => widget.bloc.add(
+          SubmitAttendanceRegularization(
+            workDate: day,
+            dayType: dayType,
+            note: note,
+          ),
+        ),
       ),
     );
-    note.dispose();
+    if (result == _CorrectionOutcome.openLeaveForm) _applyLeaveFor(day);
   }
 
   static String _dateKey(DateTime value) =>
@@ -2873,6 +2845,50 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
+  /// The screen a request lands on once it is sent: what was asked for, and
+  /// confirmation that it went to the right person.
+  Widget _submittedPage() {
+    final summary = _submittedSummary;
+    if (summary == null) return const SizedBox.shrink();
+    return _HubScaffold(
+      key: const ValueKey('submitted'),
+      title: summary.screenTitle,
+      onBack: _back,
+      // An X closes the moment a request was sent; a request being looked at
+      // later is a page you came from somewhere, so it gets an arrow.
+      closeIcon: _submittedSuccess,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        RequestSummaryBody(summary: summary, showSuccess: _submittedSuccess),
+      ],
+    );
+  }
+
+  void _showSubmitted(RequestSummary summary, _QuickPage returnTo) {
+    setState(() {
+      _submittedSummary = summary;
+      _submittedReturnPage = returnTo;
+      _submittedSuccess = true;
+      _page = _QuickPage.submitted;
+    });
+    widget.controller._navigationChanged();
+  }
+
+  /// A request that was sent earlier, on the same screen it was sent from —
+  /// minus the success header, which belongs to the moment it was submitted.
+  void _showRequestDetail(RequestSummary summary) {
+    setState(() {
+      _submittedSummary = summary;
+      _submittedReturnPage = _page;
+      _submittedSuccess = false;
+      _page = _QuickPage.submitted;
+    });
+    widget.controller._navigationChanged();
+  }
+
   Widget _success() {
     return Center(
       key: ValueKey('success-${_flow.name}'),
@@ -3122,8 +3138,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// month, so the 2nd Saturday can be off while the 1st is not.
   bool _isWeekoffDay(DateTime day) => widget.dashboard.shift.isWeekOff(day);
 
-  // Overtime day rules: any *past* day for half-day; only a week-off or
-  // company holiday for full-day. Duration was chosen on the previous step.
+  /// Overtime day rule: any day from the start of the backdating window up to
+  /// and including today. Length no longer narrows this — a full day's worth
+  /// used to be refused unless the day was a week-off or a holiday.
   bool _canSelectOvertimeDay(DateTime day) {
     final today = _dateOnly(DateTime.now());
     // Today counts: a week-off worked today is overtime like any other. Only
@@ -3132,9 +3149,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return !day.isBefore(_overtimeWindowStart);
   }
 
-  /// Whether the window holds any day the current choice can be claimed for.
-  /// A full day is week-offs and holidays only, so a short backdating window
-  /// can contain none — better said out loud than left as a dead calendar.
+  /// Whether the window holds any day at all that can be claimed for.
   bool get _overtimeWindowHasADay {
     final today = _dateOnly(DateTime.now());
     for (
@@ -3620,6 +3635,21 @@ class _AttendanceMonthCell extends StatelessWidget {
   }
 }
 
+const _shortMonthNames = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
 const _fullWeekdayNames = [
   'Monday',
   'Tuesday',
@@ -3714,27 +3744,392 @@ String attendancePunchClock(DateTime? value) => value == null
 /// Read-only detail for one calendar day: date, status tag and the punch-in /
 /// punch-out pair. Shared by the employee's own calendar and the manager's
 /// read-only view of a team member's calendar.
+/// One thing the selected day lets you do. The calendar no longer carries a
+/// button per action in its header — the day decides what is on offer, so an
+/// action only appears when the policy would actually accept it.
+/// The day types a correction may ask for, in the order the sheet lists them.
+class _CorrectionDayType {
+  const _CorrectionDayType(this.value, this.label, this.dotColor);
+
+  final String value;
+  final String label;
+  final Color dotColor;
+}
+
+const _correctionDayTypes = <_CorrectionDayType>[
+  _CorrectionDayType('full_day', 'Full Day', Color(0xFF34A853)),
+  _CorrectionDayType('half_day', 'Half Day', Color(0xFF34A853)),
+  _CorrectionDayType('wfh', 'Work from home', Color(0xFF34A853)),
+  // Leave is the odd one out: it spends a balance rather than recording work.
+  _CorrectionDayType('leave', 'Leave', Color(0xFF2F7FE4)),
+];
+
+/// What the correction sheet asks the caller to do once it closes.
+enum _CorrectionOutcome { submitted, openLeaveForm }
+
+class _CorrectionSheet extends StatefulWidget {
+  const _CorrectionSheet({
+    required this.day,
+    required this.dayView,
+    required this.shift,
+    required this.leaveBlockedReason,
+    required this.onSubmit,
+  });
+
+  final DateTime day;
+  final AttendanceDayView dayView;
+  final ShiftPolicy shift;
+
+  /// Why leave cannot be applied for this day, or null when it can.
+  final String? leaveBlockedReason;
+  final Future<bool> Function(String dayType, String note) onSubmit;
+
+  @override
+  State<_CorrectionSheet> createState() => _CorrectionSheetState();
+}
+
+class _CorrectionSheetState extends State<_CorrectionSheet> {
+  final _note = TextEditingController();
+  String? _dayType;
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  /// The hours the chosen day type will record, taken from the shift HR saved.
+  /// Shown so the request is made with its consequence visible rather than
+  /// discovered on the calendar after approval.
+  String? get _plannedHours {
+    final type = _dayType;
+    if (type == null || type == 'leave') return null;
+    final start = widget.shift.startMinutes;
+    if (start == null) return null;
+    if (type == 'half_day') {
+      final hours = widget.shift.minHalfDayHours > 0
+          ? widget.shift.minHalfDayHours
+          : 4;
+      return '${_clock(start)} – ${_clock(start + (hours * 60).round())}';
+    }
+    final end = widget.shift.endMinutes;
+    if (end == null) return null;
+    return '${_clock(start)} – ${_clock(end)}';
+  }
+
+  /// Minutes past midnight as a wall clock, wrapping past midnight.
+  static String _clock(int minutes) {
+    final hour = (minutes ~/ 60) % 24;
+    final minute = minutes % 60;
+    final display = hour % 12 == 0 ? 12 : hour % 12;
+    return '$display:${minute.toString().padLeft(2, '0')} '
+        '${hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final day = widget.day;
+    final planned = _plannedHours;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHandle(),
+            const SizedBox(height: 12),
+            const Text(
+              'Request Correction',
+              style: TextStyle(
+                color: Color(0xFF2A2A2A),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
+              style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'What should this day be?',
+              style: TextStyle(
+                color: Color(0xFF2A2A2A),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFFE6E6E6)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (final (index, option) in _correctionDayTypes.indexed) ...[
+                    if (index > 0)
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xFFF0F0F0),
+                      ),
+                    _CorrectionDayTypeRow(
+                      label: option.label,
+                      dotColor: option.dotColor,
+                      selected: _dayType == option.value,
+                      // Leave spends a balance rather than recording work, so
+                      // it hands over to the leave form instead of being
+                      // submitted as a correction.
+                      disabledReason: option.value == 'leave'
+                          ? widget.leaveBlockedReason
+                          : null,
+                      onTap: () {
+                        if (option.value == 'leave') {
+                          Navigator.pop(
+                            context,
+                            _CorrectionOutcome.openLeaveForm,
+                          );
+                          return;
+                        }
+                        setState(() => _dayType = option.value);
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (planned != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.schedule_rounded,
+                    size: 14,
+                    color: Color(0xFF6A6A6A),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Recorded as $planned once approved.',
+                      style: const TextStyle(
+                        color: Color(0xFF6A6A6A),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Row(
+              children: [
+                Text(
+                  'Notes ',
+                  style: TextStyle(
+                    color: Color(0xFF2A2A2A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '(optional)',
+                  style: TextStyle(color: Color(0xFF929292), fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _note,
+              minLines: 3,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
+              decoration: InputDecoration(
+                hintText: 'Add a note for your manager...',
+                hintStyle: const TextStyle(
+                  color: Color(0xFF929292),
+                  fontSize: 13,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 13,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF0571A6),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 26),
+            _SheetPrimaryButton(
+              label: 'Submit for review',
+              color: const Color(0xFF0571A6),
+              // A day type is the whole request, so there is nothing to send
+              // until one is picked.
+              onPressed: _dayType == null || _busy
+                  ? null
+                  : () async {
+                      // Captured before the await: the sheet may be gone by
+                      // the time the request comes back.
+                      final navigator = Navigator.of(context);
+                      setState(() => _busy = true);
+                      final ok = await widget.onSubmit(
+                        _dayType!,
+                        _note.text.trim(),
+                      );
+                      if (!mounted) return;
+                      if (ok) {
+                        navigator.pop(_CorrectionOutcome.submitted);
+                      } else {
+                        setState(() => _busy = false);
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CorrectionDayTypeRow extends StatelessWidget {
+  const _CorrectionDayTypeRow({
+    required this.label,
+    required this.dotColor,
+    required this.selected,
+    required this.onTap,
+    this.disabledReason,
+  });
+
+  final String label;
+  final Color dotColor;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Why this option cannot be chosen. Shown under the label rather than in a
+  /// snackbar, which a modal sheet would cover.
+  final String? disabledReason;
+
+  @override
+  Widget build(BuildContext context) {
+    final blocked = disabledReason != null;
+    return InkWell(
+      onTap: blocked ? null : onTap,
+      child: Container(
+        color: selected ? const Color(0xFFE7F6EA) : Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: blocked ? const Color(0xFFC9C9C9) : dotColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: blocked
+                          ? const Color(0xFF9A9A9A)
+                          : selected
+                          ? const Color(0xFF1F7A3D)
+                          : const Color(0xFF2A2A2A),
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  if (blocked) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      disabledReason!,
+                      style: const TextStyle(
+                        color: Color(0xFF9A9A9A),
+                        fontSize: 11.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AttendanceDayAction {
+  const AttendanceDayAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+}
+
 class AttendanceDayDetail extends StatelessWidget {
   const AttendanceDayDetail({
     super.key,
     required this.day,
-    this.onRequestCorrection,
-    this.correctionBlockedReason,
+    this.actions = const [],
+    this.pendingNotice,
+    this.blockedReason,
   });
 
   final AttendanceDayView day;
 
-  /// Shown as the "Apply for a correction" link on days that need one. Omitted
-  /// on the manager's read-only view of a report.
-  final VoidCallback? onRequestCorrection;
+  /// What can be done with this day, in the order they should be offered.
+  final List<AttendanceDayAction> actions;
 
-  /// Why a correction cannot be raised for this day — outside the backdating
-  /// window, or a case HR does not allow. Shown in place of the link, so the
-  /// answer is on the day itself rather than at the end of a form.
-  final String? correctionBlockedReason;
+  /// Set while a request for this day is with the manager. It replaces the
+  /// punch card and every action: there is nothing to do but wait, and
+  /// offering a second request would only create a duplicate.
+  final String? pendingNotice;
+
+  /// Why nothing is on offer — outside the backdating window, a case HR does
+  /// not allow. Shown quietly, so the answer is on the day itself rather than
+  /// at the end of a form.
+  final String? blockedReason;
 
   @override
   Widget build(BuildContext context) {
+    final pending = pendingNotice;
     final tag = attendanceTagStyle(day.kind);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3752,105 +4147,178 @@ class AttendanceDayDetail extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: tag.bg,
-                borderRadius: BorderRadius.circular(9999),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 4,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: tag.fg,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    tag.label,
-                    style: TextStyle(
-                      color: tag.fg,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          height: 71,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _AttendancePunchCell(
-                  label: 'Punch-in',
-                  value: attendancePunchClock(day.record?.punchIn),
-                  alignEnd: false,
+            if (pending == null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: tag.bg,
+                  borderRadius: BorderRadius.circular(9999),
                 ),
-              ),
-              Container(width: 1, color: const Color(0xFFDDDDDD)),
-              Expanded(
-                child: _AttendancePunchCell(
-                  label: 'Punch-out',
-                  value: attendancePunchClock(day.record?.punchOut),
-                  alignEnd: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: tag.fg,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      tag.label,
+                      style: TextStyle(
+                        color: tag.fg,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
+          ],
         ),
-        if (onRequestCorrection case final request?) ...[
-          const SizedBox(height: 12),
-          InkWell(
-            onTap: request,
-            child: const Text(
-              'Missed Punch-in or out. Apply for a correction',
-              style: TextStyle(
-                color: Color(0xFF0571A6),
-                fontSize: 12,
+        if (pending != null) ...[
+          const SizedBox(height: 16),
+          _AttendancePendingNotice(text: pending),
+        ] else ...[
+          const SizedBox(height: 16),
+          Container(
+            height: 71,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _AttendancePunchCell(
+                    label: 'Punch-in',
+                    value: attendancePunchClock(day.record?.punchIn),
+                    alignEnd: false,
+                  ),
+                ),
+                Container(width: 1, color: const Color(0xFFDDDDDD)),
+                Expanded(
+                  child: _AttendancePunchCell(
+                    label: 'Punch-out',
+                    value: attendancePunchClock(day.record?.punchOut),
+                    alignEnd: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final action in actions) ...[
+            const SizedBox(height: 12),
+            _AttendanceDayActionButton(action: action),
+          ],
+          if (actions.isEmpty && blockedReason != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.lock_outline_rounded,
+                  size: 13,
+                  color: Color(0xFF929292),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    blockedReason!,
+                    style: const TextStyle(
+                      color: Color(0xFF929292),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _AttendanceDayActionButton extends StatelessWidget {
+  const _AttendanceDayActionButton({required this.action});
+
+  final AttendanceDayAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF2A2A2A),
+          side: const BorderSide(color: Color(0xFFE6E6E6)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
+        onPressed: action.onTap,
+        child: Text(action.label),
+      ),
+    );
+  }
+}
+
+/// The amber "already with your manager" strip.
+class _AttendancePendingNotice extends StatelessWidget {
+  const _AttendancePendingNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF1DC),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF6E2BE),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.hourglass_bottom_rounded,
+              size: 13,
+              color: Color(0xFF8A6A2F),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF8A6A2F),
+                fontSize: 12.5,
+                height: 1.45,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-        ] else if (correctionBlockedReason case final reason?) ...[
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.lock_outline_rounded,
-                size: 13,
-                color: Color(0xFF929292),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  reason,
-                  style: const TextStyle(
-                    color: Color(0xFF929292),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -3943,7 +4411,9 @@ class _SheetPrimaryButton extends StatelessWidget {
     this.color = const Color(0xFFC75C36),
   });
   final String label;
-  final VoidCallback onPressed;
+
+  /// Null disables the button — used while a required choice is unmade.
+  final VoidCallback? onPressed;
   final Color color;
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -3963,121 +4433,6 @@ class _SheetPrimaryButton extends StatelessWidget {
 
 /// One punch row on the correction sheet: a wide box showing the time and a
 /// narrow AM/PM box, matching the paired fields in the design.
-class _CorrectionTimeField extends StatelessWidget {
-  const _CorrectionTimeField({
-    required this.label,
-    required this.value,
-    required this.onPickTime,
-    required this.onToggleMeridiem,
-  });
-
-  final String label;
-  final TimeOfDay? value;
-  final VoidCallback onPickTime;
-  final VoidCallback onToggleMeridiem;
-
-  static const _boxBorder = Color(0xFFE5E7EB);
-
-  @override
-  Widget build(BuildContext context) {
-    final hour = value == null
-        ? null
-        : (value!.hour % 12 == 0 ? 12 : value!.hour % 12);
-    final clock = value == null
-        ? ''
-        : '$hour:${value!.minute.toString().padLeft(2, '0')}';
-    final meridiem = value == null ? 'AM' : (value!.hour >= 12 ? 'PM' : 'AM');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 12,
-            height: 16 / 12,
-            letterSpacing: .3,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: onPickTime,
-                child: Container(
-                  height: 42,
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: _boxBorder, width: .8),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    clock.isEmpty ? '--:--' : clock,
-                    style: TextStyle(
-                      color: clock.isEmpty
-                          ? const Color(0xFF9CA3AF)
-                          : const Color(0xFF2A2A2A),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 18),
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: value == null ? null : onToggleMeridiem,
-              child: Container(
-                width: 89,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border.all(color: _boxBorder, width: .8),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      meridiem,
-                      style: TextStyle(
-                        color: value == null
-                            ? const Color(0xFF9CA3AF)
-                            : const Color(0xFF2A2A2A),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    // This toggles AM/PM in place rather than drilling into
-                    // another screen, so the chevron should read as a
-                    // dropdown indicator (pointing down), not a nav arrow —
-                    // rotate the shared right-pointing asset 90°.
-                    Transform.rotate(
-                      angle: math.pi / 2,
-                      child: SvgPicture.asset(
-                        'assets/icons/list_row_chevron.svg',
-                        width: 14,
-                        height: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 class _HubScaffold extends StatelessWidget {
   const _HubScaffold({
     super.key,
@@ -4090,10 +4445,15 @@ class _HubScaffold extends StatelessWidget {
     this.footer,
     this.trailing,
     this.backgroundColor,
+    this.closeIcon = false,
   });
 
   final String title;
   final VoidCallback onBack;
+
+  /// Show a × instead of the back chevron — used by screens that end a flow
+  /// rather than sit inside one.
+  final bool closeIcon;
   final List<Widget> children;
   final Widget profileAction;
   final VoidCallback onNotifications;
@@ -4137,11 +4497,17 @@ class _HubScaffold extends StatelessWidget {
                       width: 38,
                       height: 38,
                       child: Center(
-                        child: SvgPicture.asset(
-                          'assets/icons/chevron_back.svg',
-                          width: 20,
-                          height: 20,
-                        ),
+                        child: closeIcon
+                            ? const Icon(
+                                Icons.close_rounded,
+                                size: 20,
+                                color: Color(0xFF2A2A2A),
+                              )
+                            : SvgPicture.asset(
+                                'assets/icons/chevron_back.svg',
+                                width: 20,
+                                height: 20,
+                              ),
                       ),
                     ),
                   ),
@@ -4338,9 +4704,12 @@ class _LeaveViewSwitchItem extends StatelessWidget {
 }
 
 class _LeaveRequestCard extends StatelessWidget {
-  const _LeaveRequestCard({required this.request});
+  const _LeaveRequestCard({required this.request, this.onViewDetails});
 
   final LeaveRequest request;
+
+  /// Opens the same summary the request was sent on, attachment included.
+  final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -4430,159 +4799,16 @@ class _LeaveRequestCard extends StatelessWidget {
               ),
             ],
           ),
+          if (onViewDetails case final open?) ...[
+            const SizedBox(height: 4),
+            _ViewDetailsLink(onTap: open),
+          ],
         ],
       ),
     );
   }
 }
 
-/// Everything a request was filled in with, plus what came back. Opened from
-/// the "View details" line on any history card, so the employee can read their
-/// own submission and the response without asking their manager.
-Future<void> showRequestDetailsSheet(
-  BuildContext context, {
-  required String title,
-  required String statusLabel,
-  required Color statusColor,
-  required Color statusTint,
-  required List<(String label, String value)> rows,
-  String responseLabel = '',
-  String responseNote = '',
-}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.white,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (sheetContext) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE5E7EB),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Color(0xFF111827),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusTint,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            for (final row in rows)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 116,
-                      child: Text(
-                        row.$1,
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        row.$2.trim().isEmpty ? '—' : row.$2,
-                        style: const TextStyle(
-                          color: Color(0xFF111827),
-                          fontSize: 13.5,
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (responseLabel.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 11,
-                ),
-                decoration: BoxDecoration(
-                  color: statusTint,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      responseLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (responseNote.trim().isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        responseNote.trim(),
-                        style: TextStyle(
-                          color: statusColor.withValues(alpha: .85),
-                          fontSize: 12.5,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
-}
 
 /// The "View details" line every history card carries.
 class _ViewDetailsLink extends StatelessWidget {
@@ -5160,16 +5386,18 @@ class _LeaveAttachmentField extends StatelessWidget {
   const _LeaveAttachmentField({required this.fileName, required this.onPicked});
 
   final String? fileName;
-  final ValueChanged<String?> onPicked;
+  final ValueChanged<PlatformFile?> onPicked;
 
   Future<void> _pick(BuildContext context) async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+        // Bytes, not just a name: the file has to reach the server.
+        withData: true,
       );
       if (result == null || result.files.isEmpty || !context.mounted) return;
-      onPicked(result.files.single.name);
+      onPicked(result.files.single);
     } catch (_) {
       // File picking was cancelled or unsupported on this platform.
     }

@@ -205,13 +205,13 @@ export async function sendTodayLifecycleNotifications(now = new Date()) {
   for (const employee of employees) {
     const org = employee.org ?? employee.email.split('@').at(1) ?? 'default';
     const recipients = byOrg.get(org) ?? [];
+    // Birthdays and anniversaries are announced by the Connect card the daily
+    // job publishes — see `lifecycleCopy`, which sends the 🎂 and 🎉 copy. This
+    // job used to send its own plainer version of both, so everyone got the
+    // same news twice, hours apart. A new joiner has no such card, so it stays.
     const events: Array<{ scenario: string; body: string }> = [];
-    if (employee.birthday?.getUTCMonth() === month - 1 && employee.birthday.getUTCDate() === day) {
-      events.push({ scenario: 'birthday', body: `It's ${employee.name}'s birthday today - wish them well!` });
-    }
     if (employee.joiningDate?.getUTCMonth() === month - 1 && employee.joiningDate.getUTCDate() === day) {
       const years = year - employee.joiningDate.getUTCFullYear();
-      if (years > 0) events.push({ scenario: 'work_anniversary', body: `${employee.name} completes ${years} year${years === 1 ? '' : 's'} at Sowaka today` });
       if (years === 0) events.push({ scenario: 'new_joiner', body: `Welcome ${employee.name} to the team!` });
     }
     for (const event of events) {

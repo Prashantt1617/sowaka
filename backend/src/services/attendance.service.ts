@@ -2,6 +2,8 @@ import { ObjectId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, users } from '../config/db';
 import {
   AttendanceRegularization,
+  REGULARIZATION_DAY_TYPES,
+  RegularizationDayType,
   RegularizationStatus,
 } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
@@ -47,6 +49,7 @@ async function getAttendanceForEmployee(
     records: records.map((item) => ({
       id: item._id?.toHexString(), workDate: item.workDate,
       punchIn: item.punchIn?.toISOString(), punchOut: item.punchOut?.toISOString(),
+      dayType: item.dayType,
     })),
     regularizations: regularizations.map(toRegularizationView),
   };
@@ -128,7 +131,7 @@ export function correctionTriggerFor(punchIn: Date | null, punchOut: Date | null
 
 export async function requestRegularization(
   userId: string,
-  input: { workDate?: string; punchIn?: string; punchOut?: string; note?: string },
+  input: { workDate?: string; dayType?: string; note?: string },
 ) {
   const workDate = input.workDate ?? '';
   const date = parseDate(workDate, 'workDate');
@@ -145,13 +148,9 @@ export async function requestRegularization(
       `Regularization can be raised up to ${correction.backdateDays} days back`,
     );
   }
-  const punchIn = parsePunch(input.punchIn, workDate, 'punchIn');
-  const punchOut = parsePunch(input.punchOut, workDate, 'punchOut');
-  if (!punchIn && !punchOut) {
-    throw new AttendanceError(400, 'Enter a punch-in or a punch-out time');
-  }
-  if (punchIn && punchOut && punchOut <= punchIn) {
-    throw new AttendanceError(400, 'Punch-out must be after punch-in');
+  const dayType = (input.dayType ?? '').trim() as RegularizationDayType;
+  if (!REGULARIZATION_DAY_TYPES.includes(dayType)) {
+    throw new AttendanceError(400, 'Choose what this day should be');
   }
   const note = (input.note ?? '').trim();
   if (note.length > 500) throw new AttendanceError(400, 'Note cannot exceed 500 characters');
@@ -182,12 +181,12 @@ export async function requestRegularization(
   const createdAt = new Date();
   const result = await attendanceRegularizations().insertOne({
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
-    workDate, punchIn, punchOut, note, status: 'pending', createdAt,
+    workDate, requestedDayType: dayType, note, status: 'pending', createdAt,
   });
   await notifyCorrectionSubmitted({ employeeUserId: userId, workDate, reason: note });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
-    managerUserId: employee.managerUserId, workDate, punchIn, punchOut, note,
+    managerUserId: employee.managerUserId, workDate, requestedDayType: dayType, note,
     status: 'pending', createdAt,
   });
 }
@@ -242,9 +241,22 @@ export async function decideRegularization(
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
 
   if (decision === 'approved') {
-    // Fold the corrected times into the canonical attendance record so the
-    // employee's calendar reflects what was approved, not just the request.
-    const punchUpdate: Record<string, Date> = { updatedAt: decidedAt };
+    // Fold the decision into the canonical attendance record so the employee's
+    // calendar reflects what was approved, not just the request. Corrections
+    // raised before day types still carry punch times, so both are applied.
+    const punchUpdate: Record<string, Date | RegularizationDayType> = { updatedAt: decidedAt };
+    if (result.requestedDayType) {
+      punchUpdate.dayType = result.requestedDayType;
+      // An approved day is a worked day, so it gets the shift's own hours
+      // rather than staying blank: the calendar showed "-" against a day the
+      // manager had just confirmed was worked.
+      const shift = await policyForUser(result.userId);
+      const window = punchWindowFor(result.requestedDayType, result.workDate, shift);
+      if (window) {
+        punchUpdate.punchIn = window.punchIn;
+        punchUpdate.punchOut = window.punchOut;
+      }
+    }
     if (result.punchIn) punchUpdate.punchIn = result.punchIn;
     if (result.punchOut) punchUpdate.punchOut = result.punchOut;
     await attendanceRecords().updateOne(
@@ -297,14 +309,6 @@ async function enrichRegularizations(values: AttendanceRegularization[]) {
  * A corrected punch arrives as an ISO instant from the client. It must land on
  * the work date being corrected, so a mistyped day can't be smuggled through.
  */
-function parsePunch(value: string | undefined, workDate: string, field: string): Date | undefined {
-  const raw = (value ?? '').trim();
-  if (!raw) return undefined;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) throw new AttendanceError(400, `${field} is not a valid time`);
-  return parsed;
-}
-
 function parseDate(value: string, field: string): Date {
   if (!datePattern.test(value)) throw new AttendanceError(400, `${field} must use YYYY-MM-DD format`);
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -323,6 +327,49 @@ function toRegularizationView(value: AttendanceRegularization) {
     requestedPunchIn: punchIn?.toISOString(),
     requestedPunchOut: punchOut?.toISOString(),
   };
+}
+
+/**
+ * Wall-clock offset the shift times are written in. The rest of the product
+ * already assumes India (see the daily lifecycle job), and a shift saved as
+ * "09:00" means nine in the morning where the office is, not nine UTC.
+ */
+const SHIFT_UTC_OFFSET = '+05:30';
+
+/**
+ * The hours an approved correction records for the day.
+ *
+ * Full day and work-from-home both take the whole shift; a half day runs from
+ * the shift's start for as long as the policy says a half day lasts. Leave
+ * records no hours at all — it is time off, not time worked.
+ */
+function punchWindowFor(
+  dayType: RegularizationDayType,
+  workDate: string,
+  shift: { startTime: string; endTime: string; minHalfDayHours: number },
+): { punchIn: Date; punchOut: Date } | undefined {
+  if (dayType === 'leave') return undefined;
+  const at = (time: string, addDays = 0) => {
+    // Built from the calendar date directly. Going through an instant and back
+    // out via toISOString() lands a day early, because midnight local is the
+    // previous day in UTC.
+    const [year, month, day] = workDate.split('-').map(Number);
+    const base = new Date(Date.UTC(year, month - 1, day + addDays));
+    return new Date(
+      `${base.toISOString().slice(0, 10)}T${time}:00.000${SHIFT_UTC_OFFSET}`,
+    );
+  };
+  const punchIn = at(shift.startTime);
+  if (dayType === 'half_day') {
+    const hours = shift.minHalfDayHours > 0 ? shift.minHalfDayHours : 4;
+    return {
+      punchIn,
+      punchOut: new Date(punchIn.getTime() + hours * 60 * 60 * 1000),
+    };
+  }
+  // An end at or before the start means the shift runs into the next day.
+  const overnight = shift.endTime <= shift.startTime;
+  return { punchIn, punchOut: at(shift.endTime, overnight ? 1 : 0) };
 }
 
 export class AttendanceError extends Error {

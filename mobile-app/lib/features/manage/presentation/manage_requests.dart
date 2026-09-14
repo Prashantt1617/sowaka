@@ -518,149 +518,31 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   final String? photoUrl;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: MColors.bg,
-    body: Column(
-      children: [
-        _TopBar(
-          title: 'Attendance correction',
-          sub: '${request.who} · ${request.team}',
-          onBack: () => Navigator.pop(context),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-            children: [
-              PressableCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        AvatarBadge(
-                          initial: request.initial,
-                          index: request.avatarIndex,
-                          size: 50,
-                          photoUrl: photoUrl,
-                        ),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                request.who,
-                                style: const TextStyle(
-                                  color: MColors.ink,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _appliedTimestamp(request.createdAt),
-                                style: const TextStyle(
-                                  color: MColors.inkFaint,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (request.decision != LeaveDecision.pending)
-                          _LeaveStatusPill(decision: request.decision),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _AttendanceDatePanel(request: request),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              const _LeaveSectionLabel('PUNCH TIMES'),
-              const SizedBox(height: 7),
-              PressableCard(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 5,
-                ),
-                child: Column(
-                  children: [
-                    _LeaveDetailRow(
-                      icon: Icons.schedule_rounded,
-                      label: 'Punch in',
-                      value: _attendanceClock(request.punchIn),
-                    ),
-                    const Divider(height: 1, color: MColors.line),
-                    _LeaveDetailRow(
-                      icon: Icons.schedule_rounded,
-                      label: 'Punch out',
-                      value: _attendanceClock(request.punchOut),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              const _LeaveSectionLabel('REASON'),
-              const SizedBox(height: 7),
-              PressableCard(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  request.note,
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 14.5,
-                    height: 1.65,
-                  ),
-                ),
-              ),
-              if (request.managerNote.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                const _LeaveSectionLabel('YOUR NOTE'),
-                const SizedBox(height: 7),
-                _ReviewedDeclineNote(note: request.managerNote),
-              ],
-            ],
-          ),
-        ),
-        if (request.decision == LeaveDecision.pending)
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: MColors.line)),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ActionButton(
-                      label: 'Decline',
-                      icon: Icons.close_rounded,
-                      background: Colors.white,
-                      foreground: MColors.inkSoft,
-                      border: MColors.line,
-                      onTap: () => _decide(context, LeaveDecision.declined),
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    flex: 2,
-                    child: ActionButton(
-                      label: 'Approve',
-                      icon: Icons.check_rounded,
-                      background: MColors.sageDeep,
-                      foreground: Colors.white,
-                      onTap: () => _decide(context, LeaveDecision.approved),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+  Widget build(BuildContext context) => _RequestDetailScaffold(
+    title: 'Attendance Correction',
+    subtitle: '${request.who} · ${request.team}',
+    decision: request.decision,
+    managerNote: request.managerNote,
+    summary: RequestSummary(
+      screenTitle: 'Attendance Correction',
+      successTitle: '',
+      successBody: '',
+      rows: [
+        SummaryRow('Employee', '${request.who} · ${request.team}'),
+        SummaryRow('Work Date', _summaryDate(request.workDate)),
+        // What the day holds now, then what approving would make it. A
+        // correction is raised precisely because one of these is missing, so
+        // both are shown even when they are blank.
+        SummaryRow('Punch In', _attendanceClock(request.punchIn)),
+        SummaryRow('Punch Out', _attendanceClock(request.punchOut)),
+        SummaryRow('Marked As', _attendancePeriod(request)),
+        SummaryRow('Raised On', _summaryDate(request.createdAt)),
+        SummaryRow('Status', _decisionText(request.decision)),
       ],
+      reason: request.note,
     ),
+    onDecline: () => _decide(context, LeaveDecision.declined),
+    onApprove: () => _decide(context, LeaveDecision.approved),
   );
 
   Future<void> _decide(BuildContext context, LeaveDecision decision) async {
@@ -673,8 +555,10 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   }
 }
 
-/// Summarises the punch times an employee is asking to have recorded.
+/// What the employee is asking for: the day type on current corrections, and
+/// the punch times on ones raised before day types existed.
 String _attendancePeriod(AttendanceRegularization request) {
+  if (request.dayTypeLabel.isNotEmpty) return request.dayTypeLabel;
   final inAt = request.requestedPunchIn;
   final outAt = request.requestedPunchOut;
   if (inAt != null && outAt != null) {
@@ -889,10 +773,10 @@ class _LeaveDatePanel extends StatelessWidget {
 }
 
 class _LeaveTypeChip extends StatelessWidget {
-  const _LeaveTypeChip({required this.type, this.large = false});
+  const _LeaveTypeChip({required this.type});
 
   final String type;
-  final bool large;
+  static const large = false;
 
   @override
   Widget build(BuildContext context) {
@@ -978,144 +862,51 @@ class _LeaveRequestDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = leavePalette(leave.type);
     return Scaffold(
       backgroundColor: MColors.bg,
       body: Column(
         children: [
           _TopBar(
-            title: 'Leave request',
+            title: 'Leave',
             sub: '${leave.who} · ${leave.team}',
             onBack: () => Navigator.of(context).pop(),
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: [
-                PressableCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          AvatarBadge(
-                            initial: leave.initial,
-                            index: leave.avatarIndex,
-                            size: 50,
-                            photoUrl: photoUrl,
-                          ),
-                          const SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  leave.who,
-                                  style: const TextStyle(
-                                    color: MColors.ink,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _appliedTimestamp(leave.requestedOn),
-                                  style: const TextStyle(
-                                    color: MColors.inkFaint,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          leave.decision == LeaveDecision.pending
-                              ? _LeaveTypeChip(type: leave.type, large: true)
-                              : _LeaveStatusPill(decision: leave.decision),
-                        ],
+                // The same summary the employee sees when the request is sent,
+                // so both sides read the request the same way.
+                RequestSummaryBody(
+                  summary: RequestSummary(
+                    screenTitle: 'Leave',
+                    successTitle: '',
+                    successBody: '',
+                    rows: [
+                      SummaryRow('Employee', '${leave.who} · ${leave.team}'),
+                      SummaryRow('Leave Type', leave.type),
+                      SummaryRow('Start Date', _summaryDate(leave.start)),
+                      SummaryRow('End Date', _summaryDate(leave.end)),
+                      SummaryRow(
+                        'Duration',
+                        leave.halfDay ? 'Half Day' : '${_days(leave.days)} day'
+                            '${leave.days == 1 ? '' : 's'}',
                       ),
-                      const SizedBox(height: 16),
-                      IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: _LeaveInfoTile(
-                                label: 'DATES',
-                                value: _leaveDateRange(leave),
-                                background: colors.$2,
-                                foreground: colors.$1,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            _LeaveInfoTile(
-                              label: 'DURATION',
-                              value:
-                                  '${leave.daysLabel} ${leave.days == 1 ? 'day' : 'days'}',
-                              background: const Color(0xFFF8F4EE),
-                              foreground: MColors.ink,
-                            ),
-                          ],
-                        ),
-                      ),
+                      SummaryRow('Applied On', _summaryDate(leave.requestedOn)),
+                      SummaryRow('Status', _statusLabel(leave.decision)),
                     ],
+                    reason: leave.reason,
+                    documentName: leave.documentName,
+                    documentUrl: leave.documentUrl,
                   ),
+                  showSuccess: false,
                 ),
-                const SizedBox(height: 18),
-                const _LeaveSectionLabel('REASON'),
-                const SizedBox(height: 7),
-                PressableCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    leave.reason,
-                    style: const TextStyle(
-                      color: MColors.ink,
-                      fontSize: 14.5,
-                      height: 1.65,
-                    ),
-                  ),
-                ),
-                if (leave.decision == LeaveDecision.declined &&
-                    leave.managerNote.isNotEmpty) ...[
+                if (leave.managerNote.isNotEmpty) ...[
                   const SizedBox(height: 18),
-                  const _LeaveSectionLabel('DECLINE NOTE'),
+                  const _LeaveSectionLabel('YOUR NOTE'),
                   const SizedBox(height: 7),
-                  PressableCard(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      leave.managerNote,
-                      style: const TextStyle(
-                        color: MColors.ink,
-                        fontSize: 14.5,
-                        height: 1.65,
-                      ),
-                    ),
-                  ),
+                  _ReviewedDeclineNote(note: leave.managerNote),
                 ],
-                const SizedBox(height: 18),
-                const _LeaveSectionLabel('REQUEST DETAILS'),
-                const SizedBox(height: 7),
-                PressableCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 5,
-                  ),
-                  child: Column(
-                    children: [
-                      _LeaveDetailRow(
-                        icon: Icons.event_available_rounded,
-                        label: 'Leave type',
-                        value: leave.type,
-                      ),
-                      const Divider(height: 1, color: MColors.line),
-                      _LeaveDetailRow(
-                        icon: Icons.schedule_rounded,
-                        label: 'Requested',
-                        value: _requestTimestamp(leave.requestedOn),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -1161,12 +952,123 @@ class _LeaveRequestDetailPage extends StatelessWidget {
     );
   }
 
+  static String _days(double value) =>
+      value == value.roundToDouble() ? value.toStringAsFixed(0) : '$value';
+
+  static String _statusLabel(LeaveDecision decision) => switch (decision) {
+    LeaveDecision.approved => 'Approved',
+    LeaveDecision.declined => 'Declined',
+    LeaveDecision.pending => 'Pending',
+  };
+
   Future<void> _decide(BuildContext context, LeaveDecision decision) async {
     final result = await _showLeaveDecisionSheet(context, leave, decision);
     if (result == null || !context.mounted) return;
     bloc.add(DecideLeave(leave.id, decision, managerNote: result.managerNote));
   }
 }
+
+
+/// The frame every manager request detail shares: the summary the employee
+/// sent, their own note once decided, and the two decision buttons pinned to
+/// the bottom while it is still pending.
+class _RequestDetailScaffold extends StatelessWidget {
+  const _RequestDetailScaffold({
+    required this.title,
+    required this.subtitle,
+    required this.decision,
+    required this.managerNote,
+    required this.summary,
+    required this.onApprove,
+    required this.onDecline,
+  });
+
+  final String title;
+  final String subtitle;
+  final LeaveDecision decision;
+  final String managerNote;
+  final RequestSummary summary;
+  final VoidCallback onApprove;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: MColors.bg,
+      body: Column(
+        children: [
+          _TopBar(
+            title: title,
+            sub: subtitle,
+            onBack: () => Navigator.of(context).pop(),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              children: [
+                RequestSummaryBody(summary: summary, showSuccess: false),
+                if (managerNote.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const _LeaveSectionLabel('YOUR NOTE'),
+                  const SizedBox(height: 7),
+                  _ReviewedDeclineNote(note: managerNote),
+                ],
+              ],
+            ),
+          ),
+          if (decision == LeaveDecision.pending)
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: MColors.line)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 10,
+                      child: ActionButton(
+                        label: 'Decline',
+                        icon: Icons.close_rounded,
+                        background: Colors.white,
+                        foreground: MColors.inkSoft,
+                        border: MColors.line,
+                        onTap: onDecline,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      flex: 14,
+                      child: ActionButton(
+                        label: 'Approve',
+                        icon: Icons.check_rounded,
+                        background: MColors.sageDeep,
+                        foreground: Colors.white,
+                        onTap: onApprove,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _decisionText(LeaveDecision decision) => switch (decision) {
+  LeaveDecision.approved => 'Approved',
+  LeaveDecision.declined => 'Declined',
+  LeaveDecision.pending => 'Pending',
+};
+
+/// "Friday, 21 Aug" — shared by the request summary screens.
+String _summaryDate(DateTime value) =>
+    '${_fullWeekday(value)}, ${value.day} '
+    '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]}';
 
 class _LeaveInfoTile extends StatelessWidget {
   const _LeaveInfoTile({
@@ -1792,39 +1694,25 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
   final String? photoUrl;
 
   @override
-  Widget build(BuildContext context) => _ManagerRequestDetailPage(
-    title: 'Overtime request',
-    photoUrl: photoUrl,
-    person: request.who,
-    team: request.team,
-    initial: request.initial,
-    avatarIndex: request.avatarIndex,
-    requestedOn: request.requestedOn,
-    chip: request.decision == LeaveDecision.pending
-        ? _RequestChip(
-            label: request.hoursLabel,
-            foreground: MColors.gold,
-            background: MColors.goldTint,
-            large: true,
-          )
-        : _LeaveStatusPill(decision: request.decision),
-    primaryLabel: 'WORK DATE',
-    primaryValue: _managerDate(request.workDate),
-    primaryForeground: MColors.gold,
-    primaryBackground: MColors.goldTint,
-    secondaryLabel: 'DURATION',
-    secondaryValue: request.hoursLabel,
-    noteLabel: request.note.isEmpty ? null : 'NOTE',
-    note: request.note.isEmpty ? null : request.note,
-    details: [
-      (Icons.schedule_rounded, 'Time', request.timeRangeLabel),
-      (
-        Icons.schedule_rounded,
-        'Requested',
-        '${daysAgo(request.requestedOn)} ago',
-      ),
-    ],
-    pending: request.decision == LeaveDecision.pending,
+  Widget build(BuildContext context) => _RequestDetailScaffold(
+    title: 'Overtime',
+    subtitle: '${request.who} · ${request.team}',
+    decision: request.decision,
+    managerNote: request.managerNote,
+    summary: RequestSummary(
+      screenTitle: 'Overtime',
+      successTitle: '',
+      successBody: '',
+      rows: [
+        SummaryRow('Employee', '${request.who} · ${request.team}'),
+        SummaryRow('Work Date', _summaryDate(request.workDate)),
+        SummaryRow('Duration', request.hoursLabel),
+        SummaryRow('Time', request.timeRangeLabel),
+        SummaryRow('Applied On', _summaryDate(request.requestedOn)),
+        SummaryRow('Status', _decisionText(request.decision)),
+      ],
+      reason: request.note,
+    ),
     onDecline: () => _decide(context, LeaveDecision.declined),
     onApprove: () => _decide(context, LeaveDecision.approved),
   );

@@ -94,7 +94,7 @@ export async function createReimbursementClaim(
   };
   try {
     const result = await reimbursementClaims().insertOne(claim);
-    return toView({ ...claim, _id: result.insertedId }, employee);
+    return await toView({ ...claim, _id: result.insertedId }, employee);
   } catch (error) {
     if (uploadedReceipt) {
       await deleteReimbursementReceipt(uploadedReceipt.objectKey).catch(() => undefined);
@@ -107,7 +107,7 @@ export async function getMyReimbursementClaims(userId: string) {
   const employee = await users().findOne({ userId });
   if (!employee) throw new ReimbursementError(404, 'Employee not found');
   const claims = await reimbursementClaims().find({ userId }).sort({ createdAt: -1 }).toArray();
-  return claims.map((claim) => toView(claim, employee));
+  return Promise.all(claims.map((claim) => toView(claim, employee)));
 }
 
 export async function getManagerReimbursementInbox(managerUserId: string) {
@@ -120,10 +120,12 @@ export async function getManagerReimbursementInbox(managerUserId: string) {
     .find({ userId: { $in: employeeIds } })
     .toArray();
   const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
-  return claims.flatMap((claim) => {
-    const employee = employeeById.get(claim.userId);
-    return employee ? [toView(claim, employee)] : [];
-  });
+  return Promise.all(
+    claims.flatMap((claim) => {
+      const employee = employeeById.get(claim.userId);
+      return employee ? [toView(claim, employee)] : [];
+    }),
+  );
 }
 
 /** Org-wide list of every reimbursement claim, for the HR dashboard. */
@@ -135,10 +137,12 @@ export async function listAllReimbursementsForAdmin(adminUserId: string) {
     .find({ userId: { $in: employees.map((e) => e.userId) } })
     .sort({ status: -1, createdAt: -1 })
     .toArray();
-  return claims.flatMap((claim) => {
-    const employee = employeeById.get(claim.userId);
-    return employee ? [toView(claim, employee)] : [];
-  });
+  return Promise.all(
+    claims.flatMap((claim) => {
+      const employee = employeeById.get(claim.userId);
+      return employee ? [toView(claim, employee)] : [];
+    }),
+  );
 }
 
 /**
@@ -187,7 +191,7 @@ export async function adminDecideReimbursement(
     { returnDocument: 'after' },
   );
   if (!updated) throw new ReimbursementError(409, 'Reimbursement claim has already been decided');
-  return toView(updated, employee);
+  return await toView(updated, employee);
 }
 
 /// Presigned URL so the owner, the claim's manager, or a dashboard user can view the bill.
@@ -208,7 +212,13 @@ export async function getReceiptDownloadUrl(
   return { url, receiptName, expiresIn: env.s3.presignTtl };
 }
 
-function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: User) {
+/**
+ * Async because the receipt is handed over as a short-lived signed link, so the
+ * app opens the file straight from storage rather than through the API. The
+ * signing date is bucketed, so the same receipt keeps the same URL between
+ * refreshes instead of looking like a new file each time.
+ */
+async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: User) {
   return {
     id: claim._id.toHexString(),
     userId: claim.userId,
@@ -221,6 +231,9 @@ function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: User) {
     category: claim.category,
     receiptName: claim.receiptName,
     hasReceipt: Boolean(claim.receiptObjectKey),
+    receiptUrl: claim.receiptObjectKey
+      ? await presignReceiptDownload(claim.receiptObjectKey, claim.receiptName ?? 'receipt')
+      : undefined,
     note: claim.note,
     managerNote: claim.managerNote,
     status: claim.status,

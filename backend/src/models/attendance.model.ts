@@ -1,9 +1,24 @@
 import { ObjectId } from 'mongodb';
 
 export type AttendanceSource = 'sql_import' | 'manual';
-// Corrections now capture the punch times the employee says they worked,
-// rather than a coarse present/half-day/late bucket.
 export type RegularizationStatus = 'pending' | 'approved' | 'declined';
+
+/**
+ * What the employee says the day should have been.
+ *
+ * A correction used to submit the punch times someone believed they worked,
+ * which asked a manager to vouch for a clock reading nobody witnessed. Asking
+ * for the day's classification instead is the judgement a manager can actually
+ * make, and it is what payroll consumes.
+ */
+export type RegularizationDayType = 'full_day' | 'half_day' | 'wfh' | 'leave';
+
+export const REGULARIZATION_DAY_TYPES: RegularizationDayType[] = [
+  'full_day',
+  'half_day',
+  'wfh',
+  'leave',
+];
 
 export interface AttendanceRecord {
   employeeId: string;
@@ -11,6 +26,12 @@ export interface AttendanceRecord {
   workDate: string;
   punchIn?: Date;
   punchOut?: Date;
+  /**
+   * Set when an approved correction reclassified the day. It outranks whatever
+   * the punches grade to, because a manager has explicitly said what the day
+   * was.
+   */
+  dayType?: RegularizationDayType;
   source: AttendanceSource;
   sourceKey: string;
   importedAt: Date;
@@ -23,9 +44,11 @@ export interface AttendanceRegularization {
   employeeId: string;
   managerUserId: string;
   workDate: string;
-  /** Requested punch-in; absent when only a punch-out is being corrected. */
+  /** What the day should be recorded as. */
+  requestedDayType?: RegularizationDayType;
+  /** @deprecated Punch times from corrections raised before day types. */
   punchIn?: Date;
-  /** Requested punch-out; absent when only a punch-in is being corrected. */
+  /** @deprecated */
   punchOut?: Date;
   note?: string;
   status: RegularizationStatus;

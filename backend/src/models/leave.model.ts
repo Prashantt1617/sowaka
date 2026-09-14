@@ -16,6 +16,10 @@ export interface Leave {
   /** Half a day off. Only valid when startDate and endDate are the same day. */
   halfDay?: boolean;
   reason: string;
+  /** Supporting document (a medical note, a booking) — object key in S3. */
+  documentKey?: string;
+  /** The file's original name, so the app can label the chip. */
+  documentName?: string;
   status: LeaveStatus;
   managerNote?: string;
   decidedByUserId?: string; // -> User.userId

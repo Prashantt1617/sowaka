@@ -36,6 +36,32 @@ export async function uploadReimbursementReceipt(userId: string, file: ReceiptFi
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/**
+ * A document attached to a leave request. Same bucket and the same encryption
+ * as receipts — only the key prefix differs, so a leave note is never served
+ * from a reimbursement URL.
+ */
+export async function uploadLeaveDocument(userId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const objectKey = buildObjectKey(userId, file.originalName).replace(
+    /^([^/]*\/)?/,
+    (prefix) => `${prefix}leave/`,
+  );
+  const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ServerSideEncryption: encryption,
+      ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
+    }),
+  );
+  return { objectKey, contentType: file.contentType, size: file.size };
+}
+
 export async function deleteReimbursementReceipt(objectKey: string) {
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
