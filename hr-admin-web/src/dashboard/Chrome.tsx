@@ -55,6 +55,7 @@ const CLAIMS: NavItem[] = [
 // Connect's own section: moderation is not an HR request queue like leave, and
 // filing it under one would bury it.
 const CONNECT: NavItem[] = [
+  { key: 'engagementposts', label: 'Engagement posts' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
 const SECTIONS: { title: string; items: NavItem[] }[] = [

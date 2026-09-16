@@ -1,5 +1,5 @@
 // Typed calls against the org-wide HR-admin (dashboard) endpoints.
-import { api } from './http';
+import { api, apiUpload } from './http';
 
 // 'admin' = the request was overridden/decided from the HR dashboard (rules 6/7).
 export type DecidedByRole = 'manager' | 'admin';
@@ -468,3 +468,82 @@ export const reviewContentReport = (id: string, input: { status: string; note?: 
 /** Takes the reported post down. Comments are removed by editing the post. */
 export const removeReportedPost = (postId: string) =>
   api(`/connect/posts/${postId}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------- engagement posts
+
+/**
+ * The engagement formats HR can publish into Connect. One today; the list is
+ * what the composer offers, so a new template becomes a new entry here plus a
+ * field set below rather than a new screen.
+ */
+export type EngagementPostType =
+  | 'caption_challenge'
+  | 'photo_story_challenge'
+  | 'most_likely';
+
+export type EngagementPostDTO = {
+  id: string;
+  type: string;
+  tag: string;
+  tagIcon: string;
+  author: { name: string };
+  body: Record<string, unknown>;
+  publishedAt: string;
+};
+
+export type CaptionChallengeInput = {
+  type: EngagementPostType;
+  title: string;
+  /** Bold opening line. Photo-story challenges only. */
+  task: string;
+  prompt: string;
+  pointsPerVote: number;
+  closesAt: string;
+  photo: File | null;
+  /** Most Likely only — the question card. */
+  label: string;
+  question: string;
+  hint: string;
+};
+
+/**
+ * Publishes a caption challenge to the feed.
+ *
+ * Sent as multipart because the picture is the post — a caption challenge
+ * without one is nothing to caption.
+ */
+export function publishCaptionChallenge(input: CaptionChallengeInput) {
+  const form = new FormData();
+  form.append('type', input.type);
+  form.append('removeMedia', 'false');
+  form.append(
+    'body',
+    JSON.stringify({
+      title: input.title,
+      task: input.task,
+      prompt: input.prompt,
+      pointsPerVote: input.pointsPerVote,
+      closesAt: input.closesAt,
+      label: input.label,
+      question: input.question,
+      hint: input.hint,
+    }),
+  );
+  if (input.photo) form.append('media', input.photo);
+  return apiUpload<{ post: EngagementPostDTO }>('/connect/posts', form);
+}
+
+/** Engagement posts already in the feed, newest first. */
+export async function getEngagementPosts(): Promise<EngagementPostDTO[]> {
+  const data = await api<{ posts: EngagementPostDTO[] }>('/connect/feed');
+  return (data.posts ?? []).filter(
+    (post) =>
+      post.type === 'caption_challenge' ||
+      post.type === 'photo_story_challenge' ||
+      post.type === 'most_likely',
+  );
+}
+
+export function deleteEngagementPost(postId: string) {
+  return api<void>(`/connect/posts/${postId}`, { method: 'DELETE' });
+}
