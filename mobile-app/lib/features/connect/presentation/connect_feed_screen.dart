@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../shared/image_crop_sheet.dart';
+import 'contest_composer.dart';
 import '../../shared/image_source_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -2815,6 +2816,36 @@ class _ChallengePoints extends StatelessWidget {
   }
 }
 
+/// Shown where the entry box would be once a challenge has closed.
+class _ChallengeClosedNote extends StatelessWidget {
+  const _ChallengeClosedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _CaptionColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _CaptionColors.border, width: 1.114),
+      ),
+      child: const Text(
+        'This challenge has closed. You can still like and comment.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: _soraFont,
+          fontSize: 12,
+          height: 16.2 / 12,
+          fontWeight: FontWeight.w400,
+          letterSpacing: -0.16,
+          color: _CaptionColors.inkTertiary,
+        ),
+      ),
+    );
+  }
+}
+
 /// The poster's face on a challenge they made themselves, sized to sit where
 /// the Sowaka mark otherwise would.
 class _ChallengeAuthorAvatar extends StatelessWidget {
@@ -3067,7 +3098,14 @@ class _MostLikelyBodyState extends State<_MostLikelyBody> {
               const SizedBox(height: 16),
               _questionCard(post),
               const SizedBox(height: 10),
-              if (tagged == null) _searchField() else _taggedRow(tagged),
+              // Closed: the tags stand as they are. The leaderboard is still
+              // there to read, and likes and comments still work.
+              if (post.challengeClosed)
+                const _ChallengeClosedNote()
+              else if (tagged == null)
+                _searchField()
+              else
+                _taggedRow(tagged),
             ],
           ),
         ),
@@ -3607,6 +3645,7 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
     final post = widget.post;
     final entries = post.captionEntries;
     final alreadyCaptioned = post.myCaptionEntryId != null;
+    final closed = post.challengeClosed;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3628,10 +3667,15 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
                 const SizedBox(height: 12),
                 _pageIndicator(entries.length),
               ],
+              // Closed: the result stands, so the whole entry block goes. A
+              // closing line under the card already says why, and a disabled
+              // box repeating it would be clutter over a finished game.
+              if (closed)
+                const _ChallengeClosedNote()
               // The input goes once you have captioned: there is nothing left
               // to type, and a disabled box explaining that is just clutter
               // above your own entry, which already carries the Delete action.
-              if (!alreadyCaptioned) ...[
+              else if (!alreadyCaptioned) ...[
                 const SizedBox(height: 4),
                 const Text(
                   'Your entry',
@@ -3915,23 +3959,36 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
                 ),
               ),
               const SizedBox(width: 8),
+              // Once closed, the only thing left to say about an entry is how
+              // it did: the vote count beside it already does that, and Delete
+              // would take points back off whoever earned them. Your own entry
+              // reads "Yours" so the card still tells you which one it is.
+              if (widget.post.challengeClosed)
+                _captionAction(
+                  label: entry.isMine
+                      ? 'Yours'
+                      : (entry.votedByViewer ? 'Voted' : 'Closed'),
+                  filled: false,
+                  onTap: null,
+                )
               // Your own caption offers Delete instead of Vote — you cannot
               // vote for yourself, and deleting is the only way to rewrite.
-              entry.isMine
-                  ? _captionAction(
-                      label: 'Delete',
-                      filled: false,
-                      onTap: widget.onDeleteCaption == null
-                          ? null
-                          : () => _confirmDelete(context),
-                    )
-                  : _captionAction(
-                      label: entry.votedByViewer ? 'Voted' : 'Vote',
-                      filled: !entry.votedByViewer,
-                      onTap: widget.onVoteCaption == null
-                          ? null
-                          : () => widget.onVoteCaption!(entry.id),
-                    ),
+              else if (entry.isMine)
+                _captionAction(
+                  label: 'Delete',
+                  filled: false,
+                  onTap: widget.onDeleteCaption == null
+                      ? null
+                      : () => _confirmDelete(context),
+                )
+              else
+                _captionAction(
+                  label: entry.votedByViewer ? 'Voted' : 'Vote',
+                  filled: !entry.votedByViewer,
+                  onTap: widget.onVoteCaption == null
+                      ? null
+                      : () => widget.onVoteCaption!(entry.id),
+                ),
             ],
           ),
         ],
@@ -3952,7 +4009,10 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
         decoration: BoxDecoration(
           color: filled ? _CaptionColors.brand : Colors.white,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _CaptionColors.brand, width: 1.129),
+          border: Border.all(
+            color: onTap == null ? _CaptionColors.border : _CaptionColors.brand,
+            width: 1.129,
+          ),
         ),
         child: Text(
           label,
@@ -3962,7 +4022,11 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
             height: 16.2 / 12,
             fontWeight: FontWeight.w600,
             letterSpacing: -0.16,
-            color: filled ? Colors.white : _CaptionColors.brand,
+            color: filled
+                ? Colors.white
+                : (onTap == null
+                      ? _CaptionColors.inkTertiary
+                      : _CaptionColors.brand),
           ),
         ),
       ),
@@ -5463,6 +5527,29 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   /// A type chip was tapped. Media is composed right here; every other type
   /// has its own dedicated composer, so hand off to it and leave this screen
   /// behind — the flows themselves are unchanged.
+  /// Opens the contest screen, and posts what it hands back.
+  Future<void> _startContest() async {
+    final result = await Navigator.of(context).push<ContestDraft>(
+      MaterialPageRoute(builder: (_) => const ContestComposerPage()),
+    );
+    if (!mounted || result == null) return;
+    final photo = result.photoPath;
+    final draft = photo == null
+        ? result.draft
+        : ConnectPostDraft(
+            type: result.draft.type,
+            body: result.draft.body,
+            media: ConnectMediaAttachment(
+              path: photo,
+              name: photo.split(Platform.pathSeparator).last,
+              size: await File(photo).length(),
+              mimeType: 'image/jpeg',
+            ),
+          );
+    if (!mounted) return;
+    Navigator.of(context).pop(_QuickPostResult.draft(draft));
+  }
+
   Future<void> _chooseType(ConnectPostType type) async {
     if (type == ConnectPostType.newPost) {
       await _addMedia();
@@ -5617,6 +5704,13 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               label: 'Recommend',
               asset: 'assets/icons/post_type_recommend.png',
               onTap: () => _chooseType(ConnectPostType.recommendation),
+            ),
+            // Contests have their own screen rather than a composer body:
+            // the format is chosen first and decides which fields follow.
+            _PostTypeChip(
+              label: 'Contest',
+              asset: 'assets/icons/post_type_kudos.png',
+              onTap: _startContest,
             ),
             // Not among the design's four chips, but announcements are
             // admin-only and this row is now the only way to reach them.
