@@ -3,11 +3,11 @@ import {
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
-  type ServerSideEncryption,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
+import { s3EncryptionParams } from '../utils/s3-encryption.util';
 import { stablePresignDate } from '../utils/presign.util';
 
 type ReceiptFile = {
@@ -22,7 +22,6 @@ let client: S3Client | undefined;
 export async function uploadReimbursementReceipt(userId: string, file: ReceiptFile) {
   validateConfiguration();
   const objectKey = buildObjectKey(userId, file.originalName);
-  const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
   await getClient().send(
     new PutObjectCommand({
       Bucket: env.s3.bucket,
@@ -30,8 +29,7 @@ export async function uploadReimbursementReceipt(userId: string, file: ReceiptFi
       Body: file.bytes,
       ContentType: file.contentType,
       ContentLength: file.size,
-      ServerSideEncryption: encryption,
-      ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
+      ...s3EncryptionParams(),
     }),
   );
   return { objectKey, contentType: file.contentType, size: file.size };
@@ -48,7 +46,6 @@ export async function uploadLeaveDocument(userId: string, file: ReceiptFile) {
     /^([^/]*\/)?/,
     (prefix) => `${prefix}leave/`,
   );
-  const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
   await getClient().send(
     new PutObjectCommand({
       Bucket: env.s3.bucket,
@@ -56,8 +53,7 @@ export async function uploadLeaveDocument(userId: string, file: ReceiptFile) {
       Body: file.bytes,
       ContentType: file.contentType,
       ContentLength: file.size,
-      ServerSideEncryption: encryption,
-      ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
+      ...s3EncryptionParams(),
     }),
   );
   return { objectKey, contentType: file.contentType, size: file.size };

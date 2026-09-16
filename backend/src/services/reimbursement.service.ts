@@ -231,8 +231,14 @@ async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: U
     category: claim.category,
     receiptName: claim.receiptName,
     hasReceipt: Boolean(claim.receiptObjectKey),
+    // A receipt that will not sign — a key removed from the bucket, an
+    // environment without S3 — costs that one claim its download link, not the
+    // whole list its response. Leave documents already work this way.
     receiptUrl: claim.receiptObjectKey
-      ? await presignReceiptDownload(claim.receiptObjectKey, claim.receiptName ?? 'receipt')
+      ? await presignReceiptDownload(
+          claim.receiptObjectKey,
+          claim.receiptName ?? 'receipt',
+        ).catch(() => undefined)
       : undefined,
     note: claim.note,
     managerNote: claim.managerNote,

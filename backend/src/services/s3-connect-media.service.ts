@@ -3,11 +3,11 @@ import {
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
-  type ServerSideEncryption,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
+import { s3EncryptionParams } from '../utils/s3-encryption.util';
 import { stablePresignDate } from '../utils/presign.util';
 import { connectMedia } from '../config/db';
 
@@ -25,7 +25,6 @@ export async function uploadConnectMedia(userId: string, file: ConnectMediaFile)
   try {
     validateConfiguration();
     const objectKey = buildObjectKey(userId, file.originalName);
-    const encryption = env.s3.serverSideEncryption as ServerSideEncryption;
     await getClient().send(
       new PutObjectCommand({
         Bucket: env.s3.bucket,
@@ -33,8 +32,7 @@ export async function uploadConnectMedia(userId: string, file: ConnectMediaFile)
         Body: file.bytes,
         ContentType: file.contentType,
         ContentLength: file.size,
-        ServerSideEncryption: encryption,
-        ...(encryption === 'aws:kms' ? { SSEKMSKeyId: env.s3.kmsKeyId } : {}),
+      ...s3EncryptionParams(),
       }),
     );
     return { objectKey, contentType: file.contentType, size: file.size };
