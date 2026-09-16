@@ -11,6 +11,9 @@ enum ConnectPostType {
   liveGame,
   newJoinee,
   recommendation,
+  captionChallenge,
+  photoStoryChallenge,
+  mostLikely,
 }
 
 class ConnectTeammate {
@@ -120,6 +123,9 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.liveGame => 'live_game',
     ConnectPostType.newJoinee => 'new_joinee',
     ConnectPostType.recommendation => 'recommendation',
+    ConnectPostType.captionChallenge => 'caption_challenge',
+    ConnectPostType.photoStoryChallenge => 'photo_story_challenge',
+    ConnectPostType.mostLikely => 'most_likely',
   };
 }
 
@@ -194,6 +200,55 @@ class ConnectPollOption {
   }
 }
 
+/// One person's caption on a challenge, as the viewer sees it.
+class ConnectCaptionEntry {
+  const ConnectCaptionEntry({
+    required this.id,
+    required this.userId,
+    required this.name,
+    required this.initials,
+    required this.text,
+    this.photoUrl,
+    required this.votes,
+    required this.points,
+    required this.votedByViewer,
+    required this.isMine,
+    this.rank,
+  });
+
+  final String id;
+  final String userId;
+  final String name;
+  final String initials;
+  final String text;
+
+  /// The picture on a photo-story entry. Null on a caption entry.
+  final String? photoUrl;
+  final int votes;
+  final int points;
+  final bool votedByViewer;
+  final bool isMine;
+
+  /// Set only on the leaderboard's copy of an entry.
+  final int? rank;
+
+  factory ConnectCaptionEntry.fromJson(Map<String, dynamic> json) {
+    return ConnectCaptionEntry(
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      name: json['name'] as String? ?? 'Teammate',
+      initials: json['initials'] as String? ?? '?',
+      text: json['text'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String?,
+      votes: (json['votes'] as num?)?.toInt() ?? 0,
+      points: (json['points'] as num?)?.toInt() ?? 0,
+      votedByViewer: json['votedByViewer'] as bool? ?? false,
+      isMine: json['isMine'] as bool? ?? false,
+      rank: (json['rank'] as num?)?.toInt(),
+    );
+  }
+}
+
 class ConnectPost {
   const ConnectPost({
     required this.id,
@@ -246,6 +301,22 @@ class ConnectPost {
     return pollOptions.fold(0, (sum, option) => sum + option.votes);
   }
 
+  List<ConnectCaptionEntry> get captionEntries => [
+    for (final value in body['entries'] as List<dynamic>? ?? const [])
+      ConnectCaptionEntry.fromJson(value as Map<String, dynamic>),
+  ];
+
+  List<ConnectCaptionEntry> get captionLeaderboard => [
+    for (final value in body['leaderboard'] as List<dynamic>? ?? const [])
+      ConnectCaptionEntry.fromJson(value as Map<String, dynamic>),
+  ];
+
+  /// Most Likely: the colleague this viewer tagged, if they have.
+  String? get myTaggedUserId => body['myTaggedUserId'] as String?;
+
+  String? get myCaptionEntryId => body['myEntryId'] as String?;
+  String? get myCaptionVoteEntryId => body['myVoteEntryId'] as String?;
+
   factory ConnectPost.fromJson(Map<String, dynamic> json) {
     return ConnectPost(
       id: json['id'] as String? ?? '',
@@ -292,6 +363,9 @@ ConnectPostType _parseType(String? value) {
     'live_game' => ConnectPostType.liveGame,
     'new_joinee' => ConnectPostType.newJoinee,
     'recommendation' => ConnectPostType.recommendation,
+    'caption_challenge' => ConnectPostType.captionChallenge,
+    'photo_story_challenge' => ConnectPostType.photoStoryChallenge,
+    'most_likely' => ConnectPostType.mostLikely,
     _ => ConnectPostType.leadership,
   };
 }

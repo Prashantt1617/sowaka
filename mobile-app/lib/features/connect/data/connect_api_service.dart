@@ -125,6 +125,67 @@ class ConnectApiService {
     return json['alreadyReported'] != true;
   }
 
+  /// Adds this viewer's entry. One each — the server refuses a second.
+  ///
+  /// A caption challenge sends plain JSON; a photo-story challenge sends
+  /// multipart, because the entry carries a picture as well as the words.
+  /// Most Likely sends no words at all — the entry is the colleague tagged.
+  Future<ConnectPost> submitCaption(
+    String postId,
+    String text, {
+    String? photoPath,
+    String? taggedUserId,
+  }) async {
+    if (photoPath == null) {
+      final json = await _request(
+        'POST',
+        '/connect/posts/$postId/captions',
+        body: {
+          'text': text,
+          if (taggedUserId != null) 'taggedUserId': taggedUserId,
+        },
+      );
+      return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+    }
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/connect/posts/$postId/captions'),
+    );
+    request.headers['Authorization'] = 'Bearer ${session.token}';
+    request.fields['text'] = text;
+    if (taggedUserId != null) request.fields['taggedUserId'] = taggedUserId;
+    request.files.add(
+      await http.MultipartFile.fromPath('entryPhoto', photoPath),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    final decoded = _decodeResponse(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return ConnectPost.fromJson(decoded['post'] as Map<String, dynamic>);
+    }
+    throw ConnectApiException(
+      decoded['message'] as String? ?? 'Connect request failed',
+      response.statusCode,
+    );
+  }
+
+  /// Removes this viewer's own caption, and the votes it held with it.
+  Future<ConnectPost> deleteCaption(String postId) async {
+    final json = await _request('DELETE', '/connect/posts/$postId/captions');
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  /// Votes for a caption, or takes the vote back when the same one is sent
+  /// again — the server treats a repeat as a toggle.
+  Future<ConnectPost> voteCaption(String postId, String entryId) async {
+    final json = await _request(
+      'POST',
+      '/connect/posts/$postId/captions/vote',
+      body: {'entryId': entryId},
+    );
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
   Future<List<BlockedPerson>> fetchBlocked() async {
     final json = await _request('GET', '/connect/blocks');
     return _blockedFrom(json);

@@ -73,6 +73,9 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    # Flutter's asset globs are not recursive, so the engagement icons
+    # exported from Figma need their own line.
+    - assets/icons/engagement/
     - assets/games/
 
   fonts:
@@ -83,6 +86,12 @@ flutter:
     - family: Anton
       fonts:
         - asset: assets/fonts/anton/Anton-Regular.ttf
+    # Engagement posts are drawn in Sora in Figma, and are set in it here so
+    # they match the design exactly. The rest of the app stays on Plus Jakarta
+    # Sans — this is scoped to those cards on purpose.
+    - family: Sora
+      fonts:
+        - asset: assets/fonts/sora/Sora-Variable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:
