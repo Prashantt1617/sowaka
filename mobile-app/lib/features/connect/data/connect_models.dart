@@ -314,6 +314,11 @@ class ConnectPost {
   /// Most Likely: the colleague this viewer tagged, if they have.
   String? get myTaggedUserId => body['myTaggedUserId'] as String?;
 
+  /// A challenge past its closing time. It still takes likes and comments —
+  /// it is a post like any other — but nothing that would change the result:
+  /// no new entries, no withdrawing one, no votes.
+  bool get challengeClosed => body['closed'] == true;
+
   String? get myCaptionEntryId => body['myEntryId'] as String?;
   String? get myCaptionVoteEntryId => body['myVoteEntryId'] as String?;
 

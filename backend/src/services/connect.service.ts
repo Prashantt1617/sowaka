@@ -254,13 +254,23 @@ export async function toggleConnectCommentReaction(
  * time stays open.
  */
 function assertChallengeOpen(post: ConnectPost) {
-  const closesAt = String(post.body.closesAt ?? '').trim();
-  if (!closesAt) return;
-  const when = new Date(closesAt);
-  if (Number.isNaN(when.getTime())) return;
-  if (Date.now() > when.getTime()) {
+  if (challengeHasClosed(post)) {
     throw new ConnectError(409, 'This challenge has closed');
   }
+}
+
+/**
+ * Whether a challenge's closing time has passed.
+ *
+ * A post with no closing time, or with the free text these used to carry,
+ * never closes — there is no moment to compare against.
+ */
+function challengeHasClosed(post: ConnectPost): boolean {
+  const closesAt = String(post.body.closesAt ?? '').trim();
+  if (!closesAt) return false;
+  const when = new Date(closesAt);
+  if (Number.isNaN(when.getTime())) return false;
+  return Date.now() > when.getTime();
 }
 
 export async function addCaptionEntry(
@@ -364,6 +374,10 @@ export async function removeCaptionEntry(viewerUserId: string, postId: string) {
   if (!isChallenge(post.type)) {
     throw new ConnectError(400, 'That post does not take entries');
   }
+  // A closed challenge is a finished one. Withdrawing an entry now would take
+  // points back off whoever the votes had already earned them for, and move a
+  // leaderboard nobody can answer any more.
+  assertChallengeOpen(post);
   const mine = (post.captionEntries ?? []).find((entry) => entry.userId === viewerUserId);
   if (!mine) throw new ConnectError(404, 'You have not captioned this yet');
 
@@ -739,10 +753,50 @@ export async function updateConnectPost(
 
 export async function deleteConnectPost(viewerUserId: string, postId: string) {
   const { post } = await requireEditablePost(viewerUserId, postId);
+  // A challenge that ran its course has paid out: people played, they earned,
+  // and pulling the post down afterwards does not unearn it. One taken down
+  // while it was still running never finished, so what it paid comes back —
+  // otherwise posting a challenge and deleting it would be a way to hand out
+  // points with nothing to show for them.
+  if (isChallenge(post.type) && !challengeHasClosed(post)) {
+    await reverseChallengePoints(post);
+  }
   await connectPosts().deleteOne({ id: post.id });
   await deleteConnectMediaByKeys(mediaObjectKeys(post.body));
   announceChange(post, 'deleted', viewerUserId);
   return { id: post.id };
+}
+
+/**
+ * Takes back every point a challenge paid out, in one write per person.
+ *
+ * An entry earns a point per vote it drew, and a Most Likely tag earns one for
+ * the colleague named on top of that. Both go to the same person, so they come
+ * back together.
+ */
+async function reverseChallengePoints(post: ConnectPost) {
+  const entries = post.captionEntries ?? [];
+  if (entries.length === 0) return;
+  const pointsPerVote = normalizePoints(post.body.pointsPerVote);
+  const votes = Object.values(post.captionVotes ?? {});
+
+  const owed = new Map<string, number>();
+  for (const entry of entries) {
+    const votesFor = votes.filter((entryId) => entryId === entry.id).length;
+    const earned =
+      votesFor * pointsPerVote + (entry.taggedUserId ? pointsPerVote : 0);
+    if (earned === 0) continue;
+    const userId = pointsRecipient(entry);
+    owed.set(userId, (owed.get(userId) ?? 0) + earned);
+  }
+  if (owed.size === 0) return;
+
+  await users().bulkWrite(
+    [...owed.entries()].map(([userId, points]) => ({
+      updateOne: { filter: { userId }, update: { $inc: { points: -points } } },
+    })),
+    { ordered: false },
+  );
 }
 
 /**
@@ -882,6 +936,9 @@ async function viewPost(
     );
     body.entries = entries;
     body.entryCount = entries.length;
+    // Closed challenges still take likes and comments — they are a post like
+    // any other. What freezes is everything that would change the result.
+    body.closed = challengeHasClosed(post);
     if (post.type === 'most_likely') {
       // Here the board ranks the people who were named, not the people who
       // did the naming — one row per colleague, counting their tags.
