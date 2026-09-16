@@ -5782,18 +5782,6 @@ class _HomeAttendanceCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (needsCorrection) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Attendance correction required for few dates. Please regularize to avoid loss of pay.',
-                style: TextStyle(
-                  color: Color(0xFFFF383C),
-                  fontSize: 12.5,
-                  height: 1.4,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ],
         ),
       ),
