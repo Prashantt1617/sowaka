@@ -33,6 +33,18 @@ export class ConnectError extends Error {
 const ANNOUNCEMENT_POST_TYPES: ConnectPostType[] = ['leadership', 'hr_announcement'];
 
 /**
+ * The engagement formats people enter and vote on. They share one entry list,
+ * one vote map and one leaderboard — a photo-story entry is a caption entry
+ * that also carries a picture.
+ */
+const CHALLENGE_POST_TYPES: ConnectPostType[] = [
+  'caption_challenge',
+  'photo_story_challenge',
+  'most_likely',
+];
+const isChallenge = (type: ConnectPostType) => CHALLENGE_POST_TYPES.includes(type);
+
+/**
  * Tells every other client in the post's audience that it changed. Fire-and-
  * forget: a realtime hiccup must never fail the write that already succeeded.
  */
@@ -55,7 +67,6 @@ export async function getConnectFeed(viewerUserId: string) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   const org = orgForUser(viewer);
-  await ensureDefaultConnectPosts(org);
 
   // Blocking is a personal mute: a blocked colleague's own posts drop out of
   // this viewer's feed. Official announcements are exempt — an employee who
@@ -208,6 +219,206 @@ export async function toggleConnectCommentReaction(
     const viewer = await users().findOne({ userId: viewerUserId });
     if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
   }
+  announceChange(post, 'updated', viewerUserId);
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * Adds this person's caption to a challenge.
+ *
+ * One each, and deliberately not editable. A caption that is already up may
+ * have been voted on, and rewriting it underneath those votes would change
+ * what people endorsed after the fact. Changing your mind means deleting and
+ * posting again — which gives up the votes along with the caption, and the
+ * points they earned.
+ */
+export async function addCaptionEntry(
+  viewerUserId: string,
+  postId: string,
+  textInput: string,
+  photo?: ConnectMediaFile,
+  taggedUserId?: string,
+) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (!isChallenge(post.type)) {
+    throw new ConnectError(400, 'That post does not take entries');
+  }
+  const viewer = await users().findOne({ userId: viewerUserId });
+  if (!viewer) throw new ConnectError(404, 'User not found');
+  if ((post.captionEntries ?? []).some((entry) => entry.userId === viewerUserId)) {
+    throw new ConnectError(
+      409,
+      post.type === 'most_likely'
+        ? 'You have already tagged someone. Remove your tag to pick again.'
+        : 'You have already entered this. Delete your entry to write a new one.',
+    );
+  }
+  // Most Likely is answered by naming someone, so there is nothing to type —
+  // the tag is the whole entry, and the points go to whoever was named.
+  if (post.type === 'most_likely') {
+    const tagged = await users().findOne({ userId: String(taggedUserId ?? '') });
+    if (!tagged) throw new ConnectError(400, 'Tag a colleague first');
+    if (orgForUser(tagged) !== post.org) {
+      throw new ConnectError(400, 'You can only tag someone from your company');
+    }
+    if (tagged.userId === viewerUserId) {
+      throw new ConnectError(400, 'You cannot tag yourself');
+    }
+    const tagEntry = {
+      id: randomUUID(),
+      userId: viewerUserId,
+      name: viewer.name,
+      initials: initialsFor(viewer.name),
+      text: '',
+      taggedUserId: tagged.userId,
+      taggedName: tagged.name,
+      taggedInitials: initialsFor(tagged.name),
+      taggedDesignation: tagged.designation ?? tagged.department ?? '',
+      createdAt: new Date(),
+    };
+    await connectPosts().updateOne(
+      { id: postId },
+      { $push: { captionEntries: tagEntry }, $set: { updatedAt: new Date() } },
+    );
+    await users().updateOne(
+      { userId: tagged.userId },
+      { $inc: { points: normalizePoints(post.body.pointsPerVote) } },
+    );
+    const afterTag = await connectPosts().findOne({ id: postId });
+    announceChange(post, 'updated', viewerUserId);
+    return viewPost(afterTag ?? post, viewerUserId);
+  }
+
+  const limit = Number(post.body.captionLimit ?? 140);
+  const text = textInput.trim().slice(0, limit);
+  if (!text) throw new ConnectError(400, 'Write your entry first');
+  // A photo-story entry is the picture plus the story — one without the other
+  // is not an entry, and the card has nowhere to show it.
+  if (post.type === 'photo_story_challenge' && !photo) {
+    throw new ConnectError(400, 'Add the photo you caught');
+  }
+  if (photo && !photo.contentType.startsWith('image/')) {
+    throw new ConnectError(400, 'Entries must be a photo');
+  }
+
+  const uploaded = photo ? await storeConnectMediaMany(viewerUserId, [photo]) : [];
+  const entry = {
+    id: randomUUID(),
+    userId: viewerUserId,
+    name: viewer.name,
+    initials: initialsFor(viewer.name),
+    text,
+    ...(uploaded.length ? { photoObjectKey: uploaded[0].objectKey } : {}),
+    createdAt: new Date(),
+  };
+  await connectPosts().updateOne(
+    { id: postId },
+    { $push: { captionEntries: entry }, $set: { updatedAt: new Date() } },
+  );
+  const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * Removes this person's own caption, and with it every vote it held.
+ *
+ * The points those votes paid are taken back at the same time: a balance that
+ * survived the caption it was earned on would let someone farm votes and then
+ * delete the evidence.
+ */
+export async function removeCaptionEntry(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (!isChallenge(post.type)) {
+    throw new ConnectError(400, 'That post does not take entries');
+  }
+  const mine = (post.captionEntries ?? []).find((entry) => entry.userId === viewerUserId);
+  if (!mine) throw new ConnectError(404, 'You have not captioned this yet');
+
+  const votes = post.captionVotes ?? {};
+  const votesLost = Object.values(votes).filter((entryId) => entryId === mine.id).length;
+  const pointsPerVote = normalizePoints(post.body.pointsPerVote);
+  // Every voter who backed this caption is released, so their one vote is
+  // free to go elsewhere rather than being spent on something that is gone.
+  const voterIds = Object.entries(votes)
+    .filter(([, entryId]) => entryId === mine.id)
+    .map(([voterId]) => voterId);
+
+  await connectPosts().updateOne(
+    { id: postId },
+    {
+      $pull: { captionEntries: { id: mine.id } },
+      $unset: Object.fromEntries(voterIds.map((id) => [`captionVotes.${id}`, true])),
+      $set: { updatedAt: new Date() },
+    },
+  );
+  // A photo-story entry takes its picture with it rather than leaving it
+  // orphaned in the bucket.
+  if (mine.photoObjectKey) {
+    await deleteConnectMediaByKeys([mine.photoObjectKey]);
+  }
+  if (votesLost > 0) {
+    await users().updateOne(
+      { userId: viewerUserId },
+      { $inc: { points: -(votesLost * pointsPerVote) } },
+    );
+  }
+  // A Most Likely entry paid its point to the person who was named, so
+  // withdrawing the tag takes it back from them.
+  if (mine.taggedUserId) {
+    await users().updateOne(
+      { userId: mine.taggedUserId },
+      { $inc: { points: -pointsPerVote } },
+    );
+  }
+  const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * One vote each, changeable — voting again moves it rather than adding one.
+ * Voting for your own caption is refused, and the points follow the vote so a
+ * moved vote pays the new author and takes it back from the old one.
+ */
+export async function voteOnCaptionEntry(
+  viewerUserId: string,
+  postId: string,
+  entryId: string,
+) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (!isChallenge(post.type)) {
+    throw new ConnectError(400, 'That post does not take entries');
+  }
+  const entry = (post.captionEntries ?? []).find((item) => item.id === entryId);
+  if (!entry) throw new ConnectError(404, 'Caption not found');
+  if (entry.userId === viewerUserId) {
+    throw new ConnectError(400, 'You cannot vote for your own caption');
+  }
+  const pointsPerVote = normalizePoints(post.body.pointsPerVote);
+  const previousEntryId = post.captionVotes?.[viewerUserId];
+  const previous = previousEntryId
+    ? (post.captionEntries ?? []).find((item) => item.id === previousEntryId)
+    : undefined;
+
+  if (previousEntryId === entryId) {
+    // Tapping the caption you already backed takes the vote back.
+    await connectPosts().updateOne(
+      { id: postId },
+      { $unset: { [`captionVotes.${viewerUserId}`]: true }, $set: { updatedAt: new Date() } },
+    );
+    await users().updateOne({ userId: entry.userId }, { $inc: { points: -pointsPerVote } });
+  } else {
+    await connectPosts().updateOne(
+      { id: postId },
+      { $set: { [`captionVotes.${viewerUserId}`]: entryId, updatedAt: new Date() } },
+    );
+    await users().updateOne({ userId: entry.userId }, { $inc: { points: pointsPerVote } });
+    if (previous) {
+      await users().updateOne({ userId: previous.userId }, { $inc: { points: -pointsPerVote } });
+    }
+  }
+  const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -513,6 +724,84 @@ async function viewPost(
     const baseCount = typeof body.baseCount === 'number' ? body.baseCount : 0;
     body.registeredCount = baseCount + Object.keys(post.actionBy ?? {}).length;
   }
+  if (isChallenge(post.type)) {
+    const votes = post.captionVotes ?? {};
+    const tally = new Map<string, number>();
+    for (const entryId of Object.values(votes)) {
+      tally.set(entryId, (tally.get(entryId) ?? 0) + 1);
+    }
+    const pointsPerVote = normalizePoints(body.pointsPerVote);
+    const entries = await Promise.all(
+      (post.captionEntries ?? [])
+        // A blocked colleague's entry goes the way of their posts and comments.
+        .filter((entry) => !blockedUserIds.includes(entry.userId))
+        .map(async (entry) => {
+          const votesFor = tally.get(entry.id) ?? 0;
+          return {
+            id: entry.id,
+            userId: entry.userId,
+            name: entry.name,
+            initials: entry.initials,
+            text: entry.text,
+            photoUrl: entry.photoObjectKey
+              ? await presignConnectMedia(entry.photoObjectKey).catch(() => undefined)
+              : undefined,
+            createdAt: entry.createdAt,
+            votes: votesFor,
+            points: votesFor * pointsPerVote,
+            votedByViewer: votes[viewerUserId] === entry.id,
+            isMine: entry.userId === viewerUserId,
+          };
+        }),
+    );
+    body.entries = entries;
+    body.entryCount = entries.length;
+    if (post.type === 'most_likely') {
+      // Here the board ranks the people who were named, not the people who
+      // did the naming — one row per colleague, counting their tags.
+      const tally = new Map<
+        string,
+        { userId: string; name: string; initials: string; designation: string; votes: number }
+      >();
+      for (const entry of post.captionEntries ?? []) {
+        if (!entry.taggedUserId) continue;
+        const row = tally.get(entry.taggedUserId) ?? {
+          userId: entry.taggedUserId,
+          name: entry.taggedName ?? 'Teammate',
+          initials: entry.taggedInitials ?? '?',
+          designation: entry.taggedDesignation ?? '',
+          votes: 0,
+        };
+        row.votes += 1;
+        tally.set(entry.taggedUserId, row);
+      }
+      body.leaderboard = [...tally.values()]
+        .sort((a, b) => b.votes - a.votes)
+        .map((row, index) => ({
+          ...row,
+          id: row.userId,
+          text: row.designation,
+          points: row.votes * pointsPerVote,
+          rank: index + 1,
+          isMine: row.userId === viewerUserId,
+          votedByViewer: false,
+        }));
+      body.myTaggedUserId =
+        (post.captionEntries ?? []).find((entry) => entry.userId === viewerUserId)
+          ?.taggedUserId ?? null;
+    }
+    // The card shows entries in the order they were written; the leaderboard
+    // ranks them. Ties keep submission order, so an earlier entry is never
+    // demoted by a later one that drew level. Most Likely has already built
+    // its own board above, ranking the people who were named.
+    if (post.type !== 'most_likely') {
+      body.leaderboard = [...entries]
+        .sort((a, b) => b.votes - a.votes)
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    }
+    body.myEntryId = entries.find((entry) => entry.isMine)?.id ?? null;
+    body.myVoteEntryId = votes[viewerUserId] ?? null;
+  }
   if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
       .find({ gameId: body.gameId, org: post.org })
@@ -629,6 +918,9 @@ function parsePostType(value: string | undefined): ConnectPostType {
     'live_game',
     'new_joinee',
     'recommendation',
+    'caption_challenge',
+    'photo_story_challenge',
+    'most_likely',
   ];
   if (allowed.includes(value as ConnectPostType)) return value as ConnectPostType;
   throw new ConnectError(400, 'Post type is invalid');
@@ -675,6 +967,40 @@ function normalizePostBody(
         linkDomain: normalizeText(input.linkDomain, '', 120),
         // Filled in by `withLinkPreview` after normalization.
         linkImageUrl: normalizeText(input.linkImageUrl, '', 600),
+      };
+    case 'caption_challenge':
+      // Entries and votes are never taken from the client: they are written by
+      // their own endpoints, so editing the brief cannot quietly rewrite who
+      // captioned what or how the voting stands.
+      return {
+        title: normalizeText(input.title, 'Caption this', 80),
+        prompt: normalizeText(input.prompt, '', 300),
+        pointsPerVote: normalizePoints(input.pointsPerVote),
+        closesAt: normalizeText(input.closesAt, '', 60),
+        captionLimit: 140,
+      };
+    case 'photo_story_challenge':
+      // Entries and votes are written by their own endpoints, never taken from
+      // the client, so editing the brief cannot rewrite who caught what.
+      return {
+        title: normalizeText(input.title, 'Caught red handed', 80),
+        task: normalizeText(input.task, '', 200),
+        prompt: normalizeText(input.prompt, '', 300),
+        pointsPerVote: normalizePoints(input.pointsPerVote),
+        closesAt: normalizeText(input.closesAt, '', 60),
+        captionLimit: 200,
+      };
+    case 'most_likely':
+      // The tags themselves are the votes, so nothing here is user-supplied
+      // beyond the question being asked.
+      return {
+        title: normalizeText(input.title, 'Most Likely', 80),
+        label: normalizeText(input.label, '', 40),
+        question: normalizeText(input.question, '', 160),
+        hint: normalizeText(input.hint, '', 120),
+        prompt: normalizeText(input.prompt, '', 300),
+        pointsPerVote: normalizePoints(input.pointsPerVote),
+        closesAt: normalizeText(input.closesAt, '', 60),
       };
     case 'hr_announcement': {
       const requireAcknowledgement = input.requireAcknowledgement === true;
@@ -813,6 +1139,17 @@ function existingPollImageKeys(body: Record<string, unknown>): (string | undefin
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
   const text = typeof value === 'string' ? value.trim() : fallback;
   return (text || fallback).slice(0, maxLength);
+}
+
+/**
+ * What one vote is worth. Bounded rather than free-form: the figure is printed
+ * on the card and paid into a balance, so a typo of 10000 would quietly mint
+ * points nobody can take back.
+ */
+function normalizePoints(value: unknown) {
+  const points = Math.round(Number(value));
+  if (!Number.isFinite(points) || points < 1) return 10;
+  return Math.min(points, 100);
 }
 
 /** Ids of people tagged in a media post. Deduped and capped; names and photos
@@ -965,276 +1302,14 @@ function postMeta(type: ConnectPostType) {
     live_game: ['Live Game', '🎮', '#E0483B', '#FBE2DE'],
     new_joinee: ['New Joinee', '👋', '#C26B8A', '#F5E4EC'],
     recommendation: ['Must Watch/Read', '🎬', '#4F6F8C', '#E4EBF0'],
+    caption_challenge: ['Caption Challenge', '💬', '#6D28D9', '#F3E8FF'],
+    photo_story_challenge: ['Photo Challenge', '📸', '#6D28D9', '#F3E8FF'],
+    most_likely: ['Most Likely', '🫵', '#6D28D9', '#F3E8FF'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };
 }
 
-async function ensureDefaultConnectPosts(org: string) {
-  const existing = await connectPosts().countDocuments({ org });
-  if (existing > 0) return;
-  const now = Date.now();
-  const posts = defaultPosts(org).map((post, index) => ({
-    ...post,
-    publishedAt: new Date(now - index * 1000 * 60 * 60 * 4),
-    createdAt: new Date(now - index * 1000 * 60 * 60 * 4),
-    updatedAt: new Date(now - index * 1000 * 60 * 60 * 4),
-  }));
-  await connectPosts().insertMany(posts);
-}
-
-function defaultPosts(org: string): ConnectPost[] {
-  return [
-    post(
-      org,
-      'leadership',
-      'Leadership',
-      '👑',
-      '#C98A2E',
-      '#F4ECDD',
-      'Vikrant Singh',
-      'V',
-      'Co-founder & CEO',
-      '#BE5A36',
-      'Public',
-      {
-        text: 'We did it, team. Sowaka has been named Best PropTech Company of the Year. This belongs to every single one of you.',
-        mediaKind: 'video',
-        mediaTitle: 'Award ceremony 2026',
-        mediaDuration: '1:24',
-      },
-      342,
-    ),
-    post(
-      org,
-      'hr_announcement',
-      'Announcement',
-      '📣',
-      '#C98A2E',
-      '#F4ECDD',
-      'People & Culture',
-      'HR',
-      'HR & Admin team',
-      '#C98A2E',
-      'Public',
-      {
-        title: 'Heads up!',
-        text: 'There is construction ongoing in the common area. It will not be accessible on 17 June. Please plan accordingly.',
-        severity: 'warning',
-      },
-      48,
-    ),
-    post(
-      org,
-      'birthday',
-      'Birthday',
-      '🎂',
-      '#BE5A36',
-      '#F6E5DB',
-      'Sowaka Connect',
-      'S',
-      'Auto · HRIS',
-      '#C98A2E',
-      'Public',
-      {
-        personName: 'Sneha Sharma',
-        personInitials: 'S',
-        subtitle: 'Product Designer · turns a year wiser today',
-        actionLabel: 'Send wishes',
-        actionDoneLabel: 'Wish sent!',
-      },
-      87,
-    ),
-    post(
-      org,
-      'anniversary',
-      'Anniversary',
-      '🎉',
-      '#4C5840',
-      '#E9EBE0',
-      'Sowaka Connect',
-      'S',
-      'Auto · HRIS',
-      '#4C5840',
-      'Public',
-      {
-        personName: 'Rahul Mehta',
-        personInitials: 'R',
-        years: 3,
-        subtitle: 'Engineering · joined June 2023',
-      },
-      112,
-    ),
-    post(
-      org,
-      'kudos',
-      'Kudos',
-      '👏',
-      '#BE5A36',
-      '#F6E5DB',
-      'Arjun Mehta',
-      'A',
-      'Design Manager',
-      '#4F8C89',
-      'Team',
-      {
-        text: 'Huge shout-out to Prashant for closing the onboarding edge cases before launch. Calm, thorough and very team-first.',
-        personName: 'Prashant Nair',
-        personInitials: 'P',
-      },
-      97,
-    ),
-    post(
-      org,
-      'survey',
-      'Survey/Poll',
-      '📊',
-      '#BE5A36',
-      '#F6E5DB',
-      'People & Culture',
-      'HR',
-      'HR & Admin team',
-      '#C98A2E',
-      'Public',
-      {
-        title: 'What should our next learning session be?',
-        totalVotes: 97,
-        options: [
-          { id: 'fin', label: 'Financial Planning', votes: 14 },
-          { id: 'fit', label: 'Fitness Session', votes: 22 },
-          { id: 'stress', label: 'Stress Management Workshop', votes: 19 },
-          { id: 'ai', label: 'AI Training in My Job', votes: 31 },
-          { id: 'stress2', label: 'Stress Management Session', votes: 11 },
-        ],
-      },
-      54,
-    ),
-    post(
-      org,
-      'event',
-      'Event',
-      '🎟️',
-      '#BE5A36',
-      '#F6E5DB',
-      'People & Culture',
-      'HR',
-      'HR & Admin team',
-      '#BE5A36',
-      'Public',
-      {
-        title: 'Friday Game Night',
-        subtitle: 'Cafeteria · 5:30 PM',
-        actionLabel: 'Register',
-        actionDoneLabel: 'Registered',
-        countLabel: 'registered',
-        baseCount: 15,
-      },
-      63,
-    ),
-    post(
-      org,
-      'live_game',
-      'Live Game',
-      '🎮',
-      '#E0483B',
-      '#FBE2DE',
-      'Sowaka Connect',
-      'G',
-      'Auto · Games',
-      '#4F8C89',
-      'Public',
-      {
-        title: 'Find Your Mate',
-        subtitle: 'Match the clue to the teammate it describes before the timer runs out.',
-        startsAtLabel: 'Starts 5:30 PM',
-        actionLabel: 'Play now',
-        actionDoneLabel: 'Played',
-      },
-      24,
-    ),
-    post(
-      org,
-      'new_joinee',
-      'New Joinee',
-      '👋',
-      '#C26B8A',
-      '#F5E4EC',
-      'Sowaka Connect',
-      'S',
-      'Auto · HRIS',
-      '#C26B8A',
-      'Team',
-      {
-        personName: 'Ishaan Kapoor',
-        personInitials: 'I',
-        subtitle: 'Joining as Product Designer · Team Design',
-        facts: 'Previously Product Designer at Zomato · based in Bengaluru · started 8 July 2026.',
-        managerNote:
-          "Thrilled to have Ishaan join us. He'll be leading design on our onboarding flows.",
-        actionLabel: 'Say hi',
-        actionDoneLabel: 'Said hi!',
-      },
-      64,
-    ),
-    post(
-      org,
-      'recommendation',
-      'Must Watch/Read',
-      '🎬',
-      '#4F6F8C',
-      '#E4EBF0',
-      'Meera Iyer',
-      'M',
-      'Design Lead',
-      '#4F6F8C',
-      'Public',
-      {
-        text: "If you're figuring out how to give feedback that actually lands, this one's worth the 12 minutes.",
-        mediaKind: 'video',
-        mediaTitle: 'The Feedback Fallacy — HBR',
-        mediaDuration: '12:04',
-      },
-      29,
-    ),
-  ];
-}
-
-function post(
-  org: string,
-  type: ConnectPostType,
-  tag: string,
-  tagIcon: string,
-  tagColor: string,
-  tagTint: string,
-  authorName: string,
-  initials: string,
-  designation: string,
-  avatarColor: string,
-  visibilityLabel: string,
-  body: Record<string, unknown>,
-  baseLikes: number,
-  teamId?: string,
-): ConnectPost {
-  return {
-    id: randomUUID(),
-    org,
-    type,
-    tag,
-    tagIcon,
-    tagColor,
-    tagTint,
-    author: { name: authorName, initials, designation, avatarColor },
-    audience: { label: visibilityLabel, org, teamId },
-    body,
-    likedBy: Array.from({ length: baseLikes }, (_, index) => `seed-${type}-${index}`),
-    comments: [],
-    actionBy: {},
-    pollVotes: {},
-    publishedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-}
 
 function defaultActionValue(type: ConnectPostType) {
   return type;

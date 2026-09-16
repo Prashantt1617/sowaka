@@ -10,7 +10,10 @@ export type ConnectPostType =
   | 'event'
   | 'live_game'
   | 'new_joinee'
-  | 'recommendation';
+  | 'recommendation'
+  | 'caption_challenge'
+  | 'photo_story_challenge'
+  | 'most_likely';
 
 export interface ConnectAuthor {
   userId?: string;
@@ -47,6 +50,29 @@ export interface ConnectComment {
   likedBy: string[];
 }
 
+export interface ConnectCaptionEntry {
+  id: string;
+  userId: string;
+  name: string;
+  initials: string;
+  text: string;
+  /**
+   * Set on a photo-story challenge, where the entry is a picture plus the
+   * story behind it. Absent on a caption challenge, which is words only.
+   */
+  photoObjectKey?: string;
+  /**
+   * Set on a Most Likely entry: the colleague this person tagged. Here the
+   * entry *is* the vote — the tag is what counts, and the points go to whoever
+   * was named rather than to whoever named them.
+   */
+  taggedUserId?: string;
+  taggedName?: string;
+  taggedInitials?: string;
+  taggedDesignation?: string;
+  createdAt: Date;
+}
+
 export interface ConnectPost {
   id: string;
   /** Stable idempotency key for lifecycle-generated posts. */
@@ -64,6 +90,16 @@ export interface ConnectPost {
   comments: ConnectComment[];
   actionBy?: Record<string, string>;
   pollVotes?: Record<string, string>;
+  /**
+   * Caption challenge entries. One per person, enforced on write — a caption
+   * cannot be edited once it is up, because it may already have been voted
+   * on and rewriting it underneath those votes would misrepresent what people
+   * voted for. Changing your mind means deleting and posting again, which
+   * gives up the votes along with the caption.
+   */
+  captionEntries?: ConnectCaptionEntry[];
+  /** One vote each, viewer id -> entry id. Voting again moves the vote. */
+  captionVotes?: Record<string, string>;
   publishedAt: Date;
   createdAt: Date;
   updatedAt: Date;
