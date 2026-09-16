@@ -494,16 +494,19 @@ export type EngagementPostDTO = {
 export type CaptionChallengeInput = {
   type: EngagementPostType;
   title: string;
-  /** Bold opening line. Photo-story challenges only. */
+  /**
+   * The whole brief, in one field. This was a bold opening line plus a
+   * paragraph under it, which asked whoever wrote it to split one thought in
+   * two — and the card ran them together anyway.
+   */
   task: string;
-  prompt: string;
   pointsPerVote: number;
+  /** When entries close, as an ISO instant. Empty leaves it open. */
   closesAt: string;
   photo: File | null;
   /** Most Likely only — the question card. */
   label: string;
   question: string;
-  hint: string;
 };
 
 /**
@@ -521,27 +524,30 @@ export function publishCaptionChallenge(input: CaptionChallengeInput) {
     JSON.stringify({
       title: input.title,
       task: input.task,
-      prompt: input.prompt,
       pointsPerVote: input.pointsPerVote,
       closesAt: input.closesAt,
       label: input.label,
       question: input.question,
-      hint: input.hint,
     }),
   );
   if (input.photo) form.append('media', input.photo);
   return apiUpload<{ post: EngagementPostDTO }>('/connect/posts', form);
 }
 
-/** Engagement posts already in the feed, newest first. */
+/**
+ * Engagement posts already in the feed, newest first.
+ *
+ * The server does the narrowing. Asking for the whole feed and filtering here
+ * meant the page of 50 was spent on ordinary posts, so older challenges
+ * dropped off the list entirely once enough of them piled up — and every
+ * photo on those posts was signed just to be discarded.
+ */
 export async function getEngagementPosts(): Promise<EngagementPostDTO[]> {
-  const data = await api<{ posts: EngagementPostDTO[] }>('/connect/feed');
-  return (data.posts ?? []).filter(
-    (post) =>
-      post.type === 'caption_challenge' ||
-      post.type === 'photo_story_challenge' ||
-      post.type === 'most_likely',
+  const types = 'caption_challenge,photo_story_challenge,most_likely';
+  const data = await api<{ posts: EngagementPostDTO[] }>(
+    `/connect/feed?types=${encodeURIComponent(types)}`,
   );
+  return data.posts ?? [];
 }
 
 export function deleteEngagementPost(postId: string) {

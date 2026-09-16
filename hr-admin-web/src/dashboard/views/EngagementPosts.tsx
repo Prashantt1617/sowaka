@@ -22,13 +22,11 @@ const emptyFor = (type: CaptionChallengeInput['type']): CaptionChallengeInput =>
   type,
   title: DEFAULTS[type].title,
   task: DEFAULTS[type].task,
-  prompt: '',
   pointsPerVote: 10,
   closesAt: '',
   photo: null,
   label: '',
   question: '',
-  hint: '',
 });
 
 const field = {
@@ -85,6 +83,10 @@ export function EngagementPosts() {
   const [composing, setComposing] = useState(false);
   const [form, setForm] = useState<CaptionChallengeInput>(emptyFor('caption_challenge'));
   const [preview, setPreview] = useState<string | null>(null);
+  // Held as two fields because that is how a date and a time are picked, and
+  // joined into the single instant the API stores.
+  const [closesDate, setClosesDate] = useState('');
+  const [closesTime, setClosesTime] = useState('');
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -113,6 +115,8 @@ export function EngagementPosts() {
     setComposing(false);
     setForm(emptyFor('caption_challenge'));
     setPreview(null);
+    setClosesDate('');
+    setClosesTime('');
     if (fileInput.current) fileInput.current.value = '';
   };
 
@@ -128,13 +132,30 @@ export function EngagementPosts() {
       flash('Write the question people are tagging someone for');
       return;
     }
-    if (!isMostLikely && !form.prompt.trim()) {
-      flash('Write a line of context for the picture');
+    if (!isMostLikely && !form.task.trim()) {
+      flash('Describe what people are being asked to do');
+      return;
+    }
+    if (closesDate && !closesTime) {
+      flash('Pick a time for the closing date');
+      return;
+    }
+    if (closesTime && !closesDate) {
+      flash('Pick a date for the closing time');
+      return;
+    }
+    // Local wall-clock, sent as an instant — whoever is reading the card sees
+    // it in their own zone.
+    const closesAt = closesDate
+      ? new Date(`${closesDate}T${closesTime}`).toISOString()
+      : '';
+    if (closesDate && Number.isNaN(Date.parse(closesAt))) {
+      flash('That closing date is not valid');
       return;
     }
     setBusy(true);
     try {
-      await publishCaptionChallenge(form);
+      await publishCaptionChallenge({ ...form, closesAt });
       close();
       await load();
       flash(`${FORMATS.find((f) => f.key === form.type)?.name} published to Connect`);
@@ -238,14 +259,14 @@ export function EngagementPosts() {
             </div>
           </div>
 
-          {form.type === 'photo_story_challenge' && (
+          {!isMostLikely && (
             <div style={{ marginTop: 14 }}>
-              <label style={label}>Task line (bold)</label>
-              <input
-                style={field}
+              <label style={label}>Task</label>
+              <textarea
+                style={{ ...field, minHeight: 88, resize: 'vertical' }}
                 value={form.task}
                 onChange={(e) => set('task', e.target.value)}
-                placeholder="Today's task: catch the grumpiest face in the office."
+                placeholder="What should be the description of the contest?"
               />
             </div>
           )}
@@ -270,45 +291,35 @@ export function EngagementPosts() {
                   placeholder="Who is most likely to eat your lunch?"
                 />
               </div>
-              <div style={{ marginTop: 14 }}>
-                <label style={label}>Nudge under the question</label>
-                <input
-                  style={field}
-                  value={form.hint}
-                  onChange={(e) => set('hint', e.target.value)}
-                  placeholder="Someone came to your mind immediately, tag them."
-                />
+              <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 8 }}>
+                The lines around the question — &ldquo;Tag a colleague who is
+                most likely to relate with the question.&rdquo; and
+                &ldquo;Someone came to your mind immediately, tag them.&rdquo; —
+                are the same on every Most Likely post and are written by the
+                card itself.
               </div>
             </>
           )}
 
           <div style={{ marginTop: 14 }}>
-            <label style={label}>
-              {isMostLikely ? 'Line above the question' : 'Context line'}
-            </label>
-            <input
-              style={field}
-              value={form.prompt}
-              onChange={(e) => set('prompt', e.target.value)}
-              placeholder={
-                isMostLikely
-                  ? 'Tag a colleague who is most likely to relate with the question.'
-                  : 'When the meeting could have been an email. Got a better caption?'
-              }
-            />
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <label style={label}>Closing line</label>
-            <input
-              style={field}
-              value={form.closesAt}
-              onChange={(e) => set('closesAt', e.target.value)}
-              placeholder="Closes Friday, 5 pm"
-            />
+            <label style={label}>End on</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input
+                style={field}
+                type="date"
+                value={closesDate}
+                onChange={(e) => setClosesDate(e.target.value)}
+              />
+              <input
+                style={field}
+                type="time"
+                value={closesTime}
+                onChange={(e) => setClosesTime(e.target.value)}
+              />
+            </div>
             <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5 }}>
-              Shown on the card as written. Nothing closes automatically yet —
-              captions and votes stay open until the post is deleted.
+              Entries and votes are refused after this. Leave both empty to
+              keep the challenge open until you delete it.
             </div>
           </div>
 
@@ -410,11 +421,16 @@ export function EngagementPosts() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {String(post.body.prompt ?? '')}
+                  {String(post.body.task ?? post.body.question ?? '')}
                 </div>
                 <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>
                   {entries} {entries === 1 ? 'entry' : 'entries'}
-                  {post.body.closesAt ? ` · ${String(post.body.closesAt)}` : ''}
+                  {post.body.closesAt
+                    ? ` · closes ${new Date(String(post.body.closesAt)).toLocaleString(
+                        undefined,
+                        { dateStyle: 'medium', timeStyle: 'short' },
+                      )}`
+                    : ''}
                 </div>
               </div>
               <button

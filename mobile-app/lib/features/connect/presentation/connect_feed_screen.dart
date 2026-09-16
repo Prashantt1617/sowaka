@@ -2624,6 +2624,37 @@ class _SurveyBody extends StatelessWidget {
 /// the rest of the app stays on Plus Jakarta Sans.
 const String _soraFont = 'Sora';
 
+/// The two lines that frame every Most Likely question. They say what the
+/// format asks of you, which never changes from post to post, so the card
+/// carries them rather than asking whoever wrote the question to retype them.
+const String _mostLikelyPrompt =
+    'Tag a colleague who is most likely to relate with the question.';
+const String _mostLikelyHint =
+    'Someone came to your mind immediately, tag them.';
+
+/// "Closes Friday, 5 pm" from the stored instant, in the reader's own zone.
+/// Empty when the challenge has no closing time.
+String _closesLabel(ConnectPost post) {
+  final raw = _bodyString(post, 'closesAt');
+  if (raw.isEmpty) return '';
+  final when = DateTime.tryParse(raw)?.toLocal();
+  if (when == null) return raw;
+  final hour = when.hour % 12 == 0 ? 12 : when.hour % 12;
+  final minute = when.minute.toString().padLeft(2, '0');
+  final meridiem = when.hour < 12 ? 'am' : 'pm';
+  return 'Closes ${_closesWeekdays[when.weekday - 1]}, $hour:$minute $meridiem';
+}
+
+const _closesWeekdays = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
+
 /// The picture an entry sits on, once a challenge has entries: a rounded
 /// plate narrower than the card, with the entry card overhanging it on both
 /// sides (node 2271:29757).
@@ -2677,6 +2708,7 @@ class _ChallengeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final official = post.body['official'] != false;
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
       decoration: const BoxDecoration(
@@ -2686,22 +2718,30 @@ class _ChallengeHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          ClipOval(
-            child: Image.asset(
-              'assets/images/sowaka_logo.png',
-              width: 47.996,
-              height: 47.996,
-              fit: BoxFit.cover,
-            ),
-          ),
+          // A challenge HR publishes speaks for the company and carries its
+          // mark; one a colleague posts is theirs, so it carries their face
+          // and their name. The server decides which from who posted it.
+          if (official)
+            ClipOval(
+              child: Image.asset(
+                'assets/images/sowaka_logo.png',
+                width: 47.996,
+                height: 47.996,
+                fit: BoxFit.cover,
+              ),
+            )
+          else
+            _ChallengeAuthorAvatar(author: post.author),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Sowaka Engagement',
-                  style: TextStyle(
+                Text(
+                  official ? 'Sowaka Engagement' : post.author.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontFamily: _soraFont,
                     fontSize: 16,
                     height: 24 / 16,
@@ -2770,6 +2810,51 @@ class _ChallengePoints extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The poster's face on a challenge they made themselves, sized to sit where
+/// the Sowaka mark otherwise would.
+class _ChallengeAuthorAvatar extends StatelessWidget {
+  const _ChallengeAuthorAvatar({required this.author});
+
+  final ConnectAuthor author;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = author.photoUrl ?? '';
+    if (photo.isNotEmpty) {
+      return ClipOval(
+        child: Image(
+          image: _remoteImage(photo),
+          width: 47.996,
+          height: 47.996,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return Container(
+      width: 47.996,
+      height: 47.996,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: const Alignment(-0.72, -0.69),
+          end: const Alignment(0.72, 0.69),
+          colors: _avatarGradientFor(author.userId),
+        ),
+      ),
+      child: Text(
+        author.initials.isEmpty ? '?' : author.initials.characters.first,
+        style: const TextStyle(
+          fontFamily: _soraFont,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
       ),
     );
   }
@@ -2991,23 +3076,21 @@ class _MostLikelyBodyState extends State<_MostLikelyBody> {
   }
 
   Widget _brief(ConnectPost post) {
-    final prompt = _bodyString(post, 'prompt');
-    final closes = _bodyString(post, 'closesAt');
+    final closes = _closesLabel(post);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (prompt.isNotEmpty)
-          Text(
-            prompt,
-            style: const TextStyle(
-              fontFamily: _soraFont,
-              fontSize: 12,
-              height: 16.2 / 12,
-              fontWeight: FontWeight.w400,
-              letterSpacing: -0.16,
-              color: _CaptionColors.inkSecondary,
-            ),
+        const Text(
+          _mostLikelyPrompt,
+          style: TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 12,
+            height: 16.2 / 12,
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.16,
+            color: _CaptionColors.inkSecondary,
           ),
+        ),
         if (closes.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
@@ -3030,7 +3113,7 @@ class _MostLikelyBodyState extends State<_MostLikelyBody> {
   Widget _questionCard(ConnectPost post) {
     final label = _bodyString(post, 'label');
     final question = _bodyString(post, 'question');
-    final hint = _bodyString(post, 'hint');
+    const hint = _mostLikelyHint;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -3583,28 +3666,14 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
       _ChallengeTitleRow(post: post, fallbackTitle: 'Caption this');
 
   Widget _brief(ConnectPost post) {
-    final prompt = _bodyString(post, 'prompt');
-    final closes = _bodyString(post, 'closesAt');
+    final task = _bodyString(post, 'task');
+    final closes = _closesLabel(post);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_bodyString(post, 'task').isNotEmpty) ...[
+        if (task.isNotEmpty)
           Text(
-            _bodyString(post, 'task'),
-            style: const TextStyle(
-              fontFamily: _soraFont,
-              fontSize: 12,
-              height: 16.2 / 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.16,
-              color: _CaptionColors.inkSecondary,
-            ),
-          ),
-        ],
-        if (prompt.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            prompt,
+            task,
             style: const TextStyle(
               fontFamily: _soraFont,
               fontSize: 12,
@@ -3614,7 +3683,6 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
               color: _CaptionColors.inkSecondary,
             ),
           ),
-        ],
         if (closes.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(

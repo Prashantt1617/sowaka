@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { connectPosts, gameScores, users } from '../config/db';
-import { ConnectPost, ConnectPostType } from '../models/connect.model';
+import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
 import {
@@ -63,10 +63,23 @@ function announceChange(
   });
 }
 
-export async function getConnectFeed(viewerUserId: string) {
+/**
+ * The feed, newest first.
+ *
+ * `types` narrows it server-side. The HR dashboard wants only the engagement
+ * formats, and filtering a fixed page of 50 in the browser meant the older
+ * challenges fell off the end as ordinary posts pushed past them — and that
+ * every photo on those posts was signed just to be thrown away.
+ */
+export async function getConnectFeed(
+  viewerUserId: string,
+  options: { types?: ConnectPostType[] } = {},
+) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   const org = orgForUser(viewer);
+  const typeFilter =
+    options.types && options.types.length > 0 ? { type: { $in: options.types } } : {};
 
   // Blocking is a personal mute: a blocked colleague's own posts drop out of
   // this viewer's feed. Official announcements are exempt — an employee who
@@ -88,6 +101,7 @@ export async function getConnectFeed(viewerUserId: string) {
   const posts = await connectPosts()
     .find({
       org,
+      ...typeFilter,
       ...blockFilter,
       $or: [
         // MongoDB's driver stores `undefined` as BSON null rather than
@@ -232,6 +246,23 @@ export async function toggleConnectCommentReaction(
  * posting again — which gives up the votes along with the caption, and the
  * points they earned.
  */
+/**
+ * Refuses an entry or a vote once a challenge has closed.
+ *
+ * The closing time was display text until now, so a challenge that said it
+ * closed on Friday went on taking entries indefinitely. A post with no closing
+ * time stays open.
+ */
+function assertChallengeOpen(post: ConnectPost) {
+  const closesAt = String(post.body.closesAt ?? '').trim();
+  if (!closesAt) return;
+  const when = new Date(closesAt);
+  if (Number.isNaN(when.getTime())) return;
+  if (Date.now() > when.getTime()) {
+    throw new ConnectError(409, 'This challenge has closed');
+  }
+}
+
 export async function addCaptionEntry(
   viewerUserId: string,
   postId: string,
@@ -243,6 +274,7 @@ export async function addCaptionEntry(
   if (!isChallenge(post.type)) {
     throw new ConnectError(400, 'That post does not take entries');
   }
+  assertChallengeOpen(post);
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   if ((post.captionEntries ?? []).some((entry) => entry.userId === viewerUserId)) {
@@ -348,32 +380,50 @@ export async function removeCaptionEntry(viewerUserId: string, postId: string) {
     { id: postId },
     {
       $pull: { captionEntries: { id: mine.id } },
-      $unset: Object.fromEntries(voterIds.map((id) => [`captionVotes.${id}`, true])),
+      // Only when there are votes to release: Mongo refuses an empty $unset,
+      // and an entry nobody has voted on is the ordinary case.
+      ...(voterIds.length > 0
+        ? { $unset: Object.fromEntries(voterIds.map((id) => [`captionVotes.${id}`, true])) }
+        : {}),
       $set: { updatedAt: new Date() },
     },
   );
-  // A photo-story entry takes its picture with it rather than leaving it
-  // orphaned in the bucket.
-  if (mine.photoObjectKey) {
-    await deleteConnectMediaByKeys([mine.photoObjectKey]);
-  }
-  if (votesLost > 0) {
-    await users().updateOne(
-      { userId: viewerUserId },
-      { $inc: { points: -(votesLost * pointsPerVote) } },
-    );
-  }
-  // A Most Likely entry paid its point to the person who was named, so
-  // withdrawing the tag takes it back from them.
-  if (mine.taggedUserId) {
-    await users().updateOne(
-      { userId: mine.taggedUserId },
-      { $inc: { points: -pointsPerVote } },
-    );
-  }
-  const updated = await connectPosts().findOne({ id: postId });
+  // Everything this entry earned, taken back from whoever earned it. A Most
+  // Likely tag paid a point to the person named as well as a point per vote,
+  // and both went to the same person, so it comes back as one write.
+  const refund =
+    votesLost * pointsPerVote + (mine.taggedUserId ? pointsPerVote : 0);
+
+  // The picture, the points and the re-read do not depend on one another —
+  // only on the update above, which has already landed.
+  const [updated] = await Promise.all([
+    connectPosts().findOne({ id: postId }),
+    // A photo-story entry takes its picture with it rather than leaving it
+    // orphaned in the bucket.
+    mine.photoObjectKey
+      ? deleteConnectMediaByKeys([mine.photoObjectKey])
+      : Promise.resolve(),
+    refund > 0
+      ? users().updateOne(
+          { userId: pointsRecipient(mine) },
+          { $inc: { points: -refund } },
+        )
+      : Promise.resolve(),
+  ]);
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * Who a point earned on this entry belongs to.
+ *
+ * Every format but Most Likely rewards the person who wrote the entry. Most
+ * Likely rewards the person who was named — the entry's author is the one
+ * doing the naming, and paying them would let someone tag a colleague and then
+ * vote for their own tag, minting points on demand.
+ */
+function pointsRecipient(entry: ConnectCaptionEntry): string {
+  return entry.taggedUserId ?? entry.userId;
 }
 
 /**
@@ -390,6 +440,7 @@ export async function voteOnCaptionEntry(
   if (!isChallenge(post.type)) {
     throw new ConnectError(400, 'That post does not take entries');
   }
+  assertChallengeOpen(post);
   const entry = (post.captionEntries ?? []).find((item) => item.id === entryId);
   if (!entry) throw new ConnectError(404, 'Caption not found');
   if (entry.userId === viewerUserId) {
@@ -407,15 +458,24 @@ export async function voteOnCaptionEntry(
       { id: postId },
       { $unset: { [`captionVotes.${viewerUserId}`]: true }, $set: { updatedAt: new Date() } },
     );
-    await users().updateOne({ userId: entry.userId }, { $inc: { points: -pointsPerVote } });
+    await users().updateOne(
+      { userId: pointsRecipient(entry) },
+      { $inc: { points: -pointsPerVote } },
+    );
   } else {
     await connectPosts().updateOne(
       { id: postId },
       { $set: { [`captionVotes.${viewerUserId}`]: entryId, updatedAt: new Date() } },
     );
-    await users().updateOne({ userId: entry.userId }, { $inc: { points: pointsPerVote } });
+    await users().updateOne(
+      { userId: pointsRecipient(entry) },
+      { $inc: { points: pointsPerVote } },
+    );
     if (previous) {
-      await users().updateOne({ userId: previous.userId }, { $inc: { points: -pointsPerVote } });
+      await users().updateOne(
+        { userId: pointsRecipient(previous) },
+        { $inc: { points: -pointsPerVote } },
+      );
     }
   }
   const updated = await connectPosts().findOne({ id: postId });
@@ -490,6 +550,35 @@ function sparsePollImageKeys(
   return keys;
 }
 
+/**
+ * Whether a challenge speaks as the company or as the colleague who posted it.
+ *
+ * HR publishes from the dashboard and the card carries the Sowaka mark; anyone
+ * else posting one from the app gets their own name and photo on it, because
+ * it is their challenge and not an announcement. Decided from the poster's
+ * dashboard access here rather than taken from the client, which could
+ * otherwise dress an ordinary post up as an official one.
+ */
+function challengeVoice(
+  type: ConnectPostType,
+  body: Record<string, unknown>,
+  poster: User,
+): Record<string, unknown> {
+  if (!isChallenge(type)) return body;
+  const official = Boolean(poster.dashboardAccess);
+  return {
+    ...body,
+    official,
+    // What a vote is worth is HR's to set. A challenge posted from the app is
+    // worth the standard ten, whatever the client sent — otherwise anyone
+    // could mint points for their colleagues by posting a challenge that paid
+    // a thousand a vote.
+    pointsPerVote: official
+      ? normalizePoints(body.pointsPerVote)
+      : DEFAULT_POINTS_PER_VOTE,
+  };
+}
+
 export async function createConnectPost(viewerUserId: string, input: ConnectPostInput) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
@@ -507,6 +596,18 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     );
     const enrichedBody =
       type === 'recommendation' ? await withLinkPreview(normalizedBody) : normalizedBody;
+    const body = challengeVoice(
+      type,
+      withMedia(enrichedBody, uploadedMedia),
+      viewer,
+    );
+    // A caption challenge is a picture people caption — without one there is
+    // nothing to caption, and the card renders an empty frame nobody can
+    // enter. The web composer checks this too, but a check that only lives in
+    // one client is not a rule.
+    if (type === 'caption_challenge' && !hasMedia(body)) {
+      throw new ConnectError(400, 'Add the picture people will be captioning');
+    }
     const visibility = await visibilityFromBody(type, enrichedBody, viewer);
     const post: ConnectPost = {
       id: randomUUID(),
@@ -522,7 +623,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
         org: orgForUser(viewer),
         teamId: visibility.teamId,
       },
-      body: withMedia(enrichedBody, uploadedMedia),
+      body,
       likedBy: [],
       comments: [],
       actionBy: {},
@@ -572,12 +673,37 @@ export async function updateConnectPost(
       type === 'recommendation'
         ? await withLinkPreview(normalizedBody, post.body.linkUrl as string | undefined)
         : normalizedBody;
-    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
+    // What a vote is worth is fixed the moment someone enters. The points are
+    // already banked on people's records at the old rate, so a new one cannot
+    // apply to them: the board would show amounts nobody received, and taking
+    // an entry down would debit its author at a rate they never earned. HR can
+    // still change everything else about a live challenge.
+    const frozenBody = isChallenge(type)
+      ? {
+          ...enrichedBody,
+          // Who the card speaks as was settled when it was posted; an edit
+          // does not turn a colleague's challenge into a company one.
+          official: Boolean(post.body.official),
+          // What a vote is worth is fixed the moment someone enters. The
+          // points are already banked on people's records at the old rate, so
+          // a new one cannot apply to them: the board would show amounts
+          // nobody received, and taking an entry down would debit its author
+          // at a rate they never earned. HR can still change everything else
+          // about a live challenge.
+          // Frozen once anyone has entered, and in any case only settable on
+          // a post HR published — editing must not turn a colleague's
+          // challenge into one that pays whatever the client asks for.
+          ...((post.captionEntries ?? []).length > 0 || !post.body.official
+            ? { pointsPerVote: normalizePoints(post.body.pointsPerVote) }
+            : {}),
+        }
+      : enrichedBody;
+    const visibility = await visibilityFromBody(type, frozenBody, viewer);
     const existingMediaObjectKeys = mediaObjectKeys(post.body);
     const body = input.removeMedia
-      ? withoutMedia(enrichedBody)
+      ? withoutMedia(frozenBody)
       : withMedia(
-          enrichedBody,
+          frozenBody,
           uploadedMedia.length > 0 ? uploadedMedia : mediaFromBody(post.body),
         );
     const update = {
@@ -759,13 +885,20 @@ async function viewPost(
     if (post.type === 'most_likely') {
       // Here the board ranks the people who were named, not the people who
       // did the naming — one row per colleague, counting their tags.
-      const tally = new Map<
+      //
+      // Blocking applies on both sides: a tag from someone you blocked does
+      // not count, and someone you blocked does not appear as a row. The
+      // entry list above already drops the first; doing it here too keeps the
+      // board from disagreeing with the card it sits under.
+      const board = new Map<
         string,
         { userId: string; name: string; initials: string; designation: string; votes: number }
       >();
       for (const entry of post.captionEntries ?? []) {
         if (!entry.taggedUserId) continue;
-        const row = tally.get(entry.taggedUserId) ?? {
+        if (blockedUserIds.includes(entry.userId)) continue;
+        if (blockedUserIds.includes(entry.taggedUserId)) continue;
+        const row = board.get(entry.taggedUserId) ?? {
           userId: entry.taggedUserId,
           name: entry.taggedName ?? 'Teammate',
           initials: entry.taggedInitials ?? '?',
@@ -773,9 +906,9 @@ async function viewPost(
           votes: 0,
         };
         row.votes += 1;
-        tally.set(entry.taggedUserId, row);
+        board.set(entry.taggedUserId, row);
       }
-      body.leaderboard = [...tally.values()]
+      body.leaderboard = [...board.values()]
         .sort((a, b) => b.votes - a.votes)
         .map((row, index) => ({
           ...row,
@@ -926,6 +1059,21 @@ function parsePostType(value: string | undefined): ConnectPostType {
   throw new ConnectError(400, 'Post type is invalid');
 }
 
+/**
+ * Post types from a comma-separated query string, for narrowing the feed.
+ * Unknown names are refused rather than ignored, so a typo shows up as a bad
+ * request instead of quietly returning everything.
+ */
+export function parsePostTypeList(value: unknown): ConnectPostType[] {
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => parsePostType(part));
+}
+
 function normalizePostBody(
   type: ConnectPostType,
   input: Record<string, unknown>,
@@ -974,9 +1122,12 @@ function normalizePostBody(
       // captioned what or how the voting stands.
       return {
         title: normalizeText(input.title, 'Caption this', 80),
-        prompt: normalizeText(input.prompt, '', 300),
+        // One description, not a bold line and a paragraph under it. Two
+        // fields asked whoever was writing the brief to split a single
+        // thought in two, and the card ran them together anyway.
+        task: normalizeText(input.task, '', 400),
         pointsPerVote: normalizePoints(input.pointsPerVote),
-        closesAt: normalizeText(input.closesAt, '', 60),
+        closesAt: normalizeClosesAt(input.closesAt),
         captionLimit: 140,
       };
     case 'photo_story_challenge':
@@ -984,23 +1135,24 @@ function normalizePostBody(
       // the client, so editing the brief cannot rewrite who caught what.
       return {
         title: normalizeText(input.title, 'Caught red handed', 80),
-        task: normalizeText(input.task, '', 200),
-        prompt: normalizeText(input.prompt, '', 300),
+        task: normalizeText(input.task, '', 400),
         pointsPerVote: normalizePoints(input.pointsPerVote),
-        closesAt: normalizeText(input.closesAt, '', 60),
+        closesAt: normalizeClosesAt(input.closesAt),
         captionLimit: 200,
       };
     case 'most_likely':
       // The tags themselves are the votes, so nothing here is user-supplied
       // beyond the question being asked.
+      // The two lines around the question — what the format is asking of you,
+      // and the nudge under it — are the same on every Most Likely post, so
+      // the card carries them and nobody is asked to retype them. Only the
+      // question itself and its label change.
       return {
         title: normalizeText(input.title, 'Most Likely', 80),
         label: normalizeText(input.label, '', 40),
         question: normalizeText(input.question, '', 160),
-        hint: normalizeText(input.hint, '', 120),
-        prompt: normalizeText(input.prompt, '', 300),
         pointsPerVote: normalizePoints(input.pointsPerVote),
-        closesAt: normalizeText(input.closesAt, '', 60),
+        closesAt: normalizeClosesAt(input.closesAt),
       };
     case 'hr_announcement': {
       const requireAcknowledgement = input.requireAcknowledgement === true;
@@ -1105,6 +1257,11 @@ function withoutMedia(body: Record<string, unknown>) {
   return next;
 }
 
+/** Whether a body carries a picture or video of its own. */
+function hasMedia(body: Record<string, unknown>): boolean {
+  return mediaObjectKeys(body).length > 0;
+}
+
 function mediaObjectKeys(body: Record<string, unknown>): string[] {
   const many = body.mediaObjectKeys;
   if (Array.isArray(many)) {
@@ -1146,9 +1303,32 @@ function normalizeText(value: unknown, fallback: string, maxLength: number) {
  * on the card and paid into a balance, so a typo of 10000 would quietly mint
  * points nobody can take back.
  */
+/**
+ * When a challenge stops accepting entries, as an ISO instant.
+ *
+ * This was free text — "Closes Friday, 5 pm" — which read well and meant
+ * nothing: nothing could compare it to now, so nothing ever closed. Stored as
+ * a real moment so the server can refuse a late entry, and formatted for
+ * display by whoever is showing it.
+ *
+ * An empty value is a challenge with no closing time, which stays open.
+ */
+function normalizeClosesAt(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const when = new Date(raw);
+  if (Number.isNaN(when.getTime())) {
+    throw new ConnectError(400, 'Closing time is not a valid date');
+  }
+  return when.toISOString();
+}
+
+/** What a vote is worth when nobody has said otherwise. */
+const DEFAULT_POINTS_PER_VOTE = 10;
+
 function normalizePoints(value: unknown) {
   const points = Math.round(Number(value));
-  if (!Number.isFinite(points) || points < 1) return 10;
+  if (!Number.isFinite(points) || points < 1) return DEFAULT_POINTS_PER_VOTE;
   return Math.min(points, 100);
 }
 

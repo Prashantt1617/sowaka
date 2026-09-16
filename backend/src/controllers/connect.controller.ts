@@ -6,6 +6,7 @@ import {
   createConnectPost,
   deleteConnectPost,
   getConnectFeed,
+  parsePostTypeList,
   getConnectPost,
   performConnectAction,
   removeCaptionEntry,
@@ -27,7 +28,9 @@ import {
 
 export async function connectFeed(req: Request, res: Response, next: NextFunction) {
   try {
-    const posts = await getConnectFeed(requireUserId(req));
+    const posts = await getConnectFeed(requireUserId(req), {
+      types: parsePostTypeList(req.query.types),
+    });
     res.status(200).json({ success: true, posts });
   } catch (error) {
     handleConnectError(error, next);
