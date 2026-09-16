@@ -847,12 +847,6 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                           ),
                         ],
                       ),
-                      if (_demoPayslips(user.email).isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Payslips'),
-                        const SizedBox(height: 8),
-                        _PayslipsCard(payslips: _demoPayslips(user.email)),
-                      ],
                       if (dashboard.myOrgChart.length > 1) ...[
                         const SizedBox(height: 22),
                         const _SectionTitle(title: 'Org Chart'),
@@ -1720,142 +1714,6 @@ class _PunchColumn extends StatelessWidget {
   }
 }
 
-/// A payslip someone can download from their own profile: a month label and
-/// a link straight to the stored file. Not read from any backend — see
-/// `_demoPayslips` below.
-class _DemoPayslip {
-  const _DemoPayslip({required this.label, required this.url});
-  final String label;
-  final String url;
-}
-
-/// A demo of payslip download, scoped to a single account rather than built
-/// out as a real feature — no payroll data model, no API route. The three
-/// links are dummy PDFs uploaded straight to S3 (Shashank's own presigned
-/// bucket path), each carrying a plausible 7-day link since a SigV4
-/// presigned URL cannot outlive that.
-List<_DemoPayslip> _demoPayslips(String email) {
-  if (email.trim().toLowerCase() != 'shashank@tqslogistic.com') return const [];
-  return const [
-    _DemoPayslip(
-      label: 'August 2026',
-      url:
-          'https://sowaka-user-uploads.s3.ap-south-1.amazonaws.com/payslips/a8371b02-60c8-46e1-9ffd-57d4047b2255/2026-08.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3IEKT74JNHGXINOW%2F20260914%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260914T094947Z&X-Amz-Expires=604800&X-Amz-Signature=0bddeb8aba22026f2e83060275f87add939bcbbe124cd2d774066a94c176aff5&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Payslip-August-2026.pdf%22&x-amz-checksum-mode=ENABLED&x-id=GetObject',
-    ),
-    _DemoPayslip(
-      label: 'July 2026',
-      url:
-          'https://sowaka-user-uploads.s3.ap-south-1.amazonaws.com/payslips/a8371b02-60c8-46e1-9ffd-57d4047b2255/2026-07.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3IEKT74JNHGXINOW%2F20260914%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260914T094947Z&X-Amz-Expires=604800&X-Amz-Signature=599bc64024748d568bdbff22ccfed448ddc8f9655ec624b720f3fc5507fe3699&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Payslip-July-2026.pdf%22&x-amz-checksum-mode=ENABLED&x-id=GetObject',
-    ),
-    _DemoPayslip(
-      label: 'June 2026',
-      url:
-          'https://sowaka-user-uploads.s3.ap-south-1.amazonaws.com/payslips/a8371b02-60c8-46e1-9ffd-57d4047b2255/2026-06.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3IEKT74JNHGXINOW%2F20260914%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260914T094947Z&X-Amz-Expires=604800&X-Amz-Signature=4f2ca421430b8b698f34bf860a5fca0fbfebf91517b1ace382e054317093f45c&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Payslip-June-2026.pdf%22&x-amz-checksum-mode=ENABLED&x-id=GetObject',
-    ),
-  ];
-}
-
-class _PayslipsCard extends StatelessWidget {
-  const _PayslipsCard({required this.payslips});
-
-  final List<_DemoPayslip> payslips;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      decoration: _cardDecoration,
-      child: Column(
-        children: [
-          for (final (index, payslip) in payslips.indexed) ...[
-            if (index > 0)
-              const Divider(height: 1, color: Color(0xFFEDEDED), indent: 15, endIndent: 15),
-            _PayslipRow(payslip: payslip),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _PayslipRow extends StatefulWidget {
-  const _PayslipRow({required this.payslip});
-  final _DemoPayslip payslip;
-
-  @override
-  State<_PayslipRow> createState() => _PayslipRowState();
-}
-
-class _PayslipRowState extends State<_PayslipRow> {
-  bool _opening = false;
-
-  Future<void> _open() async {
-    if (_opening) return;
-    setState(() => _opening = true);
-    try {
-      final opened = await openExternalLink(widget.payslip.url);
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the payslip')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _opening = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: _open,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 13),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FA),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Icon(
-                Icons.description_outlined,
-                size: 18,
-                color: Color(0xFF0571A6),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                widget.payslip.label,
-                style: const TextStyle(
-                  color: Color(0xFF222222),
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (_opening)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              const Icon(
-                Icons.download_rounded,
-                size: 19,
-                color: Color(0xFF0571A6),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _InfoCard extends StatelessWidget {
   const _InfoCard({required this.children});
 
@@ -2094,11 +1952,17 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 ApiConfig.privacyPolicyUrl,
-                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 12.5,
+                ),
               ),
               Text(
                 ApiConfig.dataDeletionUrl,
-                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 12.5,
+                ),
               ),
             ],
           ),
