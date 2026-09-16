@@ -343,8 +343,9 @@ class LeaveBalanceItem {
 }
 
 /// Trims a trailing `.0` so 12 reads as "12" and 0.5 as "0.5".
-String formatDays(double value) =>
-    value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+String formatDays(double value) => value == value.roundToDouble()
+    ? value.toInt().toString()
+    : value.toString();
 
 class LeaveBalance {
   const LeaveBalance({
@@ -938,13 +939,14 @@ class ReimbursementType {
   DateTime earliestClaimableFrom(DateTime today) =>
       today.subtract(Duration(days: backdateDays));
 
-  factory ReimbursementType.fromJson(Map<String, dynamic> json) => ReimbursementType(
-    id: json['id'] as String? ?? '',
-    name: json['name'] as String? ?? '',
-    description: json['description'] as String? ?? '',
-    maxLimit: (json['maxLimit'] as num?)?.toDouble() ?? 0,
-    backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 30,
-  );
+  factory ReimbursementType.fromJson(Map<String, dynamic> json) =>
+      ReimbursementType(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        maxLimit: (json['maxLimit'] as num?)?.toDouble() ?? 0,
+        backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 30,
+      );
 }
 
 /// When one leave type may be applied for, as HR configured it.
@@ -979,19 +981,20 @@ class CorrectionRules {
   DateTime earliestFrom(DateTime today) =>
       today.subtract(Duration(days: backdateDays));
 
-  factory CorrectionRules.fromJson(Map<String, dynamic> json) => CorrectionRules(
-    triggers:
-        (json['triggers'] as List<dynamic>? ??
-                const [
-                  'Missing punch-in',
-                  'Missing punch-out',
-                  'Both punches missing',
-                ])
-            .map((value) => value.toString())
-            .toList(),
-    backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 7,
-    punchFormat: json['punchFormat'] as String? ?? '',
-  );
+  factory CorrectionRules.fromJson(Map<String, dynamic> json) =>
+      CorrectionRules(
+        triggers:
+            (json['triggers'] as List<dynamic>? ??
+                    const [
+                      'Missing punch-in',
+                      'Missing punch-out',
+                      'Both punches missing',
+                    ])
+                .map((value) => value.toString())
+                .toList(),
+        backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 7,
+        punchFormat: json['punchFormat'] as String? ?? '',
+      );
 }
 
 /// Whether a leave range can be applied for, and if not, why — one rule, used
@@ -1100,13 +1103,14 @@ class LeaveTypeWindow {
   DateTime earliestFrom(DateTime today) =>
       allowBackdated ? today.subtract(Duration(days: backdatedDays)) : today;
 
-  factory LeaveTypeWindow.fromJson(Map<String, dynamic> json) => LeaveTypeWindow(
-    key: json['key'] as String? ?? '',
-    name: json['name'] as String? ?? '',
-    advanceDays: (json['advanceDays'] as num?)?.toInt() ?? 30,
-    allowBackdated: json['allowBackdated'] as bool? ?? true,
-    backdatedDays: (json['backdatedDays'] as num?)?.toInt() ?? 3,
-  );
+  factory LeaveTypeWindow.fromJson(Map<String, dynamic> json) =>
+      LeaveTypeWindow(
+        key: json['key'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        advanceDays: (json['advanceDays'] as num?)?.toInt() ?? 30,
+        allowBackdated: json['allowBackdated'] as bool? ?? true,
+        backdatedDays: (json['backdatedDays'] as num?)?.toInt() ?? 3,
+      );
 }
 
 class ShiftPolicy {
@@ -1118,7 +1122,16 @@ class ShiftPolicy {
     this.minFullDayHours = 8,
     this.lateGraceMinutes = 10,
     this.earlyOutGraceMinutes = 10,
-    this.weeklyOff = const {'1': [6], '2': [6], '3': [6], '4': [6], '5': [6]},
+    this.weeklyOff = const {
+      '1': [6],
+      '2': [6],
+      '3': [6],
+      '4': [6],
+      '5': [6],
+    },
+    this.missingPunchIn = 'Absent',
+    this.missingPunchOut = 'Absent',
+    this.missingBoth = 'Absent',
     this.overtimeBackdateDays = 7,
     this.leaveTypes = const [],
     this.correction = const CorrectionRules(),
@@ -1137,6 +1150,13 @@ class ShiftPolicy {
   /// Week of the month ('1'..'5') -> weekday indexes that are off,
   /// 0 = Mon .. 6 = Sun. Set under Shifts › Policies.
   final Map<String, List<int>> weeklyOff;
+
+  /// What a day with a punch missing is recorded as — 'Absent', 'Half Day' or
+  /// 'Present' — set by HR under Shifts › Attendance correction. The calendar
+  /// marks the day as this rather than deciding for itself.
+  final String missingPunchIn;
+  final String missingPunchOut;
+  final String missingBoth;
 
   /// How far back an overtime claim may reach, in days.
   final int overtimeBackdateDays;
@@ -1165,7 +1185,8 @@ class ShiftPolicy {
   /// The window for one leave type by its display name, or null if unknown.
   LeaveTypeWindow? windowForLeave(String label) {
     for (final type in leaveTypes) {
-      if (type.name == label || type.key == label.toLowerCase().replaceAll(' ', '_')) {
+      if (type.name == label ||
+          type.key == label.toLowerCase().replaceAll(' ', '_')) {
         return type;
       }
       // 'Casual Leave' in the app's picker is the 'casual' type here.
@@ -1197,13 +1218,21 @@ class ShiftPolicy {
   bool isWeekOff(DateTime date) {
     final week = ((date.day - 1) ~/ 7) + 1;
     final weekday = date.weekday - 1; // Dart: Mon = 1 .. Sun = 7
-    return (weeklyOff[(week > 5 ? 5 : week).toString()] ?? const []).contains(weekday);
+    return (weeklyOff[(week > 5 ? 5 : week).toString()] ?? const []).contains(
+      weekday,
+    );
   }
 
   Duration get minHalfDay => _hours(minHalfDayHours);
   Duration get minFullDay => _hours(minFullDayHours);
   static Duration _hours(double value) =>
       Duration(minutes: (value * 60).round());
+
+  /// How HR says a day with these punches should be recorded.
+  String markFor({DateTime? punchIn, DateTime? punchOut}) {
+    if (punchIn == null && punchOut == null) return missingBoth;
+    return punchIn == null ? missingPunchIn : missingPunchOut;
+  }
 
   /// Minutes past midnight for [startTime] / [endTime], or null if malformed.
   int? get startMinutes => _minutes(startTime);
@@ -1281,19 +1310,27 @@ class ShiftPolicy {
       minFullDayHours: hours('minFullDayHours', 8),
       lateGraceMinutes: minutes('lateGraceMinutes', 10),
       earlyOutGraceMinutes: minutes('earlyOutGraceMinutes', 10),
+      missingPunchIn: json['missingPunchIn'] as String? ?? 'Absent',
+      missingPunchOut: json['missingPunchOut'] as String? ?? 'Absent',
+      missingBoth: json['missingBoth'] as String? ?? 'Absent',
       weeklyOff: {
-        for (final entry in (json['weeklyOff'] as Map<dynamic, dynamic>? ?? const {}).entries)
+        for (final entry
+            in (json['weeklyOff'] as Map<dynamic, dynamic>? ?? const {})
+                .entries)
           entry.key.toString(): [
             for (final day in (entry.value as List<dynamic>? ?? const []))
               (day as num).toInt(),
           ],
       },
-      overtimeBackdateDays: (json['overtimeBackdateDays'] as num?)?.toInt() ?? 7,
+      overtimeBackdateDays:
+          (json['overtimeBackdateDays'] as num?)?.toInt() ?? 7,
       correction: CorrectionRules.fromJson(
         json['correction'] as Map<String, dynamic>? ?? const {},
       ),
       leaveTypes: (json['leaveTypes'] as List<dynamic>? ?? const [])
-          .map((value) => LeaveTypeWindow.fromJson(value as Map<String, dynamic>))
+          .map(
+            (value) => LeaveTypeWindow.fromJson(value as Map<String, dynamic>),
+          )
           .toList(),
     );
   }

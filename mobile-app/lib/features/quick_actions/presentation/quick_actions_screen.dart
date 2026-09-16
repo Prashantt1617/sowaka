@@ -46,16 +46,7 @@ enum _QuickPage {
 
 enum _QuickFlow { leave, overtime, reimbursement }
 
-enum AttendanceFilter {
-  present,
-  late,
-  halfDay,
-  leave,
-  leaveApplied,
-  correction,
-  correctionAwaits,
-  holiday,
-}
+enum AttendanceFilter { missedPunch, present, late, halfDay, leave, holiday }
 
 enum AttendanceKind {
   present,
@@ -81,6 +72,8 @@ class AttendanceDayView {
     this.holiday,
     this.late = false,
     this.earlyOut = false,
+    this.needsCorrection = false,
+    this.correctionPending = false,
   });
 
   final DateTime date;
@@ -97,6 +90,40 @@ class AttendanceDayView {
 
   /// Left before the shift end less its grace.
   final bool earlyOut;
+
+  /// HR allows a correction against this day and nobody has raised one yet.
+  /// Drawn red whatever the day is marked as: a half day with a punch missing
+  /// still needs someone to act on it, so it cannot look settled.
+  final bool needsCorrection;
+
+  /// A correction is with the manager. The day keeps whatever it already was —
+  /// only the dashed border and the notice say a decision is outstanding.
+  final bool correctionPending;
+
+  /// Nobody has settled this day yet: either a correction is still open on it,
+  /// or one has been raised and is waiting on a manager. Drawn red throughout,
+  /// because asking is not the same as being answered — the day only stops
+  /// being red once the correction is approved.
+  bool get unresolved => needsCorrection || correctionPending;
+
+  AttendanceDayView copyWith({
+    bool? needsCorrection,
+    bool? correctionPending,
+    AttendanceRegularization? regularization,
+  }) => AttendanceDayView(
+    date: date,
+    kind: kind,
+    title: title,
+    cellLabel: cellLabel,
+    record: record,
+    regularization: regularization ?? this.regularization,
+    leave: leave,
+    holiday: holiday,
+    late: late,
+    earlyOut: earlyOut,
+    needsCorrection: needsCorrection ?? this.needsCorrection,
+    correctionPending: correctionPending ?? this.correctionPending,
+  );
 }
 
 List<AttendanceDayView> buildAttendanceDays({
@@ -161,151 +188,196 @@ List<AttendanceDayView> buildAttendanceDays({
         ? ''
         : ' · ${overtimeItem.decision == LeaveDecision.approved ? 'OT · Approved' : 'OT'}';
 
-    if (holiday != null) {
-      return AttendanceDayView(
-        date: date,
-        kind: AttendanceKind.holiday,
-        title: holiday.name,
-        cellLabel: 'Holiday',
-        holiday: holiday,
-        leave: leave,
-        record: record,
-      );
-    }
-    if (leave != null && leaveStatus != LeaveDecision.declined) {
-      final approved = leaveStatus == LeaveDecision.approved;
-      return AttendanceDayView(
-        date: date,
-        kind: approved
-            ? AttendanceKind.leaveApproved
-            : AttendanceKind.leavePending,
-        title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
-        cellLabel: approved ? 'Approved' : 'Pending',
-        leave: leave,
-        record: record,
-      );
-    }
-    if (approvedRegularization) {
-      // The device record may not reflect the correction yet, so fall back
-      // to the approved request's own requested times for display.
-      final dayType = record?.dayType.isNotEmpty == true
-          ? record!.dayType
-          : regularization?.requestedDayType ?? '';
-      // The hours the day type implies, for a day the server approved without
-      // writing them — an approval taken on a build that predates day types
-      // leaves the record blank, and the calendar then shows two dashes
-      // against a day the manager has just confirmed was worked.
-      final (plannedIn, plannedOut) = shift.punchWindowFor(dayType, date);
-      final displayRecord = AttendanceRecord(
-        workDate: date,
-        punchIn:
-            record?.punchIn ?? regularization?.requestedPunchIn ?? plannedIn,
-        punchOut:
-            record?.punchOut ?? regularization?.requestedPunchOut ?? plannedOut,
-        dayType: dayType,
-      );
-      final punchIn = displayRecord.punchIn;
-      final punchOut = displayRecord.punchOut;
-      // A day corrected to leave is a leave day, and carries no punches by
-      // design — calling it "Present" with two dashes was the calendar
-      // reading a missing punch as a missing record.
-      if (dayType == 'leave') {
+    // The day on its own terms. A request awaiting a decision does not
+    // change any of this — see below.
+    AttendanceDayView natural() {
+      if (holiday != null) {
         return AttendanceDayView(
           date: date,
-          kind: AttendanceKind.leaveApproved,
-          title: 'Leave (regularised)',
-          cellLabel: 'Leave',
+          kind: AttendanceKind.holiday,
+          title: holiday.name,
+          cellLabel: 'Holiday',
+          holiday: holiday,
+          leave: leave,
+          record: record,
+        );
+      }
+      if (leave != null && leaveStatus != LeaveDecision.declined) {
+        final approved = leaveStatus == LeaveDecision.approved;
+        return AttendanceDayView(
+          date: date,
+          kind: approved
+              ? AttendanceKind.leaveApproved
+              : AttendanceKind.leavePending,
+          title: 'Leave · ${approved ? 'Approved' : 'Pending'}',
+          cellLabel: approved ? 'Approved' : 'Pending',
+          leave: leave,
+          record: record,
+        );
+      }
+      if (approvedRegularization) {
+        // The device record may not reflect the correction yet, so fall back
+        // to the approved request's own requested times for display.
+        final dayType = record?.dayType.isNotEmpty == true
+            ? record!.dayType
+            : regularization?.requestedDayType ?? '';
+        // The hours the day type implies, for a day the server approved without
+        // writing them — an approval taken on a build that predates day types
+        // leaves the record blank, and the calendar then shows two dashes
+        // against a day the manager has just confirmed was worked.
+        final (plannedIn, plannedOut) = shift.punchWindowFor(dayType, date);
+        final displayRecord = AttendanceRecord(
+          workDate: date,
+          punchIn:
+              record?.punchIn ?? regularization?.requestedPunchIn ?? plannedIn,
+          punchOut:
+              record?.punchOut ??
+              regularization?.requestedPunchOut ??
+              plannedOut,
+          dayType: dayType,
+        );
+        final punchIn = displayRecord.punchIn;
+        final punchOut = displayRecord.punchOut;
+        // A day corrected to leave is a leave day, and carries no punches by
+        // design — calling it "Present" with two dashes was the calendar
+        // reading a missing punch as a missing record.
+        if (dayType == 'leave') {
+          return AttendanceDayView(
+            date: date,
+            kind: AttendanceKind.leaveApproved,
+            title: 'Leave (regularised)',
+            cellLabel: 'Leave',
+            record: displayRecord,
+            regularization: regularization,
+          );
+        }
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.present,
+          title: displayRecord.dayTypeLabel.isEmpty
+              ? 'Present (regularised)'
+              : '${displayRecord.dayTypeLabel} (regularised)',
+          cellLabel: '',
           record: displayRecord,
           regularization: regularization,
+          late: punchIn != null && shift.isLate(punchIn),
+          earlyOut: punchOut != null && shift.isEarlyOut(punchOut),
+        );
+      }
+      if (complete) {
+        // Three bands, all from the shift HR configured: a full day, a half day,
+        // and below that a day short enough to need a correction.
+        final fullDay = duration! >= shift.minFullDay;
+        final halfDay = !fullDay && duration >= shift.minHalfDay;
+        final short = !fullDay && !halfDay;
+        final late = shift.isLate(record!.punchIn!);
+        final earlyOut = shift.isEarlyOut(record.punchOut!);
+        final flags = [if (late) 'Late', if (earlyOut) 'Early out'].join(' · ');
+        final label = short
+            ? 'Short day'
+            : halfDay
+            ? 'Half day'
+            : 'Present';
+        return AttendanceDayView(
+          date: date,
+          kind: short
+              ? AttendanceKind.attention
+              : halfDay
+              ? AttendanceKind.halfDay
+              : AttendanceKind.present,
+          title:
+              '$label · ${_QuickActionsScreenState._duration(duration)}'
+              '${flags.isEmpty ? '' : ' · $flags'}$overtimeSuffix',
+          cellLabel: short
+              ? 'Short'
+              : halfDay
+              ? 'Half day'
+              : (late ? 'Late' : (overtimeItem == null ? '' : 'OT')),
+          record: record,
+          late: late,
+          earlyOut: earlyOut,
+        );
+      }
+      if (record != null || (!future && !weekoff)) {
+        final missing = record?.punchIn == null
+            ? 'missing punch-in'
+            : 'missing punch-out';
+        // How an incomplete day is recorded is HR's call, not the calendar's —
+        // set under Shifts › Attendance correction. The missing punch is left
+        // as a dash rather than filled in with a guess: the day is marked, no
+        // time is invented for it.
+        //
+        // Only the month being worked is marked this way. Older months have
+        // been through payroll, so re-grading them underneath a settled figure
+        // would change history; those keep flagging for attention instead.
+        final mark = shift.markFor(
+          punchIn: record?.punchIn,
+          punchOut: record?.punchOut,
+        );
+        // Whether HR lets this case be corrected at all, from Shifts ›
+        // Attendance correction. A day that can still be corrected is drawn red
+        // even when the mark above says half day.
+        final correctable = shift.correction.allows(
+          CorrectionRules.triggerFor(
+            punchIn: record?.punchIn,
+            punchOut: record?.punchOut,
+          ),
+        );
+        final activeMonth = date.year == now.year && date.month == now.month;
+        if (activeMonth && (mark == 'Half Day' || mark == 'Present')) {
+          final halfDay = mark == 'Half Day';
+          return AttendanceDayView(
+            date: date,
+            kind: halfDay ? AttendanceKind.halfDay : AttendanceKind.present,
+            title: '${halfDay ? 'Half day' : 'Present'} · $missing',
+            cellLabel: halfDay ? 'Half day' : '',
+            record: record,
+            regularization: regularization,
+            needsCorrection: correctable,
+          );
+        }
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.attention,
+          title: activeMonth && mark == 'Absent'
+              ? 'Absent · $missing'
+              : 'Missed Punched · $missing',
+          cellLabel: activeMonth && mark == 'Absent' ? 'Absent' : 'Missed',
+          record: record,
+          regularization: regularization,
+          needsCorrection: correctable,
+        );
+      }
+      if (weekoff) {
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.weekoff,
+          title: 'Weekly off',
+          cellLabel: 'Week off',
         );
       }
       return AttendanceDayView(
         date: date,
-        kind: AttendanceKind.present,
-        title: displayRecord.dayTypeLabel.isEmpty
-            ? 'Present (regularised)'
-            : '${displayRecord.dayTypeLabel} (regularised)',
+        kind: AttendanceKind.future,
+        title: future ? 'Working day' : 'No record',
         cellLabel: '',
-        record: displayRecord,
-        regularization: regularization,
-        late: punchIn != null && shift.isLate(punchIn),
-        earlyOut: punchOut != null && shift.isEarlyOut(punchOut),
       );
     }
+
+    final view = natural();
+    // A correction raised but not yet decided leaves the day exactly as it
+    // was. Repainting it the moment someone asks would show a half day as
+    // settled on the strength of a request the manager has not looked at.
+    // The dashed border says a decision is outstanding; the state follows
+    // the decision, not the ask.
     if (pendingRegularization) {
-      return AttendanceDayView(
-        date: date,
-        kind: AttendanceKind.regularizationPending,
-        title: 'Regularization · Pending',
-        cellLabel: 'Pending',
-        record: record,
+      return view.copyWith(
+        correctionPending: true,
+        needsCorrection: false,
         regularization: regularization,
       );
     }
-    if (complete) {
-      // Three bands, all from the shift HR configured: a full day, a half day,
-      // and below that a day short enough to need a correction.
-      final fullDay = duration! >= shift.minFullDay;
-      final halfDay = !fullDay && duration >= shift.minHalfDay;
-      final short = !fullDay && !halfDay;
-      final late = shift.isLate(record!.punchIn!);
-      final earlyOut = shift.isEarlyOut(record.punchOut!);
-      final flags = [
-        if (late) 'Late',
-        if (earlyOut) 'Early out',
-      ].join(' · ');
-      final label = short
-          ? 'Short day'
-          : halfDay
-          ? 'Half day'
-          : 'Present';
-      return AttendanceDayView(
-        date: date,
-        kind: short
-            ? AttendanceKind.attention
-            : halfDay
-            ? AttendanceKind.halfDay
-            : AttendanceKind.present,
-        title:
-            '$label · ${_QuickActionsScreenState._duration(duration)}'
-            '${flags.isEmpty ? '' : ' · $flags'}$overtimeSuffix',
-        cellLabel: short
-            ? 'Short'
-            : halfDay
-            ? 'Half day'
-            : (late ? 'Late' : (overtimeItem == null ? '' : 'OT')),
-        record: record,
-        late: late,
-        earlyOut: earlyOut,
-      );
-    }
-    if (record != null || (!future && !weekoff)) {
-      final missing = record?.punchIn == null
-          ? 'missing punch-in'
-          : 'missing punch-out';
-      return AttendanceDayView(
-        date: date,
-        kind: AttendanceKind.attention,
-        title: 'Needs attention · $missing',
-        cellLabel: 'Attention',
-        record: record,
-        regularization: regularization,
-      );
-    }
-    if (weekoff) {
-      return AttendanceDayView(
-        date: date,
-        kind: AttendanceKind.weekoff,
-        title: 'Weekly off',
-        cellLabel: 'Week off',
-      );
-    }
-    return AttendanceDayView(
-      date: date,
-      kind: AttendanceKind.future,
-      title: future ? 'Working day' : 'No record',
-      cellLabel: '',
-    );
+    return view;
   });
 }
 
@@ -366,11 +438,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     DateTime.now().year,
     DateTime.now().month,
   );
-  bool _attendanceListView = false;
   AttendanceFilter? _attendanceFilter;
   AttendanceDayView? _selectedCalendarDay;
   bool _overtimeHistoryView = false;
   DateTime? _overtimeDate;
+
   /// 'Full day' or 'Half day' — the only two durations overtime is claimed as,
   /// matching what HR configured. The hours behind them come from the shift.
   String? _overtimeDuration;
@@ -704,7 +776,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             text: TextSpan(
               style: const TextStyle(color: _Q.inkSoft, fontSize: 12),
               children: [
-                const TextSpan(text: 'For more information check out our '),
+                const TextSpan(text: 'Read detailed leave policy '),
                 TextSpan(
                   text: 'leave policy',
                   style: const TextStyle(
@@ -1033,7 +1105,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ? (_leaveFrom ?? today)
         : (_leaveTo ?? _leaveFrom ?? today);
     final window = _leaveWindow;
-    final first = window == null ? today : _dateOnly(window.earliestFrom(today));
+    final first = window == null
+        ? today
+        : _dateOnly(window.earliestFrom(today));
     final last = window == null
         ? today.add(const Duration(days: 365))
         : _dateOnly(window.latestFrom(today));
@@ -1463,7 +1537,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     setState(() {
       _overtimeDuration = picked;
       final date = _overtimeDate;
-      if (date != null && !_canSelectOvertimeFormDay(date)) _overtimeDate = null;
+      if (date != null && !_canSelectOvertimeFormDay(date))
+        _overtimeDate = null;
     });
   }
 
@@ -1510,7 +1585,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final duration = _overtimeDuration;
     if (date == null || duration == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick a date and a duration to continue.')),
+        const SnackBar(
+          content: Text('Pick a date and a duration to continue.'),
+        ),
       );
       return;
     }
@@ -1519,7 +1596,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final worked = _overtimeWorked;
     final start = widget.dashboard.shift.startMinutes ?? 9 * 60;
     final startDateTime = DateTime(
-      date.year, date.month, date.day, start ~/ 60, start % 60,
+      date.year,
+      date.month,
+      date.day,
+      start ~/ 60,
+      start % 60,
     );
     final sent = await widget.bloc.add(
       SubmitOvertimeApplication(
@@ -1773,8 +1854,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       // The new type may not reach back as far as the date already chosen.
       final date = _reimbursementDate;
       final type = _pickedReimbursementType;
-      if (date != null && type != null &&
-          date.isBefore(type.earliestClaimableFrom(_dateOnly(DateTime.now())))) {
+      if (date != null &&
+          type != null &&
+          date.isBefore(
+            type.earliestClaimableFrom(_dateOnly(DateTime.now())),
+          )) {
         _reimbursementDate = null;
       }
     });
@@ -1784,11 +1868,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final today = _dateOnly(DateTime.now());
     final initial = _reimbursementDate ?? today;
     // Only as far back as this type allows — the server refuses anything older.
-    final earliest = _pickedReimbursementType?.earliestClaimableFrom(today)
-        ?? today.subtract(const Duration(days: 365));
+    final earliest =
+        _pickedReimbursementType?.earliestClaimableFrom(today) ??
+        today.subtract(const Duration(days: 365));
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial.isAfter(today) || initial.isBefore(earliest) ? today : initial,
+      initialDate: initial.isAfter(today) || initial.isBefore(earliest)
+          ? today
+          : initial,
       firstDate: earliest,
       lastDate: today,
       builder: _pickerTheme,
@@ -2021,13 +2108,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               asset: 'assets/icons/calendar_chevron_prev.svg',
             ),
             Expanded(
-              child: Text(
-                '${_monthName(_attendanceMonth.month)} ${_attendanceMonth.year}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF2A2A2A),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
+              // Tapping the month name is how you back out of a filtered
+              // list — the same gesture that opened it, in reverse.
+              child: GestureDetector(
+                onTap: () => setState(() => _attendanceFilter = null),
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  '${_monthName(_attendanceMonth.month)} ${_attendanceMonth.year}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF2A2A2A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
             ),
@@ -2038,48 +2131,39 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ],
         ),
         const SizedBox(height: 24),
-        LeaveViewSwitch(
-          history: _attendanceListView,
-          onChanged: (list) => setState(() => _attendanceListView = list),
-          firstLabel: 'Grid',
-          secondLabel: 'List',
-        ),
-        const SizedBox(height: 16),
         AttendanceFilterChips(
           selected: _attendanceFilter,
           onChanged: (filter) => setState(() => _attendanceFilter = filter),
         ),
         const SizedBox(height: 20),
-        Text(
-          switch (_selectedCalendarDay) {
-            null => 'Tap a day to see what you can do with it.',
-            final day => switch (_leaveTypesFor(day.date)) {
-              // Naming the types matters when only some of them reach this
-              // far: casual runs out long before earned does.
-              final types
-                  when types.isNotEmpty && types.length < _leaveLabels.length =>
-                'Selected ${_short(day.date)} — leave can be applied as '
-                    '${types.join(' or ')}.',
-              _ => 'Selected ${_short(day.date)} — tap the date again to '
-                  'clear.',
-            },
-          },
-          style: _QText.subtitle,
-        ),
-        const SizedBox(height: 20),
-        if (_attendanceListView) ...[
-          ...days.map(
-            (day) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: AttendanceListCard(
-                day: day,
-                today: _sameDay(day.date, DateTime.now()),
-                dimmed: !matchesAttendanceFilter(day, _attendanceFilter),
-                selected: _sameDay(day.date, _selectedCalendarDay?.date),
-                onTap: () => _openAttendanceDay(day),
+        if (_attendanceFilter != null) ...[
+          // A heading opens the days it covers, rather than greying out the
+          // rest of a month you then have to read around.
+          if (!days.any(
+            (day) => matchesAttendanceFilter(day, _attendanceFilter),
+          ))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Text(
+                'Nothing this month.',
+                textAlign: TextAlign.center,
+                style: _QText.subtitle,
               ),
             ),
-          ),
+          ...days
+              .where((day) => matchesAttendanceFilter(day, _attendanceFilter))
+              .map(
+                (day) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: AttendanceListCard(
+                    day: day,
+                    today: _sameDay(day.date, DateTime.now()),
+                    dimmed: false,
+                    selected: _sameDay(day.date, _selectedCalendarDay?.date),
+                    onTap: () => _openAttendanceDay(day),
+                  ),
+                ),
+              ),
           if (_calendarDetailDay(days) case final detail?) ...[
             const SizedBox(height: 16),
             AttendanceDayDetail(
@@ -2174,25 +2258,55 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   List<AttendanceDayAction> _actionsForDay(AttendanceDayView day) {
     // A request already with the manager replaces every action.
     if (_pendingNoticeFor(day) != null) return const [];
-    return [
-      if (_correctionBlockedReason(day) == null)
+    // A day that can be corrected offers only that. Leave is what you do with
+    // a day that has nothing to fix — a future date, mainly — so offering both
+    // at once asks the wrong question of a day that has already gone wrong.
+    if (_correctionBlockedReason(day) == null) {
+      return [
         AttendanceDayAction(
           label: 'Request Correction',
           onTap: () => _showRegularization(day),
         ),
+      ];
+    }
+    return [
+      if (_leaveApplicable(day))
+        AttendanceDayAction(
+          label: 'Apply Leave',
+          onTap: () => _applyLeaveFor(day.date),
+        ),
     ];
   }
 
+  /// Whether this day is one a leave request can still be made for.
+  bool _leaveApplicable(AttendanceDayView day) {
+    switch (day.kind) {
+      case AttendanceKind.leaveApproved:
+      case AttendanceKind.leavePending:
+      case AttendanceKind.holiday:
+      case AttendanceKind.weekoff:
+        return false;
+      default:
+        break;
+    }
+    // The windows HR set per type decide the rest, so a date outside every
+    // one of them offers nothing rather than opening a form that would be
+    // refused.
+    return _leaveTypesFor(day.date).isNotEmpty;
+  }
+
   /// The amber line shown while a request for this day is with the manager.
-  String? _pendingNoticeFor(AttendanceDayView day) => switch (day.kind) {
-    AttendanceKind.regularizationPending =>
-      'Your missed punched request is currently under review by your manager '
-          'for this day.',
-    AttendanceKind.leavePending =>
-      'Your leave request is currently under review by your manager for this '
-          'day.',
-    _ => null,
-  };
+  String? _pendingNoticeFor(AttendanceDayView day) {
+    if (day.correctionPending) {
+      return 'Your missed punched request is currently under review by your '
+          'manager for this day.';
+    }
+    if (day.kind == AttendanceKind.leavePending) {
+      return 'Your leave request is currently under review by your manager '
+          'for this day.';
+    }
+    return null;
+  }
 
   String? _correctionBlockedReason(AttendanceDayView day) {
     final rules = widget.dashboard.shift.correction;
@@ -2200,7 +2314,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final date = _dateOnly(day.date);
 
     if (date.isAfter(today)) return 'A future day cannot be regularised.';
-    if (day.kind == AttendanceKind.regularizationPending) {
+    if (day.correctionPending) {
       return 'A correction for this day is already with your manager.';
     }
     if (day.regularization?.status.toLowerCase() == 'approved') {
@@ -2616,9 +2730,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             _ => null,
           },
           lastDate: switch (_flow) {
-            _QuickFlow.overtime || _QuickFlow.reimbursement => _dateOnly(
-              DateTime.now(),
-            ),
+            _QuickFlow.overtime ||
+            _QuickFlow.reimbursement => _dateOnly(DateTime.now()),
             _ => null,
           },
           selectableDayPredicate: _flow == _QuickFlow.overtime
@@ -3002,8 +3115,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     type.name,
                     Icons.receipt_long_rounded,
                     [
-                      if (type.maxLimit > 0) 'up to ₹${formatDays(type.maxLimit)}',
-                      type.backdateDays == 0 ? 'today only' : '${type.backdateDays}d back',
+                      if (type.maxLimit > 0)
+                        'up to ₹${formatDays(type.maxLimit)}',
+                      type.backdateDays == 0
+                          ? 'today only'
+                          : '${type.backdateDays}d back',
                     ].join(' · '),
                   ),
               ],
@@ -3017,12 +3133,15 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   ? '${chosen.name} can only be claimed for today.'
                   : '${chosen.name} can be claimed up to ${chosen.backdateDays} days back.',
             )
-          else if (step.label == 'Amount' && chosen != null && chosen.maxLimit > 0)
+          else if (step.label == 'Amount' &&
+              chosen != null &&
+              chosen.maxLimit > 0)
             _FlowStep(
               label: step.label,
               kind: step.kind,
               question: step.question,
-              subtitle: '${chosen.name} is capped at ₹${formatDays(chosen.maxLimit)}.',
+              subtitle:
+                  '${chosen.name} is capped at ₹${formatDays(chosen.maxLimit)}.',
               money: true,
             )
           else
@@ -3202,6 +3321,12 @@ class AttendanceFilterChips extends StatelessWidget {
       child: Row(
         children: [
           _AttendanceFilterChip(
+            label: 'Missed Punch',
+            selected: selected == AttendanceFilter.missedPunch,
+            onTap: () => toggle(AttendanceFilter.missedPunch),
+          ),
+          const SizedBox(width: 8),
+          _AttendanceFilterChip(
             label: 'Present',
             selected: selected == AttendanceFilter.present,
             onTap: () => toggle(AttendanceFilter.present),
@@ -3237,38 +3362,7 @@ class AttendanceFilterChips extends StatelessWidget {
             selected: selected == AttendanceFilter.leave,
             onTap: () => toggle(AttendanceFilter.leave),
           ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Leave Applied',
-            selected: selected == AttendanceFilter.leaveApplied,
-            onTap: () => toggle(AttendanceFilter.leaveApplied),
-            leading: CustomPaint(
-              size: const Size(8, 8),
-              painter: const _DashedRoundRectPainter(
-                color: Color(0xFF717171),
-                radius: 2,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Correction',
-            selected: selected == AttendanceFilter.correction,
-            onTap: () => toggle(AttendanceFilter.correction),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Correction Awaits',
-            selected: selected == AttendanceFilter.correctionAwaits,
-            onTap: () => toggle(AttendanceFilter.correctionAwaits),
-            leading: CustomPaint(
-              size: const Size(8, 8),
-              painter: const _DashedRoundRectPainter(
-                color: Color(0xFF717171),
-                radius: 2,
-              ),
-            ),
-          ),
+
           const SizedBox(width: 8),
           _AttendanceFilterChip(
             label: 'Holiday',
@@ -3359,7 +3453,7 @@ _AttendanceCellStyle _attendanceGridCellStyle(AttendanceKind kind) =>
         bold: false,
         fill: Color(0xFFF2F2F2),
       ),
-      // "Correction Required" — action needed, not yet requested.
+      // "Missed Punched" — a punch is missing and nobody has raised it yet.
       AttendanceKind.attention => const _AttendanceCellStyle(
         color: Color(0xFFFF383C),
       ),
@@ -3419,7 +3513,14 @@ class AttendanceListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = dimmed ? _Q.inkFaint : _attendanceListRowColor(day.kind);
+    final color = dimmed
+        ? _Q.inkFaint
+        // An unresolved day reads red here too, whatever it is marked as —
+        // the grid and the list must never disagree about which days still
+        // need someone to act.
+        : day.unresolved
+        ? _attendanceListRowColor(AttendanceKind.attention)
+        : _attendanceListRowColor(day.kind);
     final showChevron = !dimmed && _attendanceListShowsChevron(day.kind);
     final background = selected
         ? const Color(0xFFDBEAFE)
@@ -3574,9 +3675,24 @@ class _AttendanceMonthCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = dimmed
+    final base = dimmed
         ? const _AttendanceCellStyle(color: _Q.inkFaint, bold: false)
+        : day.unresolved
+        // A day still open for correction reads red even when the policy
+        // marks it a half day — settled green would hide that it needs
+        // someone to act.
+        ? _attendanceGridCellStyle(AttendanceKind.attention)
         : _attendanceGridCellStyle(day.kind);
+    // A request with the manager keeps the day's own colour and only borrows
+    // the dashed outline, so the state still reads as whatever it is today.
+    final style = day.correctionPending
+        ? _AttendanceCellStyle(
+            color: base.color,
+            bold: base.bold,
+            dashedBorder: const Color(0xFF0571A6),
+            fill: base.fill,
+          )
+        : base;
     final isHalfDay = !dimmed && day.kind == AttendanceKind.halfDay;
     final dashedColor = (today || selected) ? null : style.dashedBorder;
     final content = Material(
@@ -3667,7 +3783,6 @@ String _hoursMinutesLabel(double hours) {
   return m == 0 ? '${h}h' : '${h}h ${m}m';
 }
 
-
 Widget _pickerTheme(BuildContext context, Widget? child) {
   final base = Theme.of(context);
   final colorScheme = ColorScheme.fromSeed(
@@ -3711,7 +3826,7 @@ AttendanceTagStyle attendanceTagStyle(AttendanceKind kind) => switch (kind) {
   AttendanceKind.attention => (
     bg: const Color(0xFFFEE0E0),
     fg: const Color(0xFFFF383C),
-    label: 'Correction Required',
+    label: 'Missed Punched',
   ),
   AttendanceKind.regularizationPending => (
     bg: const Color(0xFFFEE0E0),
@@ -3792,6 +3907,19 @@ class _CorrectionSheetState extends State<_CorrectionSheet> {
   final _note = TextEditingController();
   String? _dayType;
   var _busy = false;
+
+  /// What this day may be corrected to.
+  ///
+  /// A day already marked as a half day — the policy's answer to a punch being
+  /// missing — is only ever disputed one way: the person says they worked the
+  /// whole day. Offering half day again asks them to confirm what the day
+  /// already is, and the rest are not what a missing punch is about.
+  List<_CorrectionDayType> get _options =>
+      widget.dayView.kind == AttendanceKind.halfDay
+      ? _correctionDayTypes
+            .where((option) => option.value == 'full_day')
+            .toList()
+      : _correctionDayTypes;
 
   @override
   void dispose() {
@@ -3880,7 +4008,7 @@ class _CorrectionSheetState extends State<_CorrectionSheet> {
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  for (final (index, option) in _correctionDayTypes.indexed) ...[
+                  for (final (index, option) in _options.indexed) ...[
                     if (index > 0)
                       const Divider(
                         height: 1,
@@ -4130,7 +4258,16 @@ class AttendanceDayDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pending = pendingNotice;
-    final tag = attendanceTagStyle(day.kind);
+    final base = attendanceTagStyle(day.kind);
+    // Red on any day a correction is still open against, so the list agrees
+    // with the grid rather than showing a settled-looking half day.
+    final tag = day.unresolved
+        ? (
+            bg: attendanceTagStyle(AttendanceKind.attention).bg,
+            fg: attendanceTagStyle(AttendanceKind.attention).fg,
+            label: base.label,
+          )
+        : base;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -4150,7 +4287,10 @@ class AttendanceDayDetail extends StatelessWidget {
             if (pending == null) ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: tag.bg,
                   borderRadius: BorderRadius.circular(9999),
@@ -4215,7 +4355,7 @@ class AttendanceDayDetail extends StatelessWidget {
             ),
           ),
           for (final action in actions) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _AttendanceDayActionButton(action: action),
           ],
           if (actions.isEmpty && blockedReason != null) ...[
@@ -4255,17 +4395,23 @@ class _AttendanceDayActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Node 2112:69779 — a hairline outline, not a filled button: the action
+    // is offered, not urged.
     return SizedBox(
       height: 48,
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF2A2A2A),
-          side: const BorderSide(color: Color(0xFFE6E6E6)),
+          foregroundColor: const Color(0xFF222222),
+          side: const BorderSide(color: Color(0xFFEBEBEB), width: 1.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          textStyle: const TextStyle(
+            fontSize: 14,
+            height: 20 / 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         onPressed: action.onTap,
         child: Text(action.label),
@@ -4808,7 +4954,6 @@ class _LeaveRequestCard extends StatelessWidget {
     );
   }
 }
-
 
 /// The "View details" line every history card carries.
 class _ViewDetailsLink extends StatelessWidget {
@@ -5948,17 +6093,21 @@ class _MonthCalendarState extends State<_MonthCalendar> {
   bool get _canGoBack {
     final first = widget.firstDate;
     if (first == null) return true;
-    return DateTime(_month.year, _month.month - 1, 1).isAfter(
-      DateTime(first.year, first.month, 0),
-    );
+    return DateTime(
+      _month.year,
+      _month.month - 1,
+      1,
+    ).isAfter(DateTime(first.year, first.month, 0));
   }
 
   bool get _canGoForward {
     final last = widget.lastDate;
     if (last == null) return true;
-    return DateTime(_month.year, _month.month + 1, 1).isBefore(
-      DateTime(last.year, last.month + 1, 1),
-    );
+    return DateTime(
+      _month.year,
+      _month.month + 1,
+      1,
+    ).isBefore(DateTime(last.year, last.month + 1, 1));
   }
 
   void _shift(int delta) {
@@ -6671,14 +6820,19 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
   if (filter == null) return true;
   final kind = day.kind;
   return switch (filter) {
+    // A day with a punch missing belongs here whether the policy marked it a
+    // half day or left it flagged — it is the same missed punch either way,
+    // and someone looking for one should find it under one heading.
+    AttendanceFilter.missedPunch =>
+      kind == AttendanceKind.attention ||
+          day.correctionPending ||
+          day.needsCorrection,
     AttendanceFilter.present => kind == AttendanceKind.present,
     AttendanceFilter.late => day.late,
     AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
-    AttendanceFilter.leave => kind == AttendanceKind.leaveApproved,
-    AttendanceFilter.leaveApplied => kind == AttendanceKind.leavePending,
-    AttendanceFilter.correction => kind == AttendanceKind.attention,
-    AttendanceFilter.correctionAwaits =>
-      kind == AttendanceKind.regularizationPending,
+    AttendanceFilter.leave =>
+      kind == AttendanceKind.leaveApproved ||
+          kind == AttendanceKind.leavePending,
     AttendanceFilter.holiday => kind == AttendanceKind.holiday,
   };
 }
