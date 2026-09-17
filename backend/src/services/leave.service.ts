@@ -5,6 +5,7 @@ import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
 import { holidayDatesForUser } from './holiday.service';
+import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import {
   approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveTypeRulesFor,
   managerMayDecide, weekOffGridFor,
@@ -31,6 +32,10 @@ export interface LeaveView {
   days: number;
   halfDay: boolean;
   reason: string;
+  /** Present only when a document was attached. */
+  documentName?: string;
+  /** Short-lived link to that document. */
+  documentUrl?: string;
   status: LeaveStatus;
   managerNote?: string;
   createdAt: string;
@@ -46,6 +51,7 @@ export async function applyForLeave(
     endDate: string;
     reason: string;
     halfDay?: boolean;
+    document?: { originalName: string; contentType: string; size: number; bytes: Buffer };
   },
 ): Promise<LeaveView> {
   const employee = await users().findOne({ userId });
@@ -183,6 +189,12 @@ export async function applyForLeave(
     throw new LeaveError(409, 'A pending or approved leave already overlaps these dates');
   }
 
+  // Uploaded before the insert so a storage failure fails the request rather
+  // than leaving a leave row pointing at a document that was never stored.
+  const stored = input.document
+    ? await uploadLeaveDocument(userId, input.document)
+    : undefined;
+
   const createdAt = Date.now();
   const result = await leaves().insertOne({
     userId,
@@ -192,6 +204,8 @@ export async function applyForLeave(
     days,
     halfDay: halfDay || undefined,
     reason,
+    documentKey: stored?.objectKey,
+    documentName: stored ? input.document!.originalName : undefined,
     status: 'pending',
     createdAt,
     updatedAt: new Date(createdAt),
@@ -206,7 +220,7 @@ export async function applyForLeave(
     reason,
   });
 
-  return toLeaveView(
+  return await toLeaveView(
     {
       _id: result.insertedId,
       userId,
@@ -230,7 +244,7 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
   }
 
   const documents = await leaves().find({ userId }).sort({ createdAt: -1 }).toArray();
-  return documents.map((leave) => toLeaveView(leave, employee));
+  return Promise.all(documents.map((leave) => toLeaveView(leave, employee)));
 }
 
 export async function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear()) {
@@ -424,13 +438,15 @@ export async function getManagerLeaveInbox(managerUserId: string): Promise<Leave
     .sort({ status: -1, createdAt: -1 })
     .toArray();
 
-  return documents.map((leave) => {
-    const employee = employeeById.get(leave.userId);
-    if (!employee) {
-      throw new LeaveError(409, 'Leave has an invalid employee reference');
-    }
-    return toLeaveView(leave, employee as User);
-  });
+  return Promise.all(
+    documents.map((leave) => {
+      const employee = employeeById.get(leave.userId);
+      if (!employee) {
+        throw new LeaveError(409, 'Leave has an invalid employee reference');
+      }
+      return toLeaveView(leave, employee as User);
+    }),
+  );
 }
 
 export async function decideLeave(
@@ -503,7 +519,7 @@ export async function decideLeave(
     comment: input.managerNote?.trim() ?? '',
   });
 
-  return toLeaveView(updated, employee);
+  return await toLeaveView(updated, employee);
 }
 
 /** Org-wide list of every leave, for the HR dashboard. */
@@ -515,10 +531,12 @@ export async function listAllLeavesForAdmin(adminUserId: string): Promise<LeaveV
     .find({ userId: { $in: employees.map((e) => e.userId) } })
     .sort({ status: -1, createdAt: -1 })
     .toArray();
-  return documents.flatMap((leave) => {
-    const employee = employeeById.get(leave.userId);
-    return employee ? [toLeaveView(leave, employee)] : [];
-  });
+  return Promise.all(
+    documents.flatMap((leave) => {
+      const employee = employeeById.get(leave.userId);
+      return employee ? [toLeaveView(leave, employee)] : [];
+    }),
+  );
 }
 
 /**
@@ -631,7 +649,7 @@ function balanceItem(total: number, used: number) {
   return { total, used, remaining: Math.max(0, total - used) };
 }
 
-function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): LeaveView {
+async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Promise<LeaveView> {
   const createdAt = leave.createdAt ? new Date(leave.createdAt) : (leave.updatedAt ?? new Date());
   return {
     id: leave._id.toHexString(),
@@ -649,6 +667,10 @@ function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): LeaveVie
     days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
     halfDay: leave.halfDay === true,
     reason: leave.reason,
+    documentName: leave.documentName,
+    documentUrl: leave.documentKey
+      ? await presignReceiptDownload(leave.documentKey, leave.documentName).catch(() => undefined)
+      : undefined,
     status: leave.status,
     managerNote: leave.managerNote,
     createdAt: createdAt.toISOString(),

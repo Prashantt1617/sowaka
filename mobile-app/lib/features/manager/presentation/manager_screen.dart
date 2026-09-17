@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:file_picker/file_picker.dart';
 
 import '../../shared/image_crop_sheet.dart';
+import '../../shared/image_source_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -23,6 +23,8 @@ import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../games/presentation/web_game_screen.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
+import '../../requests/presentation/request_summary.dart';
+import '../../../services/linkified_text.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
 import '../data/manager_models.dart';

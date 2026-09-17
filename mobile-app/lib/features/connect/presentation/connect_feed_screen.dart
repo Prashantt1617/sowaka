@@ -4,9 +4,10 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 
 import '../../shared/image_crop_sheet.dart';
+import 'contest_composer.dart';
+import '../../shared/image_source_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_api_service.dart';
@@ -209,7 +210,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               child: _ConnectEmptyState(
                 icon: Icons.forum_rounded,
                 title: 'No posts yet',
-                body: 'Start the conversation — company updates, kudos and '
+                body:
+                    'Start the conversation — company updates, kudos and '
                     'events you post will appear here.',
                 actionLabel: 'Write a post',
                 onAction: _openPostTypePicker,
@@ -222,55 +224,66 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       );
     }
     final posts = state.posts;
-    return RefreshIndicator(
-      color: _ConnectColors.terra,
-      onRefresh: _bloc.refresh,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-        itemCount: posts.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(height: 16),
-        itemBuilder: (context, index) {
-          // The composer entry point, now that the nav has no Post tab
-          // (node 2002:39114).
-          if (index == 0) {
-            return _StartAPostCard(
-              initials: _viewerInitials,
-              color: _viewerColor,
-              photoUrl: _viewerPhotoUrl,
-              onTap: _openPostTypePicker,
+    return _TaggableDirectory(
+      people: _taggablePeople,
+      viewerUserId: widget.session.user.id,
+      child: RefreshIndicator(
+        color: _ConnectColors.terra,
+        onRefresh: _bloc.refresh,
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+          itemCount: posts.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(height: 16),
+          itemBuilder: (context, index) {
+            // The composer entry point, now that the nav has no Post tab
+            // (node 2002:39114).
+            if (index == 0) {
+              return _StartAPostCard(
+                initials: _viewerInitials,
+                color: _viewerColor,
+                photoUrl: _viewerPhotoUrl,
+                onTap: _openPostTypePicker,
+              );
+            }
+            final post = posts[index - 1];
+            return _ConnectPostCard(
+              key: ValueKey(post.id),
+              post: post,
+              busy: state.busyPostId == post.id,
+              canManage:
+                  post.author.userId.isNotEmpty &&
+                  post.author.userId == widget.session.user.id,
+              onLike: () => _bloc.toggleReaction(post.id),
+              onComment: (text) => _bloc.addComment(post.id, text),
+              onAction: ({optionId}) =>
+                  _bloc.performAction(post.id, optionId: optionId),
+              onSubmitCaption: (text, photoPath, taggedUserId) =>
+                  _bloc.submitCaption(
+                    post.id,
+                    text,
+                    photoPath: photoPath,
+                    taggedUserId: taggedUserId,
+                  ),
+              onDeleteCaption: () => _bloc.deleteCaption(post.id),
+              onVoteCaption: (entryId) => _bloc.voteCaption(post.id, entryId),
+              onPlayGame: () => _openGame(post),
+              onEdit: () => _openComposer(post.type, existing: post),
+              onDelete: () => _confirmDelete(post),
+              onReport: () => _reportContent(
+                postId: post.id,
+                authorName: post.author.name,
+                isComment: false,
+              ),
+              onBlock: () =>
+                  _confirmBlock(post.author.userId, post.author.name),
+              onOpenComments: () => _openComments(post.id),
+              viewerInitials: _viewerInitials,
+              viewerColor: _viewerColor,
+              viewerPhotoUrl: _viewerPhotoUrl,
+              onOpenPerson: widget.onOpenPerson,
             );
-          }
-          final post = posts[index - 1];
-          return _ConnectPostCard(
-            key: ValueKey(post.id),
-            post: post,
-            busy: state.busyPostId == post.id,
-            canManage:
-                post.author.userId.isNotEmpty &&
-                post.author.userId == widget.session.user.id,
-            onLike: () => _bloc.toggleReaction(post.id),
-            onComment: (text) => _bloc.addComment(post.id, text),
-            onAction: ({optionId}) =>
-                _bloc.performAction(post.id, optionId: optionId),
-            onPlayGame: () => _openGame(post),
-            onEdit: () => _openComposer(post.type, existing: post),
-            onDelete: () => _confirmDelete(post),
-            onReport: () => _reportContent(
-              postId: post.id,
-              authorName: post.author.name,
-              isComment: false,
-            ),
-            onBlock: () => _confirmBlock(
-              post.author.userId,
-              post.author.name,
-            ),
-            onOpenComments: () => _openComments(post.id),
-            viewerInitials: _viewerInitials,
-            viewerColor: _viewerColor,
-            viewerPhotoUrl: _viewerPhotoUrl,
-            onOpenPerson: widget.onOpenPerson,
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -368,7 +381,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ReportSheet(authorName: authorName, isComment: isComment),
+      builder: (_) =>
+          _ReportSheet(authorName: authorName, isComment: isComment),
     );
     if (!mounted || result == null) return;
     await _bloc.reportContent(
@@ -452,6 +466,9 @@ class _ConnectPostCard extends StatefulWidget {
     required this.viewerColor,
     this.viewerPhotoUrl = '',
     this.onOpenPerson,
+    this.onSubmitCaption,
+    this.onDeleteCaption,
+    this.onVoteCaption,
   });
 
   final ConnectPost post;
@@ -472,6 +489,16 @@ class _ConnectPostCard extends StatefulWidget {
 
   /// Opens a tagged person's profile.
   final ValueChanged<String>? onOpenPerson;
+
+  /// Challenge posts only.
+  final Future<void> Function(
+    String text,
+    String? photoPath,
+    String? taggedUserId,
+  )?
+  onSubmitCaption;
+  final Future<void> Function()? onDeleteCaption;
+  final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
   State<_ConnectPostCard> createState() => _ConnectPostCardState();
@@ -504,11 +531,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
     );
   }
 
-  Widget _buildCard(
-    ConnectPost post,
-    bool showHeader,
-    Gradient? cardGradient,
-  ) {
+  Widget _buildCard(ConnectPost post, bool showHeader, Gradient? cardGradient) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cardGradient == null
@@ -516,14 +539,8 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
             : null,
         gradient: cardGradient,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _ConnectColors.cardBorder),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _cardBorderColor(post.type), width: 1.129),
+        boxShadow: _cardShadow(post.type),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
@@ -558,6 +575,9 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               onCommentPrefill: (text) =>
                   setState(() => _commentController.text = text),
               onOpenPerson: widget.onOpenPerson,
+              onSubmitCaption: widget.onSubmitCaption,
+              onDeleteCaption: widget.onDeleteCaption,
+              onVoteCaption: widget.onVoteCaption,
             ),
             _PostFooter(
               post: post,
@@ -600,6 +620,9 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.event:
     case ConnectPostType.newJoinee:
     case ConnectPostType.liveGame:
+    case ConnectPostType.captionChallenge:
+    case ConnectPostType.photoStoryChallenge:
+    case ConnectPostType.mostLikely:
       return false;
   }
 }
@@ -638,9 +661,39 @@ Gradient? _celebrationCardGradient(ConnectPostType type) {
   return switch (type) {
     ConnectPostType.birthday ||
     ConnectPostType.anniversary => _celebrationGradient,
+    ConnectPostType.captionChallenge ||
+    ConnectPostType.photoStoryChallenge ||
+    ConnectPostType.mostLikely => _captionChallengeGradient,
     _ => null,
   };
 }
+
+/// Engagement posts carry their own lilac card per node 2227:14315 — a violet
+/// border and a violet-cast shadow rather than the feed's default grey hairline.
+const _captionChallengeGradient = LinearGradient(
+  begin: Alignment(-0.87, -0.49),
+  end: Alignment(0.87, 0.49),
+  colors: [Color(0xFFFAF5FF), Color(0xFFF3E8FF), Color(0xFFEDE9FE)],
+  stops: [0, 0.4, 1],
+);
+
+Color _cardBorderColor(ConnectPostType type) => switch (type) {
+  ConnectPostType.captionChallenge ||
+  ConnectPostType.photoStoryChallenge ||
+  ConnectPostType.mostLikely => const Color(0xFFC4B5FD),
+  _ => _ConnectColors.cardBorder,
+};
+
+List<BoxShadow> _cardShadow(ConnectPostType type) => switch (type) {
+  ConnectPostType.captionChallenge ||
+  ConnectPostType.photoStoryChallenge ||
+  ConnectPostType.mostLikely => const [
+    BoxShadow(color: Color(0x1A6D28D9), blurRadius: 16, offset: Offset(0, 4)),
+  ],
+  _ => const [
+    BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2)),
+  ],
+};
 
 /// The pill shown for each post type, or null for types whose body renders its
 /// own heading (celebrations, kudos, events…).
@@ -1047,6 +1100,9 @@ class _PostBody extends StatelessWidget {
     required this.onDelete,
     required this.onCommentPrefill,
     this.onOpenPerson,
+    this.onSubmitCaption,
+    this.onDeleteCaption,
+    this.onVoteCaption,
   });
 
   final ConnectPost post;
@@ -1059,6 +1115,17 @@ class _PostBody extends StatelessWidget {
 
   /// Opens a tagged person's profile. Null where the host can't navigate.
   final ValueChanged<String>? onOpenPerson;
+
+  /// Challenge posts only — one entry each, one vote each. `photoPath` is set
+  /// on a photo-story challenge, where the entry carries a picture too.
+  final Future<void> Function(
+    String text,
+    String? photoPath,
+    String? taggedUserId,
+  )?
+  onSubmitCaption;
+  final Future<void> Function()? onDeleteCaption;
+  final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -1119,6 +1186,24 @@ class _PostBody extends StatelessWidget {
         canManage: canManage,
         onEdit: onEdit,
         onDelete: onDelete,
+      ),
+      ConnectPostType.mostLikely => _MostLikelyBody(
+        post: post,
+        canManage: canManage,
+        onEdit: onEdit,
+        onDelete: onDelete,
+        onSubmitCaption: onSubmitCaption,
+        onDeleteCaption: onDeleteCaption,
+      ),
+      ConnectPostType.captionChallenge ||
+      ConnectPostType.photoStoryChallenge => _CaptionChallengeBody(
+        post: post,
+        canManage: canManage,
+        onEdit: onEdit,
+        onDelete: onDelete,
+        onSubmitCaption: onSubmitCaption,
+        onDeleteCaption: onDeleteCaption,
+        onVoteCaption: onVoteCaption,
       ),
     };
   }
@@ -1462,7 +1547,8 @@ class _MediaPreview extends StatelessWidget {
             ),
           // The media title is the uploaded file's name, which is worth showing
           // over a video poster and never over a photo.
-          if (mediaKind == 'video' && _bodyString(post, 'mediaTitle').isNotEmpty)
+          if (mediaKind == 'video' &&
+              _bodyString(post, 'mediaTitle').isNotEmpty)
             Positioned(
               left: 12,
               top: 12,
@@ -1525,21 +1611,27 @@ class _AspectFrameState extends State<_AspectFrame> {
 
   void _resolve() {
     _detach();
-    final stream = widget.provider.resolve(createLocalImageConfiguration(context));
-    final listener = ImageStreamListener((info, _) {
-      if (!mounted) return;
-      final ratio = info.image.width / info.image.height;
-      setState(() => _aspect = ratio.clamp(_minAspect, _maxAspect));
-    }, onError: (error, stack) {
-      if (mounted) setState(() => _aspect = 16 / 9);
-    });
+    final stream = widget.provider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    final listener = ImageStreamListener(
+      (info, _) {
+        if (!mounted) return;
+        final ratio = info.image.width / info.image.height;
+        setState(() => _aspect = ratio.clamp(_minAspect, _maxAspect));
+      },
+      onError: (error, stack) {
+        if (mounted) setState(() => _aspect = 16 / 9);
+      },
+    );
     _stream = stream;
     _listener = listener;
     stream.addListener(listener);
   }
 
   void _detach() {
-    if (_stream != null && _listener != null) _stream!.removeListener(_listener!);
+    if (_stream != null && _listener != null)
+      _stream!.removeListener(_listener!);
     _stream = null;
     _listener = null;
   }
@@ -1555,7 +1647,11 @@ class _AspectFrameState extends State<_AspectFrame> {
     // Before the size is known the card holds the old fixed height, so the
     // feed does not jump as images resolve above the fold.
     if (_aspect == null) {
-      return Container(height: 200, color: _ConnectColors.sand, child: widget.child);
+      return Container(
+        height: 200,
+        color: _ConnectColors.sand,
+        child: widget.child,
+      );
     }
     return AspectRatio(
       aspectRatio: _aspect!,
@@ -2525,6 +2621,1896 @@ class _SurveyBody extends StatelessWidget {
   }
 }
 
+/// The Sora face the engagement designs are set in. Scoped to these cards —
+/// the rest of the app stays on Plus Jakarta Sans.
+const String _soraFont = 'Sora';
+
+/// The two lines that frame every Most Likely question. They say what the
+/// format asks of you, which never changes from post to post, so the card
+/// carries them rather than asking whoever wrote the question to retype them.
+const String _mostLikelyPrompt =
+    'Tag a colleague who is most likely to relate with the question.';
+const String _mostLikelyHint =
+    'Someone came to your mind immediately, tag them.';
+
+/// "Closes Friday, 5 pm" from the stored instant, in the reader's own zone.
+/// Empty when the challenge has no closing time.
+String _closesLabel(ConnectPost post) {
+  final raw = _bodyString(post, 'closesAt');
+  if (raw.isEmpty) return '';
+  final when = DateTime.tryParse(raw)?.toLocal();
+  if (when == null) return raw;
+  final hour = when.hour % 12 == 0 ? 12 : when.hour % 12;
+  final minute = when.minute.toString().padLeft(2, '0');
+  final meridiem = when.hour < 12 ? 'am' : 'pm';
+  return 'Closes ${_closesWeekdays[when.weekday - 1]}, $hour:$minute $meridiem';
+}
+
+const _closesWeekdays = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
+
+/// The picture an entry sits on, once a challenge has entries: a rounded
+/// plate narrower than the card, with the entry card overhanging it on both
+/// sides (node 2271:29757).
+const double _photoPlateWidth = 272;
+const double _photoPlateHeight = 201;
+
+/// How far the entry card rides up over that plate (the plate's -40 margin).
+const double _cardOverlap = 40;
+
+/// Palette from the caption challenge frames (nodes 2227:14315, 2204:7228).
+class _CaptionColors {
+  const _CaptionColors._();
+  static const ink = Color(0xFF222222);
+  static const inkSecondary = Color(0xFF484848);
+  static const inkTertiary = Color(0xFF717171);
+  static const brand = Color(0xFF0571A6);
+  static const border = Color(0xFFEBEBEB);
+  static const surface = Color(0xFFF7F7F9);
+  static const violetBorder = Color(0xFFC4B5FD);
+
+  /// Border/Icons — the muted grey the leaderboard's tally line uses.
+  static const inkMuted = Color(0xFF9197A2);
+
+  /// The header's divider is the same violet at 40%.
+  static const violetDivider = Color(0x66C4B5FD);
+}
+
+/// The author strip every engagement card shares — Sowaka's mark, the format
+/// name, and the manage menu, closed by the violet divider (node 2227:13048).
+class _ChallengeHeader extends StatelessWidget {
+  const _ChallengeHeader({
+    required this.post,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ConnectPost post;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  static const _subtle = TextStyle(
+    fontFamily: _soraFont,
+    fontSize: 14,
+    height: 21 / 14,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.16,
+    color: _CaptionColors.inkTertiary,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final official = post.body['official'] != false;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: _CaptionColors.violetDivider, width: 1.129),
+        ),
+      ),
+      child: Row(
+        children: [
+          // A challenge HR publishes speaks for the company and carries its
+          // mark; one a colleague posts is theirs, so it carries their face
+          // and their name. The server decides which from who posted it.
+          if (official)
+            ClipOval(
+              child: Image.asset(
+                'assets/images/sowaka_logo.png',
+                width: 47.996,
+                height: 47.996,
+                fit: BoxFit.cover,
+              ),
+            )
+          else
+            _ChallengeAuthorAvatar(author: post.author),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  official ? 'Sowaka Engagement' : post.author.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.16,
+                    color: _CaptionColors.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(_challengeKindLabel(post.type), style: _subtle),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: Text('\u2022', style: _subtle),
+                    ),
+                    Text(_relativeTime(post.publishedAt), style: _subtle),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          _PostMenuButton(
+            canManage: canManage,
+            onEdit: onEdit,
+            onDelete: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "⭐ 10 pts per vote received" — the star is the render exported from the
+/// design, not an emoji, so it sits identically on every platform. It leads
+/// the card, above the heading (nodes 2248:28335, 2227:14316).
+class _ChallengePoints extends StatelessWidget {
+  const _ChallengePoints({required this.post});
+
+  final ConnectPost post;
+
+  @override
+  Widget build(BuildContext context) {
+    final points = (post.body['pointsPerVote'] as num?)?.toInt() ?? 10;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Image.asset(
+            'assets/icons/engagement/star.png',
+            width: 18,
+            height: 18,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$points pts per vote received',
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 12,
+              height: 16.2 / 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.16,
+              color: Color(0xFFFFCC00),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown where the entry box would be once a challenge has closed.
+class _ChallengeClosedNote extends StatelessWidget {
+  const _ChallengeClosedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _CaptionColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _CaptionColors.border, width: 1.114),
+      ),
+      child: const Text(
+        'This challenge has closed. You can still like and comment.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: _soraFont,
+          fontSize: 12,
+          height: 16.2 / 12,
+          fontWeight: FontWeight.w400,
+          letterSpacing: -0.16,
+          color: _CaptionColors.inkTertiary,
+        ),
+      ),
+    );
+  }
+}
+
+/// The poster's face on a challenge they made themselves, sized to sit where
+/// the Sowaka mark otherwise would.
+class _ChallengeAuthorAvatar extends StatelessWidget {
+  const _ChallengeAuthorAvatar({required this.author});
+
+  final ConnectAuthor author;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = author.photoUrl ?? '';
+    if (photo.isNotEmpty) {
+      return ClipOval(
+        child: Image(
+          image: _remoteImage(photo),
+          width: 47.996,
+          height: 47.996,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return Container(
+      width: 47.996,
+      height: 47.996,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: const Alignment(-0.72, -0.69),
+          end: const Alignment(0.72, 0.69),
+          colors: _avatarGradientFor(author.userId),
+        ),
+      ),
+      child: Text(
+        author.initials.isEmpty ? '?' : author.initials.characters.first,
+        style: const TextStyle(
+          fontFamily: _soraFont,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+/// The card's heading and the link to its leaderboard (node 2248:28331).
+class _ChallengeTitleRow extends StatelessWidget {
+  const _ChallengeTitleRow({required this.post, required this.fallbackTitle});
+
+  final ConnectPost post;
+  final String fallbackTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _bodyString(post, 'title');
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          title.isEmpty ? fallbackTitle : title,
+          style: const TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 20,
+            height: 28 / 20,
+            fontWeight: FontWeight.w700,
+            color: _CaptionColors.ink,
+          ),
+        ),
+        GestureDetector(
+          onTap: () => _openLeaderboard(context, post),
+          behavior: HitTestBehavior.opaque,
+          child: const Text(
+            'Leaderboard',
+            style: TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 12,
+              height: 16.2 / 12,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.16,
+              color: _CaptionColors.brand,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The line under "Sowaka Engagement" — which of the engagement formats this
+/// card is.
+String _challengeKindLabel(ConnectPostType type) => switch (type) {
+  ConnectPostType.photoStoryChallenge => 'Caught Challenge',
+  ConnectPostType.mostLikely => 'Most Likely Challenge',
+  _ => 'Caption Challenge',
+};
+
+/// Most Likely: Sowaka asks a question, and instead of writing anything you
+/// tag the colleague it brings to mind (node 2227:13159).
+///
+/// The points go to the person tagged, not the tagger — so the leaderboard
+/// ranks who was named most. One tag each, and it cannot be edited: taking it
+/// back hands the point back too, exactly like the other formats.
+class _MostLikelyBody extends StatefulWidget {
+  const _MostLikelyBody({
+    required this.post,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onSubmitCaption,
+    required this.onDeleteCaption,
+  });
+
+  final ConnectPost post;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final Future<void> Function(
+    String text,
+    String? photoPath,
+    String? taggedUserId,
+  )?
+  onSubmitCaption;
+  final Future<void> Function()? onDeleteCaption;
+
+  @override
+  State<_MostLikelyBody> createState() => _MostLikelyBodyState();
+}
+
+class _MostLikelyBodyState extends State<_MostLikelyBody> {
+  final _query = TextEditingController();
+  final _focus = FocusNode();
+
+  /// The suggestions live in the app's overlay rather than in the card, so
+  /// they can hang over the question above them. Painting them out of the
+  /// card's bounds would look right but take no taps — Flutter does not
+  /// hit-test what falls outside a parent, however it is clipped.
+  final _portal = OverlayPortalController();
+  final _link = LayerLink();
+
+  ConnectTeammate? _picked;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _query.addListener(() {
+      // Typing past a chosen name means they are looking for someone else.
+      if (_picked != null && _query.text != _picked!.name) {
+        _picked = null;
+      }
+      setState(_syncPortal);
+    });
+    _focus.addListener(() => setState(_syncPortal));
+  }
+
+  void _syncPortal() {
+    final wanted = _focus.hasFocus && _picked == null;
+    if (wanted && !_portal.isShowing) {
+      _portal.show();
+    } else if (!wanted && _portal.isShowing) {
+      _portal.hide();
+    }
+  }
+
+  @override
+  void dispose() {
+    _query.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// Everyone in the org, minus whoever is looking — you cannot tag yourself,
+  /// and the server refuses it anyway.
+  List<ConnectTeammate> get _matches {
+    final directory = _TaggableDirectory.of(context);
+    if (directory == null || directory.people.isEmpty) return const [];
+    final typed = _query.text.trim().toLowerCase();
+    final me = directory.viewerUserId;
+    return directory.people
+        .where((person) => person.userId.isNotEmpty && person.userId != me)
+        .where(
+          (person) =>
+              typed.isEmpty || person.name.toLowerCase().contains(typed),
+        )
+        .take(24)
+        .toList();
+  }
+
+  Future<void> _submit() async {
+    final submit = widget.onSubmitCaption;
+    if (submit == null || _busy) return;
+    // A name typed in full counts as a pick, so someone who knows the spelling
+    // does not have to go back and hunt for the row.
+    final typed = _query.text.trim().toLowerCase();
+    final chosen =
+        _picked ??
+        _matches.where((p) => p.name.toLowerCase() == typed).firstOrNull;
+    if (chosen == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a colleague from the list')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await submit('', null, chosen.userId);
+      _query.clear();
+      _picked = null;
+      _focus.unfocus();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _untag() async {
+    final remove = widget.onDeleteCaption;
+    if (remove == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await remove();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final tagged = post.myTaggedUserId;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ChallengeHeader(
+          post: post,
+          canManage: widget.canManage,
+          onEdit: widget.onEdit,
+          onDelete: widget.onDelete,
+        ),
+        Padding(
+          // 14 top, 18 bottom, 22 each side (node 2227:13070).
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ChallengePoints(post: post),
+              _ChallengeTitleRow(post: post, fallbackTitle: 'Most Likely'),
+              const SizedBox(height: 8),
+              _brief(post),
+              const SizedBox(height: 16),
+              _questionCard(post),
+              const SizedBox(height: 10),
+              // Closed: the tags stand as they are. The leaderboard is still
+              // there to read, and likes and comments still work.
+              if (post.challengeClosed)
+                const _ChallengeClosedNote()
+              else if (tagged == null)
+                _searchField()
+              else
+                _taggedRow(tagged),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _brief(ConnectPost post) {
+    final closes = _closesLabel(post);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          _mostLikelyPrompt,
+          style: TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 12,
+            height: 16.2 / 12,
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.16,
+            color: _CaptionColors.inkSecondary,
+          ),
+        ),
+        if (closes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            closes,
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 11,
+              height: 16.5 / 11,
+              fontWeight: FontWeight.w400,
+              color: _CaptionColors.inkTertiary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// The question itself: a label, the question, and the nudge under it
+  /// (node 2227:13110).
+  Widget _questionCard(ConnectPost post) {
+    final label = _bodyString(post, 'label');
+    final question = _bodyString(post, 'question');
+    const hint = _mostLikelyHint;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _CaptionColors.violetBorder, width: 1.129),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (label.isNotEmpty)
+            Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: _CaptionColors.border),
+                ),
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 10,
+                  height: 16.2 / 10,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: -0.16,
+                  color: _CaptionColors.ink,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              question,
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 14,
+                height: 16.2 / 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: _CaptionColors.ink,
+              ),
+            ),
+          ),
+          if (hint.isNotEmpty)
+            Text(
+              hint,
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 10,
+                height: 16.2 / 10,
+                fontWeight: FontWeight.w400,
+                letterSpacing: -0.16,
+                color: _CaptionColors.inkTertiary,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The "@ Search a colleague" pill, with the suggestions floating above it
+  /// (node 2227:13102) so the list never pushes the card around as you type.
+  Widget _searchField() {
+    // Resolved here, under the feed, because the overlay builds outside this
+    // subtree and cannot reach the directory itself.
+    final matches = _matches;
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (_) {
+        if (matches.isEmpty) return const SizedBox.shrink();
+        return Positioned(
+          width: 227,
+          child: CompositedTransformFollower(
+            link: _link,
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.bottomLeft,
+            offset: const Offset(16.87, 0),
+            child: _ColleagueSuggestions(
+              people: matches,
+              onPick: (person) {
+                setState(() {
+                  _picked = person;
+                  _query.text = person.name;
+                  _syncPortal();
+                });
+                _focus.unfocus();
+              },
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(
+        link: _link,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 15.114,
+            vertical: 11.114,
+          ),
+          decoration: BoxDecoration(
+            color: _CaptionColors.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _CaptionColors.border, width: 1.114),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _query,
+                  focusNode: _focus,
+                  enabled: widget.onSubmitCaption != null,
+                  onSubmitted: (_) => _submit(),
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 13,
+                    color: _CaptionColors.ink,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    filled: false,
+                    // The '@' is the field's own, not something to type: it
+                    // stands in front of whatever is typed, and folds back
+                    // into the placeholder while the field is empty.
+                    prefixText: _query.text.isEmpty ? null : '\u0040',
+                    prefixStyle: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 13,
+                      color: _CaptionColors.ink,
+                    ),
+                    hintText: '\u0040 Search a colleague',
+                    hintStyle: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 13,
+                      color: _CaptionColors.inkTertiary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _submit,
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  width: 19.985,
+                  height: 19.985,
+                  child: _busy
+                      ? const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _CaptionColors.brand,
+                          ),
+                        )
+                      : SvgPicture.asset(
+                          'assets/icons/engagement/send.svg',
+                          width: 19.985,
+                          height: 19.985,
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Your own tag, once it is in. It cannot be edited — the point has already
+  /// moved to them — so the only action is to take it back and pick again.
+  Widget _taggedRow(String taggedUserId) {
+    final board = widget.post.captionLeaderboard;
+    final them = board.where((e) => e.userId == taggedUserId).firstOrNull;
+    final name = them?.name ?? 'your pick';
+    final role = them?.text ?? '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15.114, vertical: 11.114),
+      decoration: BoxDecoration(
+        color: _CaptionColors.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _CaptionColors.border, width: 1.114),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: const Alignment(-0.72, -0.69),
+                end: const Alignment(0.72, 0.69),
+                colors: _avatarGradientFor(taggedUserId),
+              ),
+            ),
+            child: Text(
+              (them?.initials ?? '?').characters.take(2).toString(),
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'You tagged $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 13,
+                    height: 21 / 14,
+                    fontWeight: FontWeight.w600,
+                    color: _CaptionColors.ink,
+                  ),
+                ),
+                if (role.isNotEmpty)
+                  Text(
+                    role,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 12,
+                      height: 18 / 12,
+                      fontWeight: FontWeight.w400,
+                      color: _CaptionColors.inkTertiary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _untag,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              _busy ? '…' : 'Remove',
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 12,
+                height: 16.2 / 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: _CaptionColors.brand,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The colleague picker that floats over the card while you type
+/// (node 2227:13102) — 227 wide, capped at 144 tall so it scrolls rather than
+/// growing past the card.
+class _ColleagueSuggestions extends StatelessWidget {
+  const _ColleagueSuggestions({required this.people, required this.onPick});
+
+  final List<ConnectTeammate> people;
+  final ValueChanged<ConnectTeammate> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 227,
+        constraints: const BoxConstraints(maxHeight: 144),
+        decoration: BoxDecoration(
+          color: _CaptionColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _CaptionColors.border, width: 1.114),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A6D28D9),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          shrinkWrap: true,
+          itemCount: people.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final person = people[index];
+            return Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (_) => onPick(person),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: _avatarGradientFor(person.userId),
+                      ),
+                    ),
+                    child: Text(
+                      person.initials.characters.take(2).toString(),
+                      style: const TextStyle(
+                        fontFamily: _soraFont,
+                        fontSize: 11.52,
+                        height: 17.28 / 11.52,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          person.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: _soraFont,
+                            fontSize: 14,
+                            height: 21 / 14,
+                            fontWeight: FontWeight.w600,
+                            color: _CaptionColors.ink,
+                          ),
+                        ),
+                        if (person.department.isNotEmpty)
+                          Text(
+                            person.department,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: _soraFont,
+                              fontSize: 12,
+                              height: 18 / 12,
+                              fontWeight: FontWeight.w400,
+                              color: _CaptionColors.inkTertiary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// The org-wide directory, handed down to whichever card needs to tag someone.
+/// The feed loads it once; passing it through every layer of post plumbing
+/// would mean threading it through widgets that have no interest in it.
+class _TaggableDirectory extends InheritedWidget {
+  const _TaggableDirectory({
+    required this.people,
+    required this.viewerUserId,
+    required super.child,
+  });
+
+  final List<ConnectTeammate> people;
+
+  /// Kept alongside the list so a picker can leave the viewer out of it —
+  /// tagging yourself is refused by the server, so it should not be offered.
+  final String viewerUserId;
+
+  static _TaggableDirectory? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_TaggableDirectory>();
+
+  @override
+  bool updateShouldNotify(_TaggableDirectory old) =>
+      old.people != people || old.viewerUserId != viewerUserId;
+}
+
+/// A caption challenge: Sowaka posts a picture, everyone writes one caption,
+/// and the votes decide the leaderboard.
+///
+/// A caption cannot be edited once it is up — it may already have been voted
+/// on, and rewriting it underneath those votes would change what people
+/// endorsed. Rewriting means deleting and posting again, which gives up the
+/// votes and the points with it.
+class _CaptionChallengeBody extends StatefulWidget {
+  const _CaptionChallengeBody({
+    required this.post,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onSubmitCaption,
+    required this.onDeleteCaption,
+    required this.onVoteCaption,
+  });
+
+  final ConnectPost post;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final Future<void> Function(
+    String text,
+    String? photoPath,
+    String? taggedUserId,
+  )?
+  onSubmitCaption;
+  final Future<void> Function()? onDeleteCaption;
+  final Future<void> Function(String entryId)? onVoteCaption;
+
+  @override
+  State<_CaptionChallengeBody> createState() => _CaptionChallengeBodyState();
+}
+
+class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
+  final _caption = TextEditingController();
+  final _pageController = PageController();
+  int _page = 0;
+  bool _busy = false;
+
+  /// The picture chosen for a photo-story entry, before it is sent.
+  String? _photoPath;
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  bool get _needsPhoto =>
+      widget.post.type == ConnectPostType.photoStoryChallenge;
+
+  Future<void> _pickPhoto() async {
+    final picked = await pickImageFrom(context);
+    if (picked == null || !mounted) return;
+    // Cropped to the card's own photo well, so what someone lines up here is
+    // exactly what the feed shows — no surprise trim once it is posted.
+    final cropped = await cropImageFile(
+      context,
+      path: picked.path,
+      title: 'Crop your photo',
+      initial: CropShape.challengeCard,
+      allowShapeChange: false,
+    );
+    if (cropped == null) return;
+    setState(() => _photoPath = cropped);
+  }
+
+  Future<void> _submit() async {
+    final text = _caption.text.trim();
+    final submit = widget.onSubmitCaption;
+    if (text.isEmpty || submit == null || _busy) return;
+    if (_needsPhoto && _photoPath == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add the photo you caught')));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await submit(text, _photoPath, null);
+      _caption.clear();
+      setState(() => _photoPath = null);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final entries = post.captionEntries;
+    final alreadyCaptioned = post.myCaptionEntryId != null;
+    final closed = post.challengeClosed;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _header(post),
+        Padding(
+          // Body container: 14 top, 18 bottom, 22 each side (node 2203:6712).
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ChallengePoints(post: post),
+              _titleRow(post),
+              const SizedBox(height: 8),
+              _brief(post),
+              const SizedBox(height: 16),
+              _photo(post, entries),
+              if (entries.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _pageIndicator(entries.length),
+              ],
+              // Closed: the result stands, so the whole entry block goes. A
+              // closing line under the card already says why, and a disabled
+              // box repeating it would be clutter over a finished game.
+              if (closed)
+                const _ChallengeClosedNote()
+              // The input goes once you have captioned: there is nothing left
+              // to type, and a disabled box explaining that is just clutter
+              // above your own entry, which already carries the Delete action.
+              else if (!alreadyCaptioned) ...[
+                const SizedBox(height: 4),
+                const Text(
+                  'Your entry',
+                  style: TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 11,
+                    height: 16.5 / 11,
+                    fontWeight: FontWeight.w400,
+                    color: _CaptionColors.inkTertiary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (_needsPhoto) ...[_photoField(), const SizedBox(height: 10)],
+                _captionInput(),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Author row — 18 top, 14 bottom, 22 sides, closed by the violet divider.
+  Widget _header(ConnectPost post) => _ChallengeHeader(
+    post: post,
+    canManage: widget.canManage,
+    onEdit: widget.onEdit,
+    onDelete: widget.onDelete,
+  );
+
+  Widget _titleRow(ConnectPost post) =>
+      _ChallengeTitleRow(post: post, fallbackTitle: 'Caption this');
+
+  Widget _brief(ConnectPost post) {
+    final task = _bodyString(post, 'task');
+    final closes = _closesLabel(post);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (task.isNotEmpty)
+          Text(
+            task,
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 12,
+              height: 16.2 / 12,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.16,
+              color: _CaptionColors.inkSecondary,
+            ),
+          ),
+        if (closes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            closes,
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 11,
+              height: 16.5 / 11,
+              fontWeight: FontWeight.w400,
+              color: _CaptionColors.inkTertiary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// How the picture and the entries sit together, which differs by format.
+  ///
+  /// A caption challenge has one picture — HR's — and the captions ride over
+  /// its lower edge. A photo challenge has no picture of its own: every entry
+  /// brings its own, so the carousel pages through entrants' photos and there
+  /// is nothing to show until someone enters.
+  /// How the picture and the entries sit together, which differs by format.
+  ///
+  /// A caption challenge has one picture — HR's — and the captions ride over
+  /// its lower edge. A photo challenge has no picture of its own: every entry
+  /// brings its own, so the carousel pages through entrants' photos and there
+  /// is nothing to show until someone enters.
+  Widget _photo(ConnectPost post, List<ConnectCaptionEntry> entries) {
+    final entryPhotos = post.type == ConnectPostType.photoStoryChallenge;
+    if (entryPhotos && entries.isEmpty) return const SizedBox.shrink();
+
+    final mediaUrl = _bodyString(post, 'mediaUrl');
+
+    // Nothing entered yet: the picture is the whole block, full width behind
+    // the violet frame (node 2227:14181).
+    if (entries.isEmpty) {
+      return Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _CaptionColors.violetBorder, width: 1.129),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: SizedBox(
+            height: 223.998,
+            width: double.infinity,
+            child: mediaUrl.isEmpty
+                ? const ColoredBox(color: Color(0xFFF2F2F5))
+                : Image(image: _remoteImage(mediaUrl), fit: BoxFit.cover),
+          ),
+        ),
+      );
+    }
+
+    // Once there are entries the frame goes and the picture shrinks to a
+    // rounded 272x201 plate, with the entry card overhanging it on both sides
+    // (node 2271:29756). The card overlaps the plate by 40, and the well ends
+    // where the card ends — measured, so a one-line caption leaves no gap.
+    final wellHeight = _photoPlateHeight - _cardOverlap + _tallestCard(entries);
+
+    Widget plate(String? url) => ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: _photoPlateWidth,
+        height: _photoPlateHeight,
+        child: (url ?? '').isEmpty
+            ? const ColoredBox(color: Color(0xFFF2F2F5))
+            : Image(image: _remoteImage(url!), fit: BoxFit.cover),
+      ),
+    );
+
+    return SizedBox(
+      height: wellHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // One picture for a caption challenge; one per entry for a photo
+          // challenge, so it pages with the carousel.
+          if (!entryPhotos)
+            Align(alignment: Alignment.topCenter, child: plate(mediaUrl)),
+          PageView.builder(
+            controller: _pageController,
+            itemCount: entries.length,
+            onPageChanged: (index) => setState(() => _page = index),
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (entryPhotos)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: plate(entry.photoUrl),
+                    ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: _photoPlateHeight - _cardOverlap,
+                    child: _captionCard(entry),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The height of the tallest entry card, so the well can hug it.
+  ///
+  /// Everything but the caption is fixed: 12 padding, 8 above and below the
+  /// divider, the 1px rule itself, the 32 author row and 12 padding again.
+  /// Only the caption varies, between one and two lines.
+  double _tallestCard(List<ConnectCaptionEntry> entries) {
+    const chrome = 12 + 8 + 1 + 8 + 32 + 12;
+    const lineHeight = 16.2;
+    // The card spans the well's full 307.987, less its 16 padding and its
+    // 1.129 border either side.
+    const textWidth = 307.987 - 32 - 2 * 1.129;
+    var lines = 1;
+    for (final entry in entries) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: '"${entry.text}"',
+          style: const TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 14,
+            height: lineHeight / 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.16,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 2,
+      )..layout(maxWidth: textWidth);
+      if (painter.computeLineMetrics().length > 1) lines = 2;
+    }
+    return chrome + lines * lineHeight;
+  }
+
+  Widget _captionCard(ConnectCaptionEntry entry) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _CaptionColors.border, width: 1.129),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '"${entry.text}"',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 14,
+              height: 16.2 / 14,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.16,
+              color: _CaptionColors.ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1, thickness: 1, color: _CaptionColors.border),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: const Alignment(-0.72, -0.69),
+                    end: const Alignment(0.72, 0.69),
+                    colors: _avatarGradientFor(entry.userId),
+                  ),
+                ),
+                child: Text(
+                  entry.initials.isEmpty ? '?' : entry.initials[0],
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 16,
+                    height: 16.2 / 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      entry.isMine ? '${entry.name} (you)' : entry.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: _soraFont,
+                        fontSize: 12,
+                        height: 16.2 / 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.16,
+                        color: _CaptionColors.ink,
+                      ),
+                    ),
+                    Text(
+                      '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        fontFamily: _soraFont,
+                        fontSize: 10,
+                        height: 16.2 / 10,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: -0.16,
+                        color: _CaptionColors.inkTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Once closed, the only thing left to say about an entry is how
+              // it did: the vote count beside it already does that, and Delete
+              // would take points back off whoever earned them. Your own entry
+              // reads "Yours" so the card still tells you which one it is.
+              if (widget.post.challengeClosed)
+                _captionAction(
+                  label: entry.isMine
+                      ? 'Yours'
+                      : (entry.votedByViewer ? 'Voted' : 'Closed'),
+                  filled: false,
+                  onTap: null,
+                )
+              // Your own caption offers Delete instead of Vote — you cannot
+              // vote for yourself, and deleting is the only way to rewrite.
+              else if (entry.isMine)
+                _captionAction(
+                  label: 'Delete',
+                  filled: false,
+                  onTap: widget.onDeleteCaption == null
+                      ? null
+                      : () => _confirmDelete(context),
+                )
+              else
+                _captionAction(
+                  label: entry.votedByViewer ? 'Voted' : 'Vote',
+                  filled: !entry.votedByViewer,
+                  onTap: widget.onVoteCaption == null
+                      ? null
+                      : () => widget.onVoteCaption!(entry.id),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _captionAction({
+    required String label,
+    required bool filled,
+    required VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: filled ? _CaptionColors.brand : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: onTap == null ? _CaptionColors.border : _CaptionColors.brand,
+            width: 1.129,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 12,
+            height: 16.2 / 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.16,
+            color: filled
+                ? Colors.white
+                : (onTap == null
+                      ? _CaptionColors.inkTertiary
+                      : _CaptionColors.brand),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pageIndicator(int count) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var index = 0; index < count; index++) ...[
+              if (index > 0) const SizedBox(width: 4),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: index == _page
+                      ? const Color(0xFF9333EA)
+                      : const Color(0xFFD9D9E3),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${_page + 1} of $count',
+          style: const TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 13,
+            height: 19.5 / 13,
+            fontWeight: FontWeight.w400,
+            color: _CaptionColors.inkSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// "Add image" until a picture is chosen, then the picture itself with a
+  /// cross to drop it (nodes 2217:10877, 2217:11010).
+  Widget _photoField() {
+    final path = _photoPath;
+    if (path == null) {
+      return GestureDetector(
+        onTap: widget.onSubmitCaption == null ? null : _pickPhoto,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          decoration: BoxDecoration(
+            color: _CaptionColors.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _CaptionColors.border, width: 1.114),
+          ),
+          child: const Text(
+            'Add image',
+            style: TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 13,
+              color: _CaptionColors.inkTertiary,
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _CaptionColors.surface,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: _CaptionColors.border, width: 1.114),
+      ),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.file(
+              File(path),
+              height: 223.998,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: 10,
+            child: GestureDetector(
+              onTap: () => setState(() => _photoPath = null),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(
+                  color: Color(0x99000000),
+                  shape: BoxShape.circle,
+                ),
+                child: SvgPicture.asset(
+                  'assets/icons/engagement/cross.svg',
+                  width: 14,
+                  height: 14,
+                  colorFilter: const ColorFilter.mode(
+                    Colors.white,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _captionInput() {
+    final empty = widget.post.captionEntries.isEmpty;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15.114, vertical: 11.114),
+      decoration: BoxDecoration(
+        color: _CaptionColors.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _CaptionColors.border, width: 1.114),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _caption,
+              enabled: widget.onSubmitCaption != null,
+              maxLength: 140,
+              onSubmitted: (_) => _submit(),
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 13,
+                color: _CaptionColors.ink,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                counterText: '',
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                filled: false,
+                hintText: _needsPhoto
+                    ? (empty ? 'Be the first one to catch' : 'Your story...')
+                    : (empty
+                          ? 'Be the first one to caption'
+                          : 'Your caption...'),
+                hintStyle: const TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 13,
+                  color: _CaptionColors.inkTertiary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _submit,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 19.985,
+              height: 19.985,
+              child: _busy
+                  ? const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _CaptionColors.brand,
+                      ),
+                    )
+                  : SvgPicture.asset(
+                      'assets/icons/engagement/send.svg',
+                      width: 19.985,
+                      height: 19.985,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final entry = widget.post.captionEntries.firstWhere((item) => item.isMine);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete your caption?'),
+        content: Text(
+          entry.votes == 0
+              ? 'You can write a new one straight after.'
+              : 'It has ${entry.votes} vote${entry.votes == 1 ? '' : 's'}. '
+                    'Deleting gives up those votes and the points they earned.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await widget.onDeleteCaption?.call();
+  }
+}
+
+/// "2h ago" — the relative stamp the header shows.
+String _relativeTime(DateTime? value) {
+  if (value == null) return '';
+  final diff = DateTime.now().difference(value);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
+}
+
+/// Avatar colours, picked per person so the same face keeps its colour.
+List<Color> _avatarGradientFor(String userId) {
+  const palettes = [
+    [Color(0xFFFF5A5F), Color(0xFFFF8C8F)],
+    [Color(0xFF4F8C89), Color(0xFF7FB3B0)],
+    [Color(0xFF8A6AA0), Color(0xFFB394C6)],
+    [Color(0xFFC98A2E), Color(0xFFE0B063)],
+    [Color(0xFF4C5840), Color(0xFF77856A)],
+  ];
+  return palettes[userId.hashCode.abs() % palettes.length];
+}
+
+/// The leaderboard behind the card's "Leaderboard" link (nodes 2204:8251,
+/// 2227:14436). Ranked by votes; ties keep submission order.
+Future<void> _openLeaderboard(BuildContext context, ConnectPost post) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (sheetContext) => _CaptionLeaderboardSheet(post: post),
+  );
+}
+
+class _CaptionLeaderboardSheet extends StatelessWidget {
+  const _CaptionLeaderboardSheet({required this.post});
+
+  final ConnectPost post;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = post.captionLeaderboard;
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.62,
+      child: Column(
+        children: [
+          // Grabber: 40x4, 12 above and 4 below (node 2204:8252).
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFD1D5DB),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1.114),
+              ),
+            ),
+            child: const Text(
+              'Leaderboard',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 16,
+                height: 24 / 16,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: _CaptionColors.ink,
+              ),
+            ),
+          ),
+          Expanded(
+            child: entries.isEmpty
+                ? const _CaptionLeaderboardEmpty()
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    itemCount: entries.length,
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1.129,
+                      thickness: 1.129,
+                      color: _CaptionColors.border,
+                    ),
+                    itemBuilder: (context, index) => _CaptionLeaderboardRow(
+                      entry: entries[index],
+                      type: post.type,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CaptionLeaderboardRow extends StatelessWidget {
+  const _CaptionLeaderboardRow({required this.entry, required this.type});
+
+  final ConnectCaptionEntry entry;
+
+  /// Most Likely ranks people by the tags they were given, not by likes on
+  /// something they wrote, so the tally under the row is counted differently.
+  final ConnectPostType type;
+
+  /// The top three wear the medals drawn in the design; everyone after gets
+  /// their number (nodes 2206:10561, 2206:10592, 2206:10623).
+  static const _medals = {
+    1: 'assets/icons/engagement/medal_1.svg',
+    2: 'assets/icons/engagement/medal_2.svg',
+    3: 'assets/icons/engagement/medal_3.svg',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = entry.rank ?? 0;
+    final medal = _medals[rank];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (medal != null) ...[
+                      SvgPicture.asset(medal, width: 20, height: 20),
+                      const SizedBox(width: 8),
+                    ] else ...[
+                      Text(
+                        '$rank',
+                        style: const TextStyle(
+                          fontFamily: _soraFont,
+                          fontSize: 15,
+                          height: 22.5 / 15,
+                          fontWeight: FontWeight.w700,
+                          color: _CaptionColors.ink,
+                        ),
+                      ),
+                      const SizedBox(width: 17),
+                    ],
+                    Container(
+                      width: 32,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: const Alignment(-0.72, -0.69),
+                          end: const Alignment(0.72, 0.69),
+                          colors: _avatarGradientFor(entry.userId),
+                        ),
+                      ),
+                      child: Text(
+                        entry.initials.isEmpty ? '?' : entry.initials[0],
+                        style: const TextStyle(
+                          fontFamily: _soraFont,
+                          fontSize: 12,
+                          height: 16.2 / 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        entry.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: _soraFont,
+                          fontSize: 12,
+                          height: 16.2 / 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.16,
+                          color: _CaptionColors.ink,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (entry.text.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    entry.text,
+                    style: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 14,
+                      height: 21 / 14,
+                      fontWeight: FontWeight.w400,
+                      color: _CaptionColors.inkSecondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  type == ConnectPostType.mostLikely
+                      ? '${entry.votes} tag${entry.votes == 1 ? '' : 's'}'
+                      : '${entry.votes} like${entry.votes == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 12,
+                    height: 18 / 12,
+                    fontWeight: FontWeight.w400,
+                    color: _CaptionColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            '${entry.points} points',
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 14,
+              height: 21 / 14,
+              fontWeight: FontWeight.w700,
+              color: _CaptionColors.brand,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CaptionLeaderboardEmpty extends StatelessWidget {
+  const _CaptionLeaderboardEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 62),
+        Image.asset(
+          'assets/icons/engagement/trophy.png',
+          width: 108,
+          height: 108,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Be the first one to play',
+          style: TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 14,
+            height: 16.2 / 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.16,
+            color: Color(0xFFD67E33),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _EventBody extends StatelessWidget {
   const _EventBody({
     required this.post,
@@ -3487,21 +5473,17 @@ class _QuickPostPageState extends State<_QuickPostPage> {
     super.dispose();
   }
 
-
   bool get _canPost => _text.text.trim().isNotEmpty || _media.isNotEmpty;
 
   Future<void> _addMedia() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final files = await pickImagesFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
-      withData: false,
-      allowMultiple: true,
     );
-    final files = result?.files ?? const [];
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
       var path = file.path;
-      if (path == null || path.isEmpty) continue;
+      if (path.isEmpty) continue;
       final mime = _mimeTypeFor(file.extension);
       // Each photo gets its own crop step; video has no frame to crop.
       if (mime.startsWith('image/')) {
@@ -3545,6 +5527,29 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   /// A type chip was tapped. Media is composed right here; every other type
   /// has its own dedicated composer, so hand off to it and leave this screen
   /// behind — the flows themselves are unchanged.
+  /// Opens the contest screen, and posts what it hands back.
+  Future<void> _startContest() async {
+    final result = await Navigator.of(context).push<ContestDraft>(
+      MaterialPageRoute(builder: (_) => const ContestComposerPage()),
+    );
+    if (!mounted || result == null) return;
+    final photo = result.photoPath;
+    final draft = photo == null
+        ? result.draft
+        : ConnectPostDraft(
+            type: result.draft.type,
+            body: result.draft.body,
+            media: ConnectMediaAttachment(
+              path: photo,
+              name: photo.split(Platform.pathSeparator).last,
+              size: await File(photo).length(),
+              mimeType: 'image/jpeg',
+            ),
+          );
+    if (!mounted) return;
+    Navigator.of(context).pop(_QuickPostResult.draft(draft));
+  }
+
   Future<void> _chooseType(ConnectPostType type) async {
     if (type == ConnectPostType.newPost) {
       await _addMedia();
@@ -3699,6 +5704,13 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               label: 'Recommend',
               asset: 'assets/icons/post_type_recommend.png',
               onTap: () => _chooseType(ConnectPostType.recommendation),
+            ),
+            // Contests have their own screen rather than a composer body:
+            // the format is chosen first and decides which fields follow.
+            _PostTypeChip(
+              label: 'Contest',
+              asset: 'assets/icons/post_type_kudos.png',
+              onTap: _startContest,
             ),
             // Not among the design's four chips, but announcements are
             // admin-only and this row is now the only way to reach them.
@@ -4249,6 +6261,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   late final TextEditingController _prize;
   late final TextEditingController _acknowledgementMessage;
   _PollDraft? _pollDraft;
+
   /// The link's resolved preview, shown under the URL field. Null until a
   /// lookup has returned something.
   Map<String, String>? _linkPreview;
@@ -4382,7 +6395,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       return;
     }
     if (url == _resolvedFor) return;
-    _linkDebounce = Timer(const Duration(milliseconds: 600), () => _resolveLink(url));
+    _linkDebounce = Timer(
+      const Duration(milliseconds: 600),
+      () => _resolveLink(url),
+    );
   }
 
   Future<void> _resolveLink(String url) async {
@@ -4394,7 +6410,9 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     setState(() {
       _resolvingLink = false;
       _resolvedFor = url;
-      _linkPreview = (preview['imageUrl'] ?? '').isEmpty && (preview['title'] ?? '').isEmpty
+      _linkPreview =
+          (preview['imageUrl'] ?? '').isEmpty &&
+              (preview['title'] ?? '').isEmpty
           ? null
           : preview;
       // The title field is a convenience, not an override — only filled when
@@ -5132,15 +7150,13 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   }
 
   Future<void> _pickMedia() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final file = await pickImageFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
-      withData: false,
     );
-    final file = result?.files.single;
     if (file == null) return;
     var path = file.path;
-    if (path == null || path.isEmpty) {
+    if (path.isEmpty) {
       _showValidation('Could not read the selected file.');
       return;
     }
@@ -5185,17 +7201,14 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   Future<void> _pickExtraMedia() async {
     final remaining = _maxMediaCount - 1 - _extraMedia.length;
     if (remaining <= 0) return;
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final files = (await pickImagesFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-      withData: false,
-      allowMultiple: true,
-    );
-    final files = result?.files.take(remaining) ?? const [];
+    )).take(remaining);
     final picked = <ConnectMediaAttachment>[];
     for (final file in files) {
       var path = file.path;
-      if (path == null || path.isEmpty) continue;
+      if (path.isEmpty) continue;
       if (!mounted) return;
       final cropped = await cropImageFile(
         context,
@@ -5426,260 +7439,270 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             // the emoji row sit behind it — the keyboard came up and there was
             // nowhere to see what you were typing.
             return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-              child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x1F000000),
-                    blurRadius: 16,
-                    offset: Offset(0, -4),
-                  ),
-                ],
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
-              child: Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 12, bottom: 4),
-                    child: Center(
-                      child: SizedBox(
-                        width: 40,
-                        height: 4,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Color(0xFFD1D5DB),
-                            borderRadius: BorderRadius.all(Radius.circular(99)),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x1F000000),
+                      blurRadius: 16,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12, bottom: 4),
+                      child: Center(
+                        child: SizedBox(
+                          width: 40,
+                          height: 4,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFFD1D5DB),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(99),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Color(0xFFF3F4F6)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFF3F4F6)),
+                        ),
+                      ),
+                      child: Center(
+                        child: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.16,
+                            ),
+                            children: [
+                              const TextSpan(
+                                text: 'Comments · ',
+                                style: TextStyle(color: Color(0xFF222222)),
+                              ),
+                              TextSpan(
+                                text: '${post.commentCount}',
+                                style: const TextStyle(
+                                  color: Color(0xFF717171),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    child: Center(
-                      child: RichText(
-                        text: TextSpan(
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.16,
-                          ),
-                          children: [
-                            const TextSpan(
-                              text: 'Comments · ',
-                              style: TextStyle(color: Color(0xFF222222)),
+                    Expanded(
+                      child: post.comments.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No comments yet — say something first.',
+                                style: TextStyle(
+                                  color: _ConnectColors.faint,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          : Builder(
+                              builder: (context) {
+                                final topLevel = _topLevelComments(post);
+                                final repliesByParent = _repliesByParent(post);
+                                return ListView.builder(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
+                                  itemCount: topLevel.length,
+                                  itemBuilder: (context, index) {
+                                    final comment = topLevel[index];
+                                    final replies =
+                                        repliesByParent[comment.id] ??
+                                        const <ConnectComment>[];
+                                    final expanded = _expandedThreadIds
+                                        .contains(comment.id);
+                                    return Container(
+                                      padding: const EdgeInsets.only(
+                                        top: 12,
+                                        bottom: 12,
+                                      ),
+                                      decoration: const BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Color(0xFFF7F7F9),
+                                          ),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildCommentRow(comment),
+                                          if (replies.isNotEmpty)
+                                            if (expanded) ...[
+                                              for (final reply in replies)
+                                                _buildReplyRow(comment, reply),
+                                              _buildHideRepliesToggle(
+                                                comment.id,
+                                              ),
+                                            ] else
+                                              _buildViewRepliesToggle(
+                                                comment.id,
+                                                replies.length,
+                                              ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
                             ),
-                            TextSpan(
-                              text: '${post.commentCount}',
-                              style: const TextStyle(color: Color(0xFF717171)),
+                    ),
+                    Container(
+                      height: 54,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFF3F4F6)),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          for (final emoji in const [
+                            '❤️',
+                            '🙌',
+                            '🔥',
+                            '👏',
+                            '😍',
+                            '🎉',
+                            '💯',
+                            '😂',
+                          ])
+                            InkWell(
+                              borderRadius: BorderRadius.circular(99),
+                              onTap: () => _insertEmoji(emoji),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 22),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_replyingToId != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Replying to ${_replyingToName ?? ''}',
+                                        style: const TextStyle(
+                                          color: Color(0xFF717171),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: _cancelReply,
+                                      child: const Icon(
+                                        Icons.close_rounded,
+                                        size: 16,
+                                        color: Color(0xFF717171),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Row(
+                              children: [
+                                _InitialAvatar(
+                                  initials: widget.viewerInitials,
+                                  color: widget.viewerColor,
+                                  photoUrl: widget.viewerPhotoUrl,
+                                  size: 32,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _controller,
+                                    focusNode: _focusNode,
+                                    minLines: 1,
+                                    maxLines: 3,
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: (_) => _submit(),
+                                    decoration: InputDecoration(
+                                      hintText: 'Write a comment...',
+                                      hintStyle: const TextStyle(
+                                        color: Color(0xFF717171),
+                                        fontSize: 13,
+                                      ),
+                                      filled: true,
+                                      fillColor: const Color(0xFFF7F7F9),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                      suffixIcon: IconButton(
+                                        icon: const Icon(
+                                          Icons.send_rounded,
+                                          size: 18,
+                                        ),
+                                        color: _ConnectColors.blue,
+                                        onPressed: busy ? null : _submit,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(99),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFFEBEBEB),
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(99),
+                                        borderSide: const BorderSide(
+                                          color: _ConnectColors.blue,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: post.comments.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No comments yet — say something first.',
-                              style: TextStyle(
-                                color: _ConnectColors.faint,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        : Builder(
-                            builder: (context) {
-                              final topLevel = _topLevelComments(post);
-                              final repliesByParent = _repliesByParent(post);
-                              return ListView.builder(
-                                controller: scrollController,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                ),
-                                itemCount: topLevel.length,
-                                itemBuilder: (context, index) {
-                                  final comment = topLevel[index];
-                                  final replies =
-                                      repliesByParent[comment.id] ??
-                                      const <ConnectComment>[];
-                                  final expanded = _expandedThreadIds.contains(
-                                    comment.id,
-                                  );
-                                  return Container(
-                                    padding: const EdgeInsets.only(
-                                      top: 12,
-                                      bottom: 12,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: Color(0xFFF7F7F9),
-                                        ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _buildCommentRow(comment),
-                                        if (replies.isNotEmpty)
-                                          if (expanded) ...[
-                                            for (final reply in replies)
-                                              _buildReplyRow(comment, reply),
-                                            _buildHideRepliesToggle(comment.id),
-                                          ] else
-                                            _buildViewRepliesToggle(
-                                              comment.id,
-                                              replies.length,
-                                            ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                  Container(
-                    height: 54,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: const BoxDecoration(
-                      border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        for (final emoji in const [
-                          '❤️',
-                          '🙌',
-                          '🔥',
-                          '👏',
-                          '😍',
-                          '🎉',
-                          '💯',
-                          '😂',
-                        ])
-                          InkWell(
-                            borderRadius: BorderRadius.circular(99),
-                            onTap: () => _insertEmoji(emoji),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 22),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_replyingToId != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Replying to ${_replyingToName ?? ''}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF717171),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: _cancelReply,
-                                    child: const Icon(
-                                      Icons.close_rounded,
-                                      size: 16,
-                                      color: Color(0xFF717171),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          Row(
-                            children: [
-                              _InitialAvatar(
-                                initials: widget.viewerInitials,
-                                color: widget.viewerColor,
-                                photoUrl: widget.viewerPhotoUrl,
-                                size: 32,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: TextField(
-                                  controller: _controller,
-                                  focusNode: _focusNode,
-                                  minLines: 1,
-                                  maxLines: 3,
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) => _submit(),
-                                  decoration: InputDecoration(
-                                    hintText: 'Write a comment...',
-                                    hintStyle: const TextStyle(
-                                      color: Color(0xFF717171),
-                                      fontSize: 13,
-                                    ),
-                                    filled: true,
-                                    fillColor: const Color(0xFFF7F7F9),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(
-                                        Icons.send_rounded,
-                                        size: 18,
-                                      ),
-                                      color: _ConnectColors.blue,
-                                      onPressed: busy ? null : _submit,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(99),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFFEBEBEB),
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(99),
-                                      borderSide: const BorderSide(
-                                        color: _ConnectColors.blue,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
               ),
             );
           },
@@ -6551,16 +8574,20 @@ class _LinkPreviewCard extends StatelessWidget {
               child: loading
                   ? const Center(
                       child: SizedBox(
-                        width: 18, height: 18,
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
                   : imageUrl.isEmpty
-                      ? Container(
-                          color: _ConnectColors.sand,
-                          child: const Icon(Icons.link_rounded, color: Colors.white70),
-                        )
-                      : Image(image: _remoteImage(imageUrl), fit: BoxFit.cover),
+                  ? Container(
+                      color: _ConnectColors.sand,
+                      child: const Icon(
+                        Icons.link_rounded,
+                        color: Colors.white70,
+                      ),
+                    )
+                  : Image(image: _remoteImage(imageUrl), fit: BoxFit.cover),
             ),
           ),
           const SizedBox(width: 12),
@@ -6576,14 +8603,19 @@ class _LinkPreviewCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF222222),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF222222),
                   ),
                 ),
                 if (!loading && site.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
                     site,
-                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF717171)),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF717171),
+                    ),
                   ),
                 ],
                 if (!loading && imageUrl.isEmpty) ...[
@@ -7882,12 +9914,11 @@ class _PollEditorPageState extends State<_PollEditorPage> {
   }
 
   Future<void> _pickOptionImage(int index) async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
+    final picked = await pickImageFrom(
+      context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-      withData: false,
     );
-    final path = result?.files.single.path;
+    final path = picked?.path;
     if (path == null || path.isEmpty || !mounted) return;
     final cropped = await cropImageFile(
       context,

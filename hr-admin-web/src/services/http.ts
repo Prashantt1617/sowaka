@@ -47,3 +47,24 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   }
   return data as T;
 }
+
+/**
+ * Multipart POST, for the endpoints that take a file.
+ *
+ * Kept separate from `api` rather than folded into it: the browser has to set
+ * its own `Content-Type` on a FormData body so the multipart boundary comes
+ * out right, and `api` always sets JSON.
+ */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new ApiError(res.status, (data.message as string) || `Request failed (${res.status})`);
+  }
+  return data as T;
+}

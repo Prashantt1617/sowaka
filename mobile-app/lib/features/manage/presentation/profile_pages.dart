@@ -585,14 +585,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
 
   Future<void> _changePhoto() async {
     if (_uploadingPhoto) return;
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['jpg', 'jpeg', 'png'],
-      withData: false,
-    );
-    final file = result?.files.single;
-    final path = file?.path;
-    if (file == null || path == null || path.isEmpty) return;
+    final file = await pickImageFrom(context);
+    if (file == null) return;
+    final path = file.path;
     if (!mounted) return;
 
     // A profile photo is shown in a circle everywhere, so it is cropped square
@@ -1957,11 +1952,17 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 ApiConfig.privacyPolicyUrl,
-                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 12.5,
+                ),
               ),
               Text(
                 ApiConfig.dataDeletionUrl,
-                style: const TextStyle(color: Color(0xFF0571A6), fontSize: 12.5),
+                style: const TextStyle(
+                  color: Color(0xFF0571A6),
+                  fontSize: 12.5,
+                ),
               ),
             ],
           ),

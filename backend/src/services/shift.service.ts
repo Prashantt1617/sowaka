@@ -501,6 +501,14 @@ export type ShiftPolicyView = {
   minFullDayHours: number;
   lateGraceMinutes: number;
   earlyOutGraceMinutes: number;
+  /**
+   * What a day with a punch missing is recorded as. HR sets these under
+   * Shifts › Attendance correction, and the app grades against them rather
+   * than treating every incomplete day as needing a correction.
+   */
+  missingPunchIn: DayMark;
+  missingPunchOut: DayMark;
+  missingBoth: DayMark;
   /** How far back an overtime claim may reach, in days. */
   overtimeBackdateDays: number;
   /**
@@ -543,6 +551,9 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
     lateGraceMinutes: policy.lateGraceMinutes,
     earlyOutGraceMinutes: policy.earlyOutGraceMinutes,
     weeklyOff: policy.weeklyOff,
+    missingPunchIn: policy.missingPunchIn,
+    missingPunchOut: policy.missingPunchOut,
+    missingBoth: policy.missingBoth,
     overtimeBackdateDays: policy.overtime.backdateDays,
     // The types this employee may apply for, as HR has them configured.
     leaveTypes: policy.leave.types
@@ -585,10 +596,34 @@ export function isWeekOffDay(date: Date, weeklyOff: Record<string, number[]>): b
 export async function policyForUser(userId: string): Promise<ShiftPolicyRules & { shiftName: string | null }> {
   const user = await users().findOne({ userId });
   if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
+  const orgPolicy = await getOrgShiftPolicy(user.org);
   const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
   // A template with no policy of its own is not an override of anything.
-  if (template?.policy) return { ...template.policy, shiftName: template.name };
-  return { ...(await getOrgShiftPolicy(user.org)), shiftName: null };
+  if (!template?.policy) return { ...orgPolicy, shiftName: null };
+  // A template overrides the working day — when the shift runs, what counts as
+  // a half or full day, the grace, the week-off grid. The rules below it
+  // (leave windows, correction and overtime backdating) always come from
+  // Shifts › Policies, so HR changes one figure in one place and every
+  // employee follows it. A template used to hold a frozen copy of these, taken
+  // when it was created, which is why editing Policies appeared to do nothing
+  // for anyone assigned to one.
+  //
+  // How a day with a punch missing is marked is one of those org-level rules.
+  // It is set under Shifts › Attendance correction and is not a property of
+  // when the shift runs, so it is deliberately not overridden here — the
+  // templates still carry a stale 'Pending Regularisation' from before these
+  // were a fixed set of three, and taking it would beat what HR has since set.
+  return {
+    ...orgPolicy,
+    startTime: template.policy.startTime,
+    endTime: template.policy.endTime,
+    weeklyOff: template.policy.weeklyOff,
+    minHalfDayHours: template.policy.minHalfDayHours,
+    minFullDayHours: template.policy.minFullDayHours,
+    lateGraceMinutes: template.policy.lateGraceMinutes,
+    earlyOutGraceMinutes: template.policy.earlyOutGraceMinutes,
+    shiftName: template.name,
+  };
 }
 
 /**

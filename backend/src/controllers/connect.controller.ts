@@ -1,15 +1,19 @@
 import { NextFunction, Request, Response } from 'express';
 import {
+  addCaptionEntry,
   addConnectComment,
   ConnectError,
   createConnectPost,
   deleteConnectPost,
   getConnectFeed,
+  parsePostTypeList,
   getConnectPost,
   performConnectAction,
+  removeCaptionEntry,
   toggleConnectCommentReaction,
   toggleConnectReaction,
   updateConnectPost,
+  voteOnCaptionEntry,
 } from '../services/connect.service';
 import { fetchLinkPreview } from '../services/link-preview.service';
 import {
@@ -24,7 +28,9 @@ import {
 
 export async function connectFeed(req: Request, res: Response, next: NextFunction) {
   try {
-    const posts = await getConnectFeed(requireUserId(req));
+    const posts = await getConnectFeed(requireUserId(req), {
+      types: parsePostTypeList(req.query.types),
+    });
     res.status(200).json({ success: true, posts });
   } catch (error) {
     handleConnectError(error, next);
@@ -224,4 +230,51 @@ function stringField(value: unknown) {
 
 function handleConnectError(error: unknown, next: NextFunction) {
   next(error);
+}
+
+export async function submitCaption(req: Request, res: Response, next: NextFunction) {
+  try {
+    // A caption challenge posts plain JSON; a photo-story challenge posts
+    // multipart with the picture under `entryPhoto`.
+    const files = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
+    const photo = (files.entryPhoto ?? [])[0];
+    const post = await addCaptionEntry(
+      requireUserId(req),
+      String(req.params.postId ?? ''),
+      String(req.body.text ?? ''),
+      photo && {
+        originalName: photo.originalname,
+        contentType: photo.mimetype,
+        size: photo.size,
+        bytes: photo.buffer,
+      },
+      // Most Likely answers with a colleague rather than words.
+      req.body.taggedUserId ? String(req.body.taggedUserId) : undefined,
+    );
+    res.status(201).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function deleteCaption(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await removeCaptionEntry(requireUserId(req), String(req.params.postId ?? ''));
+    res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function voteCaption(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await voteOnCaptionEntry(
+      requireUserId(req),
+      String(req.params.postId ?? ''),
+      String(req.body.entryId ?? ''),
+    );
+    res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
 }

@@ -15,7 +15,14 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
       startDate: String(req.body.startDate ?? ''),
       endDate: String(req.body.endDate ?? ''),
       reason: String(req.body.reason ?? ''),
-      halfDay: req.body.halfDay === true,
+      // Multipart sends booleans as strings, so both forms are accepted.
+      halfDay: req.body.halfDay === true || req.body.halfDay === 'true',
+      document: req.file && {
+        originalName: req.file.originalname,
+        contentType: req.file.mimetype,
+        size: req.file.size,
+        bytes: req.file.buffer,
+      },
     });
     res.status(201).json({ success: true, leave });
   } catch (error) {

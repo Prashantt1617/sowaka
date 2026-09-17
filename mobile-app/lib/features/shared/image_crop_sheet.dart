@@ -35,16 +35,26 @@ Matrix4 coverTransform(double imageAspect, Size frame) {
     ..scaleByDouble(scale, scale, 1, 1);
 }
 
-/// The shapes on offer. A profile photo is locked to square; media posts choose.
+/// The shapes on offer. A profile photo is locked to square; media posts
+/// choose; a challenge entry is locked to the card it will sit in.
 enum CropShape {
   square(1, 'Square', '1:1'),
   portrait(4 / 5, 'Portrait', '4:5'),
-  landscape(16 / 9, 'Landscape', '16:9');
+  landscape(16 / 9, 'Landscape', '16:9'),
+  /// The photo well on an engagement card — 308 wide by 224 tall. Locked to
+  /// it so what someone lines up is exactly what the feed shows, rather than
+  /// a 16:9 crop the card then trims the sides off.
+  challengeCard(307.987 / 224, 'Card', '11:8');
 
   const CropShape(this.aspect, this.label, this.ratio);
   final double aspect;
   final String label;
   final String ratio;
+
+  /// The shapes the picker offers. `challengeCard` is not among them: it is a
+  /// fixed frame for one surface, never a choice someone makes for a post.
+  static List<CropShape> get choosable =>
+      const [CropShape.square, CropShape.portrait, CropShape.landscape];
 }
 
 Future<String?> cropImageFile(
@@ -278,7 +288,7 @@ class _CropPageState extends State<_CropPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  for (final shape in CropShape.values)
+                  for (final shape in CropShape.choosable)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 5),
                       child: _ShapeChip(

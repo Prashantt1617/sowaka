@@ -64,6 +64,15 @@ export interface User {
   leaveBalance?: number;
   branch?: string;
   recognition?: UserRecognition;
+  /**
+   * Engagement points, earned from Connect — currently ten per vote a caption
+   * receives. Accumulated now and not spent anywhere yet: the balance is what
+   * a later rewards flow will read, so it has to be accurate from the first
+   * challenge rather than backfilled from votes nobody kept.
+   *
+   * Absent on everyone who joined before this existed, which reads as zero.
+   */
+  points?: number;
   role?: 'manager' | 'employee';
   // Leadership have no manager and do not raise approval-gated requests.
   isLeadership?: boolean;

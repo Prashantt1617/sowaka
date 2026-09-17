@@ -9,14 +9,11 @@ import { useStore } from '../store';
 import { Card } from '../ui';
 import {
   createShift, deleteShift as deleteShiftApi, getAllEmployees, getShiftPolicy, getShifts, updateShift,
-  type DayMark, type EmployeeDTO, type LeaveTypeRule, type PunchFormat, type ShiftDTO, type ShiftPolicyDTO,
+  type DayMark, type EmployeeDTO, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
 
 const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
-const PUNCH_FORMATS: PunchFormat[] = ['Biometric', 'Geotag (powered by Sowaka)', 'Present by default (Auto Punch)'];
-const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
-const TRIGGERS = ['Missing punch-in', 'Missing punch-out', 'Both punches missing'];
 const DOW = [
   { key: 0, label: 'M', long: 'Mon' }, { key: 1, label: 'T', long: 'Tue' },
   { key: 2, label: 'W', long: 'Wed' }, { key: 3, label: 'T', long: 'Thu' },
@@ -116,9 +113,11 @@ export function ShiftTemplates() {
       { header: 'Full day (hrs)', value: () => p.minFullDayHours },
       { header: 'Late grace (min)', value: () => p.lateGraceMinutes },
       { header: 'Early-out grace (min)', value: () => p.earlyOutGraceMinutes },
-      { header: 'Punch format', value: () => p.correction.punchFormat },
-      { header: 'Leave approver', value: () => p.leave.approver },
-      { header: 'Overtime eligible', value: () => (p.overtime.eligible ? 'Yes' : 'No') },
+      // Org-wide rules, so they come from Shifts › Policies rather than from
+      // the template's own copy of them.
+      { header: 'Punch format', value: () => orgPolicy?.correction.punchFormat ?? '' },
+      { header: 'Leave approver', value: () => orgPolicy?.leave.approver ?? '' },
+      { header: 'Overtime eligible', value: () => (orgPolicy?.overtime.eligible ? 'Yes' : 'No') },
     ], rows);
   };
 
@@ -329,8 +328,7 @@ export function ShiftTemplates() {
         </div>
       </Section>
 
-      <Section title="Attendance correction" subtitle="Missing punches, what can be corrected, and by whom.">
-        <SubLabel>Missing punches</SubLabel>
+      <Section title="Missing punches" subtitle="What a day with a punch missing is marked as, for people on this shift.">
         <Grid2>
           <Field label="Punch-in missing — mark as">
             <Select value={policy.missingPunchIn} onChange={(v) => patch({ missingPunchIn: v })} options={MARK_OPTIONS} />
@@ -342,143 +340,22 @@ export function ShiftTemplates() {
             <Select value={policy.missingBoth} onChange={(v) => patch({ missingBoth: v })} options={MARK_OPTIONS} />
           </Field>
         </Grid2>
-
-        <SubLabel>Punch format</SubLabel>
-        <Select
-          value={policy.correction.punchFormat}
-          onChange={(v) => patch({ correction: { ...policy.correction, punchFormat: v } })}
-          options={PUNCH_FORMATS}
-        />
-
-        <SubLabel>A correction can be raised when a day is marked</SubLabel>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {TRIGGERS.map((t) => {
-            const on = policy.correction.triggers.includes(t);
-            return (
-              <button
-                key={t}
-                onClick={() => patch({
-                  correction: {
-                    ...policy.correction,
-                    triggers: on ? policy.correction.triggers.filter((x) => x !== t) : [...policy.correction.triggers, t],
-                  },
-                })}
-                style={chip(on)}
-              >{t}</button>
-            );
-          })}
-        </div>
-
-        <SubLabel>Approval</SubLabel>
-        <Field label="Who approves a correction?">
-          <Select
-            value={policy.correction.approver}
-            onChange={(v) => patch({ correction: { ...policy.correction, approver: v } })}
-            options={APPROVERS}
-          />
-        </Field>
-        <QRow label="Can HR override the decision?">
-          <YesNo value={policy.correction.hrOverride} onChange={(v) => patch({ correction: { ...policy.correction, hrOverride: v } })} />
-        </QRow>
-        <QRow label="Can a manager correct attendance without the employee applying?">
-          <YesNo value={policy.correction.managerWithoutEmployee} onChange={(v) => patch({ correction: { ...policy.correction, managerWithoutEmployee: v } })} />
-        </QRow>
-        <Field label="How far back can a correction be raised?">
-          <Num value={policy.correction.backdateDays} onChange={(v) => patch({ correction: { ...policy.correction, backdateDays: v } })} suffix="days" width={220} />
-        </Field>
       </Section>
 
-      <Section title="Overtime" subtitle="Whether this shift qualifies, and how far back a claim can reach.">
-        <QRow label="Are employees on this shift eligible for overtime?">
-          <YesNo value={policy.overtime.eligible} onChange={(v) => patch({ overtime: { ...policy.overtime, eligible: v } })} />
-        </QRow>
-        <Field label="How far back can overtime be claimed?">
-          <Num value={policy.overtime.backdateDays} onChange={(v) => patch({ overtime: { ...policy.overtime, backdateDays: v } })} suffix="days" width={220} />
-        </Field>
+      <Section title="Leave, correction and overtime rules" subtitle="Set once for the whole org.">
         <div style={note}>
-          Overtime is claimed as a full day or a half day. Approved overtime earns comp-off —
-          a full day adds 1, a half day 0.5.
+          A template covers the working day only — when the shift runs, what counts as a half or
+          full day, the grace, the week-off grid and the marks above. How far ahead and how far
+          back each leave type can be applied for, how far back a correction or an overtime claim
+          may reach, and who approves them are set in <strong>Shifts › Policies</strong> and apply
+          to everyone, on a template or not. Change a figure there and the app follows it the same
+          day.
         </div>
       </Section>
-
-      <Section title="Leave" subtitle="Approval, and each type's accrual, window and year-end handling.">
-        <Field label="Who approves a leave request?">
-          <Select
-            value={policy.leave.approver}
-            onChange={(v) => patch({ leave: { ...policy.leave, approver: v } })}
-            options={APPROVERS}
-          />
-        </Field>
-        <QRow label="Can HR override the decision?">
-          <YesNo value={policy.leave.hrOverride} onChange={(v) => patch({ leave: { ...policy.leave, hrOverride: v } })} />
-        </QRow>
-        {policy.leave.types.map((type, index) => (
-          <LeaveTypeBlock
-            key={type.key}
-            type={type}
-            onChange={(change) => patch({
-              leave: {
-                ...policy.leave,
-                types: policy.leave.types.map((t, i) => (i === index ? { ...t, ...change } : t)),
-              },
-            })}
-          />
-        ))}
-      </Section>
     </div>
   );
 }
 
-function LeaveTypeBlock({ type, onChange }: { type: LeaveTypeRule; onChange: (c: Partial<LeaveTypeRule>) => void }) {
-  const isCompOff = type.key === 'comp_off';
-  return (
-    <div style={{ border: '1px solid #EDEDF0', borderRadius: 10, padding: '14px 16px', marginTop: 12 }}>
-      <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10 }}>{type.name}</div>
-      <Grid2>
-        {!isCompOff && (
-          <Field label="Leaves earned per month">
-            <Num value={type.perMonth} onChange={(v) => onChange({ perMonth: v })} suffix="/ month" step="0.5" />
-          </Field>
-        )}
-        <Field label="Balance processed at">
-          <Select
-            value={type.resetOn}
-            onChange={(v) => onChange({ resetOn: v })}
-            options={['calendar_year', 'financial_year'] as const}
-            render={(v) => (v === 'calendar_year' ? 'End of calendar year' : 'End of financial year')}
-          />
-        </Field>
-        <Field label="Carry forward up to">
-          <Num value={type.carryForwardDays} onChange={(v) => onChange({ carryForwardDays: v })} suffix="days" />
-        </Field>
-        <Field label="What happens to the rest">
-          <Select
-            value={type.encashment}
-            onChange={(v) => onChange({ encashment: v })}
-            options={['all', 'limit', 'none'] as const}
-            render={(v) => (v === 'all' ? 'Encash all of it' : v === 'limit' ? 'Encash up to a limit' : 'Nothing — it lapses')}
-          />
-        </Field>
-        {type.encashment === 'limit' && (
-          <Field label="Encashment limit">
-            <Num value={type.encashLimitDays} onChange={(v) => onChange({ encashLimitDays: v })} suffix="days" />
-          </Field>
-        )}
-        <Field label="Can be applied up to">
-          <Num value={type.advanceDays} onChange={(v) => onChange({ advanceDays: v })} suffix="days ahead" />
-        </Field>
-      </Grid2>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
-        <div style={fieldLabel}>Allow backdated applications</div>
-        <YesNo value={type.allowBackdated} onChange={(v) => onChange({ allowBackdated: v })} />
-        {type.allowBackdated && (
-          <Num value={type.backdatedDays} onChange={(v) => onChange({ backdatedDays: v })} suffix="days back" width={160} />
-        )}
-      </div>
-      <div style={{ ...note, marginTop: 12 }}>Any balance still left after that will lapse.</div>
-    </div>
-  );
-}
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -513,17 +390,6 @@ function Field({ label, required, children }: { label: string; required?: boolea
     </div>
   );
 }
-function QRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderTop: '1px solid #F4F4F6' }}>
-      <div style={{ flex: 1, fontSize: 15, color: '#333333', fontWeight: 600 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-function SubLabel({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9197A2', margin: '18px 0 8px' }}>{children}</div>;
-}
 function Num({ value, onChange, suffix, width, step }: { value: number; onChange: (v: number) => void; suffix: string; width?: number; step?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff', width: width ?? '100%' }}>
@@ -537,19 +403,6 @@ function Select<T extends string>({ value, onChange, options, render }: { value:
     <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{ ...input, cursor: 'pointer' }}>
       {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
     </select>
-  );
-}
-function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
-      {[{ v: true, l: 'Yes' }, { v: false, l: 'No' }].map((o) => (
-        <button key={o.l} onClick={() => onChange(o.v)} style={{
-          padding: '7px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none',
-          borderLeft: o.v ? 'none' : '1px solid #EBEBEB',
-          background: value === o.v ? '#0571A6' : '#fff', color: value === o.v ? '#fff' : '#484848',
-        }}>{o.l}</button>
-      ))}
-    </div>
   );
 }
 function Th({ children, width, right }: { children: ReactNode; width?: number; right?: boolean }) {
@@ -569,7 +422,6 @@ const overnightTag: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#8A
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: '#333333', cursor: 'pointer' };
 const banner: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 12, padding: '13px 16px', marginBottom: 14 };
 const note: CSSProperties = { marginTop: 12, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
-const chip = (on: boolean): CSSProperties => ({ padding: '9px 15px', borderRadius: 10, border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`, background: on ? '#0571A6' : '#fff', color: on ? '#fff' : '#484848', fontWeight: 700, fontSize: 14, cursor: 'pointer' });
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '8px 14px', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' };
 const smallBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
 const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px' };

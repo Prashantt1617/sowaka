@@ -28,6 +28,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Sowaka uses the camera so you can take a photo for your profile picture or a post.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sowaka uses the microphone to dictate feedback notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

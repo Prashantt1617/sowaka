@@ -47,10 +47,15 @@ export async function isAllowedRecipient(email: string): Promise<boolean> {
 export async function sendOtpEmail(email: string, otp: string): Promise<void> {
   if (!(await isAllowedRecipient(email))) return;
   if (!transporter) {
-    if (env.nodeEnv !== 'production' || env.otpDevBypass) {
+    // Only a developer's own machine may stand in for SMTP, and only there is
+    // the code itself safe to write down. Keyed off `isLocal` rather than
+    // "not production" so a host with NODE_ENV unset — the default, and the
+    // most likely to be misconfigured — fails loudly instead of quietly
+    // printing sign-in codes for real accounts into the log.
+    if (env.isLocal) {
       logger.warn('SMTP is not configured; using local OTP delivery', {
         recipient: maskEmail(email),
-        otp: env.nodeEnv === 'production' ? undefined : otp,
+        otp,
       });
       return;
     }
@@ -84,7 +89,7 @@ export async function sendOtpEmail(email: string, otp: string): Promise<void> {
       error,
     );
 
-    if (env.nodeEnv !== 'production' && env.otpDevBypass) {
+    if (env.isLocal && env.otpDevBypass) {
       logger.warn('Using local OTP bypass after SMTP failure', {
         recipient: maskEmail(email),
         otp,

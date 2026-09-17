@@ -156,6 +156,31 @@ class ConnectBloc {
     );
   }
 
+  Future<void> submitCaption(
+    String postId,
+    String text, {
+    String? photoPath,
+    String? taggedUserId,
+  }) async {
+    await _mutatePost(
+      postId,
+      () => _api.submitCaption(
+        postId,
+        text,
+        photoPath: photoPath,
+        taggedUserId: taggedUserId,
+      ),
+    );
+  }
+
+  Future<void> deleteCaption(String postId) async {
+    await _mutatePost(postId, () => _api.deleteCaption(postId));
+  }
+
+  Future<void> voteCaption(String postId, String entryId) async {
+    await _mutatePost(postId, () => _api.voteCaption(postId, entryId));
+  }
+
   Future<bool> createPost(ConnectPostDraft draft) async {
     _emit(_state.copyWith(busyPostId: '__create__', clearMessage: true));
     try {

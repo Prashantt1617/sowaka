@@ -249,6 +249,8 @@ class SubmitLeaveApplication extends ManagerEvent {
     required this.endDate,
     required this.reason,
     this.halfDay = false,
+    this.documentName,
+    this.documentBytes,
   });
 
   final String type;
@@ -256,6 +258,10 @@ class SubmitLeaveApplication extends ManagerEvent {
   final DateTime endDate;
   final String reason;
   final bool halfDay;
+
+  /// Optional supporting document — a medical note, a booking.
+  final String? documentName;
+  final Uint8List? documentBytes;
 }
 
 class SubmitOvertimeApplication extends ManagerEvent {
@@ -301,13 +307,13 @@ class RecordPunch extends ManagerEvent {
 class SubmitAttendanceRegularization extends ManagerEvent {
   const SubmitAttendanceRegularization({
     required this.workDate,
-    required this.punchIn,
-    required this.punchOut,
+    required this.dayType,
     required this.note,
   });
   final DateTime workDate;
-  final DateTime? punchIn;
-  final DateTime? punchOut;
+
+  /// What the day should be recorded as: full_day, half_day, wfh or leave.
+  final String dayType;
   final String note;
 }
 
@@ -424,14 +430,12 @@ class ManagerBloc {
           }
         case SubmitAttendanceRegularization(
           :final workDate,
-          :final punchIn,
-          :final punchOut,
+          :final dayType,
           :final note,
         ):
           final request = await _service.submitAttendanceRegularization(
             workDate: workDate,
-            punchIn: punchIn,
-            punchOut: punchOut,
+            dayType: dayType,
             note: note,
           );
           final data = _state.dashboard;
@@ -638,6 +642,8 @@ class ManagerBloc {
           :final endDate,
           :final reason,
           :final halfDay,
+          :final documentName,
+          :final documentBytes,
         ):
           final leave = await _service.submitLeaveApplication(
             type: type,
@@ -645,6 +651,8 @@ class ManagerBloc {
             endDate: endDate,
             reason: reason,
             halfDay: halfDay,
+            documentName: documentName,
+            documentBytes: documentBytes,
           );
           final data = _state.dashboard;
           _emit(

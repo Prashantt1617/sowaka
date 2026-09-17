@@ -1,5 +1,5 @@
 // Typed calls against the org-wide HR-admin (dashboard) endpoints.
-import { api } from './http';
+import { api, apiUpload } from './http';
 
 // 'admin' = the request was overridden/decided from the HR dashboard (rules 6/7).
 export type DecidedByRole = 'manager' | 'admin';
@@ -468,3 +468,88 @@ export const reviewContentReport = (id: string, input: { status: string; note?: 
 /** Takes the reported post down. Comments are removed by editing the post. */
 export const removeReportedPost = (postId: string) =>
   api(`/connect/posts/${postId}`, { method: 'DELETE' });
+
+// ---------------------------------------------------------- engagement posts
+
+/**
+ * The engagement formats HR can publish into Connect. One today; the list is
+ * what the composer offers, so a new template becomes a new entry here plus a
+ * field set below rather than a new screen.
+ */
+export type EngagementPostType =
+  | 'caption_challenge'
+  | 'photo_story_challenge'
+  | 'most_likely';
+
+export type EngagementPostDTO = {
+  id: string;
+  type: string;
+  tag: string;
+  tagIcon: string;
+  author: { name: string };
+  body: Record<string, unknown>;
+  publishedAt: string;
+};
+
+export type CaptionChallengeInput = {
+  type: EngagementPostType;
+  title: string;
+  /**
+   * The whole brief, in one field. This was a bold opening line plus a
+   * paragraph under it, which asked whoever wrote it to split one thought in
+   * two — and the card ran them together anyway.
+   */
+  task: string;
+  pointsPerVote: number;
+  /** When entries close, as an ISO instant. Empty leaves it open. */
+  closesAt: string;
+  photo: File | null;
+  /** Most Likely only — the question card. */
+  label: string;
+  question: string;
+};
+
+/**
+ * Publishes a caption challenge to the feed.
+ *
+ * Sent as multipart because the picture is the post — a caption challenge
+ * without one is nothing to caption.
+ */
+export function publishCaptionChallenge(input: CaptionChallengeInput) {
+  const form = new FormData();
+  form.append('type', input.type);
+  form.append('removeMedia', 'false');
+  form.append(
+    'body',
+    JSON.stringify({
+      title: input.title,
+      task: input.task,
+      pointsPerVote: input.pointsPerVote,
+      closesAt: input.closesAt,
+      label: input.label,
+      question: input.question,
+    }),
+  );
+  if (input.photo) form.append('media', input.photo);
+  return apiUpload<{ post: EngagementPostDTO }>('/connect/posts', form);
+}
+
+/**
+ * Engagement posts already in the feed, newest first.
+ *
+ * The server does the narrowing. Asking for the whole feed and filtering here
+ * meant the page of 50 was spent on ordinary posts, so older challenges
+ * dropped off the list entirely once enough of them piled up — and every
+ * photo on those posts was signed just to be discarded.
+ */
+export async function getEngagementPosts(): Promise<EngagementPostDTO[]> {
+  const types = 'caption_challenge,photo_story_challenge,most_likely';
+  const data = await api<{ posts: EngagementPostDTO[] }>(
+    `/connect/feed?types=${encodeURIComponent(types)}`,
+  );
+  return data.posts ?? [];
+}
+
+export function deleteEngagementPost(postId: string) {
+  return api<void>(`/connect/posts/${postId}`, { method: 'DELETE' });
+}
