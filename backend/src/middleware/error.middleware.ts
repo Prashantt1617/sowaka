@@ -52,10 +52,23 @@ export const errorHandler = (
   }
 
   const internalMessage = error instanceof Error ? error.message : String(error);
+  // Some refusals carry something the client needs to act on — a punch turned
+  // away outside the office sends back which office it was measured against
+  // and how far, so the screen can say where you are rather than only that you
+  // are not there. Only ever on expected errors, never on a crash.
+  const details =
+    expected &&
+    typeof error === 'object' &&
+    error !== null &&
+    'details' in error &&
+    error.details
+      ? (error.details as Record<string, unknown>)
+      : undefined;
   response.status(statusCode).json({
     success: false,
     message: expected && error instanceof Error ? error.message : 'Internal server error',
     requestId: request.requestId,
+    ...(details ? { details } : {}),
     ...(env.nodeEnv === 'production' || expected ? {} : { error: internalMessage }),
   });
 };

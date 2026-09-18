@@ -17,6 +17,11 @@ import {
   ShiftTemplate,
   PunchFormat,
   PUNCH_FORMATS,
+  PunchMode,
+  PUNCH_MODES,
+  CorrectionOutcome,
+  CORRECTION_OUTCOMES,
+  HALF_DAY_CORRECTION_OUTCOMES,
 } from '../models/shift.model';
 
 export class ShiftError extends Error {
@@ -127,9 +132,18 @@ function correctionRules(value: unknown): ShiftCorrectionRules {
   if (format && !PUNCH_FORMATS.includes(format as PunchFormat)) {
     throw new ShiftError(400, `Punch format must be one of: ${PUNCH_FORMATS.join(', ')}`);
   }
+  const punchMode = String(source.punchMode ?? '').trim();
+  if (punchMode && !PUNCH_MODES.includes(punchMode as PunchMode)) {
+    throw new ShiftError(400, `Punch mode must be one of: ${PUNCH_MODES.join(', ')}`);
+  }
+  const absentOutcomes = strings(source.absentOutcomes, [...CORRECTION_OUTCOMES]).filter(
+    (outcome) => CORRECTION_OUTCOMES.includes(outcome as CorrectionOutcome),
+  ) as CorrectionOutcome[];
   return {
     triggers,
     punchFormat: (format || 'Present by default (Auto Punch)') as PunchFormat,
+    punchMode: (punchMode || 'Both punches') as PunchMode,
+    absentOutcomes,
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
     managerWithoutEmployee: flag(source.managerWithoutEmployee, true),
     hrOverride: flag(source.hrOverride, true),
@@ -179,6 +193,7 @@ function leaveRules(value: unknown): ShiftLeaveRules {
     types,
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
     hrOverride: flag(source.hrOverride, true),
+    balanceTracked: flag(source.balanceTracked, true),
   };
 }
 
@@ -192,6 +207,30 @@ function days(value: unknown, field: string, fallback: number): number {
 }
 
 type ShiftInput = Record<string, unknown>;
+
+/**
+ * The capture settings a template may carry, or undefined to inherit the org's.
+ *
+ * Only what was explicitly sent is stored: an empty value means "inherit",
+ * which is different from every format the list offers.
+ */
+function punchOverrides(input: ShiftInput): {
+  punchFormat?: PunchFormat;
+  punchMode?: PunchMode;
+} {
+  const format = String(input.punchFormat ?? '').trim();
+  if (format && !PUNCH_FORMATS.includes(format as PunchFormat)) {
+    throw new ShiftError(400, `Punch format must be one of: ${PUNCH_FORMATS.join(', ')}`);
+  }
+  const mode = String(input.punchMode ?? '').trim();
+  if (mode && !PUNCH_MODES.includes(mode as PunchMode)) {
+    throw new ShiftError(400, `Punch mode must be one of: ${PUNCH_MODES.join(', ')}`);
+  }
+  return {
+    ...(format ? { punchFormat: format as PunchFormat } : {}),
+    ...(mode ? { punchMode: mode as PunchMode } : {}),
+  };
+}
 
 function objectId(value: string): ObjectId {
   if (!ObjectId.isValid(value)) throw new ShiftError(400, 'Shift ID is invalid');
@@ -238,6 +277,9 @@ function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPoli
     name: doc.name,
     active: doc.active,
     policy: doc.policy ?? fallback ?? { ...DEFAULT_ORG_SHIFT_POLICY },
+    // Empty string rather than absent: the dashboard shows it as "inherit".
+    punchFormat: doc.punchFormat ?? '',
+    punchMode: doc.punchMode ?? '',
     assignedUserIds: doc.assignedUserIds ?? [],
     assignedCount: (doc.assignedUserIds ?? []).length,
     createdAt: doc.createdAt?.toISOString(),
@@ -272,6 +314,7 @@ export async function createShift(callerId: string, input: ShiftInput) {
   const now = new Date();
   const document: Omit<ShiftTemplate, '_id'> = {
     org, name, active: flag(input.active, true), policy, assignedUserIds: [],
+    ...punchOverrides(input),
     createdAt: now, updatedAt: now,
   };
   const result = await shiftTemplates().insertOne(document);
@@ -291,9 +334,21 @@ export async function updateShift(callerId: string, shiftId: string, input: Shif
   // A template saved before templates carried a policy edits from the org's.
   const base = current.policy ?? (await getOrgShiftPolicy(org));
   const policy = toPolicyRules((input.policy ?? {}) as Record<string, unknown>, base);
+  const overrides = punchOverrides(input);
   const updated = await shiftTemplates().findOneAndUpdate(
     { _id, org },
-    { $set: { name, active: flag(input.active, current.active), policy, updatedAt: new Date() } },
+    {
+      $set: { name, active: flag(input.active, current.active), policy, updatedAt: new Date(), ...overrides },
+      // Clearing a format is how HR puts these people back on the org's.
+      ...(Object.keys(overrides).length < 2
+        ? {
+            $unset: {
+              ...(overrides.punchFormat ? {} : { punchFormat: '' }),
+              ...(overrides.punchMode ? {} : { punchMode: '' }),
+            },
+          }
+        : {}),
+    },
     { returnDocument: 'after' },
   );
   if (!updated) throw new ShiftError(404, 'Shift not found');
@@ -523,6 +578,11 @@ export type ShiftPolicyView = {
     backdatedDays: number;
   }[];
   /**
+   * Whether this employee has a leave balance. With it off they are on
+   * unlimited leave: no type to choose, no days to count down.
+   */
+  leaveBalanceTracked: boolean;
+  /**
    * What a regularisation may be raised against, so the app can grey out the
    * button on a day HR does not allow one for, rather than letting someone
    * fill a form the server will refuse.
@@ -533,6 +593,12 @@ export type ShiftPolicyView = {
     /** How far back a correction may reach, in days. */
     backdateDays: number;
     punchFormat: string;
+    /** Whether this employee's day is built from one punch or two. */
+    punchMode: string;
+    /** What an absent day may be corrected to, as HR configured it. */
+    absentOutcomes: string[];
+    /** Fixed: a half day can only be disputed as a full day. */
+    halfDayOutcomes: string[];
   };
 };
 
@@ -564,10 +630,17 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
         allowBackdated: type.allowBackdated,
         backdatedDays: type.backdatedDays,
       })),
+    leaveBalanceTracked: policy.leave.balanceTracked ?? true,
     correction: {
       triggers: policy.correction.triggers,
       backdateDays: policy.correction.backdateDays,
       punchFormat: policy.correction.punchFormat,
+      punchMode: policy.correction.punchMode ?? 'Both punches',
+      // What the employee may ask for on each kind of day. A half day has one
+      // possible outcome and it is not HR's to change, so the app is told it
+      // here rather than deriving it.
+      absentOutcomes: policy.correction.absentOutcomes ?? [...CORRECTION_OUTCOMES],
+      halfDayOutcomes: [...HALF_DAY_CORRECTION_OUTCOMES],
     },
   };
 }
@@ -600,28 +673,42 @@ export async function policyForUser(userId: string): Promise<ShiftPolicyRules & 
   const template = await shiftTemplates().findOne({ org: user.org, active: true, assignedUserIds: userId });
   // A template with no policy of its own is not an override of anything.
   if (!template?.policy) return { ...orgPolicy, shiftName: null };
-  // A template overrides the working day — when the shift runs, what counts as
-  // a half or full day, the grace, the week-off grid. The rules below it
-  // (leave windows, correction and overtime backdating) always come from
-  // Shifts › Policies, so HR changes one figure in one place and every
-  // employee follows it. A template used to hold a frozen copy of these, taken
-  // when it was created, which is why editing Policies appeared to do nothing
-  // for anyone assigned to one.
+  // A template overrides everything it carries. It is a full policy for the
+  // people on it — the working day, what an incomplete day is marked as, what
+  // may be corrected and what it may be corrected to — so HR can run one team
+  // differently from the rest without asking for an exception each time.
   //
-  // How a day with a punch missing is marked is one of those org-level rules.
-  // It is set under Shifts › Attendance correction and is not a property of
-  // when the shift runs, so it is deliberately not overridden here — the
-  // templates still carry a stale 'Pending Regularisation' from before these
-  // were a fixed set of three, and taking it would beat what HR has since set.
+  // Anything a template has never been given an opinion about is still the
+  // org's: the capture fields sit outside the policy block and fall back, and
+  // every template's policy was normalised to the org's when this changed, so
+  // nothing started grading differently on the day it shipped.
+  const marks = {
+    // A mark retired since the template was written still reads, rather than
+    // reaching the app as a value it has no case for.
+    missingPunchIn: RETIRED_MARKS[template.policy.missingPunchIn] ?? template.policy.missingPunchIn,
+    missingPunchOut: RETIRED_MARKS[template.policy.missingPunchOut] ?? template.policy.missingPunchOut,
+    missingBoth: RETIRED_MARKS[template.policy.missingBoth] ?? template.policy.missingBoth,
+  };
   return {
     ...orgPolicy,
-    startTime: template.policy.startTime,
-    endTime: template.policy.endTime,
-    weeklyOff: template.policy.weeklyOff,
-    minHalfDayHours: template.policy.minHalfDayHours,
-    minFullDayHours: template.policy.minFullDayHours,
-    lateGraceMinutes: template.policy.lateGraceMinutes,
-    earlyOutGraceMinutes: template.policy.earlyOutGraceMinutes,
+    ...template.policy,
+    ...marks,
+    correction: {
+      ...orgPolicy.correction,
+      ...template.policy.correction,
+      // How this team's punches are captured is a property of the team: a
+      // field team on geotagged punches and a factory floor on a device are
+      // both right at the same time. Set outside the policy block, so a
+      // template that was never given one follows the org.
+      punchFormat:
+        template.punchFormat ??
+        template.policy.correction?.punchFormat ??
+        orgPolicy.correction.punchFormat,
+      punchMode:
+        template.punchMode ??
+        template.policy.correction?.punchMode ??
+        orgPolicy.correction.punchMode,
+    },
     shiftName: template.name,
   };
 }
@@ -660,6 +747,11 @@ export async function fullDayHoursFor(userId: string): Promise<number> {
 }
 
 /** The leave types this employee accrues, for the balance and the apply flow. */
+/** This employee's leave rules — their template's, or the org's. */
+export async function leaveRulesFor(userId: string): Promise<ShiftLeaveRules> {
+  return (await policyForUser(userId)).leave;
+}
+
 export async function leaveTypeRulesFor(userId: string): Promise<LeaveTypeRule[]> {
   return (await policyForUser(userId)).leave.types;
 }

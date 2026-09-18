@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb';
+import { PunchLocation } from './office.model';
 
 export type AttendanceSource = 'sql_import' | 'manual';
 export type RegularizationStatus = 'pending' | 'approved' | 'declined';
@@ -11,12 +12,27 @@ export type RegularizationStatus = 'pending' | 'approved' | 'declined';
  * for the day's classification instead is the judgement a manager can actually
  * make, and it is what payroll consumes.
  */
-export type RegularizationDayType = 'full_day' | 'half_day' | 'wfh' | 'leave';
+/**
+ * 'wfh' and 'client_visit' are about *where* the day was worked rather than
+ * what it counts as, and both are claims only the manager can settle — nobody
+ * marks their own day present from outside the office. They are raised from the
+ * punch screen when the location check refuses, and the day becomes a worked
+ * day when, and only when, the manager approves.
+ */
+export type RegularizationDayType =
+  | 'full_day'
+  | 'half_day'
+  | 'wfh'
+  | 'client_visit'
+  /** Retired name for a client visit; kept so older requests still read. */
+  | 'office_visit'
+  | 'leave';
 
 export const REGULARIZATION_DAY_TYPES: RegularizationDayType[] = [
   'full_day',
   'half_day',
   'wfh',
+  'client_visit',
   'leave',
 ];
 
@@ -32,6 +48,14 @@ export interface AttendanceRecord {
    * was.
    */
   dayType?: RegularizationDayType;
+  /**
+   * Where each punch was taken, when the app supplied it. Kept as the device
+   * reported it — coordinates, the fix's accuracy, which office it matched and
+   * how far away — so a disputed day can be looked into rather than argued
+   * over a yes/no that nobody can check.
+   */
+  punchInLocation?: PunchLocation;
+  punchOutLocation?: PunchLocation;
   source: AttendanceSource;
   sourceKey: string;
   importedAt: Date;

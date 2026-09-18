@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import {
-  AttendanceError, decideRegularization, getManagerRegularizations,
+  AttendanceError, decideRegularization, getManagerRegularizations, punchOfficesFor,
   getMyAttendance, getTeamMemberAttendance, recordPunch, requestRegularization,
 } from '../services/attendance.service';
 
@@ -29,8 +29,31 @@ export async function listTeamMemberAttendance(req: Request, res: Response, next
 }
 export async function punch(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await recordPunch(userId(req), String(req.body?.type ?? ''));
+    // Raw as the device saw it. No verdict is accepted from the client — the
+    // service decides whether this falls inside an office.
+    const body = req.body ?? {};
+    const lat = Number(body.latitude);
+    const lng = Number(body.longitude);
+    const reading =
+      Number.isFinite(lat) && Number.isFinite(lng)
+        ? {
+            latitude: lat,
+            longitude: lng,
+            accuracy: Number.isFinite(Number(body.accuracy))
+              ? Number(body.accuracy)
+              : undefined,
+            mocked: body.mocked === true,
+          }
+        : undefined;
+    const result = await recordPunch(userId(req), String(body.type ?? ''), reading);
     res.json({ success: true, ...result });
+  } catch (error) { next(error); }
+}
+
+/** Where this employee's org lets them punch from. */
+export async function punchLocations(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, offices: await punchOfficesFor(userId(req)) });
   } catch (error) { next(error); }
 }
 export async function createRegularization(req: Request, res: Response, next: NextFunction) {

@@ -10,6 +10,7 @@ import { Collection, Db, MongoClient } from 'mongodb';
 import { env } from './env';
 import { AuthSessionDocument, OtpChallenge } from '../models/auth.model';
 import { User } from '../models/user.model';
+import { Office } from '../models/office.model';
 import { Leave } from '../models/leave.model';
 import { Company } from '../models/company.model';
 import { FeedbackRecord } from '../models/feedback.model';
@@ -142,6 +143,10 @@ export function attendanceRegularizations(): Collection<AttendanceRegularization
 
 export function shiftTemplates(): Collection<ShiftTemplate> {
   return getDb().collection<ShiftTemplate>('shift_templates');
+}
+
+export function offices(): Collection<Office> {
+  return getDb().collection<Office>('offices');
 }
 
 export function shiftPolicies(): Collection<OrgShiftPolicy> {
