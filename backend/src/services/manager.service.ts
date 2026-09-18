@@ -413,6 +413,25 @@ export async function getManagerWorkspace(managerUserId: string) {
     // already shared stays open to edits.
     cycleEndsOn: cycle.end,
     approverName: approver?.name ?? 'Your manager',
+    // Whether anyone reviews this person. `approverName` falls back to a
+    // placeholder when nobody does, so the app cannot tell from the name alone
+    // — and someone at the top of the tree has no "your feedback" to wait for.
+    hasManager: Boolean(approver),
+    // The viewer's own KPIs for this cycle, worded as HR wrote them. A month
+    // nobody has reviewed yet shows these, so someone knows what they will be
+    // measured on before the review arrives — once it does, the manager's
+    // notes take their place.
+    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period)).map(
+      (p) => ({
+        parameterId: p.id,
+        name: p.title,
+        subtitle: p.subtitle,
+        description: p.description,
+        weight: p.weight,
+        score: 0,
+        note: '',
+      }),
+    ),
     // The viewer's own reporting line, so their profile shows the same chart
     // their team members' profiles do.
     myOrgChart: buildOrgChart(manager, orgUsersById),
@@ -707,7 +726,13 @@ function monthsSince(previous: string | undefined, current: string): number {
  * for drafts written before ids were stored.
  */
 function reconcileParameters(
-  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+  assigned: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    description?: string;
+    weight: number;
+  }>,
   saved: FeedbackParameter[] | undefined,
 ): FeedbackParameter[] {
   const blanks = blankParameters(assigned);
@@ -723,12 +748,21 @@ function reconcileParameters(
 }
 
 function blankParameters(
-  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+  assigned: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    description?: string;
+    weight: number;
+  }>,
 ): FeedbackParameter[] {
   return assigned.map((p) => ({
     parameterId: p.id,
     name: p.title,
     subtitle: p.subtitle,
+    // HR's guidance for this parameter. The app's hint line reads it; without
+    // it every hint fell back to copy hard-coded in the app.
+    description: p.description,
     // Carried onto the blank form so the app can show what each parameter is
     // worth before anything is scored.
     weight: p.weight,

@@ -100,9 +100,24 @@ class _GrowTabState extends State<_GrowTab> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
+              // Node 2408:75660. Someone at the top of the reporting tree has
+              // nobody reviewing them, so there is nothing to open and the card
+              // would only promise a review that never comes.
+              if (data.hasManager) ...[
+                _YourFeedbackCard(
+                  initial: data.managerInitial,
+                  photoUrl: data.managerPhotoUrl,
+                  onOpen: () => openGrowth(
+                    name: data.managerName,
+                    designation: data.managerTeam,
+                    history: data.growthHistory,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               if (total > 0) ...[
                 _FeedbackGivenCard(given: given, total: total, period: period),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
               ],
               _FeedbackSearchField(
                 query: _query,
@@ -110,28 +125,7 @@ class _GrowTabState extends State<_GrowTab> {
                 onClear: () => setState(() => _query = ''),
                 hint: 'Search employee',
               ),
-              const SizedBox(height: 14),
-              // Per node 781:6773 the viewer's own entry sits directly below
-              // the search field, styled like every other person's card.
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _MyGrowthRow(
-                  name: data.managerName,
-                  designation: data.managerTeam,
-                  initial: data.managerInitial,
-                  photoUrl: data.managerPhotoUrl,
-                  reviewed: data.growthHistory.isNotEmpty,
-                  approverName: data.approverName,
-                  // Opens either way: with no reviews yet the page says who
-                  // it is waiting on, which beats a snackbar that says the
-                  // same and leaves nowhere to go.
-                  onOpen: () => openGrowth(
-                    name: data.managerName,
-                    designation: data.managerTeam,
-                    history: data.growthHistory,
-                  ),
-                ),
-              ),
+              const SizedBox(height: 12),
               for (final member in filtered)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -170,9 +164,110 @@ class _GrowTabState extends State<_GrowTab> {
   }
 }
 
-/// "6/12 Feedback Given" progress card at the top of the Grow tab
-/// (node 781:6795).
-class _FeedbackGivenCard extends StatelessWidget {
+/// The viewer's own reviews, as the first thing on a manager's Grow tab
+/// (node 2408:75660). Opens their growth page; only shown to someone who has a
+/// manager to be reviewed by.
+class _YourFeedbackCard extends StatelessWidget {
+  const _YourFeedbackCard({
+    required this.initial,
+    required this.photoUrl,
+    required this.onOpen,
+  });
+
+  final String initial;
+  final String? photoUrl;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _growCardDecoration(16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.all(17.114),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ProfileAvatarAction(
+                  initial: initial,
+                  photoUrl: photoUrl,
+                  onTap: onOpen,
+                  size: 56,
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Your Feedback',
+                              style: TextStyle(
+                                color: Color(0xFF222222),
+                                fontSize: 17,
+                                height: 25.5 / 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          _GrowChevron(),
+                        ],
+                      ),
+                      Text(
+                        'Your manager reviews your performance against your '
+                        'KPIs every month.',
+                        style: TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 14,
+                          height: 20 / 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GrowChevron extends StatelessWidget {
+  const _GrowChevron();
+
+  @override
+  Widget build(BuildContext context) {
+    return SvgPicture.asset(
+      'assets/icons/chevron_right_expand.svg',
+      width: 20,
+      height: 20,
+      colorFilter: const ColorFilter.mode(Color(0xFF717171), BlendMode.srcIn),
+    );
+  }
+}
+
+BoxDecoration _growCardDecoration(double radius) => BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.circular(radius),
+  border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+  boxShadow: const [
+    BoxShadow(color: Color(0x1A000000), blurRadius: 1.5, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x1A000000), blurRadius: 1, offset: Offset(0, 1)),
+  ],
+);
+
+/// "Team Feedback": how many of this month's reviews are in (nodes 2395:70619,
+/// 2408:75654). The bulb opens a note on why the reviews matter — closed by
+/// default, since a manager who has read it once does not need it every visit.
+class _FeedbackGivenCard extends StatefulWidget {
   const _FeedbackGivenCard({
     required this.given,
     required this.total,
@@ -186,31 +281,92 @@ class _FeedbackGivenCard extends StatelessWidget {
   final String period;
 
   @override
+  State<_FeedbackGivenCard> createState() => _FeedbackGivenCardState();
+}
+
+class _FeedbackGivenCardState extends State<_FeedbackGivenCard> {
+  bool _tipOpen = false;
+
+  @override
   Widget build(BuildContext context) {
+    final given = widget.given;
+    final total = widget.total;
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 26),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 1.5,
-            offset: Offset(0, 1),
-          ),
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 1,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
+      decoration: _growCardDecoration(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(bottom: 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFEBEBEB))),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Team Feedback',
+                          style: TextStyle(
+                            color: Color(0xFF101828),
+                            fontSize: 16,
+                            height: 16.2 / 16,
+                            letterSpacing: -0.16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Semantics(
+                        button: true,
+                        label: _tipOpen ? 'Hide tip' : 'Why this matters',
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => setState(() => _tipOpen = !_tipOpen),
+                          child: Image.asset(
+                            'assets/icons/grow/light_bulb.png',
+                            width: 24,
+                            height: 24,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_tipOpen)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1FFFB000),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      "Review your team's performance against their KPIs every "
+                      "month, so they have clarity on what they're doing well "
+                      'and where they can grow. A good leader uses this '
+                      'feedback to help their team grow and stay engaged.',
+                      style: TextStyle(
+                        color: Color(0xFF222222),
+                        fontSize: 12,
+                        height: 16.2 / 12,
+                        letterSpacing: -0.16,
+                        fontWeight: FontWeight.w300,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
-            _periodTitle(period).toUpperCase(),
+            _periodTitle(widget.period).toUpperCase(),
             style: const TextStyle(
               color: Color(0xFF0571A6),
               fontSize: 11.5,
@@ -263,6 +419,17 @@ class _FeedbackGivenCard extends StatelessWidget {
               alignment: Alignment.centerLeft,
               widthFactor: total == 0 ? 0 : (given / total).clamp(0.0, 1.0),
               child: const ColoredBox(color: Color(0xFF0571A6)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Review your team's performance every month",
+            style: TextStyle(
+              color: Color(0xFF484848),
+              fontSize: 12,
+              height: 16.2 / 12,
+              letterSpacing: -0.16,
+              fontWeight: FontWeight.w300,
             ),
           ),
         ],
@@ -410,135 +577,7 @@ class _MyFeedbackCard extends StatelessWidget {
   }
 }
 
-/// Team row in the Grow tab; the dot shows whether this period's review is in.
-/// The viewer's own feedback entry in the Grow list (node 781:6813). Same card
-/// as a teammate's row, but labelled "You (…)"; when the approver hasn't given
-/// feedback yet there's nothing to open, so tapping explains that instead.
-class _MyGrowthRow extends StatelessWidget {
-  const _MyGrowthRow({
-    required this.name,
-    required this.designation,
-    required this.initial,
-    required this.photoUrl,
-    required this.reviewed,
-    required this.approverName,
-    required this.onOpen,
-  });
-
-  final String name;
-  final String designation;
-  final String initial;
-  final String? photoUrl;
-  final bool reviewed;
-  final String approverName;
-  final VoidCallback? onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    return PressableCard(
-      onTap: onOpen ?? () => _explainPending(context),
-      padding: const EdgeInsets.all(17),
-      child: Row(
-        children: [
-          _ProfileAvatarAction(
-            initial: initial,
-            photoUrl: photoUrl,
-            onTap: onOpen ?? () => _explainPending(context),
-            size: 56,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        '$name (You)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: MColors.ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (reviewed)
-                      Container(
-                        width: 14,
-                        height: 14,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00C950),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.1),
-                        ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          size: 10,
-                          color: Colors.white,
-                        ),
-                      )
-                    else
-                      Container(
-                        width: 16,
-                        height: 16,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF8C8F),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.1),
-                        ),
-                        child: const Icon(
-                          Icons.priority_high_rounded,
-                          size: 10,
-                          color: Colors.white,
-                        ),
-                      ),
-                  ],
-                ),
-                if (designation.isNotEmpty)
-                  Text(
-                    designation,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: MColors.inkSoft,
-                      fontSize: 14,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          SvgPicture.asset(
-            'assets/icons/chevron_right_expand.svg',
-            width: 20,
-            height: 20,
-            colorFilter: const ColorFilter.mode(
-              MColors.inkFaint,
-              BlendMode.srcIn,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _explainPending(BuildContext context) {
-    final by = approverName.isEmpty ? 'your manager' : approverName;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Feedback hasn't been given yet by $by."),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: MColors.ink,
-      ),
-    );
-  }
-}
-
+/// Team row in the Grow tab; the badge shows whether this period's review is in.
 class _GrowthTeamRow extends StatelessWidget {
   const _GrowthTeamRow({
     required this.member,

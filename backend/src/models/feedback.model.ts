@@ -15,6 +15,12 @@ export interface FeedbackParameter {
   /** Copy shown under the name at the time of scoring. Absent on legacy rows. */
   subtitle?: string;
   /**
+   * HR's guidance for scoring this parameter, carried on the blank form only
+   * so the manager sees it while writing. Never stored on a sent review: the
+   * save path rebuilds each line without it.
+   */
+  description?: string;
+  /**
    * Percentage this parameter contributed to the overall score, snapshotted
    * like the copy: re-weighting a template later must not silently restate what
    * a sent review meant. Absent on reviews written before weighting existed,
