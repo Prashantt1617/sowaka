@@ -7,7 +7,7 @@ import { notifyLeaveDecided, notifyLeaveSubmitted } from './request-notification
 import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import {
-  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveTypeRulesFor,
+  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor,
   managerMayDecide, weekOffGridFor,
 } from './shift.service';
 import { COMP_OFF_CREDIT, LeaveTypeKey, LeaveTypeRule, processYearEnd } from '../models/shift.model';
@@ -135,13 +135,20 @@ export async function applyForLeave(
     throw new LeaveError(400, `Leave cannot exceed ${maxLeaveDays} days`);
   }
 
+  // Unlimited leave keeps no balance, so there is nothing here to overdraw:
+  // the manager's decision is the whole control. Checking anyway would refuse
+  // people against days their policy never gave them.
+  const tracksBalance = (await leaveRulesFor(userId)).balanceTracked ?? true;
+
   // You cannot spend leave you do not have. Checked against the balance for the
   // year the leave starts in, counting what is already approved *and* what is
   // still pending — two pending requests that each fit the balance must not be
   // able to overdraw it together.
   // A range that crosses new year is charged to both years, so each one is
   // checked against its own balance rather than the start year's alone.
-  const years = [...new Set([startDate.getUTCFullYear(), endDate.getUTCFullYear()])];
+  const years = tracksBalance
+    ? [...new Set([startDate.getUTCFullYear(), endDate.getUTCFullYear()])]
+    : [];
   const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
   for (const year of years) {
     const balance = await getMyLeaveBalance(userId, year);

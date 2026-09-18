@@ -5,6 +5,7 @@ import { deviceTokens, getDb, leaves, notifications, users } from '../config/db'
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
+import { companyDisplayName } from './company-settings.service';
 
 /** Greeting name for email copy; falls back to a neutral form when unset. */
 function firstName(name?: string): string {
@@ -183,8 +184,16 @@ export async function flushNotificationBatches(includeDaily = false) {
         : batch.scenario === 'nomination_received'
           ? `${count} nomination${count === 1 ? '' : 's'} received today`
         : `${count} new responses to "${batch.title}"`;
+    // Titled with the company the reader works for. One deployment serves
+    // several, so the product's own name is wrong for all but one of them.
+    const recipient = await users().findOne(
+      { userId: String(batch.recipientUserId) },
+      { projection: { org: 1 } },
+    );
     await notifyUsers([String(batch.recipientUserId)], {
-      scenario: String(batch.scenario), title: 'Sowaka Connect', body,
+      scenario: String(batch.scenario),
+      title: await companyDisplayName(recipient?.org, 'Connect'),
+      body,
       data: batch.data as Record<string, string>,
     });
     await collection.deleteOne({ _id: batch._id });
@@ -216,7 +225,7 @@ export async function sendTodayLifecycleNotifications(now = new Date()) {
     }
     for (const event of events) {
       const alreadySent = await notifications().findOne({ userId: recipients[0], scenario: event.scenario, 'data.dateKey': dateKey, 'data.employeeUserId': employee.userId });
-      if (!alreadySent) await notifyUsers(recipients, { scenario: event.scenario, title: 'Sowaka Connect', body: event.body,
+      if (!alreadySent) await notifyUsers(recipients, { scenario: event.scenario, title: await companyDisplayName(employee.org, 'Connect'), body: event.body,
         data: { destination: 'employee_profile', employeeUserId: employee.userId, dateKey } });
     }
   }

@@ -737,7 +737,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ('Type:', 'Correction'),
               ('Date:', _shortAttendanceDate(request.workDate)),
               ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
+              // The reason belongs on the detail page, not on the card: the
+              // list is for deciding at a glance what each request is for.
             ],
             decision: request.decision,
             responseNote: request.managerNote,
@@ -1092,8 +1093,8 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: const Color(0xFFDAFFD3),
-                    foreground: const Color(0xFF34C759),
+                    background: MColors.approveTint,
+                    foreground: MColors.approveInk,
                     onTap: onApprove!,
                   ),
                 ),
@@ -1101,8 +1102,8 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: const Color(0xFFFDDBDB),
-                    foreground: const Color(0xFFFF383C),
+                    background: MColors.rejectTint,
+                    foreground: MColors.rejectInk,
                     onTap: onReject!,
                   ),
                 ),

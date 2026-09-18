@@ -170,7 +170,9 @@ class _LoginScreenState extends State<LoginScreen>
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
                   name: state.session?.user.name ?? 'there',
-                  company: state.session?.user.company ?? 'Sowaka',
+                  company: state.session?.user.company.isNotEmpty == true
+                      ? state.session!.user.company
+                      : 'your team',
                   session: state.session,
                   onEnter: () async {
                     final session = state.session;

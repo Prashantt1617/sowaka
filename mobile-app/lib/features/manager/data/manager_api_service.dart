@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../attendance/data/punch_location_service.dart';
+
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_config.dart';
@@ -89,6 +91,10 @@ class ManagerApiService {
       managerPhotoUrl: session.user.profilePhotoUrl,
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
+      hasManager: workspace['hasManager'] as bool? ?? true,
+      myParameters: (workspace['myParameters'] as List<dynamic>? ?? const [])
+          .map((item) => FeedbackParam.fromJson(item as Map<String, dynamic>))
+          .toList(),
       cycleEndsOn: switch (workspace['cycleEndsOn']) {
         final String value when value.isNotEmpty => DateTime.tryParse(value),
         _ => null,
@@ -158,7 +164,9 @@ class ManagerApiService {
     );
   }
 
-  Future<(List<AttendanceRecord>, List<AttendanceRegularization>)>
+  /// This member's month, plus whether their own shift takes a single punch —
+  /// they may be on a different template from the manager reading it.
+  Future<(List<AttendanceRecord>, List<AttendanceRegularization>, bool)>
   fetchTeamMemberAttendance(
     String employeeUserId,
     DateTime from,
@@ -177,16 +185,29 @@ class ManagerApiService {
             (v) => AttendanceRegularization.fromJson(v as Map<String, dynamic>),
           )
           .toList(),
+      json['singlePunch'] as bool? ?? false,
     );
   }
 
-  Future<AttendanceRecord> recordPunch(String type) async {
+  Future<AttendanceRecord> recordPunch(
+    String type, {
+    PunchReading? reading,
+  }) async {
     final json = await _request(
       'POST',
       '/attendance/punch',
-      body: {'type': type},
+      body: {'type': type, ...?reading?.toJson()},
     );
     return AttendanceRecord.fromJson(json);
+  }
+
+  /// Where this employee's org lets them punch from. Empty means their org is
+  /// not geofenced and a punch needs no location at all.
+  Future<List<PunchOffice>> fetchPunchOffices() async {
+    final json = await _request('GET', '/attendance/punch-locations');
+    return (json['offices'] as List<dynamic>? ?? const [])
+        .map((item) => PunchOffice.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   Future<AttendanceRegularization> submitAttendanceRegularization({
@@ -197,11 +218,7 @@ class ManagerApiService {
     final json = await _request(
       'POST',
       '/attendance/regularizations',
-      body: {
-        'workDate': _dateOnly(workDate),
-        'dayType': dayType,
-        'note': note,
-      },
+      body: {'workDate': _dateOnly(workDate), 'dayType': dayType, 'note': note},
     );
     return AttendanceRegularization.fromJson(
       json['regularization'] as Map<String, dynamic>,
@@ -341,25 +358,23 @@ class ManagerApiService {
     // A supporting document turns this into a multipart post; without one the
     // plain JSON body is kept, which is what every existing caller sends.
     if (documentBytes != null && documentName != null) {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$_baseUrl/leaves'),
-      )
-        ..headers['Authorization'] = 'Bearer ${session.token}'
-        ..fields.addAll({
-          'type': _leaveTypeToken(type),
-          'startDate': _dateOnly(startDate),
-          'endDate': _dateOnly(endDate),
-          'reason': reason,
-          'halfDay': halfDay ? 'true' : 'false',
-        })
-        ..files.add(
-          http.MultipartFile.fromBytes(
-            'document',
-            documentBytes,
-            filename: documentName,
-          ),
-        );
+      final request =
+          http.MultipartRequest('POST', Uri.parse('$_baseUrl/leaves'))
+            ..headers['Authorization'] = 'Bearer ${session.token}'
+            ..fields.addAll({
+              'type': _leaveTypeToken(type),
+              'startDate': _dateOnly(startDate),
+              'endDate': _dateOnly(endDate),
+              'reason': reason,
+              'halfDay': halfDay ? 'true' : 'false',
+            })
+            ..files.add(
+              http.MultipartFile.fromBytes(
+                'document',
+                documentBytes,
+                filename: documentName,
+              ),
+            );
       final json = await _send(request);
       return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
     }
@@ -447,7 +462,10 @@ class ManagerApiService {
     try {
       final json = await _request('GET', '/reimbursements/types');
       return (json['types'] as List<dynamic>? ?? const [])
-          .map((value) => ReimbursementType.fromJson(value as Map<String, dynamic>))
+          .map(
+            (value) =>
+                ReimbursementType.fromJson(value as Map<String, dynamic>),
+          )
           .where((type) => type.name.isNotEmpty)
           .toList();
     } catch (_) {
@@ -560,7 +578,11 @@ class ManagerApiService {
         : jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = json['message'] as String? ?? 'Request failed';
-      throw ManagerApiException(label == null ? message : '$label: $message');
+      throw ManagerApiException(
+        label == null ? message : '$label: $message',
+        statusCode: response.statusCode,
+        details: json['details'] as Map<String, dynamic>?,
+      );
     }
     return json;
   }
@@ -598,8 +620,16 @@ String _dateOnly(DateTime value) {
 }
 
 class ManagerApiException implements Exception {
-  const ManagerApiException(this.message);
+  const ManagerApiException(this.message, {this.statusCode, this.details});
   final String message;
+
+  /// The HTTP status, where the caller needs to tell one refusal from another
+  /// — a punch outside the office reads differently from one with no fix.
+  final int? statusCode;
+
+  /// Anything the server sent alongside the message. A refused punch carries
+  /// the office it was measured against and how far away the reading was.
+  final Map<String, dynamic>? details;
 
   @override
   String toString() => message;

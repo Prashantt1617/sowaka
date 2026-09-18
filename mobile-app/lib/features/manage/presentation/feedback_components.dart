@@ -6,6 +6,7 @@ class _ParamCard extends StatefulWidget {
     required this.param,
     required this.locked,
     required this.listening,
+    this.transcribing = false,
     required this.onScore,
     required this.onNote,
     required this.onVoice,
@@ -14,6 +15,7 @@ class _ParamCard extends StatefulWidget {
   final FeedbackParam param;
   final bool locked;
   final bool listening;
+  final bool transcribing;
   final ValueChanged<double> onScore;
   final ValueChanged<String> onNote;
   final VoidCallback onVoice;
@@ -253,6 +255,24 @@ class _ParamCardState extends State<_ParamCard> {
               children: [
                 if (widget.listening)
                   const Expanded(child: _VoiceWaveform())
+                else if (widget.transcribing)
+                  // Node 736:14306: the recording has stopped and its words
+                  // are on the way. Two lines tall, like the empty field.
+                  const Expanded(
+                    child: SizedBox(
+                      height: 37.5,
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF222222),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
                 else
                   Expanded(
                     child: TextFormField(

@@ -24,7 +24,9 @@ class AuthUser {
       email: json['email'] as String? ?? '',
       name: json['name'] as String? ?? 'User',
       role: json['role'] as String? ?? 'employee',
-      company: json['company'] as String? ?? 'Sowaka',
+      // Never the product's name as a stand-in for an employer: one build
+      // serves every company on the platform.
+      company: json['company'] as String? ?? '',
       profilePhotoUrl: _optionalString(json['profilePhotoUrl']),
       location: _optionalString(json['location']),
       state: _optionalString(json['state']),

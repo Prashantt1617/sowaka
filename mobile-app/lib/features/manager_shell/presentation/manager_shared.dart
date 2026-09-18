@@ -469,6 +469,13 @@ class MColors {
   static const sageDeep = Color(0xFF4C5840);
   static const sageTint = Color(0xFFDEEBE9);
   static const live = Color(0xFFC0392B);
+  // The approve and reject pair as the request cards wear them: a tint behind
+  // coloured text, not a solid fill. Defined here so a sheet confirming a
+  // decision looks like the button that opened it.
+  static const approveTint = Color(0xFFE1FED7);
+  static const approveInk = Color(0xFF65C466);
+  static const rejectTint = Color(0xFFEED4D3);
+  static const rejectInk = Color(0xFFEB4C46);
   static const plum = Color(0xFF8A6AA0);
   static const plumTint = Color(0xFFEEE6F0);
   static const teal = Color(0xFF4F8C89);

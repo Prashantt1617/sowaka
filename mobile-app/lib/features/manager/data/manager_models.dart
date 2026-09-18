@@ -780,6 +780,8 @@ class ManagerDashboard {
     this.managerPhotoUrl,
     required this.managerTeam,
     required this.approverName,
+    this.hasManager = true,
+    this.myParameters = const [],
     this.cycleEndsOn,
     required this.managerScore,
     required this.growthHistory,
@@ -811,6 +813,17 @@ class ManagerDashboard {
   final String? managerPhotoUrl;
   final String managerTeam;
   final String approverName;
+
+  /// Whether anyone reviews this person. False for whoever sits at the top of
+  /// the reporting tree — they have no "your feedback" to wait on, so the card
+  /// for it is not shown. Defaults to true so a backend that predates the field
+  /// keeps showing it, as it always did.
+  final bool hasManager;
+
+  /// The viewer's own KPIs this cycle, with HR's subtitle and guidance for
+  /// each. Shown for a month that has not been reviewed yet, so the page says
+  /// what the review will cover instead of standing empty.
+  final List<FeedbackParam> myParameters;
 
   /// The day the review cycle closes. Until then a manager can still edit a
   /// review they have already shared, which the Grow page says out loud.
@@ -876,6 +889,8 @@ class ManagerDashboard {
       managerPhotoUrl: managerPhotoUrl ?? this.managerPhotoUrl,
       managerTeam: managerTeam,
       approverName: approverName,
+      hasManager: hasManager,
+      myParameters: myParameters,
       cycleEndsOn: cycleEndsOn ?? this.cycleEndsOn,
       managerScore: managerScore ?? this.managerScore,
       growthHistory: growthHistory ?? this.growthHistory,
@@ -962,13 +977,53 @@ class CorrectionRules {
     ],
     this.backdateDays = 7,
     this.punchFormat = '',
+    this.punchMode = 'Both punches',
+    this.absentOutcomes = const ['Full day', 'Half day', 'Leave'],
+    this.halfDayOutcomes = const ['Full day'],
   });
 
   final List<String> triggers;
   final int backdateDays;
   final String punchFormat;
 
-  /// The case a day falls into, named the way the policy names it.
+  /// Whether this employee's day is built from one punch or two. On a
+  /// single-punch setup there is no punch-out to be missing, so the day is
+  /// either recorded — a full day — or it is not.
+  final String punchMode;
+
+  /// What HR lets an absent day be raised as.
+  final List<String> absentOutcomes;
+
+  /// What a half day may be raised as. Fixed to a full day: there is nothing
+  /// else a half day could be disputed as.
+  final List<String> halfDayOutcomes;
+
+  bool get singlePunch => punchMode == 'Single punch';
+
+  /// What this day may be asked to become, as day-type keys the server
+  /// accepts. Mirrors the rule the server enforces, so the sheet cannot offer
+  /// a choice the request would be refused for.
+  List<String> outcomesForMark(String mark) {
+    const keys = {
+      'Full day': 'full_day',
+      'Half day': 'half_day',
+      'Leave': 'leave',
+    };
+    final allowed = mark == 'Half Day'
+        ? halfDayOutcomes
+        : mark == 'Absent'
+        ? absentOutcomes
+        // Already a full day, so there is nothing to argue up to.
+        : absentOutcomes.where((outcome) => outcome != 'Full day').toList();
+    return allowed
+        .map((outcome) => keys[outcome])
+        .whereType<String>()
+        .toList();
+  }
+
+  /// The case a day falls into, named the way the policy names it. A
+  /// single-punch day has only two of them, and keeps these names so a policy
+  /// saved under either mode still reads.
   static String triggerFor({DateTime? punchIn, DateTime? punchOut}) {
     if (punchIn != null && punchOut != null) return 'Both punches present';
     if (punchIn == null && punchOut == null) return 'Both punches missing';
@@ -994,6 +1049,16 @@ class CorrectionRules {
                 .toList(),
         backdateDays: (json['backdateDays'] as num?)?.toInt() ?? 7,
         punchFormat: json['punchFormat'] as String? ?? '',
+        punchMode: json['punchMode'] as String? ?? 'Both punches',
+        absentOutcomes:
+            (json['absentOutcomes'] as List<dynamic>? ??
+                    const ['Full day', 'Half day', 'Leave'])
+                .map((value) => value.toString())
+                .toList(),
+        halfDayOutcomes:
+            (json['halfDayOutcomes'] as List<dynamic>? ?? const ['Full day'])
+                .map((value) => value.toString())
+                .toList(),
       );
 }
 
@@ -1133,6 +1198,7 @@ class ShiftPolicy {
     this.missingPunchOut = 'Absent',
     this.missingBoth = 'Absent',
     this.overtimeBackdateDays = 7,
+    this.leaveBalanceTracked = true,
     this.leaveTypes = const [],
     this.correction = const CorrectionRules(),
   });
@@ -1164,6 +1230,38 @@ class ShiftPolicy {
   /// The application window for each leave type, so the pickers can be bounded
   /// rather than letting someone fill a form the server will refuse.
   final List<LeaveTypeWindow> leaveTypes;
+
+  /// Whether this employee punches from the app at all.
+  ///
+  /// Their template decides it: a biometric device or an auto-punch policy
+  /// records the day without them, so the app shows what arrived rather than
+  /// offering a control that would do nothing.
+  bool get punchesFromApp =>
+      correction.punchFormat == 'Geotag (powered by Sowaka)' ||
+      correction.punchFormat == 'In-app punch in';
+
+  /// Whether this employee's leave is counted down from a balance.
+  ///
+  /// Off means unlimited leave: nothing to spend, so the app asks for dates
+  /// and a reason rather than a type, and shows what has been applied for
+  /// instead of what is left.
+  final bool leaveBalanceTracked;
+
+  /// Whether this employee is marked present without punching at all.
+  ///
+  /// Nobody punches on auto punch, so there are no times to show and no punch
+  /// that could be missing — showing empty punch columns to these people reads
+  /// as a day that went wrong rather than one that never had punches.
+  bool get markedPresentAutomatically =>
+      correction.punchFormat == 'Present by default (Auto Punch)';
+
+  /// Whether this employee's day is built from a single punch. There is no
+  /// punch-out to take, so none is offered and none can be missing.
+  bool get singlePunchDay => correction.singlePunch;
+
+  /// Whether the punch this employee takes is checked against an office.
+  bool get punchIsGeofenced =>
+      correction.punchFormat == 'Geotag (powered by Sowaka)';
 
   /// What a correction may be raised against, so the calendar can grey the
   /// button out rather than opening a form the server will refuse.
@@ -1229,10 +1327,25 @@ class ShiftPolicy {
       Duration(minutes: (value * 60).round());
 
   /// How HR says a day with these punches should be recorded.
+  ///
+  /// On a single-punch policy there is no punch-out to be missing: the punch
+  /// either arrived, and the day is a full one, or it did not.
   String markFor({DateTime? punchIn, DateTime? punchOut}) {
+    if (singlePunchDay) return punchIn == null ? missingBoth : 'Present';
     if (punchIn == null && punchOut == null) return missingBoth;
     return punchIn == null ? missingPunchIn : missingPunchOut;
   }
+
+  /// Whether this day counts as recorded: both punches, or the only one.
+  bool dayIsComplete({DateTime? punchIn, DateTime? punchOut}) =>
+      singlePunchDay ? punchIn != null : punchIn != null && punchOut != null;
+
+  /// The case this day falls into, as this employee's policy names it.
+  String triggerFor({DateTime? punchIn, DateTime? punchOut}) =>
+      singlePunchDay
+      // One punch, so the only two cases are recorded and not recorded.
+      ? (punchIn == null ? 'Both punches missing' : 'Both punches present')
+      : CorrectionRules.triggerFor(punchIn: punchIn, punchOut: punchOut);
 
   /// Minutes past midnight for [startTime] / [endTime], or null if malformed.
   int? get startMinutes => _minutes(startTime);
@@ -1324,6 +1437,7 @@ class ShiftPolicy {
       },
       overtimeBackdateDays:
           (json['overtimeBackdateDays'] as num?)?.toInt() ?? 7,
+      leaveBalanceTracked: json['leaveBalanceTracked'] as bool? ?? true,
       correction: CorrectionRules.fromJson(
         json['correction'] as Map<String, dynamic>? ?? const {},
       ),
@@ -1342,10 +1456,16 @@ class AttendanceRecord {
     this.punchIn,
     this.punchOut,
     this.dayType = '',
+    this.officeName,
   });
   final DateTime workDate;
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// The office a geofenced punch matched, sent back by the punch itself so
+  /// the confirmation can name where you were. Null on every other read — the
+  /// calendar does not carry it.
+  final String? officeName;
 
   /// What an approved correction recorded the day as: full_day, half_day, wfh
   /// or leave. Empty on a day nobody has corrected. A day corrected to leave
@@ -1358,6 +1478,7 @@ class AttendanceRecord {
     'full_day' => 'Full Day',
     'half_day' => 'Half Day',
     'wfh' => 'Work from home',
+    'client_visit' || 'office_visit' => 'Client visit',
     'leave' => 'Leave',
     _ => '',
   };
@@ -1365,6 +1486,7 @@ class AttendanceRecord {
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) =>
       AttendanceRecord(
         workDate: DateTime.parse(json['workDate'] as String),
+        officeName: json['office'] as String?,
         punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
         punchOut: DateTime.tryParse(
           json['punchOut'] as String? ?? '',
@@ -1417,6 +1539,7 @@ class AttendanceRegularization {
     'full_day' => 'Full Day',
     'half_day' => 'Half Day',
     'wfh' => 'Work from home',
+    'client_visit' || 'office_visit' => 'Client visit',
     'leave' => 'Leave',
     _ => '',
   };

@@ -657,6 +657,10 @@ const _celebrationGradient = LinearGradient(
   stops: [0.02, 0.18, 0.33, 0.5, 0.66, 0.82, 0.98],
 );
 
+/// Whether this post speaks for the company. The server decides it from the
+/// poster's dashboard access, so the card cannot be dressed up from the app.
+bool _isOfficialPost(ConnectPost post) => post.body['official'] != false;
+
 Gradient? _celebrationCardGradient(ConnectPostType type) {
   return switch (type) {
     ConnectPostType.birthday ||
@@ -2117,7 +2121,13 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    '${_bodyString(post, 'personName')} has been with Sowaka for $years years!',
+                    // The employer is whoever this person actually works for —
+                    // the card is served to every company on the deployment,
+                    // not only the one the product is named after. Older cards
+                    // carry no company, so they say it without naming one.
+                    '${_bodyString(post, 'personName')} has been with '
+                    '${_bodyString(post, 'companyName').isNotEmpty ? _bodyString(post, 'companyName') : 'the team'} '
+                    'for $years ${years == 1 ? 'year' : 'years'}!',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: _ConnectColors.ink,
@@ -2709,7 +2719,7 @@ class _ChallengeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final official = post.body['official'] != false;
+    final official = _isOfficialPost(post);
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
       decoration: const BoxDecoration(
