@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { connectPosts, gameScores, users } from '../config/db';
+import { companies, connectPosts, gameScores, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -9,6 +9,7 @@ import {
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { fetchLinkPreview } from './link-preview.service';
+import { companyDisplayName } from './company-settings.service';
 import {
   deleteConnectMedia,
   presignConnectMedia,
@@ -1552,9 +1553,15 @@ function defaultActionValue(type: ConnectPostType) {
   return type;
 }
 
-function systemAuthor() {
+/**
+ * Who a card the system published is from.
+ *
+ * The employer's name, not the product's: a Convrse employee reading their own
+ * feed should see their company on it.
+ */
+function systemAuthor(companyName: string) {
   return {
-    name: 'Sowaka Connect',
+    name: companyName,
     initials: 'S',
     designation: 'Auto · HRIS',
     avatarColor: '#C98A2E',
@@ -1567,6 +1574,7 @@ function systemPost(
   systemKey: string,
   body: Record<string, unknown>,
   teamId?: string,
+  companyName = 'Your company',
 ): ConnectPost {
   const now = new Date();
   const meta = postMeta(type);
@@ -1576,7 +1584,7 @@ function systemPost(
     org,
     type,
     ...meta,
-    author: systemAuthor(),
+    author: systemAuthor(companyName),
     audience: { label: teamId ? 'Team' : 'Public', org, teamId },
     body,
     likedBy: [],
@@ -1628,6 +1636,15 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
     )
     .toArray();
 
+  // The company each card speaks for. An anniversary card names the employer,
+  // and this runs across every org on the deployment — so it has to be the org
+  // the person actually works for, not whoever the product is named after.
+  const companyNames = new Map(
+    (await companies().find({}).project({ id: 1, name: 1 }).toArray()).map(
+      (company) => [company.id, company.name],
+    ),
+  );
+
   for (const employee of employees) {
     const org = orgForUser(employee);
     if (employee.birthday && employee.birthday.getUTCMonth() + 1 === month && employee.birthday.getUTCDate() === day) {
@@ -1641,7 +1658,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
         subtitle: `${employee.designation ?? employee.department ?? 'Teammate'} · turns a year wiser today`,
         actionLabel: 'Send wishes',
         actionDoneLabel: 'Wish sent!',
-      }));
+      }, undefined, companyNames.get(org)));
     }
     if (employee.joiningDate && employee.joiningDate.getUTCMonth() + 1 === month && employee.joiningDate.getUTCDate() === day) {
       const years = year - employee.joiningDate.getUTCFullYear();
@@ -1652,8 +1669,9 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
           personInitials: initialsFor(employee.name),
           photoKey: employee.profilePhotoKey,
           years,
+          companyName: companyNames.get(org),
           subtitle: `${employee.department ?? employee.designation ?? 'Team'} · joined ${employee.joiningDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`,
-        }));
+        }, undefined, companyNames.get(org)));
       }
     }
   }
@@ -1662,6 +1680,7 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
 /** Create the immediate welcome post emitted by the HR employee workflow. */
 export async function generateNewJoineePost(employee: User, manager?: User) {
   const org = orgForUser(employee);
+  const companyName = await companyDisplayName(org, 'Your company');
   await insertSystemPost(systemPost(org, 'new_joinee', `new-joinee:${employee.userId}`, {
     personName: employee.name,
     personInitials: initialsFor(employee.name),
@@ -1675,5 +1694,5 @@ export async function generateNewJoineePost(employee: User, manager?: User) {
     actionLabel: 'Say hi',
     actionDoneLabel: 'Said hi!',
     // Scoped to the team the joinee lands in — their manager's reporting group.
-  }, employee.managerUserId));
+  }, employee.managerUserId, companyName));
 }

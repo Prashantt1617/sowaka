@@ -33,6 +33,22 @@ async function requireAdminOrg(adminUserId: string): Promise<string> {
 }
 
 /** Raw config for an org, with defaults applied. Used by the overtime rules. */
+/**
+ * What to call an org in anything a person reads.
+ *
+ * One deployment serves several companies, so copy that names an employer has
+ * to name *theirs*. Falls back to a phrase rather than to the product's own
+ * name, which would be wrong for everyone except one customer.
+ */
+export async function companyDisplayName(
+  org: string | undefined,
+  fallback = 'your company',
+): Promise<string> {
+  if (!org) return fallback;
+  const company = await companies().findOne({ id: org }, { projection: { name: 1 } });
+  return company?.name?.trim() || fallback;
+}
+
 export async function getCompanyConfig(
   org: string | undefined,
 ): Promise<{ weekoffDays: number[]; overtimeDisabledDepartments: string[] }> {
