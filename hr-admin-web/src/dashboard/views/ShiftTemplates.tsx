@@ -9,11 +9,19 @@ import { useStore } from '../store';
 import { Card } from '../ui';
 import {
   createShift, deleteShift as deleteShiftApi, getAllEmployees, getShiftPolicy, getShifts, updateShift,
-  type DayMark, type EmployeeDTO, type ShiftDTO, type ShiftPolicyDTO,
+  type EmployeeDTO, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
+import { LeaveTypeCard } from './LeaveTypes';
+import { DayOutcomeGrid, OUTCOMES, TRIGGERS } from '../components/DayOutcomeGrid';
 
-const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
+const PUNCH_FORMATS: PunchFormat[] = [
+  'Biometric',
+  'Geotag (powered by Sowaka)',
+  'Present by default (Auto Punch)',
+  'In-app punch in',
+];
+const PUNCH_MODES: PunchMode[] = ['Both punches', 'Single punch'];
 const DOW = [
   { key: 0, label: 'M', long: 'Mon' }, { key: 1, label: 'T', long: 'Tue' },
   { key: 2, label: 'W', long: 'Wed' }, { key: 3, label: 'T', long: 'Thu' },
@@ -50,6 +58,10 @@ export function ShiftTemplates() {
   const [name, setName] = useState('');
   const [active, setActive] = useState(true);
   const [policy, setPolicy] = useState<ShiftPolicyDTO | null>(null);
+  // Empty means this template takes the org's capture settings, which is what
+  // every template written before these existed does.
+  const [punchFormat, setPunchFormat] = useState<PunchFormat | ''>('');
+  const [punchMode, setPunchMode] = useState<PunchMode | ''>('');
   /** The roster, so an export can name the people a shift covers. */
   const [roster, setRoster] = useState<EmployeeDTO[]>([]);
 
@@ -67,11 +79,12 @@ export function ShiftTemplates() {
 
   const open = (shift: ShiftDTO) => {
     setName(shift.name); setActive(shift.active); setPolicy(shift.policy);
+    setPunchFormat(shift.punchFormat ?? ''); setPunchMode(shift.punchMode ?? '');
     setMode({ kind: 'edit', id: shift.id });
   };
   const create = () => {
     if (!orgPolicy) { flash('The org policy has not loaded yet'); return; }
-    setName(''); setActive(true);
+    setName(''); setActive(true); setPunchFormat(''); setPunchMode('');
     // A new template starts as a copy of the policy everyone is on today.
     setPolicy(JSON.parse(JSON.stringify(orgPolicy)) as ShiftPolicyDTO);
     setMode({ kind: 'edit', id: null });
@@ -85,7 +98,7 @@ export function ShiftTemplates() {
     if (!policy) return;
     setSaving(true);
     try {
-      const input = { name: name.trim(), active, policy };
+      const input = { name: name.trim(), active, policy, punchFormat, punchMode };
       const saved = mode.kind === 'edit' && mode.id
         ? await updateShift(mode.id, input)
         : await createShift(input);
@@ -328,28 +341,170 @@ export function ShiftTemplates() {
         </div>
       </Section>
 
-      <Section title="Missing punches" subtitle="What a day with a punch missing is marked as, for people on this shift.">
+      {/* Capture belongs to the template: a factory floor on a biometric
+          device and a field team on geotagged punches run side by side. */}
+      <Section title="How attendance is captured" subtitle="Where the punches come from for people on this shift, and how many a day has.">
         <Grid2>
-          <Field label="Punch-in missing — mark as">
-            <Select value={policy.missingPunchIn} onChange={(v) => patch({ missingPunchIn: v })} options={MARK_OPTIONS} />
+          <Field label="Punch in / punch out data comes from">
+            <Select
+              value={punchFormat}
+              onChange={setPunchFormat}
+              options={['', ...PUNCH_FORMATS] as (PunchFormat | '')[]}
+              render={(format) =>
+                format === ''
+                  ? `Same as the org (${orgPolicy?.correction.punchFormat ?? 'org policy'})`
+                  : format
+              }
+            />
           </Field>
-          <Field label="Punch-out missing — mark as">
-            <Select value={policy.missingPunchOut} onChange={(v) => patch({ missingPunchOut: v })} options={MARK_OPTIONS} />
-          </Field>
-          <Field label="Both punches missing — mark as">
-            <Select value={policy.missingBoth} onChange={(v) => patch({ missingBoth: v })} options={MARK_OPTIONS} />
+          <Field label="How many punches does a day have?">
+            <Select
+              value={punchMode}
+              onChange={setPunchMode}
+              options={['', ...PUNCH_MODES] as (PunchMode | '')[]}
+              render={(mode) =>
+                mode === ''
+                  ? `Same as the org (${
+                      orgPolicy?.correction.punchMode === 'Single punch'
+                        ? 'punch in only'
+                        : 'punch in and punch out'
+                    })`
+                  : mode === 'Single punch'
+                    ? 'Punch in only'
+                    : 'Punch in and punch out'
+              }
+            />
           </Field>
         </Grid2>
+        <div style={note}>
+          {(punchMode || orgPolicy?.correction.punchMode) === 'Single punch'
+            ? 'With one punch there are no hours to measure, so a recorded punch counts as a full day and only the missing case below applies.'
+            : 'Hours worked are measured between the two punches and graded against the thresholds above.'}{' '}
+          Only Biometric is wired end to end today. Left on “same as the org”,
+          these people follow <strong>Shifts › Policies</strong>.
+        </div>
       </Section>
 
-      <Section title="Leave, correction and overtime rules" subtitle="Set once for the whole org.">
+      {/* The same grid as Shifts › Policies, asked for these people. A
+          template is a full policy, so what it says here is what the app
+          grades their days by. */}
+      <Section
+        title="How a day comes out"
+        subtitle="What a day is marked as for people on this shift, and what they may raise against it."
+      >
+        <div style={{ margin: '0 -20px' }}>
+          <DayOutcomeGrid
+            singlePunch={(punchMode || orgPolicy?.correction.punchMode) === 'Single punch'}
+            autoPresent={
+              (punchFormat || orgPolicy?.correction.punchFormat) ===
+              'Present by default (Auto Punch)'
+            }
+            missingPunchIn={policy.missingPunchIn}
+            missingPunchOut={policy.missingPunchOut}
+            missingBoth={policy.missingBoth}
+            onMissingPunchIn={(v) => patch({ missingPunchIn: v })}
+            onMissingPunchOut={(v) => patch({ missingPunchOut: v })}
+            onMissingBoth={(v) => patch({ missingBoth: v })}
+            triggers={Object.fromEntries(
+              TRIGGERS.map((t) => [t, policy.correction.triggers.includes(t)]),
+            )}
+            onTrigger={(trigger, allowed) =>
+              patch({
+                correction: {
+                  ...policy.correction,
+                  triggers: allowed
+                    ? [...policy.correction.triggers, trigger]
+                    : policy.correction.triggers.filter((t) => t !== trigger),
+                },
+              })
+            }
+            absentOutcomes={policy.correction.absentOutcomes ?? [...OUTCOMES]}
+            onToggleOutcome={(outcome) => {
+              const current = policy.correction.absentOutcomes ?? [...OUTCOMES];
+              patch({
+                correction: {
+                  ...policy.correction,
+                  absentOutcomes: current.includes(outcome)
+                    ? current.filter((item) => item !== outcome)
+                    : OUTCOMES.filter((item) => current.includes(item) || item === outcome),
+                },
+              });
+            }}
+            minHalfDayHours={policy.minHalfDayHours}
+            minFullDayHours={policy.minFullDayHours}
+            thresholdsLocation="this shift’s own thresholds above"
+          />
+        </div>
+      </Section>
+
+      {/* Leave belongs to the template too: a team on unlimited leave and a
+          team on twelve casual days a year are both right at the same time. */}
+      <Section
+        title="Leave"
+        subtitle="What the people on this shift may take, and whether it is counted down."
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>
+              Do they have a leave balance?
+            </div>
+            <div style={{ fontSize: 13, color: '#717171', marginTop: 3, lineHeight: 1.5 }}>
+              {policy.leave.balanceTracked === false
+                ? 'Unlimited leave — they apply, a manager approves, and nothing is counted down. They are not asked for a leave type.'
+                : 'Leave is counted down from the balances below.'}
+            </div>
+          </div>
+          <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
+            {[true, false].map((value) => {
+              const on = (policy.leave.balanceTracked ?? true) === value;
+              return (
+                <button
+                  key={String(value)}
+                  onClick={() => patch({ leave: { ...policy.leave, balanceTracked: value } })}
+                  style={{
+                    padding: '8px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                    border: 'none', borderLeft: value ? 'none' : '1px solid #EBEBEB',
+                    background: on ? '#0571A6' : '#fff', color: on ? '#fff' : '#484848',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {value ? 'Yes' : 'No'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {policy.leave.balanceTracked === false ? (
+          <div style={note}>
+            Nothing to configure: accrual, carry-forward and encashment all
+            describe a balance these people do not have.
+          </div>
+        ) : (
+          policy.leave.types.map((row, index) => (
+            <LeaveTypeCard
+              key={row.key}
+              row={row}
+              onChange={(change) =>
+                patch({
+                  leave: {
+                    ...policy.leave,
+                    types: policy.leave.types.map((item, i) =>
+                      i === index ? { ...item, ...change } : item,
+                    ),
+                  },
+                })
+              }
+            />
+          ))
+        )}
+      </Section>
+
+      <Section title="Approvals and backdating" subtitle="Set once for the whole org.">
         <div style={note}>
-          A template covers the working day only — when the shift runs, what counts as a half or
-          full day, the grace, the week-off grid and the marks above. How far ahead and how far
-          back each leave type can be applied for, how far back a correction or an overtime claim
-          may reach, and who approves them are set in <strong>Shifts › Policies</strong> and apply
-          to everyone, on a template or not. Change a figure there and the app follows it the same
-          day.
+          This template overrides the org policy for everyone on it — the working day, the marks
+          above, the leave they may take, what may be corrected and what it may be corrected to.
+          How far back a correction or an overtime claim may reach, and who approves them, are
+          still set in <strong>Shifts › Policies</strong> and apply to everyone.
         </div>
       </Section>
     </div>

@@ -261,11 +261,22 @@ export function processYearEnd(closing: number, rule: LeaveTypeRule) {
   return { carried, encashed, lapsed: remainder - encashed };
 }
 
-/** How an employee's punches are captured. */
+/**
+ * How an employee's punches are captured. Set per shift template, so teams on
+ * different hardware can run side by side. Only Biometric is wired end to end
+ * today; in-app punch-in can be configured ahead of its screens.
+ */
 export type PunchFormat =
   | 'Biometric'
   | 'Geotag (powered by Sowaka)'
-  | 'Present by default (Auto Punch)';
+  | 'Present by default (Auto Punch)'
+  | 'In-app punch in';
+
+/** Whether a day is built from one punch or two. */
+export type PunchMode = 'Both punches' | 'Single punch';
+
+/** What an employee may ask an absent day to be changed to. */
+export type CorrectionOutcome = 'Full day' | 'Half day' | 'Leave';
 
 // A template is a named override of the org policy plus the people it covers.
 // It starts as a copy of the org policy and every field is editable; anyone it
@@ -275,6 +286,9 @@ export type ShiftDTO = {
   name: string;
   active: boolean;
   policy: ShiftPolicyDTO;
+  /** How this template's people punch. Empty means the org's setting applies. */
+  punchFormat: PunchFormat | '';
+  punchMode: PunchMode | '';
   assignedUserIds: string[];
   assignedCount: number;
 };
@@ -284,6 +298,9 @@ export type ShiftInput = {
   active?: boolean;
   /** Only the fields being changed; the rest keep the template's current values. */
   policy?: Partial<ShiftPolicyDTO>;
+  /** How this template's people punch. Empty inherits the org's setting. */
+  punchFormat?: PunchFormat | '';
+  punchMode?: PunchMode | '';
 };
 
 /** One person a rule set selected, and the shift they are on today. */
@@ -346,6 +363,10 @@ export type ShiftPolicyDTO = {
     triggers: string[];
     /** Where punch data comes from. */
     punchFormat: PunchFormat;
+    /** Whether the day is built from one punch or two. */
+    punchMode: PunchMode;
+    /** What an absent day may be corrected to. A half day is fixed to a full day. */
+    absentOutcomes: CorrectionOutcome[];
     approver: string;
     managerWithoutEmployee: boolean; hrOverride: boolean; skipLevel: boolean;
     /** How far back a correction may reach, in days. */
@@ -354,6 +375,11 @@ export type ShiftPolicyDTO = {
   leave: {
     approver: string;
     hrOverride: boolean;
+    /**
+     * Whether these employees have a leave balance. Off means unlimited leave:
+     * nothing is counted down, and the accrual below describes nothing.
+     */
+    balanceTracked: boolean;
     /** Accrual, year-end handling and the application window, per leave type. */
     types: LeaveTypeRule[];
   };
