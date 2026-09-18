@@ -1146,6 +1146,15 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _speechInitialized = false;
   String? _listeningField;
+  // The field whose recording has stopped but whose final words have not
+  // arrived yet. The note box shows a spinner for it (node 736:14306).
+  String? _transcribingField;
+
+  void _finishTranscribing() {
+    if (mounted && _transcribingField != null) {
+      setState(() => _transcribingField = null);
+    }
+  }
 
   @override
   void initState() {
@@ -1164,11 +1173,20 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     required ValueChanged<String> onText,
   }) async {
     if (_speech.isListening && _listeningField == field) {
+      setState(() {
+        _listeningField = null;
+        _transcribingField = field;
+      });
       await _speech.stop();
-      if (mounted) setState(() => _listeningField = null);
+      // The recogniser normally reports its final words within a moment; if
+      // it never does, don't leave the box spinning.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (_transcribingField == field) _finishTranscribing();
+      });
       return;
     }
     if (_speech.isListening) await _speech.cancel();
+    _transcribingField = null;
 
     final available = _speechInitialized
         ? true
@@ -1177,10 +1195,14 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
               if ((status == 'done' || status == 'notListening') && mounted) {
                 setState(() => _listeningField = null);
               }
+              if (status == 'done') _finishTranscribing();
             },
             onError: (error) {
               if (!mounted) return;
-              setState(() => _listeningField = null);
+              setState(() {
+                _listeningField = null;
+                _transcribingField = null;
+              });
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Voice input unavailable: ${error.errorMsg}'),
@@ -1210,10 +1232,14 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     await _speech.listen(
       onResult: (result) {
         final words = result.recognizedWords.trim();
-        if (words.isEmpty) return;
-        onText(prefix.isEmpty ? words : '$prefix $words');
+        if (words.isNotEmpty) {
+          onText(prefix.isEmpty ? words : '$prefix $words');
+        }
         if (result.finalResult && mounted) {
-          setState(() => _listeningField = null);
+          setState(() {
+            _listeningField = null;
+            _transcribingField = null;
+          });
         }
       },
     );
@@ -1232,10 +1258,27 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final alreadySent = member.status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
     final complete = scored.length == state.recordParams.length;
-    // Average only what has been rated. Dividing by every parameter made a
-    // half-filled form read as a near-zero score with a huge negative delta.
+    // Weighted the way the server scores a sent review, so the number here is
+    // the number that gets saved rather than a plain average that drifts from
+    // it whenever the weights are uneven.
+    //
+    // Only what has been rated counts, renormalised over those weights:
+    // dividing by every parameter made a half-filled form read as a near-zero
+    // score with a huge negative delta.
+    final ratedWeight = scored.fold<double>(
+      0,
+      (sum, item) => sum + (item.weight ?? 0).toDouble(),
+    );
     final overall = scored.isEmpty
         ? 0.0
+        : ratedWeight > 0
+        ? scored.fold<double>(
+                0,
+                (sum, item) => sum + item.score * (item.weight ?? 0),
+              ) /
+              ratedWeight
+        // Parameters assigned before weighting existed carry none; an even
+        // split is how the server reads them too.
         : scored.fold<double>(0, (sum, item) => sum + item.score) /
               scored.length;
 
@@ -1291,7 +1334,10 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                           'HR has not assigned feedback parameters for this '
                           'person this cycle, so there is nothing to score yet.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: MColors.inkSoft, fontSize: 13.5),
+                          style: TextStyle(
+                            color: MColors.inkSoft,
+                            fontSize: 13.5,
+                          ),
                         ),
                       ],
                     ),
@@ -1338,6 +1384,7 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                           param: param,
                           locked: locked,
                           listening: _listeningField == 'param-$index',
+                          transcribing: _transcribingField == 'param-$index',
                           onScore: (value) =>
                               bloc.add(UpdateFeedbackScore(index, value)),
                           onNote: (value) =>
@@ -1464,10 +1511,15 @@ class _OverallScoreCard extends StatelessWidget {
     required this.previousScore,
     this.showAveragesNote = false,
     this.boxed = true,
+    this.onDeltaTap,
   });
 
   final double overall;
   final double? previousScore;
+
+  /// Called with the change in points when the "+3.4 pts" chip is tapped, so
+  /// the page can say in words what the number means (node 2412:81964).
+  final ValueChanged<double>? onDeltaTap;
 
   /// False when embedded in a larger card (the growth page keeps the score and
   /// its chart in one card), so this doesn't draw a second card around itself.
@@ -1542,23 +1594,27 @@ class _OverallScoreCard extends StatelessWidget {
           ),
         ),
         if (delta != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            decoration: BoxDecoration(
-              color: up ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-              border: Border.all(
-                color: up ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
-                width: 1.114,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDeltaTap == null ? null : () => onDeltaTap!(delta),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: up ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                border: Border.all(
+                  color: up ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
+                  width: 1.114,
+                ),
+                borderRadius: BorderRadius.circular(999),
               ),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '${up ? '+' : ''}${delta.toStringAsFixed(1)} pts',
-              style: TextStyle(
-                color: up ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                fontSize: 12.5,
-                height: 1.5,
-                fontWeight: FontWeight.w700,
+              child: Text(
+                '${up ? '+' : ''}${delta.toStringAsFixed(1)} pts',
+                style: TextStyle(
+                  color: up ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                  fontSize: 12.5,
+                  height: 1.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),

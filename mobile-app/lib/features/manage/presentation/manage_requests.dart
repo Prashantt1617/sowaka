@@ -350,9 +350,8 @@ class _AttendanceCorrectionCard extends StatelessWidget {
                   child: ActionButton(
                     label: 'Decline',
                     icon: Icons.close_rounded,
-                    background: Colors.white,
-                    foreground: MColors.inkSoft,
-                    border: MColors.line,
+                    background: MColors.rejectTint,
+                    foreground: MColors.rejectInk,
                     onTap: () => _decide(context, LeaveDecision.declined),
                   ),
                 ),
@@ -361,8 +360,8 @@ class _AttendanceCorrectionCard extends StatelessWidget {
                   child: ActionButton(
                     label: 'Approve',
                     icon: Icons.check_rounded,
-                    background: MColors.sageDeep,
-                    foreground: Colors.white,
+                    background: MColors.approveTint,
+                    foreground: MColors.approveInk,
                     onTap: () => _decide(context, LeaveDecision.approved),
                   ),
                 ),
@@ -489,8 +488,10 @@ Future<String?> _showAttendanceDecisionSheet(
                 child: ActionButton(
                   label: approved ? 'Confirm approve' : 'Confirm decline',
                   icon: approved ? Icons.check_rounded : Icons.close_rounded,
-                  background: approved ? MColors.sageDeep : MColors.live,
-                  foreground: Colors.white,
+                  // Same colours as the Approve and Reject buttons on the card
+                  // this sheet was opened from.
+                  background: approved ? MColors.approveTint : MColors.rejectTint,
+                  foreground: approved ? MColors.approveInk : MColors.rejectInk,
                   onTap: () {
                     if (!approved && note.text.trim().isEmpty) return;
                     Navigator.pop(sheetContext, note.text.trim());
@@ -679,9 +680,8 @@ class _LeaveCard extends StatelessWidget {
                     child: ActionButton(
                       label: 'Decline',
                       icon: Icons.close_rounded,
-                      background: Colors.white,
-                      foreground: MColors.inkSoft,
-                      border: MColors.line,
+                      background: MColors.rejectTint,
+                      foreground: MColors.rejectInk,
                       onTap: () =>
                           _confirmDecision(context, LeaveDecision.declined),
                     ),
@@ -691,8 +691,8 @@ class _LeaveCard extends StatelessWidget {
                     child: ActionButton(
                       label: 'Approve',
                       icon: Icons.check_rounded,
-                      background: MColors.sageDeep,
-                      foreground: Colors.white,
+                      background: MColors.approveTint,
+                      foreground: MColors.approveInk,
                       onTap: () =>
                           _confirmDecision(context, LeaveDecision.approved),
                     ),
@@ -922,25 +922,22 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 10,
-                      child: ActionButton(
-                        label: 'Decline',
-                        icon: Icons.close_rounded,
-                        background: Colors.white,
-                        foreground: MColors.inkSoft,
-                        border: MColors.line,
-                        onTap: () => _decide(context, LeaveDecision.declined),
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      flex: 14,
                       child: ActionButton(
                         label: 'Approve',
                         icon: Icons.check_rounded,
-                        background: MColors.sageDeep,
-                        foreground: Colors.white,
+                        background: MColors.approveTint,
+                        foreground: MColors.approveInk,
                         onTap: () => _decide(context, LeaveDecision.approved),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ActionButton(
+                        label: 'Decline',
+                        icon: Icons.close_rounded,
+                        background: MColors.rejectTint,
+                        foreground: MColors.rejectInk,
+                        onTap: () => _decide(context, LeaveDecision.declined),
                       ),
                     ),
                   ],
@@ -1025,28 +1022,28 @@ class _RequestDetailScaffold extends StatelessWidget {
               ),
               child: SafeArea(
                 top: false,
+                // The same pair, in the same order and colours, as the card
+                // this page was opened from: approve on the left in green,
+                // decline on the right in red, equal widths.
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 10,
-                      child: ActionButton(
-                        label: 'Decline',
-                        icon: Icons.close_rounded,
-                        background: Colors.white,
-                        foreground: MColors.inkSoft,
-                        border: MColors.line,
-                        onTap: onDecline,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      flex: 14,
                       child: ActionButton(
                         label: 'Approve',
                         icon: Icons.check_rounded,
-                        background: MColors.sageDeep,
-                        foreground: Colors.white,
+                        background: MColors.approveTint,
+                        foreground: MColors.approveInk,
                         onTap: onApprove,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ActionButton(
+                        label: 'Decline',
+                        icon: Icons.close_rounded,
+                        background: MColors.rejectTint,
+                        foreground: MColors.rejectInk,
+                        onTap: onDecline,
                       ),
                     ),
                   ],
@@ -1227,7 +1224,10 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
   LeaveDecision decision,
 ) async {
   final approve = decision == LeaveDecision.approved;
-  final accent = approve ? MColors.sageDeep : MColors.terra;
+  // The colours the Approve and Reject buttons wear on the card this sheet
+  // was opened from, so confirming looks like what was tapped.
+  final accent = approve ? MColors.approveTint : MColors.rejectTint;
+  final accentInk = approve ? MColors.approveInk : MColors.rejectInk;
   final noteController = TextEditingController();
   try {
     return await showModalBottomSheet<_DecisionSheetResult>(
@@ -1387,7 +1387,7 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                           foreground:
                               !approve && noteController.text.trim().isEmpty
                               ? MColors.inkFaint
-                              : Colors.white,
+                              : accentInk,
                           onTap: !approve && noteController.text.trim().isEmpty
                               ? null
                               : () => Navigator.pop(
@@ -1535,9 +1535,8 @@ class _OvertimeRequestCard extends StatelessWidget {
                     child: ActionButton(
                       label: 'Decline',
                       icon: Icons.close_rounded,
-                      background: Colors.white,
-                      foreground: MColors.inkSoft,
-                      border: MColors.line,
+                      background: MColors.rejectTint,
+                      foreground: MColors.rejectInk,
                       onTap: () =>
                           _confirmDecision(context, LeaveDecision.declined),
                     ),
@@ -1547,8 +1546,8 @@ class _OvertimeRequestCard extends StatelessWidget {
                     child: ActionButton(
                       label: 'Approve',
                       icon: Icons.check_rounded,
-                      background: MColors.sageDeep,
-                      foreground: Colors.white,
+                      background: MColors.approveTint,
+                      foreground: MColors.approveInk,
                       onTap: () =>
                           _confirmDecision(context, LeaveDecision.approved),
                     ),
@@ -1918,25 +1917,22 @@ class _ManagerRequestDetailPage extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    flex: 10,
-                    child: ActionButton(
-                      label: 'Decline',
-                      icon: Icons.close_rounded,
-                      background: Colors.white,
-                      foreground: MColors.inkSoft,
-                      border: MColors.line,
-                      onTap: onDecline,
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    flex: 14,
                     child: ActionButton(
                       label: 'Approve',
                       icon: Icons.check_rounded,
-                      background: MColors.sageDeep,
-                      foreground: Colors.white,
+                      background: MColors.approveTint,
+                      foreground: MColors.approveInk,
                       onTap: onApprove,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ActionButton(
+                      label: 'Decline',
+                      icon: Icons.close_rounded,
+                      background: MColors.rejectTint,
+                      foreground: MColors.rejectInk,
+                      onTap: onDecline,
                     ),
                   ),
                 ],
@@ -1960,7 +1956,8 @@ Future<_DecisionSheetResult?> _showRequestDecisionSheet(
   required String value,
   required String trailing,
 }) async {
-  final accent = approve ? MColors.sageDeep : MColors.live;
+  final accent = approve ? MColors.approveTint : MColors.rejectTint;
+  final accentInk = approve ? MColors.approveInk : MColors.rejectInk;
   final noteController = TextEditingController();
   try {
     return await showModalBottomSheet<_DecisionSheetResult>(
@@ -2112,7 +2109,7 @@ Future<_DecisionSheetResult?> _showRequestDecisionSheet(
                           foreground:
                               !approve && noteController.text.trim().isEmpty
                               ? MColors.inkFaint
-                              : Colors.white,
+                              : accentInk,
                           onTap: !approve && noteController.text.trim().isEmpty
                               ? null
                               : () => Navigator.pop(

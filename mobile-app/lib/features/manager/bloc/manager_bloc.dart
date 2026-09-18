@@ -32,7 +32,9 @@ class ManagerState {
   factory ManagerState.initial({required bool canManage}) {
     return ManagerState(
       status: ManagerLoadStatus.initial,
-      tab: canManage ? ManagerTab.manage : ManagerTab.grow,
+      // Everyone lands on Connect: the feed is what the app is opened for, and
+      // a manager's own tabs are one tap away.
+      tab: ManagerTab.connect,
       view: ManagerView.home,
       canManage: canManage,
     );
@@ -338,6 +340,12 @@ class ManagerBloc {
       _state = ManagerState.initial(canManage: session.user.role == 'manager');
 
   final ManagerApiService _service;
+
+  /// The punch screen talks to the server directly — it has its own sequence of
+  /// reading the device, being refused and offering a way out, which does not
+  /// fit a single event and a single state.
+  ManagerApiService get api => _service;
+
   final StreamController<ManagerState> _controller =
       StreamController<ManagerState>.broadcast();
 

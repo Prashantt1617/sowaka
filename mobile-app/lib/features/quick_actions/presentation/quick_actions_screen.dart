@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../attendance/presentation/punch_screen.dart';
+import '../../attendance/presentation/slide_to_punch.dart';
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
@@ -16,6 +18,10 @@ class QuickActionsController extends ChangeNotifier {
   bool get canGoBack => _state != null && _state!._page != _QuickPage.home;
 
   void handleBack() => _state?._back();
+
+  /// Opens the leave list, for a surface outside this tab that offers leave as
+  /// the alternative to punching in — someone who is not coming in at all.
+  void openLeave() => _state?._open(_QuickPage.leave);
 
   void _attach(_QuickActionsScreenState state) {
     _state = state;
@@ -174,8 +180,13 @@ List<AttendanceDayView> buildAttendanceDays({
     }
     final future = date.isAfter(_dateOnly(now));
     final weekoff = shift.isWeekOff(date);
-    final complete = record?.punchIn != null && record?.punchOut != null;
-    final duration = complete
+    // What counts as a recorded day is the employee's own policy: one punch
+    // makes the day on a single-punch shift, and there is nothing to measure.
+    final complete = shift.dayIsComplete(
+      punchIn: record?.punchIn,
+      punchOut: record?.punchOut,
+    );
+    final duration = complete && record?.punchOut != null
         ? record!.punchOut!.difference(record.punchIn!)
         : null;
     final approvedRegularization =
@@ -266,18 +277,24 @@ List<AttendanceDayView> buildAttendanceDays({
       }
       if (complete) {
         // Three bands, all from the shift HR configured: a full day, a half day,
-        // and below that a day short enough to need a correction.
-        final fullDay = duration! >= shift.minFullDay;
-        final halfDay = !fullDay && duration >= shift.minHalfDay;
+        // and below that a day short enough to need a correction. With a single
+        // punch there are no hours to band, so the punch alone makes the day.
+        final fullDay = duration == null || duration >= shift.minFullDay;
+        final halfDay = !fullDay && duration! >= shift.minHalfDay;
         final short = !fullDay && !halfDay;
         final late = shift.isLate(record!.punchIn!);
-        final earlyOut = shift.isEarlyOut(record.punchOut!);
+        final earlyOut =
+            record.punchOut != null && shift.isEarlyOut(record.punchOut!);
         final flags = [if (late) 'Late', if (earlyOut) 'Early out'].join(' · ');
         final label = short
             ? 'Short day'
             : halfDay
             ? 'Half day'
             : 'Present';
+        // Nothing to report the length of when only one punch is taken.
+        final durationSuffix = duration == null
+            ? ''
+            : ' · ${_QuickActionsScreenState._duration(duration)}';
         return AttendanceDayView(
           date: date,
           kind: short
@@ -286,7 +303,7 @@ List<AttendanceDayView> buildAttendanceDays({
               ? AttendanceKind.halfDay
               : AttendanceKind.present,
           title:
-              '$label · ${_QuickActionsScreenState._duration(duration)}'
+              '$label$durationSuffix'
               '${flags.isEmpty ? '' : ' · $flags'}$overtimeSuffix',
           cellLabel: short
               ? 'Short'
@@ -298,8 +315,21 @@ List<AttendanceDayView> buildAttendanceDays({
           earlyOut: earlyOut,
         );
       }
+      // Nobody punches on an auto-punch policy, so a working day with no
+      // record is a day present — not a day with something missing.
+      if (shift.markedPresentAutomatically && !future && !weekoff && holiday == null) {
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.present,
+          title: 'Present',
+          cellLabel: '',
+          record: record,
+        );
+      }
       if (record != null || (!future && !weekoff)) {
-        final missing = record?.punchIn == null
+        final missing = shift.singlePunchDay
+            ? 'no punch recorded'
+            : record?.punchIn == null
             ? 'missing punch-in'
             : 'missing punch-out';
         // How an incomplete day is recorded is HR's call, not the calendar's —
@@ -318,7 +348,7 @@ List<AttendanceDayView> buildAttendanceDays({
         // Attendance correction. A day that can still be corrected is drawn red
         // even when the mark above says half day.
         final correctable = shift.correction.allows(
-          CorrectionRules.triggerFor(
+          shift.triggerFor(
             punchIn: record?.punchIn,
             punchOut: record?.punchOut,
           ),
@@ -599,6 +629,42 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
+  /// Opens the punch screen, and reloads the day once it closes.
+  ///
+  /// The punch screen owns the sequence — reading the location, being refused,
+  /// offering somewhere to go next — so this only has to bring back whatever it
+  /// settled on.
+  Future<void> _startPunch(String type) async {
+    final outcome = await Navigator.of(context).push<PunchOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PunchScreen(
+          api: widget.bloc.api,
+          type: type,
+          onRequestWfh: () => _open(_QuickPage.calendar),
+          // Today's day is already with the manager: they may still punch, but
+          // the screen stops offering a second request for the same day.
+          alreadyRequestedToday: _requestedToday(),
+          geofenced: widget.dashboard.shift.punchIsGeofenced,
+          // The card's own slider has already been dragged.
+          startImmediately: true,
+        ),
+      ),
+    );
+    if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
+      await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
+    }
+  }
+
+  /// Whether a correction for today is already with the manager.
+  bool _requestedToday() {
+    final now = DateTime.now();
+    return widget.dashboard.regularizations.any(
+      (request) =>
+          _sameDay(request.workDate, now) &&
+          request.decision == LeaveDecision.pending,
+    );
+  }
+
   Widget _home() {
     final today = DateTime.now();
     final todayRecord = widget.dashboard.attendance
@@ -633,6 +699,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           (request) => request.decision == LeaveDecision.pending,
         );
 
+    // Days this month already gone by with a punch missing. The banner counts
+    // them rather than saying "some", because the number is what tells someone
+    // whether this is one forgotten evening or a month that needs sorting out.
+    final missedPunches = widget.dashboard.attendance
+        .where(
+          (record) =>
+              !record.workDate.isBefore(monthStart) &&
+              record.workDate.isBefore(todayOnly) &&
+              (record.punchIn == null || record.punchOut == null) &&
+              !widget.dashboard.shift.isWeekOff(record.workDate) &&
+              !widget.dashboard.holidays.any(
+                (holiday) => _sameDay(holiday.date, record.workDate),
+              ),
+        )
+        .length;
+
+    // Their day is recorded for them, so most of these actions have nothing
+    // to act on.
+    final autoPresent = widget.dashboard.shift.markedPresentAutomatically;
+
     final leaveDaysAvailable = _accruingLeaveLabels.fold<double>(
       0,
       (total, label) => total + _balanceFor(label)!.remaining,
@@ -660,7 +746,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   progress: progress,
                   needsCorrection: needsCorrection,
                   onTap: () => _open(_QuickPage.calendar),
+                  onPunch: widget.dashboard.shift.punchesFromApp
+                      ? _startPunch
+                      : null,
+                  autoPresent:
+                      widget.dashboard.shift.markedPresentAutomatically,
+                  singlePunch: widget.dashboard.shift.singlePunchDay,
                 ),
+                if (missedPunches > 0) ...[
+                  const SizedBox(height: 14),
+                  _MissedPunchBanner(
+                    count: missedPunches,
+                    onRegularize: () => _open(_QuickPage.calendar),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 const _HomeSectionLabel('Actions'),
                 const SizedBox(height: 2),
@@ -684,16 +783,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     mainAxisExtent: 142,
                   ),
                   children: [
-                    _HomeActionCard(
-                      icon: Icons.card_giftcard_rounded,
-                      color: const Color(0xFFBE5A36),
-                      tint: const Color(0xFFF6E5DB),
-                      title: 'Leave',
-                      subtitle: '$leaveDaysAvailable days available',
-                      onTap: () => _open(_QuickPage.leave),
-                      imageAsset: 'assets/icons/action_card_leave_calendar.png',
-                    ),
-                    if (widget.dashboard.overtimeEnabled)
+                    // Someone marked present automatically has no attendance to
+                    // manage: no leave to balance against days worked, and no
+                    // overtime to claim beyond hours nobody records. What is
+                    // left is what they can still act on.
+                    if (!autoPresent)
+                      _HomeActionCard(
+                        icon: Icons.card_giftcard_rounded,
+                        color: const Color(0xFFBE5A36),
+                        tint: const Color(0xFFF6E5DB),
+                        title: 'Leave',
+                        // No balance, nothing to count down — so the card says
+                        // what it is for rather than a number that would be
+                        // wrong for these people.
+                        subtitle: widget.dashboard.shift.leaveBalanceTracked
+                            ? '$leaveDaysAvailable days available'
+                            : 'Apply & view requests',
+                        onTap: () => _open(_QuickPage.leave),
+                        imageAsset: 'assets/icons/action_card_leave_calendar.png',
+                      ),
+                    if (!autoPresent && widget.dashboard.overtimeEnabled)
                       _HomeActionCard(
                         icon: Icons.hourglass_bottom_rounded,
                         color: const Color(0xFFC98A2E),
@@ -755,20 +864,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       trailing: _LeaveHeaderButton(onTap: _openBlankLeaveForm),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        const _HomeSectionLabel('Leave Balance'),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 108,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final label in _accruingLeaveLabels) ...[
-                _LeaveBalanceCard(label: label, item: _balanceFor(label)!),
-                const SizedBox(width: 8),
+        // With no balance to count down, what matters is what has been asked
+        // for and how it went — node 2217:12436.
+        if (!widget.dashboard.shift.leaveBalanceTracked) ...[
+          const SizedBox(height: 16),
+          _LeaveYearSummaryCard(leaves: widget.dashboard.myLeaves),
+        ] else ...[
+          const _HomeSectionLabel('Leave Balance'),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 108,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final label in _accruingLeaveLabels) ...[
+                  _LeaveBalanceCard(label: label, item: _balanceFor(label)!),
+                  const SizedBox(width: 8),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 4),
         Padding(
           padding: const EdgeInsets.only(top: 4),
@@ -965,13 +1081,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _LeaveFieldLabel('Leave Type'),
-              _LeaveDropdownField(
-                value: _leaveType ?? 'Select leave type',
-                filled: _leaveType != null,
-                onTap: _pickLeaveType,
-              ),
-              const SizedBox(height: 16),
+              // Unlimited leave has no types to choose between: there is
+              // nothing to spend, so the request is dates and a reason.
+              if (widget.dashboard.shift.leaveBalanceTracked) ...[
+                _LeaveFieldLabel('Leave Type'),
+                _LeaveDropdownField(
+                  value: _leaveType ?? 'Select leave type',
+                  filled: _leaveType != null,
+                  onTap: _pickLeaveType,
+                ),
+                const SizedBox(height: 16),
+              ],
               _LeaveFieldLabel('Start Date'),
               _LeaveDropdownField(
                 value: _leaveFrom == null ? 'Select date' : _short(_leaveFrom!),
@@ -1154,7 +1274,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Every leave field except the attachment, which stays optional. The range
   /// must also cost at least one day — an all-week-off range is not a leave.
   bool get _leaveFormComplete {
-    if (_leaveType == null || _leaveFrom == null) return false;
+    // On unlimited leave there is no type to pick, so the form is complete
+    // without one.
+    final needsType = widget.dashboard.shift.leaveBalanceTracked;
+    if ((needsType && _leaveType == null) || _leaveFrom == null) return false;
     if (_leaveReason.text.trim().isEmpty) return false;
     // One rule, shared with every other apply-leave surface: the Apply button
     // is off for anything the server would refuse.
@@ -1296,7 +1419,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   Future<void> _submitLeaveApplication() async {
     if (!_leaveFormComplete) return;
-    final type = _leaveType!;
+    // The server still records a type, and casual is what an unlimited day is
+    // taken as — the balance it would spend is simply never counted.
+    final type = _leaveType ?? 'Casual Leave';
     final from = _leaveFrom!;
     final to = _leaveTo ?? from;
     final sent = await widget.bloc.add(
@@ -1318,7 +1443,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         successTitle: 'Leave Applied',
         successBody: 'Leave has been sent to your manager for review',
         rows: [
-          SummaryRow('Leave Type', type.replaceAll(' Leave', '')),
+          if (widget.dashboard.shift.leaveBalanceTracked)
+            SummaryRow('Leave Type', type.replaceAll(' Leave', '')),
           SummaryRow('Start Date', _summaryDate(from)),
           SummaryRow('End Date', _summaryDate(to)),
           SummaryRow(
@@ -2171,6 +2297,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               actions: _actionsForDay(detail),
               pendingNotice: _pendingNoticeFor(detail),
               blockedReason: _correctionBlockedReason(detail),
+              singlePunch: widget.dashboard.shift.singlePunchDay,
             ),
           ],
         ] else ...[
@@ -2188,6 +2315,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               actions: _actionsForDay(detail),
               pendingNotice: _pendingNoticeFor(detail),
               blockedReason: _correctionBlockedReason(detail),
+              singlePunch: widget.dashboard.shift.singlePunchDay,
             ),
           ],
         ],
@@ -3871,10 +3999,12 @@ class _CorrectionDayType {
   final Color dotColor;
 }
 
+/// Only what a day can *become*. Working from home is why a day should count,
+/// not what it counts as — it belongs in the reason, and HR's list under
+/// Shifts › Attendance correction holds these three.
 const _correctionDayTypes = <_CorrectionDayType>[
   _CorrectionDayType('full_day', 'Full Day', Color(0xFF34A853)),
   _CorrectionDayType('half_day', 'Half Day', Color(0xFF34A853)),
-  _CorrectionDayType('wfh', 'Work from home', Color(0xFF34A853)),
   // Leave is the odd one out: it spends a balance rather than recording work.
   _CorrectionDayType('leave', 'Leave', Color(0xFF2F7FE4)),
 ];
@@ -3908,18 +4038,24 @@ class _CorrectionSheetState extends State<_CorrectionSheet> {
   String? _dayType;
   var _busy = false;
 
-  /// What this day may be corrected to.
+  /// What this day may be corrected to, as HR configured it.
   ///
-  /// A day already marked as a half day — the policy's answer to a punch being
-  /// missing — is only ever disputed one way: the person says they worked the
-  /// whole day. Offering half day again asks them to confirm what the day
-  /// already is, and the rest are not what a missing punch is about.
-  List<_CorrectionDayType> get _options =>
-      widget.dayView.kind == AttendanceKind.halfDay
-      ? _correctionDayTypes
-            .where((option) => option.value == 'full_day')
-            .toList()
-      : _correctionDayTypes;
+  /// A day already marked as a half day is only ever disputed one way: the
+  /// person says they worked the whole day. Offering half day again asks them
+  /// to confirm what the day already is. What an absent day may become is
+  /// HR's to choose, and the server refuses anything outside that list, so the
+  /// sheet asks the policy rather than deciding for itself.
+  List<_CorrectionDayType> get _options {
+    final mark = switch (widget.dayView.kind) {
+      AttendanceKind.halfDay => 'Half Day',
+      AttendanceKind.present => 'Present',
+      _ => 'Absent',
+    };
+    final allowed = widget.shift.correction.outcomesForMark(mark);
+    return _correctionDayTypes
+        .where((option) => allowed.contains(option.value))
+        .toList();
+  }
 
   @override
   void dispose() {
@@ -4238,9 +4374,15 @@ class AttendanceDayDetail extends StatelessWidget {
     this.actions = const [],
     this.pendingNotice,
     this.blockedReason,
+    this.singlePunch = false,
   });
 
   final AttendanceDayView day;
+
+  /// This employee's day is one punch, so there is no punch-out to show — an
+  /// empty second cell reads as a day that went wrong rather than one that
+  /// never had a second punch.
+  final bool singlePunch;
 
   /// What can be done with this day, in the order they should be offered.
   final List<AttendanceDayAction> actions;
@@ -4338,19 +4480,21 @@ class AttendanceDayDetail extends StatelessWidget {
               children: [
                 Expanded(
                   child: _AttendancePunchCell(
-                    label: 'Punch-in',
+                    label: singlePunch ? 'Punch' : 'Punch-in',
                     value: attendancePunchClock(day.record?.punchIn),
                     alignEnd: false,
                   ),
                 ),
-                Container(width: 1, color: const Color(0xFFDDDDDD)),
-                Expanded(
-                  child: _AttendancePunchCell(
-                    label: 'Punch-out',
-                    value: attendancePunchClock(day.record?.punchOut),
-                    alignEnd: true,
+                if (!singlePunch) ...[
+                  Container(width: 1, color: const Color(0xFFDDDDDD)),
+                  Expanded(
+                    child: _AttendancePunchCell(
+                      label: 'Punch-out',
+                      value: attendancePunchClock(day.record?.punchOut),
+                      alignEnd: true,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -4713,6 +4857,116 @@ class _LeaveHeaderButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// This year's requests, for people with no balance to show (node 2217:12436).
+class _LeaveYearSummaryCard extends StatelessWidget {
+  const _LeaveYearSummaryCard({required this.leaves});
+
+  final List<LeaveRequest> leaves;
+
+  @override
+  Widget build(BuildContext context) {
+    final year = DateTime.now().year;
+    final thisYear = leaves
+        .where((leave) => leave.start.year == year || leave.end.year == year)
+        .toList();
+    final approved = thisYear
+        .where((leave) => leave.decision == LeaveDecision.approved)
+        .length;
+    final pending = thisYear
+        .where((leave) => leave.decision == LeaveDecision.pending)
+        .length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0A000000), blurRadius: 2, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'THIS YEAR',
+            style: TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF9CA3AF),
+              fontSize: 12,
+              height: 16 / 12,
+              letterSpacing: 0.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _LeaveYearFigure(
+                value: '${thisYear.length}',
+                label: 'Total request',
+                color: const Color(0xFF111827),
+              ),
+              _LeaveYearFigure(
+                value: '$approved',
+                label: 'Approved',
+                color: const Color(0xFF16A34A),
+              ),
+              _LeaveYearFigure(
+                value: '$pending',
+                label: 'Pending',
+                color: const Color(0xFFFF383C),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One of the three figures: the count over its name.
+class _LeaveYearFigure extends StatelessWidget {
+  const _LeaveYearFigure({
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontFamily: 'Sora',
+            color: color,
+            fontSize: 16,
+            height: 24 / 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Sora',
+            color: Color(0xFF9CA3AF),
+            fontSize: 10,
+            height: 15 / 10,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _LeaveBalanceCard extends StatelessWidget {
@@ -5598,6 +5852,64 @@ class _HomeSectionLabel extends StatelessWidget {
   );
 }
 
+/// Days this month with a punch missing, and a way straight to them.
+///
+/// Node 2430:87608. Separate from the attendance card rather than inside it: it
+/// is about days already gone, while the card above is about today.
+class _MissedPunchBanner extends StatelessWidget {
+  const _MissedPunchBanner({required this.count, required this.onRegularize});
+
+  final int count;
+  final VoidCallback onRegularize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9D5D5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'You have $count missed ${count == 1 ? 'punch' : 'punches'} — '
+            'regularize your attendance to avoid loss of pay',
+            style: const TextStyle(
+              color: Color(0xFF222222),
+              fontSize: 14,
+              height: 20 / 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onRegularize,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE05A5A)),
+              ),
+              child: const Text(
+                'Regularize',
+                style: TextStyle(
+                  color: Color(0xFFE05A5A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HomeAttendanceCard extends StatelessWidget {
   const _HomeAttendanceCard({
     required this.date,
@@ -5607,6 +5919,9 @@ class _HomeAttendanceCard extends StatelessWidget {
     required this.progress,
     required this.needsCorrection,
     required this.onTap,
+    this.onPunch,
+    this.autoPresent = false,
+    this.singlePunch = false,
   });
 
   final DateTime date;
@@ -5617,8 +5932,22 @@ class _HomeAttendanceCard extends StatelessWidget {
   final bool needsCorrection;
   final VoidCallback onTap;
 
+  /// Starts a punch, for the people whose org punches from the app. Null on a
+  /// biometric or auto-punch policy, where the card only reports what the
+  /// device recorded — there is nothing here to slide.
+  final ValueChanged<String>? onPunch;
+
+  /// This person is marked present without punching, so the card reports that
+  /// rather than showing punch times that will never arrive.
+  final bool autoPresent;
+
+  /// This person's day is one punch. Once it is in, the day is recorded — there
+  /// is no punch-out to slide and no second time to show.
+  final bool singlePunch;
+
   static String _clock(DateTime? value) {
-    if (value == null) return '-';
+    // Nothing recorded yet, said the way the design says it.
+    if (value == null) return 'NR';
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
     final minute = value.minute.toString().padLeft(2, '0');
     return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
@@ -5686,14 +6015,78 @@ class _HomeAttendanceCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              '${date.day} ${_monthName(date.month)} ${date.year}',
-              style: const TextStyle(
-                color: Color(0xFF222222),
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${date.day} ${_monthName(date.month)} ${date.year}',
+                    style: const TextStyle(
+                      color: Color(0xFF484848),
+                      fontSize: 14,
+                      height: 16.2 / 14,
+                      letterSpacing: -0.16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                // Present once the day has a punch against it, or when nobody
+                // has to punch at all (node 2412:82314).
+                if (punchIn != null || autoPresent)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF00C950),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Present',
+                          style: TextStyle(
+                            color: Color(0xFF008236),
+                            fontSize: 12,
+                            height: 16 / 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
+            if (onPunch case final punch?) ...[
+              const SizedBox(height: 12),
+              // Punch in while the day has not started, punch out once it has.
+              // A day with both punches recorded has nothing left to slide.
+              if (punchIn == null)
+                SlideToPunch(
+                  label: 'Slide to Punch In',
+                  onComplete: () => punch('in'),
+                )
+              else if (!singlePunch && punchOut == null)
+                SlideToPunch.filled(
+                  label: 'Slide to Punch Out',
+                  color: const Color(0xFF34A853),
+                  onComplete: () => punch('out'),
+                ),
+            ],
+            if (autoPresent) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Marked present automatically — no punching needed.',
+                style: TextStyle(color: Color(0xFF717171), fontSize: 13),
+              ),
+            ] else ...[
             const SizedBox(height: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(99),
@@ -5703,26 +6096,6 @@ class _HomeAttendanceCard extends StatelessWidget {
                 backgroundColor: const Color(0xFFEBEBEB),
                 valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
               ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  _clock(punchIn),
-                  style: const TextStyle(
-                    color: Color(0xFF717171),
-                    fontSize: 12,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  expectedOut == null ? '-' : _clock(expectedOut),
-                  style: const TextStyle(
-                    color: Color(0xFF717171),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
             ),
             const SizedBox(height: 14),
             Row(
@@ -5736,9 +6109,10 @@ class _HomeAttendanceCard extends StatelessWidget {
                         'PUNCH-IN',
                         style: TextStyle(
                           color: Color(0xFF717171),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: .6,
+                          fontSize: 10,
+                          height: 15 / 10,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: .25,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -5753,6 +6127,7 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (!singlePunch) ...[
                 Container(width: 1, height: 32, color: const Color(0xFFEBEBEB)),
                 const SizedBox(width: 16),
                 Expanded(
@@ -5763,9 +6138,10 @@ class _HomeAttendanceCard extends StatelessWidget {
                         'PUNCH-OUT',
                         style: TextStyle(
                           color: Color(0xFF717171),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: .6,
+                          fontSize: 10,
+                          height: 15 / 10,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: .25,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -5780,8 +6156,10 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                ],
               ],
             ),
+            ],
           ],
         ),
       ),
@@ -6687,7 +7065,10 @@ const _policiesData = <_Policy>[
     Icons.shield_rounded,
     _Q.plum,
     _Q.plumTint,
-    'Sowaka has zero tolerance for harassment. Complaints go to the Internal Committee and are handled confidentially, with resolution within 90 days. You can raise one anonymously.',
+    // The employer's policy, not the product's — this is read by people at
+    // every company on the platform, and it is their own company that runs the
+    // Internal Committee.
+    'Your company has zero tolerance for harassment. Complaints go to the Internal Committee and are handled confidentially, with resolution within 90 days. You can raise one anonymously.',
   ),
   _Policy(
     'Overtime',
