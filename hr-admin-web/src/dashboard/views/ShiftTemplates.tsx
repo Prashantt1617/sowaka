@@ -450,7 +450,7 @@ export function ShiftTemplates() {
             </div>
             <div style={{ fontSize: 13, color: '#717171', marginTop: 3, lineHeight: 1.5 }}>
               {policy.leave.balanceTracked === false
-                ? 'Unlimited leave — they apply, a manager approves, and nothing is counted down. They are not asked for a leave type.'
+              ? ''
                 : 'Leave is counted down from the balances below.'}
             </div>
           </div>
@@ -476,8 +476,7 @@ export function ShiftTemplates() {
         </div>
         {policy.leave.balanceTracked === false ? (
           <div style={note}>
-            Nothing to configure: accrual, carry-forward and encashment all
-            describe a balance these people do not have.
+          Unlimited leave — they apply, a manager approves, and nothing is counted down.
           </div>
         ) : (
           policy.leave.types.map((row, index) => (
