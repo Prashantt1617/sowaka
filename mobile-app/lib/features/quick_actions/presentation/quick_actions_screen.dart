@@ -4480,21 +4480,22 @@ class AttendanceDayDetail extends StatelessWidget {
               children: [
                 Expanded(
                   child: _AttendancePunchCell(
-                    label: singlePunch ? 'Punch' : 'Punch-in',
+                    label: 'Punch-in',
                     value: attendancePunchClock(day.record?.punchIn),
                     alignEnd: false,
                   ),
                 ),
-                if (!singlePunch) ...[
-                  Container(width: 1, color: const Color(0xFFDDDDDD)),
-                  Expanded(
-                    child: _AttendancePunchCell(
-                      label: 'Punch-out',
-                      value: attendancePunchClock(day.record?.punchOut),
-                      alignEnd: true,
-                    ),
+                Container(width: 1, color: const Color(0xFFDDDDDD)),
+                Expanded(
+                  child: _AttendancePunchCell(
+                    label: 'Punch-out',
+                    // Not required where HR's shift asks for one punch.
+                    value: singlePunch
+                        ? 'NR'
+                        : attendancePunchClock(day.record?.punchOut),
+                    alignEnd: true,
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -5946,8 +5947,7 @@ class _HomeAttendanceCard extends StatelessWidget {
   final bool singlePunch;
 
   static String _clock(DateTime? value) {
-    // Nothing recorded yet, said the way the design says it.
-    if (value == null) return 'NR';
+    if (value == null) return '-';
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
     final minute = value.minute.toString().padLeft(2, '0');
     return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
@@ -6127,7 +6127,6 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!singlePunch) ...[
                 Container(width: 1, height: 32, color: const Color(0xFFEBEBEB)),
                 const SizedBox(width: 16),
                 Expanded(
@@ -6146,7 +6145,9 @@ class _HomeAttendanceCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _clock(punchOut),
+                        // Not required on a single-punch shift, rather than
+                        // missing: nobody is expected to punch out.
+                        singlePunch ? 'NR' : _clock(punchOut),
                         style: const TextStyle(
                           color: Color(0xFF222222),
                           fontSize: 14.5,
@@ -6156,7 +6157,6 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                ],
               ],
             ),
             ],

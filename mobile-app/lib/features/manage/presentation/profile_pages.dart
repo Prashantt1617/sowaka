@@ -1188,13 +1188,13 @@ class _AttendanceCard extends StatelessWidget {
                     value: _attendanceClock(punchIn),
                   ),
                 ),
-                if (!singlePunch)
-                  Expanded(
-                    child: _PunchColumn(
-                      label: 'PUNCH-OUT',
-                      value: _attendanceClock(punchOut),
-                    ),
+                Expanded(
+                  child: _PunchColumn(
+                    label: 'PUNCH-OUT',
+                    // Not required where HR's shift asks for one punch.
+                    value: singlePunch ? 'NR' : _attendanceClock(punchOut),
                   ),
+                ),
               ],
             ),
           if (onViewCalendar case final open?) ...[
