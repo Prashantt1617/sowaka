@@ -92,6 +92,7 @@ class ManagerApiService {
       managerTeam: session.user.company,
       approverName: workspace['approverName'] as String? ?? 'Your manager',
       hasManager: workspace['hasManager'] as bool? ?? true,
+      teamLevel: (workspace['teamLevel'] as num?)?.toInt() ?? 1,
       myParameters: (workspace['myParameters'] as List<dynamic>? ?? const [])
           .map((item) => FeedbackParam.fromJson(item as Map<String, dynamic>))
           .toList(),

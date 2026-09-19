@@ -421,6 +421,12 @@ class _FeedbackSearchFieldState extends State<_FeedbackSearchField> {
     onChanged: widget.onChanged,
     decoration: InputDecoration(
       hintText: widget.hint,
+      // Sora at 16 in #9197A2, as the team search sets it (node 2488:89720).
+      hintStyle: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF9197A2),
+        fontSize: 16,
+      ),
       // Exported glyph from node 781:6828 (griddy-icons:search), which
       // already carries the design's #9197A2 fill.
       prefixIcon: Padding(
@@ -440,14 +446,15 @@ class _FeedbackSearchFieldState extends State<_FeedbackSearchField> {
             ),
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      // 54 tall with a 24 radius, the pill the design draws it as.
+      contentPadding: const EdgeInsets.symmetric(vertical: 15.114),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: MColors.line),
+        borderRadius: BorderRadius.circular(24),
+        borderSide: const BorderSide(color: MColors.line, width: 1.114),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: MColors.terra),
+        borderRadius: BorderRadius.circular(24),
+        borderSide: const BorderSide(color: MColors.terra, width: 1.114),
       ),
     ),
   );

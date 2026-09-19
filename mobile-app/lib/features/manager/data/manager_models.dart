@@ -171,6 +171,9 @@ class TeamMember {
     required this.userId,
     required this.name,
     this.isManager = false,
+    this.isSelf = false,
+    this.reportsToViewer = false,
+    this.reportCount = 0,
     required this.initial,
     required this.team,
     required this.score,
@@ -202,6 +205,17 @@ class TeamMember {
   final String name;
 
   /// The viewer's own manager — shown as "(Manager)" in the team list.
+  /// The viewer themselves, shown as "(You)" in the list.
+  final bool isSelf;
+
+  /// Someone who reports to the viewer. It separates the team they lead from
+  /// the team they belong to.
+  final bool reportsToViewer;
+
+  /// How many people report to them — a member who leads a team of their own
+  /// is offered an expander rather than read as an individual.
+  final int reportCount;
+
   final bool isManager;
   final String initial;
   final String team;
@@ -240,6 +254,9 @@ class TeamMember {
       userId: json['userId'] as String? ?? '',
       name: name,
       isManager: json['isManager'] == true,
+      isSelf: json['isSelf'] == true,
+      reportsToViewer: json['reportsToViewer'] == true,
+      reportCount: (json['reportCount'] as num?)?.toInt() ?? 0,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       team: json['department'] as String? ?? 'Team',
       score: (json['score'] as num?)?.toDouble() ?? 0,
@@ -781,6 +798,7 @@ class ManagerDashboard {
     required this.managerTeam,
     required this.approverName,
     this.hasManager = true,
+    this.teamLevel = 1,
     this.myParameters = const [],
     this.cycleEndsOn,
     required this.managerScore,
@@ -819,6 +837,10 @@ class ManagerDashboard {
   /// for it is not shown. Defaults to true so a backend that predates the field
   /// keeps showing it, as it always did.
   final bool hasManager;
+
+  /// How the viewer's team reads: 1 works alongside peers, 2 also leads
+  /// people, 3 leads leaders and sees the teams beneath them.
+  final int teamLevel;
 
   /// The viewer's own KPIs this cycle, with HR's subtitle and guidance for
   /// each. Shown for a month that has not been reviewed yet, so the page says
@@ -890,6 +912,7 @@ class ManagerDashboard {
       managerTeam: managerTeam,
       approverName: approverName,
       hasManager: hasManager,
+      teamLevel: teamLevel,
       myParameters: myParameters,
       cycleEndsOn: cycleEndsOn ?? this.cycleEndsOn,
       managerScore: managerScore ?? this.managerScore,
