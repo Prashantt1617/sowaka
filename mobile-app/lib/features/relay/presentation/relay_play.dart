@@ -191,14 +191,59 @@ class _RelayPlayState extends State<RelayPlay> {
               onChanged: (_) => widget.onTyping?.call(),
               onSubmitted: (_) => _submit(),
               textInputAction: TextInputAction.send,
+              textCapitalization: TextCapitalization.words,
+              autocorrect: false,
               style: RelayStyle.sora(15),
+              // Every border and the fill overridden: the app's theme gives text
+              // fields a white fill and outlined borders for each state, and
+              // turning off only the base one drew a second box inside this.
               decoration: InputDecoration(
                 isCollapsed: true,
+                filled: false,
+                contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
                 hintText: 'type the answer',
                 hintStyle: RelayStyle.sora(15, color: RelayStyle.tertiary),
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          // The design has no send control and the return key alone was never
+          // found — a team typed its answer and scored nothing.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _answer,
+            builder: (context, value, _) {
+              final ready = value.text.trim().isNotEmpty;
+              return GestureDetector(
+                onTap: ready ? _submit : null,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: ready ? 1 : 0.45,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: RelayStyle.brand,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      'SUBMIT',
+                      textAlign: TextAlign.center,
+                      style: RelayStyle.sora(
+                        13,
+                        weight: FontWeight.w600,
+                        color: Colors.white,
+                        height: 19.5,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           // The design's thumbs-down, shown when the last try was not it.
           if (wrong)

@@ -4,6 +4,15 @@
 /// and fetch: a round trip in the middle of a three-second clue cadence is a
 /// round trip nobody has. Nothing here is derived on the phone except the
 /// countdown between messages.
+/// Readers that never throw. A field arriving in an unexpected shape is read
+/// as empty rather than crashing the game in the middle of a round.
+int _int(Object? value) => value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+String _str(Object? value) => value is String ? value : '';
+bool _bool(Object? value) => value == true;
+List<Object?> _list(Object? value) => value is List ? value : const [];
+Map<String, dynamic> _map(Object? value) =>
+    value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
 class RelayState {
   const RelayState({
     required this.phase,
@@ -70,40 +79,40 @@ class RelayState {
   final int pointsThisRound;
 
   static RelayState fromJson(Map<String, dynamic> json) {
-    final event = Map<String, dynamic>.from(json['event'] as Map? ?? const {});
-    final team = Map<String, dynamic>.from(json['team'] as Map? ?? const {});
+    final event = _map(json['event']);
+    final team = _map(json['team']);
     return RelayState(
-      phase: RelayPhase.from(json['phase'] as String?),
-      eventName: event['name'] as String? ?? '',
-      round: (event['round'] as num?)?.toInt() ?? 0,
-      rounds: (event['rounds'] as num?)?.toInt() ?? 0,
-      teamName: team['name'] as String? ?? '',
-      points: (team['points'] as num?)?.toInt() ?? 0,
-      isLeader: json['isLeader'] == true,
-      leadName: json['leadName'] as String? ?? '',
-      leadIsAnswering: json['leadIsAnswering'] == true,
-      prompt: json['prompt'] as String? ?? '',
-      questionNumber: (json['questionNumber'] as num?)?.toInt() ?? 0,
-      questionsPerRound: (json['questionsPerRound'] as num?)?.toInt() ?? 0,
-      pointsPerCorrect: (json['pointsPerCorrect'] as num?)?.toInt() ?? 0,
-      roundSecondsLeft: (json['roundSecondsLeft'] as num?)?.toInt() ?? 0,
-      questionSecondsLeft: (json['questionSecondsLeft'] as num?)?.toInt() ?? 0,
-      secondsUntilStart: (json['secondsUntilStart'] as num?)?.toInt() ?? 0,
-      instructionsVideoUrl: json['instructionsVideoUrl'] as String? ?? '',
+      phase: RelayPhase.from(_str(json['phase'])),
+      eventName: _str(event['name']),
+      round: _int(event['round']),
+      rounds: _int(event['rounds']),
+      teamName: _str(team['name']),
+      points: _int(team['points']),
+      isLeader: _bool(json['isLeader']),
+      leadName: _str(json['leadName']),
+      leadIsAnswering: _bool(json['leadIsAnswering']),
+      prompt: _str(json['prompt']),
+      questionNumber: _int(json['questionNumber']),
+      questionsPerRound: _int(json['questionsPerRound']),
+      pointsPerCorrect: _int(json['pointsPerCorrect']),
+      roundSecondsLeft: _int(json['roundSecondsLeft']),
+      questionSecondsLeft: _int(json['questionSecondsLeft']),
+      secondsUntilStart: _int(json['secondsUntilStart']),
+      instructionsVideoUrl: _str(json['instructionsVideoUrl']),
       pieces: [
-        for (final piece in (json['pieces'] as List? ?? const []))
+        for (final piece in _list(json['pieces']))
           if (piece is Map) RelayPiece.fromJson(Map<String, dynamic>.from(piece)),
       ],
       teammates: [
-        for (final mate in (json['teammates'] as List? ?? const []))
+        for (final mate in _list(json['teammates']))
           if (mate is Map) RelayTeammate.fromJson(Map<String, dynamic>.from(mate)),
       ],
       standings: [
-        for (final row in (json['standings'] as List? ?? const []))
+        for (final row in _list(json['standings']))
           if (row is Map) RelayStanding.fromJson(Map<String, dynamic>.from(row)),
       ],
-      yourRank: (json['yourRank'] as num?)?.toInt() ?? 0,
-      pointsThisRound: (json['pointsThisRound'] as num?)?.toInt() ?? 0,
+      yourRank: _int(json['yourRank']),
+      pointsThisRound: _int(json['pointsThisRound']),
     );
   }
 }
@@ -130,8 +139,8 @@ class RelayPiece {
   final String text;
 
   static RelayPiece fromJson(Map<String, dynamic> json) => RelayPiece(
-    label: json['label'] as String? ?? '',
-    text: json['text'] as String? ?? '',
+    label: _str(json['label']),
+    text: _str(json['text']),
   );
 }
 
@@ -155,11 +164,11 @@ class RelayTeammate {
   final bool isYou;
 
   static RelayTeammate fromJson(Map<String, dynamic> json) => RelayTeammate(
-    name: json['name'] as String? ?? '',
-    present: json['present'] == true,
-    isLeader: json['isLeader'] == true,
-    hasClue: json['hasClue'] == true,
-    isYou: json['isYou'] == true,
+    name: _str(json['name']),
+    present: _bool(json['present']),
+    isLeader: _bool(json['isLeader']),
+    hasClue: _bool(json['hasClue']),
+    isYou: _bool(json['isYou']),
   );
 }
 
@@ -171,9 +180,9 @@ class RelayStanding {
   final int points;
 
   static RelayStanding fromJson(Map<String, dynamic> json) => RelayStanding(
-    rank: (json['rank'] as num?)?.toInt() ?? 0,
-    name: json['name'] as String? ?? '',
-    points: (json['points'] as num?)?.toInt() ?? 0,
+    rank: _int(json['rank']),
+    name: _str(json['name']),
+    points: _int(json['points']),
   );
 }
 
@@ -188,9 +197,9 @@ class RelayResult {
   final String answer;
 
   static RelayResult fromJson(Map<String, dynamic> json) => RelayResult(
-    correct: json['correct'] == true,
-    skipped: json['skipped'] == true,
-    answer: json['answer'] as String? ?? '',
+    correct: _bool(json['correct']),
+    skipped: _bool(json['skipped']),
+    answer: _str(json['answer']),
   );
 }
 
@@ -219,23 +228,23 @@ class RelayCard {
   final List<RelayCardMember> members;
 
   static RelayCard fromJson(Map<String, dynamic> json) {
-    final event = Map<String, dynamic>.from(json['event'] as Map? ?? const {});
-    final team = json['team'] is Map ? Map<String, dynamic>.from(json['team'] as Map) : null;
+    final event = _map(json['event']);
+    final team = json['team'] is Map ? _map(json['team']) : null;
     return RelayCard(
-      title: event['title'] as String? ?? '',
-      status: event['status'] as String? ?? '',
-      startsAt: DateTime.tryParse(event['startsAt'] as String? ?? '')?.toLocal(),
-      rewardAmount: (event['rewardAmount'] as num?)?.toInt() ?? 0,
-      pointsPerCorrect: (event['pointsPerCorrect'] as num?)?.toInt() ?? 0,
-      instructionsVideoUrl: event['instructionsVideoUrl'] as String? ?? '',
-      teamName: team?['name'] as String?,
+      title: _str(event['title']),
+      status: _str(event['status']),
+      startsAt: DateTime.tryParse(_str(event['startsAt']))?.toLocal(),
+      rewardAmount: _int(event['rewardAmount']),
+      pointsPerCorrect: _int(event['pointsPerCorrect']),
+      instructionsVideoUrl: _str(event['instructionsVideoUrl']),
+      teamName: team == null ? null : _str(team['name']),
       members: [
-        for (final member in (team?['members'] as List? ?? const []))
+        for (final member in _list(team?['members']))
           if (member is Map)
             RelayCardMember(
-              name: member['name'] as String? ?? '',
-              isLeader: member['isLeader'] == true,
-              isYou: member['isYou'] == true,
+              name: _str(member['name']),
+              isLeader: _bool(member['isLeader']),
+              isYou: _bool(member['isYou']),
             ),
       ],
     );

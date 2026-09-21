@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   relayEvents,
   relayItems,
@@ -54,7 +55,11 @@ async function memo<T>(key: string, ttlMs: number, load: () => Promise<T>): Prom
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.value as T;
   const value = await load();
-  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  // A miss is never remembered: a brief moment with no event found would
+  // otherwise tell everyone "no game" for the whole of the cache window.
+  if (value !== null && value !== undefined) {
+    cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
   return value;
 }
 
@@ -534,21 +539,24 @@ export async function leaderboard(eventId: string) {
  */
 export async function startDueEvents(): Promise<string[]> {
   const due = await relayEvents()
-    .find({ status: 'scheduled', startsAt: { $lte: new Date() } })
+    .find({ status: 'scheduled', startsAt: { $lte: new Date() }, startClaim: { $exists: false } })
     .toArray();
   const started: string[] = [];
   for (const event of due) {
+    // Claimed with a marker rather than by changing the status. Flipping it
+    // away from "scheduled" for the instant of starting told anyone acting in
+    // that instant that no game existed.
+    const claim = randomUUID();
     const claimed = await relayEvents().updateOne(
-      { id: event.id, status: 'scheduled' },
-      { $set: { status: 'draft', updatedAt: new Date() } },
+      { id: event.id, status: 'scheduled', startClaim: { $exists: false } },
+      { $set: { startClaim: claim } },
     );
     if (claimed.modifiedCount !== 1) continue;
     try {
       await startEvent(event.id);
       started.push(event.id);
-    } catch {
-      // Put it back rather than leaving it stuck between states.
-      await relayEvents().updateOne({ id: event.id }, { $set: { status: 'scheduled' } });
+    } finally {
+      await relayEvents().updateOne({ id: event.id, startClaim: claim }, { $unset: { startClaim: '' } });
     }
   }
   return started;
@@ -608,12 +616,16 @@ export async function startEvent(eventId: string) {
   if (event.status === 'live') throw new RelayError(409, 'The event is already running');
   const teams = await relayTeams().find({ eventId }).toArray();
   if (teams.length === 0) throw new RelayError(400, 'Import the roster before starting');
-  for (let round = 1; round <= event.config.rounds; round += 1) {
-    const size = await relayItems().countDocuments({ eventId, round });
+  const sizes = await Promise.all(
+    Array.from({ length: event.config.rounds }, (_, i) =>
+      relayItems().countDocuments({ eventId, round: i + 1 }),
+    ),
+  );
+  sizes.forEach((size, i) => {
     if (size < event.config.questionsPerRound) {
-      throw new RelayError(400, `Round ${round} has too few items to play`);
+      throw new RelayError(400, `Round ${i + 1} has too few items to play`);
     }
-  }
+  });
 
   const startedAt = new Date();
   await relayEvents().updateOne(
@@ -675,10 +687,23 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
   const lastSeen = new Map([...seen].map(([userId, at]) => [userId, new Date(at)]));
 
   // Settling can write, so it happens once per team here rather than per player.
+  // Teams settle side by side: each is independent, and one after another
+  // meant a tick's length grew with every team — seconds, against a remote
+  // database, with forty-odd of them.
   const progressByTeam = new Map<string, RelayTeamProgress>();
-  for (const team of teams) {
-    if (event.status !== 'live') continue;
-    progressByTeam.set(team.id, await settle(event, team));
+  const settled = await Promise.all(
+    teams.map(async (team) => {
+      if (event.status === 'live') return [team.id, await settle(event, team)] as const;
+      if (event.status === 'finished') {
+        // Read, not settled: nothing moves once the game is over, but the final
+        // table needs the scores — without them every team showed zero.
+        return [team.id, await readProgress(event.id, team.id)] as const;
+      }
+      return [team.id, null] as const;
+    }),
+  );
+  for (const [teamId, progress] of settled) {
+    if (progress) progressByTeam.set(teamId, progress);
   }
 
   const table = standings(

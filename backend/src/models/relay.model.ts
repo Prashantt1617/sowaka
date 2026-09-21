@@ -61,6 +61,8 @@ export interface RelayEvent {
    * never a figure the app or the server makes up.
    */
   rewardAmount?: number;
+  /** Held only while one server is starting the game, so no other does. */
+  startClaim?: string;
   startedAt?: Date;
   /** 1-based once play begins; 0 while the lobby is still filling. */
   currentRound: number;

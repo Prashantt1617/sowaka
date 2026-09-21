@@ -16,7 +16,8 @@
     "relay:check": "tsx src/scripts/relay-engine-check.ts",
     "relay:runtime": "tsx src/scripts/relay-runtime-check.ts",
     "relay:sockets": "tsx src/scripts/relay-socket-check.ts",
-    "relay:store": "tsx src/scripts/relay-store-check.ts"
+    "relay:store": "tsx src/scripts/relay-store-check.ts",
+    "relay:game": "tsx src/scripts/relay-game-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

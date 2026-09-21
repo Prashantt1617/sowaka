@@ -174,8 +174,15 @@ function start() {
   timer.unref?.();
 }
 
+let ticking = false;
+
 async function tick() {
   if (!namespace) return;
+  // One pass at a time. Against a remote database a pass can outlast the
+  // second between ticks, and letting them overlap stacks the work up exactly
+  // when the most people are playing.
+  if (ticking) return;
+  ticking = true;
   try {
     // A scheduled event starts itself the moment it is due, so nobody has to
     // press anything on the day.
@@ -194,6 +201,8 @@ async function tick() {
     }
   } catch (error) {
     logger.error('Relay tick failed', {}, error);
+  } finally {
+    ticking = false;
   }
 }
 
