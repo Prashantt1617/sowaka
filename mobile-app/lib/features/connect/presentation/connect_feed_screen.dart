@@ -2775,9 +2775,18 @@ class _ChallengeHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // The label gives way before the time does: on a narrow phone
+                // "Most Likely Challenge • 3d ago" ran off the card.
                 Row(
                   children: [
-                    Text(_challengeKindLabel(post.type), style: _subtle),
+                    Flexible(
+                      child: Text(
+                        _challengeKindLabel(post.type),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _subtle,
+                      ),
+                    ),
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 6),
                       child: Text('\u2022', style: _subtle),
