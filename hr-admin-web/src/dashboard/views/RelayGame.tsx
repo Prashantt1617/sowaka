@@ -29,6 +29,20 @@ const button = (bg: string, color = '#fff') => ({
   fontWeight: 700,
   cursor: 'pointer',
 });
+/** A step is a number, not a heading that starts with one. */
+const stepBadge = (muted: boolean) => ({
+  width: 26,
+  height: 26,
+  borderRadius: 99,
+  background: muted ? '#F1F2F4' : '#E7F2F7',
+  color: muted ? '#9A9AA1' : '#0571A6',
+  fontSize: 13,
+  fontWeight: 800,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flex: 'none',
+});
 const ghost = {
   ...button('#fff', '#222'),
   border: '1px solid #E7E7EA',
@@ -316,10 +330,15 @@ export function RelayGame() {
             const missingItems = event.itemCount === 0;
             const notReady = missingRoster || missingItems;
             return (
-            <Card style={{ marginBottom: 14, opacity: notReady ? 0.55 : 1 }}>
-              <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>3 · Publish to Connect</h3>
+            <Card style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
+                <span style={stepBadge(notReady)}>3</span>
+                <h3 style={{ margin: 0, fontSize: 16, color: notReady ? '#9A9AA1' : '#222' }}>
+                  Publish to Connect
+                </h3>
+              </div>
               {notReady && (
-                <p style={{ margin: '0 0 8px', color: '#B23B3B', fontSize: 13 }}>
+                <p style={{ margin: '0 0 8px', color: '#B23B3B', fontSize: 13.5 }}>
                   {missingRoster && missingItems
                     ? 'Import the team roster and the questions first.'
                     : missingRoster
@@ -472,10 +491,16 @@ function ImportPanel({
   const errors = issues.filter((issue) => issue.severity === 'error');
   const warnings = issues.filter((issue) => issue.severity === 'warning');
 
+  const [step, ...rest] = title.split('·');
   return (
-    <Card style={{ marginBottom: 14, opacity: disabled ? 0.55 : 1 }}>
-      <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>{title}</h3>
-      <p style={{ margin: '0 0 12px', color: '#717171', fontSize: 13 }}>
+    <Card style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
+        <span style={stepBadge(disabled === true)}>{step.trim()}</span>
+        <h3 style={{ margin: 0, fontSize: 16, color: disabled === true ? '#9A9AA1' : '#222' }}>
+          {rest.join('·').trim()}
+        </h3>
+      </div>
+      <p style={{ margin: '0 0 12px', color: disabled ? '#B23B3B' : '#717171', fontSize: 13.5 }}>
         {disabled ? (disabledNote ?? hint) : hint}
       </p>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
