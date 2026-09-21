@@ -7,6 +7,7 @@ import {
 } from '../config/db';
 import {
   RelayAnswerRecord,
+  RelayConfig,
   RelayEvent,
   RelayItem,
   RelayTeam,
@@ -14,6 +15,7 @@ import {
 } from '../models/relay.model';
 import {
   answerAccepted,
+  assignments,
   currentLeader,
   piecesForPlayer,
   PresentPlayer,
@@ -26,7 +28,9 @@ import {
 import { itemsForTeam } from './relay-pool';
 import { RelayError } from './relay-import.service';
 import {
+  answeringTeams,
   cacheProgress,
+  markAnswering,
   forgetProgress,
   markPresent,
   persistPresence,
@@ -82,12 +86,41 @@ export interface PlayerSnapshot {
   prompt: string;
   questionNumber: number;
   questionsPerRound: number;
-  secondsLeft: number;
+  /**
+   * The clock the player watches: the whole round, four questions' worth.
+   *
+   * The 30-second cap still governs each question underneath — it closes them
+   * and it is what a skip hands forward — but nobody is shown a timer that
+   * resets four times a round. During the break this counts down to the next
+   * round instead.
+   */
+  roundSecondsLeft: number;
+  /** The per-question cap, still enforced even though it is not the display. */
+  questionSecondsLeft: number;
   /** Only ever this player's share of the puzzle. */
   pieces: { label: string; text: string }[];
-  teammates: { name: string; present: boolean; isLeader: boolean }[];
+  /** `hasClue` drives the tick beside each face: who is holding a piece now. */
+  teammates: { name: string; present: boolean; isLeader: boolean; hasClue: boolean }[];
+  /** Named on every player's screen, because they are who to shout the clue at. */
+  leadName: string;
+  /** Drives "Your team lead is answering" — true while they are typing. */
+  leadIsAnswering: boolean;
   standings: { rank: number; name: string; points: number }[];
+  /** Counts the lobby down to kick-off; zero once play has begun. */
+  secondsUntilStart: number;
+  /** Shown before the lobby, so nobody arrives without knowing the rules. */
+  instructionsVideoUrl: string;
+  /** Where this team sits, so the screen does not have to find itself in the list. */
+  yourRank: number;
+  /** What this round earned, shown as "+100 points this round". */
+  pointsThisRound: number;
   lastOutcome?: { outcome: string; answer: string };
+}
+
+/** Whole seconds until a moment, never negative. */
+function secondsUntil(at: Date | undefined, now: number): number {
+  if (!at) return 0;
+  return Math.max(0, Math.ceil((new Date(at).getTime() - now) / 1000));
 }
 
 async function membership(userId: string) {
@@ -142,6 +175,7 @@ async function progressFor(event: RelayEvent, team: RelayTeam): Promise<RelayTea
     round: event.currentRound,
     questionIndex: 0,
     questionStartedAt: event.roundStartedAt ?? new Date(),
+    carriedSeconds: 0,
     answers: [],
     totalPoints: 0,
     bonusRounds: [],
@@ -166,6 +200,8 @@ async function closeQuestion(
   secondsTaken: number,
   submitted?: string,
   answeredBy?: string,
+  /** Seconds a skip hands to the next question. Zero for anything else. */
+  carryForward = 0,
 ): Promise<boolean> {
   const record: RelayAnswerRecord = {
     round: progress.round,
@@ -186,7 +222,12 @@ async function closeQuestion(
     {
       $push: { answers: record },
       $inc: { totalPoints: record.points, totalSecondsUsed: record.secondsTaken },
-      $set: { questionIndex: progress.questionIndex + 1, questionStartedAt: new Date(), updatedAt: new Date() },
+      $set: {
+        questionIndex: progress.questionIndex + 1,
+        questionStartedAt: new Date(),
+        carriedSeconds: Math.max(0, Math.round(carryForward)),
+        updatedAt: new Date(),
+      },
     },
   );
   if (result.modifiedCount !== 1) return false;
@@ -241,10 +282,10 @@ async function settle(event: RelayEvent, team: RelayTeam): Promise<RelayTeamProg
     if (progress.round !== event.currentRound) break;
     if (progress.questionIndex >= config.questionsPerRound) break;
     const round = roundPhase(config, event.roundStartedAt ?? new Date(), now);
-    const question = questionPhase(config, progress.questionStartedAt, now);
+    const question = questionPhase(config, progress.questionStartedAt, now, progress.carriedSeconds);
     const outOfTime = question.phase === 'expired' || round.phase !== 'playing';
     if (!outOfTime) break;
-    await closeQuestion(event, progress, 'timeout', Math.min(question.elapsedSec, config.questionSeconds));
+    await closeQuestion(event, progress, 'timeout', Math.min(question.elapsedSec, question.allowance));
     progress = (await relayProgress().findOne({ eventId: event.id, teamId: team.id })) ?? progress;
   }
   return progress;
@@ -274,11 +315,14 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
   }
   const players = await presentPlayers(event, team);
   const leader = currentLeader(players, config, now);
-  const teammates = players.map((player) => ({
-    name: player.name,
-    isLeader: player.userId === leader?.userId,
-    present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
-  }));
+  const teammatesOf = (holders: Set<string>) =>
+    players.map((player) => ({
+      name: player.name,
+      isLeader: player.userId === leader?.userId,
+      present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
+      hasClue: holders.has(player.userId),
+    }));
+  const teammates = teammatesOf(new Set());
 
   if (event.status !== 'live' || !event.roundStartedAt) {
     return {
@@ -288,19 +332,27 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       isLeader: leader?.userId === userId,
       prompt: '',
       questionNumber: 0,
-      secondsLeft: 0,
+      roundSecondsLeft: 0,
+      questionSecondsLeft: 0,
       pieces: [],
       teammates,
+      leadName: leader?.name ?? '',
+      leadIsAnswering: false,
       standings: [],
+      secondsUntilStart: secondsUntil(event.startsAt, now),
+      instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+      yourRank: 0,
+      pointsThisRound: 0,
     };
   }
 
   const progress = await settle(event, team);
+  const table = await leaderboard(event.id);
   const round = roundPhase(config, event.roundStartedAt, now);
   const pool = await poolFor(event, event.currentRound);
   const plan = itemsForTeam(pool, team.index, config.questionsPerRound);
   const item = plan[progress.questionIndex];
-  const question = questionPhase(config, progress.questionStartedAt, now);
+  const question = questionPhase(config, progress.questionStartedAt, now, progress.carriedSeconds);
   const finishedRound = progress.questionIndex >= config.questionsPerRound;
   const phase: PlayerSnapshot['phase'] =
     round.phase === 'break' || finishedRound ? 'break' : 'playing';
@@ -312,14 +364,42 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     isLeader: leader?.userId === userId,
     prompt: phase === 'playing' && item ? item.prompt : '',
     questionNumber: Math.min(progress.questionIndex + 1, config.questionsPerRound),
-    secondsLeft: phase === 'playing' ? question.secondsLeft : round.secondsLeft,
+    roundSecondsLeft: round.secondsLeft,
+    questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
     pieces:
       phase === 'playing' && item
         ? piecesForPlayer(item, players, config, question.elapsedSec, now, userId)
         : [],
-    teammates,
-    standings: phase === 'break' ? await leaderboard(event.id) : [],
+    teammates: teammatesOf(
+      phase === 'playing' ? holdersOf(item, players, config, question.elapsedSec, now) : new Set(),
+    ),
+    leadName: leader?.name ?? '',
+    leadIsAnswering: (await answeringTeams(event.id, [team.id])).has(team.id),
+    standings: table,
+    secondsUntilStart: 0,
+    instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+    yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
+    pointsThisRound: roundPoints(progress, event.currentRound),
   };
+}
+
+const config = (event: RelayEvent) => event.config;
+
+/**
+ * Who currently holds a piece, for the ticks beside each face.
+ *
+ * Derived from the same assignment the pieces themselves come from, so the
+ * tick can never disagree with what is on somebody's screen.
+ */
+function holdersOf(
+  item: RelayItem | undefined,
+  players: PresentPlayer[],
+  config: RelayConfig,
+  elapsedSec: number,
+  now: number,
+): Set<string> {
+  if (!item) return new Set();
+  return new Set(assignments(item, players, config, elapsedSec, now).map((a) => a.userId));
 }
 
 async function currentItemFor(event: RelayEvent, team: RelayTeam, progress: RelayTeamProgress) {
@@ -335,6 +415,18 @@ async function requireLeader(userId: string) {
   const leader = currentLeader(players, event.config, Date.now());
   if (leader?.userId !== userId) throw new RelayError(403, 'Only the team leader can answer');
   return { event, team };
+}
+
+/**
+ * The lead is typing, so their team's screens can say so.
+ *
+ * Only the lead: nobody else has an answer box, and a mark from anyone else
+ * would put a false "answering" on four other phones.
+ */
+export async function markLeadAnswering(userId: string) {
+  const { event, team } = await requireLeader(userId).catch(() => ({ event: null, team: null }));
+  if (!event || !team) return;
+  await markAnswering(event.id, team.id);
 }
 
 export async function submitAnswer(userId: string, given: string) {
@@ -361,9 +453,23 @@ export async function skipQuestion(userId: string) {
     throw new RelayError(409, 'This round is over');
   }
   const item = await currentItemFor(event, team, progress);
-  const secondsTaken = (Date.now() - progress.questionStartedAt.getTime()) / 1000;
-  await closeQuestion(event, progress, 'skipped', secondsTaken);
-  return { answer: item?.acceptedAnswers[0] ?? '' };
+  const now = Date.now();
+  const { allowance } = questionPhase(config(event), progress.questionStartedAt, now, progress.carriedSeconds);
+  const secondsTaken = (now - progress.questionStartedAt.getTime()) / 1000;
+  // The point of skipping: whatever was left goes to the next question.
+  const carried = Math.max(0, allowance - secondsTaken);
+  await closeQuestion(event, progress, 'skipped', secondsTaken, undefined, undefined, carried);
+  return { answer: item?.acceptedAnswers[0] ?? '', carriedSeconds: Math.round(carried) };
+}
+
+/** What a team banked this round: answers plus the round's own bonus. */
+function roundPoints(progress: RelayTeamProgress, round: number): number {
+  const answers = progress.answers.filter((answer) => answer.round === round);
+  const base = answers.reduce((total, answer) => total + answer.points, 0);
+  const bonus = progress.bonusRounds.includes(round)
+    ? progress.totalPoints - progress.answers.reduce((t, a) => t + a.points, 0)
+    : 0;
+  return base + Math.max(0, bonus);
 }
 
 export async function leaderboard(eventId: string) {
@@ -389,6 +495,34 @@ export async function leaderboard(eventId: string) {
  * or two of them will advance 44 teams twice. Rounds start together for
  * everyone, which is the point of the shared break.
  */
+/**
+ * Starts a scheduled event once its moment arrives.
+ *
+ * Guarded on the event still being scheduled, so whichever server gets there
+ * first starts it and the others do nothing.
+ */
+export async function startDueEvents(): Promise<string[]> {
+  const due = await relayEvents()
+    .find({ status: 'scheduled', startsAt: { $lte: new Date() } })
+    .toArray();
+  const started: string[] = [];
+  for (const event of due) {
+    const claimed = await relayEvents().updateOne(
+      { id: event.id, status: 'scheduled' },
+      { $set: { status: 'draft', updatedAt: new Date() } },
+    );
+    if (claimed.modifiedCount !== 1) continue;
+    try {
+      await startEvent(event.id);
+      started.push(event.id);
+    } catch {
+      // Put it back rather than leaving it stuck between states.
+      await relayEvents().updateOne({ id: event.id }, { $set: { status: 'scheduled' } });
+    }
+  }
+  return started;
+}
+
 export async function advanceEvent(eventId: string): Promise<'unchanged' | 'round' | 'finished'> {
   const event = await relayEvents().findOne({ id: eventId, status: 'live' });
   if (!event || !event.roundStartedAt) return 'unchanged';
@@ -426,6 +560,7 @@ export async function advanceEvent(eventId: string): Promise<'unchanged' | 'roun
             round: nextRound,
             questionIndex: 0,
             questionStartedAt: startedAt,
+            carriedSeconds: 0,
             updatedAt: startedAt,
           },
         },
@@ -473,6 +608,7 @@ export async function startEvent(eventId: string) {
       round: 1,
       questionIndex: 0,
       questionStartedAt: startedAt,
+      carriedSeconds: 0,
       answers: [],
       totalPoints: 0,
       bonusRounds: [],
@@ -526,6 +662,10 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
   const round = event.roundStartedAt
     ? roundPhase(config, event.roundStartedAt, now)
     : { phase: 'playing' as const, secondsLeft: 0 };
+  const answering = await answeringTeams(
+    eventId,
+    teams.map((team) => team.id),
+  );
 
   for (const team of teams) {
     const players: PresentPlayer[] = team.members.map((member) => ({
@@ -533,18 +673,21 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
       lastSeenAt: lastSeen.get(member.userId) ?? new Date(0),
     }));
     const leader = currentLeader(players, config, now);
-    const teammates = players.map((player) => ({
-      name: player.name,
-      isLeader: player.userId === leader?.userId,
-      present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
-    }));
     const progress = progressByTeam.get(team.id);
     const plan = itemsForTeam(pool, team.index, config.questionsPerRound);
     const item = progress ? plan[progress.questionIndex] : undefined;
     const question = progress
-      ? questionPhase(config, progress.questionStartedAt, now)
+      ? questionPhase(config, progress.questionStartedAt, now, progress.carriedSeconds)
       : { phase: 'running' as const, elapsedSec: 0, secondsLeft: 0 };
     const finishedRound = (progress?.questionIndex ?? 0) >= config.questionsPerRound;
+    const holders =
+      progress && item ? holdersOf(item, players, config, question.elapsedSec, now) : new Set<string>();
+    const teammates = players.map((player) => ({
+      name: player.name,
+      isLeader: player.userId === leader?.userId,
+      present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
+      hasClue: holders.has(player.userId),
+    }));
     const phase: PlayerSnapshot['phase'] =
       event.status === 'finished'
         ? 'finished'
@@ -569,13 +712,20 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         prompt: phase === 'playing' && item ? item.prompt : '',
         questionNumber: Math.min((progress?.questionIndex ?? 0) + 1, config.questionsPerRound),
         questionsPerRound: config.questionsPerRound,
-        secondsLeft: phase === 'playing' ? question.secondsLeft : round.secondsLeft,
+        roundSecondsLeft: round.secondsLeft,
+        questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
         pieces:
           phase === 'playing' && item
             ? piecesForPlayer(item, players, config, question.elapsedSec, now, member.userId)
             : [],
         teammates,
-        standings: phase === 'playing' ? [] : table,
+        leadName: leader?.name ?? '',
+        leadIsAnswering: answering.has(team.id),
+        standings: table,
+        secondsUntilStart: phase === 'lobby' ? secondsUntil(event.startsAt, now) : 0,
+        instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+        yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
+        pointsThisRound: progress ? roundPoints(progress, event.currentRound) : 0,
       });
     }
   }

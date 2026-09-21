@@ -11,7 +11,15 @@ import { closeDb, connectDb, getDb, relayEvents, relayItems, relayProgress, rela
 import { env } from '../config/env';
 import { RELAY_DEFAULT_CONFIG, RelayItem, RelayTeam } from '../models/relay.model';
 import { User } from '../models/user.model';
-import { leaderboard, skipQuestion, snapshot, startEvent, submitAnswer, heartbeat } from '../services/relay-runtime.service';
+import {
+  heartbeat,
+  leaderboard,
+  skipQuestion,
+  snapshot,
+  startDueEvents,
+  startEvent,
+  submitAnswer,
+} from '../services/relay-runtime.service';
 
 if (!/check|scratch|test/i.test(env.mongoDbName)) {
   console.error(
@@ -133,18 +141,70 @@ async function main() {
   check('the exact word is accepted', (await submitAnswer('u0', 'think')).correct === true);
 
   console.log('\nskipping and finishing the round');
-  await skipQuestion('u0');
+  const beforeSkip = await snapshot('u0');
+  const skipped = await skipQuestion('u0');
   check('a skip moves on', (await snapshot('u0')).questionNumber === 4);
+  check(
+    'the seconds left on it are handed forward',
+    (skipped.carriedSeconds ?? 0) > 20,
+    `${skipped.carriedSeconds}s carried from a question barely touched`,
+  );
+  const afterSkip = await snapshot('u0');
+  check(
+    'so the next question starts with more than 30s',
+    afterSkip.questionSecondsLeft > 30,
+    `${afterSkip.questionSecondsLeft}s on the question, was ${beforeSkip.questionSecondsLeft}s`,
+  );
   await submitAnswer('u0', 'CLOUD');
 
   const after = await relayProgress().findOne({ eventId, teamId: team.id });
-  check('three correct scored 30', after?.totalPoints === 30, `${after?.totalPoints} points`);
+  const expected = 3 * RELAY_DEFAULT_CONFIG.pointsPerCorrect;
+  check(
+    'three correct are scored at the configured rate',
+    after?.totalPoints === expected,
+    `${after?.totalPoints} points, expected ${expected}`,
+  );
   check('a skip forfeited the bonus', (after?.bonusRounds ?? []).length === 0);
   check('four answers recorded', after?.answers.length === 4);
-  check('the round is over for this team', (await snapshot('u0')).phase === 'break');
+  const done = await snapshot('u0');
+  check('the round is over for this team', done.phase === 'break');
+  // The screen shows one clock for the whole round; the 30s cap governs
+  // underneath it and is what a skip hands forward.
+  const mid = await snapshot('u1');
+  check(
+    'the round clock is what players are shown',
+    mid.roundSecondsLeft > 0 && mid.roundSecondsLeft <= 120,
+    `${mid.roundSecondsLeft}s of the round left`,
+  );
 
   const table = await leaderboard(eventId);
-  check('leaderboard has the team', table[0]?.name === 'Player 0 TEAM' && table[0].points === 30);
+  check(
+    'leaderboard has the team',
+    table[0]?.name === 'Player 0 TEAM' && table[0].points === expected,
+  );
+
+  console.log('\nstarting itself when the moment arrives');
+  const dueId = randomUUID();
+  await relayEvents().insertOne({
+    id: dueId, org: ORG, name: 'Due event', status: 'scheduled',
+    config: { ...RELAY_DEFAULT_CONFIG, rounds: 1 }, currentRound: 0,
+    startsAt: new Date(Date.now() - 5_000),
+    createdBy: 'u0', createdAt: now, updatedAt: now,
+  });
+  // Mongo stamps an _id on insert, so the due event gets its own team rather
+  // than a copy of one already stored.
+  await relayTeams().insertOne({
+    ...team,
+    _id: undefined as never,
+    id: randomUUID(),
+    eventId: dueId,
+  });
+  await relayItems().insertMany([1, 2, 3, 4].map((p) => ({ ...item(1, p, `A${p}`, false), id: `d${p}`, eventId: dueId })));
+  const autoStarted = await startDueEvents();
+  const dueAfter = await relayEvents().findOne({ id: dueId });
+  check('a scheduled event whose time has come starts itself', autoStarted.includes(dueId));
+  check('and is live on round one', dueAfter?.status === 'live' && dueAfter.currentRound === 1);
+  check('a second pass does not start it twice', (await startDueEvents()).length === 0);
 
   console.log(`\n${failures === 0 ? 'all checks passed' : `${failures} FAILED`}`);
 }

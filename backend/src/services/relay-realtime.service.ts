@@ -5,6 +5,8 @@ import {
   eventTick,
   heartbeat,
   liveEventIds,
+  markLeadAnswering,
+  startDueEvents,
   PlayerSnapshot,
   touchPresence,
   skipQuestion,
@@ -62,6 +64,11 @@ export function initRelayRealtime(io: SocketServer): Namespace {
 
     socket.on('relay:heartbeat', () => {
       void heartbeat(userId).catch(() => undefined);
+    });
+
+    // Sent while the lead types; the other phones show that somebody is on it.
+    socket.on('relay:typing', () => {
+      void markLeadAnswering(userId).catch(() => undefined);
     });
 
     socket.on('relay:answer', async (payload: { text?: string }) => {
@@ -170,6 +177,9 @@ function start() {
 async function tick() {
   if (!namespace) return;
   try {
+    // A scheduled event starts itself the moment it is due, so nobody has to
+    // press anything on the day.
+    await startDueEvents();
     const connected = [...new Set([...namespace.sockets.values()].map((s) => String(s.data.userId)))];
     for (const eventId of await liveEventIds()) {
       // Anyone holding a socket counts as present, before anything is derived

@@ -595,11 +595,21 @@ async function buildItems(adminUserId: string, eventId: string, fileName: string
   // Every round needs a pool big enough that teams within earshot are never on
   // the same item at once. Too small is not a style problem — it is two
   // neighbouring teams hearing each other's answer.
-  const perRound: { round: number; size: number; clash: number }[] = [];
-  for (let round = 1; round <= config.rounds; round += 1) {
-    const size = documents.filter((item) => item.round === round).length;
+  const highestRound = documents.reduce((highest, item) => Math.max(highest, item.round), 0);
+  const perRound: { round: number; size: number; clash: number; kind: string }[] = [];
+  for (let round = 1; round <= highestRound; round += 1) {
+    const inRound = documents.filter((item) => item.round === round);
+    const size = inRound.length;
+    const mixed = new Set(inRound.map((i) => i.kind));
     const clash = nearestClash(size, teamCount, config.questionsPerRound);
-    perRound.push({ round, size, clash });
+    perRound.push({ round, size, clash, kind: [...mixed].join(', ') });
+    if (size === 0) {
+      issues.push({
+        severity: 'error',
+        message: `Round ${round} has no items, but round ${highestRound} does — rounds have to run 1 to ${highestRound} with no gaps`,
+      });
+      continue;
+    }
     if (size < config.questionsPerRound) {
       issues.push({
         severity: 'error',
@@ -607,11 +617,11 @@ async function buildItems(adminUserId: string, eventId: string, fileName: string
       });
       continue;
     }
-    const mixed = new Set(documents.filter((i) => i.round === round).map((i) => i.kind));
+    // A round is one kind of puzzle — that is what the post calls its category.
     if (mixed.size > 1) {
       issues.push({
         severity: 'warning',
-        message: `Round ${round} mixes ${[...mixed].join(', ')} — teams in the same round will be playing different kinds of puzzle`,
+        message: `Round ${round} mixes ${[...mixed].join(', ')} — a round is meant to be one kind of puzzle`,
       });
     }
     if (teamCount > 0 && clash < MIN_CLASH_DISTANCE) {
@@ -663,8 +673,15 @@ export async function commitItems(
   await relayItems().deleteMany({ eventId });
   if (documents.length > 0) await relayItems().insertMany(documents);
   forgetRelayCache(eventId);
-  await relayEvents().updateOne({ id: eventId }, { $set: { updatedAt: new Date() } });
-  return summary;
+  // The sheet is what decides how many rounds there are and what each one is,
+  // so the event takes its shape from the content rather than being configured
+  // separately and disagreeing with it.
+  const rounds = documents.reduce((highest, item) => Math.max(highest, item.round), 0);
+  await relayEvents().updateOne(
+    { id: eventId },
+    { $set: { 'config.rounds': rounds, updatedAt: new Date() } },
+  );
+  return { ...summary, rounds };
 }
 
 export async function listTeams(adminUserId: string, eventId: string) {

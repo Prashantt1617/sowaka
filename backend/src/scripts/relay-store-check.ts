@@ -42,6 +42,7 @@ function progress(points: number): RelayTeamProgress {
     round: 1,
     questionIndex: 2,
     questionStartedAt: new Date('2026-09-21T10:00:00.000Z'),
+    carriedSeconds: 0,
     answers: [],
     totalPoints: points,
     bonusRounds: [],

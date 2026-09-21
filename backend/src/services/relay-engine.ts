@@ -148,13 +148,16 @@ export function questionPhase(
   config: RelayConfig,
   questionStartedAt: Date,
   now: number,
-): { phase: QuestionPhase; elapsedSec: number; secondsLeft: number } {
+  carriedSeconds = 0,
+): { phase: QuestionPhase; elapsedSec: number; secondsLeft: number; allowance: number } {
+  // Whatever a skip handed forward is added to this question's own time.
+  const allowance = config.questionSeconds + Math.max(0, carriedSeconds);
   const elapsedSec = (now - questionStartedAt.getTime()) / 1000;
-  const secondsLeft = Math.max(0, Math.ceil(config.questionSeconds - elapsedSec));
   return {
-    phase: elapsedSec >= config.questionSeconds ? 'expired' : 'running',
+    phase: elapsedSec >= allowance ? 'expired' : 'running',
     elapsedSec,
-    secondsLeft,
+    secondsLeft: Math.max(0, Math.ceil(allowance - elapsedSec)),
+    allowance,
   };
 }
 

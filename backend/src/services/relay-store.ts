@@ -21,8 +21,11 @@ const PROGRESS_TTL_SECONDS = 6 * 60 * 60;
 
 const memoryPresence = new Map<string, number>();
 const memoryProgress = new Map<string, RelayTeamProgress>();
+const memoryAnswering = new Map<string, number>();
+const ANSWERING_WINDOW_MS = 4000;
 
 const presenceKey = (eventId: string, userId: string) => `relay:pres:${eventId}:${userId}`;
+const typingKey = (eventId: string, teamId: string) => `relay:typing:${eventId}:${teamId}`;
 const progressKey = (eventId: string, teamId: string) => `relay:prog:${eventId}:${teamId}`;
 
 /** Marks players as here. Cheap enough to run every tick for everyone. */
@@ -129,6 +132,49 @@ export async function cacheProgress(progress: RelayTeamProgress): Promise<void> 
     logger.error('Progress cache write failed', { teamId: progress.teamId }, error);
     memoryProgress.set(key, progress);
   }
+}
+
+/**
+ * Marks a team's lead as answering, for a few seconds.
+ *
+ * Short-lived on purpose: it drives "Your team lead is answering" on the other
+ * phones, and a stale mark would leave that showing after they stopped.
+ */
+export async function markAnswering(eventId: string, teamId: string): Promise<void> {
+  const key = typingKey(eventId, teamId);
+  const until = Date.now() + ANSWERING_WINDOW_MS;
+  const redis = redisReady() ? redisClient() : null;
+  if (!redis) {
+    memoryAnswering.set(key, until);
+    return;
+  }
+  try {
+    await redis.set(key, String(until), 'EX', 10);
+  } catch {
+    memoryAnswering.set(key, until);
+  }
+}
+
+export async function answeringTeams(eventId: string, teamIds: string[]): Promise<Set<string>> {
+  const now = Date.now();
+  const live = new Set<string>();
+  if (teamIds.length === 0) return live;
+  const redis = redisReady() ? redisClient() : null;
+  if (!redis) {
+    for (const teamId of teamIds) {
+      if ((memoryAnswering.get(typingKey(eventId, teamId)) ?? 0) > now) live.add(teamId);
+    }
+    return live;
+  }
+  try {
+    const values = await redis.mget(teamIds.map((teamId) => typingKey(eventId, teamId)));
+    values.forEach((value, index) => {
+      if (value && Number(value) > now) live.add(teamIds[index]);
+    });
+  } catch {
+    /* the indicator is cosmetic; a failure just means nobody looks busy */
+  }
+  return live;
 }
 
 /** Drops cached progress for an event, after anything that rewrites it wholesale. */

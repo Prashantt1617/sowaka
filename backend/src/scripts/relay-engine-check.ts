@@ -12,6 +12,7 @@ import {
   piecesForPlayer,
   questionPhase,
   roundPhase,
+  roundSeconds,
   scoreRound,
   standings,
 } from '../services/relay-engine';
@@ -107,15 +108,37 @@ check('expires at 30s', questionPhase(config, new Date(now - 31_000), now).phase
 const r = roundPhase(config, new Date(now - 100_000), now);
 check('100s into a 120s round', r.phase === 'playing' && r.secondsLeft === 20);
 const br = roundPhase(config, new Date(now - 130_000), now);
-check('after 120s everyone is on the leaderboard', br.phase === 'break' && br.secondsLeft === 50);
+const breakLeft = roundSeconds(config) + config.breakSeconds - 130;
+check(
+  'after the round everyone is on the leaderboard',
+  br.phase === 'break' && br.secondsLeft === breakLeft,
+  `${br.secondsLeft}s until the next round`,
+);
+
+console.log('\nskipping buys time for the next question');
+const fresh = questionPhase(config, new Date(now - 5_000), now);
+check('a question on its own gets 30s', fresh.allowance === 30, `${fresh.secondsLeft}s left after 5s`);
+const carried = questionPhase(config, new Date(now - 5_000), now, 20);
+check('20s carried makes the next one 50s', carried.allowance === 50, `${carried.secondsLeft}s left after 5s`);
+check('and it does not expire at 30s', carried.phase === 'running');
+const spent = questionPhase(config, new Date(now - 52_000), now, 20);
+check('it still expires once the carried time is gone', spent.phase === 'expired');
 
 console.log('\nscoring');
 const answer = (outcome: RelayAnswerRecord['outcome'], secondsTaken: number, position: number): RelayAnswerRecord =>
-  ({ round: 1, position, outcome, secondsTaken, points: outcome === 'correct' ? 10 : 0 });
+  ({ round: 1, position, outcome, secondsTaken, points: outcome === 'correct' ? config.pointsPerCorrect : 0 });
 const sweep = scoreRound([answer('correct', 17, 1), answer('correct', 22, 2), answer('correct', 28, 3), answer('correct', 33, 4)], config);
-check('four right in 100s scores 40 + 20', sweep.totalPoints === 60, `${sweep.basePoints} + ${sweep.bonusPoints}`);
+const expectedBase = 4 * config.pointsPerCorrect;
+check(
+  'four right in 100s is four answers plus the spare seconds',
+  sweep.basePoints === expectedBase && sweep.bonusPoints === 20,
+  `${sweep.basePoints} + ${sweep.bonusPoints}`,
+);
 const skipped = scoreRound([answer('correct', 10, 1), answer('correct', 10, 2), answer('correct', 10, 3), answer('skipped', 5, 4)], config);
-check('a skip forfeits the bonus', skipped.bonusPoints === 0 && skipped.totalPoints === 30);
+check(
+  'a skip forfeits the bonus',
+  skipped.bonusPoints === 0 && skipped.totalPoints === 3 * config.pointsPerCorrect,
+);
 const timedOut = scoreRound([answer('correct', 10, 1), answer('correct', 10, 2), answer('correct', 10, 3), answer('timeout', 30, 4)], config);
 check('a timeout forfeits it too', timedOut.bonusPoints === 0);
 const abandoned = scoreRound([answer('timeout', 30, 1), answer('timeout', 30, 2), answer('timeout', 30, 3), answer('timeout', 30, 4)], config);

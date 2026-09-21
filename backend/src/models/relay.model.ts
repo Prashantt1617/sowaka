@@ -23,13 +23,16 @@ export interface RelayConfig {
 }
 
 export const RELAY_DEFAULT_CONFIG: RelayConfig = {
-  rounds: 4,
+  // Five rounds of four, as the screens show: "ROUND 2 OF 5" over four pips.
+  rounds: 5,
   questionsPerRound: 4,
   hintsPerQuestion: 5,
   hintIntervalSeconds: 3,
+  // The cap that closes a question. Players are shown the round instead —
+  // four of these, counted down as one 120-second clock.
   questionSeconds: 30,
-  breakSeconds: 60,
-  pointsPerCorrect: 10,
+  breakSeconds: 90,
+  pointsPerCorrect: 30,
   matchThreshold: 0.7,
   presenceWindowSeconds: 20,
   leadGraceSeconds: 30,
@@ -44,6 +47,15 @@ export interface RelayEvent {
   status: RelayEventStatus;
   config: RelayConfig;
   lobbyOpensAt?: Date;
+  /**
+   * When play begins, set when the post is published from the dashboard.
+   *
+   * The lobby counts down to it and the game starts itself — nobody presses
+   * anything at half past one, and there is no operator on the day.
+   */
+  startsAt?: Date;
+  /** The instructions video, uploaded with the post and shown before the lobby. */
+  instructionsVideoUrl?: string;
   startedAt?: Date;
   /** 1-based once play begins; 0 while the lobby is still filling. */
   currentRound: number;
@@ -164,6 +176,14 @@ export interface RelayTeamProgress {
   /** 0-based position within the round. */
   questionIndex: number;
   questionStartedAt: Date;
+  /**
+   * Seconds a skip handed forward.
+   *
+   * Skipping is how a team buys time: the seconds left on a question they give
+   * up on are added to the next one's allowance, so walking away from a
+   * hopeless clue is worth something rather than merely ending it sooner.
+   */
+  carriedSeconds: number;
   answers: RelayAnswerRecord[];
   totalPoints: number;
   /** Rounds whose clean-sweep bonus has been paid, so it is never paid twice. */
