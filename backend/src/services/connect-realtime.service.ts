@@ -59,64 +59,16 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
   });
 
   io.use(async (socket, next) => {
-    try {
-      const token = socketToken(socket);
-      if (!token) {
-        next(new Error('Authentication required'));
-        return;
-      }
-      // Session and user resolve in a single round trip: this database is
-      // remote and a findOne costs up to ~1.5s, so doing it twice made every
-      // socket handshake feel broken.
-      const [record] = await authSessions()
-        .aggregate<{ userId: string; user?: User }>([
-          { $match: { tokenHash: hashSessionToken(token), expiresAt: { $gt: new Date() } } },
-          { $limit: 1 },
-          {
-            $lookup: {
-              from: 'users',
-              localField: 'userId',
-              foreignField: 'userId',
-              as: 'user',
-              // Only what room-joining needs: profile photos live inline as
-              // base64 data URIs and would otherwise ride along on every
-              // handshake.
-              pipeline: [
-                {
-                  $project: {
-                    _id: 0,
-                    org: 1,
-                    email: 1,
-                    department: 1,
-                    managerUserId: 1,
-                    lifecycleStatus: 1,
-                  },
-                },
-              ],
-            },
-          },
-          { $project: { _id: 0, userId: 1, user: { $first: '$user' } } },
-        ])
-        .toArray();
-      if (!record) {
-        next(new Error('Session expired or invalid'));
-        return;
-      }
-      const user = record.user;
-      if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
-        next(new Error('User is not active'));
-        return;
-      }
-      const org = user.org ?? user.email.split('@').at(1) ?? 'default';
-      socket.data.userId = record.userId;
-      socket.data.org = org;
-      socket.data.department = user.department;
-      socket.data.managerUserId = user.managerUserId;
-      next();
-    } catch (error) {
-      logger.error('Connect socket authentication failed', {}, error);
-      next(new Error('Authentication failed'));
+    const identity = await authenticateSocket(socket);
+    if ('error' in identity) {
+      next(new Error(identity.error));
+      return;
     }
+    socket.data.userId = identity.userId;
+    socket.data.org = identity.org;
+    socket.data.department = identity.department;
+    socket.data.managerUserId = identity.managerUserId;
+    next();
   });
 
   io.on('connection', (socket) => {
@@ -144,6 +96,70 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
 
   logger.info('Connect realtime ready', { path: '/connect/socket' });
   return io;
+}
+
+export interface SocketIdentity {
+  userId: string;
+  org: string;
+  department?: string;
+  managerUserId?: string;
+}
+
+/**
+ * Resolves the session behind a socket handshake.
+ *
+ * Session and user come back in a single round trip: this database is remote
+ * and a findOne costs up to ~1.5s, so doing it twice made every handshake feel
+ * broken. Shared by every namespace so there is one way in, not two.
+ */
+export async function authenticateSocket(
+  socket: Socket,
+): Promise<SocketIdentity | { error: string }> {
+  try {
+    const token = socketToken(socket);
+    if (!token) return { error: 'Authentication required' };
+    const [record] = await authSessions()
+      .aggregate<{ userId: string; user?: User }>([
+        { $match: { tokenHash: hashSessionToken(token), expiresAt: { $gt: new Date() } } },
+        { $limit: 1 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'userId',
+            foreignField: 'userId',
+            as: 'user',
+            pipeline: [
+              {
+                $project: {
+                  _id: 0,
+                  org: 1,
+                  email: 1,
+                  department: 1,
+                  managerUserId: 1,
+                  lifecycleStatus: 1,
+                },
+              },
+            ],
+          },
+        },
+        { $project: { _id: 0, userId: 1, user: { $first: '$user' } } },
+      ])
+      .toArray();
+    if (!record) return { error: 'Session expired or invalid' };
+    const user = record.user;
+    if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
+      return { error: 'User is not active' };
+    }
+    return {
+      userId: record.userId,
+      org: user.org ?? user.email.split('@').at(1) ?? 'default',
+      department: user.department,
+      managerUserId: user.managerUserId,
+    };
+  } catch (error) {
+    logger.error('Socket authentication failed', {}, error);
+    return { error: 'Authentication failed' };
+  }
 }
 
 function socketToken(socket: Socket): string | undefined {
