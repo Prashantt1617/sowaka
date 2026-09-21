@@ -4,14 +4,15 @@ import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
 
 void main() {
-  test('an employee opens on Grow but may still browse Team', () {
+  test('an employee opens on Connect but may still browse Team', () {
     final bloc = ManagerBloc(session: _session('employee'));
 
     // Team is open to everyone — an individual contributor sees the same list
     // read-only, with no requests segment and no decisions — so the tab is
     // selectable even though nothing on it can be managed.
     expect(bloc.state.canManage, isFalse);
-    expect(bloc.state.tab, ManagerTab.grow);
+    // Everyone lands on Connect, whatever their role.
+    expect(bloc.state.tab, ManagerTab.connect);
 
     bloc.add(const ChangeManagerTab(ManagerTab.manage));
     expect(bloc.state.tab, ManagerTab.manage);
@@ -20,11 +21,11 @@ void main() {
     bloc.dispose();
   });
 
-  test('manager starts on Manage', () {
+  test('a manager also opens on Connect, and can manage', () {
     final bloc = ManagerBloc(session: _session('manager'));
 
     expect(bloc.state.canManage, isTrue);
-    expect(bloc.state.tab, ManagerTab.manage);
+    expect(bloc.state.tab, ManagerTab.connect);
 
     bloc.dispose();
   });
