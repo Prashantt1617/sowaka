@@ -150,6 +150,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         builder: (_) => PunchScreen(
           api: _bloc.api,
           type: 'in',
+          onRecorded: (record) => _bloc.add(PunchRecorded(record)),
           // A request already in for today: they can still come in and punch,
           // but they are not asked to raise a second one for the same day.
           alreadyRequestedToday: _requestedToday(dashboard),

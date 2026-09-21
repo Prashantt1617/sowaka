@@ -1082,6 +1082,7 @@ Future<void> _startProfilePunch(
       builder: (_) => PunchScreen(
         api: bloc.api,
         type: type,
+        onRecorded: (record) => bloc.add(PunchRecorded(record)),
         alreadyRequestedToday: requestedToday,
         geofenced: dashboard.shift.punchIsGeofenced,
         // The profile card's slider has already been dragged.

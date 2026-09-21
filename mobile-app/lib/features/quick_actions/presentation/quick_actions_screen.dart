@@ -640,6 +640,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         builder: (_) => PunchScreen(
           api: widget.bloc.api,
           type: type,
+          onRecorded: (record) => widget.bloc.add(PunchRecorded(record)),
           onRequestWfh: () => _open(_QuickPage.calendar),
           // Today's day is already with the manager: they may still punch, but
           // the screen stops offering a second request for the same day.

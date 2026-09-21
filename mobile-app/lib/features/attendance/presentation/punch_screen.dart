@@ -5,6 +5,7 @@ import 'slide_to_punch.dart';
 
 import '../data/punch_location_service.dart';
 import '../../manager/data/manager_api_service.dart';
+import '../../manager/data/manager_models.dart';
 
 /// What the punch screen is doing right now (nodes 2306:58967 onward).
 enum _PunchStage { ready, checking, sending, done, outside, blocked, requested }
@@ -36,6 +37,7 @@ class PunchScreen extends StatefulWidget {
     required this.api,
     required this.type,
     this.onRequestWfh,
+    this.onRecorded,
     this.alreadyRequestedToday = false,
     this.geofenced = true,
     this.startImmediately = false,
@@ -45,6 +47,15 @@ class PunchScreen extends StatefulWidget {
 
   /// 'in' or 'out'.
   final String type;
+
+  /// Hands the recorded punch back to whoever opened this screen.
+  ///
+  /// The punch is sent straight to the API rather than through the bloc,
+  /// because this screen needs the refusal's own details to decide what to
+  /// offer next. That left the dashboard unaware a punch had happened: the
+  /// time never appeared on the home card and the slider invited another go,
+  /// which the server then refused as already punched in.
+  final void Function(AttendanceRecord record)? onRecorded;
 
   /// Opens the work-from-home request, for the case where someone is not
   /// coming in at all. Null where the host cannot navigate there.
@@ -184,6 +195,7 @@ class _PunchScreenState extends State<PunchScreen> {
     setState(() => _busy = true);
     try {
       final record = await widget.api.recordPunch(widget.type, reading: reading);
+      widget.onRecorded?.call(record);
       if (!mounted) return;
       setState(() {
         _busy = false;
