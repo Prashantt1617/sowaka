@@ -12,6 +12,8 @@ import {
 } from './relay-runtime.service';
 import { RelayError } from './relay-import.service';
 import { logger } from '../utils/logger';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { redisPubSubPair } from '../config/redis';
 
 /**
  * The game's socket layer.
@@ -36,6 +38,7 @@ function userRoom(userId: string): string {
 
 export function initRelayRealtime(io: SocketServer): Namespace {
   namespace = io.of('/relay');
+  attachAdapter(io);
 
   namespace.use(async (socket, next) => {
     const identity = await authenticateSocket(socket);
@@ -86,6 +89,28 @@ export function initRelayRealtime(io: SocketServer): Namespace {
   start();
   logger.info('Relay realtime ready', { namespace: '/relay' });
   return namespace;
+}
+
+/**
+ * Lets any server emit to a socket held by another.
+ *
+ * Without it, a clue decided on one instance cannot reach a phone connected to
+ * a different one — the same split that made a prototype serve four versions of
+ * one game. With a single server it is simply unused.
+ */
+function attachAdapter(target: SocketServer) {
+  const pair = redisPubSubPair();
+  if (!pair) {
+    logger.info('Sockets running without a shared backplane', {});
+    return;
+  }
+  try {
+    // Set on the server, so Connect's own rooms get the same correctness.
+    target.adapter(createAdapter(pair.pub, pair.sub));
+    logger.info('Sockets sharing a Redis backplane', {});
+  } catch (error) {
+    logger.error('Could not attach the Redis adapter; sockets stay local', {}, error);
+  }
 }
 
 async function run(socket: Socket, userId: string, action: () => Promise<void>) {

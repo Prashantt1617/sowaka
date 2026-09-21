@@ -1,7 +1,6 @@
 import {
   relayEvents,
   relayItems,
-  relayPresence,
   relayProgress,
   relayTeams,
   users,
@@ -26,6 +25,14 @@ import {
 } from './relay-engine';
 import { itemsForTeam } from './relay-pool';
 import { RelayError } from './relay-import.service';
+import {
+  cacheProgress,
+  forgetProgress,
+  markPresent,
+  persistPresence,
+  presenceFor,
+  readProgress,
+} from './relay-store';
 
 /**
  * Small in-process cache for the parts of an event that do not change while a
@@ -101,19 +108,20 @@ async function membership(userId: string) {
 export async function heartbeat(userId: string) {
   const { event, team } = await membership(userId);
   if (!team) return;
-  await relayPresence().updateOne(
-    { eventId: event.id, userId },
-    { $set: { eventId: event.id, teamId: team.id, userId, lastSeenAt: new Date() } },
-    { upsert: true },
-  );
+  // Written where presence is read from, not only to the durable mirror —
+  // otherwise a heartbeat lands somewhere nothing consults.
+  await markPresent(event.id, [userId]);
+  void persistPresence(event.id, [userId], new Map([[userId, team.id]]));
 }
 
 async function presentPlayers(event: RelayEvent, team: RelayTeam): Promise<PresentPlayer[]> {
-  const seen = await relayPresence().find({ eventId: event.id, teamId: team.id }).toArray();
-  const lastSeen = new Map(seen.map((row) => [row.userId, row.lastSeenAt]));
+  const seen = await presenceFor(
+    event.id,
+    team.members.map((member) => member.userId),
+  );
   return team.members.map((member) => ({
     ...member,
-    lastSeenAt: lastSeen.get(member.userId) ?? new Date(0),
+    lastSeenAt: new Date(seen.get(member.userId) ?? 0),
   }));
 }
 
@@ -125,7 +133,7 @@ async function poolFor(event: RelayEvent, round: number): Promise<RelayItem[]> {
 }
 
 async function progressFor(event: RelayEvent, team: RelayTeam): Promise<RelayTeamProgress> {
-  const existing = await relayProgress().findOne({ eventId: event.id, teamId: team.id });
+  const existing = await readProgress(event.id, team.id);
   if (existing) return existing;
   const fresh: RelayTeamProgress = {
     eventId: event.id,
@@ -141,6 +149,7 @@ async function progressFor(event: RelayEvent, team: RelayTeam): Promise<RelayTea
     updatedAt: new Date(),
   };
   await relayProgress().insertOne(fresh);
+  await cacheProgress(fresh);
   return fresh;
 }
 
@@ -183,6 +192,8 @@ async function closeQuestion(
   if (result.modifiedCount !== 1) return false;
   if (progress.questionIndex + 1 >= event.config.questionsPerRound) {
     await payRoundBonus(event, progress.teamId, progress.round);
+  } else {
+    await refreshCachedProgress(event.id, progress.teamId);
   }
   return true;
 }
@@ -193,16 +204,25 @@ async function closeQuestion(
  * Guarded on the round not already being in `bonusRounds`, so whichever call
  * closes the last question pays it and a concurrent one cannot pay it again.
  */
+async function refreshCachedProgress(eventId: string, teamId: string) {
+  const stored = await relayProgress().findOne({ eventId, teamId });
+  if (stored) await cacheProgress(stored);
+}
+
 async function payRoundBonus(event: RelayEvent, teamId: string, round: number) {
   const progress = await relayProgress().findOne({ eventId: event.id, teamId });
   if (!progress) return;
   const thisRound = progress.answers.filter((answer) => answer.round === round);
   const { bonusPoints } = scoreRound(thisRound, event.config);
-  if (bonusPoints <= 0) return;
+  if (bonusPoints <= 0) {
+    await refreshCachedProgress(event.id, teamId);
+    return;
+  }
   await relayProgress().updateOne(
     { eventId: event.id, teamId, bonusRounds: { $ne: round } },
     { $inc: { totalPoints: bonusPoints }, $addToSet: { bonusRounds: round }, $set: { updatedAt: new Date() } },
   );
+  await refreshCachedProgress(event.id, teamId);
 }
 
 /**
@@ -394,6 +414,7 @@ export async function advanceEvent(eventId: string): Promise<'unchanged' | 'roun
   );
   if (moved.modifiedCount !== 1) return 'unchanged';
   forgetRelayCache(eventId);
+  await forgetProgress(eventId);
 
   const teams = await relayTeams().find({ eventId }).toArray();
   await Promise.all(
@@ -442,6 +463,7 @@ export async function startEvent(eventId: string) {
     },
   );
   forgetRelayCache(eventId);
+  await forgetProgress(eventId);
   await relayProgress().deleteMany({ eventId });
   await relayProgress().insertMany(
     teams.map((team) => ({
@@ -477,12 +499,13 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
   const { config } = event;
   const now = Date.now();
 
-  const [teams, pool, presence] = await Promise.all([
+  const [teams, pool] = await Promise.all([
     memo(`teams:${eventId}`, 30_000, () => relayTeams().find({ eventId }).toArray()),
     event.status === 'live' ? poolFor(event, event.currentRound) : Promise.resolve([]),
-    relayPresence().find({ eventId }).toArray(),
   ]);
-  const lastSeen = new Map(presence.map((row) => [row.userId, row.lastSeenAt]));
+  const everyone = teams.flatMap((team) => team.members.map((member) => member.userId));
+  const seen = await presenceFor(eventId, everyone);
+  const lastSeen = new Map([...seen].map(([userId, at]) => [userId, new Date(at)]));
 
   // Settling can write, so it happens once per team here rather than per player.
   const progressByTeam = new Map<string, RelayTeamProgress>();
@@ -579,16 +602,10 @@ export async function touchPresence(eventId: string, userIds: string[]) {
     }
   }
   if (teamOf.size === 0) return;
-  const lastSeenAt = new Date();
-  await relayPresence().bulkWrite(
-    [...teamOf].map(([userId, teamId]) => ({
-      updateOne: {
-        filter: { eventId, userId },
-        update: { $set: { eventId, teamId, userId, lastSeenAt } },
-        upsert: true,
-      },
-    })),
-  );
+  await markPresent(eventId, [...teamOf.keys()]);
+  // Mirrored into Mongo behind the response, so nothing on the game's path
+  // waits for it.
+  void persistPresence(eventId, [...teamOf.keys()], teamOf);
 }
 
 /** Live events in an org, for the socket layer to tick. */
