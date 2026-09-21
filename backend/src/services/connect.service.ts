@@ -1538,6 +1538,7 @@ function postMeta(type: ConnectPostType) {
     survey: ['Survey/Poll', '📊', '#BE5A36', '#F6E5DB'],
     event: ['Event', '🎟️', '#BE5A36', '#F6E5DB'],
     live_game: ['Live Game', '🎮', '#E0483B', '#FBE2DE'],
+    relay_game: ['Live Game', '🎮', '#0571A6', '#E7F2F7'],
     new_joinee: ['New Joinee', '👋', '#C26B8A', '#F5E4EC'],
     recommendation: ['Must Watch/Read', '🎬', '#4F6F8C', '#E4EBF0'],
     caption_challenge: ['Caption Challenge', '💬', '#6D28D9', '#F3E8FF'],

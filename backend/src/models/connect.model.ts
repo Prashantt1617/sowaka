@@ -9,6 +9,7 @@ export type ConnectPostType =
   | 'survey'
   | 'event'
   | 'live_game'
+  | 'relay_game'
   | 'new_joinee'
   | 'recommendation'
   | 'caption_challenge'

@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { publishRelayGame } from '../services/relay-publish.service';
 import {
   commitItems,
   commitRoster,
@@ -73,6 +74,24 @@ export async function commitRosterHandler(req: Request, res: Response, next: Nex
   try {
     const { fileName, bytes } = uploaded(req);
     res.json(await commitRoster(callerId(req), eventId(req), fileName, bytes));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Schedules the game and announces it, in one call. */
+export async function publishRelayGameHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const video = req.file
+      ? {
+          originalName: req.file.originalname,
+          contentType: req.file.mimetype,
+          size: req.file.size,
+          bytes: req.file.buffer,
+        }
+      : undefined;
+    const body = typeof req.body?.body === 'string' ? JSON.parse(req.body.body) : (req.body ?? {});
+    res.json(await publishRelayGame(callerId(req), eventId(req), body, video));
   } catch (error) {
     next(error);
   }

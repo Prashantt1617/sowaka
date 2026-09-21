@@ -6,12 +6,13 @@ import {
   listRelayEventsHandler,
   listRelayTeamsHandler,
   previewItemsHandler,
+  publishRelayGameHandler,
   previewRosterHandler,
   updateRelayEventHandler,
 } from '../controllers/relay.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
-import { uploadRelayFile } from '../middleware/relay-upload.middleware';
+import { uploadRelayFile, uploadRelayVideo } from '../middleware/relay-upload.middleware';
 
 export const relayRouter = Router();
 
@@ -30,3 +31,7 @@ relayRouter.post('/events/:eventId/roster/preview', uploadRelayFile, previewRost
 relayRouter.post('/events/:eventId/roster', uploadRelayFile, commitRosterHandler);
 relayRouter.post('/events/:eventId/questions/preview', uploadRelayFile, previewItemsHandler);
 relayRouter.post('/events/:eventId/questions', uploadRelayFile, commitItemsHandler);
+
+// Scheduling and announcing are one call: the countdown on the post and the
+// moment the game starts itself are the same timestamp.
+relayRouter.post('/events/:eventId/publish', uploadRelayVideo, publishRelayGameHandler);

@@ -34,3 +34,27 @@ function isAllowedRelayFile(file: Express.Multer.File) {
     file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   );
 }
+
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  // Instructions, not a feature film.
+  limits: { fileSize: 60 * 1024 * 1024, files: 1 },
+}).single('video');
+
+export function uploadRelayVideo(request: Request, response: Response, next: NextFunction) {
+  videoUpload(request, response, (error) => {
+    if (!error) {
+      if (request.file && !request.file.mimetype.startsWith('video/')) {
+        next(new RelayError(400, 'The instructions file must be a video'));
+        return;
+      }
+      next();
+      return;
+    }
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      next(new RelayError(413, 'The instructions video must be 60 MB or smaller'));
+      return;
+    }
+    next(new RelayError(400, error instanceof Error ? error.message : 'Upload is invalid'));
+  });
+}

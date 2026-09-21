@@ -7,9 +7,20 @@
  * drops what it created on the way out.
  */
 import { randomUUID } from 'node:crypto';
-import { closeDb, connectDb, getDb, relayEvents, relayItems, relayProgress, relayTeams, users } from '../config/db';
+import {
+  closeDb,
+  connectDb,
+  connectPosts,
+  getDb,
+  relayEvents,
+  relayItems,
+  relayProgress,
+  relayTeams,
+  users,
+} from '../config/db';
 import { env } from '../config/env';
 import { RELAY_DEFAULT_CONFIG, RelayItem, RelayTeam } from '../models/relay.model';
+import { publishRelayGame } from '../services/relay-publish.service';
 import { User } from '../models/user.model';
 import {
   heartbeat,
@@ -205,6 +216,44 @@ async function main() {
   check('a scheduled event whose time has come starts itself', autoStarted.includes(dueId));
   check('and is live on round one', dueAfter?.status === 'live' && dueAfter.currentRound === 1);
   check('a second pass does not start it twice', (await startDueEvents()).length === 0);
+
+  console.log('\npublishing to Connect');
+  const pubId = randomUUID();
+  await relayEvents().insertOne({
+    id: pubId, org: ORG, name: 'To publish', status: 'draft',
+    config: { ...RELAY_DEFAULT_CONFIG, rounds: 1 }, currentRound: 0,
+    createdBy: 'u0', createdAt: now, updatedAt: now,
+  });
+  let refusedEmpty = false;
+  try {
+    await publishRelayGame('u0', pubId, { startsAt: new Date(Date.now() + 600_000).toISOString() });
+  } catch {
+    refusedEmpty = true;
+  }
+  check('refuses to publish a game with no teams', refusedEmpty);
+
+  await relayTeams().insertOne({ ...team, _id: undefined as never, id: randomUUID(), eventId: pubId });
+  await relayItems().insertMany([1, 2, 3, 4].map((p) => ({ ...item(1, p, `P${p}`, false), id: `p${p}`, eventId: pubId })));
+
+  let refusedPast = false;
+  try {
+    await publishRelayGame('u0', pubId, { startsAt: new Date(Date.now() - 60_000).toISOString() });
+  } catch {
+    refusedPast = true;
+  }
+  check('refuses a start time already gone', refusedPast);
+
+  const startsAt = new Date(Date.now() + 600_000);
+  const published = await publishRelayGame('u0', pubId, {
+    title: 'Launch Relay', subtitle: 'Five rounds, one team', startsAt: startsAt.toISOString(),
+  });
+  const pubEvent = await relayEvents().findOne({ id: pubId });
+  const post = await connectPosts().findOne({ 'body.eventId': pubId });
+  check('the event is scheduled for that moment', pubEvent?.status === 'scheduled' && !!pubEvent.startsAt);
+  check('a post lands on Connect', post?.type === 'relay_game');
+  check('the post carries the game and its shape', (post?.body as Record<string, unknown>)?.roundCount === 1);
+  check('round count comes from the sheet, not typed in', published.rounds.length === 1);
+  check('the post names the action', (post?.body as Record<string, unknown>)?.actionLabel === 'View game');
 
   console.log(`\n${failures === 0 ? 'all checks passed' : `${failures} FAILED`}`);
 }
