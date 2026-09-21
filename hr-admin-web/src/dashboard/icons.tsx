@@ -48,6 +48,14 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M8 11v4M6 13h4M16 12h.01M18 14h.01" />
     </svg>
   ),
+  relaygame: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="5" cy="7" r="2" />
+      <circle cx="12" cy="7" r="2" />
+      <circle cx="19" cy="7" r="2" />
+      <path d="M7 11h10M7 11l-2 4M17 11l2 4M12 9v9" />
+    </svg>
+  ),
   departments: (
     <svg {...base(18, 'currentColor')}>
       <rect x="4" y="13" width="6" height="8" rx="1" />
