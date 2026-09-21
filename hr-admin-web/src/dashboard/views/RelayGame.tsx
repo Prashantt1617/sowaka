@@ -29,6 +29,13 @@ const button = (bg: string, color = '#fff') => ({
   fontWeight: 700,
   cursor: 'pointer',
 });
+const panel = {
+  background: '#fff',
+  border: '1px solid #EBEBEB',
+  borderRadius: 14,
+  padding: 20,
+  marginBottom: 20,
+};
 /** A step is a number, not a heading that starts with one. */
 const stepBadge = (muted: boolean) => ({
   width: 26,
@@ -47,14 +54,20 @@ const ghost = {
   ...button('#fff', '#222'),
   border: '1px solid #E7E7EA',
 };
-const label = { fontSize: 12, color: '#717171', fontWeight: 600 } as const;
 const field = {
   width: '100%',
-  border: '1px solid #E7E7EA',
+  border: '1px solid #EBEBEB',
   borderRadius: 10,
-  padding: '9px 11px',
+  padding: '10px 12px',
   font: 'inherit',
   boxSizing: 'border-box' as const,
+};
+const fieldLabel = {
+  display: 'block',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#717171',
+  marginBottom: 6,
 };
 
 type Kind = 'roster' | 'questions';
@@ -330,7 +343,7 @@ export function RelayGame() {
             const missingItems = event.itemCount === 0;
             const notReady = missingRoster || missingItems;
             return (
-            <Card style={{ marginBottom: 14 }}>
+            <div style={panel}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
                 <span style={stepBadge(notReady)}>3</span>
                 <h3 style={{ margin: 0, fontSize: 16, color: notReady ? '#9A9AA1' : '#222' }}>
@@ -351,8 +364,8 @@ export function RelayGame() {
                 the moment the game starts itself are the same time — players see the instructions
                 video first, then the lobby, and play begins on its own.
               </p>
-              <div style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
-                <label style={label}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <label style={fieldLabel}>
                   Title
                   <input
                     style={{ ...field, marginTop: 4 }}
@@ -361,7 +374,7 @@ export function RelayGame() {
                     onChange={(e) => setPublishForm({ ...publishForm, title: e.target.value })}
                   />
                 </label>
-                <label style={label}>
+                <label style={fieldLabel}>
                   Subtitle
                   <input
                     style={{ ...field, marginTop: 4 }}
@@ -370,7 +383,7 @@ export function RelayGame() {
                     onChange={(e) => setPublishForm({ ...publishForm, subtitle: e.target.value })}
                   />
                 </label>
-                <label style={label}>
+                <label style={fieldLabel}>
                   Starts at
                   <input
                     type="datetime-local"
@@ -379,7 +392,7 @@ export function RelayGame() {
                     onChange={(e) => setPublishForm({ ...publishForm, startsAt: e.target.value })}
                   />
                 </label>
-                <label style={label}>
+                <label style={fieldLabel}>
                   Instructions video
                   <div style={{ marginTop: 6 }}>
                     <label style={{ ...ghost, display: 'inline-flex', gap: 8, cursor: 'pointer' }}>
@@ -393,12 +406,12 @@ export function RelayGame() {
                     </label>
                   </div>
                 </label>
-                <div style={{ fontSize: 12, color: '#9A9AA1' }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: '#9197A2' }}>
                   {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
                   imported — the post describes the game rather than configuring it.
                 </div>
                 <button
-                  style={{ ...button('#2F8F5B'), width: 'fit-content' }}
+                  style={{ ...button('#2F8F5B'), width: 'fit-content', gridColumn: '1 / -1' }}
                   disabled={busy || notReady || !publishForm.startsAt}
                   onClick={publish}
                 >
@@ -407,6 +420,7 @@ export function RelayGame() {
                 {published && (
                   <div
                     style={{
+                      gridColumn: '1 / -1',
                       background: '#E4EDE0',
                       color: '#3B5E3F',
                       borderRadius: 10,
@@ -419,7 +433,7 @@ export function RelayGame() {
                   </div>
                 )}
               </div>
-            </Card>
+            </div>
             );
           })()}
 
@@ -493,7 +507,7 @@ function ImportPanel({
 
   const [step, ...rest] = title.split('·');
   return (
-    <Card style={{ marginBottom: 14 }}>
+    <div style={panel}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
         <span style={stepBadge(disabled === true)}>{step.trim()}</span>
         <h3 style={{ margin: 0, fontSize: 16, color: disabled === true ? '#9A9AA1' : '#222' }}>
@@ -550,7 +564,7 @@ function ImportPanel({
           {commitLabel}
         </button>
       )}
-    </Card>
+    </div>
   );
 }
 
