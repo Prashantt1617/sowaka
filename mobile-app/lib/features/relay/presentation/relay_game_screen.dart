@@ -6,6 +6,7 @@ import '../../auth/data/auth_models.dart';
 import '../data/relay_models.dart';
 import '../data/relay_socket_service.dart';
 import 'relay_lobby.dart';
+import 'relay_play.dart';
 
 /// Holds the connection and shows whichever screen the game is currently on.
 ///
@@ -13,9 +14,17 @@ import 'relay_lobby.dart';
 /// here is the second-by-second countdown, because a clock that only moved when
 /// a message arrived would visibly stutter — every push corrects it.
 class RelayGameScreen extends StatefulWidget {
-  const RelayGameScreen({super.key, required this.session, this.onHowToPlay});
+  const RelayGameScreen({
+    super.key,
+    required this.session,
+    this.pointsPerCorrect = 30,
+    this.onHowToPlay,
+  });
 
   final AuthSession session;
+
+  /// What a correct answer pays, for the line under the pips.
+  final int pointsPerCorrect;
   final VoidCallback? onHowToPlay;
 
   @override
@@ -29,6 +38,7 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
 
   RelayState? _state;
   String? _problem;
+  RelayResult? _lastResult;
 
   /// Counted down locally between pushes, reset by each one.
   int _secondsUntilStart = 0;
@@ -39,6 +49,11 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
     super.initState();
     _socket = RelaySocketService(session: widget.session)..connect();
     _subscriptions.add(_socket.states.listen(_onState));
+    _subscriptions.add(
+      _socket.results.listen((result) {
+        if (mounted) setState(() => _lastResult = result);
+      }),
+    );
     _subscriptions.add(
       _socket.errors.listen((message) {
         if (mounted) setState(() => _problem = message);
@@ -62,6 +77,8 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
       // the gaps between them.
       _secondsUntilStart = state.secondsUntilStart;
       _roundSecondsLeft = state.roundSecondsLeft;
+      // A new question clears whatever the last one ended on.
+      if (state.phase != RelayPhase.playing) _lastResult = null;
     });
   }
 
@@ -102,14 +119,17 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
 
     return Scaffold(
       body: switch (state.phase) {
-        RelayPhase.lobby => RelayLobby(
+        RelayPhase.playing => RelayPlay(
           state: state,
-          secondsLeft: _secondsUntilStart,
-          onClose: () => Navigator.of(context).maybePop(),
-          onHowToPlay: widget.onHowToPlay,
+          secondsLeft: _roundSecondsLeft,
+          pointsPerCorrect: widget.pointsPerCorrect,
+          lastResult: _lastResult,
+          onSubmit: _socket.submitAnswer,
+          onSkip: _socket.skipQuestion,
+          onTyping: _socket.reportTyping,
         ),
-        // The playing, break and finished screens land next; until they do the
-        // lobby is still an honest picture of a team that has not started.
+        // The break and finished screens land next; until they do the lobby is
+        // still an honest picture of a team between rounds.
         _ => RelayLobby(
           state: state,
           secondsLeft: _secondsUntilStart,
