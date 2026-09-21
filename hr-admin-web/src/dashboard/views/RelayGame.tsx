@@ -315,9 +315,24 @@ export function RelayGame() {
             </Card>
           )}
 
-          {event.teamCount > 0 && event.itemCount > 0 && (
-            <Card style={{ marginBottom: 14 }}>
+          {(() => {
+            // Shown even before it can be used: a step nobody can see is a step
+            // nobody knows they still have to do.
+            const missingRoster = event.teamCount === 0;
+            const missingItems = event.itemCount === 0;
+            const notReady = missingRoster || missingItems;
+            return (
+            <Card style={{ marginBottom: 14, opacity: notReady ? 0.55 : 1 }}>
               <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>3 · Publish to Connect</h3>
+              {notReady && (
+                <p style={{ margin: '0 0 8px', color: '#B23B3B', fontSize: 13 }}>
+                  {missingRoster && missingItems
+                    ? 'Import the team roster and the questions first.'
+                    : missingRoster
+                      ? 'Import the team roster first.'
+                      : 'Import the questions first.'}
+                </p>
+              )}
               <p style={{ margin: '0 0 12px', color: '#717171', fontSize: 13 }}>
                 This schedules the game and announces it together. The countdown on the post and
                 the moment the game starts itself are the same time — players see the instructions
@@ -366,7 +381,7 @@ export function RelayGame() {
                 </div>
                 <button
                   style={{ ...button('#2F8F5B'), width: 'fit-content' }}
-                  disabled={busy || !publishForm.startsAt}
+                  disabled={busy || notReady || !publishForm.startsAt}
                   onClick={publish}
                 >
                   {busy ? 'Publishing…' : 'Publish and schedule'}
@@ -387,7 +402,8 @@ export function RelayGame() {
                 )}
               </div>
             </Card>
-          )}
+            );
+          })()}
 
           {teams.length > 0 && (
             <Card style={{ marginTop: 14 }}>
