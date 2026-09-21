@@ -39,7 +39,10 @@ class RelaySocketService {
   void connect() {
     if (_socket != null) return;
     final socket = io.io(
-      _baseUrl,
+      // The namespace is part of the address. Without it the socket joined
+      // Connect's feed channel and never heard a single game update — the
+      // lobby simply waited forever.
+      '$_baseUrl/relay',
       io.OptionBuilder()
           // The game rides Connect's socket server on its own namespace.
           .setPath('/connect/socket')
@@ -49,6 +52,12 @@ class RelaySocketService {
           .enableForceNew()
           .build(),
     );
+
+    // A connection that never succeeds must say so; a silent spinner is how
+    // the wrong address went unnoticed.
+    socket.onConnectError((_) {
+      if (!_errors.isClosed) _errors.add('Can’t reach the game. Check your connection.');
+    });
 
     socket.on('relay:state', (data) {
       if (data is! Map) return;

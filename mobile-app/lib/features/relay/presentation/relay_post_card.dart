@@ -194,26 +194,38 @@ class _RelayPostCardState extends State<RelayPostCard> {
     final minutes = at.minute == 0 ? '' : ':${at.minute.toString().padLeft(2, '0')}';
     final meridiem = at.hour < 12 ? 'A.M.' : 'P.M.';
     final style = RelayStyle.sora(16, weight: FontWeight.w600, color: _cream);
-    return Row(
+    // Wraps on a narrow card instead of running off its edge.
+    return Wrap(
+      spacing: 18,
+      runSpacing: 8,
       children: [
-        RelayStyle.svg('calendar', width: 18, height: 18),
-        const SizedBox(width: 8),
-        Text('Starts ${at.day} ${months[at.month - 1]}', style: style),
-        const SizedBox(width: 18),
-        SizedBox(
-          width: 18,
-          height: 18,
-          child: Center(child: RelayStyle.svg('clock', width: 17, height: 17)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RelayStyle.svg('calendar', width: 18, height: 18),
+            const SizedBox(width: 8),
+            Text('Starts ${at.day} ${months[at.month - 1]}', style: style),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text('$hour$minutes $meridiem', style: style),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Center(child: RelayStyle.svg('clock', width: 17, height: 17)),
+            ),
+            const SizedBox(width: 8),
+            Text('$hour$minutes $meridiem', style: style),
+          ],
+        ),
       ],
     );
   }
 
   Widget _rewardBox() {
     return Container(
-      height: 106,
+      constraints: const BoxConstraints(minHeight: 106),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFFE7F7FF),
@@ -253,7 +265,7 @@ class _RelayPostCardState extends State<RelayPostCard> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     '₹${_indianGrouping(_reward)}',
-                    style: RelayStyle.sora(38, weight: FontWeight.w700, height: 40),
+                    style: RelayStyle.sora(38, weight: FontWeight.w700),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -290,9 +302,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
                 style: RelayStyle.sora(22, weight: FontWeight.w600, color: _cream),
               ),
               const SizedBox(height: 5),
-              Text(
-                '1 lead + $teammates teammate${teammates == 1 ? '' : 's'}',
-                style: RelayStyle.sora(14, color: _mist),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '1 lead + $teammates teammate${teammates == 1 ? '' : 's'}',
+                  maxLines: 1,
+                  style: RelayStyle.sora(14, color: _mist),
+                ),
               ),
             ],
           ),

@@ -252,7 +252,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             if (post.type == ConnectPostType.relayGame) {
               return Padding(
                 key: ValueKey(post.id),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: RelayPostCard(post: post, session: widget.session),
               );
             }
