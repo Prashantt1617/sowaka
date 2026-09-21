@@ -62,6 +62,10 @@ export interface PublishInput {
   subtitle: string;
   /** Local datetime from the form, sent as ISO. */
   startsAt: string;
+  /** What each correct answer pays — HR's number, never a default. */
+  pointsPerCorrect: string;
+  /** The prize headline on the post, in rupees. */
+  rewardAmount: string;
 }
 
 export interface PublishResult {
@@ -70,6 +74,8 @@ export interface PublishResult {
   rounds: { round: number; category: string }[];
   teams: number;
   instructionsVideoKey: string;
+  pointsPerCorrect: number;
+  rewardAmount: number;
 }
 
 export interface RelayTeam {
@@ -91,7 +97,12 @@ export function publishRelayGame(eventId: string, input: PublishInput, video: Fi
   const form = new FormData();
   form.append(
     'body',
-    JSON.stringify({ ...input, startsAt: new Date(input.startsAt).toISOString() }),
+    JSON.stringify({
+      ...input,
+      startsAt: new Date(input.startsAt).toISOString(),
+      pointsPerCorrect: Number(input.pointsPerCorrect),
+      rewardAmount: Number(input.rewardAmount),
+    }),
   );
   if (video) form.append('video', video);
   return apiUpload<PublishResult>(`/admin/relay/events/${eventId}/publish`, form);

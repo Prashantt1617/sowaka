@@ -81,6 +81,8 @@ flutter:
     - assets/icons/grow/
     - assets/icons/punch/
     - assets/games/
+    # Flutter does not recurse into asset folders; the relay game's own art.
+    - assets/games/relay/
 
   fonts:
     - family: Plus Jakarta Sans

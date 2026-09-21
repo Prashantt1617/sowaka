@@ -56,6 +56,11 @@ export interface RelayEvent {
   startsAt?: Date;
   /** The instructions video, uploaded with the post and shown before the lobby. */
   instructionsVideoUrl?: string;
+  /**
+   * The prize headline on the post, in rupees. Set by HR when publishing —
+   * never a figure the app or the server makes up.
+   */
+  rewardAmount?: number;
   startedAt?: Date;
   /** 1-based once play begins; 0 while the lobby is still filling. */
   currentRound: number;

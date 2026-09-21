@@ -26,6 +26,7 @@ import {
   standings,
 } from './relay-engine';
 import { itemsForTeam } from './relay-pool';
+import { presignConnectMedia } from './s3-connect-media.service';
 import { RelayError } from './relay-import.service';
 import {
   answeringTeams,
@@ -86,6 +87,8 @@ export interface PlayerSnapshot {
   prompt: string;
   questionNumber: number;
   questionsPerRound: number;
+  /** What a correct answer pays, so the screen never states a different number. */
+  pointsPerCorrect: number;
   /**
    * The clock the player watches: the whole round, four questions' worth.
    *
@@ -100,7 +103,14 @@ export interface PlayerSnapshot {
   /** Only ever this player's share of the puzzle. */
   pieces: { label: string; text: string }[];
   /** `hasClue` drives the tick beside each face: who is holding a piece now. */
-  teammates: { name: string; present: boolean; isLeader: boolean; hasClue: boolean }[];
+  teammates: {
+    name: string;
+    present: boolean;
+    isLeader: boolean;
+    hasClue: boolean;
+    /** Marks the viewer's own row, which the roster labels "(You)". */
+    isYou: boolean;
+  }[];
   /** Named on every player's screen, because they are who to shout the clue at. */
   leadName: string;
   /** Drives "Your team lead is answering" — true while they are typing. */
@@ -110,11 +120,28 @@ export interface PlayerSnapshot {
   secondsUntilStart: number;
   /** Shown before the lobby, so nobody arrives without knowing the rules. */
   instructionsVideoUrl: string;
+  /** The prize headline HR set when publishing, in rupees. */
+  rewardAmount: number;
   /** Where this team sits, so the screen does not have to find itself in the list. */
   yourRank: number;
   /** What this round earned, shown as "+100 points this round". */
   pointsThisRound: number;
   lastOutcome?: { outcome: string; answer: string };
+}
+
+/**
+ * A playable address for the instructions video.
+ *
+ * The event stores a storage key, which a phone cannot play. Signed addresses
+ * expire, so this is cached well inside that window rather than signed on
+ * every tick for every player.
+ */
+async function videoUrlFor(event: RelayEvent): Promise<string> {
+  const key = event.instructionsVideoUrl ?? '';
+  if (!key) return '';
+  return memo(`video:${event.id}:${key}`, 20 * 60_000, () =>
+    presignConnectMedia(key).catch(() => ''),
+  );
 }
 
 /** Whole seconds until a moment, never negative. */
@@ -306,6 +333,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       rounds: config.rounds,
     },
     questionsPerRound: config.questionsPerRound,
+    pointsPerCorrect: config.pointsPerCorrect,
     teammates: [] as PlayerSnapshot['teammates'],
     standings: [] as PlayerSnapshot['standings'],
   };
@@ -321,6 +349,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       isLeader: player.userId === leader?.userId,
       present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
       hasClue: holders.has(player.userId),
+      isYou: player.userId === userId,
     }));
   const teammates = teammatesOf(new Set());
 
@@ -340,7 +369,8 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       leadIsAnswering: false,
       standings: [],
       secondsUntilStart: secondsUntil(event.startsAt, now),
-      instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+      instructionsVideoUrl: await videoUrlFor(event),
+      rewardAmount: event.rewardAmount ?? 0,
       yourRank: 0,
       pointsThisRound: 0,
     };
@@ -377,7 +407,8 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     leadIsAnswering: (await answeringTeams(event.id, [team.id])).has(team.id),
     standings: table,
     secondsUntilStart: 0,
-    instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+    instructionsVideoUrl: await videoUrlFor(event),
+    rewardAmount: event.rewardAmount ?? 0,
     yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
     pointsThisRound: roundPoints(progress, event.currentRound),
   };
@@ -662,6 +693,7 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
   const round = event.roundStartedAt
     ? roundPhase(config, event.roundStartedAt, now)
     : { phase: 'playing' as const, secondsLeft: 0 };
+  const videoUrl = await videoUrlFor(event);
   const answering = await answeringTeams(
     eventId,
     teams.map((team) => team.id),
@@ -682,7 +714,8 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
     const finishedRound = (progress?.questionIndex ?? 0) >= config.questionsPerRound;
     const holders =
       progress && item ? holdersOf(item, players, config, question.elapsedSec, now) : new Set<string>();
-    const teammates = players.map((player) => ({
+    const roster = players.map((player) => ({
+      userId: player.userId,
       name: player.name,
       isLeader: player.userId === leader?.userId,
       present: now - player.lastSeenAt.getTime() < config.presenceWindowSeconds * 1000,
@@ -712,18 +745,20 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         prompt: phase === 'playing' && item ? item.prompt : '',
         questionNumber: Math.min((progress?.questionIndex ?? 0) + 1, config.questionsPerRound),
         questionsPerRound: config.questionsPerRound,
+        pointsPerCorrect: config.pointsPerCorrect,
         roundSecondsLeft: round.secondsLeft,
         questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
         pieces:
           phase === 'playing' && item
             ? piecesForPlayer(item, players, config, question.elapsedSec, now, member.userId)
             : [],
-        teammates,
+        teammates: roster.map(({ userId: id, ...rest }) => ({ ...rest, isYou: id === member.userId })),
         leadName: leader?.name ?? '',
         leadIsAnswering: answering.has(team.id),
         standings: table,
         secondsUntilStart: phase === 'lobby' ? secondsUntil(event.startsAt, now) : 0,
-        instructionsVideoUrl: event.instructionsVideoUrl ?? '',
+        instructionsVideoUrl: videoUrl,
+        rewardAmount: event.rewardAmount ?? 0,
         yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
         pointsThisRound: progress ? roundPoints(progress, event.currentRound) : 0,
       });
@@ -760,6 +795,44 @@ export async function touchPresence(eventId: string, userIds: string[]) {
 
 /** Live events in an org, for the socket layer to tick. */
 export async function liveEventIds(): Promise<string[]> {
-  const events = await relayEvents().find({ status: 'live' }).project({ id: 1 }).toArray();
+  // Scheduled events too: the lobby is a real screen with a countdown and a
+  // roster filling up, and leaving them out meant it never received a thing.
+  const events = await relayEvents()
+    .find({ status: { $in: ['scheduled', 'live'] } })
+    .project({ id: 1 })
+    .toArray();
   return events.map((event) => String(event.id));
+}
+
+/**
+ * What the Connect post shows this particular viewer.
+ *
+ * The post is the same for everyone; their team is not. So the card asks for
+ * this separately rather than the feed baking one person's team into a post
+ * the whole company reads.
+ */
+export async function playerCard(userId: string) {
+  const { event, team } = await membership(userId);
+  return {
+    event: {
+      id: event.id,
+      title: event.name,
+      status: event.status,
+      startsAt: event.startsAt?.toISOString() ?? null,
+      rewardAmount: event.rewardAmount ?? 0,
+      pointsPerCorrect: event.config.pointsPerCorrect,
+      rounds: event.config.rounds,
+      instructionsVideoUrl: await videoUrlFor(event),
+    },
+    team: team
+      ? {
+          name: team.name,
+          members: team.members.map((member) => ({
+            name: member.name,
+            isLeader: member.isLeader,
+            isYou: member.userId === userId,
+          })),
+        }
+      : null,
+  };
 }

@@ -81,7 +81,13 @@ export function RelayGame() {
   const [itemPreview, setItemPreview] = useState<ItemPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const files = useRef<Record<Kind, File | null>>({ roster: null, questions: null });
-  const [publishForm, setPublishForm] = useState({ title: '', subtitle: '', startsAt: '' });
+  const [publishForm, setPublishForm] = useState({
+    title: '',
+    subtitle: '',
+    startsAt: '',
+    pointsPerCorrect: '30',
+    rewardAmount: '10000',
+  });
   const [video, setVideo] = useState<File | null>(null);
   const [published, setPublished] = useState<PublishResult | null>(null);
 
@@ -393,6 +399,26 @@ export function RelayGame() {
                   />
                 </label>
                 <label style={fieldLabel}>
+                  Points per correct answer
+                  <input
+                    type="number"
+                    min={1}
+                    style={{ ...field, marginTop: 4 }}
+                    value={publishForm.pointsPerCorrect}
+                    onChange={(e) => setPublishForm({ ...publishForm, pointsPerCorrect: e.target.value })}
+                  />
+                </label>
+                <label style={fieldLabel}>
+                  Reward (₹)
+                  <input
+                    type="number"
+                    min={0}
+                    style={{ ...field, marginTop: 4 }}
+                    value={publishForm.rewardAmount}
+                    onChange={(e) => setPublishForm({ ...publishForm, rewardAmount: e.target.value })}
+                  />
+                </label>
+                <label style={fieldLabel}>
                   Instructions video
                   <div style={{ marginTop: 6 }}>
                     <label style={{ ...ghost, display: 'inline-flex', gap: 8, cursor: 'pointer' }}>
@@ -412,7 +438,13 @@ export function RelayGame() {
                 </div>
                 <button
                   style={{ ...button('#2F8F5B'), width: 'fit-content', gridColumn: '1 / -1' }}
-                  disabled={busy || notReady || !publishForm.startsAt}
+                  disabled={
+                    busy ||
+                    notReady ||
+                    !publishForm.startsAt ||
+                    !publishForm.pointsPerCorrect ||
+                    publishForm.rewardAmount === ''
+                  }
                   onClick={publish}
                 >
                   {busy ? 'Publishing…' : 'Publish and schedule'}

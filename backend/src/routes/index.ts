@@ -15,6 +15,7 @@ import { mediaRouter } from './media.routes';
 import { payrollRouter } from './payroll.routes';
 import { kpiRouter } from './kpi.routes';
 import { relayRouter } from './relay.routes';
+import { relayPlayerRouter } from './relay-player.routes';
 
 export const router = Router();
 
@@ -36,3 +37,4 @@ router.use('/admin/reporting', reportingRouter);
 router.use('/admin/payroll', payrollRouter);
 router.use('/admin/kpi', kpiRouter);
 router.use('/admin/relay', relayRouter);
+router.use('/relay', relayPlayerRouter);

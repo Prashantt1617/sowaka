@@ -14,6 +14,9 @@ enum ConnectPostType {
   captionChallenge,
   photoStoryChallenge,
   mostLikely,
+
+  /// The relay game's announcement, drawn as its own card with a way in.
+  relayGame,
 }
 
 class ConnectTeammate {
@@ -126,6 +129,7 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.captionChallenge => 'caption_challenge',
     ConnectPostType.photoStoryChallenge => 'photo_story_challenge',
     ConnectPostType.mostLikely => 'most_likely',
+    ConnectPostType.relayGame => 'relay_game',
   };
 }
 
@@ -371,6 +375,9 @@ ConnectPostType _parseType(String? value) {
     'caption_challenge' => ConnectPostType.captionChallenge,
     'photo_story_challenge' => ConnectPostType.photoStoryChallenge,
     'most_likely' => ConnectPostType.mostLikely,
+    // Unknown types fall back to leadership, which is how the game's post
+    // arrived as an ordinary post with no way into the game.
+    'relay_game' => ConnectPostType.relayGame,
     _ => ConnectPostType.leadership,
   };
 }

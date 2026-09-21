@@ -19,6 +19,18 @@ export interface PublishInput {
   title?: string;
   subtitle?: string;
   startsAt?: string;
+  /** What each correct answer pays. */
+  pointsPerCorrect?: number | string;
+  /** The prize headline, in rupees. */
+  rewardAmount?: number | string;
+}
+
+function wholeNumber(value: unknown, label: string, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new RelayError(400, `${label} must be a whole number from ${min} to ${max}`);
+  }
+  return parsed;
 }
 
 export interface VideoUpload {
@@ -74,6 +86,11 @@ export async function publishRelayGame(
   if (Number.isNaN(startsAt.getTime())) throw new RelayError(400, 'A start time is required');
   if (startsAt.getTime() < Date.now()) throw new RelayError(400, 'The start time has already passed');
 
+  // Both are HR's decision and both are required: a default here would put a
+  // prize on the post that nobody chose.
+  const pointsPerCorrect = wholeNumber(input.pointsPerCorrect, 'Points per correct answer', 1, 1000);
+  const rewardAmount = wholeNumber(input.rewardAmount, 'Reward amount', 0, 10_000_000);
+
   const title = (input.title ?? '').trim() || 'Team Relay';
   const subtitle = (input.subtitle ?? '').trim();
 
@@ -98,6 +115,8 @@ export async function publishRelayGame(
         startsAt,
         lobbyOpensAt: now,
         instructionsVideoUrl: instructionsVideoKey,
+        rewardAmount,
+        'config.pointsPerCorrect': pointsPerCorrect,
         updatedAt: now,
       },
     },
@@ -133,6 +152,8 @@ export async function publishRelayGame(
       mediaContentType: video?.contentType ?? '',
       actionLabel: 'View game',
       teamCount: teams,
+      pointsPerCorrect,
+      rewardAmount,
     },
     likedBy: [],
     comments: [],
@@ -150,5 +171,7 @@ export async function publishRelayGame(
     rounds: shape,
     teams,
     instructionsVideoKey,
+    pointsPerCorrect,
+    rewardAmount,
   };
 }

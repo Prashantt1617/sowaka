@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../data/relay_models.dart';
+import 'relay_style.dart';
 
-/// The round in progress.
+/// The round in progress (Figma 2606:31851 clue, 2638:36748 lead).
 ///
 /// One screen for both roles, because the header is the same game either way:
 /// the difference is that the lead has somewhere to type and nobody else does.
@@ -12,7 +13,6 @@ class RelayPlay extends StatefulWidget {
     super.key,
     required this.state,
     required this.secondsLeft,
-    required this.pointsPerCorrect,
     this.lastResult,
     this.onSubmit,
     this.onSkip,
@@ -23,7 +23,6 @@ class RelayPlay extends StatefulWidget {
 
   /// The round's clock, ticked locally and corrected by every push.
   final int secondsLeft;
-  final int pointsPerCorrect;
   final RelayResult? lastResult;
   final void Function(String answer)? onSubmit;
   final VoidCallback? onSkip;
@@ -35,12 +34,6 @@ class RelayPlay extends StatefulWidget {
 
 class _RelayPlayState extends State<RelayPlay> {
   final _answer = TextEditingController();
-
-  static const _sky = Color(0xFF4FA3D1);
-  static const _skyDeep = Color(0xFF3B8FC4);
-  static const _accent = Color(0xFF0571A6);
-  static const _ink = Color(0xFF222222);
-  static const _muted = Color(0xFF6B7280);
 
   @override
   void dispose() {
@@ -58,227 +51,184 @@ class _RelayPlayState extends State<RelayPlay> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_sky, _skyDeep],
-        ),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 26, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Center(
-                child: Text(
-                  'Time remaining',
-                  style: TextStyle(
-                    fontFamily: 'Sora',
-                    color: Colors.white,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Center(
-                child: Text(
-                  '${widget.secondsLeft} s',
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Colors.white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 22),
-              Center(
-                child: Text(
-                  state.prompt,
+    return RelayBackdrop(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(state),
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '+${state.pointsPerCorrect} points for correct answer',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Colors.white,
-                    fontSize: 23,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Center(
-                child: Text(
-                  'ROUND ${state.round} OF ${state.rounds}',
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Colors.white,
-                    fontSize: 12,
-                    letterSpacing: 0.9,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _pips(state),
-              const SizedBox(height: 14),
-              Center(
-                child: Text(
-                  '+${widget.pointsPerCorrect} points for correct answer',
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Color(0xFFDCEEF8),
-                    fontSize: 12.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (state.isLeader) ..._leadView(state) else ..._clueView(state),
-            ],
+                const SizedBox(height: 16),
+                if (state.isLeader) ..._leadView() else ..._clueView(state),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _pips(RelayState state) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+  Widget _header(RelayState state) {
+    return Column(
       children: [
-        for (var position = 1; position <= state.questionsPerRound; position += 1)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: position == state.questionNumber ? _accent : Colors.white,
-                shape: BoxShape.circle,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 39, vertical: 12),
+          child: Column(
+            children: [
+              Text(
+                'Time remaining',
+                style: RelayStyle.sora(12, weight: FontWeight.w800, color: RelayStyle.surface),
               ),
-              alignment: Alignment.center,
-              child: Text(
-                '$position',
-                style: TextStyle(
-                  fontFamily: 'Sora',
-                  color: position == state.questionNumber ? Colors.white : _ink,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+              Text(
+                '${widget.secondsLeft} s',
+                style: RelayStyle.sora(
+                  32,
+                  weight: FontWeight.w800,
+                  color: Colors.white,
+                  height: 48,
+                ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
               ),
-            ),
+            ],
           ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          state.prompt,
+          textAlign: TextAlign.center,
+          style: RelayStyle.sora(24, weight: FontWeight.w800, color: Colors.white, height: 32),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'ROUND ${state.round} OF ${state.rounds}',
+          textAlign: TextAlign.center,
+          style: RelayStyle.sora(11, weight: FontWeight.w700, height: 16.5, spacing: 0.6),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var position = 1; position <= state.questionsPerRound; position += 1) ...[
+              if (position > 1) const SizedBox(width: 20),
+              _Pip(number: position, current: position == state.questionNumber),
+            ],
+          ],
+        ),
       ],
     );
   }
 
   Widget _card({required String label, required List<Widget> children}) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white, width: 1.129),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(color: _accent, shape: BoxShape.circle),
+                width: 7.992,
+                height: 7.992,
+                decoration: const BoxDecoration(color: RelayStyle.brand, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: _accent,
-                  fontSize: 12,
-                  letterSpacing: 0.9,
-                  fontWeight: FontWeight.w700,
+                style: RelayStyle.sora(
+                  11,
+                  weight: FontWeight.w700,
+                  color: RelayStyle.brand,
+                  height: 16.5,
+                  spacing: 1,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
           ...children,
         ],
       ),
     );
   }
 
-  List<Widget> _leadView(RelayState state) {
-    final wrong = widget.lastResult != null &&
-        !widget.lastResult!.correct &&
-        !widget.lastResult!.skipped;
+  List<Widget> _leadView() {
+    final result = widget.lastResult;
+    final wrong = result != null && !result.correct && !result.skipped;
     return [
       _card(
         label: 'YOUR ANSWER',
         children: [
-          const Text(
-            'Each teammate has a part of the puzzle. Listen, then enter what the team lands on.',
-            style: TextStyle(fontFamily: 'Sora', color: _muted, fontSize: 13.5, height: 1.45),
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Text(
+              'Each teammate has a part of the puzzle. Listen, then enter what the team lands on.',
+              style: RelayStyle.sora(13, color: RelayStyle.tertiary, height: 19.5),
+            ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _answer,
-            onChanged: (_) => widget.onTyping?.call(),
-            onSubmitted: (_) => _submit(),
-            textInputAction: TextInputAction.done,
-            style: const TextStyle(fontFamily: 'Sora', fontSize: 15, color: _ink),
-            decoration: InputDecoration(
-              hintText: 'type the answer',
-              hintStyle: const TextStyle(fontFamily: 'Sora', color: Color(0xFF9CA3AF), fontSize: 15),
-              filled: true,
-              fillColor: const Color(0xFFF6F8FA),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE5E9ED)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE5E9ED)),
-              ),
-              suffixIcon: IconButton(
-                onPressed: _submit,
-                icon: const Icon(Icons.arrow_forward, color: _accent),
+          Container(
+            height: 51.995,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAFAFA),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE8E8F0), width: 1.129),
+            ),
+            alignment: Alignment.centerLeft,
+            child: TextField(
+              controller: _answer,
+              onChanged: (_) => widget.onTyping?.call(),
+              onSubmitted: (_) => _submit(),
+              textInputAction: TextInputAction.send,
+              style: RelayStyle.sora(15),
+              decoration: InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                hintText: 'type the answer',
+                hintStyle: RelayStyle.sora(15, color: RelayStyle.tertiary),
               ),
             ),
           ),
-          if (wrong) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Not it — try again.',
-              style: TextStyle(fontFamily: 'Sora', color: Color(0xFFC2402F), fontSize: 13),
+          // The design's thumbs-down, shown when the last try was not it.
+          if (wrong)
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              child: Center(child: RelayStyle.svg('wrong_answer', width: 24, height: 24)),
             ),
-          ],
         ],
       ),
-      const SizedBox(height: 14),
-      FilledButton(
-        onPressed: widget.onSkip,
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFFD5EAF6),
-          foregroundColor: _ink,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: const Text(
-          'SKIP',
-          style: TextStyle(
-            fontFamily: 'Sora',
-            fontSize: 14.5,
-            letterSpacing: 0.8,
-            fontWeight: FontWeight.w700,
+      const SizedBox(height: 16),
+      GestureDetector(
+        onTap: widget.onSkip,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: RelayStyle.tint,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
+          ),
+          child: Text(
+            'SKIP',
+            textAlign: TextAlign.center,
+            style: RelayStyle.sora(13, weight: FontWeight.w600, height: 19.5),
           ),
         ),
       ),
-      const SizedBox(height: 8),
-      const Text(
-        "If you skip you can't come back",
-        style: TextStyle(fontFamily: 'Sora', color: Color(0xFFDCEEF8), fontSize: 12.5),
+      const SizedBox(height: 16),
+      Text(
+        'If you skip you can’t come back',
+        style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
       ),
     ];
   }
@@ -287,82 +237,115 @@ class _RelayPlayState extends State<RelayPlay> {
     return [
       if (state.pieces.isEmpty)
         _card(
-          label: 'WAITING',
-          children: const [
-            Text(
-              'Nothing on your screen for this one yet — listen to your team.',
-              style: TextStyle(fontFamily: 'Sora', color: _muted, fontSize: 13.5, height: 1.45),
+          label: 'YOUR CLUE',
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'Yours is on its way — listen to your team.',
+                style: RelayStyle.sora(13, color: RelayStyle.tertiary, height: 19.5),
+              ),
             ),
           ],
         )
       else
-        for (final piece in state.pieces) ...[
-          _card(
-            label: piece.label.toUpperCase(),
-            children: [
-              Text(
-                piece.text,
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: _ink,
-                  fontSize: 17,
-                  height: 1.4,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Every teammate has a part of the puzzle',
-                style: TextStyle(fontFamily: 'Sora', color: _muted, fontSize: 12.5),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+        for (var i = 0; i < state.pieces.length; i += 1) ...[
+          if (i > 0) const SizedBox(height: 16),
+          _pieceCard(state.pieces[i]),
         ],
-      if (state.leadIsAnswering)
+      if (state.leadIsAnswering) ...[
+        const SizedBox(height: 16),
         Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFD9ECF7),
-            borderRadius: BorderRadius.circular(14),
+            color: RelayStyle.tint,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
           ),
-          padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 15,
-                backgroundColor: const Color(0xFFE85D9E),
-                child: Text(
-                  state.leadName.isEmpty ? '?' : state.leadName.characters.first.toUpperCase(),
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+              RelayInitial(
+                name: state.leadName,
+                size: 31.987,
+                fontSize: 11.2,
+                gradient: RelayStyle.avatarPink,
               ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Your team lead is answering',
-                    style: TextStyle(
-                      fontFamily: 'Sora',
-                      color: _ink,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your team lead is answering',
+                      style: RelayStyle.sora(13, weight: FontWeight.w600, height: 19.5),
                     ),
-                  ),
-                  Text(
-                    state.leadName,
-                    style: const TextStyle(fontFamily: 'Sora', color: _muted, fontSize: 12.5),
-                  ),
-                ],
+                    Text(
+                      state.leadName,
+                      style: RelayStyle.sora(12, color: RelayStyle.tertiary, height: 18),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
+      ],
     ];
+  }
+
+  Widget _pieceCard(RelayPiece piece) {
+    // A movie clue is a sentence and reads as a quote; a letter or a sum step
+    // keeps its own label, because which step it is matters to the answer.
+    final isClue = piece.label.toLowerCase().startsWith('clue');
+    final sentence = piece.text.trim().contains(' ');
+    return _card(
+      label: isClue ? 'YOUR CLUE' : piece.label.toUpperCase(),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(
+            sentence ? '"${piece.text}"' : piece.text,
+            style: RelayStyle.sora(18, weight: FontWeight.w600, height: 28),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(
+            isClue ? 'Every teammate has a part of the plot' : 'Every teammate has a part of the puzzle',
+            style: RelayStyle.sora(13, color: RelayStyle.tertiary, height: 19.5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Pip extends StatelessWidget {
+  const _Pip({required this.number, required this.current});
+
+  final int number;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          RelayStyle.svg(current ? 'pip_active' : 'pip_idle', width: 44, height: 44),
+          Text(
+            '$number',
+            style: RelayStyle.sora(
+              14,
+              weight: FontWeight.w600,
+              color: current ? Colors.white : RelayStyle.brand,
+              height: 22,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

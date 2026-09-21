@@ -131,6 +131,15 @@ async function main() {
   check('member holds a piece', memberView.pieces.length > 0, `${memberView.pieces.length} piece(s)`);
   check('both see the same question', leaderView.questionNumber === memberView.questionNumber);
   check('team is present', leaderView.teammates.filter((t) => t.present).length === 5);
+  check(
+    'each player sees exactly their own row marked as them',
+    leaderView.teammates.filter((t) => t.isYou).length === 1 &&
+      memberView.teammates.find((t) => t.isYou)?.name === 'Player 1',
+  );
+  check(
+    'the points line comes from the event',
+    leaderView.pointsPerCorrect === RELAY_DEFAULT_CONFIG.pointsPerCorrect,
+  );
 
   console.log('\nanswering');
   const wrong = await submitAnswer('u0', 'Dhoom');
@@ -237,15 +246,27 @@ async function main() {
 
   let refusedPast = false;
   try {
-    await publishRelayGame('u0', pubId, { startsAt: new Date(Date.now() - 60_000).toISOString() });
+    await publishRelayGame('u0', pubId, {
+      startsAt: new Date(Date.now() - 60_000).toISOString(),
+      pointsPerCorrect: 30,
+      rewardAmount: 10000,
+    });
   } catch {
     refusedPast = true;
   }
   check('refuses a start time already gone', refusedPast);
 
   const startsAt = new Date(Date.now() + 600_000);
+  let refusedUnpriced = false;
+  try {
+    await publishRelayGame('u0', pubId, { startsAt: startsAt.toISOString() });
+  } catch {
+    refusedUnpriced = true;
+  }
+  check('refuses to publish without HR setting points and reward', refusedUnpriced);
   const published = await publishRelayGame('u0', pubId, {
     title: 'Launch Relay', subtitle: 'Five rounds, one team', startsAt: startsAt.toISOString(),
+    pointsPerCorrect: 25, rewardAmount: 10000,
   });
   const pubEvent = await relayEvents().findOne({ id: pubId });
   const post = await connectPosts().findOne({ 'body.eventId': pubId });
@@ -254,6 +275,11 @@ async function main() {
   check('the post carries the game and its shape', (post?.body as Record<string, unknown>)?.roundCount === 1);
   check('round count comes from the sheet, not typed in', published.rounds.length === 1);
   check('the post names the action', (post?.body as Record<string, unknown>)?.actionLabel === 'View game');
+  check(
+    'points and reward are what HR entered',
+    pubEvent?.config.pointsPerCorrect === 25 && pubEvent?.rewardAmount === 10000 &&
+      (post?.body as Record<string, unknown>)?.rewardAmount === 10000,
+  );
 
   console.log(`\n${failures === 0 ? 'all checks passed' : `${failures} FAILED`}`);
 }

@@ -1,7 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-/// The rules, before anybody plays them.
+import 'relay_style.dart';
+
+/// The rules, before anybody plays them (Figma 2606:35931).
 ///
 /// There is no operator on the day and no practice round, so this is where a
 /// team learns that only one screen holds each clue. Nothing gates on watching
@@ -18,8 +22,7 @@ class RelayHowToPlay extends StatefulWidget {
 
   final String videoUrl;
 
-  /// Taken from the event rather than written into the copy, so the number on
-  /// this screen cannot disagree with what a correct answer actually pays.
+  /// From the event, so this screen cannot promise a different number.
   final int pointsPerCorrect;
 
   final VoidCallback? onClose;
@@ -34,12 +37,8 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
   VideoPlayerController? _controller;
   bool _unavailable = false;
 
-  static const _sky = Color(0xFF4FA3D1);
-  static const _skyDeep = Color(0xFF3B8FC4);
-  static const _ink = Color(0xFF222222);
-  static const _muted = Color(0xFF6B7280);
-  static const _highlight = Color(0xFFFBE8C8);
-  static const _highlightInk = Color(0xFFB4741B);
+  /// The fallback note only appears once somebody has actually tried to play.
+  bool _triedToPlay = false;
 
   @override
   void initState() {
@@ -59,10 +58,13 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
         await controller.dispose();
         return;
       }
+      controller.addListener(() {
+        if (mounted) setState(() {});
+      });
       setState(() => _controller = controller);
     } catch (_) {
-      // Playback is not available everywhere the app runs. The rules still
-      // read, which is the point of the screen.
+      // Playback is not available everywhere the app runs. The poster and the
+      // steps still read, which is the point of the screen.
       await controller.dispose();
       if (mounted) setState(() => _unavailable = true);
     }
@@ -76,216 +78,250 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_sky, _skyDeep],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close, color: Colors.white, size: 24),
+    return RelayBackdrop(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                onTap: widget.onClose,
+                child: RelayStyle.svg('cross', width: 24, height: 24),
+              ),
+              GestureDetector(
+                onTap: widget.onViewTeam,
+                child: Text(
+                  'View Team',
+                  style: RelayStyle.sora(
+                    14,
+                    weight: FontWeight.w600,
+                    color: RelayStyle.onBlue,
+                    height: 16.2,
+                    spacing: -0.16,
                   ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: widget.onViewTeam,
-                    child: const Text(
-                      'View Team',
-                      style: TextStyle(
-                        fontFamily: 'Sora',
-                        color: Colors.white,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const SizedBox(height: 26),
+          Text(
+            'How to Play',
+            textAlign: TextAlign.center,
+            style: RelayStyle.sora(24, weight: FontWeight.w800, color: Colors.white, height: 32),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: SizedBox(
+              width: 321,
+              child: Text(
+                'Watch the below video to understand how to play the following game',
+                textAlign: TextAlign.center,
+                style: RelayStyle.sora(14, color: RelayStyle.onBlue, height: 22),
               ),
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Center(
-                      child: Text(
-                        'How to Play',
-                        style: TextStyle(
-                          fontFamily: 'Sora',
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Center(
-                      child: Text(
-                        'Watch the below video to understand how to play the following game',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Sora',
-                          color: Color(0xFFE3F1FA),
-                          fontSize: 13.5,
-                          height: 1.45,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    _label('INSTRUCTION'),
-                    const SizedBox(height: 8),
-                    _video(),
-                    const SizedBox(height: 22),
-                    _label('STEPS TO PLAY'),
-                    const SizedBox(height: 10),
-                    _step(1, 'Teammates get one clue each',
-                        'Each teammate gets one private clue. Read yours aloud.'),
-                    _step(2, 'Lead enters the answer in the app',
-                        'Everyone connects the clues as a team. The lead only enters the final answer.'),
-                    _step(3, 'Every correct answer scores',
-                        'Answer before the round runs out. Finish them all with time to spare and the team keeps the seconds as points.',
-                        badge: '+${widget.pointsPerCorrect} every correct answer'),
-                    const SizedBox(height: 18),
-                    if (widget.onViewLobby != null)
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: widget.onViewLobby,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: _skyDeep,
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'View lobby',
-                            style: TextStyle(
-                              fontFamily: 'Sora',
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+          ),
+          const SizedBox(height: 26 + 18 + 16),
+          _label('INSTRUCTION'),
+          const SizedBox(height: 12),
+          _video(),
+          const SizedBox(height: 12 + 16),
+          _label('STEPS TO PLAY'),
+          const SizedBox(height: 24),
+          _step(1, 'Teammates get one clue each',
+              'Each teammate gets one private clue. Read yours aloud.'),
+          const SizedBox(height: 24),
+          _step(2, 'Lead enters the answer in the app',
+              'Everyone connects the clues as a team. The lead only enters the final answer.'),
+          const SizedBox(height: 24),
+          _highlightStep(
+            3,
+            'Every correct answer scores',
+            'Four questions a round. Get them all with time to spare and the team keeps the seconds too.',
+            '+${widget.pointsPerCorrect} every correct answer',
+          ),
+          const SizedBox(height: 24),
+          _step(4, 'Skip to buy time',
+              'A skipped question is gone for good, but its seconds carry on to the next one.'),
+          if (widget.onViewLobby != null) ...[
+            const SizedBox(height: 28),
+            GestureDetector(
+              onTap: widget.onViewLobby,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  'View lobby',
+                  textAlign: TextAlign.center,
+                  style: RelayStyle.sora(13, weight: FontWeight.w600, color: RelayStyle.brand, height: 19.5),
                 ),
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _label(String text) => Text(
     text,
-    style: const TextStyle(
-      fontFamily: 'Sora',
+    style: RelayStyle.sora(
+      12,
+      weight: FontWeight.w600,
       color: Colors.white,
-      fontSize: 11.5,
-      letterSpacing: 1.3,
-      fontWeight: FontWeight.w700,
+      height: 18,
+      spacing: 0.5,
     ),
   );
 
   Widget _video() {
     final controller = _controller;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: AspectRatio(
-        aspectRatio: controller?.value.aspectRatio ?? 16 / 9,
-        child: controller == null
-            ? Container(
-                color: const Color(0xFF2A3136),
-                alignment: Alignment.center,
-                child: _unavailable
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          'The video cannot play here — the steps below say the same thing.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Sora',
-                            color: Color(0xFFBFC7CC),
-                            fontSize: 13,
-                          ),
+    final playing = controller?.value.isPlaying ?? false;
+    return GestureDetector(
+      onTap: controller == null
+          ? () => setState(() => _triedToPlay = true)
+          : () => playing ? controller.pause() : controller.play(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          height: 201,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (controller != null && (playing || controller.value.position > Duration.zero))
+                FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: controller.value.size.width,
+                    height: controller.value.size.height,
+                    child: VideoPlayer(controller),
+                  ),
+                )
+              else
+                // The design's own crop of the poster, not a centred cover.
+                LayoutBuilder(
+                  builder: (context, box) => Stack(
+                    children: [
+                      Positioned(
+                        left: -0.1445 * box.maxWidth,
+                        top: -0.7653 * box.maxHeight,
+                        width: 1.2881 * box.maxWidth,
+                        height: 2.3267 * box.maxHeight,
+                        child: Image.asset(
+                          '${RelayStyle.asset}/video_poster.png',
+                          fit: BoxFit.fill,
                         ),
-                      )
-                    : const CircularProgressIndicator(color: Colors.white70),
-              )
-            : Stack(
-                alignment: Alignment.center,
-                children: [
-                  VideoPlayer(controller),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      controller.value.isPlaying ? controller.pause() : controller.play();
-                    }),
-                    child: Container(
-                      color: Colors.transparent,
-                      width: double.infinity,
-                      height: double.infinity,
-                      child: Center(
-                        child: AnimatedOpacity(
-                          opacity: controller.value.isPlaying ? 0 : 1,
-                          duration: const Duration(milliseconds: 180),
-                          child: const CircleAvatar(
-                            radius: 24,
-                            backgroundColor: Colors.white,
-                            child: Icon(Icons.play_arrow, color: Color(0xFF222222), size: 28),
-                          ),
-                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!playing)
+                // Where the design places it, a little left of centre.
+                Align(
+                  alignment: const Alignment(-0.148, 0.004),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Transform.rotate(
+                      angle: math.pi / 2,
+                      child: Transform.flip(
+                        flipY: true,
+                        child: RelayStyle.svg('play_arrow', width: 24, height: 24),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              if (_unavailable && _triedToPlay)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 10,
+                  child: Text(
+                    'The video can’t play here — the steps below say the same thing.',
+                    textAlign: TextAlign.center,
+                    style: RelayStyle.sora(11, color: Colors.white70),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _step(int number, String title, String detail, {String? badge}) {
-    final highlighted = badge != null;
+  Widget _badge(int number) => Container(
+    width: 28,
+    height: 28,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      shape: BoxShape.circle,
+      border: Border.all(color: const Color(0xFFE5E7EB)),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      '$number',
+      style: RelayStyle.sora(12, weight: FontWeight.w700, color: RelayStyle.inkDeep),
+    ),
+  );
+
+  Widget _step(int number, String title, String detail) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _badge(number),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: RelayStyle.sora(
+                  16,
+                  weight: FontWeight.w600,
+                  color: RelayStyle.inkDeep,
+                  height: 16.2,
+                  spacing: -0.16,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                detail,
+                style: RelayStyle.sora(
+                  14,
+                  color: RelayStyle.onBlue,
+                  height: 16.2,
+                  spacing: -0.16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _highlightStep(int number, String title, String detail, String badge) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: highlighted ? _highlight : Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFFFFDDAA),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: highlighted ? Colors.white : const Color(0xFFEFF5F9),
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '$number',
-              style: const TextStyle(
-                fontFamily: 'Sora',
-                color: _ink,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
+          _badge(number),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -293,35 +329,18 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: _ink,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: RelayStyle.sora(13, weight: FontWeight.w600, color: RelayStyle.inkDeep),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
                   detail,
-                  style: const TextStyle(
-                    fontFamily: 'Sora',
-                    color: _muted,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
+                  style: RelayStyle.sora(13, color: RelayStyle.secondary, height: 17.55),
                 ),
-                if (badge != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    badge,
-                    style: const TextStyle(
-                      fontFamily: 'Sora',
-                      color: _highlightInk,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 4),
+                Text(
+                  badge,
+                  style: RelayStyle.sora(13, color: const Color(0xFFFF8D28), height: 17.55),
+                ),
               ],
             ),
           ),

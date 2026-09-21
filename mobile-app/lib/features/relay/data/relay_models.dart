@@ -18,6 +18,7 @@ class RelayState {
     required this.prompt,
     required this.questionNumber,
     required this.questionsPerRound,
+    required this.pointsPerCorrect,
     required this.roundSecondsLeft,
     required this.questionSecondsLeft,
     required this.secondsUntilStart,
@@ -46,6 +47,9 @@ class RelayState {
   final String prompt;
   final int questionNumber;
   final int questionsPerRound;
+
+  /// Taken from the event, so "+30 points" is never the phone's own guess.
+  final int pointsPerCorrect;
 
   /// The clock players watch: the whole round, or the break before the next.
   final int roundSecondsLeft;
@@ -81,6 +85,7 @@ class RelayState {
       prompt: json['prompt'] as String? ?? '',
       questionNumber: (json['questionNumber'] as num?)?.toInt() ?? 0,
       questionsPerRound: (json['questionsPerRound'] as num?)?.toInt() ?? 0,
+      pointsPerCorrect: (json['pointsPerCorrect'] as num?)?.toInt() ?? 0,
       roundSecondsLeft: (json['roundSecondsLeft'] as num?)?.toInt() ?? 0,
       questionSecondsLeft: (json['questionSecondsLeft'] as num?)?.toInt() ?? 0,
       secondsUntilStart: (json['secondsUntilStart'] as num?)?.toInt() ?? 0,
@@ -136,6 +141,7 @@ class RelayTeammate {
     required this.present,
     required this.isLeader,
     required this.hasClue,
+    required this.isYou,
   });
 
   final String name;
@@ -145,11 +151,15 @@ class RelayTeammate {
   /// Whether they are holding a piece right now — the tick beside their face.
   final bool hasClue;
 
+  /// The viewer's own row, labelled "(You)" on the roster.
+  final bool isYou;
+
   static RelayTeammate fromJson(Map<String, dynamic> json) => RelayTeammate(
     name: json['name'] as String? ?? '',
     present: json['present'] == true,
     isLeader: json['isLeader'] == true,
     hasClue: json['hasClue'] == true,
+    isYou: json['isYou'] == true,
   );
 }
 
@@ -182,4 +192,60 @@ class RelayResult {
     skipped: json['skipped'] == true,
     answer: json['answer'] as String? ?? '',
   );
+}
+
+/// What the Connect post shows this particular viewer: the event, and the
+/// team they are on. Asked for separately because the post is the same for
+/// everyone and the team is not.
+class RelayCard {
+  const RelayCard({
+    required this.title,
+    required this.status,
+    required this.startsAt,
+    required this.rewardAmount,
+    required this.pointsPerCorrect,
+    required this.instructionsVideoUrl,
+    required this.teamName,
+    required this.members,
+  });
+
+  final String title;
+  final String status;
+  final DateTime? startsAt;
+  final int rewardAmount;
+  final int pointsPerCorrect;
+  final String instructionsVideoUrl;
+  final String? teamName;
+  final List<RelayCardMember> members;
+
+  static RelayCard fromJson(Map<String, dynamic> json) {
+    final event = Map<String, dynamic>.from(json['event'] as Map? ?? const {});
+    final team = json['team'] is Map ? Map<String, dynamic>.from(json['team'] as Map) : null;
+    return RelayCard(
+      title: event['title'] as String? ?? '',
+      status: event['status'] as String? ?? '',
+      startsAt: DateTime.tryParse(event['startsAt'] as String? ?? '')?.toLocal(),
+      rewardAmount: (event['rewardAmount'] as num?)?.toInt() ?? 0,
+      pointsPerCorrect: (event['pointsPerCorrect'] as num?)?.toInt() ?? 0,
+      instructionsVideoUrl: event['instructionsVideoUrl'] as String? ?? '',
+      teamName: team?['name'] as String?,
+      members: [
+        for (final member in (team?['members'] as List? ?? const []))
+          if (member is Map)
+            RelayCardMember(
+              name: member['name'] as String? ?? '',
+              isLeader: member['isLeader'] == true,
+              isYou: member['isYou'] == true,
+            ),
+      ],
+    );
+  }
+}
+
+class RelayCardMember {
+  const RelayCardMember({required this.name, required this.isLeader, required this.isYou});
+
+  final String name;
+  final bool isLeader;
+  final bool isYou;
 }

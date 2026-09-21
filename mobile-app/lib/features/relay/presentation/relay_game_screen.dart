@@ -2,30 +2,44 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../data/relay_models.dart';
 import '../data/relay_socket_service.dart';
+import 'relay_how_to_play.dart';
+import 'relay_leaderboard.dart';
 import 'relay_lobby.dart';
 import 'relay_play.dart';
+import 'relay_style.dart';
 
-/// Holds the connection and shows whichever screen the game is currently on.
+/// Holds the connection and shows whichever screen the game is on.
 ///
-/// The server decides the phase; this only renders it. The one thing computed
-/// here is the second-by-second countdown, because a clock that only moved when
-/// a message arrived would visibly stutter — every push corrects it.
+/// The server decides the phase; this only renders it. Before kick-off the
+/// player chooses between the rules and the lobby and can go back and forth;
+/// once the game starts that choice ends, because the round is what matters.
+///
+/// The one thing computed here is the second-by-second countdown, since a clock
+/// that only moved when a message arrived would visibly stall — every push
+/// corrects it.
 class RelayGameScreen extends StatefulWidget {
   const RelayGameScreen({
     super.key,
     required this.session,
-    this.pointsPerCorrect = 30,
-    this.onHowToPlay,
+    this.instructionsVideoUrl = '',
+    this.pointsPerCorrect = 0,
+    this.startWithRules = true,
   });
 
   final AuthSession session;
 
-  /// What a correct answer pays, for the line under the pips.
+  /// From the post, so the rules can show before the first state arrives.
+  final String instructionsVideoUrl;
+
+  /// HR's figure from the card, for the rules before the first update lands.
   final int pointsPerCorrect;
-  final VoidCallback? onHowToPlay;
+
+  /// "View game" opens on the rules; a return visit can go straight in.
+  final bool startWithRules;
 
   @override
   State<RelayGameScreen> createState() => _RelayGameScreenState();
@@ -39,6 +53,7 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   RelayState? _state;
   String? _problem;
   RelayResult? _lastResult;
+  late bool _showingRules = widget.startWithRules;
 
   /// Counted down locally between pushes, reset by each one.
   int _secondsUntilStart = 0;
@@ -71,6 +86,7 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   void _onState(RelayState state) {
     if (!mounted) return;
     setState(() {
+      final previous = _state;
       _state = state;
       _problem = null;
       // The server's clock wins on every message; the local tick only fills
@@ -78,8 +94,22 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
       _secondsUntilStart = state.secondsUntilStart;
       _roundSecondsLeft = state.roundSecondsLeft;
       // A new question clears whatever the last one ended on.
-      if (state.phase != RelayPhase.playing) _lastResult = null;
+      if (previous == null ||
+          previous.questionNumber != state.questionNumber ||
+          state.phase != RelayPhase.playing) {
+        _lastResult = null;
+      }
     });
+  }
+
+  void _close() => Navigator.of(context).maybePop();
+
+  /// A playable address: the card's, already resolved, or the server's —
+  /// which is a path on this API when media is stored locally.
+  String _videoUrl(RelayState? state) {
+    if (widget.instructionsVideoUrl.isNotEmpty) return widget.instructionsVideoUrl;
+    final fromServer = state?.instructionsVideoUrl ?? '';
+    return fromServer.startsWith('/') ? '${ApiConfig.baseUrl}$fromServer' : fromServer;
   }
 
   @override
@@ -95,46 +125,58 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   @override
   Widget build(BuildContext context) {
     final state = _state;
+    final lobby = state == null || state.phase == RelayPhase.lobby;
+
+    // The rules stay reachable until the game begins, and not after.
+    if (_showingRules && lobby) {
+      return Scaffold(
+        body: RelayHowToPlay(
+          videoUrl: _videoUrl(state),
+          pointsPerCorrect: state?.pointsPerCorrect ?? widget.pointsPerCorrect,
+          onClose: _close,
+          onViewTeam: () => setState(() => _showingRules = false),
+          onViewLobby: () => setState(() => _showingRules = false),
+        ),
+      );
+    }
+
     if (state == null) {
       return Scaffold(
-        backgroundColor: const Color(0xFF4FA3D1),
-        body: Center(
-          child: _problem == null
-              ? const CircularProgressIndicator(color: Colors.white)
-              : Padding(
-                  padding: const EdgeInsets.all(28),
-                  child: Text(
+        body: RelayBackdrop(
+          scroll: false,
+          child: Center(
+            child: _problem == null
+                ? const CircularProgressIndicator(color: Colors.white)
+                : Text(
                     _problem!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontFamily: 'Sora',
-                      color: Colors.white,
-                      fontSize: 15,
-                    ),
+                    style: RelayStyle.sora(15, color: Colors.white),
                   ),
-                ),
+          ),
         ),
       );
     }
 
     return Scaffold(
       body: switch (state.phase) {
+        RelayPhase.lobby => RelayLobby(
+          state: state,
+          secondsLeft: _secondsUntilStart,
+          onClose: _close,
+          onHowToPlay: () => setState(() => _showingRules = true),
+        ),
         RelayPhase.playing => RelayPlay(
           state: state,
           secondsLeft: _roundSecondsLeft,
-          pointsPerCorrect: widget.pointsPerCorrect,
           lastResult: _lastResult,
           onSubmit: _socket.submitAnswer,
           onSkip: _socket.skipQuestion,
           onTyping: _socket.reportTyping,
         ),
-        // The break and finished screens land next; until they do the lobby is
-        // still an honest picture of a team between rounds.
-        _ => RelayLobby(
+        RelayPhase.breakTime || RelayPhase.finished => RelayLeaderboard(
           state: state,
-          secondsLeft: _secondsUntilStart,
-          onClose: () => Navigator.of(context).maybePop(),
-          onHowToPlay: widget.onHowToPlay,
+          secondsLeft: _roundSecondsLeft,
+          onClose: _close,
         ),
       },
     );
