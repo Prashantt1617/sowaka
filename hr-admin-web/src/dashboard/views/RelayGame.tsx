@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   commitItems,
+  publishRelayGame,
+  PublishResult,
   commitRoster,
   createRelayEvent,
   ImportIssue,
@@ -32,6 +34,14 @@ const ghost = {
   border: '1px solid #E7E7EA',
 };
 const label = { fontSize: 12, color: '#717171', fontWeight: 600 } as const;
+const field = {
+  width: '100%',
+  border: '1px solid #E7E7EA',
+  borderRadius: 10,
+  padding: '9px 11px',
+  font: 'inherit',
+  boxSizing: 'border-box' as const,
+};
 
 type Kind = 'roster' | 'questions';
 
@@ -44,6 +54,9 @@ export function RelayGame() {
   const [itemPreview, setItemPreview] = useState<ItemPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const files = useRef<Record<Kind, File | null>>({ roster: null, questions: null });
+  const [publishForm, setPublishForm] = useState({ title: '', subtitle: '', startsAt: '' });
+  const [video, setVideo] = useState<File | null>(null);
+  const [published, setPublished] = useState<PublishResult | null>(null);
 
   const event = events.find((item) => item.id === eventId) ?? null;
 
@@ -90,6 +103,21 @@ export function RelayGame() {
       else setItemPreview(await previewItems(eventId, file));
     } catch (error) {
       flash(error instanceof ApiError ? error.message : 'Could not read that file');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const publish = async () => {
+    if (!eventId) return;
+    setBusy(true);
+    try {
+      const result = await publishRelayGame(eventId, publishForm, video);
+      setPublished(result);
+      flash(`Published — ${result.teams} teams, ${result.rounds.length} rounds`);
+      await load();
+    } catch (error) {
+      flash(error instanceof ApiError ? error.message : 'Could not publish the game');
     } finally {
       setBusy(false);
     }
@@ -283,6 +311,80 @@ export function RelayGame() {
                       />
                     </div>
                   ))}
+              </div>
+            </Card>
+          )}
+
+          {event.teamCount > 0 && event.itemCount > 0 && (
+            <Card style={{ marginBottom: 14 }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>3 · Publish to Connect</h3>
+              <p style={{ margin: '0 0 12px', color: '#717171', fontSize: 13 }}>
+                This schedules the game and announces it together. The countdown on the post and
+                the moment the game starts itself are the same time — players see the instructions
+                video first, then the lobby, and play begins on its own.
+              </p>
+              <div style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
+                <label style={label}>
+                  Title
+                  <input
+                    style={{ ...field, marginTop: 4 }}
+                    value={publishForm.title}
+                    placeholder="Team Relay"
+                    onChange={(e) => setPublishForm({ ...publishForm, title: e.target.value })}
+                  />
+                </label>
+                <label style={label}>
+                  Subtitle
+                  <input
+                    style={{ ...field, marginTop: 4 }}
+                    value={publishForm.subtitle}
+                    placeholder="Five rounds. Your team holds the clues."
+                    onChange={(e) => setPublishForm({ ...publishForm, subtitle: e.target.value })}
+                  />
+                </label>
+                <label style={label}>
+                  Starts at
+                  <input
+                    type="datetime-local"
+                    style={{ ...field, marginTop: 4 }}
+                    value={publishForm.startsAt}
+                    onChange={(e) => setPublishForm({ ...publishForm, startsAt: e.target.value })}
+                  />
+                </label>
+                <label style={label}>
+                  Instructions video
+                  <input
+                    type="file"
+                    accept="video/*"
+                    style={{ marginTop: 6, fontSize: 13, display: 'block' }}
+                    onChange={(e) => setVideo(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <div style={{ fontSize: 12, color: '#9A9AA1' }}>
+                  {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
+                  imported — the post describes the game rather than configuring it.
+                </div>
+                <button
+                  style={{ ...button('#2F8F5B'), width: 'fit-content' }}
+                  disabled={busy || !publishForm.startsAt}
+                  onClick={publish}
+                >
+                  {busy ? 'Publishing…' : 'Publish and schedule'}
+                </button>
+                {published && (
+                  <div
+                    style={{
+                      background: '#E4EDE0',
+                      color: '#3B5E3F',
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                      fontSize: 13,
+                    }}
+                  >
+                    Live on Connect. Starts {new Date(published.startsAt).toLocaleString()} ·{' '}
+                    {published.rounds.map((r) => `R${r.round} ${r.category}`).join(' · ')}
+                  </div>
+                )}
               </div>
             </Card>
           )}

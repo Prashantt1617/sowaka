@@ -57,6 +57,21 @@ export interface ItemPreview {
   canCommit: boolean;
 }
 
+export interface PublishInput {
+  title: string;
+  subtitle: string;
+  /** Local datetime from the form, sent as ISO. */
+  startsAt: string;
+}
+
+export interface PublishResult {
+  postId: string;
+  startsAt: string;
+  rounds: { round: number; category: string }[];
+  teams: number;
+  instructionsVideoKey: string;
+}
+
 export interface RelayTeam {
   id: string;
   teamKey: string;
@@ -64,6 +79,22 @@ export interface RelayTeam {
   index: number;
   members: { userId: string; name: string; email: string; isLeader: boolean }[];
   plan: { round: number; items: { kind: string; answer: string }[] }[];
+}
+
+/**
+ * Schedules the game and announces it on Connect in one call.
+ *
+ * Multipart because the instructions video goes with it; the rest of the form
+ * rides along as JSON so the server reads one object rather than loose fields.
+ */
+export function publishRelayGame(eventId: string, input: PublishInput, video: File | null) {
+  const form = new FormData();
+  form.append(
+    'body',
+    JSON.stringify({ ...input, startsAt: new Date(input.startsAt).toISOString() }),
+  );
+  if (video) form.append('video', video);
+  return apiUpload<PublishResult>(`/admin/relay/events/${eventId}/publish`, form);
 }
 
 export function listRelayEvents() {
