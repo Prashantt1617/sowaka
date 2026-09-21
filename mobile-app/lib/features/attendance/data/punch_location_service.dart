@@ -80,8 +80,21 @@ class PunchLocationService {
   /// Asked so the app can explain itself first (node 2288:10500): the system
   /// dialog is the one chance to get a yes, and it is far more likely to be
   /// granted by someone who already knows why it is being asked.
-  Future<bool> get needsPermission async =>
-      await Geolocator.checkPermission() == LocationPermission.denied;
+  ///
+  /// Capped, and assumed not needed if the platform does not answer: this runs
+  /// before anything is on screen, so a call that never returns freezes the tap
+  /// with nothing to look at. Guessing wrong only costs the explainer — the
+  /// read that follows shows its own progress and handles every refusal.
+  Future<bool> get needsPermission async {
+    try {
+      final permission = await Geolocator.checkPermission().timeout(
+        const Duration(seconds: 3),
+      );
+      return permission == LocationPermission.denied;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// The longest the whole check may take before it gives up.
   ///
