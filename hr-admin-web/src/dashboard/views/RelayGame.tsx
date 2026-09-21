@@ -17,7 +17,7 @@ import {
 } from '../../services/relay';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
-import { Card, EmptyRow, Pill } from '../ui';
+import { Card, EmptyRow, Pill, SummaryCard } from '../ui';
 
 const button = (bg: string, color = '#fff') => ({
   border: 'none',
@@ -152,38 +152,29 @@ export function RelayGame() {
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 18,
-          gap: 12,
+          marginBottom: 16,
+          gap: 10,
           flexWrap: 'wrap',
         }}
       >
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Relay game</h2>
-          <p style={{ margin: '4px 0 0', color: '#717171', fontSize: 14 }}>
-            Teams and questions are imported before the event. Nothing can be fixed once 220 people
-            are playing, so every problem has to be cleared here.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {events.length > 0 && (
-            <select
-              value={eventId}
-              onChange={(e) => setEventId(e.target.value)}
-              style={{ ...ghost, fontWeight: 600 }}
-            >
-              {events.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <button style={button('#0571A6')} onClick={addEvent}>
-            New event
-          </button>
-        </div>
+        {events.length > 0 && (
+          <select
+            value={eventId}
+            onChange={(e) => setEventId(e.target.value)}
+            style={{ ...ghost, fontWeight: 600, minWidth: 200 }}
+          >
+            {events.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <button style={button('#0571A6')} onClick={addEvent}>
+          New event
+        </button>
       </div>
 
       {!event ? (
@@ -192,20 +183,23 @@ export function RelayGame() {
         </Card>
       ) : (
         <>
-          <Card style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-              <Stat label="Status" value={event.status} />
-              <Stat label="Teams" value={String(event.teamCount)} />
-              <Stat label="Item pool" value={String(event.itemCount)} />
-              <Stat
-                label="Expected questions"
-                value={String(event.config.rounds * event.config.questionsPerRound)}
-                hint="per team"
-              />
-              <Stat label="Rounds" value={String(event.config.rounds)} />
-              <Stat label="Hints" value={String(event.config.hintsPerQuestion)} hint="per question" />
-            </div>
-          </Card>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <SummaryCard label="Status" value={event.status} />
+            <SummaryCard label="Teams" value={String(event.teamCount)} />
+            <SummaryCard label="Item pool" value={String(event.itemCount)} />
+            <SummaryCard
+              label="Rounds"
+              value={String(event.config.rounds)}
+              color={event.itemCount > 0 ? '#2F8F5B' : '#717171'}
+            />
+          </div>
 
           <ImportPanel
             title="1 · Team roster"
@@ -368,12 +362,17 @@ export function RelayGame() {
                 </label>
                 <label style={label}>
                   Instructions video
-                  <input
-                    type="file"
-                    accept="video/*"
-                    style={{ marginTop: 6, fontSize: 13, display: 'block' }}
-                    onChange={(e) => setVideo(e.target.files?.[0] ?? null)}
-                  />
+                  <div style={{ marginTop: 6 }}>
+                    <label style={{ ...ghost, display: 'inline-flex', gap: 8, cursor: 'pointer' }}>
+                      {video ? video.name : 'Choose a video'}
+                      <input
+                        type="file"
+                        accept="video/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => setVideo(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
                 </label>
                 <div style={{ fontSize: 12, color: '#9A9AA1' }}>
                   {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
@@ -441,16 +440,6 @@ export function RelayGame() {
   );
 }
 
-function Stat({ label: text, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div>
-      <div style={label}>{text}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, textTransform: 'capitalize' }}>{value}</div>
-      {hint && <div style={{ fontSize: 11, color: '#9A9AA1' }}>{hint}</div>}
-    </div>
-  );
-}
-
 function ImportPanel({
   title,
   hint,
@@ -490,13 +479,25 @@ function ImportPanel({
         {disabled ? (disabledNote ?? hint) : hint}
       </p>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          type="file"
-          accept={accept}
-          disabled={disabled || busy}
-          onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-          style={{ fontSize: 13 }}
-        />
+        <label
+          style={{
+            ...ghost,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: disabled || busy ? 'not-allowed' : 'pointer',
+            opacity: disabled || busy ? 0.6 : 1,
+          }}
+        >
+          Choose file
+          <input
+            type="file"
+            accept={accept}
+            disabled={disabled || busy}
+            onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+            style={{ display: 'none' }}
+          />
+        </label>
         {summary && <span style={{ fontSize: 13, color: '#717171' }}>{summary}</span>}
       </div>
 
