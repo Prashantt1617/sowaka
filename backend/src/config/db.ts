@@ -20,6 +20,13 @@ import { OvertimeRequest } from '../models/overtime.model';
 import { ReimbursementClaim } from '../models/reimbursement.model';
 import { ConnectPost } from '../models/connect.model';
 import { Game, GameScore } from '../models/game.model';
+import {
+  RelayEvent,
+  RelayPresence,
+  RelayItem,
+  RelayTeam,
+  RelayTeamProgress,
+} from '../models/relay.model';
 import { AppNotification, DeviceToken } from '../models/notification.model';
 import { AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
@@ -123,6 +130,26 @@ export function games(): Collection<Game> {
 
 export function gameScores(): Collection<GameScore> {
   return getDb().collection<GameScore>('game_scores');
+}
+
+export function relayEvents(): Collection<RelayEvent> {
+  return getDb().collection<RelayEvent>('relay_events');
+}
+
+export function relayTeams(): Collection<RelayTeam> {
+  return getDb().collection<RelayTeam>('relay_teams');
+}
+
+export function relayItems(): Collection<RelayItem> {
+  return getDb().collection<RelayItem>('relay_items');
+}
+
+export function relayProgress(): Collection<RelayTeamProgress> {
+  return getDb().collection<RelayTeamProgress>('relay_progress');
+}
+
+export function relayPresence(): Collection<RelayPresence> {
+  return getDb().collection<RelayPresence>('relay_presence');
 }
 
 export function deviceTokens(): Collection<DeviceToken> {
@@ -347,6 +374,25 @@ async function ensureIndexes(database: Db): Promise<void> {
   const payslipsCollection = database.collection<Payslip>('payslips');
   await payslipsCollection.createIndex({ org: 1, runId: 1 });
   await payslipsCollection.createIndex({ userId: 1, period: -1 });
+
+  const relayEventsCollection = database.collection<RelayEvent>('relay_events');
+  await relayEventsCollection.createIndex({ id: 1 }, { unique: true });
+  await relayEventsCollection.createIndex({ org: 1, updatedAt: -1 });
+  const relayTeamsCollection = database.collection<RelayTeam>('relay_teams');
+  await relayTeamsCollection.createIndex({ id: 1 }, { unique: true });
+  // One team per key per event: re-importing a roster replaces it rather than doubling it.
+  await relayTeamsCollection.createIndex({ eventId: 1, teamKey: 1 }, { unique: true });
+  await relayTeamsCollection.createIndex({ eventId: 1, 'members.userId': 1 });
+  const relayItemsCollection = database.collection<RelayItem>('relay_items');
+  await relayItemsCollection.createIndex({ id: 1 }, { unique: true });
+  // Items belong to the event and are shared across teams, read a round at a time.
+  await relayItemsCollection.createIndex({ eventId: 1, round: 1 });
+  const relayProgressCollection = database.collection<RelayTeamProgress>('relay_progress');
+  await relayProgressCollection.createIndex({ eventId: 1, teamId: 1 }, { unique: true });
+  await relayProgressCollection.createIndex({ eventId: 1, totalPoints: -1, totalSecondsUsed: 1 });
+  const relayPresenceCollection = database.collection<RelayPresence>('relay_presence');
+  await relayPresenceCollection.createIndex({ eventId: 1, userId: 1 }, { unique: true });
+  await relayPresenceCollection.createIndex({ eventId: 1, teamId: 1 });
 }
 
 export async function closeDb(): Promise<void> {

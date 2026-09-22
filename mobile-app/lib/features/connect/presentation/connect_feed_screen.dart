@@ -21,6 +21,7 @@ import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../../services/notification_service.dart';
+import '../../relay/presentation/relay_post_card.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
 /// Connect tab itself — the composer's `showModalBottomSheet`/`Navigator.push`
@@ -246,6 +247,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               );
             }
             final post = posts[index - 1];
+            // The game draws its whole card itself — its own gradient, and the
+            // viewer's own team — rather than sitting inside a standard post.
+            if (post.type == ConnectPostType.relayGame) {
+              return Padding(
+                key: ValueKey(post.id),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: RelayPostCard(post: post, session: widget.session),
+              );
+            }
             return _ConnectPostCard(
               key: ValueKey(post.id),
               post: post,
@@ -623,6 +633,7 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.captionChallenge:
     case ConnectPostType.photoStoryChallenge:
     case ConnectPostType.mostLikely:
+    case ConnectPostType.relayGame:
       return false;
   }
 }
@@ -1134,6 +1145,8 @@ class _PostBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (post.type) {
+      // Drawn by RelayPostCard before it reaches here; this is never shown.
+      ConnectPostType.relayGame => const SizedBox.shrink(),
       ConnectPostType.leadership => _MediaPostBody(post: post),
       ConnectPostType.recommendation => _RecommendationBody(post: post),
       ConnectPostType.newPost => _TextPostBody(
@@ -2762,9 +2775,18 @@ class _ChallengeHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // The label gives way before the time does: on a narrow phone
+                // "Most Likely Challenge • 3d ago" ran off the card.
                 Row(
                   children: [
-                    Text(_challengeKindLabel(post.type), style: _subtle),
+                    Flexible(
+                      child: Text(
+                        _challengeKindLabel(post.type),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _subtle,
+                      ),
+                    ),
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 6),
                       child: Text('\u2022', style: _subtle),

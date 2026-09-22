@@ -56,6 +56,7 @@ const CLAIMS: NavItem[] = [
 // filing it under one would bury it.
 const CONNECT: NavItem[] = [
   { key: 'engagementposts', label: 'Engagement posts' },
+  { key: 'relaygame', label: 'Relay game' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
 const SECTIONS: { title: string; items: NavItem[] }[] = [
