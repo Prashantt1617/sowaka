@@ -39,6 +39,8 @@ class RelayState {
     required this.pointsThisRound,
     this.lastOutcome,
     this.roundOutcomes = const [],
+    this.roundSeconds = 0,
+    this.roundKinds = const [],
   });
 
   final RelayPhase phase;
@@ -88,6 +90,12 @@ class RelayState {
   /// 'skipped' or 'timeout'. Colours the pips.
   final List<String> roundOutcomes;
 
+  /// A round's full length, for the rules screen.
+  final int roundSeconds;
+
+  /// Each round's kind of puzzle, in order, as the imported sheet set them.
+  final List<String> roundKinds;
+
   static RelayState fromJson(Map<String, dynamic> json) {
     final event = _map(json['event']);
     final team = _map(json['team']);
@@ -125,6 +133,8 @@ class RelayState {
       pointsThisRound: _int(json['pointsThisRound']),
       lastOutcome: json['lastOutcome'] is Map ? RelayOutcome.fromJson(_map(json['lastOutcome'])) : null,
       roundOutcomes: [for (final outcome in _list(json['roundOutcomes'])) _str(outcome)],
+      roundSeconds: _int(json['roundSeconds']),
+      roundKinds: [for (final kind in _list(json['roundKinds'])) _str(kind)],
     );
   }
 }

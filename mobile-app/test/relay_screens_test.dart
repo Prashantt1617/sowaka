@@ -117,7 +117,13 @@ void main() {
       });
 
       testWidgets('how to play', (tester) async {
-        await _render(tester, size, RelayHowToPlay(videoUrl: '', pointsPerCorrect: 30, onViewLobby: () {}));
+        await _render(tester, size, RelayHowToPlay(
+          videoUrl: '',
+          pointsPerCorrect: 30,
+          roundSeconds: 120,
+          roundKinds: const ['movie', 'word', 'number', 'lyric', 'odd'],
+          onBackToLobby: () {},
+        ));
       });
 
       testWidgets('clue, a sentence', (tester) async {

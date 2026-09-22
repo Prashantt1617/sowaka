@@ -94,6 +94,10 @@ export interface PlayerSnapshot {
   questionsPerRound: number;
   /** What a correct answer pays, so the screen never states a different number. */
   pointsPerCorrect: number;
+  /** A round's full length, for the rules screen's timer. */
+  roundSeconds: number;
+  /** What kind of puzzle each round is, in order — from the imported sheet. */
+  roundKinds: string[];
   /**
    * The clock the player watches: the whole round, four questions' worth.
    *
@@ -150,6 +154,23 @@ async function videoUrlFor(event: RelayEvent): Promise<string> {
   return memo(`video:${event.id}:${key}`, 20 * 60_000, () =>
     presignConnectMedia(key).catch(() => ''),
   );
+}
+
+/**
+ * Each round's kind of puzzle, in playing order, as the sheet defined them.
+ * Fixed once imported, so it is read once and held.
+ */
+async function roundKindsFor(event: RelayEvent): Promise<string[]> {
+  return memo(`kinds:${event.id}`, 5 * 60_000, async () => {
+    const rows = await relayItems()
+      .aggregate<{ _id: number; kind: string }>([
+        { $match: { eventId: event.id } },
+        { $group: { _id: '$round', kind: { $first: '$kind' } } },
+        { $sort: { _id: 1 } },
+      ])
+      .toArray();
+    return rows.map((row) => row.kind);
+  });
 }
 
 /** Whole seconds until a moment, never negative. */
@@ -376,6 +397,8 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     },
     questionsPerRound: config.questionsPerRound,
     pointsPerCorrect: config.pointsPerCorrect,
+    roundSeconds: roundSeconds(config),
+    roundKinds: await roundKindsFor(event),
     teammates: [] as PlayerSnapshot['teammates'],
     standings: [] as PlayerSnapshot['standings'],
   };
@@ -759,6 +782,7 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
     ? roundPhase(config, event.roundStartedAt, now)
     : { phase: 'playing' as const, secondsLeft: 0 };
   const videoUrl = await videoUrlFor(event);
+  const kinds = await roundKindsFor(event);
   const answering = await answeringTeams(
     eventId,
     teams.map((team) => team.id),
@@ -811,6 +835,8 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         questionNumber: Math.min((progress?.questionIndex ?? 0) + 1, config.questionsPerRound),
         questionsPerRound: config.questionsPerRound,
         pointsPerCorrect: config.pointsPerCorrect,
+        roundSeconds: roundSeconds(config),
+        roundKinds: kinds,
         roundSecondsLeft: round.secondsLeft,
         questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
         pieces:

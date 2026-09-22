@@ -17,8 +17,7 @@ abstract final class RelayStyle {
   /// so fixed alignments would only match one screen shape. This works the
   /// endpoints out for the actual size, with the stops folded into them so
   /// nothing falls outside 0–1.
-  static LinearGradient backgroundFor(Size size) {
-    const degrees = 137.9677728017552;
+  static LinearGradient backgroundFor(Size size, {double degrees = 137.9677728017552}) {
     final radians = degrees * math.pi / 180;
     final dx = math.sin(radians);
     final dy = -math.cos(radians);
@@ -84,10 +83,13 @@ abstract final class RelayStyle {
 
 /// Every game screen sits on the same gradient with the same page padding.
 class RelayBackdrop extends StatelessWidget {
-  const RelayBackdrop({super.key, required this.child, this.scroll = true});
+  const RelayBackdrop({super.key, required this.child, this.scroll = true, this.angle});
 
   final Widget child;
   final bool scroll;
+
+  /// Some screens draw the gradient at their own angle.
+  final double? angle;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +103,11 @@ class RelayBackdrop extends StatelessWidget {
     return SizedBox.expand(
       child: LayoutBuilder(
         builder: (context, constraints) => DecoratedBox(
-          decoration: BoxDecoration(gradient: RelayStyle.backgroundFor(constraints.biggest)),
+          decoration: BoxDecoration(
+            gradient: angle == null
+                ? RelayStyle.backgroundFor(constraints.biggest)
+                : RelayStyle.backgroundFor(constraints.biggest, degrees: angle!),
+          ),
           child: SafeArea(
             child: scroll ? SingleChildScrollView(child: padded) : padded,
           ),

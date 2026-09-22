@@ -133,9 +133,10 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
         body: RelayHowToPlay(
           videoUrl: _videoUrl(state),
           pointsPerCorrect: state?.pointsPerCorrect ?? widget.pointsPerCorrect,
+          roundSeconds: state?.roundSeconds ?? 0,
+          roundKinds: state?.roundKinds ?? const [],
           onClose: _close,
-          onViewTeam: () => setState(() => _showingRules = false),
-          onViewLobby: () => setState(() => _showingRules = false),
+          onBackToLobby: () => setState(() => _showingRules = false),
         ),
       );
     }
