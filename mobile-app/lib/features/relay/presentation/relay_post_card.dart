@@ -8,6 +8,7 @@ import '../data/relay_api_service.dart';
 import '../data/relay_models.dart';
 import 'relay_game_screen.dart';
 import 'relay_buttons.dart';
+import 'relay_spinning_cube.dart';
 import 'relay_style.dart';
 
 /// The game's post in the Connect feed (Figma 2606:35400), and the only way in.
@@ -143,12 +144,7 @@ class _RelayPostCardState extends State<RelayPostCard> {
           Positioned(
             left: 181,
             top: 48 - 59.21,
-            child: Image.asset(
-              '${RelayStyle.asset}/question_mark.png',
-              width: 168,
-              height: 168,
-              fit: BoxFit.cover,
-            ),
+            child: const RelaySpinningCube(),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,

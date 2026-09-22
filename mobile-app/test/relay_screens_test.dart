@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/relay/data/relay_models.dart';
 import 'package:mobile_app/features/relay/presentation/relay_buttons.dart';
+import 'package:mobile_app/features/relay/presentation/relay_error_mark.dart';
 import 'package:mobile_app/features/relay/presentation/relay_how_to_play.dart';
 import 'package:mobile_app/features/relay/presentation/relay_leaderboard.dart';
 import 'package:mobile_app/features/relay/presentation/relay_lobby.dart';
@@ -286,9 +287,7 @@ void main() {
 
     testWidgets('a wrong answer plays the incorrect animation once, then clears', (tester) async {
       await _render(tester, const Size(393, 852), RelayPlay(state: _state(isLeader: true), secondsLeft: 120));
-      final gif = find.byWidgetPredicate(
-        (w) => w is Image && w.image is AssetImage && (w.image as AssetImage).assetName.endsWith('incorrect_answer.gif'),
-      );
+      final gif = find.byType(RelayErrorMark);
       expect(gif, findsNothing);
       await tester.pumpWidget(
         MaterialApp(

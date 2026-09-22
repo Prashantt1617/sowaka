@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/relay_models.dart';
 import 'relay_confetti.dart';
 import 'relay_buttons.dart';
+import 'relay_error_mark.dart';
 import 'relay_style.dart';
 
 /// The round in progress (Figma 2606:31851 clue, 2638:36748 lead, 2682:37522
@@ -51,7 +52,7 @@ class _RelayPlayState extends State<RelayPlay> {
   Timer? _wrongTimer;
 
   /// One loop of the design's GIF: 67 frames at 30ms.
-  static const _wrongFor = Duration(milliseconds: 2100);
+  static const _wrongFor = Duration(milliseconds: 1800);
 
   @override
   void initState() {
@@ -128,13 +129,7 @@ class _RelayPlayState extends State<RelayPlay> {
                 color: const Color(0x73000000),
                 child: Align(
                   alignment: const Alignment(0, -0.05),
-                  child: Image.asset(
-                    '${RelayStyle.asset}/incorrect_answer.gif',
-                    width: 339,
-                    height: 183,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
+                  child: const RelayErrorMark(),
                 ),
               ),
             ),
