@@ -6,6 +6,7 @@ import '../data/relay_models.dart';
 import 'relay_confetti.dart';
 import 'relay_buttons.dart';
 import 'relay_error_mark.dart';
+import 'relay_sounds.dart';
 import 'relay_style.dart';
 
 /// The round in progress (Figma 2606:31851 clue, 2638:36748 lead, 2682:37522
@@ -51,12 +52,23 @@ class _RelayPlayState extends State<RelayPlay> {
   bool _showWrong = false;
   Timer? _wrongTimer;
 
-  /// One loop of the design's GIF: 67 frames at 30ms.
+  /// The error animation (1s) and the buzzer (1.8s), with a beat to read it.
   static const _wrongFor = Duration(milliseconds: 1800);
+
+  /// Which correct answer the chime last played for, so a repeated push of
+  /// the same outcome stays quiet.
+  String? _cheered;
+
+  static String? _outcomeKey(RelayState state) {
+    final outcome = state.lastOutcome;
+    return outcome == null ? null : '${state.round}-${state.questionNumber}-${outcome.answer}';
+  }
 
   @override
   void initState() {
     super.initState();
+    RelaySounds.instance.warmUp();
+    _cheered = _outcomeKey(widget.state);
     // Opened with a wrong try already on record — show it here too, not only
     // when one arrives as an update.
     final result = widget.lastResult;
@@ -71,10 +83,17 @@ class _RelayPlayState extends State<RelayPlay> {
       _flashWrong();
     }
     if (widget.state.questionNumber != oldWidget.state.questionNumber) _showWrong = false;
+    // The whole team hears the chime, not only the one who typed it.
+    final cheer = _outcomeKey(widget.state);
+    if (cheer != null && cheer != _cheered) {
+      _cheered = cheer;
+      RelaySounds.instance.correct();
+    }
   }
 
   void _flashWrong() {
     _showWrong = true;
+    RelaySounds.instance.incorrect();
     // A cancellable timer rather than a fire-and-forget delay, so leaving the
     // screen mid-animation does not leave a callback behind.
     _wrongTimer?.cancel();
@@ -113,7 +132,7 @@ class _RelayPlayState extends State<RelayPlay> {
           ),
         Positioned.fill(
           child: RelayConfetti(
-            trigger: outcome == null ? null : '${state.round}-${state.questionNumber}-${outcome.answer}',
+            trigger: _outcomeKey(state),
           ),
         ),
         // The design's wrong-answer moment: the page dims and the animation
