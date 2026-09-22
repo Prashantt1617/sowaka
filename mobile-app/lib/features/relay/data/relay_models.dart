@@ -96,6 +96,39 @@ class RelayState {
   /// Each round's kind of puzzle, in order, as the imported sheet set them.
   final List<String> roundKinds;
 
+  /// This question screen as it looks the moment it is answered: the
+  /// outcome, scores and pips from [next], everything else unchanged. Used to
+  /// finish a round's last question on the question — banner, confetti and
+  /// all — before the leaderboard takes over.
+  RelayState answeredWith(RelayState next) => RelayState(
+        phase: phase,
+        eventName: eventName,
+        round: round,
+        rounds: rounds,
+        teamName: teamName,
+        points: next.points,
+        isLeader: isLeader,
+        leadName: leadName,
+        leadIsAnswering: false,
+        prompt: prompt,
+        questionNumber: questionNumber,
+        questionsPerRound: questionsPerRound,
+        pointsPerCorrect: pointsPerCorrect,
+        roundSecondsLeft: roundSecondsLeft,
+        questionSecondsLeft: questionSecondsLeft,
+        secondsUntilStart: secondsUntilStart,
+        instructionsVideoUrl: instructionsVideoUrl,
+        pieces: pieces,
+        teammates: teammates,
+        standings: next.standings,
+        yourRank: next.yourRank,
+        pointsThisRound: next.pointsThisRound,
+        lastOutcome: next.lastOutcome,
+        roundOutcomes: next.roundOutcomes,
+        roundSeconds: roundSeconds,
+        roundKinds: roundKinds,
+      );
+
   static RelayState fromJson(Map<String, dynamic> json) {
     final event = _map(json['event']);
     final team = _map(json['team']);

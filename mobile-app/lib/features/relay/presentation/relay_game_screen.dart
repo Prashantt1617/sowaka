@@ -55,6 +55,20 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   RelayResult? _lastResult;
   late bool _showingRules = widget.startWithRules;
 
+  /// The round's last question, held on screen while its correct answer is
+  /// celebrated. Answering it ends the team's round, so without this the
+  /// leaderboard would replace the question before the banner, confetti and
+  /// chime could play.
+  RelayState? _finale;
+  Timer? _finaleTimer;
+
+  /// The round clock as it stood when the last answer landed; the break's
+  /// countdown is for the leaderboard, not this question.
+  int _finaleSeconds = 0;
+
+  /// Long enough for the chime and the banner, and most of the confetti.
+  static const _finaleFor = Duration(milliseconds: 3200);
+
   /// Counted down locally between pushes, reset by each one.
   int _secondsUntilStart = 0;
   int _roundSecondsLeft = 0;
@@ -87,6 +101,23 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
     if (!mounted) return;
     setState(() {
       final previous = _state;
+      final endsOnCorrect = previous != null &&
+          previous.phase == RelayPhase.playing &&
+          state.phase == RelayPhase.breakTime &&
+          state.round == previous.round &&
+          state.lastOutcome != null;
+      if (endsOnCorrect && _finale == null) {
+        _finale = previous.answeredWith(state);
+        _finaleSeconds = _roundSecondsLeft;
+        _finaleTimer?.cancel();
+        _finaleTimer = Timer(_finaleFor, () {
+          if (mounted) setState(() => _finale = null);
+        });
+      } else if (_finale != null && state.phase != RelayPhase.breakTime) {
+        // The game moved on regardless (a new round, or the end): follow it.
+        _finaleTimer?.cancel();
+        _finale = null;
+      }
       _state = state;
       _problem = null;
       // The server's clock wins on every message; the local tick only fills
@@ -115,6 +146,7 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _finaleTimer?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -154,6 +186,17 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
                     style: RelayStyle.sora(15, color: Colors.white),
                   ),
           ),
+        ),
+      );
+    }
+
+    final finale = _finale;
+    if (finale != null) {
+      return Scaffold(
+        body: RelayPlay(
+          state: finale,
+          secondsLeft: _finaleSeconds,
+          lastResult: _lastResult,
         ),
       );
     }

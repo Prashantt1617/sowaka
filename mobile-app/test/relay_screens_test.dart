@@ -417,6 +417,27 @@ void main() {
   });
 
   group('what arrives from the server', () {
+    test("the round's last correct answer keeps its question on screen", () {
+      final question = _state(isLeader: true, prompt: 'Guess the movie');
+      final done = RelayState.fromJson({
+        'phase': 'break',
+        'isLeader': true,
+        'questionNumber': 4,
+        'questionsPerRound': 4,
+        'team': {'name': 'Kritik TEAM', 'points': 450},
+        'pointsThisRound': 130,
+        'roundOutcomes': ['correct', 'skipped', 'correct', 'correct'],
+        'lastOutcome': {'outcome': 'correct', 'answer': 'Inception', 'points': 30},
+        'event': {'round': 2, 'rounds': 5},
+      });
+      final held = question.answeredWith(done);
+      expect(held.phase, RelayPhase.playing);
+      expect(held.prompt, 'Guess the movie');
+      expect(held.lastOutcome?.answer, 'Inception');
+      expect(held.roundOutcomes, hasLength(4));
+      expect(held.points, 450);
+    });
+
     test('an empty message does not crash the app', () {
       final state = RelayState.fromJson(const {});
       expect(state.phase, RelayPhase.lobby);
