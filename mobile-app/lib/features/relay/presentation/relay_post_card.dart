@@ -15,10 +15,14 @@ import 'relay_style.dart';
 /// viewer's own, fetched separately, so nobody's feed shows somebody else's
 /// team.
 class RelayPostCard extends StatefulWidget {
-  const RelayPostCard({super.key, required this.post, required this.session});
+  const RelayPostCard({super.key, required this.post, required this.session, this.card});
 
   final ConnectPost post;
   final AuthSession session;
+
+  /// Supplied only by tests; the feed always asks the server.
+  @visibleForTesting
+  final RelayCard? card;
 
   @override
   State<RelayPostCard> createState() => _RelayPostCardState();
@@ -33,6 +37,10 @@ class _RelayPostCardState extends State<RelayPostCard> {
   @override
   void initState() {
     super.initState();
+    if (widget.card != null) {
+      _card = widget.card;
+      return;
+    }
     RelayApiService(session: widget.session).myCard().then((card) {
       if (mounted) setState(() => _card = card);
     }).catchError((_) {});
@@ -61,6 +69,8 @@ class _RelayPostCardState extends State<RelayPostCard> {
       MaterialPageRoute<void>(
         builder: (_) => RelayGameScreen(
           session: widget.session,
+          // Feed → lobby → How to play → back to lobby.
+          startWithRules: false,
           instructionsVideoUrl: _card?.instructionsVideoUrl ?? '',
           pointsPerCorrect: (_body['pointsPerCorrect'] as num?)?.toInt() ?? _card?.pointsPerCorrect ?? 0,
         ),
@@ -95,22 +105,45 @@ class _RelayPostCardState extends State<RelayPostCard> {
             const SizedBox(height: 18),
             GestureDetector(
               onTap: _open,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  'View game',
-                  textAlign: TextAlign.center,
-                  style: RelayStyle.sora(
-                    16,
-                    weight: FontWeight.w600,
-                    color: RelayStyle.brand,
-                    height: 24,
-                    spacing: -0.16,
-                  ),
+              child: SizedBox(
+                height: 101,
+                child: Stack(
+                  children: [
+                    // The button is artwork in the design, cropped from a
+                    // larger image — reproduced as drawn, not restyled.
+                    Positioned.fill(
+                      child: LayoutBuilder(
+                        builder: (context, box) => Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left: -0.0518 * box.maxWidth,
+                              top: -0.7192 * box.maxHeight,
+                              width: 1.0976 * box.maxWidth,
+                              height: 2.4658 * box.maxHeight,
+                              child: Image.asset('${RelayStyle.asset}/game_cta.png', fit: BoxFit.fill),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
+                      child: Center(
+                        child: Text(
+                          'View game',
+                          textAlign: TextAlign.center,
+                          style: RelayStyle.sora(
+                            24,
+                            weight: FontWeight.w700,
+                            color: const Color(0xFF078442),
+                            height: 24,
+                            spacing: -0.16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -120,9 +153,9 @@ class _RelayPostCardState extends State<RelayPostCard> {
     );
   }
 
-  /// The card's own `linear-gradient(151.2deg, #57B9E8 1.91%, #147381 98.09%)`.
+  /// The card's own `linear-gradient(148.81deg, #57B9E8 1.91%, #147381 98.09%)`.
   LinearGradient _gradientFor(Size size) {
-    const degrees = 151.19624931210387;
+    const degrees = 148.81229242720906;
     final radians = degrees * math.pi / 180;
     final dx = math.sin(radians);
     final dy = -math.cos(radians);
@@ -194,27 +227,31 @@ class _RelayPostCardState extends State<RelayPostCard> {
     final minutes = at.minute == 0 ? '' : ':${at.minute.toString().padLeft(2, '0')}';
     final meridiem = at.hour < 12 ? 'A.M.' : 'P.M.';
     final style = RelayStyle.sora(16, weight: FontWeight.w600, color: _cream);
-    // Wraps on a narrow card instead of running off its edge.
-    return Wrap(
-      spacing: 18,
-      runSpacing: 8,
+    // Date at one end, time at the other, as drawn, both at full size. Only
+    // the date gives way, and only on a phone too narrow for both — splitting
+    // the row into equal halves shrank it on every phone.
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RelayStyle.svg('calendar', width: 18, height: 18),
-            const SizedBox(width: 8),
-            Text('Starts ${at.day} ${months[at.month - 1]}', style: style),
-          ],
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: Center(child: RelayStyle.svg('clock', width: 17, height: 17)),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RelayStyle.svg('calendar', width: 18, height: 18),
+                const SizedBox(width: 8),
+                Text('Starts ${at.day} ${months[at.month - 1]}', style: style),
+              ],
             ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: 18, height: 18, child: Center(child: RelayStyle.svg('clock', width: 17, height: 17))),
             const SizedBox(width: 8),
             Text('$hour$minutes $meridiem', style: style),
           ],

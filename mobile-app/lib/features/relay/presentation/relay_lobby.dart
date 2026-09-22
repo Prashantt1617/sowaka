@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/relay_models.dart';
 import 'relay_style.dart';
 
-/// Waiting for kick-off (Figma 2603:31280).
+/// Waiting for kick-off (Figma 2603:31280), and where "View game" lands.
 ///
 /// The countdown runs on the phone between pushes and is corrected by every
 /// one of them, so a slow message shows a second of drift rather than a clock
@@ -64,7 +64,7 @@ class RelayLobby extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 18 + 26),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             child: Column(
@@ -125,6 +125,33 @@ class RelayLobby extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          // The way to the rules — and back again with "Back to Lobby" —
+          // until the game starts.
+          Padding(
+            padding: const EdgeInsets.only(top: 18 + 12, bottom: 8),
+            child: GestureDetector(
+              onTap: onHowToPlay,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xF7CCFCFF),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
+                ),
+                child: Text(
+                  'How to play',
+                  textAlign: TextAlign.center,
+                  style: RelayStyle.sora(
+                    16,
+                    weight: FontWeight.w600,
+                    color: RelayStyle.brand,
+                    height: 16.2,
+                    spacing: -0.16,
+                  ),
+                ),
+              ),
             ),
           ),
         ],

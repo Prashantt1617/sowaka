@@ -5,6 +5,9 @@ import 'package:mobile_app/features/relay/presentation/relay_how_to_play.dart';
 import 'package:mobile_app/features/relay/presentation/relay_leaderboard.dart';
 import 'package:mobile_app/features/relay/presentation/relay_lobby.dart';
 import 'package:mobile_app/features/relay/presentation/relay_play.dart';
+import 'package:mobile_app/features/relay/presentation/relay_post_card.dart';
+import 'package:mobile_app/features/auth/data/auth_models.dart';
+import 'package:mobile_app/features/connect/data/connect_models.dart';
 
 /// Every game screen, on every phone size people will actually hold, with the
 /// awkward data real events produce: long names, a lone player, an empty
@@ -336,6 +339,76 @@ void main() {
         expect(find.text('Kuch Kuch Hota Hai'), findsOneWidget);
         await tester.pump(const Duration(seconds: 2));
         expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  group('feed → lobby → how to play → back', () {
+    testWidgets('the lobby opens the rules from its How to play button', (tester) async {
+      var opened = false;
+      await _render(
+        tester,
+        const Size(393, 852),
+        RelayLobby(state: _state(phase: RelayPhase.lobby), secondsLeft: 8, onHowToPlay: () => opened = true),
+      );
+      await tester.ensureVisible(find.text('How to play'));
+      await tester.tap(find.text('How to play'));
+      expect(opened, isTrue);
+    });
+
+    testWidgets('the rules go back to the lobby', (tester) async {
+      var back = false;
+      await _render(
+        tester,
+        const Size(393, 852),
+        RelayHowToPlay(videoUrl: '', pointsPerCorrect: 30, onBackToLobby: () => back = true),
+      );
+      await tester.tap(find.text('Back to Lobby'));
+      expect(back, isTrue);
+    });
+
+    for (final MapEntry(key: phone, value: size) in _phones.entries) {
+      testWidgets('$phone: the feed card fits, with a long team name', (tester) async {
+        final post = ConnectPost.fromJson({
+          'id': 'p1',
+          'type': 'relay_game',
+          'author': {'name': 'Sowaka', 'userId': 'x'},
+          'body': {
+            'title': 'Hint Relay',
+            'startsAt': DateTime(2026, 9, 24, 16).toUtc().toIso8601String(),
+            'rewardAmount': 1000000,
+          },
+        });
+        await _render(
+          tester,
+          size,
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              RelayPostCard(
+                post: post,
+                session: const AuthSession(
+                  token: 't',
+                  user: AuthUser(id: 'u', email: 'e', name: 'n', role: 'employee', company: 'c'),
+                ),
+                card: RelayCard(
+                  title: 'Hint Relay',
+                  status: 'scheduled',
+                  startsAt: null,
+                  rewardAmount: 1000000,
+                  pointsPerCorrect: 30,
+                  instructionsVideoUrl: '',
+                  teamName: '$_longName TEAM',
+                  members: [
+                    for (var i = 0; i < 6; i += 1)
+                      RelayCardMember(name: '$_longName $i', isLeader: i == 0, isYou: i == 1),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+        expect(find.text('View game'), findsOneWidget);
       });
     }
   });
