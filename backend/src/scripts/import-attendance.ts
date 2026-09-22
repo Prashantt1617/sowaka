@@ -152,7 +152,10 @@ async function readPunches(lastSourceId: number, fromDate?: string): Promise<Pun
 }
 
 function groupPunches(rows: PunchRow[]): DailyPunches[] {
-  const days = new Map<string, DailyPunches>();
+  const days = new Map<
+    string,
+    { employeeId: string; workDate: string; swipes: { at: Date; hour: number }[]; ins: Date[]; outs: Date[] }
+  >();
   for (const row of rows) {
     const employeeId = String(row.employee_id ?? '').trim();
     const workDate = String(row.work_date ?? '');
@@ -160,13 +163,41 @@ function groupPunches(rows: PunchRow[]): DailyPunches[] {
     const timestamp = punchTimestamp(workDate, String(row.log_time ?? ''));
     if (!employeeId || !timestamp) continue;
     const key = `${employeeId}|${workDate}`;
-    const day = days.get(key) ?? { employeeId, workDate };
-    if (row.direction === 'in' && (!day.punchIn || timestamp < day.punchIn)) day.punchIn = timestamp;
-    if (row.direction === 'out' && (!day.punchOut || timestamp > day.punchOut)) day.punchOut = timestamp;
+    const day = days.get(key) ?? { employeeId, workDate, swipes: [], ins: [], outs: [] };
+    // The device's own wall clock, so the test below does not depend on what
+    // timezone this process happens to run in.
+    day.swipes.push({ at: timestamp, hour: Number(String(row.log_time ?? '').slice(0, 2)) });
+    (row.direction === 'in' ? day.ins : day.outs).push(timestamp);
     days.set(key, day);
   }
-  return [...days.values()];
+
+  return [...days.values()].map((day) => {
+    const earliest = (list: Date[]) => list.reduce((a, b) => (b < a ? b : a));
+    const latest = (list: Date[]) => list.reduce((a, b) => (b > a ? b : a));
+    let punchIn = day.ins.length ? earliest(day.ins) : undefined;
+    let punchOut = day.outs.length ? latest(day.outs) : undefined;
+
+    // The device labels some arrivals as exits — a handful of people a day come
+    // through with an exit swipe and no entry, at nine in the morning. Somebody
+    // whose only swipes are exits still arrived, so the first one is read as the
+    // arrival rather than left as a day that looks like it began by leaving.
+    //
+    // Only inside a window somebody could plausibly have arrived in. An
+    // afternoon swipe is somebody who forgot to swipe in, and the small hours
+    // are a late shift leaving — a two in the morning exit read as an arrival
+    // would invent a day that ran until midnight.
+    const ordered = [...day.swipes].sort((a, b) => a.at.getTime() - b.at.getTime());
+    const ARRIVAL_FROM = 5;
+    const ARRIVAL_UNTIL = 12;
+    const first = ordered[0];
+    if (!punchIn && punchOut && first && first.hour >= ARRIVAL_FROM && first.hour < ARRIVAL_UNTIL) {
+      punchIn = ordered[0].at;
+      punchOut = ordered.length > 1 ? ordered[ordered.length - 1].at : undefined;
+    }
+    return { employeeId: day.employeeId, workDate: day.workDate, punchIn, punchOut };
+  });
 }
+
 
 function punchTimestamp(date: string, time: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}:\d{2}(\.\d{1,7})?$/.test(time)) return undefined;

@@ -35,6 +35,32 @@ export const COMP_OFF_CREDIT: Record<OvertimeDuration, number> = {
   full_day: 1,
 };
 
+/**
+ * How many punches a day is built from.
+ *
+ * Asked before anything else, because it decides which days can even exist:
+ * on a single-punch setup there is no punch-out to be missing, so the whole
+ * missing-punch grid collapses to one case.
+ */
+export type PunchMode = 'Both punches' | 'Single punch';
+
+export const PUNCH_MODES: PunchMode[] = ['Both punches', 'Single punch'];
+
+/**
+ * What an employee may ask a day to be changed to when they raise a
+ * correction against it.
+ *
+ * Only an absent day is configurable. A half day can only be disputed as a
+ * full day — there is nothing else it could become — so that outcome is fixed
+ * in code and the dashboard shows it rather than offering it.
+ */
+export type CorrectionOutcome = 'Full day' | 'Half day' | 'Leave';
+
+export const CORRECTION_OUTCOMES: CorrectionOutcome[] = ['Full day', 'Half day', 'Leave'];
+
+/** The only thing a half day can be corrected to. */
+export const HALF_DAY_CORRECTION_OUTCOMES: CorrectionOutcome[] = ['Full day'];
+
 export interface ShiftCorrectionRules {
   /**
    * Which missing-punch outcomes let an employee raise a correction. Only a
@@ -44,6 +70,14 @@ export interface ShiftCorrectionRules {
   triggers: string[];
   /** Where punch data comes from in the first place. */
   punchFormat: PunchFormat;
+  /** Whether the day is built from one punch or two. */
+  punchMode: PunchMode;
+  /**
+   * What an employee may ask an absent day to become. HR picks any number of
+   * these; an empty list means an absent day cannot be corrected at all, which
+   * is also what turning its trigger off means.
+   */
+  absentOutcomes: CorrectionOutcome[];
   approver: string;
   managerWithoutEmployee: boolean;
   hrOverride: boolean;
@@ -51,13 +85,25 @@ export interface ShiftCorrectionRules {
   backdateDays: number;
 }
 
-/** How an employee's punches are captured. */
-export type PunchFormat = 'Biometric' | 'Geotag (powered by Sowaka)' | 'Present by default (Auto Punch)';
+/**
+ * How an employee's punches are captured.
+ *
+ * Set per shift template rather than once for the org, so a factory floor on a
+ * biometric device and a field team on geotagged punches can run side by side.
+ * Only Biometric is wired end to end today; in-app punch-in is accepted here so
+ * templates can be set up ahead of the screens being built.
+ */
+export type PunchFormat =
+  | 'Biometric'
+  | 'Geotag (powered by Sowaka)'
+  | 'Present by default (Auto Punch)'
+  | 'In-app punch in';
 
 export const PUNCH_FORMATS: PunchFormat[] = [
   'Biometric',
   'Geotag (powered by Sowaka)',
   'Present by default (Auto Punch)',
+  'In-app punch in',
 ];
 
 /**
@@ -162,6 +208,16 @@ export function processYearEnd(closing: number, rule: LeaveTypeRule) {
 export interface ShiftLeaveRules {
   approver: string;
   hrOverride: boolean;
+  /**
+   * Whether these people have a leave balance at all.
+   *
+   * Some teams are on unlimited leave: they apply, a manager approves, and
+   * nothing is counted down. Accrual, carry-forward and encashment describe a
+   * balance, so with this off none of them mean anything — the app stops asking
+   * for a leave type and shows what has been applied for instead of what is
+   * left, and the server stops checking a balance nobody keeps.
+   */
+  balanceTracked: boolean;
   /** Accrual, year-end handling and the application window, per leave type. */
   types: LeaveTypeRule[];
 }
@@ -188,6 +244,17 @@ export interface ShiftTemplate {
   active: boolean;
   /** The full policy this template applies to the people it covers. */
   policy: ShiftPolicyRules;
+  /**
+   * How the people on this template have their punches captured, and how many
+   * punches their day is built from.
+   *
+   * Absent means inherit the org's setting, which is what every template
+   * written before this existed does — so a factory floor on a biometric
+   * device and a field team on geotagged punches can run side by side without
+   * changing anyone who was never given a format of their own.
+   */
+  punchFormat?: PunchFormat;
+  punchMode?: PunchMode;
   /** Employees this template overrides the org policy for. */
   assignedUserIds: string[];
   createdAt: Date;
@@ -245,6 +312,8 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
     // unless HR turns it on.
     triggers: CORRECTION_TRIGGERS.filter((trigger) => trigger !== 'Both punches present'),
     punchFormat: 'Present by default (Auto Punch)',
+    punchMode: 'Both punches',
+    absentOutcomes: [...CORRECTION_OUTCOMES],
     approver: 'Reporting manager',
     managerWithoutEmployee: true, hrOverride: true, skipLevel: false,
     backdateDays: 7,
@@ -252,6 +321,7 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
   leave: {
     approver: 'Reporting manager',
     hrOverride: true,
+    balanceTracked: true,
     types: DEFAULT_LEAVE_TYPES.map((type) => ({ ...type })),
   },
 };

@@ -84,7 +84,7 @@ export function receivedEmail(a: {
       + `${a.managerName} has shared performance feedback with you for the ${a.cycle} cycle.\n\n`
       + `Submitted on: ${a.submitted}\n\n`
       + `Note: This feedback can be edited by ${a.managerName} until the feedback cycle closes on ${a.closes}.\n\n`
-      + `You can view your performance feedback in the Sowaka app.\n\n`
+      + `You can view your performance feedback in the app.\n\n`
       + cta('View Performance Feedback'),
   };
 }

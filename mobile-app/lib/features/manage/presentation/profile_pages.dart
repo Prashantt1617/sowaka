@@ -806,6 +806,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         present: todayRecord?.punchIn != null,
                         punchIn: todayRecord?.punchIn,
                         punchOut: todayRecord?.punchOut,
+                        onPunch: dashboard.shift.punchesFromApp
+                            ? (type) =>
+                                  _startProfilePunch(context, bloc, dashboard, type)
+                            : null,
+                        autoPresent: dashboard.shift.markedPresentAutomatically,
+                        singlePunch: dashboard.shift.singlePunchDay,
                       ),
                       _MyRequestsSection(data: dashboard),
                       const SizedBox(height: 18),
@@ -984,8 +990,8 @@ class _ProfileRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: const Color(0xFFDAFFD3),
-                    foreground: const Color(0xFF34C759),
+                    background: MColors.approveTint,
+                    foreground: MColors.approveInk,
                     onTap: onApprove!,
                     radius: 8,
                   ),
@@ -994,8 +1000,8 @@ class _ProfileRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: const Color(0xFFFDDBDB),
-                    foreground: const Color(0xFFFF383C),
+                    background: MColors.rejectTint,
+                    foreground: MColors.rejectInk,
                     onTap: onReject!,
                     radius: 8,
                   ),
@@ -1052,6 +1058,43 @@ class _ProfileStatusPill extends StatelessWidget {
   }
 }
 
+/// Opens the punch screen from a profile, and reloads the month after it.
+///
+/// The profile has no state of its own to hang this on, so it is a function
+/// rather than a method: the punch screen owns the sequence and the bloc owns
+/// what comes back.
+Future<void> _startProfilePunch(
+  BuildContext context,
+  ManagerBloc bloc,
+  ManagerDashboard dashboard,
+  String type,
+) async {
+  final now = DateTime.now();
+  final requestedToday = dashboard.regularizations.any(
+    (request) =>
+        request.workDate.year == now.year &&
+        request.workDate.month == now.month &&
+        request.workDate.day == now.day &&
+        request.decision == LeaveDecision.pending,
+  );
+  final outcome = await Navigator.of(context).push<PunchOutcome>(
+    MaterialPageRoute(
+      builder: (_) => PunchScreen(
+        api: bloc.api,
+        type: type,
+        onRecorded: (record) => bloc.add(PunchRecorded(record)),
+        alreadyRequestedToday: requestedToday,
+        geofenced: dashboard.shift.punchIsGeofenced,
+        // The profile card's slider has already been dragged.
+        startImmediately: true,
+      ),
+    ),
+  );
+  if (outcome?.punched == true || outcome?.requested == true) {
+    await bloc.add(LoadAttendanceMonth(DateTime.now()));
+  }
+}
+
 class _AttendanceCard extends StatelessWidget {
   const _AttendanceCard({
     required this.date,
@@ -1059,12 +1102,28 @@ class _AttendanceCard extends StatelessWidget {
     required this.punchIn,
     required this.punchOut,
     this.onViewCalendar,
+    this.onPunch,
+    this.autoPresent = false,
+    this.singlePunch = false,
   });
 
   final DateTime date;
   final bool present;
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// Starts a punch, for the people whose org punches from the app (nodes
+  /// 2303:53902 and 2303:54154). Null on a biometric or auto-punch policy, and
+  /// on the manager's read-only view of someone else's profile — nobody
+  /// punches on another person's behalf.
+  final ValueChanged<String>? onPunch;
+
+  /// This person is marked present without punching, so there are no times to
+  /// show. Empty punch columns would read as a day that went wrong.
+  final bool autoPresent;
+
+  /// One punch makes the day. There is no punch-out to take or to show.
+  final bool singlePunch;
 
   /// Only the manager's read-only view of a report links through to the full
   /// calendar; the signed-in user's own profile omits it.
@@ -1097,23 +1156,48 @@ class _AttendanceCard extends StatelessWidget {
               _AttendanceStatusDot(present: present),
             ],
           ),
+          if (onPunch case final punch?) ...[
+            const SizedBox(height: 16),
+            if (punchIn == null)
+              SlideToPunch(
+                label: 'Slide to Punch In',
+                onComplete: () => punch('in'),
+              )
+            else if (!singlePunch && punchOut == null)
+              SlideToPunch.filled(
+                label: 'Slide to Punch Out',
+                color: const Color(0xFF34A853),
+                onComplete: () => punch('out'),
+              ),
+          ],
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _PunchColumn(
-                  label: 'PUNCH-IN',
-                  value: _attendanceClock(punchIn),
-                ),
+          if (autoPresent)
+            const Text(
+              'Present by deafult',
+              style: TextStyle(
+                color: MColors.inkSoft,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
-              Expanded(
-                child: _PunchColumn(
-                  label: 'PUNCH-OUT',
-                  value: _attendanceClock(punchOut),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _PunchColumn(
+                    label: 'PUNCH-IN',
+                    value: _attendanceClock(punchIn),
+                  ),
                 ),
-              ),
-            ],
-          ),
+                Expanded(
+                  child: _PunchColumn(
+                    label: 'PUNCH-OUT',
+                    // Not required where HR's shift asks for one punch.
+                    value: singlePunch ? 'NR' : _attendanceClock(punchOut),
+                  ),
+                ),
+              ],
+            ),
           if (onViewCalendar case final open?) ...[
             const SizedBox(height: 16),
             InkWell(
@@ -1396,6 +1480,8 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   bool _failed = false;
   AttendanceDayView? _selectedDay;
   List<AttendanceRecord> _records = const [];
+  /// This member's own shift takes one punch, so their days show one.
+  bool _singlePunch = false;
   List<AttendanceRegularization> _regularizations = const [];
 
   @override
@@ -1421,6 +1507,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
       setState(() {
         _records = result.$1;
         _regularizations = result.$2;
+        _singlePunch = result.$3;
         _loading = false;
       });
     } catch (_) {
@@ -1582,7 +1669,10 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
                         ),
                         if (_detailDay(days) case final detail?) ...[
                           const SizedBox(height: 16),
-                          AttendanceDayDetail(day: detail),
+                          AttendanceDayDetail(
+                            day: detail,
+                            singlePunch: _singlePunch,
+                          ),
                         ],
                       ],
                     ],
@@ -2184,10 +2274,26 @@ class _EmployeeGrowthPage extends StatefulWidget {
 }
 
 class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
-  /// Index into the chronological history shared by the growth chart and the
-  /// month cards below it, so selecting one updates the other. Null means
-  /// "default to the newest period."
-  int? _selectedIndex;
+  /// The month on show, as 'YYYY-MM'. Any month from the first review to now
+  /// can be picked — including ones nobody reviewed, which is where "pending"
+  /// and "missed" come from. Null means the current month.
+  String? _selectedPeriod;
+
+  /// Every month from the first review (or this month, if there are none) up
+  /// to this one, oldest first.
+  List<String> _periodsFor(List<GrowthRecord> history, String current) {
+    final first = history.isEmpty ? current : history.first.period;
+    return _monthsBetween(first, current);
+  }
+
+  Future<void> _pickMonth(List<String> periods, String selected) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
+    );
+    if (picked != null && mounted) setState(() => _selectedPeriod = picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2220,10 +2326,24 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
 
   Widget _build(BuildContext context, List<GrowthRecord> history) {
     final period = _EmployeeGrowthPage._currentPeriod();
-    final currentDone = history.any((record) => record.period == period);
-    final effectiveIndex = history.isEmpty
-        ? 0
-        : (_selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
+    final periods = _periodsFor(history, period);
+    final selected = periods.contains(_selectedPeriod)
+        ? _selectedPeriod!
+        : period;
+    final selectedIndex = history.indexWhere((r) => r.period == selected);
+    final record = selectedIndex >= 0 ? history[selectedIndex] : null;
+    final isCurrent = selected == period;
+    final ownPage = widget.memberId == null;
+    // Only a report can be reviewed from here: not yourself, and not the
+    // person you report to — feedback only flows downward.
+    final canReview = widget.memberId != null && !_isOwnManager;
+
+    Future<void> openForm() => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            _FeedbackFormPage(bloc: widget.bloc, memberId: widget.memberId!),
+      ),
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -2263,119 +2383,84 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                // Picking a month here, tapping a point on the chart, and
-                // opening a month card below all drive the same selection —
-                // so the highlighted point always names the month on show.
-                if (history.length > 1) ...[
-                  _GrowthMonthPicker(
-                    history: history,
-                    selectedIndex: effectiveIndex,
-                    onSelect: (index) => setState(() => _selectedIndex = index),
-                  ),
+                // Node 2406:74936 — someone with nothing reviewed yet is told
+                // who reviews them and why, before anything else.
+                if (ownPage && history.isEmpty && widget.data.hasManager) ...[
+                  _GrowIntroBanner(approverName: widget.data.approverName),
                   const SizedBox(height: 12),
                 ],
-                // With nothing to chart, an empty score card and a separate
-                // due card just look broken — the empty state below carries
-                // the explanation and the Give Feedback button instead.
-                if (history.isNotEmpty) ...[
+                // The score card always shows the latest reviewed month, even
+                // while an unreviewed one is picked below — a pending month has
+                // no score of its own to show.
+                if (history.isEmpty)
+                  _EmptyScoreCard(current: period)
+                else
                   _GrowthScoreSection(
                     history: history,
-                    selectedIndex: _selectedIndex,
-                    onSelect: (index) => setState(() => _selectedIndex = index),
+                    selectedIndex: selectedIndex >= 0 ? selectedIndex : null,
+                    onSelect: (index) =>
+                        setState(() => _selectedPeriod = history[index].period),
+                    deltaMessageFor: (label, delta) => ownPage
+                        ? 'Your overall score for $label '
+                              '${delta >= 0 ? 'increased' : 'decreased'} by '
+                              '${delta.abs().toStringAsFixed(1)} points compared '
+                              'to last month.'
+                        : "${widget.name}'s overall score for $label "
+                              '${delta >= 0 ? 'increased' : 'decreased'} by '
+                              '${delta.abs().toStringAsFixed(1)} points compared '
+                              'to last month.',
                   ),
-                  const SizedBox(height: 16),
-                ],
-                // The viewer's own page, or their own manager's: the same
-                // cards, without the write actions — this cycle is either
-                // shared or still with the approver.
-                if (widget.memberId == null || _isOwnManager) ...[
-                  if (currentDone)
-                    _FeedbackSubmittedCard(
-                      period: period,
-                      onEdit: null,
-                      editableUntil: widget.data.cycleEndsOn,
-                    )
-                  else
-                    _FeedbackAwaitedCard(
-                      period: period,
-                      approverName: widget.data.approverName,
-                    ),
-                  const SizedBox(height: 4),
-                ],
-                // A review that has been sent stays open until the cycle
-                // closes — status stays Submitted, the manager can keep
-                // editing it until then.
-                if (history.isNotEmpty &&
-                    currentDone &&
-                    widget.memberId != null &&
-                    !_isOwnManager) ...[
-                  _FeedbackSubmittedCard(
-                    period: period,
-                    onEdit: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => _FeedbackFormPage(
-                          bloc: widget.bloc,
-                          memberId: widget.memberId!,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                // Never offered for the viewer's own manager: feedback only
-                // flows downward.
-                if (history.isNotEmpty &&
-                    !currentDone &&
-                    widget.memberId != null &&
-                    !_isOwnManager)
-                  _FeedbackDuePeriodCard(
-                    period: period,
-                    onGiveFeedback: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => _FeedbackFormPage(
-                          bloc: widget.bloc,
-                          memberId: widget.memberId!,
-                        ),
-                      ),
-                    ),
-                  ),
-                // One month at a time: the picker above and the chart point
-                // choose which, so stacking every month here only repeated
-                // what the selection already says.
-                if (history.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                const SizedBox(height: 12),
+                _MonthStatusRow(
+                  label: _shortPeriod(selected),
+                  score: record?.overallScore,
+                  pending: record == null && isCurrent,
+                  missed: record == null && !isCurrent,
+                  onTap: periods.length > 1
+                      ? () => _pickMonth(periods, selected)
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                // A reviewed month: the scores and the manager's notes.
+                if (record != null) ...[
+                  // A review sent this cycle can still be edited by the person
+                  // who wrote it, until the cycle closes.
+                  if (isCurrent && canReview) ...[
+                    _FeedbackSubmittedCard(period: period, onEdit: openForm),
+                    const SizedBox(height: 12),
+                  ],
                   _GrowthMonthCard(
-                    record: history[effectiveIndex],
+                    record: record,
                     expanded: true,
                     collapsible: false,
                     onToggle: () {},
                   ),
-                ],
-                // Shown whenever there is nothing to chart. This used to be
-                // gated on a review existing for the current period, which
-                // cannot be true when the history is empty — so someone with no
-                // feedback at all got a blank page.
-                if (history.isEmpty) ...[
-                  const SizedBox(height: 12),
-                  _NoGrowthYet(
-                    approverName: widget.data.approverName,
-                    currentDone: currentDone,
-                    period: period,
-                    onGiveFeedback:
-                        (!currentDone &&
-                            widget.memberId != null &&
-                            !_isOwnManager)
-                        ? () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _FeedbackFormPage(
-                                bloc: widget.bloc,
-                                memberId: widget.memberId!,
-                              ),
-                            ),
-                          )
-                        : null,
-                  ),
-                ],
+                ]
+                // This month, not reviewed yet.
+                else if (isCurrent) ...[
+                  if (canReview)
+                    _FeedbackDuePeriodCard(
+                      period: period,
+                      onGiveFeedback: openForm,
+                    )
+                  else if (ownPage) ...[
+                    // What the review will cover, in HR's words — so the month
+                    // reads as "here is what counts" rather than standing empty.
+                    const _EvaluatedNote(),
+                    for (final (index, param)
+                        in widget.data.myParameters.indexed) ...[
+                      const SizedBox(height: 12),
+                      _GuidanceCard(
+                        name: param.name,
+                        guidance: param.description ?? '',
+                        initiallyOpen: index == 0,
+                      ),
+                    ],
+                  ],
+                ]
+                // A past month nobody reviewed.
+                else
+                  const _FeedbackMissedCard(),
               ],
             ),
           ),
@@ -2392,99 +2477,105 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
   }
 }
 
-/// Chooses which reviewed month the chart and the cards below are showing.
-///
-/// The screen already synced the chart point with the open month card; this
-/// adds the third way in, for when the dots are too close together to hit.
-class _GrowthMonthPicker extends StatelessWidget {
-  const _GrowthMonthPicker({
-    required this.history,
-    required this.selectedIndex,
-    required this.onSelect,
-  });
+const _growMonthsShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
-  final List<GrowthRecord> history;
-  final int selectedIndex;
-  final ValueChanged<int> onSelect;
+const _growMonthsLong = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
-  static const _months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+/// '2026-06' as 'Jun 2026'.
+String _shortPeriod(String period) {
+  final parts = period.split('-');
+  final month = parts.length == 2 ? int.tryParse(parts[1]) : null;
+  if (month == null || month < 1 || month > 12) return period;
+  return '${_growMonthsShort[month - 1]} ${parts[0]}';
+}
 
-  /// '2026-09' as 'September 2026'.
-  static String label(String period) {
-    final parts = period.split('-');
-    if (parts.length != 2) return period;
+/// Every 'YYYY-MM' from [first] to [last] inclusive, oldest first. Empty or
+/// reversed input gives just [last].
+List<String> _monthsBetween(String first, String last) {
+  (int, int)? parse(String value) {
+    final parts = value.split('-');
+    if (parts.length != 2) return null;
+    final year = int.tryParse(parts[0]);
     final month = int.tryParse(parts[1]);
-    if (month == null || month < 1 || month > 12) return period;
-    return '${_months[month - 1]} ${parts[0]}';
+    if (year == null || month == null) return null;
+    return (year, month);
   }
+
+  final from = parse(first);
+  final to = parse(last);
+  if (from == null || to == null) return [last];
+  final out = <String>[];
+  var (year, month) = from;
+  while (year < to.$1 || (year == to.$1 && month <= to.$2)) {
+    out.add('$year-${month.toString().padLeft(2, '0')}');
+    month++;
+    if (month > 12) {
+      month = 1;
+      year++;
+    }
+  }
+  return out.isEmpty ? [last] : out;
+}
+
+/// Who reviews you, and why (node 2406:74936). Shown until the first review
+/// arrives, which is when someone is most likely to wonder what Grow is for.
+class _GrowIntroBanner extends StatelessWidget {
+  const _GrowIntroBanner({required this.approverName});
+
+  final String approverName;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      width: double.infinity,
+      padding: const EdgeInsets.all(13.035),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: MColors.line),
+        color: const Color(0xFFEEF0FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.035),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.calendar_month_rounded,
-            size: 18,
-            color: MColors.inkSoft,
-          ),
-          const SizedBox(width: 10),
+          Image.asset('assets/icons/grow/seedling.png', width: 41, height: 41),
+          const SizedBox(width: 12),
           Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                value: selectedIndex,
-                isExpanded: true,
-                borderRadius: BorderRadius.circular(14),
-                items: [
-                  for (final (index, record) in history.indexed)
-                    DropdownMenuItem(
-                      value: index,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              label(record.period),
-                              style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w700,
-                                color: MColors.ink,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            record.overallScore.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: MColors.inkSoft,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-                onChanged: (index) {
-                  if (index != null) onSelect(index);
-                },
+            child: Text(
+              'Your manager, $approverName, reviews your performance against '
+              "your KPIs every month, so you know what's going well and where "
+              'you can grow.',
+              style: const TextStyle(
+                color: Color(0xFF484848),
+                fontSize: 12,
+                height: 16.2 / 12,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -2494,136 +2585,638 @@ class _GrowthMonthPicker extends StatelessWidget {
   }
 }
 
-/// What the growth screen says before anyone has been reviewed.
-///
-/// The screen is a chart of scores over time, so with no reviews there is
-/// nothing to draw. Rather than leave it blank, say what the screen is for,
-/// what has to happen before it fills, and who it depends on.
-class _NoGrowthYet extends StatelessWidget {
-  const _NoGrowthYet({
-    required this.approverName,
-    required this.currentDone,
-    this.period,
-    this.onGiveFeedback,
-  });
+/// The score card before there is any score (node 2406:74872): the months
+/// ahead laid out, so it reads as "this fills in" rather than "this is broken".
+class _EmptyScoreCard extends StatelessWidget {
+  const _EmptyScoreCard({required this.current});
 
-  final String approverName;
-  final bool currentDone;
-
-  /// The cycle waiting on a review, shown when the viewer can write one.
-  final String? period;
-
-  /// Set for a manager who still owes this person a review this cycle; null
-  /// for anyone who can only watch the page fill in.
-  final VoidCallback? onGiveFeedback;
+  /// This month, 'YYYY-MM' — the axis runs from here across the next five.
+  final String current;
 
   @override
   Widget build(BuildContext context) {
-    final by = approverName.trim().isEmpty ? 'your manager' : approverName;
+    final start = current;
+    final parts = start.split('-');
+    final year = int.tryParse(parts.first) ?? DateTime.now().year;
+    final month = int.tryParse(parts.last) ?? DateTime.now().month;
+    final labels = [
+      for (var i = 0; i < 6; i++) _growMonthsShort[(month - 1 + i) % 12],
+    ];
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: MColors.line),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const IconBox(
-            icon: Icons.show_chart_rounded,
-            color: MColors.plum,
-            tint: MColors.plumTint,
-            size: 52,
-            iconSize: 25,
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No reviews yet',
-            style: TextStyle(
-              color: MColors.ink,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'OVERALL SCORE',
+                  style: TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 11.5,
+                    height: 17.25 / 11.5,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'You can track your monthly overall scores here.',
+                  style: TextStyle(
+                    color: Color(0xFF717171),
+                    fontSize: 12.5,
+                    height: 18.75 / 12.5,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            currentDone
-                ? 'A review for this cycle has been started but not sent. It will appear here once $by submits it.'
-                : 'Your growth chart fills in as reviews are sent. $by reviews you once a cycle, and each one adds a point here with your score on every parameter.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: MColors.inkSoft,
-              fontSize: 13.5,
-              height: 1.55,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+            child: SizedBox(
+              height: 110,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _EmptyChartPainter(
+                  labels: labels,
+                  // Semantic year is unused on the axis, but keeps the painter
+                  // from repainting identical months across a year change.
+                  year: year,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 14),
-          if (onGiveFeedback != null) ...[
-            Material(
-              color: const Color(0xFFE8862B),
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: onGiveFeedback,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-                  child: Text(
-                    'Give Feedback',
-                    style: TextStyle(
-                      color: Colors.white,
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyChartPainter extends CustomPainter {
+  _EmptyChartPainter({required this.labels, required this.year});
+
+  final List<String> labels;
+  final int year;
+
+  static const _brand = Color(0xFF0571A6);
+  static const _muted = Color(0xFF717171);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const inset = 20.0;
+    final baseline = size.height * 0.66;
+    final left = inset;
+    final right = size.width - inset;
+    final step = (right - left) / (labels.length - 1);
+
+    // A flat line where the scores will go.
+    canvas.drawLine(
+      Offset(left, baseline),
+      Offset(right, baseline),
+      Paint()
+        ..color = const Color(0xFFE5E7EB)
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // This month's axis label in brand blue, the rest muted.
+    for (var i = 0; i < labels.length; i++) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: labels[i],
+          style: TextStyle(
+            color: i == 0 ? _brand : _muted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(
+          left + step * i - painter.width / 2,
+          size.height - painter.height,
+        ),
+      );
+    }
+
+    // One point, this month, with a "-/5" marker above it: nothing scored yet.
+    final point = Offset(left, baseline);
+    canvas.drawLine(
+      Offset(point.dx, 22),
+      point,
+      Paint()
+        ..color = _brand.withValues(alpha: 0.35)
+        ..strokeWidth = 1,
+    );
+    canvas.drawCircle(point, 5, Paint()..color = _brand);
+    canvas.drawCircle(
+      point,
+      5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    final tag = TextPainter(
+      text: const TextSpan(
+        text: '-/5',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final pill = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(point.dx, 10),
+        width: tag.width + 14,
+        height: 18,
+      ),
+      const Radius.circular(9),
+    );
+    canvas.drawRRect(pill, Paint()..color = _brand);
+    tag.paint(canvas, Offset(point.dx - tag.width / 2, 10 - tag.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(_EmptyChartPainter old) =>
+      old.year != year || old.labels.join() != labels.join();
+}
+
+/// The month on show and how it stands (node 2406:74811). Tapping it opens the
+/// month picker; a past month nobody reviewed is greyed (node 2412:78385).
+class _MonthStatusRow extends StatelessWidget {
+  const _MonthStatusRow({
+    required this.label,
+    required this.score,
+    required this.pending,
+    required this.missed,
+    required this.onTap,
+  });
+
+  final String label;
+  final double? score;
+  final bool pending;
+  final bool missed;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: missed ? const Color(0xFFEBEBEB) : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: missed ? const Color(0xFFEBEBEB) : const Color(0xFFF0EEF8),
+              width: 1.114,
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF101828),
+                  fontSize: 13,
+                  height: 19.5 / 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              if (onTap != null)
+                Transform.rotate(
+                  angle: -math.pi / 2,
+                  child: SvgPicture.asset(
+                    'assets/icons/chevron_left_small.svg',
+                    width: 18,
+                    height: 18,
+                  ),
+                ),
+              const Spacer(),
+              if (pending)
+                const _MonthChip(
+                  text: 'Pending',
+                  background: Color(0xFFFEFDDA),
+                  foreground: Color(0xFFFFCC00),
+                )
+              else if (score != null)
+                _MonthChip(
+                  text: '${score!.toStringAsFixed(1)} / 5',
+                  background: const Color(0xFFE6F1F8),
+                  foreground: const Color(0xFF0571A6),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthChip extends StatelessWidget {
+  const _MonthChip({
+    required this.text,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String text;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 14,
+          height: 16.2 / 14,
+          letterSpacing: -0.16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Your performance is evaluated…" (node 2412:80161), above the parameters of
+/// a month not yet reviewed.
+class _EvaluatedNote extends StatelessWidget {
+  const _EvaluatedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF0EEF8), width: 1.114),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 5,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: const Text(
+        'Your performance is evaluated by your manager across below parameters.',
+        style: TextStyle(
+          color: Color(0xFF717171),
+          fontSize: 12.5,
+          height: 18.75 / 12.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// One KPI, with HR's guidance behind a toggle (node 2408:77421). The plus
+/// turns into a cross when open — the same icon, rotated, as the design does.
+class _GuidanceCard extends StatefulWidget {
+  const _GuidanceCard({
+    required this.name,
+    required this.guidance,
+    this.initiallyOpen = false,
+  });
+
+  final String name;
+
+  /// What HR wrote for this KPI in HRMS. A KPI with none has nothing to open.
+  final String guidance;
+  final bool initiallyOpen;
+
+  @override
+  State<_GuidanceCard> createState() => _GuidanceCardState();
+}
+
+class _GuidanceCardState extends State<_GuidanceCard> {
+  late bool _open = widget.initiallyOpen && widget.guidance.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasGuidance = widget.guidance.trim().isNotEmpty;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: hasGuidance ? () => setState(() => _open = !_open) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.name,
+                        style: const TextStyle(
+                          color: Color(0xFF222222),
+                          fontSize: 15,
+                          height: 22.5 / 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (hasGuidance)
+                      AnimatedRotation(
+                        turns: _open ? 0.125 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: SvgPicture.asset(
+                          'assets/icons/grow/plus.svg',
+                          width: 20,
+                          height: 20,
+                          colorFilter: const ColorFilter.mode(
+                            Color(0xFF222222),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (_open) ...[
+                  const SizedBox(height: 8),
+                  const Divider(
+                    height: 1.114,
+                    thickness: 1.114,
+                    color: Color(0xFFF3F4F6),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.guidance.trim(),
+                    style: const TextStyle(
+                      color: Color(0xFF484848),
                       fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
+                      height: 21.6 / 13.5,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A past month nobody reviewed (node 2412:78838).
+class _FeedbackMissedCard extends StatelessWidget {
+  const _FeedbackMissedCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDDDDDD), width: 1.114),
+      ),
+      child: const Text(
+        'Feedback missed',
+        style: TextStyle(
+          color: Color(0xFF717171),
+          fontSize: 12.5,
+          height: 18.75 / 12.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Select Month" (node 2408:76097): a wheel of the months that can be shown,
+/// with the one on show pre-selected.
+class _MonthPickerSheet extends StatefulWidget {
+  const _MonthPickerSheet({required this.periods, required this.selected});
+
+  final List<String> periods;
+  final String selected;
+
+  @override
+  State<_MonthPickerSheet> createState() => _MonthPickerSheetState();
+}
+
+class _MonthPickerSheetState extends State<_MonthPickerSheet> {
+  late int _index = math.max(0, widget.periods.indexOf(widget.selected));
+  late final _controller = FixedExtentScrollController(initialItem: _index);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// Month names alone read cleanly, but only while every option is in the
+  /// same year — across a year boundary two Januaries would be ambiguous.
+  String _label(String period) {
+    final years = widget.periods.map((p) => p.split('-').first).toSet();
+    final parts = period.split('-');
+    final month = int.tryParse(parts.last) ?? 1;
+    final name = _growMonthsLong[(month - 1).clamp(0, 11)];
+    return years.length > 1 ? '$name ${parts.first}' : name;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const itemExtent = 52.0;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x1F000000),
+            blurRadius: 16,
+            offset: Offset(0, -4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.only(bottom: 32),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(100),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Select Month',
+              style: TextStyle(
+                color: Color(0xFF222222),
+                fontSize: 16,
+                height: 22 / 16,
+                letterSpacing: 0.2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: SizedBox(
+                height: itemExtent * 5,
+                child: Stack(
+                  children: [
+                    ListWheelScrollView.useDelegate(
+                      controller: _controller,
+                      itemExtent: itemExtent,
+                      physics: const FixedExtentScrollPhysics(),
+                      diameterRatio: 100,
+                      onSelectedItemChanged: (value) =>
+                          setState(() => _index = value),
+                      childDelegate: ListWheelChildBuilderDelegate(
+                        childCount: widget.periods.length,
+                        builder: (context, i) {
+                          final distance = (i - _index).abs();
+                          return Center(
+                            child: Opacity(
+                              opacity: distance == 0
+                                  ? 1
+                                  : distance == 1
+                                  ? 0.45
+                                  : 0.2,
+                              child: Text(
+                                _label(widget.periods[i]),
+                                style: TextStyle(
+                                  color: distance == 0
+                                      ? const Color(0xFF222222)
+                                      : const Color(0xFF717171),
+                                  fontSize: distance == 0
+                                      ? 20
+                                      : distance == 1
+                                      ? 16
+                                      : 14,
+                                  letterSpacing: distance == 0 ? 0.2 : 0.4,
+                                  fontWeight: distance == 0
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    // The hairlines either side of the chosen row.
+                    IgnorePointer(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: itemExtent * 2),
+                          Container(height: 1, color: const Color(0xFFDDDDDD)),
+                          const SizedBox(height: itemExtent - 2),
+                          Container(height: 1, color: const Color(0xFFDDDDDD)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0571A6),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () =>
+                      Navigator.of(context).pop(widget.periods[_index]),
+                  child: const Text(
+                    'Select',
+                    style: TextStyle(
+                      fontSize: 16,
+                      height: 22 / 16,
+                      letterSpacing: 0.2,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
             ),
-            if (period != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Open for ${_periodTitle(period!)}',
-                style: const TextStyle(color: MColors.inkSoft, fontSize: 12.5),
-              ),
-            ],
-          ] else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: MColors.plumTint,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Nothing to do here yet — this page fills itself in.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: MColors.plum,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Overall-score card + trend chart, kept together since tapping a point on
-/// the chart updates the score card to that month instead of always showing
-/// the latest period.
-/// The overall-score card and growth chart. Selection is owned by the parent
-/// (`_EmployeeGrowthPageState`) so the chart's highlighted point and the
-/// month-card list below it stay in sync in both directions.
 class _GrowthScoreSection extends StatelessWidget {
   const _GrowthScoreSection({
     required this.history,
     required this.selectedIndex,
     required this.onSelect,
+    this.deltaMessageFor,
   });
 
   final List<GrowthRecord> history;
   final int? selectedIndex;
   final ValueChanged<int> onSelect;
+
+  /// The sentence shown when the points chip is tapped, given the month's
+  /// label and the change. Null leaves the chip inert.
+  final String Function(String label, double delta)? deltaMessageFor;
 
   @override
   Widget build(BuildContext context) {
@@ -2655,26 +3248,33 @@ class _GrowthScoreSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Same period label as the Grow progress card, so it's clear which
-          // month the score and the highlighted chart point belong to.
-          if (selected != null) ...[
-            Text(
-              _periodTitle(selected.period).toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFF0571A6),
-                fontSize: 11.5,
-                height: 17.25 / 11.5,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+          // The month is named once on this page, by the row directly below
+          // this card — which is also what changes it. Printing it here too
+          // said the same month twice, one line apart.
           _OverallScoreCard(
             overall: selected?.overallScore ?? 0,
             previousScore: previous,
             showAveragesNote: true,
             boxed: false,
+            onDeltaTap: (deltaMessageFor == null || selected == null)
+                ? null
+                : (delta) {
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        SnackBar(
+                          behavior: SnackBarBehavior.floating,
+                          content: Text(
+                            deltaMessageFor!(
+                              _periodTitle(selected.period),
+                              delta,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                  },
           ),
           if (history.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -2759,21 +3359,13 @@ class _GrowthPageTopBar extends StatelessWidget {
 /// until the cycle closes, and the status stays Submitted throughout — a later
 /// edit replaces the review rather than starting a new one.
 class _FeedbackSubmittedCard extends StatelessWidget {
-  const _FeedbackSubmittedCard({
-    required this.period,
-    required this.onEdit,
-    this.editableUntil,
-  });
+  const _FeedbackSubmittedCard({required this.period, required this.onEdit});
 
   final String period;
 
-  /// Null on a page the viewer cannot write to — their own, or their own
-  /// manager's — where the card only reports the status.
-  final VoidCallback? onEdit;
-
-  /// When the cycle closes. A shared review stays open to edits until then,
-  /// which the employee is told rather than left to discover a changed score.
-  final DateTime? editableUntil;
+  /// Reopens the review. Only the person who wrote it sees this card: the
+  /// employee's own page shows the month's scores instead.
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -2820,42 +3412,11 @@ class _FeedbackSubmittedCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            onEdit == null
-                ? 'This cycle\'s review has been shared with you.'
-                : 'You can keep editing this review until the cycle ends.',
-            style: const TextStyle(color: MColors.inkSoft, fontSize: 13),
+          const Text(
+            'You can keep editing this review until the cycle ends.',
+            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
           ),
-          if (onEdit == null) ...[
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: Color(0xFF6B7280),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    editableUntil == null
-                        ? 'Your manager can still change it before the cycle '
-                              'closes, so the scores below may yet move.'
-                        : 'Your manager can still change it until '
-                              '${_joiningDateLabel(editableUntil!)}, so the '
-                              'scores below may yet move.',
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontSize: 12,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (onEdit != null) ...[
+          ...[
             const SizedBox(height: 14),
             Align(
               alignment: Alignment.centerLeft,
@@ -2893,76 +3454,6 @@ class _FeedbackSubmittedCard extends StatelessWidget {
   }
 }
 
-/// The same card for a cycle whose review has not arrived yet, on a page the
-/// viewer cannot write to — so a manager's own Grow page reads the same way a
-/// team member's does, instead of showing nothing at all.
-class _FeedbackAwaitedCard extends StatelessWidget {
-  const _FeedbackAwaitedCard({
-    required this.period,
-    required this.approverName,
-  });
-
-  final String period;
-  final String approverName;
-
-  @override
-  Widget build(BuildContext context) {
-    final by = approverName.trim().isEmpty ? 'Your manager' : approverName;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF5C86B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _periodTitle(period),
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFBEFD2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Awaited',
-                  style: TextStyle(
-                    color: Color(0xFF8A6218),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$by has not shared this cycle\'s review yet. It will appear here '
-            'as soon as it is sent.',
-            style: const TextStyle(color: MColors.inkSoft, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The amber "feedback is due" card for the period that has no review yet.
 class _FeedbackDuePeriodCard extends StatelessWidget {
   const _FeedbackDuePeriodCard({
     required this.period,

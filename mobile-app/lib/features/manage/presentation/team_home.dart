@@ -197,6 +197,64 @@ class _MyTeamView extends StatefulWidget {
 class _MyTeamViewState extends State<_MyTeamView> {
   String _query = '';
 
+  /// Which team is open, by title. One at a time: closed, each team is a row
+  /// of faces, which is enough to see who is around.
+  String? _openTeam;
+
+  void _toggleTeam(String title) =>
+      setState(() => _openTeam = _openTeam == title ? null : title);
+
+  /// Everyone in your core team but you — empty for someone with no manager
+  /// and no peers, who therefore has no core team to show.
+  List<TeamMember> _coreOthers(List<TeamMember> members) =>
+      _coreTeam(members).where((member) => !member.isSelf).toList();
+
+  /// "My Team" is just who you report to, not your peers too: your manager
+  /// and you (node 2488:91055).
+  List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
+    if (members.where((member) => member.isManager).firstOrNull case final m?)
+      m,
+    if (members.where((member) => member.isSelf).firstOrNull case final me?)
+      me,
+  ];
+
+  /// A team's name above its people.
+  Widget _teamHeading(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(
+      title,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF222222),
+        fontSize: 17,
+        height: 25.5 / 17,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  /// The team you belong to: your manager, you, and whoever else reports to
+  /// them from your own department.
+  List<TeamMember> _coreTeam(List<TeamMember> members) =>
+      members.where((member) => !member.reportsToViewer).toList();
+
+  /// The teams you lead, split by the department each report works in — a
+  /// designer and a backend engineer reporting to the same person are two
+  /// teams, not one list.
+  List<_TeamDepartmentGroup> _ledTeams(List<TeamMember> members) {
+    final led = members.where((member) => member.reportsToViewer).toList();
+    if (led.isEmpty) return const [];
+    final grouped = <String, List<TeamMember>>{};
+    for (final member in led) {
+      grouped.putIfAbsent(member.team, () => []).add(member);
+    }
+    final names = grouped.keys.toList()..sort();
+    return [
+      for (final name in names)
+        _TeamDepartmentGroup(title: name, members: grouped[name]!),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -219,18 +277,8 @@ class _MyTeamViewState extends State<_MyTeamView> {
           hint: 'Search employee',
         ),
         const SizedBox(height: 16),
-        // The viewer's own card, matching the teammate cards in this section
-        // and opening their personal profile.
-        if (_query.isEmpty) ...[
-          _MyTeamCard(
-            name: data.managerName,
-            team: data.managerTeam,
-            initial: data.managerInitial,
-            photoUrl: data.managerPhotoUrl,
-            onTap: widget.onOpenProfile,
-          ),
-          const SizedBox(height: 12),
-        ],
+        // The viewer is part of the team the server sends, so there is no
+        // separate card for them any more — their row simply says "(You)".
         if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
@@ -247,20 +295,110 @@ class _MyTeamViewState extends State<_MyTeamView> {
               ),
             ),
           )
-        else
-          ...filtered.map(
-            (member) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _TeamMemberRow(
-                member: member,
+        else ...[
+          // Level 1: nobody reports to you, so your team is one flat list —
+          // your manager, you, your peers (node 2488:90748).
+          if (_ledTeams(filtered).isEmpty) ...[
+            _teamHeading('My Team'),
+            for (final member in _coreTeam(filtered))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _TeamMemberRow(
+                  member: member,
+                  canManage: widget.canManage,
+                  data: data,
+                  bloc: widget.bloc,
+                  onNotifications: widget.onNotifications,
+                  onOpenComposer: widget.onOpenComposer,
+                ),
+              ),
+          ] else ...[
+            // "My Team" is just who you report to: your manager and you
+            // (node 2488:91055) — a small card of its own, separate from the
+            // people you lead. Someone with no manager has no such card; their
+            // own card heads the page instead (node 2503:92534).
+            if (_coreOthers(filtered).isEmpty) ...[
+              if (filtered.where((member) => member.isSelf).firstOrNull
+                  case final me?) ...[
+                _TeamMemberRow(
+                  member: me,
+                  canManage: widget.canManage,
+                  data: data,
+                  bloc: widget.bloc,
+                  onNotifications: widget.onNotifications,
+                  onOpenComposer: widget.onOpenComposer,
+                ),
+                const SizedBox(height: 16),
+              ],
+            ] else ...[
+              if (_openTeam == 'My Team' || _query.isNotEmpty)
+                _OpenTeamBox(
+                  title: 'My Team',
+                  members: _myTeamOnly(filtered),
+                  onTap: () => _toggleTeam('My Team'),
+                  canManage: widget.canManage,
+                  data: data,
+                  bloc: widget.bloc,
+                  onNotifications: widget.onNotifications,
+                  onOpenComposer: widget.onOpenComposer,
+                )
+              else
+                _TeamFacesCard(
+                  title: 'My Team',
+                  members: _myTeamOnly(filtered),
+                  onTap: () => _toggleTeam('My Team'),
+                ),
+              const SizedBox(height: 16),
+            ],
+            if (_ledTeams(filtered).length > 1)
+              // Reports across more than one department are grouped exactly
+              // as a bigger manager's teams are (node 2488:91180): each
+              // department a card of faces, on the shared dashed trunk.
+              _TeamStack(
+                teams: [
+                  for (final group in _ledTeams(filtered))
+                    _TeamDepartmentGroup(
+                      title: '${group.title} Team',
+                      members: group.members,
+                    ),
+                ],
+                openTitle: _query.isEmpty ? _openTeam : null,
+                onToggle: _toggleTeam,
                 canManage: widget.canManage,
                 data: data,
                 bloc: widget.bloc,
                 onNotifications: widget.onNotifications,
                 onOpenComposer: widget.onOpenComposer,
+              )
+            else
+              // One department: a plain "Direct Reports" list — your own
+              // card off the tree, your reports on it, always shown in full
+              // rather than behind a card to open (node 2488:91055).
+              ..._ledTeams(filtered).expand(
+                (group) => [
+                  _teamHeading('Direct Reports'),
+                  if (filtered.where((member) => member.isSelf).firstOrNull
+                      case final me?)
+                    _TeamMemberRow(
+                      member: me,
+                      canManage: widget.canManage,
+                      data: data,
+                      bloc: widget.bloc,
+                      onNotifications: widget.onNotifications,
+                      onOpenComposer: widget.onOpenComposer,
+                    ),
+                  _DirectReportsTree(
+                    members: group.members,
+                    canManage: widget.canManage,
+                    data: data,
+                    bloc: widget.bloc,
+                    onNotifications: widget.onNotifications,
+                    onOpenComposer: widget.onOpenComposer,
+                  ),
+                ],
               ),
-            ),
-          ),
+          ],
+        ],
       ],
     );
   }
@@ -294,7 +432,7 @@ class _TeamMemberRow extends StatelessWidget {
     final birthdaySoon = _isBirthdaySoon(member.birthday);
     final present = member.todayStatus == TeamPresenceStatus.present;
 
-    return PressableCard(
+    return _TeamCardShell(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => _TeamMemberProfilePage(
@@ -307,7 +445,6 @@ class _TeamMemberRow extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.all(17),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -332,7 +469,7 @@ class _TeamMemberRow extends StatelessWidget {
                           color: present
                               ? const Color(0xFF00C950)
                               : const Color(0xFFDDDDDD),
-                          border: Border.all(color: Colors.white, width: 1.5),
+                          border: Border.all(color: Colors.white, width: 1.114),
                         ),
                       ),
                     ),
@@ -344,26 +481,42 @@ class _TeamMemberRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      member.isManager
-                          ? '${member.name} (Manager)'
-                          : member.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF222222),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            member.isSelf
+                                ? '${member.name} (You)'
+                                : member.isManager
+                                ? '${member.name} (Manager)'
+                                : member.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Sora',
+                              color: Color(0xFF222222),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              height: 25.5 / 17,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      member.team,
+                      // The designation is what the design names here; the
+                      // department is the heading the row already sits under.
+                      member.designation.isNotEmpty
+                          ? member.designation
+                          : member.team,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
+                        fontFamily: 'Sora',
                         color: Color(0xFF717171),
                         fontSize: 14,
+                        height: 20 / 14,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -519,9 +672,11 @@ class _RequestCountPill extends StatelessWidget {
       child: Text(
         '$count request${count == 1 ? '' : 's'}',
         style: const TextStyle(
+          fontFamily: 'Sora',
           color: Color(0xFFFF5A5F),
           fontSize: 12,
-          fontWeight: FontWeight.w600,
+          height: 16 / 12,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -737,7 +892,8 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ('Type:', 'Correction'),
               ('Date:', _shortAttendanceDate(request.workDate)),
               ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
+              // The reason belongs on the detail page, not on the card: the
+              // list is for deciding at a glance what each request is for.
             ],
             decision: request.decision,
             responseNote: request.managerNote,
@@ -1092,8 +1248,8 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: const Color(0xFFDAFFD3),
-                    foreground: const Color(0xFF34C759),
+                    background: MColors.approveTint,
+                    foreground: MColors.approveInk,
                     onTap: onApprove!,
                   ),
                 ),
@@ -1101,8 +1257,8 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: const Color(0xFFFDDBDB),
-                    foreground: const Color(0xFFFF383C),
+                    background: MColors.rejectTint,
+                    foreground: MColors.rejectInk,
                     onTap: onReject!,
                   ),
                 ),
@@ -1360,3 +1516,472 @@ Future<String?> _showDeclineReasonSheet(BuildContext context) {
     ),
   );
 }
+
+/// One department's worth of the team list, or the whole list when there is
+/// only one department to show.
+class _TeamDepartmentGroup {
+  const _TeamDepartmentGroup({required this.title, required this.members});
+
+  final String? title;
+  final List<TeamMember> members;
+}
+
+/// One team: a card of faces when closed, its name over its people when open.
+///
+/// Closed (node 2488:91180) it answers "who is in it"; open (node 2503:92534)
+/// the card gives way to the team's name and the people hang off the dashed
+/// tree beneath it, so an open team reads as a branch rather than a box.
+/// One department's direct reports, always fully shown on the dashed trunk —
+/// no card to open, since there is nothing to collapse into (node 2488:91055).
+/// Used only when every one of your reports shares a single department; more
+/// than one and they are grouped into team cards instead (_TeamStack).
+class _DirectReportsTree extends StatelessWidget {
+  const _DirectReportsTree({
+    required this.members,
+    required this.canManage,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+  });
+
+  final List<TeamMember> members;
+  final bool canManage;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  static const _indent = 28.0;
+  static const _gap = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: _gap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (index, member) in members.indexed)
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CustomPaint(
+                    painter: _BranchLinePainter(
+                      first: index == 0,
+                      last: index == members.length - 1,
+                      gap: index == members.length - 1 ? 0 : _gap,
+                      leadIn: _gap,
+                    ),
+                    child: const SizedBox(width: _indent),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == members.length - 1 ? 0 : _gap,
+                      ),
+                      child: _TeamMemberRow(
+                        member: member,
+                        canManage: canManage,
+                        data: data,
+                        bloc: bloc,
+                        onNotifications: onNotifications,
+                        onOpenComposer: onOpenComposer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamFacesCard extends StatelessWidget {
+  const _TeamFacesCard({
+    required this.title,
+    required this.members,
+    required this.onTap,
+  });
+
+  final String title;
+  final List<TeamMember> members;
+  final VoidCallback onTap;
+
+  /// Five faces, then a count for the rest (node 2503:92493).
+  static const _shown = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final overflowing = members.length > _shown;
+    final faces = overflowing ? members.take(_shown).toList() : members;
+    final rest = overflowing ? members.length - faces.length : 0;
+    // Faces overlap only to make room for the +N bubble; a team that fits
+    // outright is shown in full with an ordinary gap between faces.
+    final overlap = overflowing ? -10.0 : 4.0;
+    return _TeamCardShell(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF222222),
+                    fontSize: 17,
+                    height: 25.5 / 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              SvgPicture.asset(
+                'assets/icons/team/plus.svg',
+                width: 20,
+                height: 20,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                for (final member in faces)
+                  Padding(
+                    padding: EdgeInsets.only(right: overlap),
+                    child: SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.fromBorderSide(
+                                BorderSide(color: Colors.white, width: 1.4),
+                              ),
+                            ),
+                            child: _TeamMemberPhoto(member: member, size: 56),
+                          ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color:
+                                    member.todayStatus ==
+                                        TeamPresenceStatus.present
+                                    ? const Color(0xFF00C950)
+                                    : const Color(0xFFDDDDDD),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.114,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (rest > 0)
+                  Container(
+                    width: 56,
+                    height: 56,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0571A6),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.4),
+                    ),
+                    child: Text(
+                      '+$rest',
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Colors.white,
+                        fontSize: 16,
+                        height: 16.2 / 16,
+                        letterSpacing: -0.16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// The trunk and one card's stub, dashed as the design draws them: #9197A2 at
+/// 2px with a 4/4 dash (the line SVGs behind nodes 2503:92892 and 2503:92402).
+class _BranchLinePainter extends CustomPainter {
+  const _BranchLinePainter({
+    required this.first,
+    required this.last,
+    required this.gap,
+    this.leadIn = 12,
+  });
+
+  /// Whether this is the top card, where the trunk begins above the stub.
+  final bool first;
+
+  /// How far the trunk reaches up into the gap above the first row, to meet
+  /// whatever sits above this tree — different callers leave a different gap.
+  final double leadIn;
+
+  /// The bottom card, where the trunk ends at the stub rather than carrying on.
+  final bool last;
+
+  /// The space below this card, which the trunk has to cross to reach the next.
+  final double gap;
+
+  static const _x = 13.0;
+  static const _stub = 15.0;
+  static const _dash = 4.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF9197A2)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.butt;
+    final cardHeight = size.height - gap;
+    final middle = cardHeight / 2;
+    _dashed(canvas, paint, Offset(_x, first ? -leadIn : 0),
+        Offset(_x, last ? middle : size.height));
+    _dashed(canvas, paint, Offset(_x, middle), Offset(_x + _stub, middle));
+  }
+
+  /// One line, drawn as 4px marks with 4px between them.
+  void _dashed(Canvas canvas, Paint paint, Offset from, Offset to) {
+    final total = (to - from).distance;
+    if (total <= 0) return;
+    final step = (to - from) / total;
+    for (var travelled = 0.0; travelled < total; travelled += _dash * 2) {
+      final end = (travelled + _dash).clamp(0.0, total);
+      canvas.drawLine(from + step * travelled, from + step * end, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BranchLinePainter old) =>
+      old.first != first || old.last != last || old.gap != gap;
+}
+
+/// The card every team row sits in (node 2488:89724): a hairline at 1.114, a
+/// 16 radius, 17.114 of padding and the design's two soft shadows.
+class _TeamCardShell extends StatelessWidget {
+  const _TeamCardShell({required this.child, this.onTap});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = Container(
+      padding: const EdgeInsets.all(17.114),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .1),
+            blurRadius: 1.5,
+            offset: const Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .1),
+            blurRadius: 1,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: child,
+    );
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: card,
+      ),
+    );
+  }
+}
+
+/// The teams below your own card.
+///
+/// Closed they are a plain stack of cards (node 2488:91180). Once one is open
+/// the whole stack moves right onto a dashed trunk — the open team's people
+/// and the teams still closed alike, each met by a stub (node 2503:92534).
+class _TeamStack extends StatelessWidget {
+  const _TeamStack({
+    required this.teams,
+    required this.openTitle,
+    required this.onToggle,
+    required this.canManage,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+  });
+
+  final List<_TeamDepartmentGroup> teams;
+  final String? openTitle;
+  final void Function(String title) onToggle;
+  final bool canManage;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  /// The gutter the trunk lives in: 13px to the line, 15px more to its stub,
+  /// landing the cards' left edge at 28px (node 2488:91198 — pl-[28px],
+  /// stub left-[13px] w-[15px]).
+  static const _indent = 28.0;
+  static const _gap = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    // One slot per team: a closed faces-card, or — for the team currently
+    // open — the self-contained box (node 2503:92716). Both hang off the same
+    // dashed trunk whether they are open or closed; only what fills the slot
+    // changes.
+    final rows = [
+      for (final team in teams)
+        team.title == openTitle
+            ? _OpenTeamBox(
+                title: team.title!,
+                members: team.members,
+                onTap: () => onToggle(team.title!),
+                canManage: canManage,
+                data: data,
+                bloc: bloc,
+                onNotifications: onNotifications,
+                onOpenComposer: onOpenComposer,
+              )
+            : _TeamFacesCard(
+                title: team.title!,
+                members: team.members,
+                onTap: () => onToggle(team.title!),
+              ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, row) in rows.indexed)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CustomPaint(
+                  painter: _BranchLinePainter(
+                    first: index == 0,
+                    last: index == rows.length - 1,
+                    gap: index == rows.length - 1 ? 0 : _gap,
+                    leadIn: _gap,
+                  ),
+                  child: const SizedBox(width: _indent),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == rows.length - 1 ? 0 : _gap,
+                    ),
+                    child: row,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _OpenTeamBox extends StatelessWidget {
+  const _OpenTeamBox({
+    required this.title,
+    required this.members,
+    required this.onTap,
+    required this.canManage,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+  });
+
+  final String title;
+  final List<TeamMember> members;
+  final VoidCallback onTap;
+  final bool canManage;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDDDDD), width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF222222),
+                  fontSize: 17,
+                  height: 25.5 / 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final (index, member) in members.indexed) ...[
+                _TeamMemberRow(
+                  member: member,
+                  canManage: canManage,
+                  data: data,
+                  bloc: bloc,
+                  onNotifications: onNotifications,
+                  onOpenComposer: onOpenComposer,
+                ),
+                if (index != members.length - 1) const SizedBox(height: 12),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

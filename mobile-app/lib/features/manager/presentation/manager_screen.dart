@@ -22,9 +22,10 @@ import '../../connect/presentation/connect_feed_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../games/presentation/web_game_screen.dart';
+import '../../attendance/presentation/punch_screen.dart';
+import '../../attendance/presentation/slide_to_punch.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../requests/presentation/request_summary.dart';
-import '../../../services/linkified_text.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
 import '../data/manager_models.dart';
@@ -58,6 +59,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
+  /// Whether the punch screen has already been offered this session, so
+  /// closing it does not bring it straight back on the next rebuild.
+  bool _punchPrompted = false;
   late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
 
@@ -98,9 +102,75 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (mounted) setState(() {});
   }
 
-  ManagerTab get _defaultTab => widget.session.user.role == 'manager'
-      ? ManagerTab.manage
-      : ManagerTab.grow;
+  /// Whether to open the day on the punch screen.
+  ///
+  /// Only for people who punch from the app, only before the day's first
+  /// punch, and never on a day nobody was due to work — opening a week-off on
+  /// "Ready to start your day?" is the app misreading its own policy.
+  bool _shouldOfferPunch(ManagerDashboard dashboard) {
+    if (!dashboard.shift.punchesFromApp) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (dashboard.shift.isWeekOff(today)) return false;
+    if (dashboard.holidays.any(
+      (holiday) =>
+          holiday.date.year == today.year &&
+          holiday.date.month == today.month &&
+          holiday.date.day == today.day,
+    )) {
+      return false;
+    }
+    final record = dashboard.attendance
+        .where(
+          (entry) =>
+              entry.workDate.year == today.year &&
+              entry.workDate.month == today.month &&
+              entry.workDate.day == today.day,
+        )
+        .firstOrNull;
+    return record?.punchIn == null;
+  }
+
+  /// Whether a correction for today is already with the manager.
+  bool _requestedToday(ManagerDashboard dashboard) {
+    final now = DateTime.now();
+    return dashboard.regularizations.any(
+      (request) =>
+          request.workDate.year == now.year &&
+          request.workDate.month == now.month &&
+          request.workDate.day == now.day &&
+          request.decision == LeaveDecision.pending,
+    );
+  }
+
+  Future<void> _offerPunch(ManagerDashboard dashboard) async {
+    if (!mounted) return;
+    final outcome = await Navigator.of(context).push<PunchOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PunchScreen(
+          api: _bloc.api,
+          type: 'in',
+          onRecorded: (record) => _bloc.add(PunchRecorded(record)),
+          // A request already in for today: they can still come in and punch,
+          // but they are not asked to raise a second one for the same day.
+          alreadyRequestedToday: _requestedToday(dashboard),
+          geofenced: dashboard.shift.punchIsGeofenced,
+          // Not coming in at all is the other answer to this screen.
+          onRequestWfh: () {
+            _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+            _quickActionsController.openLeave();
+          },
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+    if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
+      await _bloc.add(LoadAttendanceMonth(DateTime.now()));
+    }
+  }
+
+  /// Where the app opens, and where back returns to.
+  ManagerTab get _defaultTab => ManagerTab.connect;
 
   bool _hasBackTarget(ManagerState state) {
     return _profileOpen ||
@@ -263,6 +333,18 @@ class _ManagerScreenState extends State<ManagerScreen> {
             body: Center(
               child: Text(state.error ?? 'Could not load manager view'),
             ),
+          );
+        }
+
+        // Someone whose day starts with a punch from the app opens onto that
+        // screen (node 2412:86630) rather than having to find it: the punch is
+        // the first thing they came here to do, and a day that never got one
+        // is a day they have to correct later.
+        final dashboard = state.dashboard!;
+        if (!_punchPrompted && _shouldOfferPunch(dashboard)) {
+          _punchPrompted = true;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _offerPunch(dashboard),
           );
         }
 

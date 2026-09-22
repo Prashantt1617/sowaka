@@ -32,7 +32,9 @@ class ManagerState {
   factory ManagerState.initial({required bool canManage}) {
     return ManagerState(
       status: ManagerLoadStatus.initial,
-      tab: canManage ? ManagerTab.manage : ManagerTab.grow,
+      // Everyone lands on Connect: the feed is what the app is opened for, and
+      // a manager's own tabs are one tap away.
+      tab: ManagerTab.connect,
       view: ManagerView.home,
       canManage: canManage,
     );
@@ -299,6 +301,16 @@ class LoadAttendanceMonth extends ManagerEvent {
   final DateTime month;
 }
 
+/// A punch the punch screen already sent, folded into the dashboard.
+///
+/// Without this the record exists on the server and nowhere on the phone, so
+/// the home card shows no time and offers the slider again.
+class PunchRecorded extends ManagerEvent {
+  const PunchRecorded(this.record);
+
+  final AttendanceRecord record;
+}
+
 class RecordPunch extends ManagerEvent {
   const RecordPunch(this.type);
   final String type;
@@ -338,6 +350,12 @@ class ManagerBloc {
       _state = ManagerState.initial(canManage: session.user.role == 'manager');
 
   final ManagerApiService _service;
+
+  /// The punch screen talks to the server directly — it has its own sequence of
+  /// reading the device, being refused and offering a way out, which does not
+  /// fit a single event and a single state.
+  ManagerApiService get api => _service;
+
   final StreamController<ManagerState> _controller =
       StreamController<ManagerState>.broadcast();
 
@@ -414,20 +432,9 @@ class ManagerBloc {
           );
         case RecordPunch(:final type):
           final record = await _service.recordPunch(type);
-          final data = _state.dashboard;
-          if (data != null) {
-            final attendance = [
-              for (final item in data.attendance)
-                if (!_sameDate(item.workDate, record.workDate)) item,
-              record,
-            ];
-            _emit(
-              _state.copyWith(
-                dashboard: data.copyWith(attendance: attendance),
-                message: type == 'in' ? 'Punched in' : 'Punched out',
-              ),
-            );
-          }
+          _mergePunch(record, type == 'in' ? 'Punched in' : 'Punched out');
+        case PunchRecorded(:final record):
+          _mergePunch(record, null);
         case SubmitAttendanceRegularization(
           :final workDate,
           :final dayType,
@@ -873,6 +880,26 @@ class ManagerBloc {
     } finally {
       _refreshingLeaves = false;
     }
+  }
+
+  /// Folds a punch into the day it belongs to.
+  ///
+  /// Replaces the day's record rather than appending, so punching out does not
+  /// leave the morning's punch-in sitting beside it.
+  void _mergePunch(AttendanceRecord record, String? message) {
+    final data = _state.dashboard;
+    if (data == null) return;
+    final attendance = [
+      for (final item in data.attendance)
+        if (!_sameDate(item.workDate, record.workDate)) item,
+      record,
+    ];
+    _emit(
+      _state.copyWith(
+        dashboard: data.copyWith(attendance: attendance),
+        message: message,
+      ),
+    );
   }
 }
 

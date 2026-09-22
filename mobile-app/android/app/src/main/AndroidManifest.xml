@@ -2,6 +2,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Punching in is checked against the office's coordinates. Fine location
+         only: coarse is accurate to a few hundred metres, which cannot tell a
+         desk from the next street. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:label="Sowaka"

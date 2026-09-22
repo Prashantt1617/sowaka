@@ -101,7 +101,7 @@ export function leaveSubmittedApproverEmail(
       + `${employee.name} has submitted a ${leaveLabel(type)} request for ${dates}.\n\n`
       + `Duration: ${dayCount(days)}\n`
       + `Reason: ${reason || '—'}\n\n`
-      + `Review the request on Sowaka.\n\n`
+      + `Review the request in the app.\n\n`
       + link('Review Request'),
   };
 }
@@ -126,7 +126,7 @@ export function leaveDeclinedEmail(employee: Party, type: string, dates: string,
       + `Your ${leaveLabel(type)} request for ${dates} was not approved.\n\n`
       + `Status: Declined\n`
       + `Reason: ${comment || '—'}\n\n`
-      + `View the request on Sowaka for details.\n\n`
+      + `View the request in the app for details.\n\n`
       + link('View Request'),
   };
 }
@@ -204,7 +204,7 @@ export function overtimeSubmittedApproverEmail(
       + `Date: ${date}\n`
       + `Duration: ${duration}\n`
       + `Reason: ${reason || '—'}\n\n`
-      + `Review the request on Sowaka.\n\n`
+      + `Review the request in the app.\n\n`
       + link('Review Request'),
   };
 }
@@ -226,7 +226,7 @@ export function overtimeDeclinedEmail(employee: Party, date: string, comment: st
       `Hi ${firstName(employee.name)},\n\n`
       + `Your overtime request for ${date} was not approved.\n\n`
       + `Reason: ${comment || '—'}\n\n`
-      + `View the request on Sowaka for details.\n\n`
+      + `View the request in the app for details.\n\n`
       + link('View Request'),
   };
 }
@@ -298,7 +298,7 @@ export function presentSubmittedApproverEmail(
       `Hi ${firstName(approver.name)},\n\n`
       + `${employee.name} has requested to be marked Present for ${date}.\n\n`
       + `Reason: ${reason || '—'}\n\n`
-      + `Review the request on Sowaka.\n\n`
+      + `Review the request in the app.\n\n`
       + link('Review Request'),
   };
 }
@@ -320,7 +320,7 @@ export function presentDeclinedEmail(employee: Party, date: string, comment: str
       `Hi ${firstName(employee.name)},\n\n`
       + `Your request to be marked Present for ${date} was not approved.\n\n`
       + `Reason: ${comment || '—'}\n\n`
-      + `View your attendance on Sowaka for details.\n\n`
+      + `View your attendance in the app for details.\n\n`
       + link('View Attendance'),
   };
 }

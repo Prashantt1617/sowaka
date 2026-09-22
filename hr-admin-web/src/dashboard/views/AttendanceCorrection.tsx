@@ -1,40 +1,52 @@
-// Controls › Attendance Correction — org policy for how attendance corrections
-// work: when they can be raised (tied to the shift's Attendance Rules), the
-// reasons, who approves, override rights, and backdating limits.
+// Controls › Attendance Correction — org policy for how attendance is captured
+// and how a day comes out of it: how many punches a day is built from, what an
+// incomplete day is marked as, whether the employee may dispute it, and what
+// they may ask it to become.
 // Live: saved to the org's shift policy.
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
-import { getShiftPolicy, saveShiftPolicy, type DayMark, type PunchFormat } from '../../services/hrms';
+import { DayOutcomeGrid, OUTCOMES, TRIGGERS } from '../components/DayOutcomeGrid';
+import {
+  getShiftPolicy,
+  saveShiftPolicy,
+  type CorrectionOutcome,
+  type DayMark,
+  type PunchFormat,
+  type PunchMode,
+} from '../../services/hrms';
 
 // Only a missing punch can be corrected: a short or late day is a fact about
 // the hours worked, not a gap in the record.
 // The four ways a day can come out, in the order the punches happen. A
 // complete day is on the list because it can still be disputed — someone
 // graded a half day has something to contest even with both punches present.
-const TRIGGERS = [
-  'Missing punch-in',
-  'Missing punch-out',
-  'Both punches missing',
-  'Both punches present',
-];
-const YES_NO = ['Yes', 'No'] as const;
 
-/** Stored values keep their meaning; the labels say it in day terms. */
-const markLabel = (mark: DayMark) =>
-  mark === 'Present' ? 'Full day' : mark === 'Half Day' ? 'Half day' : mark;
 const APPROVERS = ['Reporting manager', 'HR', 'Reporting manager, then HR'];
 // What a day is marked as when a punch never arrived. This is what puts a day
 // in front of an employee to correct, so it belongs with the rest of the flow.
-const MARK_OPTIONS: DayMark[] = ['Absent', 'Half Day', 'Present'];
-// Where punch data comes from. Auto Punch marks everyone present without a
-// device, which is why it is the default for an org with no hardware.
+// Where punch data comes from. Assigned per shift template, so teams on
+// different hardware run side by side. Auto Punch marks everyone present
+// without a device, which is why it is the default for an org with none.
 const PUNCH_FORMATS: PunchFormat[] = [
   'Biometric',
   'Geotag (powered by Sowaka)',
   'Present by default (Auto Punch)',
+  'In-app punch in',
 ];
+const FORMAT_NOTES: Record<PunchFormat, string> = {
+  Biometric:
+    'Punches are imported from the biometric device. A day with no record is a missing punch.',
+  'Geotag (powered by Sowaka)':
+    'Employees punch in the app and their location is captured with the time, checked against the office they are tagged to.',
+  'Present by default (Auto Punch)':
+    'Everyone is marked present without punching. Corrections still apply where a day needs adjusting.',
+  'In-app punch in':
+    'Employees punch from the app without a location check. The app screens for this are not built yet, so people on it are not punching today.',
+};
+// What an absent day may be asked to become. A half day has one possible
+// answer and it is fixed, so it is not offered here.
 
 export function AttendanceCorrection() {
   const { flash } = useStore();
@@ -43,6 +55,8 @@ export function AttendanceCorrection() {
   );
   const [approver, setApprover] = useState('Reporting manager');
   const [punchFormat, setPunchFormat] = useState<PunchFormat>('Present by default (Auto Punch)');
+  const [punchMode, setPunchMode] = useState<PunchMode>('Both punches');
+  const [absentOutcomes, setAbsentOutcomes] = useState<CorrectionOutcome[]>([...OUTCOMES]);
   const [mgrWithoutEmployee, setMgrWithoutEmployee] = useState(true);
   const [hrOverride, setHrOverride] = useState(true);
   const [skipLevelOverride, setSkipLevelOverride] = useState(false);
@@ -69,6 +83,8 @@ export function AttendanceCorrection() {
         setTriggers(Object.fromEntries(TRIGGERS.map((t) => [t, correction.triggers.includes(t)])));
         setApprover(correction.approver);
         setPunchFormat(correction.punchFormat);
+        setPunchMode(correction.punchMode ?? 'Both punches');
+        setAbsentOutcomes(correction.absentOutcomes ?? [...OUTCOMES]);
         setMgrWithoutEmployee(correction.managerWithoutEmployee);
         setHrOverride(correction.hrOverride);
         setSkipLevelOverride(correction.skipLevel);
@@ -79,18 +95,18 @@ export function AttendanceCorrection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const CASES: {
-    trigger: string;
-    hasIn: boolean;
-    hasOut: boolean;
-    value?: DayMark;
-    set?: (v: DayMark) => void;
-  }[] = [
-    { trigger: 'Missing punch-in', hasIn: false, hasOut: true, value: punchIn, set: setPunchIn },
-    { trigger: 'Missing punch-out', hasIn: true, hasOut: false, value: punchOut, set: setPunchOut },
-    { trigger: 'Both punches missing', hasIn: false, hasOut: false, value: bothMissing, set: setBothMissing },
-    { trigger: 'Both punches present', hasIn: true, hasOut: true },
-  ];
+  const singlePunch = punchMode === 'Single punch';
+  // Nobody punches on auto punch, so there is no punch to be missing and
+  // nothing for the grid below to decide. Every working day is a full day.
+  const autoPresent = punchFormat === 'Present by default (Auto Punch)';
+
+
+  const toggleOutcome = (outcome: CorrectionOutcome) =>
+    setAbsentOutcomes((current) =>
+      current.includes(outcome)
+        ? current.filter((item) => item !== outcome)
+        : [...OUTCOMES.filter((item) => current.includes(item) || item === outcome)],
+    );
 
   const save = async () => {
     setSaving(true);
@@ -103,6 +119,8 @@ export function AttendanceCorrection() {
           triggers: TRIGGERS.filter((t) => triggers[t]),
           approver,
           punchFormat,
+          punchMode,
+          absentOutcomes,
           managerWithoutEmployee: mgrWithoutEmployee,
           hrOverride,
           skipLevel: skipLevelOverride,
@@ -117,9 +135,8 @@ export function AttendanceCorrection() {
     }
   };
 
-
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: 860 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 15, color: '#717171', fontWeight: 600 }}>Attendance correction policy</div>
         <div style={{ marginLeft: 'auto' }}>
@@ -129,82 +146,67 @@ export function AttendanceCorrection() {
         </div>
       </div>
 
+      {/* Asked first: how the punches arrive, and how many of them there are.
+          Both answers decide which rows the grid below can even have. */}
       <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
         <SectionHeader
-          title="How a day comes out"
-          subtitle="The four ways a day can land, what each is marked as, and whether the employee may raise a correction against it."
+          title="Punch format"
+          subtitle="How attendance is captured, and how many punches a day is built from."
         />
-        <div style={{ padding: '4px 22px 18px', overflowX: 'auto' }}>
-          <table style={caseTable}>
-            <thead>
-              <tr>
-                <Th center width={110}>Punch in</Th>
-                <Th center width={110}>Punch out</Th>
-                <Th>Marked as</Th>
-                <Th width={190}>Correction allowed?</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {CASES.map((row) => (
-                <tr key={row.trigger}>
-                  <Td center><Mark on={row.hasIn} /></Td>
-                  <Td center><Mark on={row.hasOut} /></Td>
-                  <Td>
-                    {row.trigger === 'Both punches present' ? (
-                      // Not a choice: a complete day is half or full on the
-                      // hours worked, against the Shift tab's thresholds.
-                      <div style={fixedValue}>
-                        <span>Half day or full day</span>
-                        <span style={fixedTag}>by hours worked</span>
-                      </div>
-                    ) : (
-                      <Select value={row.value!} onChange={row.set!} options={MARK_OPTIONS} render={markLabel} />
-                    )}
-                  </Td>
-                  <Td>
-                    <Select
-                      value={triggers[row.trigger] ? 'Yes' : 'No'}
-                      onChange={(v) => setTriggers((p) => ({ ...p, [row.trigger]: v === 'Yes' }))}
-                      options={YES_NO}
-                    />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={note}>
-            {minFullDay == null || minHalfDay == null ? (
-              'A day with both punches is graded on the hours worked, against the thresholds on the Shift tab.'
-            ) : (
-              <>
-                A day with both punches is graded on the hours worked, against the{' '}
-                <strong>Shift</strong> tab’s thresholds: <strong>{minFullDay}h</strong> or more is a
-                full day, <strong>{minHalfDay}h</strong> up to {minFullDay}h is a half day, and
-                anything shorter is flagged for correction. Change the split there, not here.
-              </>
-            )}{' '}
-            An employee raises a correction from their attendance calendar.
-          </div>
-        </div>
-      </Card>
-
-      {/* Where the punches come from in the first place. */}
-      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <SectionHeader title="Punch format" subtitle="How punch-in and punch-out are captured for this org." />
         <div style={{ padding: '18px 22px' }}>
           <Field label="Punch in / punch out data comes from">
             <select value={punchFormat} onChange={(e) => setPunchFormat(e.target.value as PunchFormat)} style={{ ...input, maxWidth: 340 }}>
               {PUNCH_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
           </Field>
+          {!autoPresent && (
+            <Field label="How many punches does a day have?">
+              <select value={punchMode} onChange={(e) => setPunchMode(e.target.value as PunchMode)} style={{ ...input, maxWidth: 340 }}>
+                <option value="Both punches">Punch in and punch out</option>
+                <option value="Single punch">Punch in only</option>
+              </select>
+            </Field>
+          )}
           <div style={note}>
-            {punchFormat === 'Biometric'
-              ? 'Punches are imported from the biometric device. A day with no record is a missing punch, and can be corrected.'
-              : punchFormat === 'Geotag (powered by Sowaka)'
-              ? 'Employees punch in the app and the location is captured with the time.'
-              : 'Everyone is marked present without punching. Corrections still apply where a day needs adjusting.'}
+            {FORMAT_NOTES[punchFormat]}{' '}
+            {autoPresent
+              ? 'Nobody punches, so there is no punch to be missing — every working day is a full day and the grid below does not apply.'
+              : singlePunch
+              ? 'With one punch a day cannot be graded on hours worked, so a recorded punch counts as a full day.'
+              : 'Hours worked are measured between the two punches and graded against the Shift tab’s thresholds.'}{' '}
+            This is the org default — a shift template can set a different format for the people it covers.
           </div>
         </div>
+      </Card>
+
+      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <SectionHeader
+          title="How a day comes out"
+          subtitle={
+            autoPresent
+              ? 'Every working day, for everyone on this policy.'
+              : singlePunch
+                ? 'Whether the punch arrived, what the day is marked as, and what the employee may raise against it.'
+                : 'The four ways a day can land, what each is marked as, and what the employee may raise against it.'
+          }
+        />
+        <DayOutcomeGrid
+          singlePunch={singlePunch}
+          autoPresent={autoPresent}
+          missingPunchIn={punchIn}
+          missingPunchOut={punchOut}
+          missingBoth={bothMissing}
+          onMissingPunchIn={setPunchIn}
+          onMissingPunchOut={setPunchOut}
+          onMissingBoth={setBothMissing}
+          triggers={triggers}
+          onTrigger={(trigger, allowed) => setTriggers((p) => ({ ...p, [trigger]: allowed }))}
+          absentOutcomes={absentOutcomes}
+          onToggleOutcome={toggleOutcome}
+          minHalfDayHours={minHalfDay}
+          minFullDayHours={minFullDay}
+          thresholdsLocation="the Shift tab’s thresholds"
+        />
       </Card>
 
       {/* Approvals & overrides */}
@@ -233,6 +235,7 @@ export function AttendanceCorrection() {
   );
 }
 
+
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div style={{ padding: '16px 22px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' }}>
@@ -241,46 +244,8 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
     </div>
   );
 }
-function Select<T extends string>({ value, onChange, options, render }: {
-  value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string;
-}) {
-  return (
-    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} style={selectStyle}>
-      {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
-    </select>
-  );
-}
 
-/** A tick or a cross for whether that punch is there in this case. */
-function Mark({ on }: { on: boolean }) {
-  return on ? (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F7A52" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="present">
-      <path d="M4 12.5 9.5 18 20 6.5" />
-    </svg>
-  ) : (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C4382E" strokeWidth="3" strokeLinecap="round" aria-label="missing">
-      <path d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  );
-}
 
-function Th({ children, center, width }: { children: ReactNode; center?: boolean; width?: number }) {
-  return (
-    <th style={{
-      textAlign: center ? 'center' : 'left', width,
-      fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171',
-      fontWeight: 700, padding: '11px 12px', borderBottom: '1px solid #EBEBEB',
-    }}>{children}</th>
-  );
-}
-function Td({ children, center }: { children: ReactNode; center?: boolean }) {
-  return (
-    <td style={{
-      padding: '12px', borderBottom: '1px solid #F0F0F2',
-      textAlign: center ? 'center' : 'left', verticalAlign: 'middle',
-    }}>{children}</td>
-  );
-}
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 14 }}>
@@ -318,8 +283,4 @@ function Suffixed({ value, onChange, suffix }: { value: string; onChange: (v: st
 
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const fixedValue: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
-const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
 const note: CSSProperties = { marginTop: 16, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
-const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };

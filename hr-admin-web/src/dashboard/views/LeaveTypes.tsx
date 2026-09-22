@@ -31,12 +31,18 @@ const SWATCH: Record<LeaveTypeKey, string> = {
 export function LeaveTypes() {
   const { flash } = useStore();
   const [types, setTypes] = useState<LeaveTypeRule[]>([]);
+  // Off means unlimited leave: nothing is counted down, so none of the accrual
+  // below describes anything.
+  const [balanceTracked, setBalanceTracked] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getShiftPolicy()
-      .then(({ leave }) => setTypes(leave.types))
+      .then(({ leave }) => {
+        setTypes(leave.types);
+        setBalanceTracked(leave.balanceTracked ?? true);
+      })
       .catch((error: Error) => flash(error.message))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -49,7 +55,7 @@ export function LeaveTypes() {
     setSaving(true);
     try {
       const { leave } = await getShiftPolicy();
-      await saveShiftPolicy({ leave: { ...leave, types } });
+      await saveShiftPolicy({ leave: { ...leave, types, balanceTracked } });
       flash('Leave types saved');
     } catch (error) {
       flash((error as Error).message);
@@ -72,14 +78,61 @@ export function LeaveTypes() {
           {saving ? 'Saving…' : 'Save leave types'}
         </button>
       </div>
-      {types.map((row, index) => (
-        <LeaveTypeCard key={row.key} row={row} onChange={(patch) => update(index, patch)} />
-      ))}
+      {/* Asked before the types, because the answer decides whether any of
+          them mean anything. */}
+      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: '#222222' }}>
+              Do these employees have a leave balance?
+            </div>
+            <div style={{ fontSize: 13, color: '#717171', marginTop: 3, lineHeight: 1.5 }}>
+              {balanceTracked
+                ? 'Leave is counted down from the balances configured below.'
+                : 'Unlimited leave — employees apply, a manager approves, and nothing is counted down. They are not asked to pick a leave type, and their app shows what they have applied for instead of what is left.'}
+            </div>
+          </div>
+          <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
+            {[true, false].map((value) => (
+              <button
+                key={String(value)}
+                onClick={() => setBalanceTracked(value)}
+                style={{
+                  padding: '8px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  border: 'none', borderLeft: value ? 'none' : '1px solid #EBEBEB',
+                  background: balanceTracked === value ? '#0571A6' : '#fff',
+                  color: balanceTracked === value ? '#fff' : '#484848',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {value ? 'Yes' : 'No'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {balanceTracked ? (
+        types.map((row, index) => (
+          <LeaveTypeCard key={row.key} row={row} onChange={(patch) => update(index, patch)} />
+        ))
+      ) : (
+        <Card style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: 13.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '12px 14px', lineHeight: 1.55 }}>
+            Accrual, carry-forward and encashment all describe a balance, and
+            these employees do not have one — so there is nothing to configure
+            here. Switch the answer above back to <strong>Yes</strong> to set
+            them up again; what was saved before is kept either way.
+          </div>
+        </Card>
+      )}
     </>
   );
 }
 
-function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void }) {
+/** One leave type's accrual and year-end handling. Shared with the shift
+ *  template editor, so a template configures leave exactly as the org does. */
+export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void }) {
   const isCompOff = row.key === 'comp_off';
   const annual = +(row.perMonth * 12).toFixed(1);
 

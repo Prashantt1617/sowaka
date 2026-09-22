@@ -54,7 +54,7 @@ class ConnectAuthor {
   factory ConnectAuthor.fromJson(Map<String, dynamic> json) {
     return ConnectAuthor(
       userId: json['userId'] as String? ?? '',
-      name: json['name'] as String? ?? 'Sowaka',
+      name: json['name'] as String? ?? 'Your company',
       initials: json['initials'] as String? ?? 'S',
       designation: json['designation'] as String? ?? '',
       avatarColor: json['avatarColor'] as String? ?? '#BE5A36',

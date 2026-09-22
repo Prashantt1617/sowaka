@@ -71,6 +71,9 @@ PODS:
   - Flutter (1.0.0)
   - flutter_local_notifications (0.0.1):
     - Flutter
+  - geolocator_apple (1.2.0):
+    - Flutter
+    - FlutterMacOS
   - GoogleDataTransport (10.1.1):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -105,6 +108,8 @@ PODS:
     - nanopb/encode (= 3.30910.0)
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
+  - package_info_plus (0.4.5):
+    - Flutter
   - PromisesObjC (2.4.1)
   - SDWebImage (5.21.7):
     - SDWebImage/Core (= 5.21.7)
@@ -129,7 +134,9 @@ DEPENDENCIES:
   - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
   - Flutter (from `Flutter`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
+  - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - speech_to_text (from `.symlinks/plugins/speech_to_text/darwin`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
@@ -164,8 +171,12 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_local_notifications:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
+  geolocator_apple:
+    :path: ".symlinks/plugins/geolocator_apple/darwin"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
   shared_preferences_foundation:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
   speech_to_text:
@@ -190,10 +201,12 @@ SPEC CHECKSUMS:
   FirebaseMessaging: 422bb80cbf8ff83e69e50bea4d4984fc4704f665
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   flutter_local_notifications: a5a732f069baa862e728d839dd2ebb904737effb
+  geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   GoogleDataTransport: a24e58982ab3ba2f64d79613e027fe7f57e88539
   GoogleUtilities: 4e0c2ad9fa0d0d18b5c4df8bf57b461cba35b0bb
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
+  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb

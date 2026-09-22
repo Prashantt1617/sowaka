@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { connectPosts, games, gameScores, users } from '../config/db';
 import { ConnectPost } from '../models/connect.model';
 import { Game } from '../models/game.model';
+import { companyDisplayName } from './company-settings.service';
 
 export class GameError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -71,7 +72,8 @@ export async function publishGame(adminUserId: string, gameId: string) {
   const post: ConnectPost = {
     id: randomUUID(), org, type: 'live_game', tag: 'Live Game', tagIcon: '🎮',
     tagColor: '#E0483B', tagTint: '#FBE2DE',
-    author: { userId: adminUserId, name: 'Sowaka Connect', initials: 'G', designation: 'Auto · Games', avatarColor: game.accentColor },
+    // The company hosting the game, not the product running it.
+    author: { userId: adminUserId, name: await companyDisplayName(org, 'Your company'), initials: 'G', designation: 'Auto · Games', avatarColor: game.accentColor },
     audience: { label: 'Company', org },
     body: { gameId: game.id, title: game.name, subtitle: game.description, hostedUrl: game.hostedUrl,
       technology: game.technology, accentColor: game.accentColor, instructions: game.instructions,

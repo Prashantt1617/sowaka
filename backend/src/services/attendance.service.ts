@@ -1,5 +1,7 @@
 import { ObjectId } from 'mongodb';
-import { attendanceRecords, attendanceRegularizations, users } from '../config/db';
+import { attendanceRecords, attendanceRegularizations, offices, users } from '../config/db';
+import { PunchLocation } from '../models/office.model';
+import { locateForPunch, officeView, punchLocationFrom } from './geofence.service';
 import {
   AttendanceRegularization,
   REGULARIZATION_DAY_TYPES,
@@ -7,6 +9,7 @@ import {
   RegularizationStatus,
 } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
 import {
   notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
@@ -55,10 +58,65 @@ async function getAttendanceForEmployee(
   };
 }
 
-export async function recordPunch(userId: string, type: string) {
+export type PunchReading = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  mocked?: boolean;
+};
+
+/**
+ * Punches someone in or out, having first checked they are where they say.
+ *
+ * The reading is raw: the app reports coordinates and this decides whether
+ * they fall inside an office. Letting the app decide and send a yes/no would
+ * put attendance behind a check anyone could skip by calling the endpoint
+ * directly — so the app never sends a verdict, only what the device saw.
+ *
+ * An org with no offices configured is not geofenced at all, and punches as it
+ * always did. That is how this ships before the coordinates are known.
+ */
+export async function recordPunch(
+  userId: string,
+  type: string,
+  reading?: PunchReading,
+) {
   if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
   const employee = await users().findOne({ userId });
   if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
+
+  let location: PunchLocation | undefined;
+  const org = employee.org ?? '';
+  // Only a geotagged shift is checked against an office. In-app punch-in is the
+  // same punch without the location question — HR chooses it for people whose
+  // work is not tied to a building — so asking them for a fix would refuse a
+  // punch their own policy says needs none.
+  const policy = await policyForUser(userId);
+  const geofenced = policy.correction.punchFormat === 'Geotag (powered by Sowaka)';
+  const sites = geofenced && org ? await offices().countDocuments({ org, active: true }) : 0;
+  if (sites > 0) {
+    if (!reading) {
+      throw new AttendanceError(
+        428,
+        'Location is required to punch. Turn location on and try again.',
+      );
+    }
+    const verdict = await locateForPunch(org, reading);
+    location = punchLocationFrom(reading, verdict);
+    // Nobody marks their own day present from outside the fence. Working
+    // elsewhere — from home, at a client site — is a claim about the day that
+    // the manager settles, raised as a request from the punch screen, so it is
+    // refused here whatever the reason.
+    if (!verdict.inside) {
+      throw new AttendanceError(
+        409,
+        verdict.reason === 'inaccurate'
+          ? 'Your location is not precise enough yet. Move near a window and try again.'
+          : 'You are outside the approved attendance area.',
+        { location, office: verdict.office ? officeView(verdict.office) : undefined },
+      );
+    }
+  }
   const now = new Date();
   const workDate = now.toISOString().slice(0, 10);
   const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
@@ -68,7 +126,14 @@ export async function recordPunch(userId: string, type: string) {
     await attendanceRecords().updateOne(
       { employeeId: employee.employeeId, workDate },
       {
-        $set: { employeeId: employee.employeeId, userId, workDate, punchIn: now, updatedAt: now },
+        $set: {
+          employeeId: employee.employeeId,
+          userId,
+          workDate,
+          punchIn: now,
+          updatedAt: now,
+          ...(location ? { punchInLocation: location } : {}),
+        },
         $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
       },
       { upsert: true },
@@ -78,7 +143,13 @@ export async function recordPunch(userId: string, type: string) {
     if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
     await attendanceRecords().updateOne(
       { employeeId: employee.employeeId, workDate },
-      { $set: { punchOut: now, updatedAt: now } },
+      {
+        $set: {
+          punchOut: now,
+          updatedAt: now,
+          ...(location ? { punchOutLocation: location } : {}),
+        },
+      },
     );
   }
 
@@ -89,7 +160,6 @@ export async function recordPunch(userId: string, type: string) {
     // Grade the day the way the app does, so the message agrees with the
     // calendar the employee is about to open.
     const worked = (updated.punchOut.getTime() - updated.punchIn.getTime()) / 60_000;
-    const policy = await policyForUser(userId);
     const band = worked >= policy.minFullDayHours * 60
       ? 'full'
       : worked >= policy.minHalfDayHours * 60
@@ -101,6 +171,7 @@ export async function recordPunch(userId: string, type: string) {
     workDate,
     punchIn: updated?.punchIn?.toISOString(),
     punchOut: updated?.punchOut?.toISOString(),
+    office: location?.officeName,
   };
 }
 
@@ -127,6 +198,81 @@ export function correctionTriggerFor(punchIn: Date | null, punchOut: Date | null
   if (punchIn && punchOut) return 'Both punches present';
   if (!punchIn && !punchOut) return 'Both punches missing';
   return punchIn ? 'Missing punch-out' : 'Missing punch-in';
+}
+
+/** How a day type reads back to the person who asked for it. */
+const DAY_TYPE_LABELS: Record<string, string> = {
+  full_day: 'Full day',
+  half_day: 'Half day',
+  leave: 'Leave',
+  wfh: 'Work from home',
+  client_visit: 'Client visit',
+  office_visit: 'Client visit',
+};
+
+/**
+ * What a day is currently marked as, graded exactly the way the calendar
+ * grades it: a complete day on the hours worked, an incomplete one on the mark
+ * HR chose for that kind of gap.
+ */
+export function markForDay(
+  policy: Pick<
+    ShiftPolicyRules,
+    | 'minFullDayHours'
+    | 'minHalfDayHours'
+    | 'missingPunchIn'
+    | 'missingPunchOut'
+    | 'missingBoth'
+    | 'correction'
+  >,
+  punchIn: Date | null,
+  punchOut: Date | null,
+): DayMark {
+  // One punch makes the day where that is all the policy asks for: there is no
+  // punch-out to be missing, and no hours to grade it by.
+  if (policy.correction?.punchMode === 'Single punch') {
+    return punchIn ? 'Present' : policy.missingBoth;
+  }
+  if (punchIn && punchOut) {
+    const worked = (punchOut.getTime() - punchIn.getTime()) / 3_600_000;
+    if (worked >= policy.minFullDayHours) return 'Present';
+    // Anything under a half day is still short of a full one, and a short day
+    // is argued the same way a half day is.
+    return 'Half Day';
+  }
+  if (!punchIn && !punchOut) return policy.missingBoth;
+  return punchIn ? policy.missingPunchOut : policy.missingPunchIn;
+}
+
+/** The day types HR's outcome names correspond to. */
+const OUTCOME_DAY_TYPES: Record<string, RegularizationDayType> = {
+  'Full day': 'full_day',
+  'Half day': 'half_day',
+  Leave: 'leave',
+};
+
+/**
+ * What this day may be asked to become.
+ *
+ * A half day has exactly one answer — a full day — and it is not HR's to
+ * change: there is nothing else a half day could be disputed as. An absent day
+ * is the configurable one, since the reason it was absent decides whether it
+ * should become a worked day or count against leave. A day already marked
+ * present can only be argued down, so a full day is not on offer.
+ */
+export function correctionOutcomesFor(
+  mark: DayMark,
+  absentOutcomes: string[],
+): RegularizationDayType[] {
+  const allowed =
+    mark === 'Half Day'
+      ? HALF_DAY_CORRECTION_OUTCOMES
+      : mark === 'Absent'
+        ? absentOutcomes
+        : absentOutcomes.filter((outcome) => outcome !== 'Full day');
+  return allowed
+    .map((outcome) => OUTCOME_DAY_TYPES[outcome])
+    .filter((dayType): dayType is RegularizationDayType => Boolean(dayType));
 }
 
 /**
@@ -199,12 +345,41 @@ export async function requestRegularization(
   // What the day actually looks like decides whether it can be corrected: HR
   // switches each of the four outcomes on or off under Attendance correction.
   const record = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
-  const trigger = correctionTriggerFor(record?.punchIn ?? null, record?.punchOut ?? null);
+  const trigger =
+    correction.punchMode === 'Single punch'
+      ? record?.punchIn
+        ? 'Both punches present'
+        : 'Both punches missing'
+      : correctionTriggerFor(record?.punchIn ?? null, record?.punchOut ?? null);
   if (!correction.triggers.includes(trigger)) {
     throw new AttendanceError(
       400,
       `${trigger} cannot be regularized — your company does not allow a correction for this case`,
     );
+  }
+  // What the day is marked as decides what it may be asked to become. Without
+  // this the app's choices were advisory: a request for anything at all went
+  // through, whatever HR had allowed.
+  if (hasDayType) {
+    const mark = markForDay(policy, record?.punchIn ?? null, record?.punchOut ?? null);
+    const allowed = correctionOutcomesFor(mark, policy.correction.absentOutcomes ?? []);
+    // A claim about where the day was worked is always permitted.
+    // Where the day was worked, rather than what it counts as, so these sit
+    // outside HR's outcome list — a manager vouches for them either way.
+    const aboutPlace =
+      requestedDayType === 'wfh' ||
+      requestedDayType === 'client_visit' ||
+      requestedDayType === 'office_visit';
+    if (!aboutPlace && !allowed.includes(requestedDayType)) {
+      throw new AttendanceError(
+        400,
+        allowed.length === 0
+          ? 'Your company does not allow this day to be changed'
+          : `This day can only be raised as: ${allowed
+              .map((dayType) => DAY_TYPE_LABELS[dayType] ?? dayType)
+              .join(', ')}`,
+      );
+    }
   }
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) throw new AttendanceError(409, 'A regularization request is already pending for this date');
@@ -237,7 +412,20 @@ export async function getTeamMemberAttendance(
   if (employee.managerUserId !== managerUserId) {
     throw new AttendanceError(403, "Not authorized to view this employee's attendance");
   }
-  return getAttendanceForEmployee(employeeUserId, employee.employeeId, fromInput, toInput);
+  const attendance = await getAttendanceForEmployee(
+    employeeUserId,
+    employee.employeeId,
+    fromInput,
+    toInput,
+  );
+  // The employee's own shift decides how their days read, and they may be on a
+  // different template from the manager looking at them — someone on a
+  // single-punch shift has no punch-out for this view to leave blank.
+  const policy = await policyForUser(employeeUserId);
+  return {
+    ...attendance,
+    singlePunch: policy.correction.punchMode === 'Single punch',
+  };
 }
 
 export async function getManagerRegularizations(managerUserId: string) {
@@ -421,6 +609,29 @@ function punchWindowFor(
   return { punchIn, punchOut: at(shift.endTime, overnight ? 1 : 0) };
 }
 
+/**
+ * The offices this employee may punch from, for the app to show before anyone
+ * slides the control. An empty list means their org is not geofenced.
+ */
+export async function punchOfficesFor(userId: string) {
+  const employee = await users().findOne({ userId });
+  const org = employee?.org ?? '';
+  if (!org) return [];
+  const sites = await offices().find({ org, active: true }).toArray();
+  return sites.map(officeView);
+}
+
 export class AttendanceError extends Error {
-  constructor(public readonly statusCode: number, message: string) { super(message); }
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+    /**
+     * Extra the client can act on — for a refused punch, the office it was
+     * measured against and how far away the reading was, so the screen can say
+     * where you are rather than only that you are not there.
+     */
+    public readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
 }

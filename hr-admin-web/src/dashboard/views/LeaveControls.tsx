@@ -22,6 +22,9 @@ export function LeaveControls() {
   // Carried through untouched: this tab owns the window and the approval flow,
   // the leave types are edited in the cards below, and both live in one field.
   const [types, setTypes] = useState<LeaveTypeRule[]>([]);
+  // Set on the Leave types page; carried here so saving approvals cannot
+  // silently switch a team's unlimited leave back on.
+  const [balanceTracked, setBalanceTracked] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -29,6 +32,7 @@ export function LeaveControls() {
     getShiftPolicy()
       .then(({ leave }) => {
         setTypes(leave.types);
+        setBalanceTracked(leave.balanceTracked ?? true);
         setApprover(leave.approver);
         setHrOverride(leave.hrOverride);
       })
@@ -45,6 +49,9 @@ export function LeaveControls() {
           types,
           approver,
           hrOverride,
+          // Whether a balance is kept is set under Leave types; this page only
+          // decides who signs a request off.
+          balanceTracked,
         },
       });
       flash('Leave policy saved');

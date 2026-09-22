@@ -57,6 +57,19 @@ export interface ManagerTeamMemberView {
   name: string;
   department: string;
   designation: string;
+  /** True for the viewer themselves, shown as "(You)" in the team list. */
+  isSelf?: boolean;
+  /**
+   * True for someone who reports to the viewer. It separates the team they
+   * lead from the team they belong to — the first is listed by department
+   * under them, the second is the core team they sit in.
+   */
+  reportsToViewer?: boolean;
+  /**
+   * How many people report to them. A member who leads a team of their own is
+   * offered an expander rather than read as an individual.
+   */
+  reportCount?: number;
   /** True for the viewer's own manager, shown as "(Manager)" in the team list. */
   isManager?: boolean;
   score: number;
@@ -197,26 +210,34 @@ export async function getManagerWorkspace(managerUserId: string) {
     .sort({ name: 1, userId: 1 })
     .toArray();
 
-  // Someone with no direct reports still has a team: their peers under the
-  // same manager. This is what the read-only Team view shows an individual
-  // contributor.
-  let reports = directReports;
-  if (directReports.length === 0 && manager.managerUserId) {
-    reports = await users()
-      .find({
-        managerUserId: manager.managerUserId,
-        ...orgFilter,
-        userId: { $ne: managerUserId },
-        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-      })
-      .sort({ name: 1, userId: 1 })
-      .toArray();
+  // Your team is the people you actually work alongside: whoever reports to
+  // your manager *and* works in your department, plus your manager heading it,
+  // plus your own reports if you have any. Department matters because a large
+  // manager's reports can span several of them, and a designer has no reason
+  // to see the whole of engineering under the same head.
+  const active = (user: User) =>
+    !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? '');
+  const sameDepartment = (user: User) =>
+    (user.department ?? '') === (manager.department ?? '');
+
+  const peers = manager.managerUserId
+    ? orgRoster.filter(
+        (user) =>
+          user.managerUserId === manager.managerUserId &&
+          user.userId !== managerUserId &&
+          active(user) &&
+          sameDepartment(user),
+      )
+    : [];
+
+  const byId = new Map<string, User>();
+  // Order matters: the manager heads the list, then you, then the rest.
+  if (approver) byId.set(approver.userId, approver);
+  byId.set(manager.userId, manager);
+  for (const user of [...directReports, ...peers].filter(active)) {
+    byId.set(user.userId, user);
   }
-  // Your own manager is part of your team however you got here — they head it.
-  // Managers with reports of their own were previously missing them entirely.
-  if (approver && !reports.some((report) => report.userId === approver.userId)) {
-    reports = [approver, ...reports];
-  }
+  const reports = [...byId.values()];
   // Recognition is limited to the manager's own direct reports — never the
   // peer/manager fallback above.
   const recognitionCandidates = directReports;
@@ -349,6 +370,14 @@ export async function getManagerWorkspace(managerUserId: string) {
       name: report.name,
       department: report.department ?? report.designation ?? 'Team',
       isManager: report.userId === manager.managerUserId,
+      isSelf: report.userId === manager.userId,
+      reportsToViewer: report.managerUserId === manager.userId,
+      reportCount: orgRoster.filter(
+        (user) =>
+          user.managerUserId === report.userId &&
+          user.userId !== report.userId &&
+          !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
+      ).length,
       designation: report.designation ?? '',
       score: current?.overallScore ?? latest?.overallScore ?? 0,
       previousScore: previousByEmployee.get(report.userId) ?? null,
@@ -413,9 +442,43 @@ export async function getManagerWorkspace(managerUserId: string) {
     // already shared stays open to edits.
     cycleEndsOn: cycle.end,
     approverName: approver?.name ?? 'Your manager',
+    // Whether anyone reviews this person. `approverName` falls back to a
+    // placeholder when nobody does, so the app cannot tell from the name alone
+    // — and someone at the top of the tree has no "your feedback" to wait for.
+    hasManager: Boolean(approver),
+    // The viewer's own KPIs for this cycle, worded as HR wrote them. A month
+    // nobody has reviewed yet shows these, so someone knows what they will be
+    // measured on before the review arrives — once it does, the manager's
+    // notes take their place.
+    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period)).map(
+      (p) => ({
+        parameterId: p.id,
+        name: p.title,
+        subtitle: p.subtitle,
+        description: p.description,
+        weight: p.weight,
+        score: 0,
+        note: '',
+      }),
+    ),
     // The viewer's own reporting line, so their profile shows the same chart
     // their team members' profiles do.
     myOrgChart: buildOrgChart(manager, orgUsersById),
+    // How far up the tree they sit, which decides how their team reads:
+    // 1 works alongside peers, 2 also leads people, 3 leads leaders and sees
+    // the teams beneath them rather than individuals.
+    teamLevel: directReports.some((report) =>
+      orgRoster.some(
+        (user) =>
+          user.managerUserId === report.userId &&
+          user.userId !== report.userId &&
+          !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
+      ),
+    )
+      ? 3
+      : directReports.length > 0
+        ? 2
+        : 1,
     managerScore: Number((ownFeedback?.overallScore ?? 0).toFixed(1)),
     weekoffDays: companyConfig.weekoffDays,
     shift,
@@ -707,7 +770,13 @@ function monthsSince(previous: string | undefined, current: string): number {
  * for drafts written before ids were stored.
  */
 function reconcileParameters(
-  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+  assigned: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    description?: string;
+    weight: number;
+  }>,
   saved: FeedbackParameter[] | undefined,
 ): FeedbackParameter[] {
   const blanks = blankParameters(assigned);
@@ -723,12 +792,21 @@ function reconcileParameters(
 }
 
 function blankParameters(
-  assigned: Array<{ id: string; title: string; subtitle: string; weight: number }>,
+  assigned: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    description?: string;
+    weight: number;
+  }>,
 ): FeedbackParameter[] {
   return assigned.map((p) => ({
     parameterId: p.id,
     name: p.title,
     subtitle: p.subtitle,
+    // HR's guidance for this parameter. The app's hint line reads it; without
+    // it every hint fell back to copy hard-coded in the app.
+    description: p.description,
     // Carried onto the blank form so the app can show what each parameter is
     // worth before anything is scored.
     weight: p.weight,
