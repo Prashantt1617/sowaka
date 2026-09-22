@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/relay/data/relay_models.dart';
+import 'package:mobile_app/features/relay/presentation/relay_buttons.dart';
 import 'package:mobile_app/features/relay/presentation/relay_how_to_play.dart';
 import 'package:mobile_app/features/relay/presentation/relay_leaderboard.dart';
 import 'package:mobile_app/features/relay/presentation/relay_lobby.dart';
@@ -230,8 +231,10 @@ void main() {
       await tester.enterText(find.byType(TextField), 'Inception');
       await tester.pump();
       await tester.ensureVisible(find.text('Submit'));
-      await tester.tap(find.text('Submit'));
-      await tester.pump();
+      // Beside the label: typing in a test leaves the caret's drag handle
+      // hanging over the middle of the button.
+      await tester.tapAt(tester.getCenter(find.byType(RelayCtaButton)) + const Offset(90, 0));
+      await tester.pump(const Duration(milliseconds: 200));
       expect(sent, 'Inception');
     });
 
@@ -351,8 +354,9 @@ void main() {
         const Size(393, 852),
         RelayLobby(state: _state(phase: RelayPhase.lobby), secondsLeft: 8, onHowToPlay: () => opened = true),
       );
-      await tester.ensureVisible(find.text('How to play'));
-      await tester.tap(find.text('How to play'));
+      await tester.ensureVisible(find.text('How to Play'));
+      await tester.tap(find.text('How to Play'));
+      await tester.pump(const Duration(milliseconds: 200));
       expect(opened, isTrue);
     });
 

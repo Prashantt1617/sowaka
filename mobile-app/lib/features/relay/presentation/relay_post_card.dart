@@ -7,6 +7,7 @@ import '../../connect/data/connect_models.dart';
 import '../data/relay_api_service.dart';
 import '../data/relay_models.dart';
 import 'relay_game_screen.dart';
+import 'relay_buttons.dart';
 import 'relay_style.dart';
 
 /// The game's post in the Connect feed (Figma 2606:35400), and the only way in.
@@ -103,49 +104,10 @@ class _RelayPostCardState extends State<RelayPostCard> {
               _team(_card!),
             ],
             const SizedBox(height: 18),
-            GestureDetector(
+            RelayCtaButton(
+              label: 'View game',
+              labelPadding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
               onTap: _open,
-              child: SizedBox(
-                height: 101,
-                child: Stack(
-                  children: [
-                    // The button is artwork in the design, cropped from a
-                    // larger image — reproduced as drawn, not restyled.
-                    Positioned.fill(
-                      child: LayoutBuilder(
-                        builder: (context, box) => Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Positioned(
-                              left: -0.0518 * box.maxWidth,
-                              top: -0.7192 * box.maxHeight,
-                              width: 1.0976 * box.maxWidth,
-                              height: 2.4658 * box.maxHeight,
-                              child: Image.asset('${RelayStyle.asset}/game_cta.png', fit: BoxFit.fill),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
-                      child: Center(
-                        child: Text(
-                          'View game',
-                          textAlign: TextAlign.center,
-                          style: RelayStyle.sora(
-                            24,
-                            weight: FontWeight.w700,
-                            color: const Color(0xFF078442),
-                            height: 24,
-                            spacing: -0.16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ],
         ),

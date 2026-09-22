@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/relay_models.dart';
 import 'relay_confetti.dart';
+import 'relay_buttons.dart';
 import 'relay_style.dart';
 
 /// The round in progress (Figma 2606:31851 clue, 2638:36748 lead, 2682:37522
@@ -340,12 +341,16 @@ class _RelayPlayState extends State<RelayPlay> {
             padding: const EdgeInsets.only(top: 12, bottom: 8),
             child: ValueListenableBuilder<TextEditingValue>(
               valueListenable: _answer,
-              builder: (context, value, _) => _bigButton(
-                label: 'Submit',
-                fill: RelayStyle.brand,
-                ink: Colors.white,
-                enabled: value.text.trim().isNotEmpty,
-                onTap: _submit,
+              builder: (context, value, _) => Center(
+                child: SizedBox(
+                  width: 262,
+                  child: RelayCtaButton(
+                    label: 'Submit',
+                    height: 102,
+                    labelPadding: const EdgeInsets.fromLTRB(12, 18, 12, 32),
+                    onTap: value.text.trim().isEmpty ? null : _submit,
+                  ),
+                ),
               ),
             ),
           ),

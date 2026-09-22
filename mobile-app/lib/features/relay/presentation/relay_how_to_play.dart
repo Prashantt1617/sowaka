@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'relay_buttons.dart';
 import 'relay_style.dart';
 
 /// The rules, before anybody plays them (Figma 2606:35931).
@@ -114,17 +115,10 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
             ),
           ),
           const SizedBox(height: 13),
-          GestureDetector(
+          RelayBannerButton(
+            label: 'Back to Lobby',
+            back: true,
             onTap: widget.onBackToLobby,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-              decoration: BoxDecoration(color: _mint, borderRadius: BorderRadius.circular(14)),
-              child: Text(
-                'Back to Lobby',
-                textAlign: TextAlign.center,
-                style: RelayStyle.sora(24, weight: FontWeight.w600, color: RelayStyle.brand, height: 16.2, spacing: -0.16),
-              ),
-            ),
           ),
           const SizedBox(height: 18 + 24),
           Text(

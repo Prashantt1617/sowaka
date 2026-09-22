@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/relay_models.dart';
+import 'relay_buttons.dart';
 import 'relay_style.dart';
 
 /// Waiting for kick-off (Figma 2603:31280), and where "View game" lands.
@@ -130,28 +131,11 @@ class RelayLobby extends StatelessWidget {
           // The way to the rules — and back again with "Back to Lobby" —
           // until the game starts.
           Padding(
-            padding: const EdgeInsets.only(top: 18 + 12, bottom: 8),
-            child: GestureDetector(
+            padding: const EdgeInsets.only(top: 18 + 12, bottom: 8 + 18),
+            child: RelayBannerButton(
+              label: 'How to Play',
+              back: false,
               onTap: onHowToPlay,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xF7CCFCFF),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
-                ),
-                child: Text(
-                  'How to play',
-                  textAlign: TextAlign.center,
-                  style: RelayStyle.sora(
-                    16,
-                    weight: FontWeight.w600,
-                    color: RelayStyle.brand,
-                    height: 16.2,
-                    spacing: -0.16,
-                  ),
-                ),
-              ),
             ),
           ),
         ],
