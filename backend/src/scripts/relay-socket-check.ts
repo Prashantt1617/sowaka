@@ -103,7 +103,7 @@ function openClient(userId: string, token: string) {
       clients.set(userId, socket);
       resolve(socket);
     });
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (error: Error) => {
       socket.close();
       reject(error);
     });
