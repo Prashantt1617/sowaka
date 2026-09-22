@@ -213,8 +213,8 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
           state: state,
           secondsLeft: _roundSecondsLeft,
           lastResult: _lastResult,
-          onSubmit: _socket.submitAnswer,
-          onSkip: _socket.skipQuestion,
+          onSubmit: (text) => _socket.submitAnswer(text, question: state.questionNumber),
+          onSkip: () => _socket.skipQuestion(question: state.questionNumber),
           onTyping: _socket.reportTyping,
         ),
         RelayPhase.breakTime || RelayPhase.finished => RelayLeaderboard(

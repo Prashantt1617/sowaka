@@ -75,17 +75,17 @@ export function initRelayRealtime(io: SocketServer): Namespace {
       void markLeadAnswering(userId).catch(() => undefined);
     });
 
-    socket.on('relay:answer', async (payload: { text?: string }) => {
+    socket.on('relay:answer', async (payload: { text?: string; question?: number }) => {
       await run(socket, userId, async () => {
-        const result = await submitAnswer(userId, String(payload?.text ?? ''));
+        const result = await submitAnswer(userId, String(payload?.text ?? ''), questionOf(payload));
         socket.emit('relay:result', result);
         if (result.correct) await pushTeamOf(userId);
       });
     });
 
-    socket.on('relay:skip', async () => {
+    socket.on('relay:skip', async (payload?: { question?: number }) => {
       await run(socket, userId, async () => {
-        const result = await skipQuestion(userId);
+        const result = await skipQuestion(userId, questionOf(payload));
         socket.emit('relay:result', { correct: false, skipped: true, ...result });
         await pushTeamOf(userId);
       });
@@ -122,6 +122,12 @@ function attachAdapter(target: SocketServer) {
   } catch (error) {
     logger.error('Could not attach the Redis adapter; sockets stay local', {}, error);
   }
+}
+
+/** The question a phone says it is acting on, if it said one. */
+function questionOf(payload: unknown): number | undefined {
+  const value = (payload as { question?: unknown } | undefined)?.question;
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }
 
 async function run(socket: Socket, userId: string, action: () => Promise<void>) {
@@ -190,7 +196,10 @@ function start() {
 let ticking = false;
 
 async function tick() {
-  if (!namespace) return;
+  // Held for the whole pass: shutting down clears the module's copy between
+  // two awaits, and the pass should finish quietly rather than throw.
+  const ns = namespace;
+  if (!ns) return;
   // One pass at a time. Against a remote database a pass can outlast the
   // second between ticks, and letting them overlap stacks the work up exactly
   // when the most people are playing.
@@ -200,7 +209,7 @@ async function tick() {
     // A scheduled event starts itself the moment it is due, so nobody has to
     // press anything on the day.
     await startDueEvents();
-    const connected = [...new Set([...namespace.sockets.values()].map((s) => String(s.data.userId)))];
+    const connected = [...new Set([...ns.sockets.values()].map((s) => String(s.data.userId)))];
     for (const eventId of await liveEventIds()) {
       // Anyone holding a socket counts as present, before anything is derived
       // from who is present.

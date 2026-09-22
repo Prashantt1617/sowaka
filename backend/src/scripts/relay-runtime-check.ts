@@ -162,8 +162,17 @@ async function main() {
 
   console.log('\nskipping and finishing the round');
   const beforeSkip = await snapshot('u0');
-  const skipped = await skipQuestion('u0');
+  const skipped = await skipQuestion('u0', 3);
   check('a skip moves on', (await snapshot('u0')).questionNumber === 4);
+  // The double tap: a second skip still aimed at question 3.
+  let staleRefused = false;
+  try {
+    await skipQuestion('u0', 3);
+  } catch {
+    staleRefused = true;
+  }
+  check('a second tap on the same skip is refused', staleRefused);
+  check('and does not skip the next question', (await snapshot('u0')).questionNumber === 4);
   check(
     'the seconds left on it are handed forward',
     (skipped.carriedSeconds ?? 0) > 20,

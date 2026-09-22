@@ -86,9 +86,15 @@ class RelaySocketService {
   }
 
   /// Only the lead has an answer box, so only the lead ever sends this.
-  void submitAnswer(String text) => _socket?.emit('relay:answer', {'text': text});
+  ///
+  /// Both name the question they are meant for, so a double tap that arrives
+  /// after the first has moved the team on is ignored rather than skipping or
+  /// answering the next question unseen.
+  void submitAnswer(String text, {required int question}) =>
+      _socket?.emit('relay:answer', {'text': text, 'question': question});
 
-  void skipQuestion() => _socket?.emit('relay:skip');
+  void skipQuestion({required int question}) =>
+      _socket?.emit('relay:skip', {'question': question});
 
   /// Sent while the lead types, so their team's screens can say somebody is on
   /// it. Expires by itself a few seconds after they stop.

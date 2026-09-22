@@ -528,12 +528,27 @@ export async function markLeadAnswering(userId: string) {
   await markAnswering(event.id, team.id);
 }
 
-export async function submitAnswer(userId: string, given: string) {
+/**
+ * Refuses an answer or a skip aimed at a question that has already closed.
+ *
+ * A double tap sends two; the first closes the question, and without this the
+ * second would land on the next one and skip it unseen. Phones say which
+ * question they meant (1-based); an older client that doesn't is taken at its
+ * word.
+ */
+function requireStillOpen(progress: RelayTeamProgress, question?: number) {
+  if (question !== undefined && question !== progress.questionIndex + 1) {
+    throw new RelayError(409, 'That question has already moved on');
+  }
+}
+
+export async function submitAnswer(userId: string, given: string, question?: number) {
   const { event, team } = await requireLeader(userId);
   const progress = await settle(event, team);
   if (progress.questionIndex >= event.config.questionsPerRound) {
     throw new RelayError(409, 'This round is over');
   }
+  requireStillOpen(progress, question);
   const item = await currentItemFor(event, team, progress);
   if (!item) throw new RelayError(409, 'No question is open');
 
@@ -545,12 +560,13 @@ export async function submitAnswer(userId: string, given: string) {
   return { correct: true, answer: item.acceptedAnswers[0] };
 }
 
-export async function skipQuestion(userId: string) {
+export async function skipQuestion(userId: string, question?: number) {
   const { event, team } = await requireLeader(userId);
   const progress = await settle(event, team);
   if (progress.questionIndex >= event.config.questionsPerRound) {
     throw new RelayError(409, 'This round is over');
   }
+  requireStillOpen(progress, question);
   const item = await currentItemFor(event, team, progress);
   const now = Date.now();
   const { allowance } = questionPhase(config(event), progress.questionStartedAt, now, progress.carriedSeconds);

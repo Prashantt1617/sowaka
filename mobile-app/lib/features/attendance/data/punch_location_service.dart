@@ -21,7 +21,7 @@ class PunchLocationException implements Exception {
 
   String get message => switch (problem) {
     PunchLocationProblem.servicesOff =>
-      'Location is switched  v    off on this device. Turn it on to punch in.',
+      'Location is switched off on this device. Turn it on to punch in.',
     PunchLocationProblem.denied =>
       'Sowaka needs your location to check you are at the office.',
     PunchLocationProblem.deniedForever =>
