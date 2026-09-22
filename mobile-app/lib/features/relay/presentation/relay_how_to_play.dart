@@ -142,8 +142,8 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
             '+${widget.pointsPerCorrect} every correct answer',
           ),
           const SizedBox(height: 24),
-          _step(4, 'Skip to buy time',
-              'A skipped question is gone for good, but its seconds carry on to the next one.'),
+          _step(4, 'Stuck? Move to the next question',
+              'The round gives your team 120 seconds for all four. Moving on is instant, but you can’t come back.'),
           if (widget.onViewLobby != null) ...[
             const SizedBox(height: 28),
             GestureDetector(

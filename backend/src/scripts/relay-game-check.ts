@@ -187,9 +187,13 @@ async function main() {
 
   console.log('\neveryone joins except team C\'s lead');
   const joining = players.filter((p) => !(p.team === 'C' && p.isLeader));
+  const joinedAt = Date.now();
   await Promise.all(joining.map(open));
   check('14 players connected over the app\'s own address', joining.every((p) => p.socket?.connected));
-  await wait(2500);
+  // Waits for the lobby rather than guessing how long it takes, and reports
+  // the slowest, so "slow" and "never arrived" cannot be confused.
+  while (Date.now() - joinedAt < 10_000 && !joining.every((p) => latest(p)?.phase === 'lobby')) await wait(100);
+  console.log(`  (slowest player had the lobby ${((Date.now() - joinedAt) / 1000).toFixed(1)}s after joining)`);
 
   console.log('\nlobby');
   const lobbyViews = joining.map(latest);
@@ -284,6 +288,28 @@ async function main() {
     everyState.some(({ p, s }) => !p.isLeader && s.pieces.length > 0),
   );
   check('the lead\'s typing reached their team', everyState.some(({ p, s }) => p.team === 'A' && !p.isLeader && s.leadIsAnswering));
+
+  console.log('\nno question closes on its own');
+  const roundLength = config.questionsPerRound * config.questionSeconds;
+  const cStates = players.filter((p) => p.team === 'C' && !p.isLeader).flatMap((p) => p.states);
+  check(
+    'a question nobody answers stays open past the old per-question cap',
+    cStates.some(
+      (s) => s.phase === 'playing' && s.event.round === 1 && s.questionNumber === 1 &&
+        s.roundSecondsLeft < roundLength - config.questionSeconds - 2,
+    ),
+  );
+
+  console.log('\nthe whole team sees a correct answer');
+  const aMembers = players.filter((p) => p.team === 'A' && !p.isLeader);
+  check(
+    'members see the correct-answer banner, not just the lead',
+    aMembers.every((p) => p.states.some((s) => s.lastOutcome?.outcome === 'correct' && !!s.lastOutcome.answer)),
+  );
+  check(
+    'the banner names the answer and its points',
+    leadA.states.some((s) => s.lastOutcome?.answer.startsWith('ANSWER') && s.lastOutcome.points === 30),
+  );
 
   console.log('\nanswers and scoring');
   check('a correct answer was accepted', leadA.results.some((r) => r.correct));

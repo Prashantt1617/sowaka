@@ -33,6 +33,7 @@ RelayState _state({
   String teamName = 'Kritik TEAM',
   String prompt = 'Guess the movie',
   int points = 320,
+  RelayOutcome? lastOutcome,
 }) =>
     RelayState(
       phase: phase,
@@ -64,6 +65,7 @@ RelayState _state({
       standings: standings,
       yourRank: 7,
       pointsThisRound: 100,
+      lastOutcome: lastOutcome,
     );
 
 const _longName = 'Venkataraghavan Subramaniam Iyengar-Krishnamurthy';
@@ -218,8 +220,8 @@ void main() {
       );
       await tester.enterText(find.byType(TextField), 'Inception');
       await tester.pump();
-      await tester.ensureVisible(find.text('SUBMIT'));
-      await tester.tap(find.text('SUBMIT'));
+      await tester.ensureVisible(find.text('Submit'));
+      await tester.tap(find.text('Submit'));
       await tester.pump();
       expect(sent, 'Inception');
     });
@@ -231,8 +233,8 @@ void main() {
         const Size(393, 852),
         RelayPlay(state: _state(isLeader: true), secondsLeft: 120, onSubmit: (_) => sent = true),
       );
-      await tester.ensureVisible(find.text('SUBMIT'));
-      await tester.tap(find.text('SUBMIT'));
+      await tester.ensureVisible(find.text('Submit'));
+      await tester.tap(find.text('Submit'));
       await tester.pump();
       expect(sent, isFalse);
     });
@@ -240,7 +242,7 @@ void main() {
     testWidgets('a member never sees an answer box', (tester) async {
       await _render(tester, const Size(393, 852), RelayPlay(state: _state(), secondsLeft: 120));
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('SUBMIT'), findsNothing);
+      expect(find.text('Submit'), findsNothing);
     });
 
     testWidgets('a lead never sees a clue', (tester) async {
@@ -254,6 +256,82 @@ void main() {
       );
       expect(find.textContaining('secret'), findsNothing);
     });
+  });
+
+  group('moving on, and getting it right', () {
+    testWidgets('the lead moves on with Next Question', (tester) async {
+      var moved = false;
+      await _render(
+        tester,
+        const Size(393, 852),
+        RelayPlay(state: _state(isLeader: true), secondsLeft: 120, onSkip: () => moved = true),
+      );
+      expect(find.text('SKIP'), findsNothing);
+      await tester.ensureVisible(find.text('NEXT QUESTION'));
+      await tester.tap(find.text('NEXT QUESTION'));
+      expect(moved, isTrue);
+    });
+
+    testWidgets('a wrong answer plays the incorrect animation once, then clears', (tester) async {
+      await _render(tester, const Size(393, 852), RelayPlay(state: _state(isLeader: true), secondsLeft: 120));
+      final gif = find.byWidgetPredicate(
+        (w) => w is Image && w.image is AssetImage && (w.image as AssetImage).assetName.endsWith('incorrect_answer.gif'),
+      );
+      expect(gif, findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RelayPlay(
+              state: _state(isLeader: true),
+              secondsLeft: 119,
+              lastResult: const RelayResult(correct: false, skipped: false, answer: ''),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(gif, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 2200));
+      expect(gif, findsNothing);
+    });
+
+    testWidgets('pips show how each question went', (tester) async {
+      final state = RelayState.fromJson({
+        'phase': 'playing',
+        'isLeader': false,
+        'questionNumber': 3,
+        'questionsPerRound': 4,
+        'roundOutcomes': ['correct', 'skipped'],
+        'event': {'round': 2, 'rounds': 5},
+      });
+      await _render(tester, const Size(393, 852), RelayPlay(state: state, secondsLeft: 60));
+      String assetOf(int n) {
+        final pip = find.ancestor(of: find.text('$n'), matching: find.byType(Stack)).first;
+        final svg = find.descendant(of: pip, matching: find.byWidgetPredicate((w) => w.runtimeType.toString() == 'SvgPicture'));
+        return (tester.widget(svg) as dynamic).bytesLoader.assetName as String;
+      }
+      expect(assetOf(1), endsWith('pip_correct.svg'));
+      expect(assetOf(2), endsWith('pip_skipped.svg'));
+      expect(assetOf(3), endsWith('pip_active.svg'));
+      expect(assetOf(4), endsWith('pip_idle.svg'));
+    });
+
+    for (final MapEntry(key: phone, value: size) in _phones.entries) {
+      testWidgets('$phone: the correct banner shows to everyone, confetti and all', (tester) async {
+        await _render(
+          tester,
+          size,
+          RelayPlay(
+            state: _state(lastOutcome: const RelayOutcome(answer: 'Kuch Kuch Hota Hai', points: 30)),
+            secondsLeft: 90,
+          ),
+        );
+        expect(find.text('Correct! +30 points'), findsOneWidget);
+        expect(find.text('Kuch Kuch Hota Hai'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 2));
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('what arrives from the server', () {

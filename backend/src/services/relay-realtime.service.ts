@@ -8,6 +8,7 @@ import {
   markLeadAnswering,
   startDueEvents,
   PlayerSnapshot,
+  snapshot,
   touchPresence,
   skipQuestion,
   submitAnswer,
@@ -60,6 +61,9 @@ export function initRelayRealtime(io: SocketServer): Namespace {
 
     // A reconnecting phone is told what is true now rather than replaying what
     // it missed, which is only possible because state is derived from the clock.
+    // Whatever was "last sent" before it connected went to nobody, so it is
+    // forgotten — otherwise an unchanged first screen was never sent at all.
+    lastSent.delete(userId);
     void pushTo(userId);
 
     socket.on('relay:heartbeat', () => {
@@ -145,14 +149,20 @@ function emitIfChanged(userId: string, view: PlayerSnapshot) {
   namespace?.to(userRoom(userId)).emit('relay:state', view);
 }
 
+/**
+ * One player's screen, the moment they connect.
+ *
+ * Built for that player alone rather than by rebuilding the whole event, which
+ * is what a hundred people joining in the same minute would otherwise cost.
+ * Somebody with no team is told so, rather than left looking at a spinner.
+ */
 async function pushTo(userId: string) {
-  for (const eventId of await liveEventIds()) {
-    const views = await eventTick(eventId);
-    const view = views.get(userId);
-    if (view) {
-      emitIfChanged(userId, view);
-      return;
-    }
+  try {
+    emitIfChanged(userId, await snapshot(userId));
+  } catch (error) {
+    const message = error instanceof RelayError ? error.message : 'Could not load the game';
+    namespace?.to(userRoom(userId)).emit('relay:error', { message });
+    if (!(error instanceof RelayError)) logger.error('Relay first push failed', { userId }, error);
   }
 }
 
@@ -160,7 +170,10 @@ async function pushTeamOf(userId: string) {
   for (const eventId of await liveEventIds()) {
     const views = await eventTick(eventId);
     if (!views.has(userId)) continue;
-    for (const [player, view] of views) emitIfChanged(player, view);
+    const here = new Set([...(namespace?.sockets.values() ?? [])].map((s) => String(s.data.userId)));
+    for (const [player, view] of views) {
+      if (here.has(player)) emitIfChanged(player, view);
+    }
     return;
   }
 }
@@ -197,7 +210,12 @@ async function tick() {
       // still needs a lock rather than every instance trying.
       await advanceEvent(eventId);
       const views = await eventTick(eventId);
-      for (const [userId, view] of views) emitIfChanged(userId, view);
+      // Only people holding a socket here. Building and "sending" a screen to
+      // someone not connected went nowhere, and was then remembered as sent.
+      const here = new Set(connected);
+      for (const [userId, view] of views) {
+        if (here.has(userId)) emitIfChanged(userId, view);
+      }
     }
   } catch (error) {
     logger.error('Relay tick failed', {}, error);

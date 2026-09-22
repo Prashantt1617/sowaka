@@ -131,7 +131,10 @@ export interface PlayerSnapshot {
   yourRank: number;
   /** What this round earned, shown as "+100 points this round". */
   pointsThisRound: number;
-  lastOutcome?: { outcome: string; answer: string };
+  /** How each closed question this round went, by position — the pips' colours. */
+  roundOutcomes: RelayAnswerRecord['outcome'][];
+  /** Set for a few seconds after a correct answer, for the banner. */
+  lastOutcome?: { outcome: 'correct'; answer: string; points: number };
 }
 
 /**
@@ -301,9 +304,10 @@ async function payRoundBonus(event: RelayEvent, teamId: string, round: number) {
 /**
  * Brings a team up to the present.
  *
- * A team nobody is playing still has its questions expire on the clock, so it
- * stays in step with everyone else and rejoins at whatever the room is on
- * rather than somewhere in the past.
+ * A question no longer closes on its own: it stays open until the lead
+ * answers it or moves on, and only the round's clock can end it. When the
+ * round runs out, whatever is left counts as missed — so a team nobody is
+ * playing still finishes the round in step with everyone else.
  */
 async function settle(event: RelayEvent, team: RelayTeam): Promise<RelayTeamProgress> {
   let progress = await progressFor(event, team);
@@ -314,13 +318,46 @@ async function settle(event: RelayEvent, team: RelayTeam): Promise<RelayTeamProg
     if (progress.round !== event.currentRound) break;
     if (progress.questionIndex >= config.questionsPerRound) break;
     const round = roundPhase(config, event.roundStartedAt ?? new Date(), now);
-    const question = questionPhase(config, progress.questionStartedAt, now, progress.carriedSeconds);
-    const outOfTime = question.phase === 'expired' || round.phase !== 'playing';
-    if (!outOfTime) break;
-    await closeQuestion(event, progress, 'timeout', Math.min(question.elapsedSec, question.allowance));
+    if (round.phase === 'playing') break;
+    const elapsed = (now - progress.questionStartedAt.getTime()) / 1000;
+    await closeQuestion(event, progress, 'timeout', elapsed);
     progress = (await relayProgress().findOne({ eventId: event.id, teamId: team.id })) ?? progress;
   }
   return progress;
+}
+
+/**
+ * The answer a team just got right, for a few seconds after it lands.
+ *
+ * Shown to the whole team, not only the lead who typed it: a member whose clue
+ * suddenly changes should see why.
+ */
+function justAnswered(
+  progress: RelayTeamProgress | undefined,
+  plan: RelayItem[],
+  round: number,
+  now: number,
+): PlayerSnapshot['lastOutcome'] {
+  if (!progress) return undefined;
+  const last = progress.answers.filter((answer) => answer.round === round).at(-1);
+  if (!last || last.outcome !== 'correct') return undefined;
+  // The next question opened when this one closed, so its start is the moment.
+  if (now - progress.questionStartedAt.getTime() > CORRECT_BANNER_MS) return undefined;
+  return {
+    outcome: 'correct',
+    answer: plan[last.position - 1]?.acceptedAnswers[0] ?? last.submitted ?? '',
+    points: last.points,
+  };
+}
+
+const CORRECT_BANNER_MS = 3500;
+
+/** Outcomes of this round's closed questions, in the order they were played. */
+function outcomesOf(progress: RelayTeamProgress | undefined, round: number) {
+  return (progress?.answers ?? [])
+    .filter((answer) => answer.round === round)
+    .sort((a, b) => a.position - b.position)
+    .map((answer) => answer.outcome);
 }
 
 export async function snapshot(userId: string): Promise<PlayerSnapshot> {
@@ -374,6 +411,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       leadIsAnswering: false,
       standings: [],
       secondsUntilStart: secondsUntil(event.startsAt, now),
+      roundOutcomes: [],
       instructionsVideoUrl: await videoUrlFor(event),
       rewardAmount: event.rewardAmount ?? 0,
       yourRank: 0,
@@ -416,6 +454,8 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     rewardAmount: event.rewardAmount ?? 0,
     yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
     pointsThisRound: roundPoints(progress, event.currentRound),
+    lastOutcome: justAnswered(progress, plan, event.currentRound, now),
+    roundOutcomes: outcomesOf(progress, event.currentRound),
   };
 }
 
@@ -786,6 +826,8 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         rewardAmount: event.rewardAmount ?? 0,
         yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
         pointsThisRound: progress ? roundPoints(progress, event.currentRound) : 0,
+        lastOutcome: justAnswered(progress, plan, event.currentRound, now),
+        roundOutcomes: outcomesOf(progress, event.currentRound),
       });
     }
   }

@@ -1,13 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/relay_models.dart';
+import 'relay_confetti.dart';
 import 'relay_style.dart';
 
-/// The round in progress (Figma 2606:31851 clue, 2638:36748 lead).
+/// The round in progress (Figma 2606:31851 clue, 2638:36748 lead, 2682:37522
+/// a wrong answer).
 ///
 /// One screen for both roles, because the header is the same game either way:
 /// the difference is that the lead has somewhere to type and nobody else does.
 /// A clue is never rendered on the lead's screen — not hidden, not present.
+///
+/// No question closes on its own. The round's clock is the only clock; a team
+/// stuck on one moves on with Next Question, and gets a banner and confetti
+/// when it lands one.
 class RelayPlay extends StatefulWidget {
   const RelayPlay({
     super.key,
@@ -25,6 +33,8 @@ class RelayPlay extends StatefulWidget {
   final int secondsLeft;
   final RelayResult? lastResult;
   final void Function(String answer)? onSubmit;
+
+  /// Moves to the next question for no points. Same as the old skip.
   final VoidCallback? onSkip;
   final VoidCallback? onTyping;
 
@@ -35,8 +45,45 @@ class RelayPlay extends StatefulWidget {
 class _RelayPlayState extends State<RelayPlay> {
   final _answer = TextEditingController();
 
+  /// The "incorrect" animation, over the page, for one play-through.
+  bool _showWrong = false;
+  Timer? _wrongTimer;
+
+  /// One loop of the design's GIF: 67 frames at 30ms.
+  static const _wrongFor = Duration(milliseconds: 2100);
+
+  @override
+  void initState() {
+    super.initState();
+    // Opened with a wrong try already on record — show it here too, not only
+    // when one arrives as an update.
+    final result = widget.lastResult;
+    if (result != null && !result.correct && !result.skipped) _flashWrong();
+  }
+
+  @override
+  void didUpdateWidget(covariant RelayPlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final result = widget.lastResult;
+    if (!identical(result, oldWidget.lastResult) && result != null && !result.correct && !result.skipped) {
+      _flashWrong();
+    }
+    if (widget.state.questionNumber != oldWidget.state.questionNumber) _showWrong = false;
+  }
+
+  void _flashWrong() {
+    _showWrong = true;
+    // A cancellable timer rather than a fire-and-forget delay, so leaving the
+    // screen mid-animation does not leave a callback behind.
+    _wrongTimer?.cancel();
+    _wrongTimer = Timer(_wrongFor, () {
+      if (mounted) setState(() => _showWrong = false);
+    });
+  }
+
   @override
   void dispose() {
+    _wrongTimer?.cancel();
     _answer.dispose();
     super.dispose();
   }
@@ -51,11 +98,59 @@ class _RelayPlayState extends State<RelayPlay> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    final outcome = state.lastOutcome;
+    return Stack(
+      children: [
+        _page(state),
+        if (outcome != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: SafeArea(top: false, child: _correctBanner(outcome)),
+          ),
+        Positioned.fill(
+          child: RelayConfetti(
+            trigger: outcome == null ? null : '${state.round}-${state.questionNumber}-${outcome.answer}',
+          ),
+        ),
+        // The design's wrong-answer moment: the page dims and the animation
+        // plays once. A tap dismisses it early.
+        if (_showWrong)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () {
+                _wrongTimer?.cancel();
+                setState(() => _showWrong = false);
+              },
+              child: ColoredBox(
+                color: const Color(0x73000000),
+                child: Align(
+                  alignment: const Alignment(0, -0.05),
+                  child: Image.asset(
+                    '${RelayStyle.asset}/incorrect_answer.gif',
+                    width: 339,
+                    height: 183,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _page(RelayState state) {
     return RelayBackdrop(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const SizedBox(height: 8),
           _header(state),
+          const SizedBox(height: 18 + 12),
+          _pips(state),
           const SizedBox(height: 18),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -65,13 +160,15 @@ class _RelayPlayState extends State<RelayPlay> {
                 Text(
                   '+${state.pointsPerCorrect} points for correct answer',
                   textAlign: TextAlign.center,
-                  style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
+                  style: RelayStyle.sora(13, color: Colors.white, height: 19.5),
                 ),
                 const SizedBox(height: 16),
                 if (state.isLeader) ..._leadView() else ..._clueView(state),
               ],
             ),
           ),
+          // Room for the banner, so it never sits on top of the last button.
+          if (state.lastOutcome != null) const SizedBox(height: 72),
         ],
       ),
     );
@@ -80,8 +177,19 @@ class _RelayPlayState extends State<RelayPlay> {
   Widget _header(RelayState state) {
     return Column(
       children: [
+        Text(
+          'ROUND ${state.round} OF ${state.rounds}',
+          textAlign: TextAlign.center,
+          style: RelayStyle.sora(11, weight: FontWeight.w700, color: Colors.white, height: 16.5, spacing: 0.6),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          state.prompt,
+          textAlign: TextAlign.center,
+          style: RelayStyle.sora(32, weight: FontWeight.w800, color: Colors.white, height: 32),
+        ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 39, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(39, 36, 39, 12),
           child: Column(
             children: [
               Text(
@@ -90,38 +198,31 @@ class _RelayPlayState extends State<RelayPlay> {
               ),
               Text(
                 '${widget.secondsLeft} s',
-                style: RelayStyle.sora(
-                  32,
-                  weight: FontWeight.w800,
-                  color: Colors.white,
-                  height: 48,
-                ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                style: RelayStyle.sora(32, weight: FontWeight.w800, color: Colors.white, height: 48)
+                    .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 18),
-        Text(
-          state.prompt,
-          textAlign: TextAlign.center,
-          style: RelayStyle.sora(24, weight: FontWeight.w800, color: Colors.white, height: 32),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'ROUND ${state.round} OF ${state.rounds}',
-          textAlign: TextAlign.center,
-          style: RelayStyle.sora(11, weight: FontWeight.w700, height: 16.5, spacing: 0.6),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var position = 1; position <= state.questionsPerRound; position += 1) ...[
-              if (position > 1) const SizedBox(width: 20),
-              _Pip(number: position, current: position == state.questionNumber),
-            ],
-          ],
-        ),
+      ],
+    );
+  }
+
+  Widget _pips(RelayState state) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var position = 1; position <= state.questionsPerRound; position += 1) ...[
+          if (position > 1) const SizedBox(width: 20),
+          _Pip(
+            number: position,
+            look: position <= state.roundOutcomes.length
+                ? (state.roundOutcomes[position - 1] == 'correct' ? _PipLook.correct : _PipLook.missed)
+                : position == state.questionNumber
+                    ? _PipLook.current
+                    : _PipLook.upcoming,
+          ),
+        ],
       ],
     );
   }
@@ -147,13 +248,7 @@ class _RelayPlayState extends State<RelayPlay> {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: RelayStyle.sora(
-                  11,
-                  weight: FontWeight.w700,
-                  color: RelayStyle.brand,
-                  height: 16.5,
-                  spacing: 1,
-                ),
+                style: RelayStyle.sora(11, weight: FontWeight.w700, color: RelayStyle.brand, height: 16.5, spacing: 1),
               ),
             ],
           ),
@@ -163,9 +258,38 @@ class _RelayPlayState extends State<RelayPlay> {
     );
   }
 
+  Widget _bigButton({
+    required String label,
+    required Color fill,
+    required Color ink,
+    VoidCallback? onTap,
+    bool enabled = true,
+  }) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: enabled ? 1 : 0.45,
+        child: Container(
+          // Full width, as drawn; without it the button shrank to its label.
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: RelayStyle.sora(16, weight: FontWeight.w600, color: ink, height: 16.2, spacing: -0.16),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _leadView() {
-    final result = widget.lastResult;
-    final wrong = result != null && !result.correct && !result.skipped;
     return [
       _card(
         label: 'YOUR ANSWER',
@@ -212,67 +336,32 @@ class _RelayPlayState extends State<RelayPlay> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          // The design has no send control and the return key alone was never
-          // found — a team typed its answer and scored nothing.
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _answer,
-            builder: (context, value, _) {
-              final ready = value.text.trim().isNotEmpty;
-              return GestureDetector(
-                onTap: ready ? _submit : null,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 150),
-                  opacity: ready ? 1 : 0.45,
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: RelayStyle.brand,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      'SUBMIT',
-                      textAlign: TextAlign.center,
-                      style: RelayStyle.sora(
-                        13,
-                        weight: FontWeight.w600,
-                        color: Colors.white,
-                        height: 19.5,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          // The design's thumbs-down, shown when the last try was not it.
-          if (wrong)
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Center(child: RelayStyle.svg('wrong_answer', width: 24, height: 24)),
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _answer,
+              builder: (context, value, _) => _bigButton(
+                label: 'Submit',
+                fill: RelayStyle.brand,
+                ink: Colors.white,
+                enabled: value.text.trim().isNotEmpty,
+                onTap: _submit,
+              ),
             ),
+          ),
         ],
       ),
       const SizedBox(height: 16),
-      GestureDetector(
+      _bigButton(
+        label: 'NEXT QUESTION',
+        fill: RelayStyle.tint,
+        ink: RelayStyle.brand,
         onTap: widget.onSkip,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: RelayStyle.tint,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: RelayStyle.tintBorder, width: 1.129),
-          ),
-          child: Text(
-            'SKIP',
-            textAlign: TextAlign.center,
-            style: RelayStyle.sora(13, weight: FontWeight.w600, height: 19.5),
-          ),
-        ),
       ),
       const SizedBox(height: 16),
       Text(
-        'If you skip you can’t come back',
+        'Stuck? Move on — you can’t come back to it',
+        textAlign: TextAlign.center,
         style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
       ),
     ];
@@ -309,25 +398,14 @@ class _RelayPlayState extends State<RelayPlay> {
           ),
           child: Row(
             children: [
-              RelayInitial(
-                name: state.leadName,
-                size: 31.987,
-                fontSize: 11.2,
-                gradient: RelayStyle.avatarPink,
-              ),
+              RelayInitial(name: state.leadName, size: 31.987, fontSize: 11.2, gradient: RelayStyle.avatarPink),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Your team lead is answering',
-                      style: RelayStyle.sora(13, weight: FontWeight.w600, height: 19.5),
-                    ),
-                    Text(
-                      state.leadName,
-                      style: RelayStyle.sora(12, color: RelayStyle.tertiary, height: 18),
-                    ),
+                    Text('Your team lead is answering', style: RelayStyle.sora(13, weight: FontWeight.w600, height: 19.5)),
+                    Text(state.leadName, style: RelayStyle.sora(12, color: RelayStyle.tertiary, height: 18)),
                   ],
                 ),
               ),
@@ -363,32 +441,69 @@ class _RelayPlayState extends State<RelayPlay> {
       ],
     );
   }
+
+  Widget _correctBanner(RelayOutcome outcome) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: RelayStyle.green,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 4))],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.white, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Correct! +${outcome.points} points',
+                  style: RelayStyle.sora(14, weight: FontWeight.w700, color: Colors.white, height: 19.5),
+                ),
+                if (outcome.answer.isNotEmpty)
+                  Text(
+                    outcome.answer,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RelayStyle.sora(13, color: Colors.white, height: 18),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
+enum _PipLook { correct, missed, current, upcoming }
+
+/// A question's dot: green when got right, grey when skipped or run out,
+/// blue for the one being played, white for those still to come.
 class _Pip extends StatelessWidget {
-  const _Pip({required this.number, required this.current});
+  const _Pip({required this.number, required this.look});
 
   final int number;
-  final bool current;
+  final _PipLook look;
 
   @override
   Widget build(BuildContext context) {
+    final (asset, ink) = switch (look) {
+      _PipLook.correct => ('pip_correct', Colors.white),
+      _PipLook.missed => ('pip_skipped', RelayStyle.tertiary),
+      _PipLook.current => ('pip_active', Colors.white),
+      _PipLook.upcoming => ('pip_idle', RelayStyle.brand),
+    };
     return SizedBox(
       width: 44,
       height: 44,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          RelayStyle.svg(current ? 'pip_active' : 'pip_idle', width: 44, height: 44),
-          Text(
-            '$number',
-            style: RelayStyle.sora(
-              14,
-              weight: FontWeight.w600,
-              color: current ? Colors.white : RelayStyle.brand,
-              height: 22,
-            ),
-          ),
+          RelayStyle.svg(asset, width: 44, height: 44),
+          Text('$number', style: RelayStyle.sora(14, weight: FontWeight.w600, color: ink, height: 22)),
         ],
       ),
     );

@@ -37,6 +37,8 @@ class RelayState {
     required this.standings,
     required this.yourRank,
     required this.pointsThisRound,
+    this.lastOutcome,
+    this.roundOutcomes = const [],
   });
 
   final RelayPhase phase;
@@ -78,6 +80,14 @@ class RelayState {
   final int yourRank;
   final int pointsThisRound;
 
+  /// Set for a few seconds after the team gets one right, for the banner and
+  /// the confetti. Everyone on the team gets it, not only the lead.
+  final RelayOutcome? lastOutcome;
+
+  /// How each closed question this round went, in order: 'correct',
+  /// 'skipped' or 'timeout'. Colours the pips.
+  final List<String> roundOutcomes;
+
   static RelayState fromJson(Map<String, dynamic> json) {
     final event = _map(json['event']);
     final team = _map(json['team']);
@@ -113,6 +123,8 @@ class RelayState {
       ],
       yourRank: _int(json['yourRank']),
       pointsThisRound: _int(json['pointsThisRound']),
+      lastOutcome: json['lastOutcome'] is Map ? RelayOutcome.fromJson(_map(json['lastOutcome'])) : null,
+      roundOutcomes: [for (final outcome in _list(json['roundOutcomes'])) _str(outcome)],
     );
   }
 }
@@ -257,4 +269,15 @@ class RelayCardMember {
   final String name;
   final bool isLeader;
   final bool isYou;
+}
+
+/// A question the team just got right.
+class RelayOutcome {
+  const RelayOutcome({required this.answer, required this.points});
+
+  final String answer;
+  final int points;
+
+  static RelayOutcome fromJson(Map<String, dynamic> json) =>
+      RelayOutcome(answer: _str(json['answer']), points: _int(json['points']));
 }
