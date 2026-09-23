@@ -157,12 +157,15 @@ class _Tagline extends StatelessWidget {
         ),
         Text(
           'sowaka',
+          textAlign: TextAlign.center,
+          // The design's type spec: Anton 400, 100% line height, no tracking.
           style: TextStyle(
             fontFamily: 'Anton',
+            fontWeight: FontWeight.w400,
             color: color,
             fontSize: 14,
-            height: 19.5 / 14,
-            letterSpacing: 0.2,
+            height: 1,
+            letterSpacing: 0,
           ),
         ),
       ],
