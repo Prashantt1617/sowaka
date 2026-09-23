@@ -189,24 +189,40 @@ export function roundPhase(
 export interface RoundScore {
   correct: number;
   basePoints: number;
+  /** The round clock when the team closed its last question; zero if it ran out. */
+  secondsSaved: number;
   bonusPoints: number;
   totalPoints: number;
   secondsUsed: number;
 }
 
 /**
- * A clean sweep banks whatever time was left; anything skipped or timed out
- * forfeits it. The bonus rewards getting all of them right quickly, not
- * rushing through and missing some.
+ * A team that finishes the round early banks half a point for every second it
+ * saved — floor(saved / 2) — as long as it got at least one right. Skipping
+ * the lot to reach the end fast earns nothing.
+ *
+ * The saved time is the round clock as players saw it when the last question
+ * closed. Rounds recorded before that was kept fall back to the question
+ * times, which add up to the same thing give or take their rounding.
  */
 export function scoreRound(answers: RelayAnswerRecord[], config: RelayConfig): RoundScore {
   const correct = answers.filter((answer) => answer.outcome === 'correct').length;
   const secondsUsed = answers.reduce((total, answer) => total + answer.secondsTaken, 0);
-  const basePoints = correct * config.pointsPerCorrect;
-  const cleanSweep =
-    answers.length === config.questionsPerRound && correct === config.questionsPerRound;
-  const bonusPoints = cleanSweep ? Math.max(0, Math.round(roundSeconds(config) - secondsUsed)) : 0;
-  return { correct, basePoints, bonusPoints, totalPoints: basePoints + bonusPoints, secondsUsed };
+  const basePoints = answers.reduce((total, answer) => total + answer.points, 0);
+  const finished = answers.length === config.questionsPerRound;
+  const last = [...answers].sort((a, b) => a.position - b.position).at(-1);
+  const secondsSaved = finished
+    ? Math.max(0, Math.round(last?.roundSecondsLeft ?? roundSeconds(config) - secondsUsed))
+    : 0;
+  const bonusPoints = correct > 0 ? Math.floor(secondsSaved / 2) : 0;
+  return {
+    correct,
+    basePoints,
+    secondsSaved,
+    bonusPoints,
+    totalPoints: basePoints + bonusPoints,
+    secondsUsed,
+  };
 }
 
 export interface StandingRow {

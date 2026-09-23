@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/relay_models.dart';
+import 'relay_round_demo.dart';
 import 'relay_style.dart';
 
-/// Between rounds, and at the end (Figma 2606:36359).
+/// Between rounds, and at the end (Figma 2717:39052, opening to 2777:43446).
 ///
 /// Every team sees the same table at the same moment, because rounds start
 /// together whoever finished first — finishing early buys points, not a head
@@ -22,7 +25,18 @@ class RelayLeaderboard extends StatelessWidget {
   final int secondsLeft;
   final VoidCallback? onClose;
 
-  bool get _finished => state.phase == RelayPhase.finished;
+  /// Over, either because the server says so or because that was the last
+  /// round — a countdown to a round that cannot come is worse than no clock.
+  bool get _finished =>
+      state.phase == RelayPhase.finished || state.round >= state.rounds;
+
+  /// What the next round is, as the imported sheet set it — nothing after the
+  /// last one.
+  String? get _nextKind {
+    if (_finished || state.round >= state.rounds) return null;
+    final kinds = state.roundKinds;
+    return state.round < kinds.length ? kinds[state.round] : null;
+  }
 
   String get _clock {
     final minutes = (secondsLeft ~/ 60).toString().padLeft(2, '0');
@@ -37,30 +51,59 @@ class RelayLeaderboard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Over: the game's own name across the top with the way out beside
+          // it. Between rounds: the clock to the next one.
           if (_finished)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                onTap: onClose,
-                child: RelayStyle.svg('cross', width: 24, height: 24),
-              ),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onTap: onClose,
+                    child: RelayStyle.svg('cross', width: 24, height: 24),
+                  ),
+                ),
+                Text(
+                  state.eventName.isEmpty ? 'Hint Relay' : state.eventName,
+                  style: RelayStyle.sora(
+                    16,
+                    weight: FontWeight.w600,
+                    color: Colors.white,
+                    height: 24 / 16,
+                  ),
+                ),
+              ],
             )
           else
             Center(child: _timerBadge()),
           const SizedBox(height: 24),
           Text(
-            _finished ? 'GAME OVER!' : 'ROUND COMPLETE!',
+            _finished ? 'GAME COMPLETE!' : 'ROUND COMPLETE!',
             textAlign: TextAlign.center,
             style: RelayStyle.sora(26, weight: FontWeight.w800, color: Colors.white, height: 39),
           ),
-          const SizedBox(height: 4),
-          Text(
-            _finished ? '${state.rounds} ROUNDS PLAYED' : 'ROUND ${state.round} OF ${state.rounds}',
-            textAlign: TextAlign.center,
-            style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
-          ),
+          if (!_finished) ...[
+            const SizedBox(height: 4),
+            Text(
+              // What this screen counts down to is the next round, so that is
+              // the one it names.
+              'ROUND ${state.round >= state.rounds ? state.rounds : state.round + 1} OF ${state.rounds}',
+              textAlign: TextAlign.center,
+              style: RelayStyle.sora(13, color: RelayStyle.onBlue, height: 19.5),
+            ),
+          ],
+          if (_nextKind != null)
+            // Time to read the score first; then what is coming next.
+            _AfterAMoment(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: _NextRound(round: state.round + 1, kind: _nextKind!),
+              ),
+            ),
           const SizedBox(height: 18),
-          if (top.isNotEmpty) _podium(top),
+          if (top.isNotEmpty)
+            RelayPodium(top: top, title: _finished ? 'Final standings' : 'Top 3'),
           const SizedBox(height: 16 + 24),
           _yourTeam(),
           const SizedBox(height: 16),
@@ -112,9 +155,196 @@ class RelayLeaderboard extends StatelessWidget {
     );
   }
 
-  /// Third on the left, first raised in the middle, second on the right — the
-  /// order a podium stands in, not the order a list reads.
-  Widget _podium(List<RelayStanding> top) {
+  Widget _yourTeam() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x1F0571A6), width: 1.129),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'YOU',
+                style: RelayStyle.sora(10, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 18),
+              ),
+              const SizedBox(height: 2 + 8),
+              Padding(
+                // Clear of the total on the right.
+                padding: const EdgeInsets.only(right: 72),
+                child: Text(
+                  state.yourRank > 0 ? '#${state.yourRank} ${state.teamName}' : state.teamName,
+                  style: RelayStyle.sora(20, weight: FontWeight.w700, color: RelayStyle.brand, height: 19.5),
+                ),
+              ),
+              const SizedBox(height: 2 + 8),
+              SizedBox(
+                width: double.infinity,
+                height: 1,
+                child: RelayStyle.svg('divider_line', width: double.infinity, height: 1, fit: BoxFit.fill),
+              ),
+              const SizedBox(height: 2 + 12),
+              Text(
+                '+${state.pointsThisRound} points this round',
+                style: RelayStyle.sora(16, weight: FontWeight.w600, color: const Color(0xFFFF8D28), height: 18),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: SizedBox(
+                height: 34,
+                child: Text(
+                  '${state.points} pts',
+                  style: RelayStyle.sora(16, weight: FontWeight.w700, color: RelayStyle.brand, height: 19.5),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(RelayStanding row) {
+    final mine = row.name == state.teamName;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: mine ? Colors.white : RelayStyle.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: mine ? const Color(0x330571A6) : const Color(0xFFEBEBEB),
+          width: 1.129,
+        ),
+      ),
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              '${row.rank}. ${row.name}',
+              overflow: TextOverflow.ellipsis,
+              style: RelayStyle.sora(14, weight: mine ? FontWeight.w700 : FontWeight.w600, height: 21),
+            ),
+          ),
+          if (mine) ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0x1A0571A6),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Text(
+                'YOU',
+                style: RelayStyle.sora(10, weight: FontWeight.w700, color: RelayStyle.brand, height: 15, spacing: 0.3),
+              ),
+            ),
+          ],
+          const Spacer(),
+          Text(
+            '${row.points} pts',
+            style: RelayStyle.sora(15, weight: FontWeight.w700, color: RelayStyle.secondary, height: 22.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A look at the next round, which opens by itself a second after the
+/// leaderboard lands (Figma 2717:39052 closed, 2777:43446 open).
+class _NextRound extends StatefulWidget {
+  const _NextRound({required this.round, required this.kind});
+
+  final int round;
+  final String kind;
+
+  @override
+  State<_NextRound> createState() => _NextRoundState();
+}
+
+class _NextRoundState extends State<_NextRound> {
+  bool _open = false;
+  Timer? _timer;
+
+  /// Closed, the card shows its heading row only: 24 above, 17 of text, 21
+  /// below — the design's 62.
+  static const _closedHeight = 62.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _open = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final card = RelayRoundDemo(round: widget.round, kind: widget.kind, place: RelayDemoPlace.nextRound);
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: _open
+          ? card
+          : Container(
+              height: _closedHeight,
+              // The card is cut short, so its outline is drawn on the cut.
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white, width: 1.129),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  maxHeight: double.infinity,
+                  child: card,
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// The top three on a podium: third, first raised in the middle, second — the
+/// order a podium stands in, not the order a list reads. Shared by the
+/// leaderboard and the finished game's post (Figma 2717:39071, 2759:43105).
+class RelayPodium extends StatelessWidget {
+  const RelayPodium({
+    super.key,
+    required this.top,
+    required this.title,
+    this.surface = 'ranking_surface.png',
+    this.surfaceLeft = 0.0006,
+    this.surfaceTop = -0.323,
+  });
+
+  final List<RelayStanding> top;
+  final String title;
+
+  /// The rays behind the podium, and where the design places them.
+  final String surface;
+  final double surfaceLeft;
+  final double surfaceTop;
+
+  @override
+  Widget build(BuildContext context) {
     RelayStanding? at(int rank) => top.length >= rank ? top[rank - 1] : null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
@@ -132,14 +362,14 @@ class RelayLeaderboard extends StatelessWidget {
                 builder: (context, box) => Stack(
                   children: [
                     Positioned(
-                      left: 0.0006 * box.maxWidth,
-                      top: -0.323 * box.maxHeight,
+                      left: surfaceLeft * box.maxWidth,
+                      top: surfaceTop * box.maxHeight,
                       width: box.maxWidth,
                       height: 1.4799 * box.maxHeight,
                       child: Opacity(
                         opacity: 0.18,
                         child: Image.asset(
-                          '${RelayStyle.asset}/ranking_surface.png',
+                          '${RelayStyle.asset}/$surface',
                           fit: BoxFit.fill,
                         ),
                       ),
@@ -153,7 +383,7 @@ class RelayLeaderboard extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    _finished ? 'Final standings' : 'Standings',
+                    title,
                     style: RelayStyle.sora(11, weight: FontWeight.w700, color: RelayStyle.secondary),
                   ),
                   const SizedBox(height: 12),
@@ -299,96 +529,58 @@ class RelayLeaderboard extends StatelessWidget {
     );
   }
 
-  Widget _yourTeam() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0x1F0571A6), width: 1.129),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'YOU',
-                  style: RelayStyle.sora(10, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 18),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  state.yourRank > 0 ? '#${state.yourRank} ${state.teamName}' : state.teamName,
-                  style: RelayStyle.sora(20, weight: FontWeight.w700, color: RelayStyle.brand, height: 19.5),
-                ),
-                const SizedBox(height: 2 + 10),
-                RelayStyle.svg('divider_line', width: 196, height: 1),
-                const SizedBox(height: 2 + 10),
-                Text(
-                  '+${state.pointsThisRound} points this round',
-                  style: RelayStyle.sora(16, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 18),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${state.points}',
-            style: RelayStyle.sora(16, weight: FontWeight.w700, color: RelayStyle.brand, height: 19.5),
-          ),
-        ],
-      ),
-    );
+}
+
+/// Holds its child back for a few seconds, then fades it in.
+///
+/// The leaderboard rebuilds every second as the clock ticks; the wait lives in
+/// state so it runs once, not from the top on every tick.
+class _AfterAMoment extends StatefulWidget {
+  const _AfterAMoment({required this.child});
+
+  final Widget child;
+
+  static const delay = Duration(seconds: 6);
+
+  @override
+  State<_AfterAMoment> createState() => _AfterAMomentState();
+}
+
+class _AfterAMomentState extends State<_AfterAMoment> {
+  bool _shown = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_AfterAMoment.delay, () {
+      if (mounted) setState(() => _shown = true);
+    });
   }
 
-  Widget _row(RelayStanding row) {
-    final mine = row.name == state.teamName;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: mine ? Colors.white : RelayStyle.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: mine ? const Color(0x330571A6) : const Color(0xFFEBEBEB),
-          width: 1.129,
-        ),
-      ),
-      child: Row(
-        children: [
-          Flexible(
-            child: Text(
-              '${row.rank}. ${row.name}',
-              overflow: TextOverflow.ellipsis,
-              style: RelayStyle.sora(14, weight: mine ? FontWeight.w700 : FontWeight.w600, height: 21),
-            ),
-          ),
-          if (mine) ...[
-            const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: const Color(0x1A0571A6),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                'YOU',
-                style: RelayStyle.sora(10, weight: FontWeight.w700, color: RelayStyle.brand, height: 15, spacing: 0.3),
-              ),
-            ),
-          ],
-          const Spacer(),
-          Text(
-            '${row.points}',
-            style: RelayStyle.sora(
-              15,
-              weight: FontWeight.w700,
-              color: mine ? RelayStyle.brand : RelayStyle.secondary,
-              height: 22.5,
-            ),
-          ),
-        ],
-      ),
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing is held open for it: an empty gap where the card will be pushed
+    // the standings down the screen for six seconds. The space opens as the
+    // card fades in.
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: _shown
+          ? AnimatedOpacity(
+              opacity: 1,
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOut,
+              child: widget.child,
+            )
+          : const SizedBox(width: double.infinity),
     );
   }
 }

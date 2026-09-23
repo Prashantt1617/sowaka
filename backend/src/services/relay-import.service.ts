@@ -450,27 +450,32 @@ const MIN_CLASH_DISTANCE = 8;
 const KIND_ALIASES: Record<string, RelayItemKind> = {
   movie: 'movie',
   movieclues: 'movie',
+  plotpicks: 'movie',
   clues: 'movie',
-  lyric: 'lyric',
-  lyrics: 'lyric',
-  filllyric: 'lyric',
   word: 'word',
   unscramble: 'word',
   letters: 'word',
   number: 'number',
   numberchain: 'number',
+  numbercrunch: 'number',
+  calculation: 'number',
   calculator: 'number',
   maths: 'number',
   odd: 'odd',
   oddoneout: 'odd',
+  person: 'person',
+  personality: 'person',
+  guesswho: 'person',
+  guessthepersonality: 'person',
+  whoami: 'person',
 };
 
 const PIECE_LABELS: Record<RelayItemKind, (index: number) => string> = {
   movie: (i) => `Clue ${i + 1}`,
-  lyric: (i) => `Part ${i + 1}`,
   word: (i) => `Letter ${i + 1}`,
   number: (i) => (i === 0 ? 'Start with' : `Step ${i}`),
   odd: (i) => `Word ${i + 1}`,
+  person: (i) => `Hint ${i + 1}`,
 };
 
 interface ItemRow {
@@ -546,7 +551,7 @@ async function buildItems(adminUserId: string, eventId: string, fileName: string
       issues.push({
         severity: 'error',
         row: row.row,
-        message: `"${row.kind}" is not a round type — use movie, lyric, word, number or odd`,
+        message: `"${row.kind}" is not a round type — use movie, word, number, odd or guess who`,
       });
       continue;
     }
@@ -564,11 +569,11 @@ async function buildItems(adminUserId: string, eventId: string, fileName: string
       });
       continue;
     }
-    if (kind === 'movie' && texts.length !== config.hintsPerQuestion) {
+    if ((kind === 'movie' || kind === 'person') && texts.length !== config.hintsPerQuestion) {
       issues.push({
         severity: 'error',
         row: row.row,
-        message: `A movie needs ${config.hintsPerQuestion} clues, not ${texts.length}`,
+        message: `A ${kind === 'movie' ? 'movie' : 'Guess Who'} needs ${config.hintsPerQuestion} ${kind === 'movie' ? 'clues' : 'hints'}, not ${texts.length}`,
       });
       continue;
     }

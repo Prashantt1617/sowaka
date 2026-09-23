@@ -77,8 +77,8 @@ abstract final class RelayStyle {
         letterSpacing: spacing,
       );
 
-  static Widget svg(String name, {double? width, double? height}) =>
-      SvgPicture.asset('$asset/$name.svg', width: width, height: height);
+  static Widget svg(String name, {double? width, double? height, BoxFit fit = BoxFit.contain}) =>
+      SvgPicture.asset('$asset/$name.svg', width: width, height: height, fit: fit);
 }
 
 /// Every game screen sits on the same gradient with the same page padding.

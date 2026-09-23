@@ -32,11 +32,11 @@ class RelayApiService {
         title: card.title,
         status: card.status,
         startsAt: card.startsAt,
-        rewardAmount: card.rewardAmount,
         pointsPerCorrect: card.pointsPerCorrect,
         instructionsVideoUrl: '$_baseUrl${card.instructionsVideoUrl}',
         teamName: card.teamName,
         members: card.members,
+        podium: card.podium,
       );
     }
     return card;

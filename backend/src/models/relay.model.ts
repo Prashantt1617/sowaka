@@ -23,16 +23,18 @@ export interface RelayConfig {
 }
 
 export const RELAY_DEFAULT_CONFIG: RelayConfig = {
-  // Five rounds of four, as the screens show: "ROUND 2 OF 5" over four pips.
+  // Five rounds of five, as the screens show: "ROUND 2 OF 5" over five pips.
   rounds: 5,
-  questionsPerRound: 4,
+  questionsPerRound: 5,
   hintsPerQuestion: 5,
-  hintIntervalSeconds: 3,
+  hintIntervalSeconds: 5,
   // The cap that closes a question. Players are shown the round instead —
-  // four of these, counted down as one 120-second clock.
+  // five of these, counted down as one 150-second clock.
   questionSeconds: 30,
-  breakSeconds: 90,
-  pointsPerCorrect: 30,
+  // What a team that used the whole round waits on the leaderboard. One that
+  // finished early waits its saved time on top, so every round starts together.
+  breakSeconds: 40,
+  pointsPerCorrect: 40,
   matchThreshold: 0.7,
   presenceWindowSeconds: 20,
   leadGraceSeconds: 30,
@@ -56,11 +58,6 @@ export interface RelayEvent {
   startsAt?: Date;
   /** The instructions video, uploaded with the post and shown before the lobby. */
   instructionsVideoUrl?: string;
-  /**
-   * The prize headline on the post, in rupees. Set by HR when publishing —
-   * never a figure the app or the server makes up.
-   */
-  rewardAmount?: number;
   /** Held only while one server is starting the game, so no other does. */
   startClaim?: string;
   startedAt?: Date;
@@ -106,7 +103,7 @@ export interface RelayTeam {
  *
  * `staggered` fires them one at a time on the hint interval, easiest first —
  * the movie-clue shape. `simultaneous` puts every piece out at once, one per
- * player, which is what the unscramble, number-chain, lyric and odd-one-out
+ * player, which is what the unscramble, number-chain and odd-one-out
  * rounds are: nobody can see the whole puzzle, so they have to talk.
  */
 export type RelayRevealMode = 'staggered' | 'simultaneous';
@@ -114,21 +111,22 @@ export type RelayRevealMode = 'staggered' | 'simultaneous';
 /**
  * `exact` for answers where one wrong letter is a different answer — an
  * unscrambled word, a total, the odd one out. `fuzzy` for the ones where a
- * transliterated near-miss is the point, like a movie title or a lyric.
+ * transliterated near-miss is the point, like a movie title or a name.
  */
 export type RelayMatching = 'exact' | 'fuzzy';
 
-export type RelayItemKind = 'movie' | 'lyric' | 'word' | 'number' | 'odd';
+export type RelayItemKind = 'movie' | 'word' | 'number' | 'odd' | 'person';
 
 export const RELAY_KIND_RULES: Record<
   RelayItemKind,
   { reveal: RelayRevealMode; matching: RelayMatching }
 > = {
   movie: { reveal: 'staggered', matching: 'fuzzy' },
-  lyric: { reveal: 'simultaneous', matching: 'fuzzy' },
   word: { reveal: 'simultaneous', matching: 'exact' },
   number: { reveal: 'simultaneous', matching: 'exact' },
   odd: { reveal: 'simultaneous', matching: 'exact' },
+  // Guess Who: hints from vague to giveaway, a name spelled loosely.
+  person: { reveal: 'staggered', matching: 'fuzzy' },
 };
 
 export interface RelayPiece {
@@ -173,6 +171,11 @@ export interface RelayAnswerRecord {
   answeredBy?: string;
   secondsTaken: number;
   points: number;
+  /**
+   * The round clock when the round's last question closed, as players saw it.
+   * Only on that last answer; it is what the time bonus is paid on.
+   */
+  roundSecondsLeft?: number;
 }
 
 export interface RelayTeamProgress {
@@ -193,7 +196,7 @@ export interface RelayTeamProgress {
   carriedSeconds: number;
   answers: RelayAnswerRecord[];
   totalPoints: number;
-  /** Rounds whose clean-sweep bonus has been paid, so it is never paid twice. */
+  /** Rounds whose time bonus has been paid, so it is never paid twice. */
   bonusRounds: number[];
   /** Drives the tie-break: least time used wins. */
   totalSecondsUsed: number;

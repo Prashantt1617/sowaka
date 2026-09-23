@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,10 +9,13 @@ import '../data/relay_api_service.dart';
 import '../data/relay_models.dart';
 import 'relay_game_screen.dart';
 import 'relay_buttons.dart';
+import 'relay_leaderboard.dart';
 import 'relay_spinning_cube.dart';
 import 'relay_style.dart';
 
-/// The game's post in the Connect feed (Figma 2606:35400), and the only way in.
+/// The game's post in the Connect feed, and the only way in: counting down to
+/// the start (Figma 2790:43744), live, and once it is over the result
+/// (2759:43071).
 ///
 /// The post itself is the same for the whole company; the team block is this
 /// viewer's own, fetched separately, so nobody's feed shows somebody else's
@@ -32,6 +36,7 @@ class RelayPostCard extends StatefulWidget {
 
 class _RelayPostCardState extends State<RelayPostCard> {
   RelayCard? _card;
+  Timer? _ticker;
 
   static const _cream = Color(0xFFFAFAF7);
   static const _mist = Color(0xFFE5EDFF);
@@ -39,6 +44,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
   @override
   void initState() {
     super.initState();
+    // Once a second for the countdown; it stops itself when there is nothing
+    // left to count.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      // Redrawn once more on the way out, so zero turns into the live dot.
+      setState(() {});
+      if (_phase != _CardPhase.upcoming) _ticker?.cancel();
+    });
     if (widget.card != null) {
       _card = widget.card;
       return;
@@ -46,6 +59,12 @@ class _RelayPostCardState extends State<RelayPostCard> {
     RelayApiService(session: widget.session).myCard().then((card) {
       if (mounted) setState(() => _card = card);
     }).catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
   }
 
   Map<String, dynamic> get _body => widget.post.body;
@@ -61,10 +80,18 @@ class _RelayPostCardState extends State<RelayPostCard> {
   }
 
   DateTime? get _startsAt =>
-      DateTime.tryParse(_body['startsAt'] as String? ?? '')?.toLocal();
+      DateTime.tryParse(_body['startsAt'] as String? ?? '')?.toLocal() ?? _card?.startsAt;
 
-  /// HR's figure from the post; the card never invents one.
-  int get _reward => (_body['rewardAmount'] as num?)?.toInt() ?? _card?.rewardAmount ?? 0;
+  /// Where the game is, from the server's word where it has one and the clock
+  /// otherwise — a card loaded before kick-off turns live on its own.
+  _CardPhase get _phase {
+    final card = _card;
+    if (card != null && card.isFinished) return _CardPhase.over;
+    if (card != null && card.isLive) return _CardPhase.live;
+    final at = _startsAt;
+    if (at != null && at.isAfter(DateTime.now())) return _CardPhase.upcoming;
+    return at == null ? _CardPhase.upcoming : _CardPhase.live;
+  }
 
   void _open() {
     Navigator.of(context).push(
@@ -82,43 +109,112 @@ class _RelayPostCardState extends State<RelayPostCard> {
 
   @override
   Widget build(BuildContext context) {
+    final over = _phase == _CardPhase.over;
     return LayoutBuilder(
       builder: (context, box) => Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          gradient: _gradientFor(Size(box.maxWidth, 545)),
+          gradient: over
+              ? _gradientFor(Size(box.maxWidth, 700), 144.7696351299595)
+              : _gradientFor(Size(box.maxWidth, 683), 145.43061670358364),
         ),
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _heading(),
-            const SizedBox(height: 18),
-            _when(),
-            const SizedBox(height: 18),
-            _rewardBox(),
-            if (_card?.teamName != null) ...[
-              const SizedBox(height: 18),
-              Container(height: 1, color: const Color(0xF7CCFCFF)),
-              const SizedBox(height: 18),
-              _team(_card!),
-            ],
-            const SizedBox(height: 18),
-            RelayCtaButton(
-              label: 'View game',
-              labelPadding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
-              onTap: _open,
-            ),
-          ],
+          children: over ? _finished() : _upcomingOrLive(),
         ),
       ),
     );
   }
 
-  /// The card's own `linear-gradient(148.81deg, #57B9E8 1.91%, #147381 98.09%)`.
-  LinearGradient _gradientFor(Size size) {
-    const degrees = 148.81229242720906;
+  List<Widget> _upcomingOrLive() {
+    return [
+      _heading(),
+      const SizedBox(height: 18),
+      _when(),
+      // Live, the countdown has nothing left to count; the dot up top says so.
+      if (_phase == _CardPhase.upcoming) ...[
+        const SizedBox(height: 18),
+        _clockBox(),
+      ],
+      const SizedBox(height: 18),
+      _rewardBox(),
+      if (_card?.teamName != null) ...[
+        const SizedBox(height: 18),
+        Container(height: 1, color: const Color(0xF7CCFCFF)),
+        const SizedBox(height: 18),
+        _team(_card!),
+      ],
+      const SizedBox(height: 18),
+      RelayCtaButton(
+        label: 'Let’s Play',
+        labelPadding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
+        onTap: _open,
+      ),
+    ];
+  }
+
+  /// The result: who won, the podium, and the way to the whole table.
+  List<Widget> _finished() {
+    final podium = _card?.podium ?? const <RelayStanding>[];
+    return [
+      _heading(over: true),
+      if (podium.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        Column(
+          children: [
+            RelayStyle.svg('crown', width: 20, height: 20),
+            const SizedBox(height: 8),
+            _pill('${podium.first.name.toUpperCase()} TAKES THE WIN'),
+          ],
+        ),
+        const SizedBox(height: 18),
+        RelayPodium(
+          top: podium,
+          title: 'Final standings',
+          surface: 'score_sunburst.jpg',
+          surfaceLeft: -0.0016,
+          surfaceTop: -0.3685,
+        ),
+      ],
+      const SizedBox(height: 18),
+      RelayCtaButton(
+        label: 'View Leaderboard',
+        labelPadding: const EdgeInsets.fromLTRB(13, 28, 12, 39),
+        onTap: _open,
+      ),
+    ];
+  }
+
+  /// The frosted pill the finished post uses for its status and its winner.
+  Widget _pill(String text, {bool dot = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0x24FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x66FFFFFF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (dot) ...[RelayStyle.svg('status_dot', width: 7, height: 7), const SizedBox(width: 6)],
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: RelayStyle.sora(11, weight: FontWeight.w700, color: Colors.white, spacing: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The card's own `linear-gradient(<angle>, #57B9E8 1.91%, #147381 98.09%)`.
+  LinearGradient _gradientFor(Size size, double degrees) {
     final radians = degrees * math.pi / 180;
     final dx = math.sin(radians);
     final dy = -math.cos(radians);
@@ -135,29 +231,49 @@ class _RelayPostCardState extends State<RelayPostCard> {
     );
   }
 
-  Widget _heading() {
+  /// Once the game is over the label becomes a "GAME OVER" pill, ten taller,
+  /// and the block closes up under the title (133 rather than 165).
+  Widget _heading({bool over = false}) {
+    final titleTop = over ? 26.0 + 32 : 16.0 + 32;
     return SizedBox(
-      height: 165,
+      // Finished, the block is only as tall as what is in it.
+      height: over ? null : 165,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned(
             left: 181,
-            top: 48 - 59.21,
+            top: titleTop - 59.21,
             child: const RelaySpinningCube(),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'TEAM CHALLENGE',
-                style: RelayStyle.sora(
-                  13,
-                  weight: FontWeight.w600,
-                  color: RelayStyle.surface,
-                  spacing: 1.6,
+              if (over)
+                _pill('GAME OVER', dot: true)
+              else
+                // The live dot sits opposite the label, centred on its line,
+                // without pushing the title down.
+                SizedBox(
+                  width: double.infinity,
+                  height: 16,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Text(
+                        'TEAM CHALLENGE',
+                        style: RelayStyle.sora(
+                          13,
+                          weight: FontWeight.w600,
+                          color: RelayStyle.surface,
+                          spacing: 1.6,
+                        ),
+                      ),
+                      if (_phase == _CardPhase.live)
+                        const Positioned(right: 0, top: -5, child: _LiveBadge()),
+                    ],
+                  ),
                 ),
-              ),
               const SizedBox(height: 32),
               Text(
                 _title,
@@ -185,11 +301,9 @@ class _RelayPostCardState extends State<RelayPostCard> {
     final minutes = at.minute == 0 ? '' : ':${at.minute.toString().padLeft(2, '0')}';
     final meridiem = at.hour < 12 ? 'A.M.' : 'P.M.';
     final style = RelayStyle.sora(16, weight: FontWeight.w600, color: _cream);
-    // Date at one end, time at the other, as drawn, both at full size. Only
-    // the date gives way, and only on a phone too narrow for both — splitting
-    // the row into equal halves shrank it on every phone.
+    // Date then time, 18 apart, as drawn. Only the date gives way, and only on
+    // a phone too narrow for both.
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Flexible(
           child: FittedBox(
@@ -200,12 +314,12 @@ class _RelayPostCardState extends State<RelayPostCard> {
               children: [
                 RelayStyle.svg('calendar', width: 18, height: 18),
                 const SizedBox(width: 8),
-                Text('Starts ${at.day} ${months[at.month - 1]}', style: style),
+                Text('${at.day} ${months[at.month - 1]}', style: style),
               ],
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 18),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -218,9 +332,35 @@ class _RelayPostCardState extends State<RelayPostCard> {
     );
   }
 
+  /// "Game start in", counting down to the second.
+  Widget _clockBox() {
+    final at = _startsAt;
+    final left = at == null ? Duration.zero : at.difference(DateTime.now());
+    final seconds = left.isNegative ? 0 : left.inSeconds;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final value = '${two(seconds ~/ 3600)}:${two(seconds % 3600 ~/ 60)}:${two(seconds % 60)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          Text(
+            'Game start in ',
+            style: RelayStyle.sora(12, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 16.2, spacing: -0.16),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: RelayStyle.sora(32, weight: FontWeight.w600, color: RelayStyle.brand, spacing: -0.16)
+                .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _rewardBox() {
     return Container(
-      constraints: const BoxConstraints(minHeight: 106),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFFE7F7FF),
@@ -242,29 +382,21 @@ class _RelayPostCardState extends State<RelayPostCard> {
           const SizedBox(width: 16),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'REWARDS UP TO',
-                  style: RelayStyle.sora(
-                    12,
-                    weight: FontWeight.w600,
-                    color: RelayStyle.tertiary,
-                    spacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 2),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '₹${_indianGrouping(_reward)}',
-                    style: RelayStyle.sora(38, weight: FontWeight.w700),
+                    'SURPRISE REWARDS',
+                    style: RelayStyle.sora(20, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 24, spacing: 0.4),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text('For the top teams', style: RelayStyle.sora(13, color: RelayStyle.tertiary)),
+                const SizedBox(height: 4),
+                Text(
+                  'For the top teams',
+                  style: RelayStyle.sora(14, color: RelayStyle.tertiary, height: 16.2, spacing: -0.16),
+                ),
               ],
             ),
           ),
@@ -353,18 +485,56 @@ class _RelayPostCardState extends State<RelayPostCard> {
     return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
   }
 
-  /// 10000 → 10,000 and 1000000 → 10,00,000, the way rupees are written.
-  static String _indianGrouping(int value) {
-    final digits = value.toString();
-    if (digits.length <= 3) return digits;
-    final last3 = digits.substring(digits.length - 3);
-    var rest = digits.substring(0, digits.length - 3);
-    final groups = <String>[];
-    while (rest.length > 2) {
-      groups.insert(0, rest.substring(rest.length - 2));
-      rest = rest.substring(0, rest.length - 2);
-    }
-    if (rest.isNotEmpty) groups.insert(0, rest);
-    return '${groups.join(',')},$last3';
+}
+
+enum _CardPhase { upcoming, live, over }
+
+/// "● LIVE" in the finished post's frosted pill, the dot breathing so the
+/// card reads as happening now.
+class _LiveBadge extends StatefulWidget {
+  const _LiveBadge();
+
+  @override
+  State<_LiveBadge> createState() => _LiveBadgeState();
+}
+
+class _LiveBadgeState extends State<_LiveBadge> with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Live now',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0x24FFFFFF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0x66FFFFFF)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FadeTransition(
+              opacity: Tween<double>(begin: 1, end: 0.35).animate(_pulse),
+              child: Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(color: RelayStyle.online, shape: BoxShape.circle),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text('LIVE', style: RelayStyle.sora(11, weight: FontWeight.w700, color: Colors.white, spacing: 1.5)),
+          ],
+        ),
+      ),
+    );
   }
 }

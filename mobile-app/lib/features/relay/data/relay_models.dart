@@ -38,6 +38,7 @@ class RelayState {
     required this.yourRank,
     required this.pointsThisRound,
     this.lastOutcome,
+    this.roundFinish,
     this.roundOutcomes = const [],
     this.roundSeconds = 0,
     this.roundKinds = const [],
@@ -86,6 +87,10 @@ class RelayState {
   /// the confetti. Everyone on the team gets it, not only the lead.
   final RelayOutcome? lastOutcome;
 
+  /// Set once the team has closed every question this round: what the score
+  /// reveal counts down and adds up. Null while the round is still being played.
+  final RelayRoundFinish? roundFinish;
+
   /// How each closed question this round went, in order: 'correct',
   /// 'skipped' or 'timeout'. Colours the pips.
   final List<String> roundOutcomes;
@@ -124,6 +129,7 @@ class RelayState {
         yourRank: next.yourRank,
         pointsThisRound: next.pointsThisRound,
         lastOutcome: next.lastOutcome,
+        roundFinish: next.roundFinish,
         roundOutcomes: next.roundOutcomes,
         roundSeconds: roundSeconds,
         roundKinds: roundKinds,
@@ -165,6 +171,7 @@ class RelayState {
       yourRank: _int(json['yourRank']),
       pointsThisRound: _int(json['pointsThisRound']),
       lastOutcome: json['lastOutcome'] is Map ? RelayOutcome.fromJson(_map(json['lastOutcome'])) : null,
+      roundFinish: json['roundFinish'] is Map ? RelayRoundFinish.fromJson(_map(json['roundFinish'])) : null,
       roundOutcomes: [for (final outcome in _list(json['roundOutcomes'])) _str(outcome)],
       roundSeconds: _int(json['roundSeconds']),
       roundKinds: [for (final kind in _list(json['roundKinds'])) _str(kind)],
@@ -266,21 +273,26 @@ class RelayCard {
     required this.title,
     required this.status,
     required this.startsAt,
-    required this.rewardAmount,
     required this.pointsPerCorrect,
     required this.instructionsVideoUrl,
     required this.teamName,
     required this.members,
+    this.podium = const [],
   });
 
   final String title;
   final String status;
   final DateTime? startsAt;
-  final int rewardAmount;
   final int pointsPerCorrect;
   final String instructionsVideoUrl;
   final String? teamName;
   final List<RelayCardMember> members;
+
+  /// The top three once the game is over, first first; empty before that.
+  final List<RelayStanding> podium;
+
+  bool get isFinished => status == 'finished';
+  bool get isLive => status == 'live';
 
   static RelayCard fromJson(Map<String, dynamic> json) {
     final event = _map(json['event']);
@@ -289,7 +301,6 @@ class RelayCard {
       title: _str(event['title']),
       status: _str(event['status']),
       startsAt: DateTime.tryParse(_str(event['startsAt']))?.toLocal(),
-      rewardAmount: _int(event['rewardAmount']),
       pointsPerCorrect: _int(event['pointsPerCorrect']),
       instructionsVideoUrl: _str(event['instructionsVideoUrl']),
       teamName: team == null ? null : _str(team['name']),
@@ -301,6 +312,10 @@ class RelayCard {
               isLeader: _bool(member['isLeader']),
               isYou: _bool(member['isYou']),
             ),
+      ],
+      podium: [
+        for (final row in _list(json['podium']))
+          if (row is Map) RelayStanding.fromJson(Map<String, dynamic>.from(row)),
       ],
     );
   }
@@ -323,4 +338,21 @@ class RelayOutcome {
 
   static RelayOutcome fromJson(Map<String, dynamic> json) =>
       RelayOutcome(answer: _str(json['answer']), points: _int(json['points']));
+}
+
+/// How a team's round closed early: the clock it stopped, what that time is
+/// worth, and what the answers alone earned. The score reveal counts the clock
+/// down while the score climbs from [roundPoints] to [roundPoints] + [timeBonus].
+class RelayRoundFinish {
+  const RelayRoundFinish({required this.secondsSaved, required this.timeBonus, required this.roundPoints});
+
+  final int secondsSaved;
+  final int timeBonus;
+  final int roundPoints;
+
+  static RelayRoundFinish fromJson(Map<String, dynamic> json) => RelayRoundFinish(
+    secondsSaved: _int(json['secondsSaved']),
+    timeBonus: _int(json['timeBonus']),
+    roundPoints: _int(json['roundPoints']),
+  );
 }
