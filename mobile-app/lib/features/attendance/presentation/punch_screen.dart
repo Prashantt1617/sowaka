@@ -161,17 +161,8 @@ class _PunchScreenState extends State<PunchScreen> {
       await _send(null);
       return;
     }
-    // Explain before the OS asks. The system prompt is the one chance to get a
-    // yes, and someone who has just read why is far likelier to give it.
-    if (await _location.needsPermission) {
-      if (!mounted) return;
-      final proceed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const _LocationExplainerDialog(),
-      );
-      if (proceed != true) return;
-    }
+    // The system asks for the permission itself, with the app's own reason in
+    // its prompt; a second dialog in front of it was one tap for nothing.
     if (!mounted) return;
     setState(() => _stage = _PunchStage.checking);
     PunchReading? reading;
@@ -725,117 +716,6 @@ class _OutlineAction extends StatelessWidget {
   }
 }
 
-/// Why the app is about to ask for location (node 2288:10500).
-///
-/// Shown in front of the system prompt rather than instead of it: only the OS
-/// can grant the permission, and this is the sentence that decides whether
-/// someone taps allow when it appears.
-class _LocationExplainerDialog extends StatelessWidget {
-  const _LocationExplainerDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.all(24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        width: 320,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Image.asset(
-                'assets/icons/punch/location_dialog.png',
-                width: 84,
-                height: 84,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Enable location to punch in',
-              style: _sora(22, FontWeight.w700, _ink, height: 30 / 22),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              "Sowaka checks your location at punch-in and punch-out to confirm "
-              "you're in an approved area.",
-              style: _sora(14, FontWeight.w400, const Color(0xFF484848), height: 22 / 14),
-            ),
-            const SizedBox(height: 24),
-            // The design shows the two system choices and a cancel. Only the OS
-            // can tell them apart, so both lead to its prompt; what differs is
-            // what the person taps there.
-            _DialogAction(
-              label: 'Allow',
-              filled: true,
-              onTap: () => Navigator.of(context).pop(true),
-            ),
-            const SizedBox(height: 8),
-            _DialogAction(
-              label: 'Allow, while using the app',
-              filled: true,
-              onTap: () => Navigator.of(context).pop(true),
-            ),
-            const SizedBox(height: 8),
-            _DialogAction(
-              label: 'Cancel',
-              filled: false,
-              onTap: () => Navigator.of(context).pop(false),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One action in the permission dialog: 46 high, 12 radius (2288:10587).
-class _DialogAction extends StatelessWidget {
-  const _DialogAction({
-    required this.label,
-    required this.filled,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool filled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: double.infinity,
-    height: 46,
-    child: Material(
-      color: filled ? _brand : Colors.white,
-      shape: RoundedRectangleBorder(
-        side: filled
-            ? BorderSide.none
-            : const BorderSide(color: Color(0xFFE8E8EC), width: 1.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: _sora(
-              14,
-              FontWeight.w600,
-              filled ? Colors.white : const Color(0xFF1A1C1E),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// The quiet text action the design uses for "Apply for a leave" and
 /// "Not now" — 14/w600 in #9197A2, no border, no fill.
 class _QuietButton extends StatelessWidget {
   const _QuietButton({required this.label, required this.onTap});
