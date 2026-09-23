@@ -82,13 +82,17 @@ class _SplashScreenState extends State<SplashScreen>
                     style: const TextStyle(
                       fontFamily: 'Anton',
                       fontSize: 45,
+                      // The design's own line box: 68pt for a 45pt wordmark,
+                      // which is the whole gap down to the tagline.
+                      height: 68 / 45,
                       color: Colors.white,
                       letterSpacing: 0.5,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 60),
+              // Nothing between them: the design butts the tagline's box
+              // straight against the wordmark's.
               Opacity(
                 opacity: _taglineOpacity.value,
                 child: Transform.translate(
@@ -102,8 +106,10 @@ class _SplashScreenState extends State<SplashScreen>
                       fontWeight: widget.branding.isSowaka
                           ? FontWeight.w400
                           : FontWeight.w600,
+                      // Sowaka's own line was already set at 13; the design
+                      // gives the company variant 14.
                       fontSize: widget.branding.isSowaka ? 13 : 14,
-                      height: 19.5 / (widget.branding.isSowaka ? 13 : 14),
+                      height: widget.branding.isSowaka ? 19.5 / 13 : 19.5 / 14,
                     ),
                   ),
                 ),
