@@ -31,6 +31,7 @@ import '../bloc/manager_bloc.dart';
 import '../../shared/startup_prefs.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
+import '../../shared/app_toast.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -338,13 +339,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final message = state.message;
           if (!mounted || message == null) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: MColors.ink,
-            ),
-          );
+          showAppToast(context, message);
           _bloc.add(const ClearManagerMessage());
         });
 

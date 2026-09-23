@@ -1705,8 +1705,10 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
       rows: [
         SummaryRow('Employee', '${request.who} · ${request.team}'),
         SummaryRow('Work Date', _summaryDate(request.workDate)),
+        // Half day or full, as it was applied for. The clock times behind it
+        // are derived from the shift policy, not chosen by anyone, so showing
+        // them as "6:30 PM – 9:30 PM" invented a detail.
         SummaryRow('Duration', request.hoursLabel),
-        SummaryRow('Time', request.timeRangeLabel),
         SummaryRow('Applied On', _summaryDate(request.requestedOn)),
         SummaryRow('Status', _decisionText(request.decision)),
       ],

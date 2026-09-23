@@ -618,13 +618,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         // The server's own reason, when it gave one: "5 MB or smaller" is
         // something a person can act on, "try again" is not.
         final reason = error is ManagerApiException ? error.message : null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(reason ?? 'Could not update your photo. Try again.'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: MColors.ink,
-          ),
-        );
+        showAppToast(context, reason ?? 'Could not update your photo. Try again.');
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -3273,21 +3267,10 @@ class _GrowthScoreSection extends StatelessWidget {
             onDeltaTap: (deltaMessageFor == null || selected == null)
                 ? null
                 : (delta) {
-                    final messenger = ScaffoldMessenger.of(context);
-                    messenger
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(
-                            deltaMessageFor!(
-                              _periodTitle(selected.period),
-                              delta,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
+                    showAppToast(
+                      context,
+                      deltaMessageFor!(_periodTitle(selected.period), delta),
+                    );
                   },
           ),
           if (history.isNotEmpty) ...[

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../shared/app_toast.dart';
+
 /// A lightweight full-screen WebView for externally hosted games
 /// (Scribble, Find your Mate, Know your Nation). Unlike the Connect
 /// game player it carries no leaderboard — these games manage their
@@ -174,13 +176,7 @@ class _WebGameScreenState extends State<WebGameScreen> {
   Future<void> _copy(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Copied to clipboard'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: _ink,
-      ),
-    );
+    showAppToast(context, 'Copied to clipboard');
   }
 
   /// Re-invokes the browser's original share sheet for genuine cross-app

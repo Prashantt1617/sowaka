@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:image_picker/image_picker.dart';
+import '../shared/app_toast.dart';
 
 /// A picked image, in the shape `file_picker` already hands back, so call
 /// sites keep reading `.path`, `.name`, `.size` and `.extension` as before.
@@ -79,15 +80,11 @@ Future<PickedImage?> pickImageFrom(
   } on PlatformException catch (error) {
     // A denied camera or photo permission arrives here rather than as a crash.
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.code == 'camera_access_denied' ||
-                    error.code == 'photo_access_denied'
-                ? 'Sowaka needs permission for that. Turn it on in Settings.'
-                : 'Could not open that. Try another option.',
-          ),
-        ),
+      showAppToast(
+        context,
+        error.code == 'camera_access_denied' || error.code == 'photo_access_denied'
+            ? 'Sowaka needs permission for that. Turn it on in Settings.'
+            : 'Could not open that. Try another option.',
       );
     }
     return null;
@@ -139,11 +136,7 @@ Future<List<PickedImage>> pickImagesFrom(
     ];
   } on PlatformException {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sowaka needs permission for that. Turn it on in Settings.'),
-        ),
-      );
+      showAppToast(context, 'Sowaka needs permission for that. Turn it on in Settings.');
     }
     return const [];
   }

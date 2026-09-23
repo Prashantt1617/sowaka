@@ -17,6 +17,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import '../shared/app_toast.dart';
 
 /// How much a `BoxFit.contain` layout has to be zoomed to fill the frame.
 ///
@@ -199,9 +200,7 @@ class _CropPageState extends State<_CropPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not crop that image. Try again.')),
-      );
+      showAppToast(context, 'Could not crop that image. Try again.');
     }
   }
 

@@ -148,7 +148,8 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
       context: context,
       initialDate: _closesDate ?? now.add(const Duration(days: 1)),
       firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
+      // A contest that closes more than six months out is a typo.
+      lastDate: DateTime(now.year, now.month + 6, now.day),
     );
     if (picked == null || !mounted) return;
     setState(() => _closesDate = picked);

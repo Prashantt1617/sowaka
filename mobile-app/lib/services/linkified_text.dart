@@ -2,6 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../features/shared/app_toast.dart';
+
 /// Matches bare and schemed links plus e-mail addresses.
 ///
 /// Trailing punctuation is deliberately excluded from the match so a link at
@@ -74,12 +76,7 @@ class _LinkifiedTextState extends State<LinkifiedText> {
   Future<void> _open(String raw) async {
     final launched = await openExternalLink(raw);
     if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Couldn't open $raw"),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppToast(context, "Couldn't open $raw");
     }
   }
 

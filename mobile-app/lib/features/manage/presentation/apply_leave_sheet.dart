@@ -59,9 +59,15 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       firstDate: _window == null
           ? today.subtract(const Duration(days: 365))
           : _window!.earliestFrom(today),
-      lastDate: _window == null
-          ? today.add(const Duration(days: 365))
-          : _window!.latestFrom(today),
+      // Six months ahead at most, or sooner where the policy says so.
+      lastDate: switch ((
+        DateTime(today.year, today.month + 6, today.day),
+        _window?.latestFrom(today),
+      )) {
+        (final horizon, null) => horizon,
+        (final horizon, final policyEnd?) =>
+          horizon.isBefore(policyEnd) ? horizon : policyEnd,
+      },
       selectableDayPredicate: (day) {
         final date = DateTime(day.year, day.month, day.day);
         if (!_canSelectLeaveDay(date)) return false;
@@ -162,7 +168,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     // reason the button was disabled.
     final problem = _datesBlockedReason;
     if (problem != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
+      showAppToast(context, problem);
       return;
     }
     setState(() => _step = 1);
@@ -171,9 +177,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   void _submit() {
     final reason = _reasonController.text.trim();
     if (reason.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a reason for leave')),
-      );
+      showAppToast(context, 'Please enter a reason for leave');
       return;
     }
     widget.bloc.add(

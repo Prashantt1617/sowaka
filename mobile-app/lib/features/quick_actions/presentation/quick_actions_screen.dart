@@ -11,6 +11,7 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../shared/app_toast.dart';
 
 class QuickActionsController extends ChangeNotifier {
   _QuickActionsScreenState? _state;
@@ -1198,11 +1199,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Future<void> _pickLeaveDuration() async {
     // A half day only makes sense on a single date.
     if (!_isSingleDayLeave) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A half day can only be applied for a single date.'),
-        ),
-      );
+      showAppToast(context, 'A half day can only be applied for a single date.');
       return;
     }
     final picked = await showModalBottomSheet<String>(
@@ -1229,9 +1226,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final first = window == null
         ? today
         : _dateOnly(window.earliestFrom(today));
-    final last = window == null
-        ? today.add(const Duration(days: 365))
-        : _dateOnly(window.latestFrom(today));
+    // Six months ahead at most — nobody books leave a year out, and an
+    // endless calendar is a long way to page back from.
+    final horizon = DateTime(today.year, today.month + 6, today.day);
+    final policyEnd = window == null ? null : _dateOnly(window.latestFrom(today));
+    final last = policyEnd == null || horizon.isBefore(policyEnd) ? horizon : policyEnd;
     final start = initial.isBefore(first)
         ? first
         : initial.isAfter(last)
@@ -1711,11 +1710,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final date = _overtimeDate;
     final duration = _overtimeDuration;
     if (date == null || duration == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pick a date and a duration to continue.'),
-        ),
-      );
+      showAppToast(context, 'Pick a date and a duration to continue.');
       return;
     }
     // The claim carries the hours the duration is worth on this employee's own
@@ -2238,7 +2233,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               // Tapping the month name is how you back out of a filtered
               // list — the same gesture that opened it, in reverse.
               child: GestureDetector(
-                onTap: () => setState(() => _attendanceFilter = null),
+                onTap: () => setState(() {
+                  _attendanceFilter = null;
+                  _selectedCalendarDay = null;
+                }),
                 behavior: HitTestBehavior.opaque,
                 child: Text(
                   '${_monthName(_attendanceMonth.month)} ${_attendanceMonth.year}',
@@ -2251,16 +2249,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ),
               ),
             ),
-            AttendanceCalendarArrow(
-              onPressed: () => _changeAttendanceMonth(1),
-              asset: 'assets/icons/calendar_chevron_next.svg',
+            Opacity(
+              opacity: _canPageAttendanceForward ? 1 : .3,
+              child: AttendanceCalendarArrow(
+                onPressed: _canPageAttendanceForward
+                    ? () => _changeAttendanceMonth(1)
+                    : null,
+                asset: 'assets/icons/calendar_chevron_next.svg',
+              ),
             ),
           ],
         ),
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
-          onChanged: (filter) => setState(() => _attendanceFilter = filter),
+          // A new filter is a new question, so the day opened under the last
+          // one closes with it rather than following the list around.
+          onChanged: (filter) => setState(() {
+            _attendanceFilter = filter;
+            _selectedCalendarDay = null;
+          }),
         ),
         const SizedBox(height: 20),
         if (_attendanceFilter != null) ...[
@@ -2291,7 +2299,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   ),
                 ),
               ),
-          if (_calendarDetailDay(days) case final detail?) ...[
+          // A filtered list answers a question about the days in it, so it
+          // ends on the day that was tapped — today's punches at the foot of
+          // a list today may not even be in is an answer to nothing.
+          if (_calendarDetailDay(days, todayFallback: false) case final detail?) ...[
             const SizedBox(height: 16),
             AttendanceDayDetail(
               day: detail,
@@ -2326,13 +2337,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Day shown in the detail strip under the grid: the tapped day when one is
   /// selected, otherwise today (only when today falls in the shown month).
-  AttendanceDayView? _calendarDetailDay(List<AttendanceDayView> days) {
+  ///
+  /// [todayFallback] is off for the filtered list, which shows a day only
+  /// once it has been tapped.
+  AttendanceDayView? _calendarDetailDay(
+    List<AttendanceDayView> days, {
+    bool todayFallback = true,
+  }) {
     if (_selectedCalendarDay case final selected?) {
       return days
               .where((day) => _sameDay(day.date, selected.date))
               .firstOrNull ??
           selected;
     }
+    if (!todayFallback) return null;
     final now = DateTime.now();
     if (_attendanceMonth.year != now.year ||
         _attendanceMonth.month != now.month) {
@@ -2351,11 +2369,25 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     shift: widget.dashboard.shift,
   );
 
+  /// How far ahead attendance can be paged. There is nothing recorded in the
+  /// future, and the arrows used to run on for ever.
+  static const _attendanceMonthsAhead = 6;
+
+  bool get _canPageAttendanceForward {
+    final now = DateTime.now();
+    final furthest = DateTime(now.year, now.month + _attendanceMonthsAhead);
+    return DateTime(_attendanceMonth.year, _attendanceMonth.month + 1)
+        .isBefore(DateTime(furthest.year, furthest.month + 1));
+  }
+
   Future<void> _changeAttendanceMonth(int delta) async {
     final month = DateTime(
       _attendanceMonth.year,
       _attendanceMonth.month + delta,
     );
+    final now = DateTime.now();
+    final furthest = DateTime(now.year, now.month + _attendanceMonthsAhead);
+    if (month.isAfter(furthest)) return;
     setState(() {
       _attendanceMonth = month;
       _selectedCalendarDay = null;
@@ -3413,7 +3445,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
 class AttendanceCalendarArrow extends StatelessWidget {
   const AttendanceCalendarArrow({required this.onPressed, required this.asset});
-  final VoidCallback onPressed;
+
+  /// Null where there is nothing further to page to.
+  final VoidCallback? onPressed;
   final String asset;
 
   @override
@@ -6469,9 +6503,19 @@ class _MonthCalendarState extends State<_MonthCalendar> {
     ).isAfter(DateTime(first.year, first.month, 0));
   }
 
+  /// How far ahead the arrows go when the policy sets no end of its own.
+  /// Nobody books leave two years out, and an endless calendar is a long way
+  /// to scroll back from.
+  static const _monthsAhead = 6;
+
   bool get _canGoForward {
-    final last = widget.lastDate;
-    if (last == null) return true;
+    final policyEnd = widget.lastDate;
+    final now = DateTime.now();
+    final defaultEnd = DateTime(now.year, now.month + _monthsAhead, 1);
+    // Whichever comes first: the policy's own end, or six months out.
+    final last = policyEnd == null || defaultEnd.isBefore(policyEnd)
+        ? defaultEnd
+        : policyEnd;
     return DateTime(
       _month.year,
       _month.month + 1,
@@ -6659,23 +6703,17 @@ class _UploadCard extends StatelessWidget {
       if (result == null || result.files.isEmpty || !context.mounted) return;
       final file = result.files.single;
       if (file.size > 5 * 1024 * 1024) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Choose a file smaller than 5 MB.')),
-        );
+        showAppToast(context, 'Choose a file smaller than 5 MB.');
         return;
       }
       if (file.bytes == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read the selected file.')),
-        );
+        showAppToast(context, 'Could not read the selected file.');
         return;
       }
       onChanged(file);
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the file picker.')),
-      );
+      showAppToast(context, 'Could not open the file picker.');
     }
   }
 

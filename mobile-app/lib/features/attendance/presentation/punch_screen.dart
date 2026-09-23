@@ -274,6 +274,16 @@ class _PunchScreenState extends State<PunchScreen> {
                   ),
                 ),
               ),
+              if (_stage == _PunchStage.ready)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'When you punch-in, we check if your device location '
+                    'matches the office address',
+                    textAlign: TextAlign.center,
+                    style: _sora(11, FontWeight.w400, const Color(0xFF9E9E9E), height: 16 / 11),
+                  ),
+                ),
             ],
           ),
         ),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../../shared/app_toast.dart';
 import '../../../routes/app_routes.dart';
 import '../../../services/api_config.dart';
 import '../bloc/auth_bloc.dart';
@@ -24,8 +25,11 @@ class _LoginScreenState extends State<LoginScreen>
   late final AnimationController _floatController;
   late final AnimationController _blinkController;
   late final TextEditingController _emailController;
-  late final List<TextEditingController> _otpControllers;
-  late final List<FocusNode> _otpFocusNodes;
+  /// One field behind the six boxes. Six separate ones each held a single
+  /// character, so backspace on an empty box did nothing and a pasted code
+  /// landed entirely in the first.
+  late final TextEditingController _otpController;
+  late final FocusNode _otpFocusNode;
   late final AuthBloc _bloc;
   bool _didFocusOtp = false;
 
@@ -41,8 +45,8 @@ class _LoginScreenState extends State<LoginScreen>
     _bloc = AuthBloc();
     _emailController = TextEditingController();
     _emailController.addListener(_handleEmailChanged);
-    _otpControllers = List.generate(6, (_) => TextEditingController());
-    _otpFocusNodes = List.generate(6, (_) => FocusNode());
+    _otpController = TextEditingController();
+    _otpFocusNode = FocusNode();
     _floatController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3600),
@@ -61,10 +65,10 @@ class _LoginScreenState extends State<LoginScreen>
     _emailController
       ..removeListener(_handleEmailChanged)
       ..dispose();
-    for (final controller in _otpControllers) {
+    for (final controller in [_otpController]) {
       controller.dispose();
     }
-    for (final focusNode in _otpFocusNodes) {
+    for (final focusNode in [_otpFocusNode]) {
       focusNode.dispose();
     }
     super.dispose();
@@ -77,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen>
   void _handleOtpChanged() {
     _bloc.add(
       AuthOtpChanged(
-        _otpControllers.map((controller) => controller.text).join(),
+        _otpController.text,
       ),
     );
   }
@@ -92,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   void _editEmail() {
     _didFocusOtp = false;
-    for (final controller in _otpControllers) {
+    for (final controller in [_otpController]) {
       controller.clear();
     }
     _bloc.add(const EditAuthEmail());
@@ -138,18 +142,12 @@ class _LoginScreenState extends State<LoginScreen>
               // 1849:17545) rather than as a snackbar, so nothing is surfaced
               // here beyond the success step's own handling.
               if (state.error != null && state.step == AuthStep.success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(state.error!),
-                    behavior: SnackBarBehavior.floating,
-                    backgroundColor: _CxColors.ink,
-                  ),
-                );
+                showAppToast(context, state.error!);
                 _bloc.add(const ClearAuthError());
               }
               if (state.step == AuthStep.code && !_didFocusOtp) {
                 _didFocusOtp = true;
-                _otpFocusNodes.first.requestFocus();
+                _otpFocusNode.requestFocus();
               }
             });
 
@@ -188,8 +186,8 @@ class _LoginScreenState extends State<LoginScreen>
                 AuthStep.code => _CodeStep(
                   key: const ValueKey('code'),
                   email: state.email,
-                  otpControllers: _otpControllers,
-                  otpFocusNodes: _otpFocusNodes,
+                  otpController: _otpController,
+                  otpFocusNode: _otpFocusNode,
                   isOtpComplete: state.isOtpComplete,
                   isLoading: state.isLoading,
                   onOtpChanged: _handleOtpChanged,
@@ -565,8 +563,8 @@ class _CodeStep extends StatelessWidget {
   const _CodeStep({
     super.key,
     required this.email,
-    required this.otpControllers,
-    required this.otpFocusNodes,
+    required this.otpController,
+    required this.otpFocusNode,
     required this.isOtpComplete,
     required this.isLoading,
     required this.onOtpChanged,
@@ -577,8 +575,8 @@ class _CodeStep extends StatelessWidget {
   });
 
   final String email;
-  final List<TextEditingController> otpControllers;
-  final List<FocusNode> otpFocusNodes;
+  final TextEditingController otpController;
+  final FocusNode otpFocusNode;
   final bool isOtpComplete;
   final bool isLoading;
   final VoidCallback onOtpChanged;
@@ -661,26 +659,12 @@ class _CodeStep extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(6, (index) {
-              return Padding(
-                padding: EdgeInsets.only(right: index == 5 ? 0 : 8),
-                child: _OtpBox(
-                  controller: otpControllers[index],
-                  focusNode: otpFocusNodes[index],
-                  hasError: errorText != null,
-                  onChanged: (value) {
-                    if (value.isNotEmpty && index < 5) {
-                      otpFocusNodes[index + 1].requestFocus();
-                    } else if (value.isEmpty && index > 0) {
-                      otpFocusNodes[index - 1].requestFocus();
-                    }
-                    onOtpChanged();
-                  },
-                ),
-              );
-            }),
+          _OtpField(
+            controller: otpController,
+            focusNode: otpFocusNode,
+            hasError: errorText != null,
+            onChanged: onOtpChanged,
+            onComplete: onVerify,
           ),
           const SizedBox(height: 20),
           if (errorText != null) ...[
@@ -730,66 +714,173 @@ class _CodeStep extends StatelessWidget {
   }
 }
 
-class _OtpBox extends StatelessWidget {
-  const _OtpBox({
+/// The six-digit code: one real field, six drawn boxes.
+///
+/// Typing, backspace, select-all, paste of a whole code and the keyboard's own
+/// "from Messages" suggestion all work because there is only one field to
+/// edit; the boxes are just its value, drawn.
+class _OtpField extends StatefulWidget {
+  const _OtpField({
     required this.controller,
     required this.focusNode,
-    required this.onChanged,
     required this.hasError,
+    required this.onChanged,
+    required this.onComplete,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
+  final bool hasError;
+  final VoidCallback onChanged;
+
+  /// Called once the sixth digit lands, so nobody has to reach for a button.
+  final VoidCallback onComplete;
+
+  static const length = 6;
+
+  @override
+  State<_OtpField> createState() => _OtpFieldState();
+}
+
+class _OtpFieldState extends State<_OtpField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onEdited);
+    widget.focusNode.addListener(_redraw);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onEdited);
+    widget.focusNode.removeListener(_redraw);
+    super.dispose();
+  }
+
+  void _redraw() {
+    if (mounted) setState(() {});
+  }
+
+  /// The code already sent for checking. A refused code is still in the boxes,
+  /// so deleting a digit and typing the same one back must not send it again —
+  /// the person is correcting it, not asking twice.
+  String? _sent;
+
+  void _onEdited() {
+    _redraw();
+    widget.onChanged();
+    final code = widget.controller.text;
+    if (code.length < _OtpField.length) return;
+    if (code == _sent) return;
+    _sent = code;
+    // The keyboard stays out of the way of whatever comes next.
+    widget.focusNode.unfocus();
+    widget.onComplete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final digits = widget.controller.text;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // The field itself: off-screen but focusable, so the system keyboard
+        // and its one-time-code suggestion behave normally.
+        SizedBox(
+          width: 1,
+          height: 1,
+          child: Opacity(
+            opacity: 0,
+            child: TextField(
+              controller: widget.controller,
+              focusNode: widget.focusNode,
+              keyboardType: TextInputType.number,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              enableSuggestions: false,
+              autocorrect: false,
+              maxLength: _OtpField.length,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(_OtpField.length),
+              ],
+              decoration: const InputDecoration(counterText: '', border: InputBorder.none),
+            ),
+          ),
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            widget.focusNode.requestFocus();
+            // Straight to the end, so typing continues rather than overwrites.
+            widget.controller.selection = TextSelection.collapsed(
+              offset: widget.controller.text.length,
+            );
+          },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < _OtpField.length; i += 1)
+                Padding(
+                  padding: EdgeInsets.only(right: i == _OtpField.length - 1 ? 0 : 8),
+                  child: _OtpBox(
+                    digit: i < digits.length ? digits[i] : '',
+                    // The box the next digit will land in.
+                    active: widget.focusNode.hasFocus &&
+                        (i == digits.length ||
+                            (digits.length == _OtpField.length &&
+                                i == _OtpField.length - 1)),
+                    hasError: widget.hasError,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One drawn box: a digit, or the caret's place when it is next.
+class _OtpBox extends StatelessWidget {
+  const _OtpBox({
+    required this.digit,
+    required this.active,
+    required this.hasError,
+  });
+
+  final String digit;
+  final bool active;
   final bool hasError;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    final border = hasError
+        ? const Color(0xFFE5484D)
+        : active
+            ? const Color(0xFF0571A6)
+            : const Color(0xFFE8E8F0);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
       width: 46,
       height: 56,
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        textAlign: TextAlign.center,
-        keyboardType: TextInputType.number,
-        maxLength: 1,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        onChanged: onChanged,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border, width: active ? 1.6 : 1.129),
+      ),
+      child: Text(
+        digit,
         style: const TextStyle(
           color: Color(0xFF1A1A2E),
           fontSize: 20,
           fontWeight: FontWeight.w600,
-        ),
-        decoration: InputDecoration(
-          counterText: '',
-          filled: true,
-          fillColor: const Color(0xFFFAFAFA),
-          contentPadding: EdgeInsets.zero,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: hasError
-                  ? const Color(0xFFE5484D)
-                  : const Color(0xFFE8E8F0),
-              width: 1.129,
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF0571A6), width: 1.5),
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
-          ),
         ),
       ),
     );
   }
 }
 
-/// Post-login welcome (node 1849:17741).
 class _SuccessStep extends StatefulWidget {
   const _SuccessStep({
     super.key,

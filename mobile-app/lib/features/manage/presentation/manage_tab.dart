@@ -1210,26 +1210,15 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                 _listeningField = null;
                 _transcribingField = null;
               });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Voice input unavailable: ${error.errorMsg}'),
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: MColors.ink,
-                ),
-              );
+              showAppToast(context, 'Voice input unavailable: ${error.errorMsg}');
             },
           );
     _speechInitialized = available;
     if (!available) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Speech recognition is unavailable or microphone access was denied.',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: MColors.ink,
-        ),
+      showAppToast(
+        context,
+        'Speech recognition is unavailable or microphone access was denied.',
       );
       return;
     }

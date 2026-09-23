@@ -641,13 +641,24 @@ class _GrowthTeamRow extends StatelessWidget {
                         ),
                       )
                     else
+                      // The same "Pending" pill the month cards use — a bare
+                      // amber square said nothing about what was missing.
                       Container(
-                        width: 16,
-                        height: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFAF40),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white, width: 1.114),
+                          color: const Color(0xFFFEFDDA),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Pending',
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            color: Color(0xFFFFCC00),
+                            fontSize: 12,
+                            height: 16.2 / 12,
+                            letterSpacing: -0.16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                   ],

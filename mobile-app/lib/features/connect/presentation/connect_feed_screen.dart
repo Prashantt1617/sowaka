@@ -22,6 +22,7 @@ import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../../services/notification_service.dart';
 import '../../relay/presentation/relay_post_card.dart';
+import '../../shared/app_toast.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
 /// Connect tab itself — the composer's `showModalBottomSheet`/`Navigator.push`
@@ -131,13 +132,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final message = state.message;
           if (!mounted || message == null) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: _ConnectColors.ink,
-            ),
-          );
+          showAppToast(context, message);
           _bloc.clearMessage();
         });
         return Container(
@@ -589,6 +584,9 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               onDeleteCaption: widget.onDeleteCaption,
               onVoteCaption: widget.onVoteCaption,
             ),
+            // A contest is played, not discussed: entries and votes are the
+            // whole interaction, so it carries no like or comment row.
+            if (!_isContestPost(post.type))
             _PostFooter(
               post: post,
               busy: widget.busy,
@@ -1378,12 +1376,7 @@ class _LinkTapTarget extends StatelessWidget {
         onTap: () async {
           final opened = await openExternalLink(url);
           if (!opened && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Couldn't open $url"),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            showAppToast(context, "Couldn't open $url");
           }
         },
         child: child,
@@ -3083,9 +3076,7 @@ class _MostLikelyBodyState extends State<_MostLikelyBody> {
         _picked ??
         _matches.where((p) => p.name.toLowerCase() == typed).firstOrNull;
     if (chosen == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick a colleague from the list')),
-      );
+      showAppToast(context, 'Pick a colleague from the list');
       return;
     }
     setState(() => _busy = true);
@@ -3663,9 +3654,7 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
     final submit = widget.onSubmitCaption;
     if (text.isEmpty || submit == null || _busy) return;
     if (_needsPhoto && _photoPath == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Add the photo you caught')));
+      showAppToast(context, 'Add the photo you caught');
       return;
     }
     setState(() => _busy = true);
@@ -5722,6 +5711,13 @@ class _QuickPostPageState extends State<_QuickPostPage> {
         child: Row(
           spacing: 10,
           children: [
+            // Contests have their own screen rather than a composer body:
+            // the format is chosen first and decides which fields follow.
+            _PostTypeChip(
+              label: 'Contest',
+              asset: 'assets/icons/post_type_kudos.png',
+              onTap: _startContest,
+            ),
             _PostTypeChip(
               label: 'Media',
               asset: 'assets/icons/post_type_media.svg',
@@ -5742,13 +5738,6 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               label: 'Recommend',
               asset: 'assets/icons/post_type_recommend.png',
               onTap: () => _chooseType(ConnectPostType.recommendation),
-            ),
-            // Contests have their own screen rather than a composer body:
-            // the format is chosen first and decides which fields follow.
-            _PostTypeChip(
-              label: 'Contest',
-              asset: 'assets/icons/post_type_kudos.png',
-              onTap: _startContest,
             ),
             // Not among the design's four chips, but announcements are
             // admin-only and this row is now the only way to reach them.
@@ -7162,7 +7151,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       context: context,
       initialDate: _eventDate,
       firstDate: today,
-      lastDate: today.add(const Duration(days: 730)),
+      // Six months ahead, like every other calendar in the app.
+      lastDate: DateTime(today.year, today.month + 6, today.day),
     );
     if (selected == null) return;
     setState(() => _eventDate = selected);
@@ -7331,13 +7321,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   }
 
   void _showValidation(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: _ConnectColors.ink,
-      ),
-    );
+    showAppToast(context, message);
   }
 }
 
@@ -10444,3 +10428,10 @@ extension on Widget {
     return DefaultTextStyle(style: style, child: this);
   }
 }
+
+/// The formats the Contest composer publishes: entered and voted on rather
+/// than liked and commented on.
+bool _isContestPost(ConnectPostType type) =>
+    type == ConnectPostType.captionChallenge ||
+    type == ConnectPostType.photoStoryChallenge ||
+    type == ConnectPostType.mostLikely;
