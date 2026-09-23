@@ -407,8 +407,12 @@ class _FeedbackGivenCardState extends State<_FeedbackGivenCard> {
           ),
           const SizedBox(height: 16),
           // Outlined track with a solid fill, rather than a tinted track.
+          // Width stated outright: in a start-aligned column the track sized
+          // itself to the fill, so the outline hugged the blue and the rest
+          // of the bar was simply not there.
           Container(
             height: 12,
+            width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
@@ -949,8 +953,12 @@ class _GrowthMonthCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: collapsible ? onToggle : null,
+          // Only where the card is the thing you open. Where the month is
+          // picked above, its own title and score said the same words twice
+          // in a row.
+          if (collapsible)
+            InkWell(
+            onTap: onToggle,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
@@ -963,7 +971,7 @@ class _GrowthMonthCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (collapsible) ...[
+                  ...[
                     const SizedBox(width: 6),
                     AnimatedRotation(
                       turns: expanded ? 0.5 : 0,
@@ -997,9 +1005,9 @@ class _GrowthMonthCard extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+            ),
           if (expanded) ...[
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            if (collapsible) const Divider(height: 1, color: Color(0xFFF3F4F6)),
             ColoredBox(
               color: const Color(0xFFF7F7F9),
               child: Padding(

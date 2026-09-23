@@ -6087,7 +6087,9 @@ class _HomeAttendanceCard extends StatelessWidget {
                 'Marked present automatically — no punching needed.',
                 style: TextStyle(color: Color(0xFF717171), fontSize: 13),
               ),
-            ] else ...[
+            ] else if (punchIn != null) ...[
+            // Only once the day has started: before that the slider is the
+            // whole card, and a pair of empty times under it said nothing.
             const SizedBox(height: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(99),
