@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Which company's face the app wears.
 ///
 /// Sowaka is the product; a company that has its own brand sees that instead,
-/// down to the icon on the home screen (Figma 1887:27433, 2759:40979). The
+/// down to the icon on the home screen (Figma 1887:27433). The
 /// choice follows the signed-in person's org, and is remembered on the device
 /// so the splash — which runs before anyone has signed in — already looks
 /// right on the second launch.
@@ -19,11 +19,12 @@ class OrgBranding {
   /// The company id this branding belongs to; empty for Sowaka's own.
   final String org;
 
-  /// Set in Anton on the splash, lowercase as the design draws it.
+  /// Set in Anton on the splash, lowercase as the design draws it — unless
+  /// there is a [logoAsset], which is drawn in its place.
   final String wordmark;
   final String tagline;
 
-  /// The company's mark, shown when their logo replaces Sowaka's.
+  /// The company's own logo for the splash, in place of the wordmark.
   final String? logoAsset;
 
   /// The alternate app icon to ask iOS for; null leaves the Sowaka icon.
@@ -35,7 +36,6 @@ class OrgBranding {
     org: '',
     wordmark: 'sowaka',
     tagline: 'Your workplace, connected.',
-    logoAsset: 'assets/onboarding/sowaka_logo.png',
   );
 
   static const _known = <String, OrgBranding>{
@@ -43,8 +43,9 @@ class OrgBranding {
       org: 'convrse',
       wordmark: 'convrse',
       // The design's own line, with its typo ("You company's") corrected.
-      tagline: 'Your company’s app is powered by SOWAKA',
-      logoAsset: 'assets/onboarding/convrse_logo.png',
+      // The splash sets "sowaka" under it in the brand's own type.
+      tagline: 'Your company’s app is powered by',
+      logoAsset: 'assets/images/convrse_splash_logo.png',
       iosIconName: 'AppIconConvrse',
     ),
   };

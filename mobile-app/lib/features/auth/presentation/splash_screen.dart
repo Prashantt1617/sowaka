@@ -77,18 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _markOpacity.value,
                 child: Transform.scale(
                   scale: _markScale.value,
-                  child: Text(
-                    widget.branding.wordmark,
-                    style: const TextStyle(
-                      fontFamily: 'Anton',
-                      fontSize: 45,
-                      // The design's own line box: 68pt for a 45pt wordmark,
-                      // which is the whole gap down to the tagline.
-                      height: 68 / 45,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                  child: _Mark(branding: widget.branding),
                 ),
               ),
               // Nothing between them: the design butts the tagline's box
@@ -97,27 +86,96 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _taglineOpacity.value,
                 child: Transform.translate(
                   offset: Offset(0, _taglineShift.value),
-                  child: Text(
-                    widget.branding.tagline,
-                    style: TextStyle(
-                      color: widget.branding.isSowaka
-                          ? Colors.white
-                          : Colors.white.withValues(alpha: 0.68),
-                      fontWeight: widget.branding.isSowaka
-                          ? FontWeight.w400
-                          : FontWeight.w600,
-                      // Sowaka's own line was already set at 13; the design
-                      // gives the company variant 14.
-                      fontSize: widget.branding.isSowaka ? 13 : 14,
-                      height: widget.branding.isSowaka ? 19.5 / 13 : 19.5 / 14,
-                    ),
-                  ),
+                  child: _Tagline(branding: widget.branding),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Sowaka's wordmark, or the company's own logo where it has one.
+class _Mark extends StatelessWidget {
+  const _Mark({required this.branding});
+
+  final OrgBranding branding;
+
+  @override
+  Widget build(BuildContext context) {
+    final logo = branding.logoAsset;
+    if (logo != null) {
+      // Sits in the wordmark's 68pt line box, so the tagline lands where it
+      // does on Sowaka's own splash.
+      return SizedBox(
+        height: 68,
+        child: Center(
+          child: Image.asset(logo, width: 180, fit: BoxFit.contain),
+        ),
+      );
+    }
+    return Text(
+      branding.wordmark,
+      style: const TextStyle(
+        fontFamily: 'Anton',
+        fontSize: 45,
+        // The design's own line box: 68pt for a 45pt wordmark, which is the
+        // whole gap down to the tagline.
+        height: 68 / 45,
+        color: Colors.white,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+/// Sowaka's line, or — under a company's logo — "powered by" with "sowaka"
+/// on the line below in Anton, the brand's type, at the tagline's own size.
+class _Tagline extends StatelessWidget {
+  const _Tagline({required this.branding});
+
+  final OrgBranding branding;
+
+  @override
+  Widget build(BuildContext context) {
+    if (branding.isSowaka) {
+      return Text(
+        branding.tagline,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          height: 19.5 / 13,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+    final color = Colors.white.withValues(alpha: 0.68);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          branding.tagline,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            height: 19.5 / 14,
+          ),
+        ),
+        Text(
+          'sowaka',
+          style: TextStyle(
+            fontFamily: 'Anton',
+            color: color,
+            fontSize: 14,
+            height: 19.5 / 14,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ],
     );
   }
 }

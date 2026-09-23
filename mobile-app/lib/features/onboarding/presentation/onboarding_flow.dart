@@ -7,14 +7,12 @@ import '../../auth/data/auth_models.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
-import '../../shared/org_branding.dart';
 
 /// What someone does once, the first time they arrive (Figma 2755:28725,
-/// 2755:28758, 2759:40979).
+/// 2755:28758).
 ///
-/// Two questions and a notice: a photo so colleagues recognise them, what
-/// they are into, and — where their company has its own brand — that the app
-/// they just downloaded is about to look like their company's.
+/// Two questions: a photo so colleagues recognise them, and what they are
+/// into.
 /// Whether this person still owes us the first-run answers.
 ///
 /// Someone who joined before the interests step existed has a photo and no
@@ -161,18 +159,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
     if (!mounted) return;
     setState(() => _busy = false);
-    final branding = OrgBranding.of(widget.session.user.org);
-    if (!branding.isSowaka) await _showLogoChanged(branding);
-    if (!mounted) return;
     widget.onDone(_photoUrl, chosen);
-  }
-
-  Future<void> _showLogoChanged(OrgBranding branding) {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _LogoChangedDialog(branding: branding),
-    );
   }
 
   @override
@@ -523,98 +510,6 @@ class _Continue extends StatelessWidget {
                 ),
         ),
       ),
-    );
-  }
-}
-
-/// "You logo just changed" (Figma 2759:40979) — Sowaka's mark, an arrow, and
-/// the company's, so nobody wonders why the icon on their home screen is not
-/// the one they installed.
-class _LogoChangedDialog extends StatelessWidget {
-  const _LogoChangedDialog({required this.branding});
-
-  final OrgBranding branding;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 36.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _Mark(asset: OrgBranding.sowaka.logoAsset!),
-                const Expanded(
-                  child: Icon(Icons.arrow_forward, size: 28, color: _ink),
-                ),
-                _Mark(asset: branding.logoAsset!),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'You logo just changed',
-              style: TextStyle(
-                fontFamily: 'Sora',
-                fontSize: 20,
-                height: 30 / 20,
-                fontWeight: FontWeight.w700,
-                color: _ink,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'We updated your logo to the company’s for a personalized feel.',
-              style: TextStyle(
-                fontFamily: 'Sora',
-                fontSize: 14,
-                height: 22 / 14,
-                color: _muted,
-              ),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                height: 46,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _brand,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Okay',
-                  style: TextStyle(
-                    fontFamily: 'Sora',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Mark extends StatelessWidget {
-  const _Mark({required this.asset});
-
-  final String asset;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Image.asset(asset, width: 80, height: 80, fit: BoxFit.cover),
     );
   }
 }
