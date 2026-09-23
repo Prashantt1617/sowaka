@@ -877,23 +877,14 @@ class _SuccessStepState extends State<_SuccessStep> {
             ),
           ),
           const SizedBox(height: 24),
-          Container(
-            width: 72,
-            height: 72,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: Color(0xFFC9A8E2),
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              _initials,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 25.2,
-                height: 37.8 / 25.2,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+          // Their own face, the one they added a screen ago — initials only
+          // if there is still no photo.
+          _WelcomeAvatar(
+            initials: _initials,
+            color: const Color(0xFFC9A8E2),
+            size: 72,
+            fontSize: 25.2,
+            photoUrl: widget.session?.user.profilePhotoUrl,
           ),
           const SizedBox(height: 16),
           if (strip.isNotEmpty) ...[
