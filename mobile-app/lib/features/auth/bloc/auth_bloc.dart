@@ -90,6 +90,14 @@ class ClearAuthError extends AuthEvent {
   const ClearAuthError();
 }
 
+/// The session changed under us — first-run added a photo and interests — and
+/// the welcome screen behind it should show the new one.
+class SessionUpdated extends AuthEvent {
+  const SessionUpdated(this.session);
+
+  final AuthSession session;
+}
+
 class AuthBloc {
   AuthBloc({AuthApiService? service})
     : _service = service ?? AuthApiService(),
@@ -120,6 +128,8 @@ class AuthBloc {
 
   Future<void> _handle(AuthEvent event) async {
     switch (event) {
+      case SessionUpdated(:final session):
+        _emit(_state.copyWith(session: session));
       case AuthEmailChanged(:final email):
         _emit(_state.copyWith(email: email.trim(), clearError: true));
       case AuthOtpChanged(:final otp):

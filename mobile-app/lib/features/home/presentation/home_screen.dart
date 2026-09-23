@@ -40,9 +40,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final session = widget.session ?? ModalRoute.of(context)?.settings.arguments;
     if (session is! AuthSession) return;
     _session = session;
-    // A photo is what onboarding is gated on: it is the one thing on those
-    // screens the rest of the app can see afterwards.
-    _onboarding = (session.user.profilePhotoUrl ?? '').isEmpty;
+    // Normally first-run has already happened, between the code screen and
+    // "Meet your team". This catches the session restored on a device that
+    // signed in before it existed.
+    _onboarding = needsOnboarding(session.user);
     _applyBranding(session);
   }
 

@@ -9,6 +9,8 @@ import '../bloc/auth_bloc.dart';
 import '../data/auth_api_service.dart';
 import '../data/auth_models.dart';
 import '../data/auth_session_store.dart';
+import '../../manager/data/manager_api_service.dart';
+import '../../onboarding/presentation/onboarding_flow.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,6 +28,10 @@ class _LoginScreenState extends State<LoginScreen>
   late final List<FocusNode> _otpFocusNodes;
   late final AuthBloc _bloc;
   bool _didFocusOtp = false;
+
+  /// Set once they have been through first-run, so the flow does not reappear
+  /// behind the welcome screen.
+  bool _onboarded = false;
   bool _rememberMe = false;
 
   @override
@@ -89,6 +95,26 @@ class _LoginScreenState extends State<LoginScreen>
       controller.clear();
     }
     _bloc.add(const EditAuthEmail());
+  }
+
+  /// Keeps what first-run gathered on the session the rest of the app reads,
+  /// so "Meet your team" shows their new photo and nothing asks again.
+  Future<void> _finishOnboarding(
+    AuthSession session,
+    String photoUrl,
+    List<String> interests,
+  ) async {
+    final updated = AuthSession(
+      token: session.token,
+      user: session.user.copyWith(
+        profilePhotoUrl: photoUrl.isEmpty ? null : photoUrl,
+        interests: interests,
+      ),
+    );
+    await AuthSessionStore().save(updated);
+    if (!mounted) return;
+    setState(() => _onboarded = true);
+    _bloc.add(SessionUpdated(updated));
   }
 
   @override
@@ -167,6 +193,19 @@ class _LoginScreenState extends State<LoginScreen>
                   onResend: _sendCode,
                   errorText: state.error,
                 ),
+                // First run comes before "Meet your team": the photo they
+                // add is the one their team sees on that very screen.
+                AuthStep.success
+                    when state.session != null &&
+                        !_onboarded &&
+                        needsOnboarding(state.session!.user) =>
+                  OnboardingFlow(
+                    key: const ValueKey('onboarding'),
+                    session: state.session!,
+                    api: ManagerApiService(session: state.session!),
+                    onDone: (photoUrl, interests) =>
+                        _finishOnboarding(state.session!, photoUrl, interests),
+                  ),
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
                   name: state.session?.user.name ?? 'there',

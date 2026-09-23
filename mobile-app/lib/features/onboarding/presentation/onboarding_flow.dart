@@ -15,17 +15,21 @@ import '../../shared/org_branding.dart';
 /// Two questions and a notice: a photo so colleagues recognise them, what
 /// they are into, and — where their company has its own brand — that the app
 /// they just downloaded is about to look like their company's.
+/// Whether this person still owes us the first-run answers.
+///
+/// Someone who joined before the interests step existed has a photo and no
+/// interests; they are asked the one question they have not answered rather
+/// than being sent round the whole flow again.
+bool needsOnboarding(AuthUser user) =>
+    (user.profilePhotoUrl ?? '').isEmpty || user.interests.isEmpty;
+
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({
     super.key,
     required this.session,
     required this.api,
     required this.onDone,
-    @visibleForTesting this.initialStep = 0,
   });
-
-  /// Which step to open on; only a test ever starts anywhere but the photo.
-  final int initialStep;
 
   final AuthSession session;
   final ManagerApiService api;
@@ -55,6 +59,8 @@ class OnboardingFlow extends StatefulWidget {
   State<OnboardingFlow> createState() => _OnboardingFlowState();
 }
 
+enum _Step { photo, interests }
+
 class _Interest {
   const _Interest(this.label, this.icon);
   final String label;
@@ -71,8 +77,14 @@ const _field = Color(0xFFF7FAFB);
 const _line = Color(0xFFE8E8F0);
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
-  /// 0 = photo, 1 = interests. The third segment is the logo notice.
-  late int _step = widget.initialStep;
+  /// The steps this person is actually missing, in order.
+  late final List<_Step> _steps = [
+    if ((widget.session.user.profilePhotoUrl ?? '').isEmpty) _Step.photo,
+    if (widget.session.user.interests.isEmpty) _Step.interests,
+  ];
+  int _at = 0;
+
+  _Step get _step => _steps.isEmpty ? _Step.interests : _steps[_at];
 
   String? _photoPath;
   String _photoUrl = '';
@@ -110,7 +122,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         path: path,
         filename: 'profile.png',
       );
-      if (mounted) setState(() => _step = 1);
+      if (mounted) setState(_next);
     } catch (error) {
       final reason = error is ManagerApiException ? error.message : null;
       if (mounted) {
@@ -119,6 +131,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Moves on, or finishes if this was the last thing they were missing.
+  void _next() {
+    if (_at + 1 < _steps.length) {
+      _at += 1;
+    } else {
+      _finish();
+    }
+  }
+
+  void _finish() {
+    widget.onDone(_photoUrl, _picked.toList());
   }
 
   Future<void> _continueFromInterests() async {
@@ -168,10 +193,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Progress(step: _step),
+                  _Progress(step: _step == _Step.photo ? 0 : 1),
                   const SizedBox(height: 48),
                   Expanded(
-                    child: _step == 0 ? _photoStep() : _interestsStep(),
+                    child: _step == _Step.photo ? _photoStep() : _interestsStep(),
                   ),
                   if (_problem != null) ...[
                     Text(
@@ -186,9 +211,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     const SizedBox(height: 12),
                   ],
                   _Continue(
-                    enabled: _step == 0 ? _photoPath != null : _picked.isNotEmpty,
+                    enabled: _step == _Step.photo
+                        ? _photoPath != null
+                        : _picked.isNotEmpty,
                     busy: _busy,
-                    onTap: _step == 0 ? _continueFromPhoto : _continueFromInterests,
+                    onTap: _step == _Step.photo
+                        ? _continueFromPhoto
+                        : _continueFromInterests,
                   ),
                 ],
               ),
