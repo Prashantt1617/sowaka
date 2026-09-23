@@ -85,8 +85,7 @@ export function RelayGame() {
     title: '',
     subtitle: '',
     startsAt: '',
-    pointsPerCorrect: '30',
-    rewardAmount: '10000',
+    pointsPerCorrect: '40',
   });
   const [video, setVideo] = useState<File | null>(null);
   const [published, setPublished] = useState<PublishResult | null>(null);
@@ -283,7 +282,7 @@ export function RelayGame() {
 
           <ImportPanel
             title="2 · Questions"
-            hint="One row per item: round, kind (movie, lyric, word, number, odd), prompt, accepted answers (separate with | ), and piece1…piece5. Teams share the pool and enter it at different offsets."
+            hint="One row per item: round, kind (movie, word, number, odd, guess who), prompt, accepted answers (separate with | ), and piece1…piece5. Teams share the pool and enter it at different offsets."
             accept=".csv,.xlsx"
             busy={busy}
             disabled={event.teamCount === 0}
@@ -409,16 +408,6 @@ export function RelayGame() {
                   />
                 </label>
                 <label style={fieldLabel}>
-                  Reward (₹)
-                  <input
-                    type="number"
-                    min={0}
-                    style={{ ...field, marginTop: 4 }}
-                    value={publishForm.rewardAmount}
-                    onChange={(e) => setPublishForm({ ...publishForm, rewardAmount: e.target.value })}
-                  />
-                </label>
-                <label style={fieldLabel}>
                   Instructions video
                   <div style={{ marginTop: 6 }}>
                     <label style={{ ...ghost, display: 'inline-flex', gap: 8, cursor: 'pointer' }}>
@@ -442,8 +431,7 @@ export function RelayGame() {
                     busy ||
                     notReady ||
                     !publishForm.startsAt ||
-                    !publishForm.pointsPerCorrect ||
-                    publishForm.rewardAmount === ''
+                    !publishForm.pointsPerCorrect
                   }
                   onClick={publish}
                 >

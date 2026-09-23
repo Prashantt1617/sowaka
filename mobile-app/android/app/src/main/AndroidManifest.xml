@@ -2,10 +2,21 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Punching in is checked against the office's coordinates. Fine location
-         only: coarse is accurate to a few hundred metres, which cannot tell a
-         desk from the next street. -->
+    <!-- Punching in is checked against the office's coordinates, so what the
+         app asks for is fine location: coarse is accurate to a few hundred
+         metres, which cannot tell a desk from the next street.
+
+         Coarse is declared beside it because Android 12 and above ignore a
+         runtime request for fine location that does not name coarse as well —
+         without this line the permission dialog never appears at all. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Asking for fine location otherwise implies a GPS receiver, and Play
+         hides the app from every device without one — a good deal of the
+         tablets people read Connect on. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 
     <application
         android:label="Sowaka"

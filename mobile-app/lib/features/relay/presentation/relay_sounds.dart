@@ -25,6 +25,54 @@ class RelaySounds {
   Future<void> correct() => _play('correct.mp3');
   Future<void> incorrect() => _play('incorrect.mp3');
 
+  /// Bumped by [stopPoints]: a "+5" that was still on its way to the speaker
+  /// when the reveal ended sees it and stays silent.
+  int _pointsRun = 0;
+
+  /// A "+5" that is still starting. The next one is dropped rather than queued:
+  /// on a phone, a rewind and a play take longer than the 220ms between steps,
+  /// and a queue of them went on ringing over the leaderboard.
+  bool _pointsStarting = false;
+
+  /// The score reveal's "+5": the same chime, restarted on every step so it
+  /// rings along with the score as it climbs.
+  Future<void> points() async {
+    if (!enabled || _pointsStarting) return;
+    _pointsStarting = true;
+    final run = _pointsRun;
+    const file = 'correct.mp3';
+    try {
+      final player = await (_players[file] ??= _load(file));
+      if (player == null) {
+        _players.remove(file);
+        return;
+      }
+      if (run != _pointsRun) return;
+      await player.seekTo(Duration.zero);
+      if (run != _pointsRun) return;
+      await player.play();
+      // Stopped while this was starting: undo it.
+      if (run != _pointsRun) await player.pause();
+    } catch (error) {
+      debugPrint('Relay points sound did not play: $error');
+    } finally {
+      _pointsStarting = false;
+    }
+  }
+
+  /// Silences the reveal's chime, including any "+5" still starting.
+  Future<void> stopPoints() async {
+    _pointsRun += 1;
+    if (!enabled) return;
+    final player = await _players['correct.mp3'];
+    try {
+      await player?.pause();
+      await player?.seekTo(Duration.zero);
+    } catch (_) {
+      // Silence is the goal either way.
+    }
+  }
+
   Future<VideoPlayerController?> _load(String file) async {
     final player = VideoPlayerController.asset(
       '${RelayStyle.asset}/$file',

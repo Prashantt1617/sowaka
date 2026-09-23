@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'relay_buttons.dart';
+import 'relay_round_demo.dart';
 import 'relay_style.dart';
 
 /// The rules, before anybody plays them (Figma 2606:35931).
 ///
 /// There is no operator on the day and no practice round, so this is where a
-/// team learns that only one screen holds each clue. Nothing gates on watching
-/// it — "Back to Lobby" is right at the top, and players move between here and
-/// the lobby freely until the game starts.
+/// team learns each round by example. Nothing gates on watching it — "Back to
+/// Lobby" is right at the top, and players move between here and the lobby
+/// freely until the game starts.
 ///
 /// The round length, the points and the list of rounds come from the event,
 /// not the copy: the design's figures are examples, and a rules screen that
@@ -22,6 +23,7 @@ class RelayHowToPlay extends StatefulWidget {
     required this.videoUrl,
     required this.pointsPerCorrect,
     this.roundSeconds = 0,
+    this.questionsPerRound = 0,
     this.roundKinds = const [],
     this.onClose,
     this.onBackToLobby,
@@ -33,6 +35,9 @@ class RelayHowToPlay extends StatefulWidget {
   /// A round's full length. Zero until the first update tells us.
   final int roundSeconds;
 
+  /// Questions in a round. Zero until the first update tells us.
+  final int questionsPerRound;
+
   /// Each round's kind, in order, as the imported sheet set them.
   final List<String> roundKinds;
 
@@ -43,15 +48,6 @@ class RelayHowToPlay extends StatefulWidget {
   State<RelayHowToPlay> createState() => _RelayHowToPlayState();
 }
 
-/// How each kind of round is introduced on the rules screen.
-const _kinds = <String, ({String glyph, Color tint, Color ink, String title, String line})>{
-  'number': (glyph: '#', tint: Color(0xFFE4F7FA), ink: Color(0xFF279CB6), title: 'Number Crunch', line: 'Clues link the number'),
-  'word': (glyph: 'Aa', tint: Color(0xFFF1E9FA), ink: Color(0xFF9A65C3), title: 'Word Twist', line: 'Unscramble the letters'),
-  'movie': (glyph: '▣', tint: Color(0xFFFFF0D3), ink: Color(0xFFD89025), title: 'Plot Picks', line: 'Guess the movie'),
-  'lyric': (glyph: '♬', tint: Color(0xFFFBE6EF), ink: Color(0xFFD35B91), title: 'Lyric Link', line: 'Find the missing lyric word'),
-  'odd': (glyph: '☆', tint: Color(0xFFE9F2FF), ink: Color(0xFF628ECF), title: 'Odd One Out', line: 'Spot the one that doesn’t belong'),
-};
-
 class _RelayHowToPlayState extends State<RelayHowToPlay> {
   VideoPlayerController? _controller;
   bool _unavailable = false;
@@ -61,8 +57,6 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
 
   static const _navy = Color(0xFF173B4D);
   static const _slate = Color(0xFF647E8B);
-  static const _teal = Color(0xFF0792B0);
-  static const _mint = Color(0xF7CCFCFF);
 
   @override
   void initState() {
@@ -103,24 +97,18 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
   @override
   Widget build(BuildContext context) {
     return RelayBackdrop(
-      angle: 121.09724847448723,
+      angle: 122.15958857356406,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: widget.onClose,
-              child: RelayStyle.svg('cross', width: 24, height: 24),
-            ),
-          ),
-          const SizedBox(height: 13),
+          // The design starts this screen at 81, nineteen below the others.
+          const SizedBox(height: 19),
           RelayBannerButton(
             label: 'Back to Lobby',
             back: true,
             onTap: widget.onBackToLobby,
           ),
-          const SizedBox(height: 18 + 24),
+          const SizedBox(height: 18 + 16),
           Text(
             'How to Play',
             textAlign: TextAlign.center,
@@ -140,21 +128,38 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
           const SizedBox(height: 6 + 18),
           _video(),
           const SizedBox(height: 36),
-          _stepOne(),
-          const SizedBox(height: 24),
-          _stepTwo(),
-          const SizedBox(height: 24),
-          _stepThree(),
           if (widget.roundKinds.isNotEmpty) ...[
-            const SizedBox(height: 24),
             _roundsHeading(),
             const SizedBox(height: 24),
-            _roundList(),
+            _roundCarousel(),
+            const SizedBox(height: 24),
           ],
+          _questionsCard(),
+          const SizedBox(height: 24),
+          _fasterCard(),
           const SizedBox(height: 16),
         ],
       ),
     );
+  }
+
+  /// Opens the instructions on the whole screen, and picks up where the
+  /// tile left off.
+  ///
+  /// A 201pt strip is not enough to follow what somebody is doing; the way
+  /// back is a cross in the corner, and the video is paused on the way out so
+  /// it is not still talking behind the rules.
+  Future<void> _openFullScreen(VideoPlayerController controller) async {
+    await controller.play();
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => _FullScreenVideo(controller: controller),
+      ),
+    );
+    await controller.pause();
+    if (mounted) setState(() {});
   }
 
   // ── Video ────────────────────────────────────────────────────────────────
@@ -165,7 +170,7 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
     return GestureDetector(
       onTap: controller == null
           ? () => setState(() => _triedToPlay = true)
-          : () => playing ? controller.pause() : controller.play(),
+          : () => _openFullScreen(controller),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: SizedBox(
@@ -232,213 +237,7 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
     );
   }
 
-  // ── Steps ────────────────────────────────────────────────────────────────
-
-  Widget _stepHeading(int number, String title, {String badge = 'step_badge_blue', Color ink = _teal, Color titleInk = _navy}) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 22,
-          height: 22,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              RelayStyle.svg(badge, width: 22, height: 22),
-              Text('$number', style: RelayStyle.sora(11, weight: FontWeight.w700, color: ink)),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            title,
-            style: RelayStyle.sora(16, weight: FontWeight.w600, color: titleInk, height: 16.2, spacing: -0.16),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _card({required List<Widget> children, Color color = Colors.white, CrossAxisAlignment align = CrossAxisAlignment.start}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(18)),
-      child: Column(crossAxisAlignment: align, children: children),
-    );
-  }
-
-  Widget _stepOne() {
-    const tiles = [
-      ('T', 'TURQUOISE', Color(0xFFE4F6FC), Color(0xFF35A8D7)),
-      ('M', 'MYSTERY', Color(0xFFF2EAF9), Color(0xFF9D70C9)),
-      ('A', 'ANIMAL', Color(0xFFFFF4D8), Color(0xFFD59C26)),
-      ('E', 'ELECTRIC', Color(0xFFFCEAF3), Color(0xFFD96DA7)),
-    ];
-    return _card(
-      align: CrossAxisAlignment.center,
-      children: [
-        _stepHeading(1, 'Teammates get one clue each'),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: Text(
-            'Four teammates get a private clue each.\nRead them aloud and piece them together.',
-            style: RelayStyle.sora(14, color: _slate, spacing: -0.16),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            for (var i = 0; i < tiles.length; i += 1) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.only(top: 8, bottom: 6),
-                  decoration: BoxDecoration(color: tiles[i].$3, borderRadius: BorderRadius.circular(8)),
-                  child: Column(
-                    children: [
-                      Text(tiles[i].$1, style: RelayStyle.sora(22, weight: FontWeight.w700, color: tiles[i].$4)),
-                      const SizedBox(height: 5),
-                      Text(
-                        tiles[i].$2,
-                        maxLines: 1,
-                        style: RelayStyle.sora(7, weight: FontWeight.w600, color: tiles[i].$4),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          decoration: BoxDecoration(color: _mint, borderRadius: BorderRadius.circular(27)),
-          child: Text(
-            'Solve as a team',
-            style: RelayStyle.sora(12, weight: FontWeight.w600, color: RelayStyle.brand, height: 16.2, spacing: -0.16),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stepTwo() {
-    return _card(
-      children: [
-        _stepHeading(2, 'Lead enters the answer in the app'),
-        const SizedBox(height: 10),
-        Text(
-          'Agree on the answer as a team.',
-          style: RelayStyle.sora(14, color: _slate, height: 16.2, spacing: -0.16),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(color: const Color(0xFFEAF8FB), borderRadius: BorderRadius.circular(10)),
-          child: Row(
-            children: [
-              RelayStyle.svg('crown', width: 20, height: 20),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text('TEAM', style: RelayStyle.sora(11, weight: FontWeight.w700, color: _navy)),
-              ),
-              Container(
-                width: 28,
-                height: 24,
-                margin: const EdgeInsets.only(right: 10),
-                decoration: BoxDecoration(color: _teal, borderRadius: BorderRadius.circular(6)),
-                alignment: Alignment.center,
-                child: const Text('→', style: TextStyle(fontSize: 12, color: Colors.white)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stepThree() {
-    const rule = Color(0xFFDDBF69);
-    return _card(
-      color: const Color(0xFFFFE39A),
-      children: [
-        _stepHeading(3, 'Answer as many as you can', badge: 'step_badge_gold', ink: const Color(0xFF795900)),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: 65,
-                    height: 65,
-                    child: Stack(
-                      alignment: Alignment.topCenter,
-                      children: [
-                        RelayStyle.svg('timer_dial', width: 65, height: 65),
-                        Positioned(
-                          top: 14,
-                          child: Text(
-                            widget.roundSeconds > 0 ? '${widget.roundSeconds}' : '—',
-                            style: RelayStyle.sora(22, weight: FontWeight.w700, color: _navy),
-                          ),
-                        ),
-                        Positioned(
-                          top: 39,
-                          child: Text('SECONDS', style: RelayStyle.sora(7, weight: FontWeight.w700, color: _slate)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text('per round', style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Container(width: 1, height: 62, color: rule),
-            const SizedBox(width: 14),
-            Expanded(
-              // At least the design's 84, but free to grow with larger text.
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 84),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('+${widget.pointsPerCorrect}', style: RelayStyle.sora(28, weight: FontWeight.w700, color: _navy)),
-                    Text('POINTS', style: RelayStyle.sora(10, color: _slate, height: 16.2, spacing: -0.16)),
-                    Text(
-                      'per correct answer',
-                      textAlign: TextAlign.center,
-                      style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            RelayStyle.svg('repeat', width: 11.57, height: 9),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                'Keep solving until the timer runs out.',
-                textAlign: TextAlign.center,
-                style: RelayStyle.sora(10, weight: FontWeight.w600, color: _slate, height: 16.2, spacing: -0.16),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  // ── Rounds ───────────────────────────────────────────────────────────────
 
   Widget _roundsHeading() {
     final count = widget.roundKinds.length;
@@ -447,7 +246,10 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _stepHeading(4, 'There are $count round${count == 1 ? '' : 's'}', badge: 'step_badge_plain', titleInk: Colors.white),
+          Text(
+            'There are $count round${count == 1 ? '' : 's'}',
+            style: RelayStyle.sora(16, weight: FontWeight.w600, color: Colors.white, height: 16.2, spacing: -0.16),
+          ),
           const SizedBox(height: 3),
           Text(
             'A new clue category every round.',
@@ -458,52 +260,241 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
     );
   }
 
-  Widget _roundList() {
+  /// One example card per round, in playing order, swiped sideways with the
+  /// next one peeking in. Not clipped to the page's margin, as drawn. Every
+  /// card is the tallest one's height, whatever its example holds.
+  Widget _roundCarousel() {
     final kinds = widget.roundKinds;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < kinds.length; i += 1) ...[
+              if (i > 0) const SizedBox(width: 26),
+              RelayRoundDemo(round: i + 1, kind: kinds[i], width: 337.26, fill: true),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Scoring ──────────────────────────────────────────────────────────────
+
+  Widget _yellowCard({required String title, required List<Widget> children}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFFFFE39A), borderRadius: BorderRadius.circular(18)),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < kinds.length; i += 1)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: i == kinds.length - 1
-                  ? null
-                  : const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFDCEEF2)))),
-              child: _roundRow(i + 1, kinds[i]),
+          Text(
+            title,
+            style: RelayStyle.sora(16, weight: FontWeight.w600, color: _navy, height: 16.2, spacing: -0.16),
+          ),
+          for (final child in children) ...[const SizedBox(height: 10), child],
+        ],
+      ),
+    );
+  }
+
+  /// The gold dial with a figure and SECONDS in it, and a word under it.
+  Widget _dial(String figure, String under) {
+    return Column(
+      children: [
+        SizedBox(
+          width: 65,
+          height: 65,
+          child: Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              RelayStyle.svg('timer_dial', width: 65, height: 65),
+              Positioned(
+                top: 14,
+                child: Text(figure, style: RelayStyle.sora(22, weight: FontWeight.w700, color: _navy)),
+              ),
+              Positioned(
+                top: 39,
+                child: Text('SECONDS', style: RelayStyle.sora(7, weight: FontWeight.w700, color: _slate)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(under, style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16)),
+      ],
+    );
+  }
+
+  Widget _points(String figure, {String? under}) {
+    // At least the design's 84, but free to grow with larger text.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 84),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(figure, style: RelayStyle.sora(28, weight: FontWeight.w700, color: _navy)),
+          Text('POINTS', style: RelayStyle.sora(10, color: _slate, height: 16.2, spacing: -0.16)),
+          if (under != null)
+            Text(
+              under,
+              textAlign: TextAlign.center,
+              style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16),
             ),
         ],
       ),
     );
   }
 
-  Widget _roundRow(int number, String kind) {
-    final meta = _kinds[kind] ??
-        (glyph: '?', tint: const Color(0xFFE9F2FF), ink: const Color(0xFF628ECF), title: kind, line: '');
-    return Row(
+  Widget _questionsCard() {
+    final questions = widget.questionsPerRound;
+    return _yellowCard(
+      title: questions > 0 ? 'There are $questions questions in every round.' : 'Answer as many as you can.',
       children: [
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(color: meta.tint, borderRadius: BorderRadius.circular(6)),
-          alignment: Alignment.center,
-          child: Text(meta.glyph, style: RelayStyle.sora(9, weight: FontWeight.w700, color: meta.ink)),
+        Row(
+          children: [
+            Expanded(child: _dial(widget.roundSeconds > 0 ? '${widget.roundSeconds}' : '—', 'per round')),
+            const SizedBox(width: 14),
+            Container(width: 1, height: 62, color: const Color(0xFFDDBF69)),
+            const SizedBox(width: 14),
+            Expanded(child: _points('+${widget.pointsPerCorrect}', under: 'per correct answer')),
+          ],
         ),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(meta.title, style: RelayStyle.sora(14, weight: FontWeight.w600, color: _navy, height: 16.2, spacing: -0.16)),
-              const SizedBox(height: 1),
-              if (meta.line.isNotEmpty)
-                Text(meta.line, style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16)),
-            ],
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            RelayStyle.svg('repeat', width: 11.57, height: 9),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                ' Keep solving until the timer runs out.',
+                textAlign: TextAlign.center,
+                style: RelayStyle.sora(10, weight: FontWeight.w600, color: _slate, height: 16.2, spacing: -0.16),
+              ),
+            ),
+          ],
         ),
-        Text(number.toString().padLeft(2, '0'), style: RelayStyle.sora(12, color: _slate, height: 16.2, spacing: -0.16)),
       ],
+    );
+  }
+
+  /// The time bonus, with the design's own worked example: 40 seconds left is
+  /// 20 points. The round length and question count are the event's.
+  Widget _fasterCard() {
+    const secondsLeft = 40;
+    const bonus = secondsLeft ~/ 2;
+    final round = widget.roundSeconds;
+    final questions = widget.questionsPerRound;
+    return _yellowCard(
+      title: 'Points for finishing faster',
+      children: [
+        Text(
+          'If you complete all the questions before ${round > 0 ? '${round}s' : 'the timer runs out'}, the balance '
+          'seconds will add to your score (2s →1pt). But to get these points, you need to have at least one '
+          'right answer in that round.',
+          style: RelayStyle.sora(14, color: _slate, spacing: -0.16),
+        ),
+        Row(
+          children: [
+            Expanded(child: _dial('$secondsLeft', 'Left')),
+            const SizedBox(width: 14),
+            Text('=', textAlign: TextAlign.center, style: RelayStyle.sora(28, weight: FontWeight.w700, color: _navy)),
+            const SizedBox(width: 14),
+            Expanded(child: _points('$bonus')),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The instructions video on the whole screen, over black.
+class _FullScreenVideo extends StatefulWidget {
+  const _FullScreenVideo({required this.controller});
+
+  final VideoPlayerController controller;
+
+  @override
+  State<_FullScreenVideo> createState() => _FullScreenVideoState();
+}
+
+class _FullScreenVideoState extends State<_FullScreenVideo> {
+  @override
+  void initState() {
+    super.initState();
+    // The tile and this screen share one player, so a tap here has to redraw
+    // there too.
+    widget.controller.addListener(_onPlayerChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onPlayerChanged);
+    super.dispose();
+  }
+
+  void _onPlayerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final playing = controller.value.isPlaying;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => playing ? controller.pause() : controller.play(),
+        child: Stack(
+          children: [
+            // Whatever shape it was filmed in: scaled up until it meets the
+            // edges, never cropped and never stretched. A portrait clip fills
+            // the height, a landscape one the width.
+            Center(
+              child: controller.value.isInitialized
+                  ? FittedBox(
+                      fit: BoxFit.contain,
+                      child: SizedBox(
+                        width: controller.value.size.width,
+                        height: controller.value.size.height,
+                        child: VideoPlayer(controller),
+                      ),
+                    )
+                  : const CircularProgressIndicator(color: Colors.white),
+            ),
+            if (!playing)
+              Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: const Icon(Icons.play_arrow_rounded, size: 34, color: Colors.black),
+                ),
+              ),
+            Positioned(
+              left: 16,
+              top: MediaQuery.paddingOf(context).top + 12,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(child: RelayStyle.svg('cross', width: 20, height: 20)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

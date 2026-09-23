@@ -114,6 +114,7 @@ async function main() {
     item(1, 2, 'THINK', true),
     item(1, 3, 'Jab We Met', false),
     item(1, 4, 'CLOUD', true),
+    item(1, 5, 'MANGO', true),
   ]);
 
   console.log('starting');
@@ -185,25 +186,42 @@ async function main() {
     `${afterSkip.questionSecondsLeft}s on the question, was ${beforeSkip.questionSecondsLeft}s`,
   );
   await submitAnswer('u0', 'CLOUD');
-
-  const after = await relayProgress().findOne({ eventId, teamId: team.id });
-  const expected = 3 * RELAY_DEFAULT_CONFIG.pointsPerCorrect;
-  check(
-    'three correct are scored at the configured rate',
-    after?.totalPoints === expected,
-    `${after?.totalPoints} points, expected ${expected}`,
-  );
-  check('a skip forfeited the bonus', (after?.bonusRounds ?? []).length === 0);
-  check('four answers recorded', after?.answers.length === 4);
-  const done = await snapshot('u0');
-  check('the round is over for this team', done.phase === 'break');
-  // The screen shows one clock for the whole round; the 30s cap governs
+  // The round clock is what players are shown; the 30s cap governs
   // underneath it and is what a skip hands forward.
   const mid = await snapshot('u1');
   check(
     'the round clock is what players are shown',
-    mid.roundSecondsLeft > 0 && mid.roundSecondsLeft <= 120,
+    mid.phase === 'playing' && mid.roundSecondsLeft > 0 && mid.roundSecondsLeft <= 150,
     `${mid.roundSecondsLeft}s of the round left`,
+  );
+  await submitAnswer('u0', 'MANGO');
+
+  const after = await relayProgress().findOne({ eventId, teamId: team.id });
+  const saved = after?.answers.at(-1)?.roundSecondsLeft ?? -1;
+  const base = 4 * RELAY_DEFAULT_CONFIG.pointsPerCorrect;
+  const expected = base + Math.floor(saved / 2);
+  check('the round clock is recorded on the last answer', saved > 100 && saved <= 150, `${saved}s saved`);
+  check(
+    'four correct plus half a point per saved second, despite the skip',
+    after?.totalPoints === expected && (after?.bonusRounds ?? []).includes(1),
+    `${after?.totalPoints} points, expected ${expected}`,
+  );
+  check('five answers recorded', after?.answers.length === 5);
+  const done = await snapshot('u0');
+  check('the round is over for this team', done.phase === 'break');
+  check(
+    'the reveal is told what to count',
+    done.roundFinish?.secondsSaved === saved &&
+      done.roundFinish?.timeBonus === Math.floor(saved / 2) &&
+      done.roundFinish?.roundPoints === base,
+    JSON.stringify(done.roundFinish),
+  );
+  check('this round\'s points include the bonus', done.pointsThisRound === expected);
+  check(
+    'the leaderboard waits out the saved time and then the break',
+    done.roundSecondsLeft > RELAY_DEFAULT_CONFIG.breakSeconds &&
+      done.roundSecondsLeft <= saved + RELAY_DEFAULT_CONFIG.breakSeconds,
+    `next round in ${done.roundSecondsLeft}s`,
   );
 
   const table = await leaderboard(eventId);
@@ -228,7 +246,7 @@ async function main() {
     id: randomUUID(),
     eventId: dueId,
   });
-  await relayItems().insertMany([1, 2, 3, 4].map((p) => ({ ...item(1, p, `A${p}`, false), id: `d${p}`, eventId: dueId })));
+  await relayItems().insertMany([1, 2, 3, 4, 5].map((p) => ({ ...item(1, p, `A${p}`, false), id: `d${p}`, eventId: dueId })));
   const autoStarted = await startDueEvents();
   const dueAfter = await relayEvents().findOne({ id: dueId });
   check('a scheduled event whose time has come starts itself', autoStarted.includes(dueId));
@@ -251,14 +269,13 @@ async function main() {
   check('refuses to publish a game with no teams', refusedEmpty);
 
   await relayTeams().insertOne({ ...team, _id: undefined as never, id: randomUUID(), eventId: pubId });
-  await relayItems().insertMany([1, 2, 3, 4].map((p) => ({ ...item(1, p, `P${p}`, false), id: `p${p}`, eventId: pubId })));
+  await relayItems().insertMany([1, 2, 3, 4, 5].map((p) => ({ ...item(1, p, `P${p}`, false), id: `p${p}`, eventId: pubId })));
 
   let refusedPast = false;
   try {
     await publishRelayGame('u0', pubId, {
       startsAt: new Date(Date.now() - 60_000).toISOString(),
       pointsPerCorrect: 30,
-      rewardAmount: 10000,
     });
   } catch {
     refusedPast = true;
@@ -272,10 +289,10 @@ async function main() {
   } catch {
     refusedUnpriced = true;
   }
-  check('refuses to publish without HR setting points and reward', refusedUnpriced);
+  check('refuses to publish without HR setting points', refusedUnpriced);
   const published = await publishRelayGame('u0', pubId, {
     title: 'Launch Relay', subtitle: 'Five rounds, one team', startsAt: startsAt.toISOString(),
-    pointsPerCorrect: 25, rewardAmount: 10000,
+    pointsPerCorrect: 25,
   });
   const pubEvent = await relayEvents().findOne({ id: pubId });
   const post = await connectPosts().findOne({ 'body.eventId': pubId });
@@ -285,9 +302,10 @@ async function main() {
   check('round count comes from the sheet, not typed in', published.rounds.length === 1);
   check('the post names the action', (post?.body as Record<string, unknown>)?.actionLabel === 'View game');
   check(
-    'points and reward are what HR entered',
-    pubEvent?.config.pointsPerCorrect === 25 && pubEvent?.rewardAmount === 10000 &&
-      (post?.body as Record<string, unknown>)?.rewardAmount === 10000,
+    'points are what HR entered, and no prize figure is published',
+    pubEvent?.config.pointsPerCorrect === 25 &&
+      (post?.body as Record<string, unknown>)?.pointsPerCorrect === 25 &&
+      !('rewardAmount' in ((post?.body as Record<string, unknown>) ?? {})),
   );
 
   console.log(`\n${failures === 0 ? 'all checks passed' : `${failures} FAILED`}`);

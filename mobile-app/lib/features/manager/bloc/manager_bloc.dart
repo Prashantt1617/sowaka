@@ -666,7 +666,6 @@ class ManagerBloc {
             _state.copyWith(
               dashboard: data?.copyWith(myLeaves: [leave, ...data.myLeaves]),
               applyLeaveSent: true,
-              message: 'Leave request submitted',
             ),
           );
         case SubmitOvertimeApplication(
@@ -687,7 +686,6 @@ class ManagerBloc {
               dashboard: data?.copyWith(
                 myOvertime: [request, ...data.myOvertime],
               ),
-              message: 'Overtime request submitted',
             ),
           );
         case SubmitReimbursementApplication(
@@ -712,7 +710,6 @@ class ManagerBloc {
               dashboard: data?.copyWith(
                 myReimbursements: [claim, ...data.myReimbursements],
               ),
-              message: 'Reimbursement claim submitted',
             ),
           );
         case ClearManagerMessage():

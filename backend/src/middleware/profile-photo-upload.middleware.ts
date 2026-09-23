@@ -2,9 +2,14 @@ import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import { ManagerError } from '../services/manager.service';
 
+// The app crops to a PNG, and a PNG of a phone photo is several times the
+// size of the JPEG it came from: 5MB turned away ordinary camera pictures
+// while screenshots, which compress far better, went through.
+const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+
 const photoUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: MAX_PHOTO_BYTES, files: 1 },
 }).single('photo');
 
 export function uploadProfilePhoto(request: Request, response: Response, next: NextFunction) {
@@ -22,7 +27,7 @@ export function uploadProfilePhoto(request: Request, response: Response, next: N
       return;
     }
     if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-      next(new ManagerError(413, 'Photo must be 5 MB or smaller'));
+      next(new ManagerError(413, `Photo must be ${MAX_PHOTO_BYTES / 1024 / 1024} MB or smaller`));
       return;
     }
     next(new ManagerError(400, error instanceof Error ? error.message : 'Photo upload is invalid'));

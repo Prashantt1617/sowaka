@@ -64,8 +64,6 @@ export interface PublishInput {
   startsAt: string;
   /** What each correct answer pays — HR's number, never a default. */
   pointsPerCorrect: string;
-  /** The prize headline on the post, in rupees. */
-  rewardAmount: string;
 }
 
 export interface PublishResult {
@@ -75,7 +73,6 @@ export interface PublishResult {
   teams: number;
   instructionsVideoKey: string;
   pointsPerCorrect: number;
-  rewardAmount: number;
 }
 
 export interface RelayTeam {
@@ -101,7 +98,6 @@ export function publishRelayGame(eventId: string, input: PublishInput, video: Fi
       ...input,
       startsAt: new Date(input.startsAt).toISOString(),
       pointsPerCorrect: Number(input.pointsPerCorrect),
-      rewardAmount: Number(input.rewardAmount),
     }),
   );
   if (video) form.append('video', video);

@@ -11,11 +11,13 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import '../shared/app_toast.dart';
 
 /// How much a `BoxFit.contain` layout has to be zoomed to fill the frame.
 ///
@@ -57,12 +59,19 @@ enum CropShape {
       const [CropShape.square, CropShape.portrait, CropShape.landscape];
 }
 
+/// [maxEdge] caps the longest side of the saved crop, in pixels.
+///
+/// The crop is saved as a PNG — the only format Flutter can encode here — and
+/// a PNG of a camera photo is several times the size of the JPEG it came from.
+/// A picture shown at 100pt does not need 2048px, so callers that upload
+/// against a size limit cap it.
 Future<String?> cropImageFile(
   BuildContext context, {
   required String path,
   required String title,
   CropShape initial = CropShape.square,
   bool allowShapeChange = true,
+  int? maxEdge,
 }) {
   return Navigator.of(context, rootNavigator: true).push<String>(
     MaterialPageRoute(
@@ -72,6 +81,7 @@ Future<String?> cropImageFile(
         title: title,
         initial: initial,
         allowShapeChange: allowShapeChange,
+        maxEdge: maxEdge,
       ),
     ),
   );
@@ -83,12 +93,16 @@ class _CropPage extends StatefulWidget {
     required this.title,
     required this.initial,
     required this.allowShapeChange,
+    this.maxEdge,
   });
 
   final String path;
   final String title;
   final CropShape initial;
   final bool allowShapeChange;
+
+  /// The longest side the saved crop may have, in pixels.
+  final int? maxEdge;
 
   @override
   State<_CropPage> createState() => _CropPageState();
@@ -167,7 +181,16 @@ class _CropPageState extends State<_CropPage> {
           ? (_sourceSize?.width ?? 0)
           : (_sourceSize?.height ?? 0);
       final density = frameWidth > 0 && sourceWidth > 0 ? sourceWidth / frameWidth : 2.0;
-      final image = await object.toImage(pixelRatio: density.clamp(1.5, 4.0));
+      var pixelRatio = density.clamp(1.5, 4.0);
+      // Held to the caller's ceiling: a PNG of a camera photo grows with every
+      // pixel kept, and a profile picture is shown far smaller than the
+      // sensor's own resolution.
+      final maxEdge = widget.maxEdge;
+      if (maxEdge != null) {
+        final longest = math.max(object.size.width, object.size.height);
+        if (longest > 0) pixelRatio = math.min(pixelRatio, maxEdge / longest);
+      }
+      final image = await object.toImage(pixelRatio: pixelRatio);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) throw StateError('could not encode the crop');
@@ -177,9 +200,7 @@ class _CropPageState extends State<_CropPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not crop that image. Try again.')),
-      );
+      showAppToast(context, 'Could not crop that image. Try again.');
     }
   }
 

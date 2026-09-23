@@ -94,7 +94,7 @@ for (const team of ['A', 'B', 'C'] as const) {
   }
 }
 
-const kinds: RelayItemKind[] = ['movie', 'word', 'number', 'lyric', 'odd'];
+const kinds: RelayItemKind[] = ['odd', 'word', 'movie', 'number', 'person'];
 /** Answers keyed by prompt text, so a scripted lead can "know" them. */
 const answerKey = new Map<string, string>();
 
@@ -112,7 +112,7 @@ function items(): RelayItem[] {
         round: r + 1,
         kind,
         reveal: kind === 'movie' ? 'staggered' : 'simultaneous',
-        matching: kind === 'movie' || kind === 'lyric' ? 'fuzzy' : 'exact',
+        matching: kind === 'movie' || kind === 'person' ? 'fuzzy' : 'exact',
         prompt,
         acceptedAnswers: [answer],
         pieces: Array.from({ length: 5 }, (_, i) => ({ label: `Piece ${i + 1}`, text: `secret-${r}-${n}-${i}` })),
@@ -182,7 +182,7 @@ async function main() {
   // before the start, so the lobby can actually be seen.
   const startsAt = new Date(Date.now() + 20_000);
   await publishRelayGame('admin', eventId, {
-    title: 'Hint Relay', startsAt: startsAt.toISOString(), pointsPerCorrect: 30, rewardAmount: 10000,
+    title: 'Hint Relay', startsAt: startsAt.toISOString(), pointsPerCorrect: 30,
   });
 
   console.log('\neveryone joins except team C\'s lead');
@@ -200,7 +200,6 @@ async function main() {
   check('every player received the lobby', lobbyViews.every((s) => s?.phase === 'lobby'), `${lobbyViews.filter(Boolean).length}/14`);
   check('the countdown is counting to the start', lobbyViews.every((s) => (s?.secondsUntilStart ?? 0) > 0));
   check('HR\'s points reached the phones', lobbyViews.every((s) => s?.pointsPerCorrect === 30));
-  check('HR\'s reward reached the phones', lobbyViews.every((s) => s?.rewardAmount === 10000));
   check(
     'each player sees exactly their own row as theirs',
     joining.every((p) => latest(p)?.teammates.filter((t) => t.isYou).length === 1 && latest(p)?.teammates.find((t) => t.isYou)?.name === p.name),

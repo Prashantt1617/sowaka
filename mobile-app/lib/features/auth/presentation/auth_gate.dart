@@ -4,6 +4,7 @@ import '../../home/presentation/home_screen.dart';
 import '../data/auth_models.dart';
 import '../data/auth_api_service.dart';
 import '../data/auth_session_store.dart';
+import '../../shared/org_branding.dart';
 import 'login_screen.dart';
 import 'splash_screen.dart';
 
@@ -16,6 +17,19 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   late final Future<AuthSession?> _session = _restoreSession();
+
+  /// Whose brand this device last signed in to. Read at once, so the splash
+  /// settles on the right wordmark within the first frames rather than
+  /// showing Sowaka's to a Convrse employee for two seconds.
+  OrgBranding _branding = OrgBranding.sowaka;
+
+  @override
+  void initState() {
+    super.initState();
+    OrgBranding.remembered().then((branding) {
+      if (mounted) setState(() => _branding = branding);
+    });
+  }
 
   Future<AuthSession?> _restoreSession() async {
     // Run the restore and the splash animation together, then take whichever
@@ -56,7 +70,7 @@ class _AuthGateState extends State<AuthGate> {
       future: _session,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const SplashScreen();
+          return SplashScreen(branding: _branding);
         }
 
         final session = snapshot.data;

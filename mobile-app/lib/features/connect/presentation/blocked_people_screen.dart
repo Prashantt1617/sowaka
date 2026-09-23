@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/app_toast.dart';
+
 import '../../auth/data/auth_models.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
@@ -53,25 +55,11 @@ class _BlockedPeopleScreenState extends State<BlockedPeopleScreen> {
         _blocked = blocked;
         _busyUserId = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "You'll see ${person.name}'s posts in Connect again.",
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1A1C1E),
-        ),
-      );
+      showAppToast(context, "You'll see ${person.name}'s posts in Connect again.");
     } catch (error) {
       if (!mounted) return;
       setState(() => _busyUserId = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString()),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1A1C1E),
-        ),
-      );
+      showAppToast(context, error.toString());
     }
   }
 

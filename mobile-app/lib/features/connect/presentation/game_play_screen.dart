@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../shared/app_toast.dart';
+
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 
@@ -95,9 +97,7 @@ window.dispatchEvent(new CustomEvent('sowaka-ready'));
             .map((entry) => Map<String, dynamic>.from(entry as Map))
             .toList();
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Score ${score.round()} saved')));
+      showAppToast(context, 'Score ${score.round()} saved');
     }
   }
 

@@ -556,15 +556,6 @@ class _TeamMemberRow extends StatelessWidget {
                   ],
                 ),
               ),
-              SvgPicture.asset(
-                'assets/icons/chevron_right_expand.svg',
-                width: 20,
-                height: 20,
-                colorFilter: const ColorFilter.mode(
-                  MColors.inkFaint,
-                  BlendMode.srcIn,
-                ),
-              ),
             ],
           ),
         ],
@@ -639,15 +630,6 @@ class _MyTeamCard extends StatelessWidget {
                     ),
                   ),
               ],
-            ),
-          ),
-          SvgPicture.asset(
-            'assets/icons/chevron_right_expand.svg',
-            width: 20,
-            height: 20,
-            colorFilter: const ColorFilter.mode(
-              MColors.inkFaint,
-              BlendMode.srcIn,
             ),
           ),
         ],
@@ -1955,15 +1937,28 @@ class _OpenTeamBox extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: Color(0xFF222222),
-                  fontSize: 17,
-                  height: 25.5 / 17,
-                  fontWeight: FontWeight.w700,
-                ),
+              // The same header as the closed card, plus and all, so opening
+              // one does not make its title jump about.
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0xFF222222),
+                        fontSize: 17,
+                        height: 25.5 / 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SvgPicture.asset(
+                    'assets/icons/team/plus.svg',
+                    width: 20,
+                    height: 20,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               for (final (index, member) in members.indexed) ...[

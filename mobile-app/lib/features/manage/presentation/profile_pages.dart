@@ -599,6 +599,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       title: 'Crop your photo',
       initial: CropShape.square,
       allowShapeChange: false,
+      // Shown in a circle at well under 200pt; a full-resolution PNG of an
+      // iPhone photo is many megabytes for no visible gain.
+      maxEdge: 1024,
     );
     if (cropped == null || !mounted) return;
 
@@ -610,15 +613,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       );
       widget.bloc.setManagerPhoto(photoUrl);
       await widget.onProfilePhotoUpdated(photoUrl);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not update your photo. Try again.'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: MColors.ink,
-          ),
-        );
+        // The server's own reason, when it gave one: "5 MB or smaller" is
+        // something a person can act on, "try again" is not.
+        final reason = error is ManagerApiException ? error.message : null;
+        showAppToast(context, reason ?? 'Could not update your photo. Try again.');
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -766,10 +766,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                             width: 2.5,
                                           ),
                                         ),
-                                        child: const Icon(
-                                          Icons.camera_alt_rounded,
-                                          size: 15,
-                                          color: Colors.white,
+                                        // The same camera as the onboarding
+                                        // screen's "Add or take a photo".
+                                        child: Center(
+                                          child: SvgPicture.asset(
+                                            'assets/onboarding/camera.svg',
+                                            width: 16,
+                                            height: 16,
+                                            colorFilter: const ColorFilter.mode(
+                                              Colors.white,
+                                              BlendMode.srcIn,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -3259,21 +3267,10 @@ class _GrowthScoreSection extends StatelessWidget {
             onDeltaTap: (deltaMessageFor == null || selected == null)
                 ? null
                 : (delta) {
-                    final messenger = ScaffoldMessenger.of(context);
-                    messenger
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(
-                            deltaMessageFor!(
-                              _periodTitle(selected.period),
-                              delta,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
+                    showAppToast(
+                      context,
+                      deltaMessageFor!(_periodTitle(selected.period), delta),
+                    );
                   },
           ),
           if (history.isNotEmpty) ...[

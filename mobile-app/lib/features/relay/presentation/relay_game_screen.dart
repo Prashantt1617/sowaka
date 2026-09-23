@@ -56,11 +56,15 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
   late bool _showingRules = widget.startWithRules;
 
   /// The round's last question, held on screen while its correct answer is
-  /// celebrated. Answering it ends the team's round, so without this the
-  /// leaderboard would replace the question before the banner, confetti and
-  /// chime could play.
+  /// celebrated — or while a team that finished early watches its spare clock
+  /// turn into points. Answering it ends the team's round, so without this the
+  /// leaderboard would replace the question before any of that could play.
   RelayState? _finale;
   Timer? _finaleTimer;
+
+  /// What the score reveal counts, when the round ended early with time worth
+  /// points. Null for a plain celebration.
+  RelayRoundFinish? _reveal;
 
   /// The round clock as it stood when the last answer landed; the break's
   /// countdown is for the leaderboard, not this question.
@@ -68,6 +72,10 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
 
   /// Long enough for the chime and the banner, and most of the confetti.
   static const _finaleFor = Duration(milliseconds: 3200);
+
+  /// A ceiling on the reveal, should its own end never be heard: the longest
+  /// round's steps at 220ms, the pause on zero, and some slack.
+  static const _revealAtMost = Duration(seconds: 8);
 
   /// Counted down locally between pushes, reset by each one.
   int _secondsUntilStart = 0;
@@ -101,22 +109,26 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
     if (!mounted) return;
     setState(() {
       final previous = _state;
-      final endsOnCorrect = previous != null &&
+      final endsRound = previous != null &&
           previous.phase == RelayPhase.playing &&
           state.phase == RelayPhase.breakTime &&
-          state.round == previous.round &&
-          state.lastOutcome != null;
-      if (endsOnCorrect && _finale == null) {
+          state.round == previous.round;
+      // Time left and at least one right: the clock drains into the score.
+      // Nothing to add — every answer missed, or the clock ran out — goes
+      // straight on, after the cheer if the last one was right.
+      final finish = state.roundFinish;
+      final reveals = endsRound && finish != null && finish.timeBonus > 0 && finish.secondsSaved > 0;
+      if ((reveals || (endsRound && state.lastOutcome != null)) && _finale == null) {
         _finale = previous.answeredWith(state);
         _finaleSeconds = _roundSecondsLeft;
+        _reveal = reveals ? finish : null;
         _finaleTimer?.cancel();
-        _finaleTimer = Timer(_finaleFor, () {
-          if (mounted) setState(() => _finale = null);
-        });
+        _finaleTimer = Timer(reveals ? _revealAtMost : _finaleFor, _endFinale);
       } else if (_finale != null && state.phase != RelayPhase.breakTime) {
         // The game moved on regardless (a new round, or the end): follow it.
         _finaleTimer?.cancel();
         _finale = null;
+        _reveal = null;
       }
       _state = state;
       _problem = null;
@@ -131,6 +143,16 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
         _lastResult = null;
       }
     });
+  }
+
+  void _endFinale() {
+    _finaleTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _finale = null;
+        _reveal = null;
+      });
+    }
   }
 
   void _close() => Navigator.of(context).maybePop();
@@ -166,6 +188,7 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
           videoUrl: _videoUrl(state),
           pointsPerCorrect: state?.pointsPerCorrect ?? widget.pointsPerCorrect,
           roundSeconds: state?.roundSeconds ?? 0,
+          questionsPerRound: state?.questionsPerRound ?? 0,
           roundKinds: state?.roundKinds ?? const [],
           onClose: _close,
           onBackToLobby: () => setState(() => _showingRules = false),
@@ -197,6 +220,8 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
           state: finale,
           secondsLeft: _finaleSeconds,
           lastResult: _lastResult,
+          reveal: _reveal,
+          onRevealDone: _endFinale,
         ),
       );
     }

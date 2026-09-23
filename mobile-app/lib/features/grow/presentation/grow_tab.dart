@@ -407,8 +407,12 @@ class _FeedbackGivenCardState extends State<_FeedbackGivenCard> {
           ),
           const SizedBox(height: 16),
           // Outlined track with a solid fill, rather than a tinted track.
+          // Width stated outright: in a start-aligned column the track sized
+          // itself to the fill, so the outline hugged the blue and the rest
+          // of the bar was simply not there.
           Container(
             height: 12,
+            width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
@@ -637,13 +641,24 @@ class _GrowthTeamRow extends StatelessWidget {
                         ),
                       )
                     else
+                      // The same "Pending" pill the month cards use — a bare
+                      // amber square said nothing about what was missing.
                       Container(
-                        width: 16,
-                        height: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFAF40),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white, width: 1.114),
+                          color: const Color(0xFFFEFDDA),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Pending',
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            color: Color(0xFFFFCC00),
+                            fontSize: 12,
+                            height: 16.2 / 12,
+                            letterSpacing: -0.16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                   ],
@@ -949,8 +964,12 @@ class _GrowthMonthCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: collapsible ? onToggle : null,
+          // Only where the card is the thing you open. Where the month is
+          // picked above, its own title and score said the same words twice
+          // in a row.
+          if (collapsible)
+            InkWell(
+            onTap: onToggle,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
@@ -963,7 +982,7 @@ class _GrowthMonthCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (collapsible) ...[
+                  ...[
                     const SizedBox(width: 6),
                     AnimatedRotation(
                       turns: expanded ? 0.5 : 0,
@@ -997,9 +1016,9 @@ class _GrowthMonthCard extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+            ),
           if (expanded) ...[
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            if (collapsible) const Divider(height: 1, color: Color(0xFFF3F4F6)),
             ColoredBox(
               color: const Color(0xFFF7F7F9),
               child: Padding(

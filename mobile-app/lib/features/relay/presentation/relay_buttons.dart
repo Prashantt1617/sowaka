@@ -7,10 +7,10 @@ import 'relay_style.dart';
 /// The sunburst banner that moves between the lobby and the rules
 /// (Figma 2603:31280 "How to Play", 2606:35931 "Back to Lobby").
 ///
-/// Both are the same artwork facing opposite ways: going to the rules, the
-/// team sits left and the arrow points on; coming back, the arrow points back
-/// and the team moves right. Drawn at the design's 74pt with the figures and
-/// flag spilling past the edges, as they do there.
+/// Going to the rules, a red rule book sits left and the arrow points on;
+/// coming back, the arrow points back and the flag-raising team stands right.
+/// Drawn at the design's 74pt with the artwork spilling past the edges, as it
+/// does there.
 class RelayBannerButton extends StatelessWidget {
   const RelayBannerButton({
     super.key,
@@ -48,29 +48,44 @@ class RelayBannerButton extends StatelessWidget {
               // pl 41, pr 16; arrow 65 + text 180, gap 22, team 110.
               start = 41 + (width - 57) / 2 - 377 / 2;
             } else {
-              // pr 7; team 110, text 180, arrow 65.
-              start = (width - 7) / 2 - 355 / 2;
+              // pr 7; book 97, text 180, arrow 65.
+              start = (width - 7) / 2 - 342 / 2;
             }
-            final arrowLeft = back ? start : start + 110 + 180;
-            final textLeft = back ? start + 65 : start + 110;
-            final teamLeft = back ? start + 65 + 180 + 22 : start;
+            final arrowLeft = back ? start : start + 97 + 180;
+            final textLeft = back ? start + 65 : start + 97;
+            final teamLeft = start + 65 + 180 + 22;
             return Stack(
               clipBehavior: Clip.none,
               children: [
                 Positioned.fill(child: _surface()),
-                Positioned(
-                  left: teamLeft,
-                  top: (height - 110) / 2,
-                  width: 110,
-                  height: 110,
-                  child: _crop(
-                    'banner_team.png',
-                    left: 0.0002,
-                    top: -0.086,
-                    width: 1,
-                    height: 1,
+                if (back)
+                  Positioned(
+                    left: teamLeft,
+                    top: (height - 110) / 2,
+                    width: 110,
+                    height: 110,
+                    child: _crop(
+                      'banner_team.png',
+                      left: 0.0002,
+                      top: -0.086,
+                      width: 1,
+                      height: 1,
+                    ),
+                  )
+                else
+                  Positioned(
+                    left: start,
+                    top: (height - 97) / 2,
+                    width: 97,
+                    height: 97,
+                    child: _crop(
+                      'banner_book.png',
+                      left: -0.7183,
+                      top: -0.415,
+                      width: 2.439,
+                      height: 1.8293,
+                    ),
                   ),
-                ),
                 Positioned(
                   left: textLeft,
                   top: 0,

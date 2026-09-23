@@ -48,19 +48,20 @@ class RelayLobby extends StatelessWidget {
               Text(
                 'Lobby',
                 style: RelayStyle.sora(
-                  14,
+                  24,
                   weight: FontWeight.w600,
-                  color: RelayStyle.onBlue,
+                  color: Colors.white,
                   height: 16.2,
                   spacing: -0.16,
                 ),
               ),
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: onHowToPlay,
                 child: SizedBox(
                   width: 28,
-                  height: 24,
-                  child: Center(child: RelayStyle.svg('info', width: 22, height: 22)),
+                  height: 28,
+                  child: Center(child: RelayStyle.svg('info', width: 21.4, height: 21.4)),
                 ),
               ),
             ],
@@ -170,10 +171,11 @@ class _Row extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 RelayInitial(name: mate.name, size: 40, fontSize: 16.8),
+                // Worn on top of the lead's avatar (Figma 2606:35694).
                 if (mate.isLeader)
                   Positioned(
                     left: 10,
-                    top: 23,
+                    top: -21.5,
                     child: RelayStyle.svg('crown', width: 20, height: 20),
                   ),
                 Positioned(

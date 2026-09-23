@@ -99,12 +99,12 @@ export interface PlayerSnapshot {
   /** What kind of puzzle each round is, in order — from the imported sheet. */
   roundKinds: string[];
   /**
-   * The clock the player watches: the whole round, four questions' worth.
+   * The clock the player watches: the whole round, five questions' worth.
    *
    * The 30-second cap still governs each question underneath — it closes them
    * and it is what a skip hands forward — but nobody is shown a timer that
-   * resets four times a round. During the break this counts down to the next
-   * round instead.
+   * resets five times a round. Once the team is done — early, or with the
+   * round — it counts down to the next round instead.
    */
   roundSecondsLeft: number;
   /** The per-question cap, still enforced even though it is not the display. */
@@ -129,12 +129,16 @@ export interface PlayerSnapshot {
   secondsUntilStart: number;
   /** Shown before the lobby, so nobody arrives without knowing the rules. */
   instructionsVideoUrl: string;
-  /** The prize headline HR set when publishing, in rupees. */
-  rewardAmount: number;
   /** Where this team sits, so the screen does not have to find itself in the list. */
   yourRank: number;
   /** What this round earned, shown as "+100 points this round". */
   pointsThisRound: number;
+  /**
+   * Set once the team has closed every question this round: the clock it
+   * stopped, what that paid, and what the answers alone earned. The phone's
+   * score reveal counts the first down while the last climbs by the second.
+   */
+  roundFinish?: { secondsSaved: number; timeBonus: number; roundPoints: number };
   /** How each closed question this round went, by position — the pips' colours. */
   roundOutcomes: RelayAnswerRecord['outcome'][];
   /** Set for a few seconds after a correct answer, for the banner. */
@@ -183,9 +187,14 @@ async function membership(userId: string) {
   const user = await memo(`user:${userId}`, 30_000, () => users().findOne({ userId }));
   if (!user) throw new RelayError(404, 'User not found');
   const org = user.org ?? user.email.split('@').at(1) ?? 'default';
-  // Short-lived: a round change has to reach players quickly.
-  const event = await memo(`openEvent:${org}`, 1_000, () =>
-    relayEvents().findOne({ org, status: { $in: ['scheduled', 'live'] } }, { sort: { updatedAt: -1 } }),
+  // Short-lived: a round change has to reach players quickly. Once nothing is
+  // open, the last game played is still somewhere to go — its post reads
+  // "Game over" and "View Leaderboard" has to show the final table.
+  const event = await memo(`openEvent:${org}`, 1_000, async () =>
+    (await relayEvents().findOne(
+      { org, status: { $in: ['scheduled', 'live'] } },
+      { sort: { updatedAt: -1 } },
+    )) ?? relayEvents().findOne({ org, status: 'finished' }, { sort: { finishedAt: -1 } }),
   );
   if (!event) throw new RelayError(404, 'No relay event is open');
   const team = await memo(`team:${event.id}:${userId}`, 30_000, () =>
@@ -223,6 +232,25 @@ async function poolFor(event: RelayEvent, round: number): Promise<RelayItem[]> {
 
 async function progressFor(event: RelayEvent, team: RelayTeam): Promise<RelayTeamProgress> {
   const existing = await readProgress(event.id, team.id);
+  // A copy left over from the round before cannot be trusted for this one: it
+  // carries the old round's question index, which reads as "finished". Go back
+  // to the database, and roll it forward if even that has not caught up.
+  if (existing && existing.round !== event.currentRound) {
+    const stored = await relayProgress().findOne({ eventId: event.id, teamId: team.id });
+    const rolled: RelayTeamProgress =
+      stored && stored.round === event.currentRound
+        ? stored
+        : {
+            ...(stored ?? existing),
+            round: event.currentRound,
+            questionIndex: 0,
+            questionStartedAt: event.roundStartedAt ?? new Date(),
+            carriedSeconds: 0,
+            updatedAt: new Date(),
+          };
+    await cacheProgress(rolled);
+    return rolled;
+  }
   if (existing) return existing;
   const fresh: RelayTeamProgress = {
     eventId: event.id,
@@ -259,6 +287,7 @@ async function closeQuestion(
   /** Seconds a skip hands to the next question. Zero for anything else. */
   carryForward = 0,
 ): Promise<boolean> {
+  const endsRound = progress.questionIndex + 1 >= event.config.questionsPerRound;
   const record: RelayAnswerRecord = {
     round: progress.round,
     position: progress.questionIndex + 1,
@@ -268,6 +297,12 @@ async function closeQuestion(
     submitted,
     answeredBy,
   };
+  if (endsRound) {
+    // What the round clock read at this moment is what the bonus is paid on,
+    // so the reveal counts down from the number players were looking at.
+    const round = roundPhase(event.config, event.roundStartedAt ?? new Date(), Date.now());
+    record.roundSecondsLeft = round.phase === 'playing' ? round.secondsLeft : 0;
+  }
   const result = await relayProgress().updateOne(
     {
       eventId: event.id,
@@ -287,7 +322,7 @@ async function closeQuestion(
     },
   );
   if (result.modifiedCount !== 1) return false;
-  if (progress.questionIndex + 1 >= event.config.questionsPerRound) {
+  if (endsRound) {
     await payRoundBonus(event, progress.teamId, progress.round);
   } else {
     await refreshCachedProgress(event.id, progress.teamId);
@@ -295,17 +330,17 @@ async function closeQuestion(
   return true;
 }
 
-/**
- * Pays the leftover seconds for a clean sweep, once.
- *
- * Guarded on the round not already being in `bonusRounds`, so whichever call
- * closes the last question pays it and a concurrent one cannot pay it again.
- */
 async function refreshCachedProgress(eventId: string, teamId: string) {
   const stored = await relayProgress().findOne({ eventId, teamId });
   if (stored) await cacheProgress(stored);
 }
 
+/**
+ * Pays the time bonus for finishing a round early, once.
+ *
+ * Guarded on the round not already being in `bonusRounds`, so whichever call
+ * closes the last question pays it and a concurrent one cannot pay it again.
+ */
 async function payRoundBonus(event: RelayEvent, teamId: string, round: number) {
   const progress = await relayProgress().findOne({ eventId: event.id, teamId });
   if (!progress) return;
@@ -406,6 +441,13 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
   if (!team) {
     throw new RelayError(403, 'You are not on a team for this event');
   }
+  if (event.status === 'finished') {
+    // Nothing moves once the game is over; the tick already builds the final
+    // table for everyone, so a late arrival gets exactly what the room saw.
+    const view = (await eventTick(event.id)).get(userId);
+    if (view) return view;
+  }
+
   const players = await presentPlayers(event, team);
   const leader = currentLeader(players, config, now);
   const teammatesOf = (holders: Set<string>) =>
@@ -436,7 +478,6 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
       secondsUntilStart: secondsUntil(event.startsAt, now),
       roundOutcomes: [],
       instructionsVideoUrl: await videoUrlFor(event),
-      rewardAmount: event.rewardAmount ?? 0,
       yourRank: 0,
       pointsThisRound: 0,
     };
@@ -460,7 +501,7 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     isLeader: leader?.userId === userId,
     prompt: phase === 'playing' && item ? item.prompt : '',
     questionNumber: Math.min(progress.questionIndex + 1, config.questionsPerRound),
-    roundSecondsLeft: round.secondsLeft,
+    roundSecondsLeft: displayedSeconds(round, phase, config),
     questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
     pieces:
       phase === 'playing' && item
@@ -474,9 +515,9 @@ export async function snapshot(userId: string): Promise<PlayerSnapshot> {
     standings: table,
     secondsUntilStart: 0,
     instructionsVideoUrl: await videoUrlFor(event),
-    rewardAmount: event.rewardAmount ?? 0,
     yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
-    pointsThisRound: roundPoints(progress, event.currentRound),
+    pointsThisRound: roundPoints(progress, event.currentRound, config),
+    roundFinish: roundFinishOf(progress, event.currentRound, config),
     lastOutcome: justAnswered(progress, plan, event.currentRound, now),
     roundOutcomes: outcomesOf(progress, event.currentRound),
   };
@@ -567,6 +608,11 @@ export async function skipQuestion(userId: string, question?: number) {
     throw new RelayError(409, 'This round is over');
   }
   requireStillOpen(progress, question);
+  // The last one has to be played: passing it ends the round early and banks
+  // the time saved for a question nobody attempted.
+  if (progress.questionIndex + 1 >= event.config.questionsPerRound) {
+    throw new RelayError(409, 'The last question cannot be passed');
+  }
   const item = await currentItemFor(event, team, progress);
   const now = Date.now();
   const { allowance } = questionPhase(config(event), progress.questionStartedAt, now, progress.carriedSeconds);
@@ -577,14 +623,57 @@ export async function skipQuestion(userId: string, question?: number) {
   return { answer: item?.acceptedAnswers[0] ?? '', carriedSeconds: Math.round(carried) };
 }
 
-/** What a team banked this round: answers plus the round's own bonus. */
-function roundPoints(progress: RelayTeamProgress, round: number): number {
-  const answers = progress.answers.filter((answer) => answer.round === round);
-  const base = answers.reduce((total, answer) => total + answer.points, 0);
-  const bonus = progress.bonusRounds.includes(round)
-    ? progress.totalPoints - progress.answers.reduce((t, a) => t + a.points, 0)
-    : 0;
-  return base + Math.max(0, bonus);
+/**
+ * How a team's round went: what the answers earned, and the time bonus once
+ * it has been paid. Worked out from this round's own answers — reading the
+ * bonus off the running total counted every earlier round's bonus again.
+ */
+function roundResult(progress: RelayTeamProgress, round: number, config: RelayConfig) {
+  const score = scoreRound(
+    progress.answers.filter((answer) => answer.round === round),
+    config,
+  );
+  const paid = progress.bonusRounds.includes(round);
+  return { ...score, bonusPoints: paid ? score.bonusPoints : 0 };
+}
+
+function roundPoints(progress: RelayTeamProgress, round: number, config: RelayConfig): number {
+  const result = roundResult(progress, round, config);
+  return result.basePoints + result.bonusPoints;
+}
+
+/**
+ * What the score reveal counts: the round clock the team stopped and the
+ * points it turns into. Only once the team has closed all of its questions.
+ */
+function roundFinishOf(
+  progress: RelayTeamProgress | undefined,
+  round: number,
+  config: RelayConfig,
+): PlayerSnapshot['roundFinish'] {
+  if (!progress || progress.round !== round || progress.questionIndex < config.questionsPerRound) {
+    return undefined;
+  }
+  const result = roundResult(progress, round, config);
+  return {
+    secondsSaved: result.secondsSaved,
+    timeBonus: result.bonusPoints,
+    roundPoints: result.basePoints,
+  };
+}
+
+/**
+ * The clock players watch. A team that finished early waits out the rest of
+ * the round and then the break, so the leaderboard counts down to the moment
+ * the next round starts for everyone.
+ */
+function displayedSeconds(
+  round: { phase: 'playing' | 'break'; secondsLeft: number },
+  phase: PlayerSnapshot['phase'],
+  config: RelayConfig,
+): number {
+  if (phase === 'break' && round.phase === 'playing') return round.secondsLeft + config.breakSeconds;
+  return round.secondsLeft;
 }
 
 export async function leaderboard(eventId: string) {
@@ -646,9 +735,14 @@ export async function advanceEvent(eventId: string): Promise<'unchanged' | 'roun
   if (!event || !event.roundStartedAt) return 'unchanged';
   const { config } = event;
   const elapsed = (Date.now() - event.roundStartedAt.getTime()) / 1000;
-  if (elapsed < roundSeconds(config) + config.breakSeconds) return 'unchanged';
+  // The break exists to line the teams up for the next round. After the last
+  // one there is nothing to line up for, so the game ends when its clock does
+  // rather than counting down to a round that will never start.
+  const lastRound = event.currentRound >= config.rounds;
+  const waitFor = roundSeconds(config) + (lastRound ? 0 : config.breakSeconds);
+  if (elapsed < waitFor) return 'unchanged';
 
-  if (event.currentRound >= config.rounds) {
+  if (lastRound) {
     await relayEvents().updateOne(
       { id: eventId, status: 'live' },
       { $set: { status: 'finished', finishedAt: new Date(), updatedAt: new Date() } },
@@ -665,9 +759,6 @@ export async function advanceEvent(eventId: string): Promise<'unchanged' | 'roun
     { $set: { currentRound: nextRound, roundStartedAt: startedAt, updatedAt: startedAt } },
   );
   if (moved.modifiedCount !== 1) return 'unchanged';
-  forgetRelayCache(eventId);
-  await forgetProgress(eventId);
-
   const teams = await relayTeams().find({ eventId }).toArray();
   await Promise.all(
     teams.map((team) =>
@@ -686,6 +777,12 @@ export async function advanceEvent(eventId: string): Promise<'unchanged' | 'roun
       ),
     ),
   );
+  // Emptied only once the new round is in the database. Cleared first, a tick
+  // landing in between read the old round back out of Mongo and cached it
+  // again — and every push for the whole next round then said "question five
+  // of five", so nobody was ever shown a question.
+  forgetRelayCache(eventId);
+  await forgetProgress(eventId);
   return 'round';
 }
 
@@ -853,7 +950,7 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         pointsPerCorrect: config.pointsPerCorrect,
         roundSeconds: roundSeconds(config),
         roundKinds: kinds,
-        roundSecondsLeft: round.secondsLeft,
+        roundSecondsLeft: displayedSeconds(round, phase, config),
         questionSecondsLeft: phase === 'playing' ? question.secondsLeft : 0,
         pieces:
           phase === 'playing' && item
@@ -865,9 +962,9 @@ export async function eventTick(eventId: string): Promise<Map<string, PlayerSnap
         standings: table,
         secondsUntilStart: phase === 'lobby' ? secondsUntil(event.startsAt, now) : 0,
         instructionsVideoUrl: videoUrl,
-        rewardAmount: event.rewardAmount ?? 0,
         yourRank: table.find((row) => row.name === team.name)?.rank ?? 0,
-        pointsThisRound: progress ? roundPoints(progress, event.currentRound) : 0,
+        pointsThisRound: progress ? roundPoints(progress, event.currentRound, config) : 0,
+        roundFinish: roundFinishOf(progress, event.currentRound, config),
         lastOutcome: justAnswered(progress, plan, event.currentRound, now),
         roundOutcomes: outcomesOf(progress, event.currentRound),
       });
@@ -928,11 +1025,13 @@ export async function playerCard(userId: string) {
       title: event.name,
       status: event.status,
       startsAt: event.startsAt?.toISOString() ?? null,
-      rewardAmount: event.rewardAmount ?? 0,
       pointsPerCorrect: event.config.pointsPerCorrect,
       rounds: event.config.rounds,
       instructionsVideoUrl: await videoUrlFor(event),
     },
+    // The post turns into the result once the game is over: who won, and the
+    // podium. Empty until then, so a live table never leaks onto the feed.
+    podium: event.status === 'finished' ? (await leaderboard(event.id)).slice(0, 3) : [],
     team: team
       ? {
           name: team.name,

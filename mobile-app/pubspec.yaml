@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.0+12
+version: 1.1.0+15
 
 environment:
   sdk: ^3.10.4
@@ -81,9 +81,14 @@ flutter:
     - assets/icons/engagement/
     - assets/icons/grow/
     - assets/icons/punch/
+    # Flutter does not recurse into asset folders, so the team icons were
+    # shipped nowhere and their plus never drew.
+    - assets/icons/team/
     - assets/games/
     # Flutter does not recurse into asset folders; the relay game's own art.
     - assets/games/relay/
+    # First-run screens: the photo step, the interest chips and the logos.
+    - assets/onboarding/
 
   fonts:
     - family: Plus Jakarta Sans
@@ -99,6 +104,10 @@ flutter:
     - family: Sora
       fonts:
         - asset: assets/fonts/sora/Sora-Variable.ttf
+    # The relay game's "+40" pops in the arcade face the design asks for.
+    - family: PressStart2P
+      fonts:
+        - asset: assets/fonts/press_start/PressStart2P-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

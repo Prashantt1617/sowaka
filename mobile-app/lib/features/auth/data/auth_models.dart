@@ -5,6 +5,8 @@ class AuthUser {
     required this.name,
     required this.role,
     required this.company,
+    this.org,
+    this.interests = const [],
     this.profilePhotoUrl,
     this.location,
     this.state,
@@ -27,6 +29,11 @@ class AuthUser {
       // Never the product's name as a stand-in for an employer: one build
       // serves every company on the platform.
       company: json['company'] as String? ?? '',
+      org: _optionalString(json['org']),
+      interests: [
+        for (final value in (json['interests'] as List<dynamic>? ?? const []))
+          '$value',
+      ],
       profilePhotoUrl: _optionalString(json['profilePhotoUrl']),
       location: _optionalString(json['location']),
       state: _optionalString(json['state']),
@@ -50,6 +57,12 @@ class AuthUser {
   final String name;
   final String role;
   final String company;
+  /// The company id, which decides whose brand the app wears.
+  final String? org;
+
+  /// Picked once at onboarding; captured, not yet used.
+  final List<String> interests;
+
   final String? profilePhotoUrl;
   final String? location;
   final String? state;
@@ -68,6 +81,8 @@ class AuthUser {
     'name': name,
     'role': role,
     'company': company,
+    'org': org,
+    'interests': interests,
     'profilePhotoUrl': profilePhotoUrl,
     'location': location,
     'state': state,
@@ -81,12 +96,14 @@ class AuthUser {
     'recognition': recognition?.toJson(),
   };
 
-  AuthUser copyWith({String? profilePhotoUrl}) => AuthUser(
+  AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
     id: id,
     email: email,
     name: name,
     role: role,
     company: company,
+    org: org,
+    interests: interests ?? this.interests,
     profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
     location: location,
     state: state,

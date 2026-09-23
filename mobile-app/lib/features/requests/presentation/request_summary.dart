@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/linkified_text.dart';
+import '../../shared/app_toast.dart';
 
 /// One label/value line on a request summary.
 class SummaryRow {
@@ -175,9 +176,7 @@ class _AttachmentChip extends StatelessWidget {
           ? () async {
               final opened = await openExternalLink(link);
               if (opened || !context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Could not open the attachment')),
-              );
+              showAppToast(context, 'Could not open the attachment');
             }
           : null,
       child: Padding(

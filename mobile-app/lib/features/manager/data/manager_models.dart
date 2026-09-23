@@ -626,8 +626,14 @@ class OvertimeRequest {
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
-  String get hoursLabel =>
-      '${hours.toStringAsFixed(hours == hours.roundToDouble() ? 0 : 1)} hrs';
+  /// What was applied for, in the words the form used: a half day or a full
+  /// one. The hours behind it come from the org's shift policy, and are not
+  /// what anybody chose.
+  String get hoursLabel => halfDayClaim ? 'Half day' : 'Full day';
+
+  /// Under six hours is the half day; the policies in use put a half day at
+  /// four and a full one at eight.
+  bool get halfDayClaim => hours < 6;
 
   String get timeRangeLabel =>
       '${_clockLabel(startTime)} – ${_clockLabel(endTime)}';

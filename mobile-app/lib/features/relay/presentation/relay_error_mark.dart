@@ -21,7 +21,9 @@ class RelayErrorMark extends StatefulWidget {
 class _RelayErrorMarkState extends State<RelayErrorMark> with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 1),
+    // Half the Lottie's own second: a wrong answer should not hold the
+    // screen longer than it takes to read it.
+    duration: const Duration(milliseconds: 500),
   )..forward();
 
   @override
