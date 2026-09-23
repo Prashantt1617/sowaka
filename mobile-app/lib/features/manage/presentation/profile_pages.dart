@@ -599,6 +599,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       title: 'Crop your photo',
       initial: CropShape.square,
       allowShapeChange: false,
+      // Shown in a circle at well under 200pt; a full-resolution PNG of an
+      // iPhone photo is many megabytes for no visible gain.
+      maxEdge: 1024,
     );
     if (cropped == null || !mounted) return;
 
@@ -610,11 +613,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       );
       widget.bloc.setManagerPhoto(photoUrl);
       await widget.onProfilePhotoUpdated(photoUrl);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
+        // The server's own reason, when it gave one: "5 MB or smaller" is
+        // something a person can act on, "try again" is not.
+        final reason = error is ManagerApiException ? error.message : null;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not update your photo. Try again.'),
+          SnackBar(
+            content: Text(reason ?? 'Could not update your photo. Try again.'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: MColors.ink,
           ),
