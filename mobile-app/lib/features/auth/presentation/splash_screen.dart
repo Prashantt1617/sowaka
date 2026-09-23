@@ -97,7 +97,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// Sowaka's wordmark, or the company's own logo where it has one.
+/// The brand's wordmark — Sowaka's, or the company's — in Anton.
 class _Mark extends StatelessWidget {
   const _Mark({required this.branding});
 
@@ -105,17 +105,6 @@ class _Mark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final logo = branding.logoAsset;
-    if (logo != null) {
-      // Sits in the wordmark's 68pt line box, so the tagline lands where it
-      // does on Sowaka's own splash.
-      return SizedBox(
-        height: 68,
-        child: Center(
-          child: Image.asset(logo, width: 180, fit: BoxFit.contain),
-        ),
-      );
-    }
     return Text(
       branding.wordmark,
       style: const TextStyle(
@@ -131,8 +120,9 @@ class _Mark extends StatelessWidget {
   }
 }
 
-/// Sowaka's line, or — under a company's logo — "powered by" with "sowaka"
-/// on the line below in Anton, the brand's type, at the tagline's own size.
+/// Sowaka's line, or — under a company's wordmark — "powered by" with
+/// "sowaka" on the line below in Anton, at the tagline's own size so it sits
+/// well under the company's name.
 class _Tagline extends StatelessWidget {
   const _Tagline({required this.branding});
 

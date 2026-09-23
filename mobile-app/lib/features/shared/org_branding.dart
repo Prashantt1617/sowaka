@@ -12,20 +12,15 @@ class OrgBranding {
     required this.org,
     required this.wordmark,
     required this.tagline,
-    this.logoAsset,
     this.iosIconName,
   });
 
   /// The company id this branding belongs to; empty for Sowaka's own.
   final String org;
 
-  /// Set in Anton on the splash, lowercase as the design draws it — unless
-  /// there is a [logoAsset], which is drawn in its place.
+  /// Set in Anton on the splash, lowercase as the design draws it.
   final String wordmark;
   final String tagline;
-
-  /// The company's own logo for the splash, in place of the wordmark.
-  final String? logoAsset;
 
   /// The alternate app icon to ask iOS for; null leaves the Sowaka icon.
   final String? iosIconName;
@@ -41,11 +36,10 @@ class OrgBranding {
   static const _known = <String, OrgBranding>{
     'convrse': OrgBranding(
       org: 'convrse',
-      wordmark: 'convrse',
+      wordmark: 'convrse.ai',
       // The design's own line, with its typo ("You company's") corrected.
       // The splash sets "sowaka" under it in the brand's own type.
       tagline: 'Your company’s app is powered by',
-      logoAsset: 'assets/images/convrse_splash_logo.png',
       iosIconName: 'AppIconConvrse',
     ),
   };
