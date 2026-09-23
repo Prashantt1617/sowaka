@@ -29,9 +29,10 @@ class _LoginScreenState extends State<LoginScreen>
   late final AuthBloc _bloc;
   bool _didFocusOtp = false;
 
-  /// Set once they have been through first-run, so the flow does not reappear
-  /// behind the welcome screen.
-  bool _onboarded = false;
+  /// The session as first-run left it: with the photo and interests they
+  /// just gave. Everything after that screen uses this rather than the one
+  /// the sign-in produced, which no longer describes them.
+  AuthSession? _onboardedSession;
   bool _rememberMe = false;
 
   @override
@@ -113,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
     await AuthSessionStore().save(updated);
     if (!mounted) return;
-    setState(() => _onboarded = true);
+    setState(() => _onboardedSession = updated);
     _bloc.add(SessionUpdated(updated));
   }
 
@@ -127,6 +128,10 @@ class _LoginScreenState extends State<LoginScreen>
           initialData: _bloc.state,
           builder: (context, snapshot) {
             final state = snapshot.data ?? _bloc.state;
+            // First run's version of them wins: the stream's copy still has
+            // no photo and no interests until its event lands, and the
+            // welcome screen and the app must not be handed that one.
+            final signedIn = _onboardedSession ?? state.session;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               // Errors render inline on the form itself (nodes 1849:17319 and
@@ -196,25 +201,25 @@ class _LoginScreenState extends State<LoginScreen>
                 // First run comes before "Meet your team": the photo they
                 // add is the one their team sees on that very screen.
                 AuthStep.success
-                    when state.session != null &&
-                        !_onboarded &&
-                        needsOnboarding(state.session!.user) =>
+                    when signedIn != null &&
+                        _onboardedSession == null &&
+                        needsOnboarding(signedIn.user) =>
                   OnboardingFlow(
                     key: const ValueKey('onboarding'),
-                    session: state.session!,
-                    api: ManagerApiService(session: state.session!),
+                    session: signedIn,
+                    api: ManagerApiService(session: signedIn),
                     onDone: (photoUrl, interests) =>
-                        _finishOnboarding(state.session!, photoUrl, interests),
+                        _finishOnboarding(signedIn, photoUrl, interests),
                   ),
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
-                  name: state.session?.user.name ?? 'there',
-                  company: state.session?.user.company.isNotEmpty == true
-                      ? state.session!.user.company
+                  name: signedIn?.user.name ?? 'there',
+                  company: signedIn?.user.company.isNotEmpty == true
+                      ? signedIn!.user.company
                       : 'your team',
-                  session: state.session,
+                  session: signedIn,
                   onEnter: () async {
-                    final session = state.session;
+                    final session = signedIn;
                     if (session == null) return;
                     await AuthSessionStore().save(session);
                     if (!context.mounted) return;

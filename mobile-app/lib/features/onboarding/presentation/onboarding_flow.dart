@@ -274,13 +274,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   children: [
                     SvgPicture.asset('$_asset/camera.svg', width: 20, height: 20),
                     const SizedBox(width: 10),
-                    Text(
+                    // A longer word, or a larger type setting, shortens rather
+                    // than spilling out of the button.
+                    Flexible(
+                      child: Text(
                       path == null ? 'Add or take a photo' : 'Change photo',
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: 'Sora',
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: _brandDeep,
+                      ),
                       ),
                     ),
                   ],

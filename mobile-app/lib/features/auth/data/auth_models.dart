@@ -102,6 +102,8 @@ class AuthUser {
     name: name,
     role: role,
     company: company,
+    org: org,
+    interests: interests ?? this.interests,
     profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
     location: location,
     state: state,
