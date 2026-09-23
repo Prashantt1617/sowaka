@@ -97,14 +97,29 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// The brand's wordmark — Sowaka's, or the company's — in Anton.
+/// The brand's mark: Sowaka's wordmark in Anton, or — where a company has
+/// its own logo — that logo in its place (Figma 2759:41310).
 class _Mark extends StatelessWidget {
   const _Mark({required this.branding});
 
   final OrgBranding branding;
 
+  /// The company logo's width on the splash. The design sets it against the
+  /// tagline under it, not against the screen, so it is a fixed size rather
+  /// than a fraction of the width.
+  static const _logoWidth = 200.0;
+
   @override
   Widget build(BuildContext context) {
+    final logo = branding.logoAsset;
+    if (logo != null) {
+      return Padding(
+        // The wordmark's own 23pt of leading, so what follows sits where it
+        // does on Sowaka's splash.
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Image.asset(logo, width: _logoWidth, fit: BoxFit.contain),
+      );
+    }
     return Text(
       branding.wordmark,
       style: const TextStyle(
@@ -155,15 +170,18 @@ class _Tagline extends StatelessWidget {
             height: 19.5 / 14,
           ),
         ),
+        const SizedBox(height: 6),
         Text(
           'sowaka',
           textAlign: TextAlign.center,
-          // The design's type spec: Anton 400, 100% line height, no tracking.
+          // The design's type spec — Anton 400, 100% line height, no tracking
+          // — set well under the company's logo rather than level with it:
+          // whose app this is comes first, who powers it second.
           style: TextStyle(
             fontFamily: 'Anton',
             fontWeight: FontWeight.w400,
             color: color,
-            fontSize: 14,
+            fontSize: 30,
             height: 1,
             letterSpacing: 0,
           ),

@@ -87,7 +87,7 @@ void main() {
     expect(find.text('Add a profile photo'), findsNothing);
   });
 
-  testWidgets('interests, then the logo notice, then done — and no second pass', (tester) async {
+  testWidgets('interests, then done — and no second pass', (tester) async {
     final session = _session(photoUrl: 'https://example.test/old.png');
     final api = _FakeApi(session: session);
     String? donePhoto;
@@ -116,24 +116,18 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    // The company's notice, once, before anything else.
-    expect(find.text('You logo just changed'), findsOneWidget);
-    expect(doneInterests, isNull, reason: 'the flow is not over until it is read');
-
-    await tester.tap(find.text('Okay'));
-    await tester.pumpAndSettle();
-
+    // Whose app this is now is said on the splash, so first-run ends on the
+    // last question rather than on a notice about the logo.
     expect(api.savedInterests, ['Music']);
     expect(doneInterests, ['Music']);
     expect(donePhoto, isEmpty, reason: 'the photo they already had is untouched');
-    expect(find.text('You logo just changed'), findsNothing, reason: 'read once');
 
     // What the app carries forward no longer asks for anything.
     final after = session.user.copyWith(interests: doneInterests);
     expect(needsOnboarding(after), isFalse);
   });
 
-  testWidgets('a Sowaka employee sees no logo notice', (tester) async {
+  testWidgets('a company employee is not held up by a logo notice either', (tester) async {
     final session = _session(photoUrl: 'https://example.test/old.png', org: 'sowaka');
     final api = _FakeApi(session: session);
     var done = false;
@@ -145,7 +139,6 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.text('You logo just changed'), findsNothing);
     expect(done, isTrue);
   });
 
