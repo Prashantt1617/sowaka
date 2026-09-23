@@ -3,6 +3,7 @@ import {
   getManagerWorkspace,
   ManagerError,
   nominateForRecognition,
+  updateInterests,
   updateProfilePhoto,
   upsertFeedback,
   getFeedbackSnapshot,
@@ -47,6 +48,15 @@ export async function updateMyProfilePhoto(req: Request, res: Response, next: Ne
       bytes: req.file.buffer,
     });
     res.status(200).json({ success: true, photoUrl });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateMyInterests(req: Request, res: Response, next: NextFunction) {
+  try {
+    const interests = await updateInterests(requireUserId(req), req.body?.interests);
+    res.status(200).json({ success: true, interests });
   } catch (error) {
     next(error);
   }

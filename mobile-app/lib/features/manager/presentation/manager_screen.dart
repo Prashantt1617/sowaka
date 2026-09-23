@@ -28,6 +28,7 @@ import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
+import '../../shared/startup_prefs.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 
@@ -47,9 +48,12 @@ part '../../manager_shell/presentation/manager_tab_content.dart';
 const int _maxLeaveApplyDays = 30;
 
 class ManagerScreen extends StatefulWidget {
-  const ManagerScreen({super.key, required this.session});
+  const ManagerScreen({super.key, required this.session, this.justOnboarded = false});
 
   final AuthSession session;
+
+  /// Straight out of onboarding: the punch screen waits until next launch.
+  final bool justOnboarded;
 
   @override
   State<ManagerScreen> createState() => _ManagerScreenState();
@@ -75,6 +79,18 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _bloc = ManagerBloc(session: widget.session)
       ..add(const LoadManagerDashboard());
     AppNotificationService.instance.attachSession(widget.session);
+    // Onboarding has just taken two screens of their time; the punch screen
+    // holds until the next launch, and after that it never opens by itself
+    // again.
+    if (widget.justOnboarded) {
+      unawaited(const StartupPrefs().markPunchPromptShown());
+    } else {
+      unawaited(
+        const StartupPrefs().punchPromptShown().then((shown) {
+          if (mounted) setState(() => _punchPromptUsed = shown);
+        }),
+      );
+    }
     _notificationSubscription = AppNotificationService.instance.opened.listen(
       _handleNotificationDestination,
     );
@@ -102,6 +118,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
   void _refreshBackState() {
     if (mounted) setState(() {});
   }
+
+  /// Whether the punch screen is still owed a showing on this device.
+  ///
+  /// It gets exactly one, ever: the first launch after onboarding. Read once
+  /// here so the build method never waits on storage.
+  bool _punchPromptUsed = true;
 
   /// Whether to open the day on the punch screen.
   ///
@@ -171,7 +193,16 @@ class _ManagerScreenState extends State<ManagerScreen> {
   }
 
   /// Where the app opens, and where back returns to.
-  ManagerTab get _defaultTab => ManagerTab.connect;
+  ///
+  /// Connect, unless the punch screen has had its one showing and the day
+  /// still has no punch — then Quick Actions, where the punch card is.
+  ManagerTab get _defaultTab {
+    final dashboard = _bloc.state.dashboard;
+    if (_punchPromptUsed && dashboard != null && _shouldOfferPunch(dashboard)) {
+      return ManagerTab.quick;
+    }
+    return ManagerTab.connect;
+  }
 
   bool _hasBackTarget(ManagerState state) {
     return _profileOpen ||
@@ -342,8 +373,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
         // the first thing they came here to do, and a day that never got one
         // is a day they have to correct later.
         final dashboard = state.dashboard!;
-        if (!_punchPrompted && _shouldOfferPunch(dashboard)) {
+        if (!_punchPrompted && !_punchPromptUsed && _shouldOfferPunch(dashboard)) {
           _punchPrompted = true;
+          unawaited(const StartupPrefs().markPunchPromptShown());
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => _offerPunch(dashboard),
           );

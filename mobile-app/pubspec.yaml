@@ -84,6 +84,8 @@ flutter:
     - assets/games/
     # Flutter does not recurse into asset folders; the relay game's own art.
     - assets/games/relay/
+    # First-run screens: the photo step, the interest chips and the logos.
+    - assets/onboarding/
 
   fonts:
     - family: Plus Jakarta Sans

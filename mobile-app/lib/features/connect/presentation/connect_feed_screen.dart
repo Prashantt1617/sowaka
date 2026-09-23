@@ -2574,23 +2574,28 @@ class _SurveyBody extends StatelessWidget {
                             ),
                           ),
                         ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: hasImage ? 8 : 16,
-                        ),
-                        child: Row(
+                      // Filling the bar is what centres the label: left to
+                      // size itself, the row sat against the top edge.
+                      Positioned.fill(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            left: hasImage ? 0 : 16,
+                            right: 16,
+                          ),
+                          child: Row(
                           children: [
                             if (hasImage) ...[
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
+                              // Flush to the edge and the full height of the
+                              // bar, as the design draws it.
+                              SizedBox(
+                                width: 80,
+                                height: double.infinity,
                                 child: Image(
                                   image: _remoteImage(option.imageUrl!),
-                                  width: 32,
-                                  height: 32,
                                   fit: BoxFit.cover,
                                 ),
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 12),
                             ],
                             Expanded(
                               child: Text(
@@ -2620,6 +2625,7 @@ class _SurveyBody extends StatelessWidget {
                                 ),
                               ),
                           ],
+                          ),
                         ),
                       ),
                     ],

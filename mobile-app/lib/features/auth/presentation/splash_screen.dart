@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/org_branding.dart';
+
 /// Brand splash (node 1887:27413 → 1887:27433).
+///
+/// Wears whichever company's mark this device last signed in to, so a Convrse
+/// employee's app opens as Convrse rather than showing them somebody else's
+/// brand for two seconds.
 ///
 /// The two design states are the same screen at different points of one
 /// animation: the wordmark settles first, then the tagline — which the design
 /// ships at zero opacity — fades up underneath it.
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  const SplashScreen({super.key, this.branding = OrgBranding.sowaka});
+
+  final OrgBranding branding;
 
   /// How long the whole entrance takes; callers hold the splash at least this
   /// long so the animation isn't cut off by a fast session restore.
@@ -69,9 +77,9 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _markOpacity.value,
                 child: Transform.scale(
                   scale: _markScale.value,
-                  child: const Text(
-                    'sowaka',
-                    style: TextStyle(
+                  child: Text(
+                    widget.branding.wordmark,
+                    style: const TextStyle(
                       fontFamily: 'Anton',
                       fontSize: 45,
                       color: Colors.white,
@@ -85,13 +93,17 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _taglineOpacity.value,
                 child: Transform.translate(
                   offset: Offset(0, _taglineShift.value),
-                  child: const Text(
-                    'Your workplace, connected.',
+                  child: Text(
+                    widget.branding.tagline,
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      height: 19.5 / 13,
-                      fontWeight: FontWeight.w400,
+                      color: widget.branding.isSowaka
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.68),
+                      fontWeight: widget.branding.isSowaka
+                          ? FontWeight.w400
+                          : FontWeight.w600,
+                      fontSize: widget.branding.isSowaka ? 13 : 14,
+                      height: 19.5 / (widget.branding.isSowaka ? 13 : 14),
                     ),
                   ),
                 ),

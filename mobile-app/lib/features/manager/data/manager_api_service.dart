@@ -535,6 +535,12 @@ class ManagerApiService {
     return ReimbursementClaim.fromJson(json['claim'] as Map<String, dynamic>);
   }
 
+  /// What they said they are into, from onboarding. The whole list is sent,
+  /// so removing one is the same call as adding one.
+  Future<void> updateInterests(List<String> interests) async {
+    await _request('PATCH', '/manager/interests', body: {'interests': interests});
+  }
+
   Future<String> updateProfilePhoto({
     required String path,
     required String filename,

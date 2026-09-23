@@ -102,6 +102,36 @@ export interface ManagerTeamMemberView {
   }[];
 }
 
+/** How many someone may pick, as the onboarding screen says. */
+const MAX_INTERESTS = 3;
+
+/**
+ * Saves what someone said they are into, from onboarding.
+ *
+ * The list on the screen may grow or be translated, so whatever is sent is
+ * kept rather than checked against a fixed set — only the count and the
+ * length of each are held to, since nothing reads these yet and a wrong
+ * value here should never cost more than a wrong word in a profile.
+ */
+export async function updateInterests(userId: string, given: unknown) {
+  const user = await users().findOne({ userId });
+  if (!user) throw new ManagerError(404, 'User not found');
+  const list = Array.isArray(given) ? given : [];
+  const interests = [
+    ...new Set(
+      list
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+        .map((value) => value.slice(0, 40)),
+    ),
+  ];
+  if (interests.length > MAX_INTERESTS) {
+    throw new ManagerError(400, `Choose up to ${MAX_INTERESTS} interests`);
+  }
+  await users().updateOne({ userId }, { $set: { interests, updatedAt: new Date() } });
+  return interests;
+}
+
 export async function updateProfilePhoto(userId: string, file: ConnectMediaFile) {
   const user = await users().findOne({ userId });
   if (!user) throw new ManagerError(404, 'User not found');

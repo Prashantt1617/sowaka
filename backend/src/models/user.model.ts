@@ -48,6 +48,13 @@ export interface User {
   profilePhotoUrl?: string;
   location?: string;
   state?: string;
+  /**
+   * What the person said they are into, picked once during onboarding.
+   *
+   * Stored as given and read by nothing yet: the point today is to have it
+   * when something — a feed that knows what you like, a club, a game — asks.
+   */
+  interests?: string[];
   /** Free text: the roster records what people tell HR, not a fixed set. */
   gender?: string;
   /** Personal mobile, captured when HR adds the employee. */

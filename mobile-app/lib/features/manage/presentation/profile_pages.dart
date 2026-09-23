@@ -772,10 +772,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                             width: 2.5,
                                           ),
                                         ),
-                                        child: const Icon(
-                                          Icons.camera_alt_rounded,
-                                          size: 15,
-                                          color: Colors.white,
+                                        // The same camera as the onboarding
+                                        // screen's "Add or take a photo".
+                                        child: Center(
+                                          child: SvgPicture.asset(
+                                            'assets/onboarding/camera.svg',
+                                            width: 16,
+                                            height: 16,
+                                            colorFilter: const ColorFilter.mode(
+                                              Colors.white,
+                                              BlendMode.srcIn,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),

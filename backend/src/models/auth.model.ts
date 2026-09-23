@@ -22,7 +22,11 @@ export interface AuthUser {
   dashboardAccess?: boolean;
   isLeadership?: boolean;
   company: string;
+  /** The company's id, which is what branding is chosen by. */
+  org?: string;
   profilePhotoUrl?: string;
+  /** What they said they are into, from onboarding. Captured, not yet used. */
+  interests?: string[];
   location?: string;
   state?: string;
   designation?: string;
