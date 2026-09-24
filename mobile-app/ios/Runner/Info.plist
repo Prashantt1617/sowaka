@@ -32,6 +32,11 @@
 	<string>Sowaka uses the camera so you can take a photo for your profile picture or a post.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
+	<!-- The location plugin's code carries the "always" API, so Apple's scan
+	     asks for its purpose string even though the app never calls it. The
+	     string says what the app actually does, which is the same thing. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sowaka uses the microphone to dictate feedback notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
