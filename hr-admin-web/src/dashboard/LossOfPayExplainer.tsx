@@ -62,6 +62,9 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>
                     {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#A8475F', marginTop: 4 }}>
+                    Total deducted days → {fmt(line.days)}
+                  </div>
                 </div>
                 {!days ? (
                   <div style={{ padding: '12px 4px', color: '#717171', fontSize: 14 }}>{error ? '' : 'Loading the days…'}</div>
