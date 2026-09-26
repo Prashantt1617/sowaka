@@ -13,6 +13,7 @@ import { notificationRouter } from './notification.routes';
 import { attendanceRouter } from './attendance.routes';
 import { mediaRouter } from './media.routes';
 import { payrollRouter } from './payroll.routes';
+import { payslipRouter } from './payslip.routes';
 import { kpiRouter } from './kpi.routes';
 import { relayRouter } from './relay.routes';
 import { relayPlayerRouter } from './relay-player.routes';
@@ -24,6 +25,7 @@ router.use('/health', healthRouter);
 router.use('/holidays', holidayRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
+router.use('/payslips', payslipRouter);
 // Mounted before the authenticated Connect router: image requests can't carry
 // a bearer token, so media is served by unguessable key instead.
 router.use('/media', mediaRouter);

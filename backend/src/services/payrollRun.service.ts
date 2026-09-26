@@ -27,6 +27,8 @@ import {
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, deductionsUnder } from './deduction.service';
+import { payslipHtml } from './payslip-html';
+import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
 
 export class PayrollRunError extends Error {
@@ -296,6 +298,46 @@ export async function employeePayslips(adminUserId: string, userId: string) {
       .filter((slip) => runById.has(slip.runId))
       .map((slip) => ({ run: runView(runById.get(slip.runId)!), payslip: payslipView(slip) })),
   };
+}
+
+// ------------------------------------------------------------- an employee's own slips
+
+const MY_PAYSLIPS = 3;
+
+async function ownedPayslip(userId: string, payslipId: string) {
+  if (!ObjectId.isValid(payslipId)) throw new PayrollRunError(404, 'Payslip not found');
+  const slip = await payslips().findOne({ _id: new ObjectId(payslipId), userId });
+  if (!slip) throw new PayrollRunError(404, 'Payslip not found');
+  return slip;
+}
+
+async function companyOf(org: string) {
+  const company = await companies().findOne({ id: org }, { projection: { name: 1, address: 1 } });
+  return { name: company?.name ?? org, address: company?.address ?? '' };
+}
+
+/** The signed-in person's last few payslips, newest period first, with the run each came from. */
+export async function myPayslips(userId: string) {
+  const slips = await payslips().find({ userId }).sort({ period: -1, createdAt: -1 }).limit(MY_PAYSLIPS).toArray();
+  if (slips.length === 0) return { company: null, payslips: [] };
+  const runIds = [...new Set(slips.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const runs = await payrollRuns().find({ _id: { $in: runIds } }).toArray();
+  const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
+  return {
+    company: await companyOf(slips[0].org),
+    payslips: slips.filter((s) => runById.has(s.runId)).map((s) => ({ run: runView(runById.get(s.runId)!), payslip: payslipView(s) })),
+  };
+}
+
+export async function myPayslipHtml(userId: string, payslipId: string): Promise<string> {
+  const slip = await ownedPayslip(userId, payslipId);
+  return payslipHtml(payslipView(slip), await companyOf(slip.org));
+}
+
+/** The graded month behind a slip, so the app can show why pay was lost. */
+export async function myPayslipCalendar(userId: string, payslipId: string) {
+  const slip = await ownedPayslip(userId, payslipId);
+  return employeeCalendar(userId, userId, slip.period);
 }
 
 export async function submitRun(adminUserId: string, runIdInput: string) {

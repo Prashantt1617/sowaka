@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../shared/org_branding.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class AppHomeHeader extends StatelessWidget {
@@ -31,11 +33,17 @@ class AppHomeHeader extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Image.asset(
-                'assets/images/convrse_logo.png',
-                width: 99,
-                height: 41,
-                fit: BoxFit.contain,
+              // Whose app this is: the signed-in org's logo, or the Convrse logo
+              // the header has always worn when the org has none of its own.
+              // Listens, so the face changes the moment the org is known.
+              ValueListenableBuilder<OrgBranding>(
+                valueListenable: OrgBranding.current,
+                builder: (context, branding, _) => Image.asset(
+                  branding.homeLogoAsset ?? 'assets/images/convrse_logo.png',
+                  width: 99,
+                  height: 41,
+                  fit: BoxFit.contain,
+                ),
               ),
               const Spacer(),
               _AppHeaderBellButton(onTap: onNotifications),

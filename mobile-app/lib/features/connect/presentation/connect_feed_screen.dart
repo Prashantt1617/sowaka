@@ -10232,8 +10232,10 @@ class _ConnectEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scrolls rather than overflows: on a shorter screen the illustration,
+    // copy and button together run a few pixels past the space they get.
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,

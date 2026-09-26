@@ -255,6 +255,41 @@ class ManagerApiService {
   /// The signed-in employee's shift policy on its own. Re-read while the app
   /// runs so an HR change — a leave type switched off, a new backdating
   /// window — lands without signing out.
+  /// The signed-in person's last few payslips, newest first, with the
+  /// company the slip is printed under.
+  Future<(PayslipCompany company, List<Payslip>)> fetchMyPayslips() async {
+    final json = await _request('GET', '/payslips/mine');
+    final company = PayslipCompany.fromJson(
+      json['company'] as Map<String, dynamic>? ?? const {},
+    );
+    final rows = json['payslips'] as List<dynamic>? ?? const [];
+    return (
+      company,
+      rows.map((row) {
+        final map = row as Map<String, dynamic>;
+        return Payslip.fromJson(
+          map['run'] as Map<String, dynamic>? ?? const {},
+          map['payslip'] as Map<String, dynamic>? ?? const {},
+        );
+      }).toList(),
+    );
+  }
+
+  /// One slip as the printable document, to be turned into a PDF.
+  Future<String> fetchPayslipHtml(String payslipId) async {
+    final json = await _request('GET', '/payslips/$payslipId/html');
+    return json['html'] as String? ?? '';
+  }
+
+  /// The graded month behind a slip: why there was a loss of pay.
+  Future<List<PayslipDay>> fetchPayslipDays(String payslipId) async {
+    final json = await _request('GET', '/payslips/$payslipId/calendar');
+    final calendar = json['calendar'] as Map<String, dynamic>? ?? const {};
+    return (calendar['days'] as List<dynamic>? ?? const [])
+        .map((d) => PayslipDay.fromJson(d as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<ShiftPolicy> fetchShiftPolicy() async {
     final body = await _request('GET', '/manager/shift-policy');
     return ShiftPolicy.fromJson(
@@ -538,7 +573,11 @@ class ManagerApiService {
   /// What they said they are into, from onboarding. The whole list is sent,
   /// so removing one is the same call as adding one.
   Future<void> updateInterests(List<String> interests) async {
-    await _request('PATCH', '/manager/interests', body: {'interests': interests});
+    await _request(
+      'PATCH',
+      '/manager/interests',
+      body: {'interests': interests},
+    );
   }
 
   Future<String> updateProfilePhoto({

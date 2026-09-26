@@ -66,7 +66,9 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0571A6),
+      backgroundColor: widget.branding.light
+          ? Colors.white
+          : const Color(0xFF0571A6),
       body: Center(
         child: AnimatedBuilder(
           animation: _controller,
@@ -156,7 +158,10 @@ class _Tagline extends StatelessWidget {
         ),
       );
     }
-    final color = Colors.white.withValues(alpha: 0.68);
+    final color = branding.light
+        ? const Color(0xFF484848)
+        : Colors.white.withValues(alpha: 0.68);
+    final poweredBy = branding.poweredByLogoAsset;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -171,21 +176,24 @@ class _Tagline extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Text(
-          'sowaka',
-          textAlign: TextAlign.center,
-          // The design's type spec — Anton 400, 100% line height, no tracking
-          // — set well under the company's logo rather than level with it:
-          // whose app this is comes first, who powers it second.
-          style: TextStyle(
-            fontFamily: 'Anton',
-            fontWeight: FontWeight.w400,
-            color: color,
-            fontSize: 30,
-            height: 1,
-            letterSpacing: 0,
+        if (poweredBy != null)
+          Image.asset(poweredBy, width: 120, fit: BoxFit.contain)
+        else
+          Text(
+            'sowaka',
+            textAlign: TextAlign.center,
+            // The design's type spec — Anton 400, 100% line height, no tracking
+            // — set well under the company's logo rather than level with it:
+            // whose app this is comes first, who powers it second.
+            style: TextStyle(
+              fontFamily: 'Anton',
+              fontWeight: FontWeight.w400,
+              color: color,
+              fontSize: 30,
+              height: 1,
+              letterSpacing: 0,
+            ),
           ),
-        ),
       ],
     );
   }

@@ -8,7 +8,8 @@ import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
 import { EmployeeProfile } from './EmployeeProfile';
 import { NameCell, Td, Th } from './kpiUi';
-import { primaryBtn, smallBtn } from './kpiStyles';
+import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
+import * as XLSX from 'xlsx';
 
 export function Employees() {
   const s = useStore();
@@ -46,6 +47,7 @@ export function Employees() {
           ))}
         </SelectBox>
         <div style={{ marginLeft: 'auto', fontSize: 16, color: '#717171', fontWeight: 600 }}>{rows.length} of {s.emps.length} people</div>
+        <button onClick={() => exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
         <button onClick={() => setAddOpen(true)} style={primaryBtn}>
           <IconPlus size={15} /> Add user
         </button>
@@ -137,3 +139,22 @@ const pageBtn: CSSProperties = { ...smallBtn };
 const pageBtnDisabled: CSSProperties = { color: '#9197A2', cursor: 'not-allowed', background: '#F7F7F9' };
 const pageNum: CSSProperties = { minWidth: 32, height: 32, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
 const pageNumActive: CSSProperties = { background: '#0571A6', color: '#fff', borderColor: '#0571A6' };
+
+/** The list as filtered on screen, as an Excel sheet. */
+function exportEmployees(rows: Emp[]) {
+  const ws = XLSX.utils.json_to_sheet(rows.map((e) => ({
+    'Employee ID': e.employeeId,
+    Name: e.name,
+    'Work email': e.email,
+    Designation: e.role,
+    Department: e.team,
+    Location: e.location,
+    'Employment type': e.empType,
+    'Reporting manager': e.manager,
+    'Date of joining': e.joining,
+  })));
+  ws['!cols'] = [12, 24, 30, 22, 20, 14, 14, 22, 14].map((wch) => ({ wch }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+  XLSX.writeFile(wb, `employees-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
