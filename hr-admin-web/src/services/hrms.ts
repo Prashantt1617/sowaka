@@ -36,6 +36,28 @@ export type OvertimeDTO = {
   decidedByRole?: DecidedByRole;
 };
 
+/** An attendance correction — what the employee says the day should have been. */
+export type RegularizationDTO = {
+  id: string;
+  userId: string;
+  employeeId: string;
+  employeeCode?: string;
+  managerUserId: string;
+  manager?: string;
+  employee: { name: string; department?: string };
+  workDate: string;
+  requestedDayType?: 'full_day' | 'half_day' | 'wfh' | 'client_visit' | 'office_visit' | 'leave';
+  note?: string;
+  status: 'pending' | 'approved' | 'declined';
+  managerNote?: string;
+  createdAt: string;
+  decidedAt?: string;
+  decidedByRole?: DecidedByRole;
+  /** What the device actually recorded for the day, for comparison. */
+  punchIn?: string;
+  punchOut?: string;
+};
+
 export type ClaimDTO = {
   id: string;
   userId: string;
@@ -97,6 +119,19 @@ export const decideOvertime = (id: string, decision: 'approved' | 'declined', ma
   }).then((r) => r.overtime);
 
 // ---- Reimbursements (org-wide, dashboard-only decisions) ----
+export const getRegularizationInbox = () =>
+  api<{ regularizations: RegularizationDTO[] }>('/admin/regularizations').then((r) => r.regularizations);
+
+export const decideRegularization = (
+  id: string,
+  decision: 'approved' | 'declined',
+  managerNote?: string,
+) =>
+  api<{ regularization: RegularizationDTO }>(`/admin/regularizations/${id}/decision`, {
+    method: 'PATCH',
+    body: { decision, ...(managerNote ? { managerNote } : {}) },
+  }).then((r) => r.regularization);
+
 export const getReimbInbox = () =>
   api<{ claims: ClaimDTO[] }>('/admin/reimbursements').then((r) => r.claims);
 
@@ -167,6 +202,9 @@ export type EmployeeDTO = {
   userId: string;
   name: string;
   email?: string;
+  /** Absolute, or root-relative to the API when served from its fallback store. */
+  profilePhotoUrl?: string;
+  documents?: EmployeeDocumentDTO[];
   department?: string;
   designation?: string;
   role: 'manager' | 'employee';
@@ -196,6 +234,54 @@ export type CreateEmployeeInput = {
   birthday?: string; joiningDate?: string;
   employeeId?: string; gender?: string; mobile?: string; branch?: string;
 };
+
+/** One employee's month, every day named — including the ones nobody worked. */
+export type CalendarDayStatus = ReportStatus | 'week_off' | 'holiday' | 'upcoming';
+export type CalendarDayDTO = {
+  date: string;
+  status: CalendarDayStatus;
+  label: string | null;
+  punchIn: string | null;
+  punchOut: string | null;
+  lateByMinutes: number;
+  earlyByMinutes?: number;
+};
+export type EmployeeCalendarDTO = {
+  month: string;
+  shift: string;
+  window: string;
+  punchFormat: string;
+  days: CalendarDayDTO[];
+  totals: Record<CalendarDayStatus, number>;
+};
+export const getEmployeeCalendar = (userId: string, month: string) =>
+  api<{ calendar: EmployeeCalendarDTO }>(`/admin/employees/${userId}/calendar?month=${month}`).then((r) => r.calendar);
+
+/** What HR may file against an employee. Mirrors the server's list. */
+export const EMPLOYEE_DOCUMENT_TYPES = ['Offer letter', 'ID proof', 'Address proof', 'Experience letter', 'Resume'] as const;
+
+export type EmployeeDocumentDTO = {
+  id: string;
+  name: string;
+  type: string | null;
+  /** A link the browser can open; short-lived for stored files. */
+  url?: string;
+  uploadedAt: string | null;
+  size: number | null;
+};
+
+/** Uploads one document and returns the employee's whole list, as the server now has it. */
+export const addEmployeeDocument = (userId: string, type: string, file: File) => {
+  const form = new FormData();
+  form.append('type', type);
+  form.append('document', file);
+  return apiUpload<{ documents: EmployeeDocumentDTO[] }>(`/admin/employees/${userId}/documents`, form)
+    .then((r) => r.documents);
+};
+
+export const removeEmployeeDocument = (userId: string, documentId: string) =>
+  api<{ documents: EmployeeDocumentDTO[] }>(`/admin/employees/${userId}/documents/${documentId}`, { method: 'DELETE' })
+    .then((r) => r.documents);
 
 export const createEmployee = (input: CreateEmployeeInput) =>
   api<{ employee: EmployeeDTO }>('/admin/employees', { method: 'POST', body: input })
@@ -235,7 +321,8 @@ export type LeaveTypeRule = {
   name: string;
   /** Days earned per month. Always 0 for comp-off, which overtime credits. */
   perMonth: number;
-  resetOn: 'calendar_year' | 'financial_year';
+  /** 'monthly' closes the balance at the end of every month instead of once a year. */
+  resetOn: 'calendar_year' | 'financial_year' | 'monthly';
   carryForwardDays: number;
   encashment: 'none' | 'all' | 'limit';
   encashLimitDays: number;
@@ -289,6 +376,11 @@ export type ShiftDTO = {
   /** How this template's people punch. Empty means the org's setting applies. */
   punchFormat: PunchFormat | '';
   punchMode: PunchMode | '';
+  /** Whether this shift may claim overtime; null takes the org's answer. */
+  overtimeEligible: boolean | null;
+  /** The template everyone not assigned elsewhere follows. One per org. */
+  isDefault: boolean;
+  createdAt?: string;
   assignedUserIds: string[];
   assignedCount: number;
 };
@@ -301,6 +393,8 @@ export type ShiftInput = {
   /** How this template's people punch. Empty inherits the org's setting. */
   punchFormat?: PunchFormat | '';
   punchMode?: PunchMode | '';
+  /** Sent only when this shift overrides the org's overtime answer. */
+  overtimeEligible?: boolean;
 };
 
 /** One person a rule set selected, and the shift they are on today. */
@@ -327,17 +421,30 @@ export const resolveShiftAudience = (rules: ShiftRules) =>
     method: 'POST', body: rules,
   });
 
+// A move takes effect the day after it is made — the day already under way was
+// worked under the old shift — and the server says which day that is.
 export const assignShift = (id: string, userIds: string[]) =>
-  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/assign`, { method: 'POST', body: { userIds } })
+  api<{ shift: ShiftDTO & { effectiveFrom?: string } }>(`/admin/shifts/${id}/assign`, { method: 'POST', body: { userIds } })
     .then((r) => r.shift);
 
 export const unassignShift = (id: string, userIds: string[]) =>
-  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/unassign`, { method: 'POST', body: { userIds } })
+  api<{ shift: ShiftDTO & { effectiveFrom?: string } }>(`/admin/shifts/${id}/unassign`, { method: 'POST', body: { userIds } })
     .then((r) => r.shift);
 
 // The org-wide policy behind Shifts › Policies. This is the setup: what HR
 // saves here is what the app grades every attendance day against. Each tab
 // patches only the fields it owns.
+export type ShiftHalfDayRulesDTO = {
+  /** Fewer hours than the half-day minimum is absent, not a half day. */
+  minHalfDayEnabled: boolean;
+  /** Fewer hours than the full-day minimum is a half day. */
+  minFullDayEnabled: boolean;
+  lateArrivalEnabled: boolean;
+  lateArrivalMinutes: number;
+  earlyLeaveEnabled: boolean;
+  earlyLeaveMinutes: number;
+};
+
 export type ShiftPolicyDTO = {
   /** "HH:MM". An end at or before the start means the shift runs overnight. */
   startTime: string;
@@ -347,6 +454,8 @@ export type ShiftPolicyDTO = {
   missingBoth: DayMark;
   /** Week of month ("1".."5") -> weekday indexes off, 0 = Mon .. 6 = Sun. */
   weeklyOff: Record<string, number[]>;
+  /** The four half-day rules, each on or off. */
+  halfDay: ShiftHalfDayRulesDTO;
   minHalfDayHours: number;
   minFullDayHours: number;
   lateGraceMinutes: number;
@@ -386,12 +495,47 @@ export type ShiftPolicyDTO = {
   updatedAt?: string;
 };
 
-export const getShiftPolicy = () =>
-  api<{ policy: ShiftPolicyDTO }>('/admin/shift-policy').then((r) => r.policy);
+export const setDefaultShift = (id: string) =>
+  api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/default`, { method: 'POST', body: {} }).then((r) => r.shift);
 
-export const saveShiftPolicy = (patch: Partial<ShiftPolicyDTO>) =>
-  api<{ policy: ShiftPolicyDTO }>('/admin/shift-policy', { method: 'PATCH', body: patch })
-    .then((r) => r.policy);
+/**
+ * What a template starts from when an org has no default template yet — the
+ * same figures the server falls back to. Once an org has a default, a new
+ * template copies that instead.
+ */
+export const DEFAULT_SHIFT_POLICY: ShiftPolicyDTO = {
+  startTime: '09:00',
+  endTime: '18:00',
+  missingPunchIn: 'Absent',
+  missingPunchOut: 'Absent',
+  missingBoth: 'Absent',
+  weeklyOff: { '1': [6], '2': [6], '3': [6], '4': [6], '5': [6] },
+  halfDay: { minHalfDayEnabled: false, minFullDayEnabled: true, lateArrivalEnabled: false, lateArrivalMinutes: 120, earlyLeaveEnabled: false, earlyLeaveMinutes: 60 },
+  minHalfDayHours: 4,
+  minFullDayHours: 8,
+  lateGraceMinutes: 10,
+  earlyOutGraceMinutes: 10,
+  overtime: { eligible: true, backdateDays: 7 },
+  correction: {
+    triggers: ['Missing punch-in', 'Missing punch-out', 'Both punches missing'],
+    punchFormat: 'Present by default (Auto Punch)',
+    punchMode: 'Both punches',
+    absentOutcomes: ['Full day', 'Half day', 'Leave'],
+    approver: 'Reporting manager',
+    managerWithoutEmployee: true, hrOverride: true, skipLevel: false,
+    backdateDays: 7,
+  },
+  leave: {
+    approver: 'Reporting manager',
+    hrOverride: true,
+    balanceTracked: true,
+    types: [
+      { key: 'casual', name: 'Casual Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 15, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3, active: true },
+      { key: 'earned', name: 'Earned Leave', perMonth: 1.5, resetOn: 'financial_year', carryForwardDays: 15, encashment: 'all', encashLimitDays: 0, advanceDays: 90, allowBackdated: false, backdatedDays: 0, active: true },
+      { key: 'comp_off', name: 'Comp-off', perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 5, encashment: 'none', encashLimitDays: 0, advanceDays: 30, allowBackdated: false, backdatedDays: 0, active: true },
+    ],
+  },
+};
 
 export const getShifts = () => api<{ shifts: ShiftDTO[] }>('/admin/shifts').then((r) => r.shifts);
 
@@ -401,7 +545,7 @@ export const createShift = (input: ShiftInput) =>
 export const updateShift = (id: string, input: ShiftInput) =>
   api<{ shift: ShiftDTO }>(`/admin/shifts/${id}`, { method: 'PATCH', body: input }).then((r) => r.shift);
 
-export const deleteShift = (id: string) => api(`/admin/shifts/${id}`, { method: 'DELETE' });
+export const deleteShift = (id: string) => api<{ newDefault: string | null }>(`/admin/shifts/${id}`, { method: 'DELETE' });
 
 // ---- Holiday bank ----
 // A holiday is assigned to employees by their work location; `*` is everyone.
@@ -579,3 +723,62 @@ export async function getEngagementPosts(): Promise<EngagementPostDTO[]> {
 export function deleteEngagementPost(postId: string) {
   return api<void>(`/connect/posts/${postId}`, { method: 'DELETE' });
 }
+
+// ---- Reports › Attendance ----
+
+export type ReportStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'absent';
+
+export type ReportPersonDTO = {
+  name: string;
+  employeeId: string;
+  department: string;
+  location: string;
+  /** Null when they follow the org policy rather than a template. */
+  template: string | null;
+  punchFormat: string;
+  /** Who they report to, by name; empty at the top of the tree. */
+  manager: string;
+};
+
+/** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source] */
+export type ReportDayDTO = [string, string, ReportStatus, number, string | null, string | null, string | null, string | null, number?];
+
+export type AttendanceReportDTO = {
+  from: string;
+  to: string;
+  departments: string[];
+  templates: string[];
+  leaveTypes: string[];
+  punchFormats: string[];
+  managers: string[];
+  people: Record<string, ReportPersonDTO>;
+  days: ReportDayDTO[];
+};
+
+/** One employee's one day, with who they are folded back in. */
+export type ReportRow = ReportPersonDTO & {
+  userId: string;
+  date: string;
+  status: ReportStatus;
+  /** An overlay on a day that has a punch-in, not a status of its own. */
+  late: boolean;
+  lateByMinutes: number;
+  punchIn: string | null;
+  punchOut: string | null;
+  leaveType: string | null;
+  source: string | null;
+};
+
+/** The wire shape is tuples pointing at people; the page wants rows. */
+export function expandReport(report: AttendanceReportDTO): ReportRow[] {
+  return report.days.map(([userId, date, status, lateBy, punchIn, punchOut, leaveType, source, earlyBy]) => ({
+    ...(report.people[userId] ?? { name: '—', employeeId: '—', department: '—', location: '—', template: null, punchFormat: '—', manager: '' }),
+    userId, date, status, late: lateBy > 0, lateByMinutes: lateBy, earlyByMinutes: earlyBy ?? 0, punchIn, punchOut, leaveType, source,
+  }));
+}
+
+/** Every working day in a range, graded per employee against their own policy. */
+export const getAttendanceReport = (input: { from: string; to: string }) =>
+  api<{ report: AttendanceReportDTO }>(
+    `/admin/reports/attendance?${new URLSearchParams({ from: input.from, to: input.to })}`,
+  ).then((r) => r.report);

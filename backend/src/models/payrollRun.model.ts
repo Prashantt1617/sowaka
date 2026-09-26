@@ -61,6 +61,8 @@ export interface PayslipDeductionLine {
 export interface PayslipInputs {
   workingDays: number;
   lopDays: number;
+  /** What the template's attendance rules cost this month, one line per rule. */
+  attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
   payableDays: number;
   approvedLeaveDays: number;
   approvedOtHours: number;
@@ -76,6 +78,9 @@ export interface Payslip {
   userId: string;
   employeeName: string;
   department?: string;
+  employeeId?: string;
+  designation?: string;
+  joiningDate?: Date;
 
   annualCtcPaise: number;
   monthlyCtcPaise: number;

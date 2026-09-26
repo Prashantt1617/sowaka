@@ -26,6 +26,8 @@ import {
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
+import { attendanceCountsForPeriod, deductionsUnder } from './deduction.service';
+import { companies } from '../config/db';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -61,6 +63,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
 
   const runId = new ObjectId();
   const slips = await buildRunPayslips(
+    adminUserId,
     org,
     runId.toHexString(),
     input.period,
@@ -112,6 +115,7 @@ export async function recomputeRun(
   const range = parsePeriod(run.period);
   const runIdHex = run._id.toHexString();
   const slips = await buildRunPayslips(
+    adminUserId,
     org,
     runIdHex,
     run.period,
@@ -130,6 +134,7 @@ export async function recomputeRun(
  * than erroring the whole run. Shared by createRun and recomputeRun.
  */
 async function buildRunPayslips(
+  adminUserId: string,
   org: string,
   runIdHex: string,
   period: string,
@@ -147,6 +152,10 @@ async function buildRunPayslips(
   const templatesByCode = new Map(templates.map((t) => [t.code, t]));
   const workingDays = await computeWorkingDays(org, range);
   const ruleSetCache = new Map<string, ResolvedRuleSet>();
+  // The month's attendance, only when some template docks pay for it — the
+  // report is the slow part of a run.
+  const docksForAttendance = templates.some((t) => (t.deductionRules ?? []).some((rule) => rule.active));
+  const attendance = docksForAttendance ? await attendanceCountsForPeriod(adminUserId, period) : new Map();
 
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
@@ -181,7 +190,12 @@ async function buildRunPayslips(
     });
 
     const periodInputs = await getEmployeePeriodInputs(structure.userId, range);
-    const lopDays = clampLop(lopOverrides[structure.userId], workingDays);
+    // Loss of pay: what the template's rules make of the month's attendance,
+    // unless HR typed a figure for this person on the run.
+    const docked = deductionsUnder(template.deductionRules, attendance.get(structure.userId));
+    const lopDays = lopOverrides[structure.userId] !== undefined
+      ? clampLop(lopOverrides[structure.userId], workingDays)
+      : Math.min(docked.days, workingDays);
     const overtimePaise = nonNegInt(otOverrides[structure.userId]);
 
     const slip = computePayslip(base, {
@@ -202,6 +216,9 @@ async function buildRunPayslips(
       userId: structure.userId,
       employeeName: employee.name,
       department: employee.department,
+      employeeId: employee.employeeId,
+      designation: employee.designation,
+      joiningDate: employee.joiningDate,
       annualCtcPaise: structure.annualCtcPaise,
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       earnings: slip.earnings.map((e) => ({
@@ -223,6 +240,7 @@ async function buildRunPayslips(
       inputs: {
         workingDays,
         lopDays,
+        attendanceDeductions: docked.lines,
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
         approvedOtHours: periodInputs.approvedOtHours,
@@ -250,7 +268,28 @@ export async function getRun(adminUserId: string, runIdInput: string) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
   const slips = await payslips().find({ org, runId: run._id.toHexString() }).toArray();
-  return { run: runView(run), payslips: slips.map(payslipView) };
+  // The slip is printed under the company's name and address.
+  const company = await companies().findOne({ id: org }, { projection: { name: 1, address: 1 } });
+  return { run: runView(run), payslips: slips.map(payslipView), company: { name: company?.name ?? org, address: company?.address ?? '' } };
+}
+
+/**
+ * One employee's payslips, newest period first, each with the run it came
+ * from — a draft is a preview, an approved or paid one is the record.
+ */
+export async function employeePayslips(adminUserId: string, userId: string) {
+  const org = await requireAdminOrg(adminUserId);
+  const slips = await payslips().find({ org, userId }).sort({ period: -1 }).toArray();
+  const runIds = [...new Set(slips.map((slip) => slip.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const runs = await payrollRuns().find({ org, _id: { $in: runIds } }).toArray();
+  const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
+  const company = await companies().findOne({ id: org }, { projection: { name: 1, address: 1 } });
+  return {
+    company: { name: company?.name ?? org, address: company?.address ?? '' },
+    payslips: slips
+      .filter((slip) => runById.has(slip.runId))
+      .map((slip) => ({ run: runView(runById.get(slip.runId)!), payslip: payslipView(slip) })),
+  };
 }
 
 export async function submitRun(adminUserId: string, runIdInput: string) {
@@ -434,6 +473,9 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     userId: slip.userId,
     employeeName: slip.employeeName,
     department: slip.department,
+    employeeId: slip.employeeId,
+    designation: slip.designation,
+    joiningDate: slip.joiningDate ? slip.joiningDate.toISOString().slice(0, 10) : undefined,
     period: slip.period,
     monthlyCtcPaise: slip.monthlyCtcPaise,
     earnings: slip.earnings,

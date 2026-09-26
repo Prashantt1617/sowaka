@@ -225,77 +225,33 @@ input {
   }
 }
 
-/* —— Org chart tree (pure-CSS connectors) ——————————————————————— */
-.oc-tree ul {
-  position: relative;
-  padding: 28px 0 0;
-  margin: 0;
-  list-style: none;
-  white-space: nowrap;
-  text-align: center;
+/* —— Org chart cards: lift on hover so they read as something to open —— */
+.oc-card:hover {
+  box-shadow: 0 8px 22px rgba(34, 34, 34, 0.12) !important;
+  border-color: #D5DAE1 !important;
 }
-.oc-tree > ul {
-  padding-top: 0;
-}
-/* The founders are separate starting points — no bus linking them together. */
-.oc-tree > ul > li {
-  padding-top: 0;
-  padding-left: 34px;
-  padding-right: 34px;
-}
-.oc-tree > ul > li::before,
-.oc-tree > ul > li::after {
-  display: none;
-}
-.oc-tree li {
-  display: inline-block;
-  vertical-align: top;
-  list-style: none;
-  position: relative;
-  padding: 28px 16px 0;
-  text-align: center;
-}
-/* connectors: horizontal bus + vertical drop for each child */
-.oc-tree li::before,
-.oc-tree li::after {
-  content: '';
+/* The open-profile badge sits on the avatar's corner and appears on hover. */
+.oc-open {
   position: absolute;
-  top: 0;
-  right: 50%;
-  width: 50%;
-  height: 28px;
-  border-top: 2px solid #EBEBEB;
+  right: -5px;
+  bottom: -5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #0571A6;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.15s, transform 0.15s;
 }
-.oc-tree li::after {
-  right: auto;
-  left: 50%;
-  border-left: 2px solid #EBEBEB;
-}
-.oc-tree li:only-child::before,
-.oc-tree li:only-child::after {
-  display: none;
-}
-.oc-tree li:only-child {
-  padding-top: 0;
-}
-.oc-tree li:first-child::before,
-.oc-tree li:last-child::after {
-  border: 0 none;
-}
-.oc-tree li:last-child::before {
-  border-right: 2px solid #EBEBEB;
-  border-radius: 0 7px 0 0;
-}
-.oc-tree li:first-child::after {
-  border-radius: 7px 0 0 0;
-}
-/* vertical line coming down from a parent into its children's bus */
-.oc-tree ul ul::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 0;
-  height: 28px;
-  border-left: 2px solid #EBEBEB;
+.oc-card:hover .oc-open,
+.oc-open:focus-visible {
+  opacity: 1;
+  transform: none;
 }

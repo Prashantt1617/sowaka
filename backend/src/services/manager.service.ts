@@ -16,6 +16,7 @@ import { env } from '../config/env';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
 import { shiftPolicyFor } from './shift.service';
+import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
 import { notifyFeedbackSubmitted } from './feedback-notifications.service';
 import {
@@ -442,30 +443,37 @@ export async function getManagerWorkspace(managerUserId: string) {
         parameters: record.parameters,
         sentAt: record.sentAt ?? record.updatedAt,
       })),
-      documents: (report.documents ?? []).map((document) => ({
+      documents: await Promise.all((report.documents ?? []).map(async (document) => ({
         name: document.name,
-        url: document.url,
+        // Uploaded through the dashboard: a stored file, presigned per read.
+        url: document.objectKey
+          ? await presignReceiptDownload(document.objectKey, document.name).catch(() => '')
+          : document.url ?? '',
         type: document.type ?? null,
         uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
-      })),
+      }))),
     };
   }));
 
-  // Company config for the overtime apply flow: which weekdays are week-offs,
-  // whether overtime is enabled for this user's department, and the org holidays.
-  const companyConfig = await getCompanyConfig(manager.org);
-  // Both gates apply: HR can switch a single employee off, or a whole team.
-  const overtimeEnabled =
-    manager.overtimeEligible !== false &&
-    !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim());
-  // Only the holidays this employee observes: their own work location's, plus
-  // the all-locations days. Another office's holiday is not a day off here.
-  const orgHolidays = await holidaysForUser(manager);
   // The shift the app grades a day against: half-day and full-day hour
   // thresholds, plus the grace either side of the shift window. HR sets these
   // per shift in the dashboard; the app must not carry its own copy.
   const shift = await shiftPolicyFor(manager.userId);
 
+  // Company config for the overtime apply flow: which weekdays are week-offs,
+  // whether overtime is enabled for this user's department, and the org holidays.
+  const companyConfig = await getCompanyConfig(manager.org);
+  // Every gate applies, and the app hides the action rather than letting
+  // someone fill a form the server will refuse: HR can switch off one person,
+  // a whole team, or the shift they are on (its template's answer, or the
+  // org's under Policies › Overtime).
+  const overtimeEnabled =
+    manager.overtimeEligible !== false &&
+    !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim()) &&
+    shift.overtimeEligible;
+  // Only the holidays this employee observes: their own work location's, plus
+  // the all-locations days. Another office's holiday is not a day off here.
+  const orgHolidays = await holidaysForUser(manager);
   return {
     period,
     // The day the cycle closes, so the app can say how long a review it has

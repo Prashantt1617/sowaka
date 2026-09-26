@@ -158,13 +158,6 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M12 11.5l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 13.6l2-.3z" />
     </svg>
   ),
-  policies: (
-    <svg {...base(18, 'currentColor')}>
-      <path d="M6 3h8l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-      <path d="M14 3v4h4" />
-      <path d="M8.5 12h7M8.5 15.5h7M8.5 8.5h3" />
-    </svg>
-  ),
   reimbursements: (
     <svg {...base(18, 'currentColor')}>
       <path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21z" />
@@ -236,6 +229,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M16.5 5.2a3.2 3.2 0 0 1 0 6M18.5 14.7a3.5 3.5 0 0 1 2 3.1V19" />
     </svg>
   ),
+  attendancereport: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15.5V11M12 15.5V6.5M17 15.5v-6" />
+    </svg>
+  ),
   orgchart: (
     <svg {...base(18, 'currentColor')}>
       <rect x="9" y="3" width="6" height="5" rx="1.3" />
@@ -284,6 +283,12 @@ export const phIcon: Partial<Record<View, ReactElement>> = {
       <rect x="2.5" y="6" width="19" height="13" rx="2.5" />
       <path d="M2.5 10.5h19" />
       <circle cx="17.5" cy="14.5" r="1.3" />
+    </svg>
+  ),
+  attendancereport: (
+    <svg {...base(34, 'currentColor')} strokeWidth={1.6}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15.5V11M12 15.5V6.5M17 15.5v-6" />
     </svg>
   ),
   orgchart: (

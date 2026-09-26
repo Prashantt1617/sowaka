@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { useAuth } from '../auth/AuthContext';
 import { Card } from '../ui';
 
 type ScheduleForm = {
@@ -60,6 +61,19 @@ const MOCK_REG: RegForm = {
   deductorType: 'Company',
   deductorName: 'Convrse Spaces Pvt. Ltd.',
   deductorDesignation: 'Director',
+};
+// Which set shows is decided by the signed-in org; nothing here is fetched.
+const MOCK_REGS: Record<string, RegForm> = {
+  acmt: {
+    pan: 'AAATA2345K',
+    tan: 'DELA12345F',
+    tdsCircle: 'TDS Ward 74(1), New Delhi',
+    aoCode: 'DEL-W-74-1',
+    taxPaymentFrequency: 'monthly',
+    deductorType: 'Trust',
+    deductorName: 'ACMT Group of Colleges',
+    deductorDesignation: 'Director',
+  },
 };
 
 // —— Pay Schedule ——————————————————————————————————————————————————
@@ -206,7 +220,8 @@ function ReadValue({ text }: { text: string }) {
 // —— Tax Details (statutory registration) ————————————————————————————
 export function TaxDetails() {
   const { flash } = useStore();
-  const [reg, setReg] = useState<RegForm>(MOCK_REG);
+  const { user } = useAuth();
+  const [reg, setReg] = useState<RegForm>(MOCK_REGS[user?.org ?? ''] ?? MOCK_REG);
   const [saving, setSaving] = useState(false);
 
   const save = () => {

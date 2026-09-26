@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { getReimbReceiptUrl } from '../../services/hrms';
-import { avColor as avColorOf, ETYPE, initials as initialsOf, OTDUR, STAT, TYPE } from '../theme';
+import { ETYPE, OTDUR, STAT, TYPE } from '../theme';
 import type { LeaveType } from '../theme';
-import { DOCS } from '../seed';
 import type { Reimb } from '../seed';
-import { Pill } from '../ui';
+import { Pill, Avatar } from '../ui';
 import { IconCheck, IconDownload, IconExternal, IconFile, IconStar, IconX } from '../icons';
 import { CloseButton, DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from './shell';
 import { AddUserModal } from './AddUserModal';
@@ -413,7 +412,6 @@ function EmployeeDrawer() {
   const d = s.emps.find((e) => e.id === s.empDrawerId);
   if (!d) return null;
   const close = () => s.setEmpDrawerId(null);
-  const docList = DOCS.slice(0, d.docs);
   return (
     <DrawerShell width={440} onClose={close}>
       <div style={{ padding: 24, borderBottom: '1px solid #EBEBEB' }}>
@@ -421,11 +419,14 @@ function EmployeeDrawer() {
           <CloseButton onClose={close} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <div style={{ width: 78, height: 78, borderRadius: '50%', color: '#fff', fontWeight: 800, fontSize: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: avColorOf(d.name), marginBottom: 13 }}>
-            {initialsOf(d.name)}
+          <div style={{ marginBottom: 13 }}>
+            <Avatar name={d.name} size={78} font={32} src={d.photoUrl} />
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.3px' }}>{d.name}</div>
-          <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 3 }}>{d.role} · {d.id}</div>
+          {/* The employee ID is what HR knows them by; the system's UUID is not. */}
+          <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 3 }}>
+            {d.role}{d.employeeId !== '—' ? ` · ${d.employeeId}` : ''}
+          </div>
           <span style={{ marginTop: 11 }}>
             <Pill label={d.empType} tone={ETYPE[d.empType]} fontSize={12} padding="5px 13px" />
           </span>
@@ -440,25 +441,40 @@ function EmployeeDrawer() {
               { label: 'DATE OF BIRTH', value: d.dob },
               { label: 'JOINED', value: d.joining },
               { label: 'MANAGER', value: d.manager },
-              { label: 'MANAGER ID', value: d.managerId },
+              // An address is long and has nowhere to break; let it wrap and step down a size.
+              { label: 'EMAIL', value: <span style={{ fontSize: 14, wordBreak: 'break-all' }}>{d.email || '—'}</span> },
             ]}
           />
         </div>
         <div>
-          <div style={{ fontSize: 14, color: '#717171', fontWeight: 700, letterSpacing: '.3px', marginBottom: 9 }}>DOCUMENTS · {d.docs}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {docList.map((doc) => (
-              <div key={doc} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '11px 13px' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EFE7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <IconFile size={16} stroke="#7E5FB0" />
-                </div>
-                <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc}</div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
-                </svg>
-              </div>
-            ))}
-          </div>
+          <div style={{ fontSize: 14, color: '#717171', fontWeight: 700, letterSpacing: '.3px', marginBottom: 9 }}>DOCUMENTS · {d.documents.length}</div>
+          {d.documents.length === 0 ? (
+            <div style={{ fontSize: 14, color: '#9197A2', fontWeight: 500 }}>Nothing filed yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {d.documents.map((doc) => (
+                <a
+                  key={doc.id}
+                  href={doc.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={doc.url ? `Open ${doc.name}` : 'No file stored for this record'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
+                >
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EFE7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <IconFile size={16} stroke="#7E5FB0" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.type}</div>
+                    <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+                  </svg>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </DrawerShell>

@@ -11,10 +11,12 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import {
+  DEDUCTION_TRIGGER_LABELS,
   createSalaryTemplate,
   deleteSalaryTemplate,
   getSalaryTemplate,
   listPayHeads,
+  listSalaryStructures,
   listSalaryTemplates,
   previewSalaryTemplate,
   rupeesToPaise,
@@ -24,11 +26,15 @@ import type {
   CalculationBasis,
   CalculationMode,
   ComputedStructure,
+  DeductionTrigger,
   PayHeadDTO,
   PercentageBase,
+  SalaryDeductionRule,
   SalaryTemplateDTO,
   SalaryTemplateInput,
 } from '../../services/payroll';
+import { getAllEmployees } from '../../services/hrms';
+import * as XLSX from 'xlsx';
 import { Card, EmptyRow } from '../ui';
 import { IconClose, IconPlus } from '../icons';
 
@@ -51,6 +57,7 @@ type Form = {
   rows: Row[];
   balancingComponentCode: string;
   epfApplyCeiling: boolean;
+  deductionRules: SalaryDeductionRule[];
   sampleCtc: string;
 };
 
@@ -84,6 +91,7 @@ function buildInput(f: Form): SalaryTemplateInput {
     components: f.rows.filter((r) => r.payHeadCode).map((r) => ({ payHeadCode: r.payHeadCode, calculation: calcFromRow(r) })),
     balancingComponentCode: f.balancingComponentCode || null,
     epfApplyCeiling: f.epfApplyCeiling,
+    deductionRules: f.deductionRules,
     active: f.active,
   };
 }
@@ -159,8 +167,6 @@ export function SalaryTemplates() {
 
   // detail
   const [detailTpl, setDetailTpl] = useState<SalaryTemplateDTO | null>(null);
-  const [detailCtc, setDetailCtc] = useState('1500000');
-  const [detailComputed, setDetailComputed] = useState<ComputedStructure | null>(null);
 
   // edit
   const [form, setForm] = useState<Form | null>(null);
@@ -189,32 +195,6 @@ export function SalaryTemplates() {
   const earningCodesInForm = (f: Form) =>
     f.rows.filter((r) => r.payHeadCode && phByCode.get(r.payHeadCode)?.category === 'earning').map((r) => r.payHeadCode);
 
-  // —— Detail: recompute amounts against the entered CTC ——
-  useEffect(() => {
-    if (mode !== 'detail' || !detailTpl) return;
-    const input: SalaryTemplateInput & { sampleAnnualCtcPaise: number } = {
-      name: detailTpl.name,
-      code: detailTpl.code,
-      description: detailTpl.description,
-      components: detailTpl.components,
-      balancingComponentCode: detailTpl.balancingComponentCode ?? null,
-      epfApplyCeiling: detailTpl.epfApplyCeiling,
-      active: detailTpl.active,
-      sampleAnnualCtcPaise: rupeesToPaise(detailCtc),
-    };
-    if (input.components.length === 0) {
-      setDetailComputed(null);
-      return;
-    }
-    let cancelled = false;
-    previewSalaryTemplate(input)
-      .then((c) => !cancelled && setDetailComputed(c))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, detailTpl, detailCtc]);
-
   // —— Edit: live preview whenever the form changes ——
   useEffect(() => {
     if (mode !== 'edit' || !form) return;
@@ -242,7 +222,6 @@ export function SalaryTemplates() {
     try {
       const t = await getSalaryTemplate(code);
       setDetailTpl(t);
-      setDetailComputed(null);
       setMode('detail');
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not load template');
@@ -250,7 +229,7 @@ export function SalaryTemplates() {
   };
 
   const newTemplate = () => {
-    setForm({ name: '', code: '', description: '', active: true, rows: [], balancingComponentCode: '', epfApplyCeiling: true, sampleCtc: '1500000' });
+    setForm({ name: '', code: '', description: '', active: true, rows: [], balancingComponentCode: '', epfApplyCeiling: true, deductionRules: [], sampleCtc: '1500000' });
     setComputed(null);
     setMode('edit');
   };
@@ -266,7 +245,8 @@ export function SalaryTemplates() {
       rows: t.components.map((c) => rowFromCalc(c.payHeadCode, c.calculation)),
       balancingComponentCode: t.balancingComponentCode ?? '',
       epfApplyCeiling: t.epfApplyCeiling,
-      sampleCtc: detailCtc || '1500000',
+      deductionRules: t.deductionRules ?? [],
+      sampleCtc: '1500000',
     });
     setComputed(null);
     setMode('edit');
@@ -292,6 +272,8 @@ export function SalaryTemplates() {
       setSaving(false);
     }
   };
+
+  const exportEmployees = (t: SalaryTemplateDTO) => exportEmployeesOnTemplate(t, flash);
 
   const remove = async () => {
     if (!form?.editingCode) return;
@@ -345,7 +327,6 @@ export function SalaryTemplates() {
   // ——————————————————————————————— DETAIL ———————————————————————————————
   if (mode === 'detail' && detailTpl) {
     const t = detailTpl;
-    const { resolve } = amountResolver(detailComputed, payHeadsList, detailCtc);
 
     const buckets = new Map<Group, { comp: { payHeadCode: string; calculation: CalculationBasis }; ph?: PayHeadDTO }[]>();
     for (const comp of t.components) {
@@ -360,6 +341,7 @@ export function SalaryTemplates() {
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
           <button onClick={() => setMode('list')} style={ghostBtn}>← All templates</button>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+            <button onClick={() => void exportEmployees(t)} style={ghostBtn}>Export employees (Excel)</button>
             <button onClick={editCurrent} style={primaryBtn}>Edit</button>
           </div>
         </div>
@@ -373,42 +355,32 @@ export function SalaryTemplates() {
             <StatusText on={t.active} />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', background: '#F7F7F9', borderBottom: '1px solid #EBEBEB' }}>
-            <label style={{ fontSize: 14, fontWeight: 700, color: '#484848' }}>Annual CTC</label>
-            <CtcInput value={detailCtc} onChange={setDetailCtc} />
-          </div>
-
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
             <thead>
               <tr>
                 <th style={detTh}>Salary Components</th>
-                <th style={{ ...detTh, textAlign: 'right', width: 180 }}>Monthly Amount</th>
-                <th style={{ ...detTh, textAlign: 'right', width: 180 }}>Annual Amount</th>
+                <th style={{ ...detTh, width: 320 }}>Calculation</th>
               </tr>
             </thead>
             <tbody>
               {GROUP_ORDER.filter((g) => buckets.get(g)?.length).map((g) => (
-                <GroupRows key={g} label={GROUP_LABEL[g]} cols={3}>
+                <GroupRows key={g} label={GROUP_LABEL[g]} cols={2}>
                   {buckets.get(g)!.map(({ comp, ph }) => {
                     const isBalancing = comp.payHeadCode === t.balancingComponentCode;
-                    const amt = resolve(comp.payHeadCode, comp.calculation);
                     return (
                       <tr key={comp.payHeadCode}>
-                        <td style={detTd}>
-                          <div style={{ fontWeight: 600, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div>
-                          <div style={{ fontSize: 13, color: '#9197A2', marginTop: 2 }}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</div>
-                        </td>
-                        <td style={{ ...detTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{g === 'onetime' ? '—' : `₹${rupees(amt.monthly)}`}</td>
-                        <td style={{ ...detTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>₹{rupees(amt.annual)}</td>
+                        <td style={detTd}><div style={{ fontWeight: 600, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div></td>
+                        <td style={{ ...detTd, color: '#717171' }}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</td>
                       </tr>
                     );
                   })}
                 </GroupRows>
               ))}
-              <TotalRow monthly={detailComputed?.employerCostMonthlyPaise ?? 0} cols={3} />
             </tbody>
           </table>
         </Card>
+
+        <RulesSummary rules={t.deductionRules ?? []} />
       </div>
     );
   }
@@ -450,13 +422,13 @@ export function SalaryTemplates() {
         {/* Identity + CTC header */}
         <div style={{ padding: '18px 22px', borderBottom: '1px solid #EBEBEB' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Field label="Template Name" required><input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Below Taxable" style={input} /></Field>
-            <Field label="Code" hint="Unique reference used when assigning to employees"><input value={form.code} disabled={Boolean(form.editingCode)} onChange={(e) => set('code', e.target.value.toUpperCase())} placeholder="e.g. BELOW_TAXABLE" style={{ ...input, ...(form.editingCode ? { background: '#F7F7F9', color: '#717171' } : {}) }} /></Field>
+            <Field label="Template Name" required><input value={form.name} onChange={(e) => set('name', e.target.value)} style={input} /></Field>
+            <Field label="Code"><input value={form.code} disabled={Boolean(form.editingCode)} onChange={(e) => set('code', e.target.value.toUpperCase())} style={{ ...input, ...(form.editingCode ? { background: '#F7F7F9', color: '#717171' } : {}) }} /></Field>
           </div>
-          <Field label="Description"><input value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Optional — e.g. used for salary above 12 lakhs" style={input} /></Field>
+          <Field label="Description"><input value={form.description} onChange={(e) => set('description', e.target.value)} style={input} /></Field>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
             <div>
-              <label style={fieldLabel}>Annual CTC</label>
+              <label style={fieldLabel}>Preview with a sample CTC <span style={{ fontWeight: 500, color: '#9197A2' }}>· not saved; each person's CTC is set when they are assigned</span></label>
               <CtcInput value={form.sampleCtc} onChange={(v) => set('sampleCtc', v)} />
             </div>
             <div style={{ minWidth: 220 }}>
@@ -550,10 +522,136 @@ export function SalaryTemplates() {
           </tbody>
         </table>
       </Card>
-      <div style={{ fontSize: 13, color: '#9197A2', margin: '10px 4px' }}>Note: changes apply to future associations only. Monthly / Annual figures preview against the Annual CTC above.</div>
+
+      <RulesCard rules={form.deductionRules} onChange={(rules) => set('deductionRules', rules)} />
     </div>
   );
 }
+
+// ——————————————————————————————— PAID DAYS ———————————————————————————————
+// How attendance costs paid days for the people on this template. A payroll
+// run turns the month's late arrivals, early leaves and absences into
+// loss-of-pay days with these; the slip shows the deduction.
+
+const TRIGGERS = Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[];
+const ruleText = (rule: SalaryDeductionRule) =>
+  `Every ${rule.every} → ${rule.deductDays} paid ${rule.deductDays === 1 ? 'day' : 'days'}`;
+
+function RulesCard({ rules, onChange }: { rules: SalaryDeductionRule[]; onChange: (rules: SalaryDeductionRule[]) => void }) {
+  const [draft, setDraft] = useState<SalaryDeductionRule>({ trigger: 'late', every: 3, deductDays: 1, active: true });
+  const update = (index: number, patch: Partial<SalaryDeductionRule>) => onChange(rules.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
+      <div style={{ padding: '16px 22px', borderBottom: '1px solid #EBEBEB', fontSize: 17, fontWeight: 800 }}>Paid days calculation</div>
+      {rules.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th><th style={{ ...detTh, width: 90 }} /></tr></thead>
+          <tbody>
+            {rules.map((rule, index) => (
+              <tr key={index}>
+                <td style={ruleTd}><strong style={{ color: rule.active ? '#222222' : '#9197A2' }}>{DEDUCTION_TRIGGER_LABELS[rule.trigger]}</strong></td>
+                <td style={{ ...ruleTd, color: '#717171' }}>{ruleText(rule)}</td>
+                <td style={ruleTd}>
+                  <div style={toggleWrap}>
+                    {[true, false].map((v) => (
+                      <button key={String(v)} type="button" onClick={() => update(index, { active: v })} style={toggleBtn(rule.active === v, v)}>{v ? 'Yes' : 'No'}</button>
+                    ))}
+                  </div>
+                </td>
+                <td style={ruleTd}><button type="button" onClick={() => onChange(rules.filter((_, i) => i !== index))} style={dangerLink}>Delete</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 180px auto', gap: 12, alignItems: 'end', padding: '16px 22px', background: '#FBFBFC', borderTop: rules.length ? '1px solid #EBEBEB' : 'none' }}>
+        <div>
+          <label style={fieldLabel}>Counts</label>
+          <select value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value as DeductionTrigger })} style={{ ...input, cursor: 'pointer' }}>
+            {TRIGGERS.map((t) => <option key={t} value={t}>{DEDUCTION_TRIGGER_LABELS[t]}</option>)}
+          </select>
+        </div>
+        <div><label style={fieldLabel}>Every</label><Suffixed value={draft.every} onChange={(v) => setDraft({ ...draft, every: v })} suffix="times" step="1" /></div>
+        <div><label style={fieldLabel}>Deduct</label><Suffixed value={draft.deductDays} onChange={(v) => setDraft({ ...draft, deductDays: v })} suffix="paid days" step="0.5" /></div>
+        <button type="button" onClick={() => { if (draft.every > 0 && draft.deductDays > 0) onChange([...rules, draft]); }} style={primaryBtn}>+ Add rule</button>
+      </div>
+    </Card>
+  );
+}
+
+function RulesSummary({ rules }: { rules: SalaryDeductionRule[] }) {
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
+      <div style={{ padding: '16px 22px', borderBottom: '1px solid #EBEBEB', fontSize: 17, fontWeight: 800 }}>Paid days calculation</div>
+      {rules.length === 0 ? (
+        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>No attendance deductions — every working day is paid.</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th></tr></thead>
+          <tbody>
+            {rules.map((rule, index) => (
+              <tr key={index}>
+                <td style={ruleTd}><strong style={{ color: rule.active ? '#222222' : '#9197A2' }}>{DEDUCTION_TRIGGER_LABELS[rule.trigger]}</strong></td>
+                <td style={{ ...ruleTd, color: '#717171' }}>{ruleText(rule)}</td>
+                <td style={ruleTd}><StatusText on={rule.active} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
+// ——————————————————————————————— PEOPLE ON IT ———————————————————————————————
+// Who is on a template is a payroll list, not something to edit here: it
+// exports as an Excel sheet with each person's CTC.
+
+async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string) => void) {
+  try {
+    const [rows, people] = await Promise.all([listSalaryStructures(), getAllEmployees()]);
+    const byId = new Map(people.map((e) => [e.userId, e]));
+    const onThis = rows
+      .filter((r) => r.salaryTemplateCode === t.code)
+      .map((r) => {
+        const person = byId.get(r.userId);
+        return {
+          'Employee ID': person?.employeeId ?? '',
+          Name: person?.name ?? r.employeeName ?? r.userId,
+          Department: person?.department ?? '',
+          Designation: person?.designation ?? '',
+          'Salary template': t.name,
+          'Annual CTC (₹)': Math.round(r.annualCtcPaise / 100),
+          'Monthly (₹)': Math.round(r.annualCtcPaise / 1200),
+          Status: r.status === 'active' ? 'Active' : 'Draft',
+        };
+      })
+      .sort((a, b) => a.Name.localeCompare(b.Name));
+    if (onThis.length === 0) { flash('Nobody is on this template yet'); return; }
+    const ws = XLSX.utils.json_to_sheet(onThis);
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+    XLSX.writeFile(wb, `${t.code.toLowerCase()}-employees.xlsx`);
+  } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not export'); }
+}
+
+function Suffixed({ value, onChange, suffix, step }: { value: number; onChange: (v: number) => void; suffix: string; step: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff' }}>
+      <input type="number" min="0" step={step} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} style={{ border: 'none', outline: 'none', padding: '8px 10px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent', fontFamily: 'inherit' }} />
+      <span style={{ padding: '0 10px', fontSize: 13, color: '#717171', borderLeft: '1px solid #EBEBEB', alignSelf: 'stretch', display: 'flex', alignItems: 'center', background: '#FBFBFC', whiteSpace: 'nowrap' }}>{suffix}</span>
+    </div>
+  );
+}
+
+const ruleTd: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
+const dangerLink: CSSProperties = { background: 'none', border: 'none', color: '#C4382E', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
+const toggleWrap: CSSProperties = { display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden' };
+const toggleBtn = (on: boolean, yes: boolean): CSSProperties => ({
+  padding: '5px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
+  borderLeft: yes ? 'none' : '1px solid #EBEBEB', background: on ? '#0571A6' : '#fff', color: on ? '#fff' : '#484848',
+});
 
 // —— Inline calculation editor for one row ——
 function CalcCell({

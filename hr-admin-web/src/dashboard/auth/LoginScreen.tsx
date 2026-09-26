@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useBrand } from '../brand';
 import type { FormEvent } from 'react';
 import { requestOtp, verifyOtp } from '../../services/auth';
 import { ApiError } from '../../services/http';
@@ -67,18 +68,68 @@ export function LoginScreen() {
     }
   };
 
+  const brand = useBrand();
+  const backdrop = brand.backdrop;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', width: '100%', background: '#F7F7F9', padding: 24 }}>
-      <div style={{ width: 400, background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 20, boxShadow: '0 20px 50px rgba(60,40,24,.12)', padding: '34px 32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(5,113,166,.28)' }}>
-            <Logo />
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', minHeight: '100vh', width: '100%',
+        // Over a company's image the card keeps to the left, so the picture —
+        // and the name lit up in the middle of it — stays in view.
+        justifyContent: backdrop ? 'flex-start' : 'center',
+        padding: backdrop ? '24px 24px 24px max(48px, 9vw)' : 24,
+        background: backdrop ? `url(${backdrop}) center / cover no-repeat fixed` : '#F7F7F9',
+      }}
+    >
+      <div
+        style={{
+          width: 400, borderRadius: 20, padding: '34px 32px',
+          // Frosted over an image: enough of the room shows through to place
+          // you, and the text still sits on something close to white.
+          background: backdrop ? 'rgba(247,247,249,.8)' : '#F7F7F9',
+          backdropFilter: backdrop ? 'blur(10px) saturate(1.2)' : undefined,
+          WebkitBackdropFilter: backdrop ? 'blur(10px) saturate(1.2)' : undefined,
+          border: backdrop ? '1px solid rgba(255,255,255,.55)' : '1px solid #EBEBEB',
+          boxShadow: backdrop ? '0 24px 60px rgba(0,0,0,.35)' : '0 20px 50px rgba(60,40,24,.12)',
+        }}
+      >
+        {brand.wordmark ? (
+          // Their name carries the branding, so only "HR Admin" is added.
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+            {brand.icon && (
+              <img
+                src={brand.icon}
+                alt=""
+                style={{ width: 42, height: 42, borderRadius: 12, objectFit: 'cover', border: '1px solid rgba(255,255,255,.6)', flexShrink: 0 }}
+              />
+            )}
+            <div>
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: brand.wordmark.weight,
+                letterSpacing: brand.wordmark.letterSpacing,
+                color: brand.wordmark.color,
+                textTransform: brand.wordmark.lowercase ? 'lowercase' : undefined,
+                lineHeight: 1.1,
+              }}
+            >
+              {brand.wordmark.text}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#717171', marginTop: 4 }}>HR Admin</div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#717171', marginTop: 3 }}>HR Admin</div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 11, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(5,113,166,.28)' }}>
+              <Logo />
+            </div>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#717171', marginTop: 3 }}>HR Admin</div>
+            </div>
           </div>
-        </div>
+        )}
 
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.4px', marginBottom: 6 }}>
           {step === 'email' ? 'Sign in' : 'Enter your code'}
@@ -109,7 +160,6 @@ export function LoginScreen() {
             <input
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="123456"
               inputMode="numeric"
               autoFocus
               style={{ ...inputStyle, letterSpacing: '6px', fontSize: 20, fontWeight: 700, textAlign: 'center' }}

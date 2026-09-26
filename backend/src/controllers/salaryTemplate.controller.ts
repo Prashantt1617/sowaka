@@ -81,6 +81,7 @@ function toInput(body: unknown): SalaryTemplateInput {
     components: source.components,
     balancingComponentCode: source.balancingComponentCode,
     epfApplyCeiling: source.epfApplyCeiling,
+    deductionRules: source.deductionRules,
     active: source.active,
   };
 }

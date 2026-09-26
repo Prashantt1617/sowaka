@@ -246,6 +246,19 @@ export type StructureListRow = {
   updatedAt: string;
 };
 
+// —— Attendance deductions, as a salary template defines them ——
+export type DeductionTrigger = 'late' | 'early' | 'absent' | 'half_day' | 'leave' | 'missed_punch';
+export const DEDUCTION_TRIGGER_LABELS: Record<DeductionTrigger, string> = {
+  late: 'Late arrivals',
+  early: 'Early leaves',
+  absent: 'Absent days',
+  half_day: 'Half days',
+  leave: 'Leave days',
+  missed_punch: 'Missed punches',
+};
+/** Every `every` occurrences in a month cost `deductDays` paid days. */
+export type SalaryDeductionRule = { trigger: DeductionTrigger; every: number; deductDays: number; active: boolean };
+
 // —— Salary Templates (Pay Groups) ——
 export type SalaryTemplateComponent = { payHeadCode: string; calculation: CalculationBasis };
 export type SalaryTemplateDTO = {
@@ -256,6 +269,7 @@ export type SalaryTemplateDTO = {
   components: SalaryTemplateComponent[];
   balancingComponentCode?: string;
   epfApplyCeiling: boolean;
+  deductionRules: SalaryDeductionRule[];
   active: boolean;
   updatedAt: string;
 };
@@ -266,6 +280,7 @@ export type SalaryTemplateInput = {
   components: SalaryTemplateComponent[];
   balancingComponentCode?: string | null;
   epfApplyCeiling?: boolean;
+  deductionRules?: SalaryDeductionRule[];
   active?: boolean;
 };
 
@@ -339,6 +354,9 @@ export type PayslipDTO = {
   userId: string;
   employeeName: string;
   department?: string;
+  employeeId?: string;
+  designation?: string;
+  joiningDate?: string;
   period: string;
   monthlyCtcPaise: number;
   earnings: { code: string; name: string; calcLabel: string; fullPaise: number; paidPaise: number }[];
@@ -354,6 +372,7 @@ export type PayslipDTO = {
   inputs: {
     workingDays: number;
     lopDays: number;
+    attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
     payableDays: number;
     approvedLeaveDays: number;
     approvedOtHours: number;
@@ -367,7 +386,7 @@ export const listRuns = () =>
   api<{ runs: PayrollRunDTO[] }>('/admin/payroll/runs').then((r) => r.runs);
 
 export const getRun = (runId: string) =>
-  api<{ run: PayrollRunDTO; payslips: PayslipDTO[] }>(`/admin/payroll/runs/${runId}`);
+  api<{ run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } }>(`/admin/payroll/runs/${runId}`);
 
 export const createRun = (input: { period: string; lopDays?: Record<string, number>; overtimePaise?: Record<string, number> }) =>
   api<{ run: PayrollRunDTO; payslipCount: number }>('/admin/payroll/runs', { method: 'POST', body: input });
@@ -395,3 +414,7 @@ export const recallRun = (runId: string) =>
 
 export const markRunPaid = (runId: string) =>
   api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/mark-paid`, { method: 'POST' }).then((r) => r.run);
+
+/** One employee's payslips across runs, newest first, with the company for the printed slip. */
+export const getEmployeePayslips = (userId: string) =>
+  api<{ company: { name: string; address: string }; payslips: { run: PayrollRunDTO; payslip: PayslipDTO }[] }>(`/admin/employees/${userId}/payslips`);

@@ -9,6 +9,7 @@ import {
   RegularizationStatus,
 } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { orgUsers } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
 import {
@@ -218,30 +219,122 @@ const DAY_TYPE_LABELS: Record<string, string> = {
 export function markForDay(
   policy: Pick<
     ShiftPolicyRules,
+    | 'startTime'
+    | 'endTime'
     | 'minFullDayHours'
     | 'minHalfDayHours'
     | 'missingPunchIn'
     | 'missingPunchOut'
     | 'missingBoth'
     | 'correction'
-  >,
+  > & Partial<Pick<ShiftPolicyRules, 'halfDay'>>,
   punchIn: Date | null,
   punchOut: Date | null,
 ): DayMark {
   // One punch makes the day where that is all the policy asks for: there is no
   // punch-out to be missing, and no hours to grade it by.
+  const { punchIn: inAt, punchOut: outAt } = normalisePunches(policy, punchIn, punchOut);
+  // Four rules, each on or off; any that is on and trips makes the day a half
+  // day. With all of them off a day with its punches is a full day.
+  const rules = policy.halfDay ?? DEFAULT_HALF_DAY;
+  const lateIn = (at: Date) =>
+    rules.lateArrivalEnabled && minutesAfterShiftStart(at, policy.startTime) > rules.lateArrivalMinutes;
+  const earlyOut = (at: Date) =>
+    rules.earlyLeaveEnabled && minutesBeforeShiftEnd(at, policy.startTime, policy.endTime) > rules.earlyLeaveMinutes;
   if (policy.correction?.punchMode === 'Single punch') {
-    return punchIn ? 'Present' : policy.missingBoth;
+    // One punch: only the check-in rule can say anything.
+    if (!inAt) return policy.missingBoth;
+    return lateIn(inAt) ? 'Half Day' : 'Present';
   }
-  if (punchIn && punchOut) {
-    const worked = (punchOut.getTime() - punchIn.getTime()) / 3_600_000;
-    if (worked >= policy.minFullDayHours) return 'Present';
-    // Anything under a half day is still short of a full one, and a short day
-    // is argued the same way a half day is.
-    return 'Half Day';
+  if (inAt && outAt) {
+    const worked = (outAt.getTime() - inAt.getTime()) / 3_600_000;
+    // Too short to be even a half day, where that rule is on.
+    if (rules.minHalfDayEnabled && worked < policy.minHalfDayHours) return 'Absent';
+    if (rules.minFullDayEnabled && worked < policy.minFullDayHours) return 'Half Day';
+    if (lateIn(inAt) || earlyOut(outAt)) return 'Half Day';
+    return 'Present';
   }
-  if (!punchIn && !punchOut) return policy.missingBoth;
-  return punchIn ? policy.missingPunchOut : policy.missingPunchIn;
+  if (!inAt && !outAt) return policy.missingBoth;
+  return inAt ? policy.missingPunchOut : policy.missingPunchIn;
+}
+
+/**
+ * Wall-clock offset the shift times are written in. The rest of the product
+ * already assumes India, and a shift saved as "09:00" means nine in the
+ * morning where the office is, not nine UTC.
+ */
+export const SHIFT_UTC_OFFSET = '+05:30';
+const DAY_MS = 24 * 3_600_000;
+
+/** The office's offset from UTC in milliseconds, from the same '+05:30' the shift windows use. */
+const OFFICE_OFFSET_MS = (() => {
+  const [, sign, hh, mm] = /^([+-])(\d{2}):(\d{2})$/.exec(SHIFT_UTC_OFFSET) ?? ['', '+', '0', '0'];
+  return (sign === '-' ? -1 : 1) * (Number(hh) * 60 + Number(mm)) * 60_000;
+})();
+
+/**
+ * Minutes between the shift's start and a punch, in office time — negative
+ * when the punch came early. The start is wall-clock where the office is, not
+ * UTC; read as UTC a 09:00 start is mid-afternoon and nobody is ever late.
+ */
+/** What grades a day whose policy predates the rules: the full-day threshold alone. */
+const DEFAULT_HALF_DAY = {
+  minHalfDayEnabled: false, minFullDayEnabled: true,
+  lateArrivalEnabled: false, lateArrivalMinutes: 120,
+  earlyLeaveEnabled: false, earlyLeaveMinutes: 60,
+};
+
+/**
+ * Minutes between a punch-out and the shift's end, in office time — positive
+ * when they left early. An end at or before the start is the next day's.
+ */
+export function minutesBeforeShiftEnd(punchOut: Date, startTime: string, endTime: string): number {
+  const officeDay = new Date(punchOut.getTime() + OFFICE_OFFSET_MS).toISOString().slice(0, 10);
+  let end = new Date(`${officeDay}T${endTime}:00.000${SHIFT_UTC_OFFSET}`);
+  // On an overnight shift a punch-out after midnight is measured against that
+  // day's end; before midnight, against the end that falls the next morning.
+  if (endTime <= startTime) {
+    const start = new Date(`${officeDay}T${startTime}:00.000${SHIFT_UTC_OFFSET}`);
+    if (punchOut.getTime() >= start.getTime()) end = new Date(end.getTime() + DAY_MS);
+  }
+  return Math.round((end.getTime() - punchOut.getTime()) / 60_000);
+}
+
+export function minutesAfterShiftStart(punchIn: Date, startTime: string): number {
+  const officeDay = new Date(punchIn.getTime() + OFFICE_OFFSET_MS).toISOString().slice(0, 10);
+  const start = new Date(`${officeDay}T${startTime}:00.000${SHIFT_UTC_OFFSET}`);
+  return Math.round((punchIn.getTime() - start.getTime()) / 60_000);
+}
+
+/** Two taps this close together are one tap the device recorded twice. */
+const ONE_TAP_MS = 60_000;
+
+/**
+ * The pair as it should be read, whatever order the device filed it in.
+ *
+ * A signed difference gets three things a biometric import does wrong. It can
+ * file the two punches the wrong way round, so a 08:56→18:19 morning arrives
+ * as in 18:19, out 08:56 and grades as minus nine hours — a half day. On an
+ * overnight shift it can file the post-midnight punch-out under the same date
+ * as its punch-in, which is the same negative for the opposite reason. And it
+ * can record one tap as both punches, a day of zero hours. So: on a day shift
+ * a reversed pair is swapped back; on an overnight shift it rolls over
+ * midnight; and an identical pair is one punch — a missing punch-out, not a
+ * short day.
+ */
+export function normalisePunches(
+  policy: Pick<ShiftPolicyRules, 'startTime' | 'endTime'>,
+  punchIn: Date | null,
+  punchOut: Date | null,
+): { punchIn: Date | null; punchOut: Date | null } {
+  if (!punchIn || !punchOut) return { punchIn, punchOut };
+  const diff = punchOut.getTime() - punchIn.getTime();
+  if (Math.abs(diff) < ONE_TAP_MS) return { punchIn, punchOut: null };
+  if (diff > 0) return { punchIn, punchOut };
+  // An end at or before the start is how the policy says the shift runs overnight.
+  const overnight = policy.endTime <= policy.startTime;
+  if (overnight) return { punchIn, punchOut: new Date(punchOut.getTime() + DAY_MS) };
+  return { punchIn: punchOut, punchOut: punchIn };
 }
 
 /** The day types HR's outcome names correspond to. */
@@ -302,8 +395,10 @@ export async function requestRegularization(
   const todayText = today.toISOString().slice(0, 10);
   if (workDate > todayText) throw new AttendanceError(400, 'Future dates cannot be regularized');
   // Both limits come from the policy HR saved — how far back a correction may
-  // reach, and which of the four day outcomes may be corrected at all.
-  const policy = await policyForUser(userId);
+  // reach, and which of the four day outcomes may be corrected at all. Read as
+  // of the day being corrected: it is that day's shift that says whether it
+  // needed two punches, not whichever shift they are on now.
+  const policy = await policyForUser(userId, workDate);
   const correction = policy.correction;
   if (daysBetween(date, new Date(`${todayText}T00:00:00.000Z`)) > correction.backdateDays) {
     throw new AttendanceError(
@@ -434,6 +529,30 @@ export async function getManagerRegularizations(managerUserId: string) {
   return enrichRegularizations(values);
 }
 
+/**
+ * Every correction raised anywhere in the admin's org.
+ *
+ * The manager inbox above answers "what is waiting on me"; HR is asking "what
+ * is waiting on anyone", so this is scoped by org rather than by approver.
+ * Pending first, then newest, because the queue is the reason to open it.
+ */
+export async function listAllRegularizationsForAdmin(adminUserId: string) {
+  const employees = await orgUsers(adminUserId);
+  if (employees.length === 0) return [];
+  const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
+  const values = await attendanceRegularizations()
+    .find({ userId: { $in: employees.map((employee) => employee.userId) } })
+    .sort({ status: -1, createdAt: -1 })
+    .toArray();
+  const enriched = await enrichRegularizations(values);
+  // HR is looking across managers, so each row has to say whose call it is.
+  return enriched.map((value) => ({
+    ...value,
+    manager: byUserId.get(value.managerUserId)?.name ?? '',
+    employeeCode: byUserId.get(value.userId)?.employeeId ?? value.employeeId,
+  }));
+}
+
 export async function decideRegularization(
   managerUserId: string, id: string, input: { decision?: string; managerNote?: string },
 ) {
@@ -458,11 +577,74 @@ export async function decideRegularization(
   const decidedAt = new Date();
   const result = await attendanceRegularizations().findOneAndUpdate(
     { _id: new ObjectId(id), managerUserId, status: 'pending' },
-    { $set: { status: decision, managerNote, decidedAt, decidedByUserId: managerUserId } },
+    {
+      $set: {
+        status: decision, managerNote, decidedAt, decidedByUserId: managerUserId, decidedByRole: 'manager' as const,
+      },
+    },
     { returnDocument: 'after' },
   );
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
 
+  await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  return (await enrichRegularizations([result]))[0];
+}
+
+/**
+ * Dashboard override for a correction.
+ *
+ * HR settles requests across the whole org, so this matches on the request
+ * rather than on the approver the way the manager path does. Everything that
+ * follows an approval — the attendance record, the employee's notification —
+ * is the same work, so it runs through the same helper.
+ */
+export async function adminDecideRegularization(
+  adminUserId: string, id: string, input: { decision?: string; managerNote?: string },
+) {
+  if (!ObjectId.isValid(id)) throw new AttendanceError(400, 'Invalid request ID');
+  const decision = (input.decision ?? '').trim() as RegularizationStatus;
+  if (!decisions.has(decision)) throw new AttendanceError(400, 'Decision must be approved or declined');
+  const managerNote = (input.managerNote ?? '').trim();
+  if (managerNote.length > 500) throw new AttendanceError(400, 'Manager note cannot exceed 500 characters');
+
+  const pending = await attendanceRegularizations().findOne({ _id: new ObjectId(id) });
+  if (!pending) throw new AttendanceError(404, 'Correction request not found');
+  if (pending.userId === adminUserId) {
+    throw new AttendanceError(403, 'You cannot override your own request');
+  }
+  if (pending.status !== 'pending') {
+    throw new AttendanceError(409, 'Correction request has already been decided');
+  }
+  // Same org check the other dashboard overrides make: an admin decides for
+  // their own company and nobody else's.
+  const employees = await orgUsers(adminUserId);
+  if (!employees.some((employee) => employee.userId === pending.userId)) {
+    throw new AttendanceError(404, 'Correction request not found');
+  }
+
+  const decidedAt = new Date();
+  const result = await attendanceRegularizations().findOneAndUpdate(
+    { _id: new ObjectId(id), status: 'pending' },
+    {
+      $set: {
+        status: decision, managerNote, decidedAt, decidedByUserId: adminUserId, decidedByRole: 'admin' as const,
+      },
+    },
+    { returnDocument: 'after' },
+  );
+  if (!result) throw new AttendanceError(409, 'Correction request has already been decided');
+
+  await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  return (await enrichRegularizations([result]))[0];
+}
+
+/** The work an approved or declined correction sets off, whoever decided it. */
+async function applyRegularizationDecision(
+  result: AttendanceRegularization,
+  decision: RegularizationStatus,
+  decidedAt: Date,
+  managerNote: string,
+) {
   if (decision === 'approved') {
     // Fold the decision into the canonical attendance record so the employee's
     // calendar reflects what was approved, not just the request. Corrections
@@ -473,7 +655,8 @@ export async function decideRegularization(
       // An approved day is a worked day, so it gets the shift's own hours
       // rather than staying blank: the calendar showed "-" against a day the
       // manager had just confirmed was worked.
-      const shift = await policyForUser(result.userId);
+      // The hours belong to the shift that covered the corrected day.
+      const shift = await policyForUser(result.userId, result.workDate);
       const window = punchWindowFor(result.requestedDayType, result.workDate, shift);
       if (window) {
         punchUpdate.punchIn = window.punchIn;
@@ -502,7 +685,6 @@ export async function decideRegularization(
     approved: decision === 'approved',
     comment: managerNote,
   });
-  return (await enrichRegularizations([result]))[0];
 }
 
 async function enrichRegularizations(values: AttendanceRegularization[]) {
@@ -571,7 +753,6 @@ function toRegularizationView(value: AttendanceRegularization) {
  * already assumes India (see the daily lifecycle job), and a shift saved as
  * "09:00" means nine in the morning where the office is, not nine UTC.
  */
-const SHIFT_UTC_OFFSET = '+05:30';
 
 /**
  * The hours an approved correction records for the day.

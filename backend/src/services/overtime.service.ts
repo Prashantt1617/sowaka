@@ -22,6 +22,12 @@ export async function createOvertimeRequest(
   // It was configurable but never consulted, so a claim for a day six months
   // ago was accepted.
   const overtimeRules = (await policyForUser(userId)).overtime;
+  // Whether overtime is offered to these people at all. It is set on their
+  // shift template, or on the org under Policies › Overtime — and until now it
+  // was saved and never read, so switching it off did nothing.
+  if (overtimeRules.eligible === false) {
+    throw new OvertimeError(403, 'Overtime is not enabled for your shift');
+  }
   const daysBack = Math.round(
     (startOfUtcDay(new Date()).getTime() - workDate.getTime()) / 86_400_000,
   );

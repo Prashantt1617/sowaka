@@ -7,6 +7,8 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { useAuth } from '../auth/AuthContext';
+import { useBrand } from '../brand';
 import { Card } from '../ui';
 import { Logo } from '../icons';
 import { ORG_DISPLAY_NAME, ORG_REGISTERED_NAME } from '../org';
@@ -31,7 +33,27 @@ type OrgForm = {
   replyToEmail: string;
 };
 
-// —— Mock data for capture ————————————————————————————————————————————
+// —— Mock data for capture, per organisation ————————————————————————————
+// Which set shows is decided by the signed-in org; nothing here is fetched.
+const MOCKS: Record<string, OrgForm> = {
+  acmt: {
+    name: 'ACMT Group of Colleges',
+    displayName: 'ACMT',
+    country: 'India',
+    industry: 'Education',
+    incorporatedOn: '2008-07-01',
+    addressLine1: 'ACMT Campus, Sector 20',
+    addressLine2: 'Near Metro Station',
+    city: 'New Delhi',
+    state: 'Delhi',
+    pincode: '110001',
+    addressCountry: 'India',
+    primaryContactEmail: 'admin@acmt.in',
+    senderEmail: 'no-reply@acmt.in',
+    senderName: 'ACMT HR',
+    replyToEmail: 'hr@acmt.in',
+  },
+};
 const MOCK: OrgForm = {
   name: ORG_REGISTERED_NAME,
   displayName: ORG_DISPLAY_NAME,
@@ -52,7 +74,9 @@ const MOCK: OrgForm = {
 
 export function OrganisationProfile() {
   const { flash } = useStore();
-  const [form, setForm] = useState<OrgForm>({ ...MOCK });
+  const { user } = useAuth();
+  const brand = useBrand();
+  const [form, setForm] = useState<OrgForm>({ ...(MOCKS[user?.org ?? ''] ?? MOCK) });
   const [saving, setSaving] = useState(false);
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
@@ -80,11 +104,16 @@ export function OrganisationProfile() {
 
         {/* Logo — owner-managed, read-only */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, margin: '4px 0 20px' }}>
-          <div style={logoTile}>
-            <div style={{ transform: 'scale(2.4)' }}>
-              <Logo />
+          {brand.icon ? (
+            // The organisation's own mark, the same one the sidebar and sign-in wear.
+            <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: '0 4px 14px rgba(0,0,0,.14)', background: '#fff' }} />
+          ) : (
+            <div style={logoTile}>
+              <div style={{ transform: 'scale(2.4)' }}>
+                <Logo />
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#484848' }}>Organisation logo</div>
@@ -124,6 +153,7 @@ export function OrganisationProfile() {
           >
             <select value={form.industry} onChange={(e) => set('industry', e.target.value)} style={inputStyle}>
               <option>Services</option>
+              <option>Education</option>
               <option>Manufacturing</option>
               <option>Information Technology</option>
               <option>Retail &amp; E-commerce</option>

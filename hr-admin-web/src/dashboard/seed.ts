@@ -41,6 +41,28 @@ export type Overtime = {
   byAdmin?: boolean;
 };
 
+/** An attendance correction as the dashboard table reads it. */
+export type Correction = {
+  id: string;
+  name: string;
+  team: string;
+  employeeCode: string;
+  appliedOn: string;
+  workDate: string;
+  day: string;
+  dayType: string;
+  status: ReqStatus;
+  manager: string;
+  eRemark: string;
+  mRemark: string;
+  /** What the device recorded, so HR can see what is being corrected. */
+  recorded: string;
+  ord: number;
+  refISO: string;
+  submitterId?: string;
+  byAdmin?: boolean;
+};
+
 export type FbMgr = {
   id: string;
   name: string;
@@ -133,6 +155,8 @@ export type Emp = {
   name: string;
   email: string;
   employeeId: string;
+  /** Loadable image URL, or empty when they have not added one. */
+  photoUrl: string;
   role: string;
   team: string;
   location: string;
@@ -143,7 +167,8 @@ export type Emp = {
   managerId: string;
   dob: string;
   joining: string;
-  docs: number;
+  /** What HR has filed against them — offer letter, ID proof and the like. */
+  documents: EmpDocument[];
 };
 
 export type UserForm = {
@@ -158,16 +183,14 @@ export type UserForm = {
   dob: string;
 };
 
-export const DOCS = [
-  'Offer letter.pdf',
-  'Aadhaar card.pdf',
-  'PAN card.pdf',
-  'Bank details.pdf',
-  'Education certificate.pdf',
-  'Experience letter.pdf',
-  'Address proof.pdf',
-  'Form 16.pdf',
-];
+export type EmpDocument = {
+  id: string;
+  name: string;
+  type: string;
+  url?: string;
+  /** "10 Sep", or '' when the record predates uploads. */
+  uploadedOn: string;
+};
 
 export const emptyForm = (): UserForm => ({
   name: '',

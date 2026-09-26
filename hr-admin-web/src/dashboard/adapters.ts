@@ -1,6 +1,7 @@
 // Map backend DTOs to the dashboard's view-model types.
 import type { EmpType, FeedbackStatus, LeaveType, OtDuration, ReqStatus } from './theme';
-import type { Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb } from './seed';
+import { mediaUrl } from '../services/api';
+import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb } from './seed';
 import type { AuthUser } from '../services/auth';
 import type {
   ClaimDTO,
@@ -8,6 +9,7 @@ import type {
   FeedbackDTO,
   LeaveDTO,
   OvertimeDTO,
+  RegularizationDTO,
   WorkspaceDTO,
 } from '../services/hrms';
 
@@ -96,6 +98,43 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
   };
 }
 
+/** How each requested day type reads in the table. */
+const DAY_TYPE: Record<string, string> = {
+  full_day: 'Full day',
+  half_day: 'Half day',
+  wfh: 'Work from home',
+  client_visit: 'Client visit',
+  office_visit: 'Client visit',
+  leave: 'Leave',
+};
+
+export function adaptCorrection(dto: RegularizationDTO, managerName: string): Correction {
+  const clock = (iso?: string) =>
+    (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '');
+  const punchIn = clock(dto.punchIn);
+  const punchOut = clock(dto.punchOut);
+  return {
+    id: dto.id,
+    name: dto.employee.name,
+    team: dto.employee.department || 'Team',
+    employeeCode: dto.employeeCode || dto.employeeId,
+    appliedOn: fmtDay(dto.createdAt),
+    workDate: fmtDay(dto.workDate),
+    day: weekday(dto.workDate),
+    dayType: DAY_TYPE[dto.requestedDayType ?? ''] ?? 'Correction',
+    status: cap(dto.status) as ReqStatus,
+    // The server resolves the approver; the roster name is only a fallback.
+    manager: dto.manager || managerName,
+    eRemark: dto.note || '',
+    mRemark: dto.managerNote || '',
+    recorded: punchIn || punchOut ? `${punchIn || '—'} → ${punchOut || '—'}` : 'No punch',
+    ord: ts(dto.createdAt),
+    refISO: dto.workDate,
+    submitterId: dto.userId,
+    byAdmin: dto.decidedByRole === 'admin',
+  };
+}
+
 export function adaptReimb(dto: ClaimDTO, managerName: string): Reimb {
   const byAdmin = dto.decidedByRole === 'admin';
   return {
@@ -148,6 +187,7 @@ export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
     name: e.name,
     email: e.email || '',
     employeeId: e.employeeId || '—',
+    photoUrl: mediaUrl(e.profilePhotoUrl),
     // Designation is the person's actual job title; `role` is only the
     // manager/employee reporting flag, which is not what the table means by Role.
     role: e.designation || (e.isLeadership ? 'Leadership' : cap(e.role)),
@@ -162,7 +202,13 @@ export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
     managerId: e.managerUserId || '',
     dob: fmtDate(e.birthday),
     joining: fmtDate(e.joiningDate),
-    docs: 0,
+    documents: (e.documents ?? []).map((doc) => ({
+      id: doc.id,
+      name: doc.name,
+      type: doc.type ?? 'Document',
+      url: doc.url,
+      uploadedOn: doc.uploadedAt ? fmtDay(doc.uploadedAt) : '',
+    })),
   }));
 }
 
@@ -343,6 +389,7 @@ export function adaptWorkspace(ws: WorkspaceDTO, user: AuthUser): {
     name: t.name,
     email: '',
     employeeId: '—',
+    photoUrl: '',
     role: '—',
     team: t.department || 'Team',
     location: '—',
@@ -353,7 +400,7 @@ export function adaptWorkspace(ws: WorkspaceDTO, user: AuthUser): {
     managerId: user.id,
     dob: '—',
     joining: '—',
-    docs: 0,
+    documents: [],
   }));
 
   return { fbMgrs, fbs, emps };

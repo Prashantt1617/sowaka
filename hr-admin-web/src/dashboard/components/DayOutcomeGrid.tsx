@@ -41,11 +41,6 @@ export type DayOutcomeGridProps = {
   onTrigger: (trigger: string, allowed: boolean) => void;
   absentOutcomes: CorrectionOutcome[];
   onToggleOutcome: (outcome: CorrectionOutcome) => void;
-  /** The thresholds a complete day is graded against, for the note. */
-  minHalfDayHours: number | null;
-  minFullDayHours: number | null;
-  /** Where the thresholds are edited, named in the note. */
-  thresholdsLocation: string;
 };
 
 export function DayOutcomeGrid({
@@ -61,9 +56,6 @@ export function DayOutcomeGrid({
   onTrigger,
   absentOutcomes,
   onToggleOutcome,
-  minHalfDayHours,
-  minFullDayHours,
-  thresholdsLocation,
 }: DayOutcomeGridProps) {
   if (autoPresent) {
     return (
@@ -71,12 +63,6 @@ export function DayOutcomeGrid({
         <div style={fixedValue}>
           <span>Full day</span>
           <span style={fixedTag}>marked automatically</span>
-        </div>
-        <div style={note}>
-          With auto punch there are no punches to grade and none to be missing,
-          so there is nothing here to configure. A day that should have been
-          leave or an absence is adjusted by HR, or by the employee raising a
-          correction from their calendar.
         </div>
       </div>
     );
@@ -100,9 +86,22 @@ export function DayOutcomeGrid({
         { trigger: 'Both punches present', hasIn: true, hasOut: true },
       ];
 
+  /**
+   * A day already marked a full day has nothing to be corrected to, so the
+   * question is not asked: the switch is off and locked. Choosing "Full day"
+   * for a row turns its correction off at the same time, so the saved policy
+   * agrees with what the grid shows.
+   */
+  const isFullDay = (row: (typeof cases)[number]) =>
+    row.value === 'Present' || (row.trigger === 'Both punches present' && singlePunch);
+  const setMark = (row: (typeof cases)[number], value: DayMark) => {
+    row.set!(value);
+    if (value === 'Present' && triggers[row.trigger]) onTrigger(row.trigger, false);
+  };
+
   /** What this row's day may be asked to become. */
   const outcomesFor = (row: (typeof cases)[number]) => {
-    if (!triggers[row.trigger]) return <span style={muted}>Not correctable</span>;
+    if (isFullDay(row) || !triggers[row.trigger]) return <span style={muted}>Not correctable</span>;
     if (row.trigger === 'Both punches present') {
       // Graded on hours, so the outcome follows the grade: a half day is
       // argued up to a full day, a full day only down.
@@ -119,8 +118,7 @@ export function DayOutcomeGrid({
     if (row.value === 'Absent') {
       return <Chips options={OUTCOMES} selected={absentOutcomes} onToggle={onToggleOutcome} />;
     }
-    // Marked a full day already, so there is nothing to argue up to.
-    return <span style={muted}>Half day or leave</span>;
+    return <span style={muted}>Not correctable</span>;
   };
 
   return (
@@ -150,14 +148,15 @@ export function DayOutcomeGrid({
                     <span style={fixedTag}>{singlePunch ? 'punch recorded' : 'by hours worked'}</span>
                   </div>
                 ) : (
-                  <Select value={row.value!} onChange={row.set!} options={MARK_OPTIONS} render={markLabel} />
+                  <Select value={row.value!} onChange={(value) => setMark(row, value)} options={MARK_OPTIONS} render={markLabel} />
                 )}
               </Td>
               <Td>
                 <Select
-                  value={triggers[row.trigger] ? 'Yes' : 'No'}
+                  value={!isFullDay(row) && triggers[row.trigger] ? 'Yes' : 'No'}
                   onChange={(value) => onTrigger(row.trigger, value === 'Yes')}
                   options={YES_NO}
+                  disabled={isFullDay(row)}
                 />
               </Td>
               <Td>{outcomesFor(row)}</Td>
@@ -165,22 +164,6 @@ export function DayOutcomeGrid({
           ))}
         </tbody>
       </table>
-      <div style={note}>
-        {singlePunch ? (
-          'A recorded punch is a full day: with nothing to measure against, there are no hours to grade.'
-        ) : minFullDayHours == null || minHalfDayHours == null ? (
-          `A day with both punches is graded on the hours worked, against the thresholds in ${thresholdsLocation}.`
-        ) : (
-          <>
-            A day with both punches is graded on the hours worked, against{' '}
-            {thresholdsLocation}: <strong>{minFullDayHours}h</strong> or more is a full day,{' '}
-            <strong>{minHalfDayHours}h</strong> up to {minFullDayHours}h is a half day, and anything
-            shorter is flagged for correction.
-          </>
-        )}{' '}
-        A half day can only be raised as a full day — there is nothing else it could be. What an
-        absent day may become is yours to choose, and every absent row shares that choice.
-      </div>
     </div>
   );
 }
@@ -217,11 +200,11 @@ function Chips({ options, selected, onToggle }: {
   );
 }
 
-function Select<T extends string>({ value, onChange, options, render }: {
-  value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string;
+function Select<T extends string>({ value, onChange, options, render, disabled }: {
+  value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string; disabled?: boolean;
 }) {
   return (
-    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} style={selectStyle}>
+    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} disabled={disabled} style={{ ...selectStyle, ...(disabled ? { background: '#F7F7F9', color: '#9A9AA5', cursor: 'not-allowed' } : {}) }}>
       {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
     </select>
   );
@@ -260,8 +243,7 @@ function Td({ children, center }: { children: ReactNode; center?: boolean }) {
 }
 
 const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const fixedValue: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
+const fixedValue: CSSProperties = { display: 'flex', flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
 const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
-const note: CSSProperties = { marginTop: 16, fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
 const muted: CSSProperties = { fontSize: 13.5, color: '#9A9AA5' };
 const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };

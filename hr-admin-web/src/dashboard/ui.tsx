@@ -1,5 +1,6 @@
 // Small reusable presentational pieces used across views.
 import type { CSSProperties, ReactNode } from 'react';
+import { useState } from 'react';
 import type { Pill as PillT } from './theme';
 import { avColor, initials } from './theme';
 import { IconChevronDown, IconSearch } from './icons';
@@ -8,11 +9,25 @@ export function Avatar({
   name,
   size = 36,
   font = 14,
+  src,
 }: {
   name: string;
   size?: number;
   font?: number;
+  /** Their photo; the initials stand in when it is missing or fails to load. */
+  src?: string;
 }) {
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        onError={() => setBroken(true)}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block', background: '#EEF0F3' }}
+      />
+    );
+  }
   return (
     <div
       style={{

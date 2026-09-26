@@ -140,43 +140,39 @@ export async function applyForLeave(
   // people against days their policy never gave them.
   const tracksBalance = (await leaveRulesFor(userId)).balanceTracked ?? true;
 
-  // You cannot spend leave you do not have. Checked against the balance for the
-  // year the leave starts in, counting what is already approved *and* what is
-  // still pending — two pending requests that each fit the balance must not be
-  // able to overdraw it together.
-  // A range that crosses new year is charged to both years, so each one is
-  // checked against its own balance rather than the start year's alone.
-  const years = tracksBalance
-    ? [...new Set([startDate.getUTCFullYear(), endDate.getUTCFullYear()])]
-    : [];
+  // You cannot spend leave you do not have. Checked against the balance of
+  // each period the leave touches — a year, or a month for a type processed
+  // monthly — counting what is already approved *and* what is still pending,
+  // so two pending requests that each fit the balance cannot overdraw it
+  // together. A range that crosses a boundary is charged to both sides, each
+  // checked against its own balance.
+  const windows = tracksBalance ? balanceWindows(startDate, endDate, rule.resetOn === 'monthly') : [];
   const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
-  for (const year of years) {
-    const balance = await getMyLeaveBalance(userId, year);
+  for (const window of windows) {
+    const balance = await getMyLeaveBalance(userId, window.start.getUTCFullYear(), window.start);
     const forType = balance[type] as { total: number; used: number } | undefined;
     if (!forType) continue;
-    const yearStart = new Date(Date.UTC(year, 0, 1));
-    const yearEnd = new Date(Date.UTC(year, 11, 31));
-    const daysInYear = years.length === 1
+    const daysInWindow = windows.length === 1
       ? days
       : halfDay
         ? 0.5
         : countLeaveDays(
-            startDate < yearStart ? yearStart : startDate,
-            endDate > yearEnd ? yearEnd : endDate,
+            startDate < window.start ? window.start : startDate,
+            endDate > window.end ? window.end : endDate,
             holidayDates,
             weeklyOff,
           );
-    if (daysInYear <= 0) continue;
+    if (daysInWindow <= 0) continue;
     const held = pending
-      .filter((row) => row.startDate <= yearEnd && row.endDate >= yearStart)
+      .filter((row) => row.startDate <= window.end && row.endDate >= window.start)
       .reduce((total, row) => total + (row.days ?? 0), 0);
     const available = Math.max(0, forType.total - forType.used - held);
-    if (daysInYear > available) {
+    if (daysInWindow > available) {
       throw new LeaveError(
         400,
         held > 0
-          ? `Only ${available} day(s) of ${type} leave left in ${year} — ${forType.total - forType.used} in balance, ${held} already requested`
-          : `Only ${available} day(s) of ${type} leave left in ${year}`,
+          ? `Only ${available} day(s) of ${type} leave left in ${window.label} — ${forType.total - forType.used} in balance, ${held} already requested`
+          : `Only ${available} day(s) of ${type} leave left in ${window.label}`,
       );
     }
   }
@@ -254,15 +250,23 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
   return Promise.all(documents.map((leave) => toLeaveView(leave, employee)));
 }
 
-export async function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear()) {
+/**
+ * The balance of every leave type for `year`. A type processed yearly reads as
+ * the year's entitlement against the year's usage; a type processed monthly
+ * reads as the month `asOf` falls in (clamped into `year`): what carried in
+ * plus this month's accrual, against this month's usage.
+ */
+export async function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear(), asOf = new Date()) {
   const employee = await users().findOne({ userId });
   if (!employee) throw new LeaveError(404, 'Employee not found');
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     throw new LeaveError(400, 'Invalid balance year');
   }
-  // Entitlements come from the leave types HR configured under Shifts ›
-  // Policies › Leaves, never from a table in here.
-  const rules = await leaveTypeRulesFor(employee.userId);
+  // Entitlements come from the leave types on the employee's shift template,
+  // never from a table in here.
+  const allRules = await leaveTypeRulesFor(employee.userId);
+  const rules = allRules.filter((rule) => rule.resetOn !== 'monthly');
+  const monthlyRules = allRules.filter((rule) => rule.resetOn === 'monthly');
   const yearStart = new Date(Date.UTC(year, 0, 1));
   const yearEnd = new Date(Date.UTC(year, 11, 31));
   const approved = await leaves()
@@ -296,13 +300,86 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
     return round(accrued + (openingFor[key] ?? 0));
   };
 
+  const month = asOf.getUTCFullYear() === year ? asOf.getUTCMonth() + 1 : asOf.getUTCFullYear() > year ? 12 : 1;
+  const monthly: Partial<Record<Leave['type'], MonthlyBalance>> = {};
+  for (const rule of monthlyRules) {
+    monthly[rule.key as Leave['type']] = await monthlyBalance(employee, rule, year, month);
+  }
+  const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key]);
+
   return {
     year,
-    sick: balanceItem(entitlement('sick'), used.sick),
-    casual: balanceItem(entitlement('casual'), used.casual),
-    earned: balanceItem(entitlement('earned'), used.earned),
-    comp_off: balanceItem(entitlement('comp_off'), used.comp_off),
+    sick: item('sick'),
+    casual: item('casual'),
+    earned: item('earned'),
+    comp_off: item('comp_off'),
   };
+}
+
+type MonthlyBalance = ReturnType<typeof balanceItem> & { cadence: 'monthly'; period: string };
+
+/**
+ * A monthly type is closed at the end of every month: what is left carries
+ * into the next month up to the carry-forward limit, is encashed per the rule,
+ * and the rest lapses — the same split a year-end applies, twelve times over.
+ * Nothing is written down; the figure for a month is walked from the months
+ * before it, starting where the system began holding the employee's records
+ * (or their joining month, whichever is later), so a limit of zero means a
+ * month always opens on its own accrual and nothing else.
+ */
+async function monthlyBalance(employee: User, rule: LeaveTypeRule, year: number, month: number): Promise<MonthlyBalance> {
+  const userId = employee.userId;
+  const monthStart = (y: number, m0: number) => new Date(Date.UTC(y, m0, 1));
+  const monthEnd = (y: number, m0: number) => new Date(Date.UTC(y, m0 + 1, 0));
+  const target = monthStart(year, month - 1);
+
+  // Where the walk begins: last January if that year was tracked, else this
+  // one — never before the employee joined.
+  const priorTracked = await yearWasTracked(userId, monthStart(year - 1, 0), monthEnd(year - 1, 11));
+  let cursor = monthStart(priorTracked ? year - 1 : year, 0);
+  const joined = employee.joiningDate ? monthStart(employee.joiningDate.getUTCFullYear(), employee.joiningDate.getUTCMonth()) : null;
+  if (joined && joined > cursor && joined <= target) cursor = joined;
+  const walkEnd = monthEnd(year, month - 1);
+
+  const approved = await leaves()
+    .find({ userId, type: rule.key, status: 'approved', startDate: { $lte: walkEnd }, endDate: { $gte: cursor } })
+    .toArray();
+  const usedIn = (start: Date, end: Date) => approved.reduce((total, leave) => {
+    const inside = leave.startDate >= start && leave.endDate <= end;
+    if (leave.days != null && inside) return total + leave.days;
+    const from = leave.startDate < start ? start : leave.startDate;
+    const to = leave.endDate > end ? end : leave.endDate;
+    return from > to ? total : total + inclusiveDays(from, to);
+  }, 0);
+  // Comp-off accrues from approved overtime rather than at a monthly rate.
+  const earnedIn = rule.key === 'comp_off'
+    ? await compOffByMonth(userId, cursor, walkEnd)
+    : () => rule.perMonth;
+
+  let carried = 0;
+  while (cursor < target) {
+    const end = monthEnd(cursor.getUTCFullYear(), cursor.getUTCMonth());
+    const closing = carried + earnedIn(cursor) - usedIn(cursor, end);
+    carried = processYearEnd(closing, rule).carried;
+    cursor = monthStart(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1);
+  }
+  const total = round(carried + earnedIn(target));
+  const used = round(usedIn(target, walkEnd));
+  return { ...balanceItem(total, used), cadence: 'monthly', period: `${year}-${String(month).padStart(2, '0')}` };
+}
+
+/** Comp-off credited per month in a window, as a lookup by the month's first day. */
+async function compOffByMonth(userId: string, from: Date, to: Date): Promise<(monthStart: Date) => number> {
+  const [approved, fullDayHours] = await Promise.all([
+    overtimeRequests().find({ userId, status: 'approved', workDate: { $gte: from, $lte: to } }).toArray(),
+    fullDayHoursFor(userId),
+  ]);
+  const byMonth = new Map<string, number>();
+  for (const request of approved) {
+    const key = `${request.workDate.getUTCFullYear()}-${request.workDate.getUTCMonth()}`;
+    byMonth.set(key, (byMonth.get(key) ?? 0) + COMP_OFF_CREDIT[request.hours >= fullDayHours ? 'full_day' : 'half_day']);
+  }
+  return (monthStart) => round(byMonth.get(`${monthStart.getUTCFullYear()}-${monthStart.getUTCMonth()}`) ?? 0);
 }
 
 /**
@@ -619,6 +696,24 @@ function parseDateOnly(value: string, field: string): Date {
     throw new LeaveError(400, `${field} is not a valid date`);
   }
   return date;
+}
+
+/** The balance periods a leave range touches: calendar years, or months for a monthly type. */
+function balanceWindows(startDate: Date, endDate: Date, monthly: boolean): { start: Date; end: Date; label: string }[] {
+  const windows: { start: Date; end: Date; label: string }[] = [];
+  if (monthly) {
+    let cursor = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+    while (cursor <= endDate) {
+      const end = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0));
+      windows.push({ start: cursor, end, label: cursor.toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }) });
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    }
+    return windows;
+  }
+  for (let year = startDate.getUTCFullYear(); year <= endDate.getUTCFullYear(); year += 1) {
+    windows.push({ start: new Date(Date.UTC(year, 0, 1)), end: new Date(Date.UTC(year, 11, 31)), label: String(year) });
+  }
+  return windows;
 }
 
 function inclusiveDays(startDate: Date, endDate: Date): number {

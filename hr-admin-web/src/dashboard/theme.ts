@@ -14,7 +14,6 @@ export type View =
   | 'kpibulk'
   | 'shifttypes'
   | 'holidaybank'
-  | 'policies'
   | 'roster'
   | 'shiftswaps'
   | 'reimbursements'
@@ -31,6 +30,7 @@ export type View =
   | 'designations'
   | 'employees'
   | 'orgchart'
+  | 'attendancereport'
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
@@ -110,14 +110,13 @@ export const TITLES: Record<View, [string, string]> = {
   overview: ['HR control room', 'Tuesday, 30 June'],
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance', 'People'],
+  attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
   kpibulk: ['Bulk Assign', 'Performance · put a template on everyone its rules select'],
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
-  policies: ['Policies', 'Shifts · attendance, leave, overtime, late & half-day policies'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
   shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
   reimbursements: ['Reimbursements', 'People'],
@@ -134,6 +133,7 @@ export const TITLES: Record<View, [string, string]> = {
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],
   orgchart: ['Org chart', 'People'],
+  attendancereport: ['Attendance report', 'Reports'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
@@ -152,12 +152,6 @@ export type Placeholder = {
 };
 
 export const PH: Partial<Record<View, Placeholder>> = {
-  attendance: {
-    title: 'Attendance',
-    soon: true,
-    desc: 'Live clock-in, shift schedules and regularisation tracking are being wired up.',
-    fields: [],
-  },
   onboarding: {
     title: 'Onboarding',
     soon: true,
@@ -174,6 +168,12 @@ export const PH: Partial<Record<View, Placeholder>> = {
     title: 'Payroll',
     soon: true,
     desc: 'Salary runs, payslips and tax declarations are coming soon.',
+    fields: [],
+  },
+  attendancereport: {
+    title: 'Attendance report',
+    soon: false,
+    desc: 'Attendance for a date range, grouped by how each team\'s punches are captured.',
     fields: [],
   },
   orgchart: {

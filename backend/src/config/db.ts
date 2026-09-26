@@ -35,7 +35,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
-import { LeaveYearEnd, OrgShiftPolicy, ShiftTemplate } from '../models/shift.model';
+import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
 import { ConnectBlock, ContentReport } from '../models/moderation.model';
 
@@ -48,7 +48,11 @@ export async function connectDb(): Promise<Db> {
     throw new Error('MONGODB_URI is not configured');
   }
 
-  client = new MongoClient(env.mongoUri);
+  // Compress the wire. Every result set crosses a link that has measured
+  // anywhere from 300ms to 45s for the same 1,400 documents; sending fewer
+  // bytes is the one lever that helps whatever the link is doing. zlib is
+  // built into Node, so nothing native to install, and Atlas negotiates it.
+  client = new MongoClient(env.mongoUri, { compressors: ['zlib'] });
   await client.connect();
   db = client.db(env.mongoDbName);
   await ensureIndexes(db);
@@ -170,6 +174,10 @@ export function attendanceRegularizations(): Collection<AttendanceRegularization
 
 export function shiftTemplates(): Collection<ShiftTemplate> {
   return getDb().collection<ShiftTemplate>('shift_templates');
+}
+
+export function shiftAssignments(): Collection<ShiftAssignment> {
+  return getDb().collection<ShiftAssignment>('shift_assignments');
 }
 
 export function offices(): Collection<Office> {
@@ -354,6 +362,11 @@ async function ensureIndexes(database: Db): Promise<void> {
   const shiftTemplatesCollection = database.collection<ShiftTemplate>('shift_templates');
   await shiftTemplatesCollection.createIndex({ org: 1, name: 1 }, { unique: true });
   await shiftTemplatesCollection.createIndex({ org: 1, active: 1, isDefault: -1 });
+
+  // Assignment history: "which template covered this employee on this date".
+  const shiftAssignmentsCollection = database.collection<ShiftAssignment>('shift_assignments');
+  await shiftAssignmentsCollection.createIndex({ userId: 1, effectiveFrom: -1 });
+  await shiftAssignmentsCollection.createIndex({ org: 1, effectiveFrom: -1 });
 
   // One policy document per org — the Shifts › Policies setup.
   const shiftPoliciesCollection = database.collection<OrgShiftPolicy>('shift_policies');

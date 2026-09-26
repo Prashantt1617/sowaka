@@ -1,15 +1,18 @@
 import { StoreProvider, useStore } from './store';
+import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginScreen } from './auth/LoginScreen';
 import { Sidebar, Topbar, Toast } from './Chrome';
 import { Overview } from './views/Overview';
 import { LeaveRequests } from './views/LeaveRequests';
 import { Overtime } from './views/Overtime';
+import { AttendanceCorrections } from './views/AttendanceCorrections';
 import { Feedback } from './views/Feedback';
 import { Reimbursements } from './views/Reimbursements';
 import { Employees } from './views/Employees';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
+import { rememberBrandOrg } from './brand';
 import { Games } from './views/Games';
 import { RelayGame } from './views/RelayGame';
 import { ContentReports } from './views/ContentReports';
@@ -24,10 +27,10 @@ import { ReviewCycle } from './views/ReviewCycle';
 import { ShiftBulkAssign } from './views/ShiftBulkAssign';
 import { ShiftTemplates } from './views/ShiftTemplates';
 import { HolidayBank } from './views/HolidayBank';
-import { Policies } from './views/Policies';
 import { Organisation } from './views/Organisation';
 import { Departments } from './views/Departments';
 import { Designations } from './views/Designations';
+import { AttendanceReport } from './views/AttendanceReport';
 import { OrgChart } from './views/OrgChart';
 import { Accesses } from './views/Accesses';
 import { KpiParameters } from './views/KpiParameters';
@@ -45,6 +48,8 @@ function CurrentView() {
       return <LeaveRequests />;
     case 'overtime':
       return <Overtime />;
+    case 'attendance':
+      return <AttendanceCorrections />;
     case 'kpi':
       return <KpiParameters />;
     case 'kpibulk':
@@ -61,6 +66,8 @@ function CurrentView() {
       return <Designations />;
     case 'employees':
       return <Employees />;
+    case 'attendancereport':
+      return <AttendanceReport />;
     case 'orgchart':
       return <OrgChart />;
     case 'usersroles':
@@ -95,8 +102,6 @@ function CurrentView() {
       return <ShiftTemplates />;
     case 'holidaybank':
       return <HolidayBank />;
-    case 'policies':
-      return <Policies />;
     default:
       return <Placeholder />;
   }
@@ -113,6 +118,9 @@ function LoadingBar() {
 
 function Shell() {
   const { loading, loaded } = useStore();
+  const { user } = useAuth();
+  // So the next sign-in screen on this device already wears their company.
+  useEffect(() => { rememberBrandOrg(user?.org ?? user?.company); }, [user]);
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100%', background: '#F7F7F9', overflow: 'hidden' }}>
       <Sidebar />

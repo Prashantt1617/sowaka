@@ -1,5 +1,7 @@
 // Sidebar, topbar and toast — the persistent shell around the views.
 import { useState } from 'react';
+import { useBrand } from './brand';
+import { useAuth } from './auth/AuthContext';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { TITLES } from './theme';
@@ -22,8 +24,6 @@ const PEOPLE: NavItem[] = [
   { key: 'employees', label: 'Employees' },
   { key: 'orgchart', label: 'Org chart' },
   { key: 'usersroles', label: 'Accesses' },
-  { key: 'onboarding', label: 'Onboarding' },
-  { key: 'exit', label: 'Exit' },
 ];
 const PERFORMANCE: NavItem[] = [
   { key: 'kpi', label: 'KPI Parameters' },
@@ -33,10 +33,14 @@ const PERFORMANCE: NavItem[] = [
   { key: 'cycle', label: 'Cycle' },
 ];
 const SHIFTS: NavItem[] = [
-  { key: 'policies', label: 'Policies' },
   { key: 'holidaybank', label: 'Holiday Bank' },
   { key: 'shifttypes', label: 'Templates' },
   { key: 'shiftbulk', label: 'Bulk Assign' },
+];
+// Reports sits above Payroll: it is what HR reads before a pay cycle is run,
+// and the attendance behind it is what the cycle is built from.
+const REPORTS: NavItem[] = [
+  { key: 'attendancereport', label: 'Attendance' },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payschedule', label: 'Pay schedule' },
@@ -64,11 +68,12 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
+  { title: 'REPORTS', items: REPORTS },
   { title: 'PAYROLL', items: PAYROLL },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'CONNECT', items: CONNECT },
 ];
-const SOON: Partial<Record<View, boolean>> = { attendance: true, onboarding: true, exit: true };
+const SOON: Partial<Record<View, boolean>> = {};
 
 function CountBadge({ value, danger }: { value: number; danger?: boolean }) {
   return (
@@ -202,11 +207,16 @@ function NavSection({
 }
 
 export function Sidebar() {
-  const { leaves, ots, rbs, fbMgrs, view, setView } = useStore();
+  const brand = useBrand();
+  const { user } = useAuth();
+  // The company's real name, not a constant baked in at build time.
+  const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
+  const { leaves, ots, rbs, corrs, fbMgrs, view, setView } = useStore();
   const orgActive = view === 'organisation';
   const leavesPending = leaves.filter((l) => l.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
   const claims = rbs.filter((r) => r.status === 'Pending').length;
+  const corrPending = corrs.filter((c) => c.status === 'Pending').length;
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
 
   const badgeFor = (key: View): ReactNode => {
@@ -215,6 +225,8 @@ export function Sidebar() {
         return <CountBadge value={leavesPending} />;
       case 'overtime':
         return <CountBadge value={otPending} />;
+      case 'attendance':
+        return <CountBadge value={corrPending} />;
       case 'feedback':
         return <CountBadge value={reviewsPending} />;
       case 'reimbursements':
@@ -260,18 +272,32 @@ export function Sidebar() {
             width: 34,
             height: 34,
             borderRadius: 10,
-            background: '#0571A6',
+            // Their app icon fills the tile; Sowaka's mark sits on the brand blue.
+            background: brand.icon ? '#fff' : '#0571A6',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 2px 6px rgba(5,113,166,.28)',
+            overflow: 'hidden',
+            border: brand.icon ? '1px solid #E9EBEF' : undefined,
+            boxShadow: brand.icon ? '0 1px 3px rgba(34,34,34,.1)' : '0 2px 6px rgba(5,113,166,.28)',
           }}
         >
-          <Logo />
+          {brand.icon ? <img src={brand.icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Logo />}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.2px', lineHeight: 1.05, color: orgActive ? '#0571A6' : '#222222', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ORG_DISPLAY_NAME}</div>
+          <div
+            style={{
+              fontSize: 16, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              // Their own weight, case and colour when they have one.
+              fontWeight: brand.wordmark?.weight ?? 800,
+              letterSpacing: brand.wordmark?.letterSpacing ?? '-.2px',
+              textTransform: brand.wordmark?.lowercase ? 'lowercase' : undefined,
+              color: orgActive ? '#0571A6' : (brand.wordmark?.color ?? '#222222'),
+            }}
+          >
+            {brand.wordmark?.text ?? companyName}
+          </div>
         </div>
         <span style={{ color: orgActive ? '#0571A6' : '#9197A2', fontSize: 20, fontWeight: 700 }}>›</span>
       </button>

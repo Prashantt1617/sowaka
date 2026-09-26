@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
   assignShiftToUsers, createShift, deleteShift, listShifts, readOrgShiftPolicy,
-  resolveShiftAudience, saveOrgShiftPolicy, unassignShiftUsers, updateShift,
+  resolveShiftAudience, saveOrgShiftPolicy, setDefaultShift, unassignShiftUsers, updateShift,
 } from '../services/shift.service';
 
 function callerId(req: Request): string {
@@ -29,8 +29,8 @@ export async function updateShiftHandler(req: Request, res: Response, next: Next
 
 export async function deleteShiftHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    await deleteShift(callerId(req), String(req.params.shiftId ?? ''));
-    res.json({ success: true });
+    const { newDefault } = await deleteShift(callerId(req), String(req.params.shiftId ?? ''));
+    res.json({ success: true, newDefault });
   } catch (error) { next(error); }
 }
 
@@ -65,6 +65,13 @@ export async function assignShiftHandler(req: Request, res: Response, next: Next
 export async function unassignShiftHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const shift = await unassignShiftUsers(callerId(req), String(req.params.shiftId ?? ''), req.body?.userIds);
+    res.json({ success: true, shift });
+  } catch (error) { next(error); }
+}
+
+export async function setDefaultShiftHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shift = await setDefaultShift(callerId(req), String(req.params.shiftId ?? ''));
     res.json({ success: true, shift });
   } catch (error) { next(error); }
 }

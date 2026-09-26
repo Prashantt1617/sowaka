@@ -10,6 +10,24 @@ import { ObjectId } from 'mongodb';
  */
 export type DayMark = 'Absent' | 'Half Day' | 'Present';
 
+/**
+ * The four ways a worked day can come out a half day, each switchable on its
+ * own. Any rule that is on and trips makes the day a half day; with every rule
+ * off, a day with its punches is a full day.
+ */
+export interface ShiftHalfDayRules {
+  /** Fewer hours than `minHalfDayHours` is not even a half day — it is absent. */
+  minHalfDayEnabled: boolean;
+  /** Fewer hours than `minFullDayHours` is a half day. */
+  minFullDayEnabled: boolean;
+  /** In later than the start by more than this is a half day. */
+  lateArrivalEnabled: boolean;
+  lateArrivalMinutes: number;
+  /** Out earlier than the end by more than this is a half day. */
+  earlyLeaveEnabled: boolean;
+  earlyLeaveMinutes: number;
+}
+
 export interface ShiftOvertimeRules {
   /** How far back an overtime claim can reach, in days. */
   backdateDays: number;
@@ -138,8 +156,12 @@ export interface LeaveTypeRule {
   name: string;
   /** Days earned per month. Ignored for comp-off, which overtime credits. */
   perMonth: number;
-  /** When the balance is processed. */
-  resetOn: 'calendar_year' | 'financial_year';
+  /**
+   * When the balance is processed. Yearly cadences close once a year and
+   * write a year-end row; 'monthly' closes at the end of every month — what is
+   * left carries into the next month up to the limit, and the rest lapses.
+   */
+  resetOn: 'calendar_year' | 'financial_year' | 'monthly';
   /** Unused days carried into the next year, at most. */
   carryForwardDays: number;
   /** What happens to what is left after carry-forward. */
@@ -242,6 +264,12 @@ export interface ShiftTemplate {
   org: string;
   name: string;
   active: boolean;
+  /**
+   * Set when HR deletes the template. It leaves every list and can never be
+   * assigned again, but it still grades the days it covered — history is
+   * pinned to it — so the document itself stays.
+   */
+  deletedAt?: Date;
   /** The full policy this template applies to the people it covers. */
   policy: ShiftPolicyRules;
   /**
@@ -255,11 +283,60 @@ export interface ShiftTemplate {
    */
   punchFormat?: PunchFormat;
   punchMode?: PunchMode;
+  /**
+   * Whether the people on this shift may claim overtime.
+   *
+   * Absent means inherit the org's answer, the same way the capture fields do,
+   * so a template written before this existed does not quietly switch anyone
+   * on or off. A night shift can be paid for overtime while a desk team is not,
+   * without HR having to set it person by person.
+   */
+  overtimeEligible?: boolean;
+  /**
+   * The template everyone not assigned to another one follows. Exactly one per
+   * org. Templates are the only place a shift is configured; this is what
+   * "the org's shift" means.
+   */
+  isDefault?: boolean;
   /** Employees this template overrides the org policy for. */
   assignedUserIds: string[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * When an employee started following a template — one row per change.
+ *
+ * A template assignment used to be nothing but the employee's id sitting in an
+ * array, which meant the policy that graded a day was always the policy that
+ * happens to be assigned *now*. Moving someone onto a different shift silently
+ * re-marked every day they had already worked.
+ *
+ * So each change is written down with the date it takes effect, and grading a
+ * day looks up the assignment that covers that day. History is then a fact
+ * about what was true at the time, not a consequence of today's setup.
+ *
+ * `templateId` is null when the change puts them back on the org policy.
+ */
+export interface ShiftAssignment {
+  _id?: ObjectId;
+  org: string;
+  userId: string;
+  templateId: ObjectId | null;
+  /** Local date, 'YYYY-MM-DD', this assignment starts covering. */
+  effectiveFrom: string;
+  createdAt: Date;
+  createdByUserId: string;
+}
+
+/**
+ * The date the first, backfilled row carries.
+ *
+ * When someone is reassigned for the first time we also write down what they
+ * were on before, dated far enough back to cover all of their history — so
+ * nothing they have already worked changes mark on the day this shipped.
+ */
+export const ASSIGNMENT_EPOCH = '1970-01-01';
 
 /**
  * The org-wide shift policy — the one HR fills in under Shifts › Policies.
@@ -281,6 +358,7 @@ export interface OrgShiftPolicy {
   /** Week of the month (1-5) -> weekday indexes off, 0 = Mon .. 6 = Sun. */
   weeklyOff: Record<string, number[]>;
   // Policies › Half day
+  halfDay: ShiftHalfDayRules;
   minHalfDayHours: number;
   minFullDayHours: number;
   // Policies › Late
@@ -302,6 +380,16 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
   missingPunchOut: 'Absent',
   missingBoth: 'Absent',
   weeklyOff: { '1': [6], '2': [6], '3': [6], '4': [6], '5': [6] },
+  // Only the full-day threshold on: the grading every org had before the
+  // other three rules existed.
+  halfDay: {
+    minHalfDayEnabled: false,
+    minFullDayEnabled: true,
+    lateArrivalEnabled: false,
+    lateArrivalMinutes: 120,
+    earlyLeaveEnabled: false,
+    earlyLeaveMinutes: 60,
+  },
   minHalfDayHours: 4,
   minFullDayHours: 8,
   lateGraceMinutes: 10,
@@ -335,6 +423,16 @@ export const DEFAULT_SHIFT_POLICY = {
   name: 'General',
   startTime: '09:00',
   endTime: '18:00',
+  // Only the full-day threshold on: the grading every org had before the
+  // other three rules existed.
+  halfDay: {
+    minHalfDayEnabled: false,
+    minFullDayEnabled: true,
+    lateArrivalEnabled: false,
+    lateArrivalMinutes: 120,
+    earlyLeaveEnabled: false,
+    earlyLeaveMinutes: 60,
+  },
   minHalfDayHours: 4,
   minFullDayHours: 8,
   lateGraceMinutes: 10,
