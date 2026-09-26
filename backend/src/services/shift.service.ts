@@ -374,6 +374,7 @@ export async function createShift(callerId: string, input: ShiftInput) {
     createdAt: now, updatedAt: now,
   };
   const result = await shiftTemplates().insertOne(document);
+  shiftSetupChanged(org);
   return shiftView({ ...document, _id: result.insertedId });
 }
 
@@ -382,7 +383,7 @@ export async function updateShift(callerId: string, shiftId: string, input: Shif
   const org = await requireOrg(callerId);
   shiftSetupChanged(org);
   const _id = objectId(shiftId);
-  const current = await shiftTemplates().findOne({ _id, org });
+  const current = await shiftTemplates().findOne({ _id, org, deletedAt: { $exists: false } });
   if (!current) throw new ShiftError(404, 'Shift not found');
   const name = text(input.name, 'Shift name', MAX_NAME);
   if (await shiftTemplates().findOne({ org, name, _id: { $ne: _id }, deletedAt: { $exists: false } })) {
@@ -408,6 +409,7 @@ export async function updateShift(callerId: string, shiftId: string, input: Shif
     { returnDocument: 'after' },
   );
   if (!updated) throw new ShiftError(404, 'Shift not found');
+  shiftSetupChanged(org);
   return shiftView(updated);
 }
 
@@ -440,6 +442,7 @@ export async function deleteShift(callerId: string, shiftId: string) {
     ?? await shiftTemplates().findOne(live, { sort: { createdAt: 1 } });
   if (!successor) return { newDefault: null };
   await shiftTemplates().updateOne({ _id: successor._id }, { $set: { isDefault: true, updatedAt: new Date() } });
+  shiftSetupChanged(org);
   return { newDefault: successor.name };
 }
 
@@ -502,7 +505,7 @@ export async function assignShiftToUsers(callerId: string, shiftId: string, user
   const org = await requireOrg(callerId);
   shiftSetupChanged(org);
   const _id = objectId(shiftId);
-  const template = await shiftTemplates().findOne({ _id, org });
+  const template = await shiftTemplates().findOne({ _id, org, deletedAt: { $exists: false } });
   if (!template) throw new ShiftError(404, 'Shift not found');
   const ids = facet(userIds);
   if (!ids.length) throw new ShiftError(400, 'Select at least one employee');
@@ -539,6 +542,7 @@ export async function assignShiftToUsers(callerId: string, shiftId: string, user
       org, userId, _id, callerId, currentOf.get(userId) ?? null,
     );
   }
+  shiftSetupChanged(org);
   return { ...shiftView(updated!), effectiveFrom: effectiveFrom || undefined };
 }
 
@@ -548,7 +552,7 @@ export async function unassignShiftUsers(callerId: string, shiftId: string, user
   shiftSetupChanged(org);
   const _id = objectId(shiftId);
   const ids = facet(userIds);
-  const before = await shiftTemplates().findOne({ _id, org });
+  const before = await shiftTemplates().findOne({ _id, org, deletedAt: { $exists: false } });
   if (!before) throw new ShiftError(404, 'Shift not found');
   const updated = await shiftTemplates().findOneAndUpdate(
     { _id, org },
@@ -562,6 +566,7 @@ export async function unassignShiftUsers(callerId: string, shiftId: string, user
     if (!(before.assignedUserIds ?? []).includes(userId)) continue;
     effectiveFrom = await recordAssignmentChange(org, userId, null, callerId, _id);
   }
+  shiftSetupChanged(org);
   return { ...shiftView(updated), effectiveFrom: effectiveFrom || undefined };
 }
 
@@ -575,11 +580,12 @@ export async function setDefaultShift(callerId: string, shiftId: string) {
   const org = await requireOrg(callerId);
   shiftSetupChanged(org);
   const _id = objectId(shiftId);
-  const doc = await shiftTemplates().findOne({ _id, org });
+  const doc = await shiftTemplates().findOne({ _id, org, deletedAt: { $exists: false } });
   if (!doc) throw new ShiftError(404, 'Shift not found');
   if (!doc.active) throw new ShiftError(409, 'An inactive template cannot be the default');
   await shiftTemplates().updateMany({ org, _id: { $ne: _id }, isDefault: true }, { $set: { isDefault: false, updatedAt: new Date() } });
   const updated = await shiftTemplates().findOneAndUpdate({ _id, org }, { $set: { isDefault: true, updatedAt: new Date() } }, { returnDocument: 'after' });
+  shiftSetupChanged(org);
   return shiftView(updated!);
 }
 

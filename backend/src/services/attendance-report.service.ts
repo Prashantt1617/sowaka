@@ -476,7 +476,8 @@ export async function employeeCalendar(
     leaves()
       .find({ userId, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
       .toArray(),
-    holidaysForUser(user, { from: dayOf(from), to: dayOf(to) }),
+    // The roster row carries no org, and without one the lookup returns nothing.
+    holidaysForUser({ ...user, org }, { from: dayOf(from), to: dayOf(to) }),
   ]);
   const punchByDate = new Map(records.map((r) => [r.workDate, r]));
   const holidayByDate = new Map(holidayRows.map((h) => [keyOf(h.date), h.name]));
