@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { getEmployeeCalendar } from '../services/hrms';
 import type { CalendarDayDTO, EmployeeCalendarDTO } from '../services/hrms';
-import { inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
+import { DEDUCTION_TRIGGER_LABELS, inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
 
 const periodTitle = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -51,15 +51,17 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
           {error && <div style={{ color: '#A8475F', fontWeight: 600, padding: '14px 0' }}>{error}</div>}
           {lines.map((line) => {
             const trigger = line.trigger;
+            // Named from the rule, not the slip: a label saved with an older run stays current.
+            const label = trigger ? DEDUCTION_TRIGGER_LABELS[trigger] : line.label;
             const days = cal && trigger ? cal.days.filter(TRIGGER_DAY[trigger]) : null;
             return (
-              <div key={line.label} style={{ marginTop: 16 }}>
+              <div key={line.trigger ?? line.label} style={{ marginTop: 16 }}>
                 <div style={{ background: '#FBF1DD', border: '1px solid #F1DDB2', borderRadius: 12, padding: '12px 14px' }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>
-                    {line.label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
+                    {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
                   <div style={{ fontSize: 14, color: '#6B4E12', marginTop: 3 }}>
-                    {line.count} {line.label.toLowerCase()} this month → <strong>{line.days} {line.days === 1 ? 'day' : 'days'}</strong> deducted
+                    {line.count} {label.toLowerCase()} this month → <strong>{line.days} {line.days === 1 ? 'day' : 'days'}</strong> deducted
                     {line.every ? ` (${Math.floor(line.count / line.every)} × ${line.every}${line.count % line.every ? `, ${line.count % line.every} left over` : ''})` : ''}
                   </div>
                 </div>

@@ -4,7 +4,7 @@
 // Earnings are shown at the full monthly rate and loss of pay is a deduction
 // line, so what the attendance rules cost is on the slip rather than folded
 // silently into a smaller earned figure.
-import { inr, type PayslipDTO } from '../services/payroll';
+import { DEDUCTION_TRIGGER_LABELS, inr, type PayslipDTO } from '../services/payroll';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
@@ -51,7 +51,8 @@ export function payslipHtml(slip: PayslipDTO, company: { name: string; address: 
   const paidEarnings = slip.earnings.reduce((t, e) => t + e.paidPaise, 0);
   const lopPaise = fullEarnings - paidEarnings;
   const lines = slip.inputs.attendanceDeductions ?? [];
-  const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${l.label} ${l.count} → ${l.days}d`).join(' · ');
+  const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger] : l.label);
+  const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`).join(' · ');
   const deductions: { name: string; sub?: string; paise: number }[] = [];
   const covered = slip.inputs.paidLeaveDaysApplied ?? 0;
   if (slip.inputs.lopDays > 0) {

@@ -14,7 +14,7 @@ export const DEDUCTION_TRIGGER_LABELS: Record<DeductionTrigger, string> = {
   late: 'Late arrivals',
   early: 'Early leaves',
   absent: 'Absent days',
-  half_day: 'Half days (single punch counts)',
+  half_day: 'Half days',
   leave: 'Leave days',
   missed_punch: 'Missed punches',
 };
