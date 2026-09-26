@@ -82,6 +82,7 @@ function toInput(body: unknown): SalaryTemplateInput {
     balancingComponentCode: source.balancingComponentCode,
     epfApplyCeiling: source.epfApplyCeiling,
     deductionRules: source.deductionRules,
+    monthlyPaidLeaveDays: source.monthlyPaidLeaveDays,
     active: source.active,
   };
 }

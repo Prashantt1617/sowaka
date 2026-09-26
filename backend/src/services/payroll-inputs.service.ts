@@ -9,7 +9,6 @@
  */
 
 import { leaves, overtimeRequests, reimbursementClaims } from '../config/db';
-import { getCompanyConfig, isWeekoffDay } from './company-settings.service';
 
 export interface PeriodRange {
   year: number;
@@ -42,19 +41,13 @@ export function parsePeriod(period: string): PeriodRange {
 }
 
 /**
- * Org-level paid days in the period: calendar days minus configured week-offs.
- * A company holiday is a paid day — nobody works it, but nobody loses pay for
- * it either — so it stays in the count and the per-day rate is spread over it.
+ * Paid days in the period: every calendar day. Weekly offs and company
+ * holidays are paid — nobody works them, nobody loses pay for them — so the
+ * month's salary is spread over all its days and only loss of pay comes off.
+ * (ACMT's own payroll sheet divides by the days in the month, 31 for August.)
  */
-export async function computeWorkingDays(org: string | undefined, range: PeriodRange): Promise<number> {
-  const { weekoffDays } = await getCompanyConfig(org);
-  let workingDays = 0;
-  for (let day = 1; day <= range.daysInMonth; day++) {
-    const date = new Date(Date.UTC(range.year, range.month - 1, day));
-    if (isWeekoffDay(date, weekoffDays)) continue;
-    workingDays++;
-  }
-  return workingDays;
+export async function computeWorkingDays(_org: string | undefined, range: PeriodRange): Promise<number> {
+  return range.daysInMonth;
 }
 
 export interface EmployeePeriodInputs {

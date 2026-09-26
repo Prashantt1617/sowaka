@@ -13,7 +13,7 @@ const TRIGGER_DAY: Record<DeductionTrigger, (d: CalendarDayDTO) => boolean> = {
   late: (d) => d.lateByMinutes > 0,
   early: (d) => (d.earlyByMinutes ?? 0) > 0,
   absent: (d) => d.status === 'absent',
-  half_day: (d) => d.status === 'half_day',
+  half_day: (d) => d.status === 'half_day' || d.status === 'missed_punch',
   leave: (d) => d.status === 'on_leave',
   missed_punch: (d) => d.status === 'missed_punch',
 };
@@ -42,6 +42,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.3px' }}>Loss of pay · {periodTitle(payslip.period)}</div>
             <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>
               {payslip.inputs.lopDays} of {payslip.inputs.workingDays} paid days deducted · {inr(lopPaise)}
+              {(payslip.inputs.paidLeaveDaysApplied ?? 0) > 0 && ` · ${payslip.inputs.paidLeaveDaysApplied} ${payslip.inputs.paidLeaveDaysApplied === 1 ? 'day' : 'days'} covered by paid leave`}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ background: '#F7F7F9', border: 'none', borderRadius: 9, width: 34, height: 34, cursor: 'pointer', fontSize: 18, color: '#484848' }}>×</button>
@@ -76,7 +77,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                             {trigger === 'late' && `In at ${clock(d.punchIn)} · late by ${mins(d.lateByMinutes)}`}
                             {trigger === 'early' && `Out at ${clock(d.punchOut)} · left ${mins(d.earlyByMinutes ?? 0)} early`}
                             {trigger === 'absent' && (d.label ?? 'Absent')}
-                            {trigger === 'half_day' && `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`}
+                            {trigger === 'half_day' && (d.status === 'missed_punch' ? `Single punch · ${d.label ?? 'missed punch'} · in ${clock(d.punchIn)}` : `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`)}
                             {trigger === 'leave' && (d.label ?? 'On leave')}
                             {trigger === 'missed_punch' && (d.label ?? 'Missed punch')}
                           </td>

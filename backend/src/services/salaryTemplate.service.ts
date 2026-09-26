@@ -25,6 +25,7 @@ export interface SalaryTemplateInput {
   balancingComponentCode?: unknown;
   epfApplyCeiling?: unknown;
   deductionRules?: unknown;
+  monthlyPaidLeaveDays?: unknown;
   active?: unknown;
 }
 
@@ -179,6 +180,12 @@ async function normalizeInput(
   }
 
   const deductionRules = parseDeductionRules(input.deductionRules);
+  const monthlyPaidLeaveDays = input.monthlyPaidLeaveDays === undefined || input.monthlyPaidLeaveDays === null
+    ? 0
+    : Math.round(Number(input.monthlyPaidLeaveDays) * 2) / 2;
+  if (!Number.isFinite(monthlyPaidLeaveDays) || monthlyPaidLeaveDays < 0 || monthlyPaidLeaveDays > 31) {
+    throw new SalaryTemplateError(400, 'Paid leave days a month must be 0 to 31, in halves');
+  }
 
   let balancingComponentCode: string | undefined;
   if (input.balancingComponentCode !== undefined && input.balancingComponentCode !== null && input.balancingComponentCode !== '') {
@@ -209,6 +216,7 @@ async function normalizeInput(
     epfApplyCeiling: input.epfApplyCeiling === undefined ? undefined : Boolean(input.epfApplyCeiling),
     active,
     deductionRules,
+    monthlyPaidLeaveDays,
   };
 }
 
@@ -304,6 +312,7 @@ function toView(doc: StoredTemplate) {
     balancingComponentCode: doc.balancingComponentCode,
     epfApplyCeiling: doc.epfApplyCeiling ?? true,
     deductionRules: doc.deductionRules ?? [],
+    monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),

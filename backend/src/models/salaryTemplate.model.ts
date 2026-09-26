@@ -36,6 +36,8 @@ export interface SalaryTemplate {
    * the month's counts into loss-of-pay days with these.
    */
   deductionRules?: SalaryDeductionRule[];
+  /** Paid leave days a month that offset what the rules deduct (0 = none). */
+  monthlyPaidLeaveDays?: number;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;

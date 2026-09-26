@@ -199,6 +199,17 @@ export function PayrollRuns() {
     );
   }
 
+  // Opening: the detail is on its way. Say so at once — on a slow link the
+  // list sitting unchanged for ten seconds reads as a dead button.
+  if (openId) {
+    return (
+      <div>
+        <button onClick={() => setOpenId(null)} style={{ ...ghostBtn, marginBottom: 16 }}>← All runs</button>
+        <Card><EmptyRow text={`Opening ${runs.find((r) => r.id === openId)?.period ?? 'run'}…`} /></Card>
+      </div>
+    );
+  }
+
   // —— Run list ——
   return (
     <div>

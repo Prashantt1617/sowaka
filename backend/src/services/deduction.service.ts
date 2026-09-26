@@ -38,9 +38,12 @@ export async function attendanceCountsForPeriod(adminUserId: string, period: str
     if (status === 'absent') c.absent += 1;
     else if (status === 'half_day') c.half_day += 1;
     else if (status === 'on_leave') c.leave += 1;
-    else if (status === 'missed_punch') c.missed_punch += 1;
-    if (lateBy > 0) c.late += 1;
-    if ((earlyBy ?? 0) > 0) c.early += 1;
+    // A single punch is half a day's evidence, so it counts as a half day
+    // too; the separate missed-punch trigger stays for orgs that want it.
+    else if (status === 'missed_punch') { c.missed_punch += 1; c.half_day += 1; }
+    // A single-punch day is already a missed punch; it is not also late or early.
+    if (status !== 'missed_punch' && lateBy > 0) c.late += 1;
+    if (status !== 'missed_punch' && (earlyBy ?? 0) > 0) c.early += 1;
     counts.set(userId, c);
   }
   return counts;
