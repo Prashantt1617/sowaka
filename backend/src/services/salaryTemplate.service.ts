@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 import { payHeads, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
 import { SalaryTemplate, SalaryTemplateComponent } from '../models/salaryTemplate.model';
+import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
 import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
 import { resolveRuleSet } from './statutory.service';
@@ -23,6 +24,7 @@ export interface SalaryTemplateInput {
   components?: unknown;
   balancingComponentCode?: unknown;
   epfApplyCeiling?: unknown;
+  deductionRules?: unknown;
   active?: unknown;
 }
 
@@ -176,6 +178,8 @@ async function normalizeInput(
     throw new SalaryTemplateError(400, 'A component is "% of Basic" but the template has no Basic component');
   }
 
+  const deductionRules = parseDeductionRules(input.deductionRules);
+
   let balancingComponentCode: string | undefined;
   if (input.balancingComponentCode !== undefined && input.balancingComponentCode !== null && input.balancingComponentCode !== '') {
     balancingComponentCode = normalizeCode(input.balancingComponentCode, 'balancingComponentCode');
@@ -204,6 +208,7 @@ async function normalizeInput(
     balancingComponentCode,
     epfApplyCeiling: input.epfApplyCeiling === undefined ? undefined : Boolean(input.epfApplyCeiling),
     active,
+    deductionRules,
   };
 }
 
@@ -298,8 +303,27 @@ function toView(doc: StoredTemplate) {
     components: doc.components,
     balancingComponentCode: doc.balancingComponentCode,
     epfApplyCeiling: doc.epfApplyCeiling ?? true,
+    deductionRules: doc.deductionRules ?? [],
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
+}
+
+/** The attendance deduction rules, validated. Absent means none. */
+function parseDeductionRules(value: unknown): SalaryDeductionRule[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SalaryTemplateError(400, 'deductionRules must be a list');
+  return value.map((raw) => {
+    if (!isRecord(raw)) throw new SalaryTemplateError(400, 'Each deduction rule must be an object');
+    const trigger = String(raw.trigger ?? '');
+    if (!DEDUCTION_TRIGGERS.includes(trigger as DeductionTrigger)) {
+      throw new SalaryTemplateError(400, `A deduction rule must count one of: ${DEDUCTION_TRIGGERS.join(', ')}`);
+    }
+    const every = Number(raw.every);
+    if (!Number.isInteger(every) || every < 1 || every > 31) throw new SalaryTemplateError(400, 'Occurrences per deduction must be a whole number from 1 to 31');
+    const deductDays = Math.round(Number(raw.deductDays) * 2) / 2;
+    if (!Number.isFinite(deductDays) || deductDays <= 0 || deductDays > 31) throw new SalaryTemplateError(400, 'Paid days deducted must be more than 0 and at most 31, in halves');
+    return { trigger: trigger as DeductionTrigger, every, deductDays, active: raw.active === undefined ? true : Boolean(raw.active) };
+  });
 }

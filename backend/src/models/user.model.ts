@@ -12,9 +12,20 @@ export type OnboardingStatus = 'pending' | 'in_progress' | 'completed';
 
 export type NoticeStatus = 'none' | 'serving' | 'completed';
 
+/**
+ * A document HR has filed against an employee — an offer letter, an ID proof.
+ *
+ * Uploaded ones carry an `objectKey` and are presigned on every read, the way
+ * profile photos are; `url` only remains for records written before uploads
+ * existed, which pointed at a link rather than a stored file.
+ */
 export interface EmployeeDocument {
+  id?: string;
   name: string;
-  url: string;
+  url?: string;
+  objectKey?: string;
+  contentType?: string;
+  size?: number;
   type?: string;
   uploadedAt?: Date;
 }

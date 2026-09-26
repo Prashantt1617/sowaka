@@ -18,6 +18,8 @@ import { leaveTypeRulesFor } from './shift.service';
 
 /** The year that closes on a given date, for a reset cadence. */
 function closingYear(rule: LeaveTypeRule, now: Date): number | null {
+  // A monthly type is processed on read, month by month; there is no year to close.
+  if (rule.resetOn === 'monthly') return null;
   const month = now.getUTCMonth() + 1;
   const day = now.getUTCDate();
   if (rule.resetOn === 'calendar_year') {
@@ -77,7 +79,7 @@ export async function closeYearForUser(
 
   for (const rule of rules) {
     // Only the types whose year actually ends today, unless forced.
-    if (!force && closingYear(rule, now) !== year) { skipped += 1; continue; }
+    if (rule.resetOn === 'monthly' || (!force && closingYear(rule, now) !== year)) { skipped += 1; continue; }
     const already = await leaveYearEnds().findOne({ userId, year, type: rule.key });
     if (already) { skipped += 1; continue; }
 

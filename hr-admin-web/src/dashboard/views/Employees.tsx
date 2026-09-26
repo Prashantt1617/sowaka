@@ -69,7 +69,7 @@ export function Employees() {
               <tr key={r.id} className="phm-row" onClick={() => setSelected(r)} style={{ cursor: 'pointer' }}>
                 <Td>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                    <Avatar name={r.name} size={34} font={13} />
+                    <Avatar name={r.name} size={34} font={13} src={r.photoUrl} />
                     <span style={{ minWidth: 0 }}>
                       <NameCell name={r.name} />
                       <span style={{ display: 'block', fontSize: 13, color: '#9197A2', fontWeight: 600 }}>{r.employeeId}</span>

@@ -1,4 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
+import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
+import {
+  adminDecideRegularization,
+  listAllRegularizationsForAdmin,
+} from '../services/attendance.service';
 import { adminDecideLeave, listAllLeavesForAdmin } from '../services/leave.service';
 import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
 import {
@@ -7,7 +12,9 @@ import {
 } from '../services/reimbursement.service';
 import {
   AdminError,
+  addEmployeeDocument,
   createEmployeeForAdmin,
+  removeEmployeeDocument,
   listAllEmployeesForAdmin,
   listAllFeedbackForAdmin,
   setOvertimeEligibilityForAdmin,
@@ -48,11 +55,35 @@ export async function listReimbursements(req: Request, res: Response, next: Next
   }
 }
 
+export async function listRegularizations(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({
+      success: true,
+      regularizations: await listAllRegularizationsForAdmin(adminUserId(req)),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listFeedback(req: Request, res: Response, next: NextFunction) {
   try {
     res
       .status(200)
       .json({ success: true, feedback: await listAllFeedbackForAdmin(adminUserId(req)) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Reports › Attendance — a graded date range, grouped by capture format. */
+export async function attendanceReportHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
+    res.status(200).json({
+      success: true,
+      report: await attendanceReport(adminUserId(req), { from: str(req.query.from), to: str(req.query.to) }),
+    });
   } catch (error) {
     next(error);
   }
@@ -96,6 +127,49 @@ export async function createEmployee(req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 }
 
+/** One employee's month, day by day, as the app's calendar shows it. */
+export async function employeeCalendarHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const calendar = await employeeCalendar(
+      adminUserId(req),
+      String(req.params.userId ?? ''),
+      String(req.query.month ?? ''),
+    );
+    res.status(200).json({ success: true, calendar });
+  } catch (error) { next(error); }
+}
+
+/** HR files a document against an employee: one type, one file, appended. */
+export async function addEmployeeDocumentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const documents = await addEmployeeDocument(
+      adminUserId(req),
+      String(req.params.userId ?? ''),
+      req.body?.type,
+      req.file
+        ? {
+            originalName: req.file.originalname,
+            contentType: req.file.mimetype,
+            size: req.file.size,
+            bytes: req.file.buffer,
+          }
+        : undefined,
+    );
+    res.status(201).json({ success: true, documents });
+  } catch (error) { next(error); }
+}
+
+export async function removeEmployeeDocumentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const documents = await removeEmployeeDocument(
+      adminUserId(req),
+      String(req.params.userId ?? ''),
+      String(req.params.documentId ?? ''),
+    );
+    res.status(200).json({ success: true, documents });
+  } catch (error) { next(error); }
+}
+
 /** HR toggles whether one employee may raise overtime requests. */
 export async function updateOvertimeEligibility(req: Request, res: Response, next: NextFunction) {
   try {
@@ -120,6 +194,22 @@ export async function decideLeave(req: Request, res: Response, next: NextFunctio
       managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
     });
     res.status(200).json({ success: true, leave });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function decideRegularization(req: Request, res: Response, next: NextFunction) {
+  try {
+    const regularization = await adminDecideRegularization(
+      adminUserId(req),
+      String(req.params.regularizationId ?? ''),
+      {
+        decision: String(req.body.decision ?? ''),
+        managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
+      },
+    );
+    res.status(200).json({ success: true, regularization });
   } catch (error) {
     next(error);
   }

@@ -7,14 +7,21 @@
 // deterministically from the employee ID — those features are planned but not
 // wired to a backend yet, so the sections stand as placeholders rather than
 // being removed.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Emp } from '../seed';
 import { useStore } from '../store';
+import { IconFile } from '../icons';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
-import { Avatar, Card, Pill } from '../ui';
+import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
+import { getEmployeeCalendar } from '../../services/hrms';
+import { getEmployeePayslips, inr as inrPaise, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { LossOfPayExplainer } from '../LossOfPayExplainer';
+import { printPayslip } from '../payslip';
+import type { CalendarDayStatus, EmployeeCalendarDTO } from '../../services/hrms';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -25,14 +32,6 @@ const STATE_BY_CITY: Record<string, string> = {
 const WORKLOC_BY_CITY: Record<string, string> = {
   Bengaluru: 'Head Office — Bengaluru', Mumbai: 'Mumbai Sales Office', Gurugram: 'Delhi NCR Hub', Remote: 'Remote — India',
 };
-const SHIFT_BY_TEAM: Record<string, string> = {
-  Engineering: 'Tech Team — General (9:30 AM – 6:30 PM)',
-  Design: 'Tech Team — General (9:30 AM – 6:30 PM)',
-  Sales: 'Sales Team — Field (10:00 AM – 7:00 PM)',
-  Marketing: 'Sales Team — Field (10:00 AM – 7:00 PM)',
-  Operations: 'Gurgaon 3D Team — Rotational',
-  Finance: 'General Office (10:00 AM – 6:30 PM)',
-};
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const RATINGS = ['Outstanding', 'Exceeds expectations', 'Meets expectations', 'Developing'];
 
@@ -40,10 +39,6 @@ function seedOf(emp: Emp): number {
   const m = emp.employeeId.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 100;
 }
-function inr(n: number): string {
-  return '₹' + Math.round(n).toLocaleString('en-IN');
-}
-
 function derive(emp: Emp) {
   const seed = seedOf(emp);
   const [first, last = ''] = emp.name.split(' ');
@@ -82,7 +77,6 @@ function derive(emp: Emp) {
     ifsc: ['HDFC', 'ICIC', 'UTIB', 'SBIN', 'KKBK'][seed % 5] + '0' + String(100000 + seed * 13).slice(-6),
     accountType: 'Savings',
     payMode: 'Direct Deposit (Automated Process)',
-    shift: SHIFT_BY_TEAM[emp.team] || 'General Office (10:00 AM – 6:30 PM)',
   };
 }
 
@@ -94,17 +88,6 @@ function leaveBalance(seed: number): LeaveBal[] {
     { key: 'Casual', name: 'Casual Leave', entitled: 12, taken: (seed * 3) % 9 },
     { key: 'Earned', name: 'Earned Leave', entitled: 18, taken: (seed * 2) % 13 },
   ];
-}
-
-// Open requests awaiting the manager / HR — a seeded mix.
-type OpenReq = { kind: string; detail: string; status: ReqStatus; when: string };
-function openRequests(seed: number): OpenReq[] {
-  const out: OpenReq[] = [];
-  if (seed % 3 === 0) out.push({ kind: 'Casual Leave', detail: '2 days off', status: 'Pending', when: 'Aug 22 – Aug 23' });
-  if (seed % 4 === 1) out.push({ kind: 'Reimbursement', detail: `${inr(1500 + (seed * 37) % 6000)} · Internet`, status: 'Pending', when: 'Raised Aug 16' });
-  if (seed % 5 === 2) out.push({ kind: 'Overtime', detail: `${(3 + seed % 3)}.5 hrs`, status: 'Pending', when: 'Worked Aug 18' });
-  if (seed % 7 === 4) out.push({ kind: 'Attendance correction', detail: 'Missed evening punch', status: 'Pending', when: 'Aug 14' });
-  return out;
 }
 
 function ratingWord(score: number): string {
@@ -119,15 +102,23 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   const s = useStore();
   const d = derive(emp);
   const bal = leaveBalance(d.seed);
-  const reqs = openRequests(d.seed);
+  const [tab, setTab] = useState<ProfileTab>('profile');
+  // This month, fetched once: it names the shift in the header and seeds the
+  // Calendar tab, so opening that tab does not ask for the same month again.
+  const [currentMonth, setCurrentMonth] = useState<EmployeeCalendarDTO | null>(null);
+  useEffect(() => {
+    let live = true;
+    setCurrentMonth(null);
+    getEmployeeCalendar(emp.id, thisMonth()).then((c) => { if (live) setCurrentMonth(c); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [emp.id]);
   // Review state for the current cycle, from the feedback managers actually submitted.
   const review = s.fbEmps.find((f) => f.userId === emp.id);
-  const basicA = d.basicM * 12;
-  const hraA = d.hraM * 12;
 
   // Reporting line — manager above, direct reports below (from the roster).
   // Guard against a person being their own manager (seed-data quirk).
-  const managerName = emp.manager && emp.manager !== emp.name ? emp.manager : '';
+  // The roster fills a missing manager with a dash; that is nobody, not a name.
+  const managerName = emp.manager && emp.manager !== '—' && emp.manager !== emp.name ? emp.manager : '';
   const manager = emp.managerId ? s.emps.find((e) => e.id === emp.managerId) : undefined;
   const reports = s.emps.filter((e) => e.managerId === emp.id && e.id !== emp.id);
   const peers = emp.managerId
@@ -141,7 +132,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {/* Identity header */}
       <Card style={{ padding: 0, marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '22px 24px' }}>
-          <Avatar name={emp.name} size={68} font={26} />
+          <Avatar name={emp.name} size={68} font={26} src={emp.photoUrl} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.6px' }}>{emp.name}</div>
@@ -155,47 +146,35 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid #F0F0F2' }}>
           <Fact label="Work email" value={d.workEmail} />
-          <Fact label="Mobile" value={d.mobile} />
+          <Fact label="Employee ID" value={emp.id} />
           <Fact label="Work location" value={d.workLocation} />
           <Fact label="Reporting manager" value={emp.manager} border />
           <Fact label="Date of joining" value={emp.joining} border />
-          <Fact label="Shift" value={d.shift} border />
+          <Fact label="Shift" value={currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'} border />
         </div>
       </Card>
 
-      {/* Open requests */}
-      {reqs.length > 0 && (
-        <div style={{ marginBottom: 18 }}>
-          <SectionTitle>Open requests <span style={{ color: '#9A6B25', background: '#F6E9D5', borderRadius: 20, padding: '2px 10px', fontSize: 13 }}>{reqs.length} pending</span></SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(reqs.length, 4)}, 1fr)`, gap: 12 }}>
-            {reqs.map((r, i) => (
-              <Card key={i} style={{ padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{r.kind}</div>
-                  <Pill label={r.status} tone={STAT[r.status]} fontSize={11} />
-                </div>
-                <div style={{ fontSize: 15, color: '#484848', fontWeight: 600, marginTop: 6 }}>{r.detail}</div>
-                <div style={{ fontSize: 13, color: '#9197A2', marginTop: 3 }}>{r.when}</div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* One page, five views of the same person. */}
+      <div style={{ marginBottom: 18 }}>
+        <StatusTabs<ProfileTab>
+          options={['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart']}
+          active={tab}
+          onSelect={setTab}
+          labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart' }}
+        />
+      </div>
 
-      {/* Two-column body */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18, alignItems: 'start' }}>
-        {/* Left — the captured record */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <Section title="Basic details">
+      {tab === 'profile' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18, alignItems: 'start', maxWidth: 820 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <Section title="Basic details">
             <Grid>
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
               <Row label="Last name" value={d.lastName} />
               <Row label="Employee ID" value={emp.id} />
               <Row label="Date of joining" value={emp.joining} />
-              <Row label="Gender" value={d.gender} />
               <Row label="Work email" value={d.workEmail} />
-              <Row label="Mobile number" value={d.mobile} />
               <Row label="Designation" value={emp.role} />
               <Row label="Department" value={emp.team} />
               <Row label="Work location" value={d.workLocation} />
@@ -203,100 +182,40 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <Row label="Director / substantial interest" value={d.isDirector ? 'Yes' : 'No'} />
             </Grid>
           </Section>
-
-          <Section title="Personal details">
-            <Grid>
-              <Row label="Date of birth" value={d.dob} />
-              <Row label="Age" value={`${d.age} years`} />
-              <Row label="Father's name" value={d.fatherName} />
-              <Row label="PAN" value={d.pan} />
-              <Row label="Personal email" value={d.personalEmail} />
-              <Row label="Differently abled" value="None" />
-            </Grid>
-            <div style={{ marginTop: 4 }}>
-              <Row label="Residential address" value={`${d.address}, ${d.city}, ${d.state} — ${d.pin}`} wide />
-            </div>
-          </Section>
-
-          <Section title="Salary details">
-            <Grid>
-              <Row label="Salary template" value={d.template} />
-              <Row label="Annual CTC" value={inr(d.ctc)} strong />
-              <Row label="Monthly CTC" value={inr(Math.round(d.ctc / 12))} />
-              <Row label="Employee category" value={d.level === 'associate' ? 'Skilled' : 'Highly skilled'} />
-            </Grid>
-
-            {/* Statutory chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '4px 0 16px' }}>
-              <StatChip on label="Employees' Provident Fund" />
-              <StatChip on={d.esi} label="Employees' State Insurance" />
-              <StatChip on label="Labour Welfare Fund" />
-              <StatChip on={emp.empType !== 'Contract'} label="Statutory Bonus" />
-            </div>
-
-            {/* Salary breakup */}
-            <div style={{ border: '1px solid #F0F0F2', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, padding: '10px 14px', background: '#F7F7F9', fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
-                <div>Component</div>
-                <div style={{ textAlign: 'right' }}>Monthly</div>
-                <div style={{ textAlign: 'right' }}>Annual</div>
+            <Section title="Documents">
+            {emp.documents.length === 0 ? (
+              <div style={{ fontSize: 15, color: '#9197A2', fontWeight: 500 }}>Nothing filed yet. Documents are added from the employee's record.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {emp.documents.map((doc) => (
+                  <a
+                    key={doc.id}
+                    href={doc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#FBFBFC', border: '1px solid #EBEBEB', borderRadius: 11, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
+                  >
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EFE7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <IconFile size={16} stroke="#7E5FB0" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{doc.type}</div>
+                      <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0571A6' }}>Open</span>
+                  </a>
+                ))}
               </div>
-              <BreakRow name="Basic" sub="50% of CTC" monthly={d.basicM} annual={basicA} />
-              <BreakRow name="House Rent Allowance" sub="50% of Basic" monthly={d.hraM} annual={hraA} />
-              <BreakRow name="Fixed Allowance" sub="Balancing component" monthly={Math.round(d.ctc / 12 - d.basicM - d.hraM)} annual={d.ctc - basicA - hraA} />
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, padding: '11px 14px', background: '#E7F4FB' }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>Cost to Company</div>
-                <div style={{ textAlign: 'right', fontSize: 14, fontWeight: 800, color: '#0571A6' }}>{inr(Math.round(d.ctc / 12))}</div>
-                <div style={{ textAlign: 'right', fontSize: 14, fontWeight: 800, color: '#0571A6' }}>{inr(d.ctc)}</div>
-              </div>
-            </div>
-
-            {/* Statutory IDs */}
-            <div style={{ marginTop: 14 }}>
-              <Grid>
-                <Row label="PF account number" value={d.pfAccount} />
-                <Row label="Universal Account Number" value={d.uan} />
-                {d.esi && <Row label="ESI number" value={d.esiNumber} />}
-              </Grid>
-            </div>
+            )}
           </Section>
-
-          <Section title="Payment information">
-            <Grid>
-              <Row label="Payment mode" value={d.payMode} />
-              <Row label="Bank name" value={d.bank} />
-              <Row label="Account number" value={d.accountNo} />
-              <Row label="IFSC" value={d.ifsc} />
-              <Row label="Account type" value={d.accountType} />
-            </Grid>
-          </Section>
+          </div>
         </div>
+      )}
 
-        {/* Right rail — balance, performance, shift */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <Section title="Leave balance">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {bal.map((b) => {
-                const available = b.entitled - b.taken;
-                const pct = Math.round((b.taken / b.entitled) * 100);
-                return (
-                  <div key={b.key}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE[b.key], flexShrink: 0 }} />
-                      <span style={{ fontSize: 15, fontWeight: 700 }}>{b.name}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 15, fontWeight: 800 }}>{available}<span style={{ color: '#9197A2', fontWeight: 600 }}> / {b.entitled}</span></span>
-                    </div>
-                    <div style={{ height: 7, borderRadius: 5, background: '#F0F0F2', overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: TYPE[b.key], opacity: .55 }} />
-                    </div>
-                    <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 4 }}>{b.taken} taken · {available} available</div>
-                  </div>
-                );
-              })}
-            </div>
-          </Section>
-
-          <Section title="Performance (PMS)">
+      {tab === 'performance' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <Section title="Performance (PMS)">
             {review && review.status !== 'none' ? (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -343,8 +262,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               </div>
             )}
           </Section>
-
-          <Section title="Review history">
+            <Section title="Review history">
             {review && review.history.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                 {review.history.map((h) => (
@@ -370,8 +288,9 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               </div>
             )}
           </Section>
-
-          <Section title="KPIs">
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <Section title="KPIs">
             <EmployeeKpiPanel
               userId={emp.id}
               userName={emp.name}
@@ -380,18 +299,55 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               nextPeriod={s.cycle.next}
             />
           </Section>
+          </div>
+        </div>
+      )}
 
-          <Section title="Shift & attendance">
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{d.shift}</div>
-            <div style={{ fontSize: 13.5, color: '#717171', lineHeight: 1.5 }}>
-              Follows the {emp.team} team template — working window, grace, overtime and weekly-off as configured in Shift Templates.
+      {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} />}
+      {tab === 'salary' && <SalarySlips userId={emp.id} />}
+
+      {tab === 'requests' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 18, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <Section title="Leave balance">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {bal.map((b) => {
+                const available = b.entitled - b.taken;
+                const pct = Math.round((b.taken / b.entitled) * 100);
+                return (
+                  <div key={b.key}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE[b.key], flexShrink: 0 }} />
+                      <span style={{ fontSize: 15, fontWeight: 700 }}>{b.name}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 15, fontWeight: 800 }}>{available}<span style={{ color: '#9197A2', fontWeight: 600 }}> / {b.entitled}</span></span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 5, background: '#F0F0F2', overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: TYPE[b.key], opacity: .55 }} />
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 4 }}>{b.taken} taken · {available} available</div>
+                  </div>
+                );
+              })}
             </div>
           </Section>
+          </div>
+          <RequestsForEmployee emp={emp} />
         </div>
-      </div>
+      )}
 
+      {tab === 'orgchart' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={() => { s.setOrgChartFocus(emp.id); s.setView('orgchart'); }}
+              style={{ background: '#0571A6', color: '#fff', border: 'none', borderRadius: 11, padding: '9px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Open in org chart ↗
+            </button>
+          </div>
       {/* Reporting line — this person's slice of the org chart */}
-      <div style={{ marginTop: 18 }}>
+      <div>
         <Card style={{ padding: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid #F0F0F2' }}>
             <div style={{ fontSize: 16, fontWeight: 800 }}>Org chart</div>
@@ -400,14 +356,12 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
             </div>
           </div>
           <div style={{ padding: '26px 20px 30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* Manager */}
+            {/* Manager — nothing at all above someone who has none; the chart starts with them. */}
             {manager ? (
               <OrgNode emp={manager} caption="Reporting manager" onOpen={onOpen} />
             ) : managerName ? (
               <GhostNode name={managerName} caption="Reporting manager" />
-            ) : (
-              <div style={{ fontSize: 13.5, color: '#9197A2', fontWeight: 600 }}>No reporting manager on record</div>
-            )}
+            ) : null}
 
             {managerName && <Connector />}
 
@@ -429,7 +383,229 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
           </div>
         </Card>
       </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart';
+
+// —— Calendar: one month, every day named ————————————————————————————————
+const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {
+  present: { bg: '#E6F1E7', fg: '#4F7A52', label: 'Present' },
+  half_day: { bg: '#FBF1DD', fg: '#9A6B25', label: 'Half day' },
+  missed_punch: { bg: '#FBE9DE', fg: '#B25A1B', label: 'Missed punch' },
+  absent: { bg: '#F8E3E7', fg: '#A8475F', label: 'Absent' },
+  on_leave: { bg: '#E7F2F7', fg: '#0571A6', label: 'On leave' },
+  week_off: { bg: '#F1F1F4', fg: '#9197A2', label: 'Week off' },
+  holiday: { bg: '#EFE7F2', fg: '#7E5FB0', label: 'Holiday' },
+  upcoming: { bg: '#FFFFFF', fg: '#C7CBD3', label: 'Upcoming' },
+};
+const LEAVE_NAMES: Record<string, string> = { sick: 'Sick leave', casual: 'Casual leave', earned: 'Earned leave', comp_off: 'Comp off' };
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+const shiftMonth = (month: string, by: number) => {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + by, 1));
+  return d.toISOString().slice(0, 7);
+};
+const monthTitle = (month: string) =>
+  new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const clockOf = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+
+// ------------------------------------------------------------- salary slips
+// Every payslip a payroll run produced for them, newest first. A draft run's
+// slip is a preview; approved and paid ones are the record. Download opens
+// the printable slip.
+
+const RUN_TONE: Record<PayrollRunDTO['status'], { bg: string; fg: string; label: string }> = {
+  draft: { bg: '#F7F7F9', fg: '#717171', label: 'Draft' },
+  pending_approval: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Pending approval' },
+  approved: { bg: '#E6F1E7', fg: '#4F7A52', label: 'Approved' },
+  rejected: { bg: '#F8E3E7', fg: '#A8475F', label: 'Rejected' },
+  paid: { bg: '#E7F2F7', fg: '#0571A6', label: 'Paid' },
+};
+
+const periodTitle = (period: string) =>
+  new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+function SalarySlips({ userId }: { userId: string }) {
+  const [rows, setRows] = useState<{ run: PayrollRunDTO; payslip: PayslipDTO }[] | null>(null);
+  const [company, setCompany] = useState<{ name: string; address: string }>({ name: '', address: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [explain, setExplain] = useState<PayslipDTO | null>(null);
+  useEffect(() => {
+    let live = true;
+    setRows(null);
+    getEmployeePayslips(userId)
+      .then((r) => { if (live) { setRows(r.payslips); setCompany(r.company); } })
+      .catch((e: Error) => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [userId]);
+
+  if (error) return <Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 600 }}>{error}</div></Card>;
+  if (!rows) return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card>;
+  if (rows.length === 0) {
+    return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card>;
+  }
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+        <thead>
+          <tr>
+            {['Month', 'Status', 'Paid days', 'Loss of pay', 'Gross', 'Deductions', 'Net pay', ''].map((h, i) => (
+              <th key={h || i} style={{ textAlign: i >= 2 ? 'right' : 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '12px 18px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ run, payslip }) => {
+            const tone = RUN_TONE[run.status];
+            const full = payslip.earnings.reduce((t, e) => t + e.fullPaise, 0) + payslip.inputs.overtimePaise + payslip.reimbursementsPaise;
+            const lopPaise = payslip.earnings.reduce((t, e) => t + (e.fullPaise - e.paidPaise), 0);
+            const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
+            return (
+              <tr key={run.id}>
+                <td style={slipTd}><strong>{periodTitle(run.period)}</strong></td>
+                <td style={slipTd}><Pill label={tone.label} tone={{ bg: tone.bg, fg: tone.fg }} /></td>
+                <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {payslip.inputs.workingDays}</td>
+                <td style={{ ...slipTd, textAlign: 'right' }}>
+                  {payslip.inputs.lopDays > 0 && lines.length > 0 ? (
+                    <button type="button" onClick={() => setExplain(payslip)} title="Why is there a loss of pay?" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#A8475F', fontWeight: 700, fontSize: 16, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
+                      {payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}
+                    </button>
+                  ) : (
+                    <span style={{ color: payslip.inputs.lopDays ? '#A8475F' : '#9197A2', fontWeight: 700 }}>{payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}</span>
+                  )}
+                </td>
+                <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{inrPaise(full)}</td>
+                <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#A8475F' }}>−{inrPaise(lopPaise + payslip.employeeDeductionsPaise)}</td>
+                <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
+                <td style={{ ...slipTd, textAlign: 'right' }}>
+                  <button type="button" onClick={() => printPayslip(payslip, company)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {explain && <LossOfPayExplainer userId={userId} payslip={explain} onClose={() => setExplain(null)} />}
+    </Card>
+  );
+}
+
+const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
+
+function EmployeeCalendar({ userId, initial }: { userId: string; initial: EmployeeCalendarDTO | null }) {
+  const [month, setMonth] = useState(thisMonth());
+  const [cal, setCal] = useState<EmployeeCalendarDTO | null>(initial);
+  const [loading, setLoading] = useState(!initial);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    // The profile already holds this month; only other months are fetched here.
+    if (initial && initial.month === month) { setCal(initial); setLoading(false); return; }
+    let live = true;
+    setLoading(true); setError('');
+    getEmployeeCalendar(userId, month)
+      .then((c) => { if (live) setCal(c); })
+      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the month'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [userId, month, initial]);
+
+  // Monday-first grid, the way the app lays the month out.
+  const lead = cal ? (new Date(`${cal.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
+  const worked = cal ? cal.totals.present + cal.totals.half_day + cal.totals.missed_punch + cal.totals.absent + cal.totals.on_leave : 0;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={calNav}>‹</button>
+        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid #EBEBEB', borderRadius: 11, padding: '8px 12px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', background: '#fff', color: '#222222' }} />
+        <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} style={{ ...calNav, opacity: month >= thisMonth() ? 0.4 : 1 }}>›</button>
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.3px', marginLeft: 4 }}>{monthTitle(month)}</div>
+        {loading && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Loading…</span>}
+        {cal && (
+          <div style={{ marginLeft: 'auto', fontSize: 14, color: '#717171', fontWeight: 600 }}>
+            {cal.shift} · {cal.window} · {cal.punchFormat}
+          </div>
+        )}
+      </div>
+      {error && <div style={{ fontSize: 14, color: '#A8475F', fontWeight: 600, marginBottom: 12 }}>{error}</div>}
+
+      {cal && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+          {(['present', 'half_day', 'missed_punch', 'absent', 'on_leave', 'week_off', 'holiday'] as CalendarDayStatus[]).map((k) => (
+            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: CAL_TONE[k].bg, color: CAL_TONE[k].fg, borderRadius: 999, padding: '5px 11px', fontSize: 13, fontWeight: 700 }}>
+              {CAL_TONE[k].label} <span style={{ opacity: .8 }}>{cal.totals[k]}</span>
+            </span>
+          ))}
+          <span style={{ alignSelf: 'center', fontSize: 13, color: '#9197A2', fontWeight: 600 }}>{worked} working days so far</span>
+        </div>
+      )}
+
+      <Card style={{ padding: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #F0F0F2' }}>
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+            <div key={d} style={{ padding: '10px 12px', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>{d.toUpperCase()}</div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+          {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: '#FAFAFB' }} />)}
+          {(cal?.days ?? []).map((day) => {
+            const tone = CAL_TONE[day.status];
+            const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? day.label)
+              : day.status === 'holiday' || day.status === 'week_off' ? day.label
+                : day.status === 'upcoming' ? ''
+                  : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');
+            return (
+              <div key={day.date} title={`${day.date}${detail ? ` · ${detail}` : ''}`} style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: day.status === 'upcoming' ? '#C7CBD3' : '#222222' }}>{Number(day.date.slice(8))}</span>
+                  {day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#7E5FB0' }}>late {day.lateByMinutes}m</span>}
+                </div>
+                {day.status !== 'upcoming' && <div style={{ fontSize: 12.5, fontWeight: 700, color: tone.fg }}>{tone.label}</div>}
+                {detail && <div style={{ fontSize: 12, color: tone.fg, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+const calNav: CSSProperties = { width: 36, height: 36, borderRadius: 10, border: '1px solid #EBEBEB', background: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer', color: '#484848', fontFamily: 'inherit' };
+
+// —— Requests: this person's, from the live queues ———————————————————————
+type Req = { id: string; kind: string; detail: string; when: string; status: ReqStatus; ord: number };
+function RequestsForEmployee({ emp }: { emp: Emp }) {
+  const s = useStore();
+  const mine = (id?: string) => id === emp.id;
+  const rows: Req[] = [
+    ...s.leaves.filter((r) => mine(r.submitterId)).map((r) => ({ id: `lv-${r.id}`, kind: `${r.type} leave`, detail: r.days, when: `${r.from} – ${r.to}`, status: r.status, ord: r.ord })),
+    ...s.ots.filter((r) => mine(r.submitterId)).map((r) => ({ id: `ot-${r.id}`, kind: 'Overtime', detail: r.duration, when: r.otDate, status: r.status, ord: r.ord })),
+    ...s.rbs.filter((r) => mine(r.submitterId)).map((r) => ({ id: `rb-${r.id}`, kind: 'Reimbursement', detail: `${r.type} · ${r.amount}`, when: r.billDate, status: r.status, ord: r.ord })),
+    ...s.corrs.filter((r) => mine(r.submitterId)).map((r) => ({ id: `cr-${r.id}`, kind: 'Attendance correction', detail: r.dayType, when: r.workDate, status: r.status, ord: r.ord })),
+  ].sort((a, b) => b.ord - a.ord);
+  const pending = rows.filter((r) => r.status === 'Pending').length;
+  return (
+    <Card style={{ padding: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid #F0F0F2' }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>Requests</div>
+        <div style={{ fontSize: 13.5, color: '#9197A2', fontWeight: 600 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: 28, textAlign: 'center', color: '#9197A2', fontSize: 15, fontWeight: 600 }}>No requests from this employee.</div>
+      ) : rows.map((r) => (
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.2fr 1fr auto', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid #F0F0F2' }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{r.kind}</div>
+          <div style={{ fontSize: 14, color: '#484848', fontWeight: 600 }}>{r.detail}</div>
+          <div style={{ fontSize: 13.5, color: '#717171' }}>{r.when}</div>
+          <Pill label={r.status} tone={STAT[r.status]} fontSize={12} />
+        </div>
+      ))}
+    </Card>
   );
 }
 
@@ -490,10 +666,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 16, fontWeight: 800, marginBottom: 12 }}>{children}</div>;
-}
-
 function Grid({ children }: { children: ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 26px' }}>{children}</div>;
 }
@@ -512,27 +684,6 @@ function MiniRow({ label, value }: { label: string; value: string }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>{label}</span>
       <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: '#222222' }}>{value}</span>
-    </div>
-  );
-}
-
-function StatChip({ on, label }: { on: boolean; label: string }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, padding: '5px 11px', borderRadius: 20, background: on ? '#E4EDE0' : '#F7F7F9', color: on ? '#4F7A52' : '#9197A2', border: `1px solid ${on ? '#CFE0C6' : '#EBEBEB'}` }}>
-      <span style={{ fontWeight: 800 }}>{on ? '✓' : '✕'}</span>{label}
-    </span>
-  );
-}
-
-function BreakRow({ name, sub, monthly, annual }: { name: string; sub: string; monthly: number; annual: number }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, padding: '11px 14px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#222222' }}>{name}</div>
-        <div style={{ fontSize: 12, color: '#9197A2', marginTop: 2 }}>{sub}</div>
-      </div>
-      <div style={{ textAlign: 'right', fontSize: 14, color: '#222222', fontVariantNumeric: 'tabular-nums' }}>{inr(monthly)}</div>
-      <div style={{ textAlign: 'right', fontSize: 14, color: '#222222', fontVariantNumeric: 'tabular-nums' }}>{inr(annual)}</div>
     </div>
   );
 }

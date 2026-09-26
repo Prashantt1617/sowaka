@@ -9,6 +9,8 @@ export type AuthUser = {
   name: string;
   role: 'manager' | 'employee';
   company: string;
+  /** The company's id, e.g. 'convrse' — what per-company styling keys off. */
+  org?: string;
   dashboardAccess?: boolean;
   isLeadership?: boolean;
 };

@@ -4,17 +4,21 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
 import { emptyForm } from './seed';
-import type { Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb, UserForm } from './seed';
-import { adaptEmployees, adaptFeedbackList, adaptLeave, adaptOvertime, adaptReimb } from './adapters';
+import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb, UserForm } from './seed';
+import {
+  adaptCorrection, adaptEmployees, adaptFeedbackList, adaptLeave, adaptOvertime, adaptReimb,
+} from './adapters';
 import {
   decideLeave,
   decideOvertime,
+  decideRegularization,
   decideReimb,
   createEmployee,
   getAllEmployees,
   getAllFeedback,
   getLeaveInbox,
   getOvertimeInbox,
+  getRegularizationInbox,
   getReimbInbox,
 } from '../services/hrms';
 import type { EmployeeDTO, FeedbackDTO } from '../services/hrms';
@@ -140,6 +144,19 @@ function useProvideStore() {
   const [otConfirm, setOtConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);
   const [otNote, setOtNote] = useState('');
 
+  // Who the org chart should open centred on — set by a profile's "Open in
+  // org chart", read once by the chart, then cleared.
+  const [orgChartFocus, setOrgChartFocus] = useState<string | null>(null);
+
+  // attendance corrections
+  const [corrs, setCorrs] = useState<Correction[]>([]);
+  const [corrSearch, setCorrSearch] = useState('');
+  const [corrStatus, setCorrStatus] = useState<LeaveStatusFilter>('all');
+  const [corrFrom, setCorrFrom] = useState('');
+  const [corrTo, setCorrTo] = useState('');
+  const [corrConfirm, setCorrConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);
+  const [corrNote, setCorrNote] = useState('');
+
   // employees
   const [emps, setEmps] = useState<Emp[]>([]);
   const [empSearch, setEmpSearch] = useState('');
@@ -169,10 +186,11 @@ function useProvideStore() {
     if (!user) return;
     setLoading(true);
     try {
-      const [lv, ot, rb, fb, emp, live] = await Promise.all([
+      const [lv, ot, rb, cr, fb, emp, live] = await Promise.all([
         getLeaveInbox(),
         getOvertimeInbox(),
         getReimbInbox(),
+        getRegularizationInbox(),
         getAllFeedback(),
         getAllEmployees(),
         getKpiCycle(),
@@ -187,6 +205,7 @@ function useProvideStore() {
       setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))));
       setOts(ot.map((d) => adaptOvertime(d, mgrName(d.userId))));
       setRbs(rb.map((d) => adaptReimb(d, mgrName(d.userId))));
+      setCorrs(cr.map((d) => adaptCorrection(d, mgrName(d.userId))));
       const { fbs: fbRows, fbMgrs: fbManagers, fbEmps: fbEmployees } = adaptFeedbackList(fb, emp, live.period);
       setFbMgrs(fbManagers);
       setFbs(fbRows);
@@ -214,6 +233,7 @@ function useProvideStore() {
     setRbConfirm(null);
     setOtDrawerId(null);
     setOtConfirm(null);
+    setCorrConfirm(null);
     setLvConfirm(null);
     setEmpDrawerId(null);
     setAddOpen(false);
@@ -417,6 +437,39 @@ function useProvideStore() {
     }
   };
 
+  // ---- attendance corrections ----
+  // One confirm modal for both outcomes, like overtime: HR is overriding
+  // somebody else's approver, so the note explaining why matters either way.
+  const corrAsk = (id: string, action: 'approve' | 'decline') => {
+    const r = corrs.find((x) => x.id === id);
+    if (blockSelfOverride(r?.submitterId)) return;
+    setCorrNote('');
+    setCorrConfirm({ id, action });
+  };
+  const corrCloseConfirm = () => setCorrConfirm(null);
+  const corrDecide = async () => {
+    if (!corrConfirm) return;
+    const { id, action } = corrConfirm;
+    const r = corrs.find((x) => x.id === id);
+    if (blockSelfOverride(r?.submitterId)) {
+      setCorrConfirm(null);
+      return;
+    }
+    const note = corrNote.trim();
+    setCorrConfirm(null);
+    try {
+      const updated = await decideRegularization(
+        id,
+        action === 'approve' ? 'approved' : 'declined',
+        note || undefined,
+      );
+      setCorrs((s) => s.map((x) => (x.id === id ? adaptCorrection(updated, r?.manager ?? managerName) : x)));
+      flash(`${r ? first(r.name) : 'Correction'}’s attendance correction ${action === 'approve' ? 'approved' : 'declined'}`);
+    } catch (e) {
+      handleError(e);
+    }
+  };
+
   // ---- employees ----
   const setFormField = (k: keyof UserForm, v: string) => setForm((s) => ({ ...s, [k]: v }));
   const saveUser = async () => {
@@ -474,6 +527,11 @@ function useProvideStore() {
     rbApprove, rbOpenDecline, rbCancelDecline, rbConfirmDecline,
     rbBillId, setRbBillId, rbConfirm, rbAsk, rbCloseConfirm, rbNote, setRbNote,
     rbFrom, setRbFrom, rbTo, setRbTo,
+    orgChartFocus, setOrgChartFocus,
+    // attendance corrections
+    corrs, corrSearch, setCorrSearch, corrStatus, setCorrStatus,
+    corrFrom, setCorrFrom, corrTo, setCorrTo,
+    corrConfirm, corrNote, setCorrNote, corrAsk, corrCloseConfirm, corrDecide,
     // overtime
     ots, otSearch, setOtSearch, otStatus, setOtStatus, otDrawerId, setOtDrawerId,
     otDeclineId, otDeclineText, setOtDeclineText,

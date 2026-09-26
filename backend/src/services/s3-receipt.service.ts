@@ -59,6 +59,34 @@ export async function uploadLeaveDocument(userId: string, file: ReceiptFile) {
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/**
+ * A document HR files against an employee. Same bucket and encryption; its own
+ * prefix, so an offer letter is never reachable through a receipt's path.
+ */
+export async function uploadEmployeeDocument(userId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const objectKey = buildObjectKey(userId, file.originalName).replace(
+    /^([^/]*\/)?/,
+    (prefix) => `${prefix}employees/`,
+  );
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return { objectKey, contentType: file.contentType, size: file.size };
+}
+
+export async function deleteEmployeeDocument(objectKey: string) {
+  validateConfiguration();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+}
+
 export async function deleteReimbursementReceipt(objectKey: string) {
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));

@@ -80,4 +80,6 @@ export interface AttendanceRegularization {
   createdAt: Date;
   decidedAt?: Date;
   decidedByUserId?: string;
+  /** Whether the reporting manager or an HR admin settled it. */
+  decidedByRole?: 'manager' | 'admin';
 }

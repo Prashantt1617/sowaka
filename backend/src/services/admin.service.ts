@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { feedbackRecords, users } from '../config/db';
-import { User } from '../models/user.model';
+import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
+import { resolveProfilePhoto } from './s3-connect-media.service';
+import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument } from './s3-receipt.service';
 import { generateNewJoineePost } from './connect.service';
 
 export class AdminError extends Error {
@@ -42,10 +44,16 @@ export async function listAllFeedbackForAdmin(adminUserId: string) {
 export async function listAllEmployeesForAdmin(adminUserId: string) {
   const employees = await orgUsers(adminUserId);
   const nameById = new Map(employees.map((e) => [e.userId, e.name]));
-  return employees.map((e) => ({
+  // Presigning is local arithmetic, not a round trip, so the whole roster's
+  // photos resolve in one pass without slowing the directory down.
+  const photos = await Promise.all(employees.map((e) => resolveProfilePhoto(e)));
+  const documents = await Promise.all(employees.map((e) => employeeDocumentViews(e.documents)));
+  return employees.map((e, i) => ({
     userId: e.userId,
     name: e.name,
     email: e.email,
+    profilePhotoUrl: photos[i],
+    documents: documents[i],
     department: e.department,
     designation: e.designation,
     state: e.state,
@@ -145,4 +153,98 @@ export async function setOvertimeEligibilityForAdmin(
   );
   if (!employee) throw new AdminError(404, 'Employee not found');
   return { userId: employee.userId, name: employee.name, overtimeEligible: eligible };
+}
+
+
+// ------------------------------------------------------------- documents
+
+/** What HR may file against an employee. The dropdown offers exactly these. */
+export const EMPLOYEE_DOCUMENT_TYPES = [
+  'Offer letter',
+  'ID proof',
+  'Address proof',
+  'Experience letter',
+  'Resume',
+] as const;
+
+export interface EmployeeDocumentView {
+  id: string;
+  name: string;
+  type: string | null;
+  /** Presigned for stored files; the plain link for records that only had one. */
+  url?: string;
+  uploadedAt: string | null;
+  size: number | null;
+}
+
+/** Resolves stored files to links the browser can open. Presigning is local arithmetic. */
+export async function employeeDocumentViews(
+  documents: EmployeeDocument[] | undefined,
+): Promise<EmployeeDocumentView[]> {
+  return Promise.all(
+    (documents ?? []).map(async (document, index) => ({
+      // Records written before uploads had no id; the position is stable
+      // enough to open one, and nothing else is offered on them.
+      id: document.id ?? `legacy-${index}`,
+      name: document.name,
+      type: document.type ?? null,
+      url: document.objectKey
+        ? await presignReceiptDownload(document.objectKey, document.name).catch(() => undefined)
+        : document.url,
+      uploadedAt: document.uploadedAt ? document.uploadedAt.toISOString() : null,
+      size: document.size ?? null,
+    })),
+  );
+}
+
+async function employeeInOrg(adminUserId: string, userId: string) {
+  const employees = await orgUsers(adminUserId);
+  const employee = employees.find((e) => e.userId === userId);
+  if (!employee) throw new AdminError(404, 'Employee not found');
+  return employee;
+}
+
+export async function addEmployeeDocument(
+  adminUserId: string,
+  userId: string,
+  typeInput: unknown,
+  file: { originalName: string; contentType: string; size: number; bytes: Buffer } | undefined,
+) {
+  const type = String(typeInput ?? '').trim();
+  if (!(EMPLOYEE_DOCUMENT_TYPES as readonly string[]).includes(type)) {
+    throw new AdminError(400, `Document type must be one of: ${EMPLOYEE_DOCUMENT_TYPES.join(', ')}`);
+  }
+  if (!file) throw new AdminError(400, 'Attach the document to upload');
+  await employeeInOrg(adminUserId, userId);
+  const stored = await uploadEmployeeDocument(userId, file);
+  const document: EmployeeDocument = {
+    id: randomUUID(),
+    name: file.originalName,
+    type,
+    objectKey: stored.objectKey,
+    contentType: stored.contentType,
+    size: stored.size,
+    uploadedAt: new Date(),
+  };
+  const updated = await users().findOneAndUpdate(
+    { userId },
+    { $push: { documents: document } } as never,
+    { returnDocument: 'after' },
+  );
+  return employeeDocumentViews(updated?.documents);
+}
+
+export async function removeEmployeeDocument(adminUserId: string, userId: string, documentId: string) {
+  const employee = await employeeInOrg(adminUserId, userId);
+  const document = (employee.documents ?? []).find((d) => d.id === documentId);
+  if (!document) throw new AdminError(404, 'Document not found');
+  const updated = await users().findOneAndUpdate(
+    { userId },
+    { $pull: { documents: { id: documentId } } } as never,
+    { returnDocument: 'after' },
+  );
+  // The record is the source of truth; a stored file that outlives it is
+  // only storage, so failing to remove it must not fail the request.
+  if (document.objectKey) await deleteEmployeeDocument(document.objectKey).catch(() => undefined);
+  return employeeDocumentViews(updated?.documents);
 }

@@ -1,19 +1,27 @@
 import { Router } from 'express';
+import { employeePayslipsHandler } from '../controllers/payrollRun.controller';
 import {
+  addEmployeeDocumentHandler,
+  attendanceReportHandler,
+  createEmployee,
   decideLeave,
   decideOvertime,
+  decideRegularization,
   decideReimbursement,
+  employeeCalendarHandler,
   getCompanySettingsHandler,
-  createEmployee,
   listEmployees,
   listFeedback,
   listLeaves,
   listOvertime,
+  listRegularizations,
   listReimbursements,
+  removeEmployeeDocumentHandler,
   updateCompanySettingsHandler,
   updateOvertimeEligibility,
 } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
+import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
 import {
   createShiftHandler,
@@ -24,6 +32,7 @@ import {
   unassignShiftHandler,
   listShiftsHandler,
   saveShiftPolicyHandler,
+  setDefaultShiftHandler,
   updateShiftHandler,
 } from '../controllers/shift.controller';
 import {
@@ -44,11 +53,21 @@ adminRouter.use(requireAuth, requireDashboardAccess);
 adminRouter.get('/leaves', listLeaves);
 adminRouter.get('/overtime', listOvertime);
 adminRouter.get('/reimbursements', listReimbursements);
+// Attendance corrections across the org — the manager inbox only shows a
+// manager their own; HR reviews every one of them.
+adminRouter.get('/regularizations', listRegularizations);
 adminRouter.get('/feedback', listFeedback);
 adminRouter.get('/employees', listEmployees);
 adminRouter.post('/employees', createEmployee);
 // Per-employee overtime eligibility (HR-controlled)
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
+// One person's month, graded the way the report grades it.
+adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
+// Every payslip a payroll run has produced for them.
+adminRouter.get('/employees/:userId/payslips', employeePayslipsHandler);
+// Documents filed against an employee — offer letter, ID proof and the like.
+adminRouter.post('/employees/:userId/documents', uploadEmployeeDocumentFile, addEmployeeDocumentHandler);
+adminRouter.delete('/employees/:userId/documents/:documentId', removeEmployeeDocumentHandler);
 adminRouter.get('/games', adminListGames);
 adminRouter.post('/games', adminCreateGame);
 adminRouter.patch('/games/:gameId', adminUpdateGame);
@@ -78,6 +97,9 @@ adminRouter.delete('/shifts/:shiftId', deleteShiftHandler);
 adminRouter.post('/shifts/audience', shiftAudienceHandler);
 adminRouter.post('/shifts/:shiftId/assign', assignShiftHandler);
 adminRouter.post('/shifts/:shiftId/unassign', unassignShiftHandler);
+// The template everyone not assigned elsewhere follows.
+adminRouter.post('/shifts/:shiftId/default', setDefaultShiftHandler);
+
 
 // Claims — the expense types an org lets people claim against, and what each
 // is capped at. The cap is enforced when a claim is created, not just shown.
@@ -90,7 +112,12 @@ adminRouter.delete('/reimbursement-types/:typeId', deleteReimbursementTypeHandle
 adminRouter.get('/company/settings', getCompanySettingsHandler);
 adminRouter.patch('/company/settings', updateCompanySettingsHandler);
 
+// Reports — attendance for a date range, graded per employee against their own
+// template and grouped by how that team's punches are captured.
+adminRouter.get('/reports/attendance', attendanceReportHandler);
+
 // Overrides / dashboard-only decisions (rules 3, 6, 7, 8)
 adminRouter.patch('/leaves/:leaveId/decision', decideLeave);
 adminRouter.patch('/overtime/:overtimeId/decision', decideOvertime);
 adminRouter.patch('/reimbursements/:claimId/decision', decideReimbursement);
+adminRouter.patch('/regularizations/:regularizationId/decision', decideRegularization);

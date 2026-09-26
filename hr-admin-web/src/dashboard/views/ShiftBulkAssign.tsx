@@ -92,14 +92,21 @@ export function ShiftBulkAssign() {
     } finally { setBusy(false); }
   };
 
+  /** "2026-09-26" -> "26 Sep". */
+  const fromDay = (iso: string) =>
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
   const assign = async () => {
     if (!picked) { flash('Pick a shift first'); return; }
     if (chosen.size === 0) { flash('Select at least one employee'); return; }
     setBusy(true);
     try {
-      await assignShift(picked.id, [...chosen]);
+      const result = await assignShift(picked.id, [...chosen]);
       await reloadShifts();
-      flash(`${chosen.size} employee${chosen.size === 1 ? '' : 's'} moved onto ${picked.name}`);
+      flash(
+        `${chosen.size} employee${chosen.size === 1 ? '' : 's'} moved onto ${picked.name}`
+        + (result.effectiveFrom ? ` — from ${fromDay(result.effectiveFrom)}. Days already worked keep their old shift.` : ''),
+      );
       setStep('rules'); setTarget(EMPTY); setActive([]); setMembers([]); setChosen(new Set()); setPicked(null);
     } catch (error) {
       flash((error as Error).message);
@@ -110,9 +117,12 @@ export function ShiftBulkAssign() {
     if (!window.confirm(`Take all ${shift.assignedCount} employees off ${shift.name}? They go back to the org policy.`)) return;
     setBusy(true);
     try {
-      await unassignShift(shift.id, shift.assignedUserIds);
+      const result = await unassignShift(shift.id, shift.assignedUserIds);
       await reloadShifts();
-      flash(`Everyone removed from ${shift.name}`);
+      flash(
+        `Everyone removed from ${shift.name}`
+        + (result.effectiveFrom ? ` — from ${fromDay(result.effectiveFrom)}. Days already worked keep it.` : ''),
+      );
     } catch (error) {
       flash((error as Error).message);
     } finally { setBusy(false); }
@@ -173,8 +183,7 @@ export function ShiftBulkAssign() {
             </div>
           </div>
           <div style={{ fontSize: 13, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
-            A shift overrides the org policy for the people on it. Everyone else follows{' '}
-            <button onClick={() => setView('policies')} style={linkBtn}>Shifts › Policies</button>.
+            Everyone not assigned to a shift follows the org's <strong>default</strong> template.
           </div>
 
           {activeFacets.map((f, i) => (

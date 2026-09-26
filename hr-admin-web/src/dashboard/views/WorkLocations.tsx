@@ -3,9 +3,12 @@
 // registered/filing address.
 //
 // NOTE: frontend-capture phase — renders from local mock data, no API calls.
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Card } from '../ui';
 import { IconPlus } from '../icons';
+import { useAuth } from '../auth/AuthContext';
+import { useStore } from '../store';
 
 type WorkLocation = {
   id: string;
@@ -74,9 +77,56 @@ const LOCATIONS: WorkLocation[] = [
   },
 ];
 
+// One Delhi campus, with everyone on the roster mapped to it.
+const acmtLocations = (headcount: number): WorkLocation[] => [{
+  id: 'campus',
+  name: 'ACMT Campus — Delhi',
+  line1: 'ACMT Campus, Sector 20',
+  line2: 'Near Metro Station',
+  city: 'New Delhi',
+  state: 'Delhi',
+  pincode: '110001',
+  country: 'India',
+  employees: headcount,
+  status: 'active',
+  filingAddress: true,
+}];
+
+const IN_STATES = ['Andhra Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Odisha', 'Punjab', 'Rajasthan', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
+
+type Draft = { name: string; line1: string; line2: string; city: string; state: string; pincode: string; filingAddress: boolean; active: boolean };
+const EMPTY_DRAFT: Draft = { name: '', line1: '', line2: '', city: '', state: '', pincode: '', filingAddress: false, active: true };
+
 export function WorkLocations() {
-  const total = LOCATIONS.length;
-  const mapped = LOCATIONS.reduce((s, l) => s + l.employees, 0);
+  const { user } = useAuth();
+  const { emps, flash } = useStore();
+  // Seeded per organisation; additions live in this tab only — nothing is sent anywhere yet.
+  const [locations, setLocations] = useState<WorkLocation[]>(() =>
+    user?.org === 'acmt' ? acmtLocations(emps.length) : LOCATIONS,
+  );
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [touched, setTouched] = useState(false);
+  const setD = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const missing = {
+    name: !draft.name.trim(), line1: !draft.line1.trim(), city: !draft.city.trim(),
+    state: !draft.state, pincode: !/^\d{6}$/.test(draft.pincode),
+  };
+  const addLocation = () => {
+    setTouched(true);
+    if (Object.values(missing).some(Boolean)) return;
+    const next: WorkLocation = {
+      id: `loc-${Date.now()}`, name: draft.name.trim(), line1: draft.line1.trim(), line2: draft.line2.trim() || undefined,
+      city: draft.city.trim(), state: draft.state, pincode: draft.pincode, country: 'India', employees: 0,
+      status: draft.active ? 'active' : 'inactive', filingAddress: draft.filingAddress,
+    };
+    // Only one location can be the filing address.
+    setLocations((ls) => [...(next.filingAddress ? ls.map((l) => ({ ...l, filingAddress: false })) : ls), next]);
+    setDraft(EMPTY_DRAFT); setTouched(false); setAdding(false);
+    flash(`${next.name} added`);
+  };
+  const total = locations.length;
+  const mapped = locations.reduce((s, l) => s + l.employees, 0);
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -90,11 +140,51 @@ export function WorkLocations() {
             {total} locations · {mapped} employees mapped
           </div>
         </div>
-        <button style={{ ...primaryBtn, marginLeft: 'auto' }}><IconPlus size={15} /> Add work location</button>
+        <button type="button" onClick={() => setAdding(true)} disabled={adding} style={{ ...primaryBtn, marginLeft: 'auto', opacity: adding ? 0.6 : 1 }}><IconPlus size={15} /> Add work location</button>
       </div>
 
+      {adding && (
+        <Card style={{ padding: '18px 20px', marginBottom: 14, border: '1px solid #BFDCEB' }}>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 12 }}>New work location</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <FormField label="Location name" required error={touched && missing.name} full>
+              <input value={draft.name} onChange={(e) => setD('name', e.target.value)} placeholder="e.g. Noida Campus" style={inputStyle} />
+            </FormField>
+            <FormField label="Address line 1" required error={touched && missing.line1} full>
+              <input value={draft.line1} onChange={(e) => setD('line1', e.target.value)} placeholder="Building / street" style={inputStyle} />
+            </FormField>
+            <FormField label="Address line 2" full>
+              <input value={draft.line2} onChange={(e) => setD('line2', e.target.value)} placeholder="Area / landmark (optional)" style={inputStyle} />
+            </FormField>
+            <FormField label="City" required error={touched && missing.city}>
+              <input value={draft.city} onChange={(e) => setD('city', e.target.value)} style={inputStyle} />
+            </FormField>
+            <FormField label="State (statutory)" required error={touched && missing.state}>
+              <select value={draft.state} onChange={(e) => setD('state', e.target.value)} style={{ ...inputStyle, color: draft.state ? '#222222' : '#717171' }}>
+                <option value="">Select state</option>
+                {IN_STATES.map((st) => <option key={st} value={st} style={{ color: '#222222' }}>{st}</option>)}
+              </select>
+            </FormField>
+            <FormField label="PIN code" required error={touched && missing.pincode}>
+              <input value={draft.pincode} onChange={(e) => setD('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} style={inputStyle} />
+            </FormField>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingTop: 26 }}>
+              <label style={checkLabel}><input type="checkbox" checked={draft.active} onChange={(e) => setD('active', e.target.checked)} /> Active</label>
+              <label style={checkLabel}><input type="checkbox" checked={draft.filingAddress} onChange={(e) => setD('filingAddress', e.target.checked)} /> Registered filing address</label>
+            </div>
+          </div>
+          {touched && Object.values(missing).some(Boolean) && (
+            <div style={{ fontSize: 14, color: '#C4382E', fontWeight: 600, marginTop: 10 }}>Fill the fields marked with an asterisk — the PIN code is six digits.</div>
+          )}
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button type="button" onClick={addLocation} style={primaryBtn}>Add location</button>
+            <button type="button" onClick={() => { setAdding(false); setDraft(EMPTY_DRAFT); setTouched(false); }} style={ghostBtn}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {LOCATIONS.map((l) => (
+        {locations.map((l) => (
           <Card key={l.id} style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
               <div style={pinTile}>
@@ -130,6 +220,16 @@ export function WorkLocations() {
   );
 }
 
+function FormField({ label, required, error, full, children }: { label: string; required?: boolean; error?: boolean; full?: boolean; children: ReactNode }) {
+  return (
+    <div style={full ? { gridColumn: '1 / -1' } : undefined}>
+      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: error ? '#C4382E' : '#484848' }}>
+        {label}{required && <span style={{ color: '#C4382E' }}> *</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
 function Tag({ children, bg, fg }: { children: ReactNode; bg: string; fg: string }) {
   return <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg }}>{children}</span>;
 }
@@ -144,4 +244,6 @@ function Meta({ label, value }: { label: string; value: string }) {
 
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '7px 14px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const checkLabel: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 600, color: '#484848', cursor: 'pointer' };
 const pinTile: CSSProperties = { width: 38, height: 38, borderRadius: 11, background: '#C57F63', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };

@@ -8,11 +8,14 @@
 //
 // Salary details is deliberately not in the flow — the step is kept below,
 // unrendered, until payroll is wired up.
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconPlus } from '../icons';
-import { createEmployee, getShifts, assignShift, type ShiftDTO } from '../../services/hrms';
+import {
+  addEmployeeDocument, assignShift, createEmployee, getShifts, removeEmployeeDocument,
+  EMPLOYEE_DOCUMENT_TYPES, type EmployeeDocumentDTO, type ShiftDTO,
+} from '../../services/hrms';
 import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
 import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { evenWeights, weightError, weightTotal } from '../weights';
@@ -281,7 +284,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
                 {step === 0 ? (
                   <BasicStep basic={basic} set={set} touched={touched} missing={missing} options={options} />
                 ) : step === 1 ? (
-                  <PersonalStep />
+                  <PersonalStep userId={createdUserId} />
                 ) : step === 2 ? (
                   <PaymentStep holderName={fullName} />
                 ) : step === 3 ? (
@@ -1319,10 +1322,35 @@ function ageFromDob(dob: string): string {
   return age >= 0 && age < 120 ? String(age) : '';
 }
 
-function PersonalStep() {
+function PersonalStep({ userId }: { userId: string | null }) {
   const [p, setP] = useState<PersonalData>(EMPTY_PERSONAL);
   const set = <K extends keyof PersonalData>(k: K, v: PersonalData[K]) => setP((s) => ({ ...s, [k]: v }));
   const age = ageFromDob(p.dob);
+
+  // Documents are filed one at a time — a type, then its file — and each is
+  // uploaded the moment it is added, against the record Basic details created.
+  const [docs, setDocs] = useState<EmployeeDocumentDTO[]>([]);
+  const [docType, setDocType] = useState('');
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docBusy, setDocBusy] = useState(false);
+  const [docError, setDocError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const addDoc = async () => {
+    if (!userId || !docType || !docFile) return;
+    setDocBusy(true); setDocError('');
+    try {
+      setDocs(await addEmployeeDocument(userId, docType, docFile));
+      setDocType(''); setDocFile(null);
+      if (fileRef.current) fileRef.current.value = '';
+    } catch (e) { setDocError((e as Error).message); }
+    finally { setDocBusy(false); }
+  };
+  const removeDoc = async (id: string) => {
+    if (!userId) return;
+    setDocError('');
+    try { setDocs(await removeEmployeeDocument(userId, id)); }
+    catch (e) { setDocError((e as Error).message); }
+  };
 
   return (
     <div>
@@ -1365,6 +1393,44 @@ function PersonalStep() {
           <Select value={p.state} onChange={(v) => set('state', v)} placeholder="Select State" options={IN_STATES} />
           <input value={p.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, ''))} placeholder="PIN code" maxLength={6} style={inputStyle} />
         </div>
+      </Field>
+
+      {/* Documents — one type and one file per add; as many adds as needed */}
+      <Field label="Documents">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'center' }}>
+          <Select value={docType} onChange={setDocType} placeholder="Select document type" options={[...EMPLOYEE_DOCUMENT_TYPES]} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,image/jpeg,image/png"
+            onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+            style={{ ...inputStyle, padding: '8px 12px' }}
+          />
+          <button
+            type="button"
+            onClick={addDoc}
+            disabled={!userId || !docType || !docFile || docBusy}
+            style={{ ...primaryBtn, opacity: !userId || !docType || !docFile || docBusy ? 0.5 : 1, cursor: !userId || !docType || !docFile || docBusy ? 'not-allowed' : 'pointer' }}
+          >
+            {docBusy ? 'Uploading…' : 'Add'}
+          </button>
+        </div>
+        <div style={{ fontSize: 13, color: '#717171', marginTop: 8 }}>PDF, JPEG or PNG, up to 10 MB. Add one document at a time.</div>
+        {docError && <div style={{ fontSize: 14, color: '#C4382E', fontWeight: 600, marginTop: 8 }}>{docError}</div>}
+        {docs.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+            {docs.map((doc) => (
+              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '10px 13px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{doc.type}</div>
+                  <div style={{ fontSize: 13, color: '#717171', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</div>
+                </div>
+                {doc.url && <a href={doc.url} target="_blank" rel="noreferrer" style={{ fontSize: 14, fontWeight: 700, color: '#0571A6', textDecoration: 'none' }}>Open</a>}
+                <button type="button" onClick={() => removeDoc(doc.id)} style={{ ...ghostBtn, padding: '6px 11px', fontSize: 14, color: '#A8475F' }}>Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
       </Field>
     </div>
   );

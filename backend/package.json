@@ -24,6 +24,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1079.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/nodemailer": "^8.0.1",
+    "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/morgan": "^1.9.9",
@@ -48,9 +50,9 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.15.4",
-    "socket.io-client": "^4.8.3",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2"

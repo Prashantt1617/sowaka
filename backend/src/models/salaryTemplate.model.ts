@@ -10,6 +10,7 @@
  * the same component differently.
  */
 import { CalculationBasis } from './payHead.model';
+import { SalaryDeductionRule } from './deduction.model';
 
 export interface SalaryTemplateComponent {
   /** -> PayHead.code (must exist in the org's catalog). */
@@ -29,6 +30,12 @@ export interface SalaryTemplate {
   balancingComponentCode?: string;
   /** Default EPF ceiling behaviour for employees on this template. */
   epfApplyCeiling?: boolean;
+  /**
+   * How attendance costs paid days for the people on this template: every N
+   * late arrivals / early leaves / absences cost M days. A payroll run turns
+   * the month's counts into loss-of-pay days with these.
+   */
+  deductionRules?: SalaryDeductionRule[];
   active: boolean;
   createdAt: Date;
   updatedAt: Date;

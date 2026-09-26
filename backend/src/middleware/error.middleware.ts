@@ -10,6 +10,7 @@ import { OvertimeError } from '../services/overtime.service';
 import { ReimbursementError } from '../services/reimbursement.service';
 import { logger } from '../utils/logger';
 import { AdminError } from '../services/admin.service';
+import { ReportError } from '../services/attendance-report.service';
 import { ConnectError } from '../services/connect.service';
 import { ConnectBlockError } from '../services/connect-blocks.service';
 import { GameError } from '../services/game.service';
@@ -98,6 +99,7 @@ function getStatusCode(error: unknown): number {
     || error instanceof KpiError
     || error instanceof ShiftError
     || error instanceof ReimbursementTypeError
+    || error instanceof ReportError
   ) {
     return error.statusCode;
   }

@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { useAuth } from '../auth/AuthContext';
 import { Card } from '../ui';
 import { IconPlus } from '../icons';
 import { CloseButton } from '../drawers/shell';
@@ -63,12 +64,24 @@ const REIMBURSEMENTS: ReimbRow[] = [
   { name: 'Internet Reimbursement', type: 'Internet Reimbursement', max: '₹1,800', status: 'Active' },
 ];
 
-const COUNTS: Record<Cat, number> = {
-  earning: EARNINGS.length,
-  deduction: DEDUCTIONS.length,
-  benefit: BENEFITS.length,
-  reimbursement: REIMBURSEMENTS.length,
+type Catalog = { earnings: EarningRow[]; deductions: DeductionRow[]; benefits: BenefitRow[]; reimbursements: ReimbRow[] };
+// Which catalog shows is decided by the signed-in org. ACMT runs on a single
+// Basic component; everyone else still sees the capture above.
+const CATALOGS: Record<string, Catalog> = {
+  acmt: {
+    earnings: [{ name: 'Basic', type: 'Basic', calc: 'Fixed; 50% of CTC', epf: 'Yes', esi: 'Yes', status: 'Active' }],
+    deductions: [],
+    benefits: [],
+    reimbursements: [],
+  },
 };
+const DEFAULT_CATALOG: Catalog = { earnings: EARNINGS, deductions: DEDUCTIONS, benefits: BENEFITS, reimbursements: REIMBURSEMENTS };
+const countsFor = (c: Catalog): Record<Cat, number> => ({
+  earning: c.earnings.length,
+  deduction: c.deductions.length,
+  benefit: c.benefits.length,
+  reimbursement: c.reimbursements.length,
+});
 
 // —— Per-earning-type spec ————————————————————————————————————————————
 // Every earning renders from one form; only these knobs differ by type.
@@ -233,6 +246,9 @@ function blankReimbursement(): RForm {
 
 export function PayHeadMaster() {
   const { flash } = useStore();
+  const { user } = useAuth();
+  const catalog = CATALOGS[user?.org ?? ''] ?? DEFAULT_CATALOG;
+  const COUNTS = countsFor(catalog);
   const [tab, setTab] = useState<Cat>('earning');
   const [form, setForm] = useState<EForm | null>(null);
   const [dForm, setDForm] = useState<DForm | null>(null);
@@ -319,7 +335,7 @@ export function PayHeadMaster() {
             </tr>
           </thead>
           <tbody>
-            {tab === 'earning' && EARNINGS.map((r) => (
+            {tab === 'earning' && catalog.earnings.map((r) => (
               <tr key={r.name} className="phm-row" onClick={() => setForm(formFromEarning(r))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} fbp={r.fbp} /></Td>
                 <Td muted>{r.type}</Td>
@@ -329,7 +345,7 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
-            {tab === 'deduction' && DEDUCTIONS.map((r) => (
+            {tab === 'deduction' && catalog.deductions.map((r) => (
               <tr key={r.name} className="phm-row" onClick={() => setDForm(formFromDeduction(r))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} /></Td>
                 <Td muted>{r.type}</Td>
@@ -337,7 +353,7 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
-            {tab === 'benefit' && BENEFITS.map((r) => (
+            {tab === 'benefit' && catalog.benefits.map((r) => (
               <tr key={r.name} className="phm-row" onClick={() => setBForm(formFromBenefit(r))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} /></Td>
                 <Td muted>{r.type}</Td>
@@ -345,7 +361,7 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
-            {tab === 'reimbursement' && REIMBURSEMENTS.map((r) => (
+            {tab === 'reimbursement' && catalog.reimbursements.map((r) => (
               <tr key={r.name} className="phm-row" onClick={() => setRForm(formFromReimbursement(r))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} /></Td>
                 <Td muted>{r.type}</Td>
@@ -353,6 +369,9 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
+            {COUNTS[tab] === 0 && (
+              <tr><td colSpan={6} style={{ padding: '28px 16px', textAlign: 'center', color: '#9A9AA5', fontSize: 15 }}>No components yet — add one to get started.</td></tr>
+            )}
           </tbody>
         </table>
       </Card>

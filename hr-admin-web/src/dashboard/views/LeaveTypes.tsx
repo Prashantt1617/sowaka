@@ -1,18 +1,17 @@
-// Leave types — what accrues each month, and what happens to an unused balance
-// when the year is processed. Live: saved to the org's shift policy.
+import { Card } from '../ui';
+// A leave type as the shift template editor edits it — what accrues each month,
+// when it can be applied for, and what happens to an unused balance when the
+// year is processed.
 //
 // The year-end order is fixed: carry forward up to a limit, then encash what is
 // left, and anything still remaining lapses. Lapse is the tail of the other
 // two, so it is shown rather than set — asking for it again as a choice is what
 // made the earlier draft confusing.
-import { useEffect, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
-import { useStore } from '../store';
-import { Card } from '../ui';
-import { getShiftPolicy, saveShiftPolicy } from '../../services/hrms';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { LeaveTypeKey, LeaveTypeRule } from '../../services/hrms';
 
 const RESET_OPTIONS: { value: LeaveTypeRule['resetOn']; label: string }[] = [
+  { value: 'monthly', label: 'End of every month' },
   { value: 'calendar_year', label: 'End of calendar year' },
   { value: 'financial_year', label: 'End of financial year' },
 ];
@@ -28,125 +27,32 @@ const SWATCH: Record<LeaveTypeKey, string> = {
   comp_off: '#8A6D1F',
 };
 
-export function LeaveTypes() {
-  const { flash } = useStore();
-  const [types, setTypes] = useState<LeaveTypeRule[]>([]);
-  // Off means unlimited leave: nothing is counted down, so none of the accrual
-  // below describes anything.
-  const [balanceTracked, setBalanceTracked] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    getShiftPolicy()
-      .then(({ leave }) => {
-        setTypes(leave.types);
-        setBalanceTracked(leave.balanceTracked ?? true);
-      })
-      .catch((error: Error) => flash(error.message))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const update = (index: number, patch: Partial<LeaveTypeRule>) =>
-    setTypes((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const { leave } = await getShiftPolicy();
-      await saveShiftPolicy({ leave: { ...leave, types, balanceTracked } });
-      flash('Leave types saved');
-    } catch (error) {
-      flash((error as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <div style={{ padding: '44px 20px', textAlign: 'center', color: '#9197A2', fontSize: 15 }}>Loading leave types…</div>;
-  }
-
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 13, color: '#717171' }}>
-          Accrual and year-end handling. The balance an employee sees is built from these.
-        </div>
-        <button onClick={() => void save()} disabled={saving} style={{ ...primaryBtn, marginLeft: 'auto' }}>
-          {saving ? 'Saving…' : 'Save leave types'}
-        </button>
-      </div>
-      {/* Asked before the types, because the answer decides whether any of
-          them mean anything. */}
-      <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700, color: '#222222' }}>
-              Do these employees have a leave balance?
-            </div>
-            <div style={{ fontSize: 13, color: '#717171', marginTop: 3, lineHeight: 1.5 }}>
-              {balanceTracked
-                ? 'Leave is counted down from the balances configured below.'
-                : 'Unlimited leave — employees apply, a manager approves, and nothing is counted down. They are not asked to pick a leave type, and their app shows what they have applied for instead of what is left.'}
-            </div>
-          </div>
-          <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
-            {[true, false].map((value) => (
-              <button
-                key={String(value)}
-                onClick={() => setBalanceTracked(value)}
-                style={{
-                  padding: '8px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                  border: 'none', borderLeft: value ? 'none' : '1px solid #EBEBEB',
-                  background: balanceTracked === value ? '#0571A6' : '#fff',
-                  color: balanceTracked === value ? '#fff' : '#484848',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {value ? 'Yes' : 'No'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      {balanceTracked ? (
-        types.map((row, index) => (
-          <LeaveTypeCard key={row.key} row={row} onChange={(patch) => update(index, patch)} />
-        ))
-      ) : (
-        <Card style={{ padding: '18px 20px' }}>
-          <div style={{ fontSize: 13.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '12px 14px', lineHeight: 1.55 }}>
-            Accrual, carry-forward and encashment all describe a balance, and
-            these employees do not have one — so there is nothing to configure
-            here. Switch the answer above back to <strong>Yes</strong> to set
-            them up again; what was saved before is kept either way.
-          </div>
-        </Card>
-      )}
-    </>
-  );
-}
-
-/** One leave type's accrual and year-end handling. Shared with the shift
- *  template editor, so a template configures leave exactly as the org does. */
+/** Closed by default: the header is the summary, the chevron opens it for editing. */
 export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void }) {
   const isCompOff = row.key === 'comp_off';
+  const monthly = row.resetOn === 'monthly';
   const annual = +(row.perMonth * 12).toFixed(1);
+  const [open, setOpen] = useState(false);
 
   return (
     <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '14px 20px', borderBottom: open ? '1px solid #EBEBEB' : 'none', background: '#FBFBFC', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+      >
         <span style={{ width: 11, height: 11, borderRadius: 3, background: SWATCH[row.key], flexShrink: 0 }} />
-        <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.2px' }}>{row.name}</div>
+        <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.2px', color: '#222222' }}>{row.name}</div>
         <span style={annualPill}>
-          {isCompOff ? 'earned from overtime' : `${annual} days / year`}
+          {isCompOff ? 'earned from overtime' : monthly ? `${row.perMonth} ${row.perMonth === 1 ? 'day' : 'days'} / month` : `${annual} days / year`}
         </span>
-      </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform .18s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
 
-      <div style={{ padding: '18px 20px' }}>
+      {open && <div style={{ padding: '18px 20px' }}>
         <MiniLabel>Accrual</MiniLabel>
         {isCompOff ? (
           <div style={note}>
@@ -157,9 +63,11 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div style={fieldLabel}>Leaves earned per month</div>
             <Suffixed value={String(row.perMonth)} onChange={(v) => onChange({ perMonth: Number(v) || 0 })} suffix="/ month" width={150} step="0.5" />
-            <span style={{ fontSize: 14, color: '#717171' }}>
-              = <strong style={{ color: '#333' }}>{annual}</strong> / year
-            </span>
+            {!monthly && (
+              <span style={{ fontSize: 14, color: '#717171' }}>
+                = <strong style={{ color: '#333' }}>{annual}</strong> / year
+              </span>
+            )}
           </div>
         )}
 
@@ -168,7 +76,7 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
           {RESET_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
-        <MiniLabel>How many unused days can be carried forward?</MiniLabel>
+        <MiniLabel>{row.resetOn === 'monthly' ? 'How many unused days can be carried into the next month?' : 'How many unused days can be carried forward?'}</MiniLabel>
         <Suffixed value={String(row.carryForwardDays)} onChange={(v) => onChange({ carryForwardDays: Number(v) || 0 })} suffix="days" width={180} />
 
         <MiniLabel>What happens to the remaining days?</MiniLabel>
@@ -199,7 +107,7 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
           <span style={lapseTag}>automatic</span>
           <span>Any balance still left after that will <strong>lapse</strong>.</span>
         </div>
-      </div>
+      </div>}
     </Card>
   );
 }
@@ -243,4 +151,3 @@ const annualPill: CSSProperties = { marginLeft: 'auto', fontSize: 13, fontWeight
 const note: CSSProperties = { fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
 const lapseRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 14, color: '#717171' };
 const lapseTag: CSSProperties = { flexShrink: 0, fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '3px 10px' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };

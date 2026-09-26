@@ -9,7 +9,7 @@
  */
 
 import { leaves, overtimeRequests, reimbursementClaims } from '../config/db';
-import { getCompanyConfig, getOrgHolidayDates, isWeekoffDay } from './company-settings.service';
+import { getCompanyConfig, isWeekoffDay } from './company-settings.service';
 
 export interface PeriodRange {
   year: number;
@@ -42,19 +42,16 @@ export function parsePeriod(period: string): PeriodRange {
 }
 
 /**
- * Org-level working days in the period: calendar days minus configured week-offs
- * minus org holidays. (v1 uses org-wide holidays; per-state holiday variation is
- * a later refinement.)
+ * Org-level paid days in the period: calendar days minus configured week-offs.
+ * A company holiday is a paid day — nobody works it, but nobody loses pay for
+ * it either — so it stays in the count and the per-day rate is spread over it.
  */
 export async function computeWorkingDays(org: string | undefined, range: PeriodRange): Promise<number> {
   const { weekoffDays } = await getCompanyConfig(org);
-  const holidayDates = await getOrgHolidayDates(org);
   let workingDays = 0;
   for (let day = 1; day <= range.daysInMonth; day++) {
     const date = new Date(Date.UTC(range.year, range.month - 1, day));
-    const iso = date.toISOString().slice(0, 10);
     if (isWeekoffDay(date, weekoffDays)) continue;
-    if (holidayDates.has(iso)) continue;
     workingDays++;
   }
   return workingDays;

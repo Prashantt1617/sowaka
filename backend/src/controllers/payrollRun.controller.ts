@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import {
+  employeePayslips,
   createRun,
   decideRun,
   getRun,
@@ -100,4 +101,13 @@ export async function markRunPaidHandler(req: Request, res: Response, next: Next
 function requireUserId(req: Request): string {
   if (!req.auth?.userId) throw new PayrollRunError(401, 'Authentication required');
   return req.auth.userId;
+}
+
+export async function employeePayslipsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await employeePayslips(requireUserId(req), String(req.params.userId ?? ''));
+    res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
 }
