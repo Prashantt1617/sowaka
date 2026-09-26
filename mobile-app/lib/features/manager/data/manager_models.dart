@@ -1204,6 +1204,58 @@ class LeaveTypeWindow {
       );
 }
 
+/// The four rules HR switches on or off for how a day is marked, exactly as
+/// the server grades it. Defaults are what a server that has never sent them
+/// means: only "fewer hours than a full day is a half day" is on.
+class HalfDayRules {
+  const HalfDayRules({
+    this.minHalfDayEnabled = false,
+    this.minFullDayEnabled = true,
+    this.lateArrivalEnabled = false,
+    this.lateArrivalMinutes = 120,
+    this.earlyLeaveEnabled = false,
+    this.earlyLeaveMinutes = 60,
+  });
+
+  /// Fewer hours than the half-day minimum is not a working day.
+  final bool minHalfDayEnabled;
+
+  /// Fewer hours than the full-day minimum is a half day.
+  final bool minFullDayEnabled;
+
+  /// Arriving later than this many minutes after the shift starts is a half day.
+  final bool lateArrivalEnabled;
+  final int lateArrivalMinutes;
+
+  /// Leaving more than this many minutes before the shift ends is a half day.
+  final bool earlyLeaveEnabled;
+  final int earlyLeaveMinutes;
+
+  factory HalfDayRules.fromJson(Map<String, dynamic> json) {
+    bool flag(String key, bool fallback) {
+      final value = json[key];
+      return value is bool ? value : fallback;
+    }
+
+    int minutes(String key, int fallback) {
+      final value = json[key];
+      return value is num ? value.toInt() : fallback;
+    }
+
+    return HalfDayRules(
+      minHalfDayEnabled: flag('minHalfDayEnabled', false),
+      minFullDayEnabled: flag('minFullDayEnabled', true),
+      lateArrivalEnabled: flag('lateArrivalEnabled', false),
+      lateArrivalMinutes: minutes('lateArrivalMinutes', 120),
+      earlyLeaveEnabled: flag('earlyLeaveEnabled', false),
+      earlyLeaveMinutes: minutes('earlyLeaveMinutes', 60),
+    );
+  }
+}
+
+/// How a day with punches is marked.
+enum DayMark { present, halfDay, absent }
+
 class ShiftPolicy {
   const ShiftPolicy({
     this.name = 'General',
@@ -1211,6 +1263,7 @@ class ShiftPolicy {
     this.endTime = '18:00',
     this.minHalfDayHours = 4,
     this.minFullDayHours = 8,
+    this.halfDay = const HalfDayRules(),
     this.lateGraceMinutes = 10,
     this.earlyOutGraceMinutes = 10,
     this.weeklyOff = const {
@@ -1236,6 +1289,7 @@ class ShiftPolicy {
   final String endTime;
   final double minHalfDayHours;
   final double minFullDayHours;
+  final HalfDayRules halfDay;
   final int lateGraceMinutes;
   final int earlyOutGraceMinutes;
 
@@ -1429,6 +1483,44 @@ class ShiftPolicy {
     return punchOut.hour * 60 + punchOut.minute < end - earlyOutGraceMinutes;
   }
 
+  /// How the server marks a day, from the same four switchable rules — so the
+  /// calendar can never disagree with what HR sees. [worked] is the time
+  /// between the two punches; null when there is only one punch.
+  DayMark dayMark(DateTime? punchIn, DateTime? punchOut, Duration? worked) {
+    final start = startMinutes;
+    final end = endMinutes;
+    bool lateIn() {
+      if (!halfDay.lateArrivalEnabled || punchIn == null || start == null) {
+        return false;
+      }
+      return punchIn.hour * 60 + punchIn.minute - start >
+          halfDay.lateArrivalMinutes;
+    }
+
+    bool earlyOut() {
+      if (!halfDay.earlyLeaveEnabled ||
+          punchOut == null ||
+          start == null ||
+          end == null ||
+          end <= start) {
+        return false;
+      }
+      return end - (punchOut.hour * 60 + punchOut.minute) >
+          halfDay.earlyLeaveMinutes;
+    }
+
+    // One punch: no hours to grade, so only arriving late can make it half.
+    if (worked == null) return lateIn() ? DayMark.halfDay : DayMark.present;
+    if (halfDay.minHalfDayEnabled && worked < minHalfDay) {
+      return DayMark.absent;
+    }
+    if (halfDay.minFullDayEnabled && worked < minFullDay) {
+      return DayMark.halfDay;
+    }
+    if (lateIn() || earlyOut()) return DayMark.halfDay;
+    return DayMark.present;
+  }
+
   factory ShiftPolicy.fromJson(Map<String, dynamic> json) {
     double hours(String key, double fallback) {
       final value = json[key];
@@ -1446,6 +1538,9 @@ class ShiftPolicy {
       endTime: json['endTime'] as String? ?? '18:00',
       minHalfDayHours: hours('minHalfDayHours', 4),
       minFullDayHours: hours('minFullDayHours', 8),
+      halfDay: HalfDayRules.fromJson(
+        json['halfDay'] as Map<String, dynamic>? ?? const {},
+      ),
       lateGraceMinutes: minutes('lateGraceMinutes', 10),
       earlyOutGraceMinutes: minutes('earlyOutGraceMinutes', 10),
       missingPunchIn: json['missingPunchIn'] as String? ?? 'Absent',

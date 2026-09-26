@@ -288,9 +288,9 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   const SizedBox(height: 8),
                   _DocumentationCard(documents: member.documents),
                 ],
-                // Only a manager can review someone, and only downward —
-                // never their own manager.
-                if (canManage && !member.isManager) ...[
+                // Only a manager can review someone, and only their own
+                // direct reports — never themselves, a peer, or their manager.
+                if (canManage && member.reportsToViewer) ...[
                   const SizedBox(height: 22),
                   _GiveFeedbackButton(
                     // A review already sent this cycle is still editable, so
@@ -618,7 +618,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         // The server's own reason, when it gave one: "5 MB or smaller" is
         // something a person can act on, "try again" is not.
         final reason = error is ManagerApiException ? error.message : null;
-        showAppToast(context, reason ?? 'Could not update your photo. Try again.');
+        showAppToast(
+          context,
+          reason ?? 'Could not update your photo. Try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -815,8 +818,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         punchIn: todayRecord?.punchIn,
                         punchOut: todayRecord?.punchOut,
                         onPunch: dashboard.shift.punchesFromApp
-                            ? (type) =>
-                                  _startProfilePunch(context, bloc, dashboard, type)
+                            ? (type) => _startProfilePunch(
+                                context,
+                                bloc,
+                                dashboard,
+                                type,
+                              )
                             : null,
                         autoPresent: dashboard.shift.markedPresentAutomatically,
                         singlePunch: dashboard.shift.singlePunchDay,
@@ -1488,6 +1495,7 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   bool _failed = false;
   AttendanceDayView? _selectedDay;
   List<AttendanceRecord> _records = const [];
+
   /// This member's own shift takes one punch, so their days show one.
   bool _singlePunch = false;
   List<AttendanceRegularization> _regularizations = const [];
@@ -2323,13 +2331,14 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     );
   }
 
-  /// True when this growth page belongs to the viewer's own manager.
-  bool get _isOwnManager =>
+  /// True when this growth page belongs to one of the viewer's own direct
+  /// reports — the only people they may review. Never themselves.
+  bool get _reportsToViewer =>
       widget.memberId != null &&
       (widget.data.team
               .where((member) => member.id == widget.memberId)
               .firstOrNull
-              ?.isManager ??
+              ?.reportsToViewer ??
           false);
 
   Widget _build(BuildContext context, List<GrowthRecord> history) {
@@ -2344,7 +2353,7 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     final ownPage = widget.memberId == null;
     // Only a report can be reviewed from here: not yourself, and not the
     // person you report to — feedback only flows downward.
-    final canReview = widget.memberId != null && !_isOwnManager;
+    final canReview = _reportsToViewer;
 
     Future<void> openForm() => Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -2391,12 +2400,6 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                // Node 2406:74936 — someone with nothing reviewed yet is told
-                // who reviews them and why, before anything else.
-                if (ownPage && history.isEmpty && widget.data.hasManager) ...[
-                  _GrowIntroBanner(approverName: widget.data.approverName),
-                  const SizedBox(height: 12),
-                ],
                 // The score card always shows the latest reviewed month, even
                 // while an unreviewed one is picked below — a pending month has
                 // no score of its own to show.
@@ -2408,15 +2411,6 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                     selectedIndex: selectedIndex >= 0 ? selectedIndex : null,
                     onSelect: (index) =>
                         setState(() => _selectedPeriod = history[index].period),
-                    deltaMessageFor: (label, delta) => ownPage
-                        ? 'Your overall score for $label '
-                              '${delta >= 0 ? 'increased' : 'decreased'} by '
-                              '${delta.abs().toStringAsFixed(1)} points compared '
-                              'to last month.'
-                        : "${widget.name}'s overall score for $label "
-                              '${delta >= 0 ? 'increased' : 'decreased'} by '
-                              '${delta.abs().toStringAsFixed(1)} points compared '
-                              'to last month.',
                   ),
                 const SizedBox(height: 12),
                 _MonthStatusRow(
@@ -2451,20 +2445,14 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                       period: period,
                       onGiveFeedback: openForm,
                     )
-                  else if (ownPage) ...[
-                    // What the review will cover, in HR's words — so the month
-                    // reads as "here is what counts" rather than standing empty.
-                    const _EvaluatedNote(),
-                    for (final (index, param)
-                        in widget.data.myParameters.indexed) ...[
-                      const SizedBox(height: 12),
-                      _GuidanceCard(
-                        name: param.name,
-                        guidance: param.description ?? '',
-                        initiallyOpen: index == 0,
-                      ),
-                    ],
-                  ],
+                  else if (ownPage && widget.data.myParameters.isNotEmpty)
+                    // What the month is reviewed on: one line each, nothing to open.
+                    _ParameterList(
+                      names: [
+                        for (final param in widget.data.myParameters)
+                          param.name,
+                      ],
+                    ),
                 ]
                 // A past month nobody reviewed.
                 else
@@ -2553,40 +2541,48 @@ List<String> _monthsBetween(String first, String last) {
 
 /// Who reviews you, and why (node 2406:74936). Shown until the first review
 /// arrives, which is when someone is most likely to wonder what Grow is for.
-class _GrowIntroBanner extends StatelessWidget {
-  const _GrowIntroBanner({required this.approverName});
+/// The parameters a month is reviewed on, as a plain list.
+class _ParameterList extends StatelessWidget {
+  const _ParameterList({required this.names});
 
-  final String approverName;
+  final List<String> names;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(13.035),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFEEF0FF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.035),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Image.asset('assets/icons/grow/seedling.png', width: 41, height: 41),
-          const SizedBox(width: 12),
-          Expanded(
+          const Padding(
+            padding: EdgeInsets.only(top: 8, bottom: 4),
             child: Text(
-              'Your manager, $approverName, reviews your performance against '
-              "your KPIs every month, so you know what's going well and where "
-              'you can grow.',
-              style: const TextStyle(
-                color: Color(0xFF484848),
+              'Reviewed on',
+              style: TextStyle(
                 fontSize: 12,
-                height: 16.2 / 12,
-                letterSpacing: -0.16,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF717171),
+                letterSpacing: 0.4,
               ),
             ),
           ),
+          for (final name in names)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF222222),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2873,40 +2869,6 @@ class _MonthChip extends StatelessWidget {
           height: 16.2 / 14,
           letterSpacing: -0.16,
           fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-/// "Your performance is evaluated…" (node 2412:80161), above the parameters of
-/// a month not yet reviewed.
-class _EvaluatedNote extends StatelessWidget {
-  const _EvaluatedNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF0EEF8), width: 1.114),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 5,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: const Text(
-        'Your performance is evaluated by your manager across below parameters.',
-        style: TextStyle(
-          color: Color(0xFF717171),
-          fontSize: 12.5,
-          height: 18.75 / 12.5,
         ),
       ),
     );
@@ -3540,6 +3502,19 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
   @override
   void initState() {
     super.initState();
+    // Feedback goes to direct reports only. Whatever screen sent us here, a
+    // person can never open a review of themselves, a peer or their manager.
+    final target = widget.bloc.state.dashboard?.team
+        .where((member) => member.id == widget.memberId)
+        .firstOrNull;
+    if (target == null || !target.reportsToViewer || target.isSelf) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      });
+      return;
+    }
     // Loads the member's parameters into bloc state for the form to edit.
     widget.bloc.add(OpenFeedbackRecord(widget.memberId));
     // Saving or sending clears the selected member on the bloc. That is the
