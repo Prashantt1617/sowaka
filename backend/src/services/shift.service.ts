@@ -75,8 +75,8 @@ function hours(value: unknown, field: string, fallback: number): number {
 function minutes(value: unknown, field: string, fallback: number): number {
   if (value === undefined || value === null || value === '') return fallback;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 240) {
-    throw new ShiftError(400, `${field} must be a whole number of minutes, up to 240`);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 720) {
+    throw new ShiftError(400, `${field} must be a whole number of minutes, up to 720`);
   }
   return parsed;
 }

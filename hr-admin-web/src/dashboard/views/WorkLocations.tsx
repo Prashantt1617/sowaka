@@ -132,11 +132,7 @@ export function WorkLocations() {
     <div style={{ maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <div style={{ fontSize: 14, color: '#717171', lineHeight: 1.5, maxWidth: 560 }}>
-            The physical sites your employees are mapped to. A location’s <strong style={{ color: '#484848' }}>state</strong> drives its
-            statutory rules (PT, LWF). One location is your <strong style={{ color: '#484848' }}>registered filing address</strong>.
-          </div>
-          <div style={{ fontSize: 14, color: '#717171', marginTop: 6 }}>
+          <div style={{ fontSize: 14, color: '#717171' }}>
             {total} locations · {mapped} employees mapped
           </div>
         </div>

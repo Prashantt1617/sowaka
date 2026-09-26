@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { getEmployeeCalendar } from '../services/hrms';
 import type { CalendarDayDTO, EmployeeCalendarDTO } from '../services/hrms';
-import { inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
+import { DEDUCTION_TRIGGER_LABELS, inr, type DeductionTrigger, type PayslipDTO } from '../services/payroll';
 
 const periodTitle = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -13,7 +13,7 @@ const TRIGGER_DAY: Record<DeductionTrigger, (d: CalendarDayDTO) => boolean> = {
   late: (d) => d.lateByMinutes > 0,
   early: (d) => (d.earlyByMinutes ?? 0) > 0,
   absent: (d) => d.status === 'absent',
-  half_day: (d) => d.status === 'half_day',
+  half_day: (d) => d.status === 'half_day' || d.status === 'missed_punch',
   leave: (d) => d.status === 'on_leave',
   missed_punch: (d) => d.status === 'missed_punch',
 };
@@ -42,6 +42,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.3px' }}>Loss of pay · {periodTitle(payslip.period)}</div>
             <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>
               {payslip.inputs.lopDays} of {payslip.inputs.workingDays} paid days deducted · {inr(lopPaise)}
+              {(payslip.inputs.paidLeaveDaysApplied ?? 0) > 0 && ` · ${payslip.inputs.paidLeaveDaysApplied} ${payslip.inputs.paidLeaveDaysApplied === 1 ? 'day' : 'days'} covered by paid leave`}
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ background: '#F7F7F9', border: 'none', borderRadius: 9, width: 34, height: 34, cursor: 'pointer', fontSize: 18, color: '#484848' }}>×</button>
@@ -50,15 +51,17 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
           {error && <div style={{ color: '#A8475F', fontWeight: 600, padding: '14px 0' }}>{error}</div>}
           {lines.map((line) => {
             const trigger = line.trigger;
+            // Named from the rule, not the slip: a label saved with an older run stays current.
+            const label = trigger ? DEDUCTION_TRIGGER_LABELS[trigger] : line.label;
             const days = cal && trigger ? cal.days.filter(TRIGGER_DAY[trigger]) : null;
             return (
-              <div key={line.label} style={{ marginTop: 16 }}>
+              <div key={line.trigger ?? line.label} style={{ marginTop: 16 }}>
                 <div style={{ background: '#FBF1DD', border: '1px solid #F1DDB2', borderRadius: 12, padding: '12px 14px' }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>
-                    {line.label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
+                    {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
                   <div style={{ fontSize: 14, color: '#6B4E12', marginTop: 3 }}>
-                    {line.count} {line.label.toLowerCase()} this month → <strong>{line.days} {line.days === 1 ? 'day' : 'days'}</strong> deducted
+                    {line.count} {label.toLowerCase()} this month → <strong>{line.days} {line.days === 1 ? 'day' : 'days'}</strong> deducted
                     {line.every ? ` (${Math.floor(line.count / line.every)} × ${line.every}${line.count % line.every ? `, ${line.count % line.every} left over` : ''})` : ''}
                   </div>
                 </div>
@@ -76,7 +79,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                             {trigger === 'late' && `In at ${clock(d.punchIn)} · late by ${mins(d.lateByMinutes)}`}
                             {trigger === 'early' && `Out at ${clock(d.punchOut)} · left ${mins(d.earlyByMinutes ?? 0)} early`}
                             {trigger === 'absent' && (d.label ?? 'Absent')}
-                            {trigger === 'half_day' && `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`}
+                            {trigger === 'half_day' && (d.status === 'missed_punch' ? `Single punch · ${d.label ?? 'missed punch'} · in ${clock(d.punchIn)}` : `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`)}
                             {trigger === 'leave' && (d.label ?? 'On leave')}
                             {trigger === 'missed_punch' && (d.label ?? 'Missed punch')}
                           </td>

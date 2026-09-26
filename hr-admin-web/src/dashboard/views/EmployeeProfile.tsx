@@ -18,7 +18,7 @@ import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
 import { getEmployeeCalendar } from '../../services/hrms';
-import { getEmployeePayslips, inr as inrPaise, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { getEmployeePayslips, getSalaryStructure, inr as inrPaise, type PayrollRunDTO, type PayslipDTO, type SalaryStructureDTO } from '../../services/payroll';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
 import type { CalendarDayStatus, EmployeeCalendarDTO } from '../../services/hrms';
@@ -140,13 +140,13 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               {d.isDirector && <Pill label="Director" tone={{ bg: '#F4E9F1', fg: '#8A4A78' }} />}
             </div>
             <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 4 }}>
-              {emp.role} · {emp.team} · {emp.id}
+              {emp.role} · {emp.team} · {emp.employeeId}
             </div>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid #F0F0F2' }}>
           <Fact label="Work email" value={d.workEmail} />
-          <Fact label="Employee ID" value={emp.id} />
+          <Fact label="Employee ID" value={emp.employeeId} />
           <Fact label="Work location" value={d.workLocation} />
           <Fact label="Reporting manager" value={emp.manager} border />
           <Fact label="Date of joining" value={emp.joining} border />
@@ -172,7 +172,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
               <Row label="Last name" value={d.lastName} />
-              <Row label="Employee ID" value={emp.id} />
+              <Row label="Employee ID" value={emp.employeeId} />
               <Row label="Date of joining" value={emp.joining} />
               <Row label="Work email" value={d.workEmail} />
               <Row label="Designation" value={emp.role} />
@@ -409,8 +409,6 @@ const shiftMonth = (month: string, by: number) => {
   const d = new Date(Date.UTC(y, m - 1 + by, 1));
   return d.toISOString().slice(0, 7);
 };
-const monthTitle = (month: string) =>
-  new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const clockOf = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
 
@@ -435,21 +433,37 @@ function SalarySlips({ userId }: { userId: string }) {
   const [company, setCompany] = useState<{ name: string; address: string }>({ name: '', address: '' });
   const [error, setError] = useState<string | null>(null);
   const [explain, setExplain] = useState<PayslipDTO | null>(null);
+  const [structure, setStructure] = useState<SalaryStructureDTO | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
     setRows(null);
+    setStructure(undefined);
+    getSalaryStructure(userId)
+      .then((r) => { if (live) setStructure(r.structure); })
+      .catch(() => { if (live) setStructure(null); });
     getEmployeePayslips(userId)
       .then((r) => { if (live) { setRows(r.payslips); setCompany(r.company); } })
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
   }, [userId]);
 
-  if (error) return <Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 600 }}>{error}</div></Card>;
-  if (!rows) return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card>;
+  const salaryCard = structure === undefined ? null : (
+    <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <Fact label="Monthly salary" value={structure && structure.annualCtcPaise > 0 ? inrPaise(Math.round(structure.annualCtcPaise / 12)) : '—'} />
+        <Fact label="Annual CTC" value={structure && structure.annualCtcPaise > 0 ? inrPaise(structure.annualCtcPaise) : '—'} />
+        <Fact label="Salary template" value={structure?.salaryTemplateCode ? `${structure.salaryTemplateCode.charAt(0)}${structure.salaryTemplateCode.slice(1).toLowerCase()}${structure.status === 'active' ? '' : ' · not on payroll'}` : '—'} />
+      </div>
+    </Card>
+  );
+  if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 600 }}>{error}</div></Card></div>;
+  if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card></div>;
   if (rows.length === 0) {
-    return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card>;
+    return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card></div>;
   }
   return (
+    <div>
+    {salaryCard}
     <Card style={{ padding: 0, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
         <thead>
@@ -492,6 +506,7 @@ function SalarySlips({ userId }: { userId: string }) {
       </table>
       {explain && <LossOfPayExplainer userId={userId} payslip={explain} onClose={() => setExplain(null)} />}
     </Card>
+    </div>
   );
 }
 
@@ -524,7 +539,6 @@ function EmployeeCalendar({ userId, initial }: { userId: string; initial: Employ
         <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={calNav}>‹</button>
         <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid #EBEBEB', borderRadius: 11, padding: '8px 12px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', background: '#fff', color: '#222222' }} />
         <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} style={{ ...calNav, opacity: month >= thisMonth() ? 0.4 : 1 }}>›</button>
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.3px', marginLeft: 4 }}>{monthTitle(month)}</div>
         {loading && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Loading…</span>}
         {cal && (
           <div style={{ marginLeft: 'auto', fontSize: 14, color: '#717171', fontWeight: 600 }}>

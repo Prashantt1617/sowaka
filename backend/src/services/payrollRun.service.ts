@@ -193,9 +193,11 @@ async function buildRunPayslips(
     // Loss of pay: what the template's rules make of the month's attendance,
     // unless HR typed a figure for this person on the run.
     const docked = deductionsUnder(template.deductionRules, attendance.get(structure.userId));
+    // The template's paid-leave allowance covers the first days docked.
+    const allowance = template.monthlyPaidLeaveDays ?? 0;
     const lopDays = lopOverrides[structure.userId] !== undefined
       ? clampLop(lopOverrides[structure.userId], workingDays)
-      : Math.min(docked.days, workingDays);
+      : Math.min(Math.max(0, docked.days - allowance), workingDays);
     const overtimePaise = nonNegInt(otOverrides[structure.userId]);
 
     const slip = computePayslip(base, {
@@ -241,6 +243,7 @@ async function buildRunPayslips(
         workingDays,
         lopDays,
         attendanceDeductions: docked.lines,
+        paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
         approvedOtHours: periodInputs.approvedOtHours,
@@ -267,9 +270,12 @@ export async function listRuns(adminUserId: string) {
 export async function getRun(adminUserId: string, runIdInput: string) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
-  const slips = await payslips().find({ org, runId: run._id.toHexString() }).toArray();
-  // The slip is printed under the company's name and address.
-  const company = await companies().findOne({ id: org }, { projection: { name: 1, address: 1 } });
+  // One round trip for both: on a slow link each trip is seconds.
+  const [slips, company] = await Promise.all([
+    payslips().find({ org, runId: run._id.toHexString() }).toArray(),
+    // The slip is printed under the company's name and address.
+    companies().findOne({ id: org }, { projection: { name: 1, address: 1 } }),
+  ]);
   return { run: runView(run), payslips: slips.map(payslipView), company: { name: company?.name ?? org, address: company?.address ?? '' } };
 }
 

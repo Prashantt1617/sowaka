@@ -4,7 +4,7 @@
 // Earnings are shown at the full monthly rate and loss of pay is a deduction
 // line, so what the attendance rules cost is on the slip rather than folded
 // silently into a smaller earned figure.
-import { inr, type PayslipDTO } from '../services/payroll';
+import { DEDUCTION_TRIGGER_LABELS, inr, type PayslipDTO } from '../services/payroll';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
@@ -51,10 +51,13 @@ export function payslipHtml(slip: PayslipDTO, company: { name: string; address: 
   const paidEarnings = slip.earnings.reduce((t, e) => t + e.paidPaise, 0);
   const lopPaise = fullEarnings - paidEarnings;
   const lines = slip.inputs.attendanceDeductions ?? [];
-  const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${l.label} ${l.count} → ${l.days}d`).join(' · ');
+  const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger] : l.label);
+  const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`).join(' · ');
   const deductions: { name: string; sub?: string; paise: number }[] = [];
+  const covered = slip.inputs.paidLeaveDaysApplied ?? 0;
   if (slip.inputs.lopDays > 0) {
-    deductions.push({ name: `Loss of pay · ${slip.inputs.lopDays} day${slip.inputs.lopDays === 1 ? '' : 's'}`, sub: lopDetail || undefined, paise: lopPaise });
+    const sub = [lopDetail, covered > 0 ? `${covered} day${covered === 1 ? '' : 's'} covered by paid leave` : ''].filter(Boolean).join(' · ');
+    deductions.push({ name: `Loss of pay · ${slip.inputs.lopDays} day${slip.inputs.lopDays === 1 ? '' : 's'}`, sub: sub || undefined, paise: lopPaise });
   }
   for (const d of slip.deductions) deductions.push({ name: d.name, paise: d.amountPaise });
   const totalDeductions = deductions.reduce((t, d) => t + d.paise, 0);
@@ -120,6 +123,7 @@ export function payslipHtml(slip: PayslipDTO, company: { name: string; address: 
       <div class="days">
         <div class="kv"><span>Paid days</span><span>${slip.inputs.payableDays}</span></div>
         <div class="kv"><span>Loss of pay days</span><span>${slip.inputs.lopDays}</span></div>
+        ${covered > 0 ? `<div class="kv"><span>Covered by paid leave</span><span>${covered}</span></div>` : ''}
       </div>
     </div>
   </div>

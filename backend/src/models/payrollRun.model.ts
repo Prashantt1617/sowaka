@@ -63,6 +63,8 @@ export interface PayslipInputs {
   lopDays: number;
   /** What the template's attendance rules cost this month, one line per rule. */
   attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
+  /** Paid leave days from the template's monthly allowance that offset the docked days. */
+  paidLeaveDaysApplied?: number;
   payableDays: number;
   approvedLeaveDays: number;
   approvedOtHours: number;

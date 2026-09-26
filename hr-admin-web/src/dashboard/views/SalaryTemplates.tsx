@@ -58,6 +58,7 @@ type Form = {
   balancingComponentCode: string;
   epfApplyCeiling: boolean;
   deductionRules: SalaryDeductionRule[];
+  monthlyPaidLeaveDays: number;
   sampleCtc: string;
 };
 
@@ -92,6 +93,7 @@ function buildInput(f: Form): SalaryTemplateInput {
     balancingComponentCode: f.balancingComponentCode || null,
     epfApplyCeiling: f.epfApplyCeiling,
     deductionRules: f.deductionRules,
+    monthlyPaidLeaveDays: f.monthlyPaidLeaveDays,
     active: f.active,
   };
 }
@@ -229,7 +231,7 @@ export function SalaryTemplates() {
   };
 
   const newTemplate = () => {
-    setForm({ name: '', code: '', description: '', active: true, rows: [], balancingComponentCode: '', epfApplyCeiling: true, deductionRules: [], sampleCtc: '1500000' });
+    setForm({ name: '', code: '', description: '', active: true, rows: [], balancingComponentCode: '', epfApplyCeiling: true, deductionRules: [], monthlyPaidLeaveDays: 0, sampleCtc: '1500000' });
     setComputed(null);
     setMode('edit');
   };
@@ -246,6 +248,7 @@ export function SalaryTemplates() {
       balancingComponentCode: t.balancingComponentCode ?? '',
       epfApplyCeiling: t.epfApplyCeiling,
       deductionRules: t.deductionRules ?? [],
+      monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
       sampleCtc: '1500000',
     });
     setComputed(null);
@@ -380,7 +383,7 @@ export function SalaryTemplates() {
           </table>
         </Card>
 
-        <RulesSummary rules={t.deductionRules ?? []} />
+        <RulesSummary rules={t.deductionRules ?? []} paidLeaveDays={t.monthlyPaidLeaveDays ?? 0} />
       </div>
     );
   }
@@ -523,7 +526,7 @@ export function SalaryTemplates() {
         </table>
       </Card>
 
-      <RulesCard rules={form.deductionRules} onChange={(rules) => set('deductionRules', rules)} />
+      <RulesCard rules={form.deductionRules} onChange={(rules) => set('deductionRules', rules)} paidLeaveDays={form.monthlyPaidLeaveDays} onPaidLeaveDays={(v) => set('monthlyPaidLeaveDays', v)} />
     </div>
   );
 }
@@ -537,7 +540,7 @@ const TRIGGERS = Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[];
 const ruleText = (rule: SalaryDeductionRule) =>
   `Every ${rule.every} → ${rule.deductDays} paid ${rule.deductDays === 1 ? 'day' : 'days'}`;
 
-function RulesCard({ rules, onChange }: { rules: SalaryDeductionRule[]; onChange: (rules: SalaryDeductionRule[]) => void }) {
+function RulesCard({ rules, onChange, paidLeaveDays, onPaidLeaveDays }: { rules: SalaryDeductionRule[]; onChange: (rules: SalaryDeductionRule[]) => void; paidLeaveDays: number; onPaidLeaveDays: (v: number) => void }) {
   const [draft, setDraft] = useState<SalaryDeductionRule>({ trigger: 'late', every: 3, deductDays: 1, active: true });
   const update = (index: number, patch: Partial<SalaryDeductionRule>) => onChange(rules.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   return (
@@ -575,11 +578,15 @@ function RulesCard({ rules, onChange }: { rules: SalaryDeductionRule[]; onChange
         <div><label style={fieldLabel}>Deduct</label><Suffixed value={draft.deductDays} onChange={(v) => setDraft({ ...draft, deductDays: v })} suffix="paid days" step="0.5" /></div>
         <button type="button" onClick={() => { if (draft.every > 0 && draft.deductDays > 0) onChange([...rules, draft]); }} style={primaryBtn}>+ Add rule</button>
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderTop: '1px solid #EBEBEB' }}>
+        <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#222222' }}>Paid leave allowance per month</div>
+        <div style={{ width: 200 }}><Suffixed value={paidLeaveDays} onChange={onPaidLeaveDays} suffix="paid days" step="0.5" /></div>
+      </div>
     </Card>
   );
 }
 
-function RulesSummary({ rules }: { rules: SalaryDeductionRule[] }) {
+function RulesSummary({ rules, paidLeaveDays }: { rules: SalaryDeductionRule[]; paidLeaveDays: number }) {
   return (
     <Card style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
       <div style={{ padding: '16px 22px', borderBottom: '1px solid #EBEBEB', fontSize: 17, fontWeight: 800 }}>Paid days calculation</div>
@@ -598,6 +605,11 @@ function RulesSummary({ rules }: { rules: SalaryDeductionRule[] }) {
             ))}
           </tbody>
         </table>
+      )}
+      {paidLeaveDays > 0 && (
+        <div style={{ padding: '12px 22px', borderTop: '1px solid #EBEBEB', fontSize: 15, color: '#484848' }}>
+          Paid leave allowance: <strong>{paidLeaveDays} {paidLeaveDays === 1 ? 'day' : 'days'}</strong> a month, set off against the deductions.
+        </div>
       )}
     </Card>
   );

@@ -270,6 +270,7 @@ export type SalaryTemplateDTO = {
   balancingComponentCode?: string;
   epfApplyCeiling: boolean;
   deductionRules: SalaryDeductionRule[];
+  monthlyPaidLeaveDays: number;
   active: boolean;
   updatedAt: string;
 };
@@ -281,6 +282,7 @@ export type SalaryTemplateInput = {
   balancingComponentCode?: string | null;
   epfApplyCeiling?: boolean;
   deductionRules?: SalaryDeductionRule[];
+  monthlyPaidLeaveDays?: number;
   active?: boolean;
 };
 
@@ -373,6 +375,7 @@ export type PayslipDTO = {
     workingDays: number;
     lopDays: number;
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
+    paidLeaveDaysApplied?: number;
     payableDays: number;
     approvedLeaveDays: number;
     approvedOtHours: number;
