@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
+
+import '../data/payslip_pdf.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../attendance/presentation/punch_screen.dart';
@@ -37,6 +40,8 @@ class QuickActionsController extends ChangeNotifier {
 
 enum _QuickPage {
   home,
+  payslips,
+  payslip,
   leave,
   applyLeave,
   overtime,
@@ -318,7 +323,10 @@ List<AttendanceDayView> buildAttendanceDays({
       }
       // Nobody punches on an auto-punch policy, so a working day with no
       // record is a day present — not a day with something missing.
-      if (shift.markedPresentAutomatically && !future && !weekoff && holiday == null) {
+      if (shift.markedPresentAutomatically &&
+          !future &&
+          !weekoff &&
+          holiday == null) {
         return AttendanceDayView(
           date: date,
           kind: AttendanceKind.present,
@@ -569,6 +577,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _page = _QuickPage.overtime;
       } else if (_page == _QuickPage.applyReimbursement) {
         _page = _QuickPage.reimbursements;
+      } else if (_page == _QuickPage.payslip) {
+        _page = _QuickPage.payslips;
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
@@ -619,6 +629,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.overtime => _overtimeHub(),
         _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
+        _QuickPage.payslips => _payslipHub(),
+        _QuickPage.payslip => _payslipDetail(),
         _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
         _QuickPage.policy => _policyDetail(),
@@ -802,7 +814,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                             ? '$leaveDaysAvailable days available'
                             : 'Apply & view requests',
                         onTap: () => _open(_QuickPage.leave),
-                        imageAsset: 'assets/icons/action_card_leave_calendar.png',
+                        imageAsset:
+                            'assets/icons/action_card_leave_calendar.png',
                       ),
                     if (!autoPresent && widget.dashboard.overtimeEnabled)
                       _HomeActionCard(
@@ -822,6 +835,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       title: 'Reimbursement',
                       subtitle: 'Track your claims',
                       onTap: () => _open(_QuickPage.reimbursements),
+                      imageAsset:
+                          'assets/icons/action_card_reimbursement_money.png',
+                    ),
+                    _HomeActionCard(
+                      icon: Icons.receipt_long_rounded,
+                      color: const Color(0xFF2E7D6B),
+                      tint: const Color(0xFFDFF0EA),
+                      title: 'Manage payslips',
+                      subtitle: 'View & download',
+                      onTap: () {
+                        _payslipsFuture ??= widget.bloc.api.fetchMyPayslips();
+                        _open(_QuickPage.payslips);
+                      },
                       imageAsset:
                           'assets/icons/action_card_reimbursement_money.png',
                     ),
@@ -1199,7 +1225,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Future<void> _pickLeaveDuration() async {
     // A half day only makes sense on a single date.
     if (!_isSingleDayLeave) {
-      showAppToast(context, 'A half day can only be applied for a single date.');
+      showAppToast(
+        context,
+        'A half day can only be applied for a single date.',
+      );
       return;
     }
     final picked = await showModalBottomSheet<String>(
@@ -1229,8 +1258,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // Six months ahead at most — nobody books leave a year out, and an
     // endless calendar is a long way to page back from.
     final horizon = DateTime(today.year, today.month + 6, today.day);
-    final policyEnd = window == null ? null : _dateOnly(window.latestFrom(today));
-    final last = policyEnd == null || horizon.isBefore(policyEnd) ? horizon : policyEnd;
+    final policyEnd = window == null
+        ? null
+        : _dateOnly(window.latestFrom(today));
+    final last = policyEnd == null || horizon.isBefore(policyEnd)
+        ? horizon
+        : policyEnd;
     final start = initial.isBefore(first)
         ? first
         : initial.isAfter(last)
@@ -1746,6 +1779,528 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         reason: _overtimeNote.text.trim(),
       ),
       _QuickPage.overtime,
+    );
+  }
+
+  // ---------------------------------------------------------------- payslips
+  // What payroll produced for this person: the last three months, and for
+  // each of them why any pay was lost, in the same words HR sees.
+
+  Future<(PayslipCompany, List<Payslip>)>? _payslipsFuture;
+  PayslipCompany _payslipCompany = const PayslipCompany(name: '', address: '');
+  Payslip? _payslip;
+  Future<List<PayslipDay>>? _payslipDaysFuture;
+  bool _downloading = false;
+
+  static String _inr(int paise) =>
+      '₹${(paise / 100).round().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d\d)+\d$)'), (m) => '${m[1]},')}';
+  static String _monthOf(String period) {
+    final parts = period.split('-');
+    const names = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final month = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 1;
+    return '${names[(month - 1).clamp(0, 11)]} ${parts.first}';
+  }
+
+  static String _days(double days) => days == days.roundToDouble()
+      ? days.round().toString()
+      : days.toStringAsFixed(1);
+  static String _clock(DateTime? at) => at == null
+      ? '—'
+      : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+  static String _mins(int m) =>
+      m >= 60 ? '${m ~/ 60}h${m % 60 == 0 ? '' : ' ${m % 60}m'}' : '$m min';
+  static String _dayLabel(DateTime d) {
+    const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const mon = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${dow[d.weekday - 1]}, ${d.day.toString().padLeft(2, '0')} ${mon[d.month - 1]}';
+  }
+
+  (String, Color) _runStatusLook(String status) => switch (status) {
+    'paid' => ('Paid', const Color(0xFF16A34A)),
+    'approved' => ('Approved', const Color(0xFF16A34A)),
+    'pending_approval' => ('Pending approval', const Color(0xFF4A6FA5)),
+    'rejected' => ('Rejected', const Color(0xFFFB2C36)),
+    _ => ('Draft', const Color(0xFF717171)),
+  };
+
+  void _openPayslip(Payslip slip) {
+    setState(() {
+      _payslip = slip;
+      _payslipDaysFuture = widget.bloc.api.fetchPayslipDays(slip.id);
+    });
+    _open(_QuickPage.payslip);
+  }
+
+  Future<void> _downloadPayslip(Payslip slip) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final pdf = await buildPayslipPdf(slip: slip, company: _payslipCompany);
+      await Printing.sharePdf(
+        bytes: pdf,
+        filename: 'payslip-${slip.period}.pdf',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not prepare the payslip. Try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Widget _payslipHub() {
+    return _HubScaffold(
+      key: const ValueKey('payslip-hub'),
+      title: 'Payslips',
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        FutureBuilder<(PayslipCompany, List<Payslip>)>(
+          future: _payslipsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _InfoCard(
+                'Could not load your payslips. Pull back and try again.',
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              );
+            }
+            final slips = snapshot.data!.$2;
+            _payslipCompany = snapshot.data!.$1;
+            if (slips.isEmpty) {
+              return const _InfoCard(
+                'No payslips yet — they appear here once payroll has run for you.',
+              );
+            }
+            return Column(
+              children: [
+                for (final slip in slips) ...[
+                  Builder(
+                    builder: (context) {
+                      final (statusLabel, statusColor) = _runStatusLook(
+                        slip.runStatus,
+                      );
+                      return _QuickRequestCard(
+                        title: _monthOf(slip.period),
+                        subtitle:
+                            '${_inr(slip.netPayablePaise)} net · ${slip.payableDays}/${slip.workingDays} paid days',
+                        status: statusLabel,
+                        statusColor: statusColor,
+                        footerText: slip.lopDays > 0
+                            ? '${_days(slip.lopDays)} ${slip.lopDays == 1 ? 'day' : 'days'} loss of pay · ${_inr(slip.lossOfPayPaise)}'
+                            : 'No loss of pay',
+                        onViewDetails: () => _openPayslip(slip),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _payslipDetail() {
+    final slip = _payslip;
+    if (slip == null) return _payslipHub();
+    final (statusLabel, statusColor) = _runStatusLook(slip.runStatus);
+    final docked = slip.lines.where((line) => line.days > 0).toList();
+    final covered = slip.paidLeaveDaysApplied;
+    return _HubScaffold(
+      key: ValueKey('payslip-${slip.id}'),
+      title: _monthOf(slip.period),
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        // The figure that matters, and the days behind it.
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFFECFDF5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFD1FAE5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    _inr(slip.netPayablePaise),
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: .35),
+                      ),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Text(
+                'Total net pay',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF047857),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _payslipRow(
+                'Paid days',
+                '${slip.payableDays} of ${slip.workingDays}',
+              ),
+              _payslipRow('Loss of pay days', _days(slip.lopDays)),
+              if (covered > 0)
+                _payslipRow('Covered by paid leave', _days(covered)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFEBEBEB)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'EARNINGS',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  color: Color(0xFF717171),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final e in slip.earnings)
+                _payslipRow(
+                  e.name,
+                  _inr(e.fullPaise),
+                  sub: e.fullPaise != e.paidPaise ? 'Monthly rate' : null,
+                ),
+              if (slip.overtimePaise > 0)
+                _payslipRow('Overtime', _inr(slip.overtimePaise)),
+              if (slip.reimbursementsPaise > 0)
+                _payslipRow('Reimbursements', _inr(slip.reimbursementsPaise)),
+              const Divider(height: 22),
+              const Text(
+                'DEDUCTIONS',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  color: Color(0xFF717171),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (slip.lopDays > 0)
+                _payslipRow(
+                  'Loss of pay · ${_days(slip.lopDays)} ${slip.lopDays == 1 ? 'day' : 'days'}',
+                  '−${_inr(slip.lossOfPayPaise)}',
+                  sub: [
+                    for (final line in docked)
+                      '${line.name} ${line.count} → ${_days(line.days)}d',
+                    if (covered > 0)
+                      '${_days(covered)} ${covered == 1 ? 'day' : 'days'} covered by paid leave',
+                  ].join(' · '),
+                  strong: true,
+                ),
+              for (final d in slip.deductions)
+                _payslipRow(d.name, '−${_inr(d.fullPaise)}'),
+              if (slip.lopDays == 0 && slip.deductions.isEmpty)
+                _payslipRow('No deductions', '—'),
+              const Divider(height: 22),
+              _payslipRow(
+                'Net payable',
+                _inr(slip.netPayablePaise),
+                strong: true,
+              ),
+            ],
+          ),
+        ),
+        if (slip.lopDays > 0) ...[
+          const SizedBox(height: 14),
+          _lossOfPayReasons(slip, docked),
+        ],
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _downloading ? null : () => _downloadPayslip(slip),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0571A6),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: _downloading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(_downloading ? 'Preparing…' : 'Download payslip'),
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  /// Why pay was lost: each rule that fired, and every day that counted
+  /// towards it — the same explanation HR sees on the dashboard.
+  Widget _lossOfPayReasons(Payslip slip, List<PayslipDeductionLine> docked) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Why there is a loss of pay',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${_days(slip.lopDays)} of ${slip.workingDays} paid days deducted · ${_inr(slip.lossOfPayPaise)}',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF717171)),
+          ),
+          FutureBuilder<List<PayslipDay>>(
+            future: _payslipDaysFuture,
+            builder: (context, snapshot) {
+              final days = snapshot.data;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final line in docked) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBF1DD),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFF1DDB2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${line.name}: every ${line.every ?? '—'} → ${line.deductDays == null ? '—' : _days(line.deductDays!)} paid ${line.deductDays == 1 ? 'day' : 'days'}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF222222),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${line.count} ${line.name.toLowerCase()} this month → ${_days(line.days)} ${line.days == 1 ? 'day' : 'days'} deducted'
+                            '${line.every != null && line.every! > 0 ? ' (${line.count ~/ line.every!} × ${line.every}${line.count % line.every! > 0 ? ', ${line.count % line.every!} left over' : ''})' : ''}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF6B4E12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (days == null)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          'Loading the days…',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF717171),
+                          ),
+                        ),
+                      )
+                    else
+                      for (final d in days.where(
+                        (d) => d.countsFor(line.trigger),
+                      ))
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 108,
+                                child: Text(
+                                  _dayLabel(d.date),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF222222),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  switch (line.trigger) {
+                                    'late' =>
+                                      'In at ${_clock(d.punchIn)} · late by ${_mins(d.lateByMinutes)}',
+                                    'early' =>
+                                      'Out at ${_clock(d.punchOut)} · left ${_mins(d.earlyByMinutes)} early',
+                                    'absent' => d.label ?? 'Absent',
+                                    'half_day' =>
+                                      d.status == 'missed_punch'
+                                          ? 'Single punch · ${d.label ?? 'missed punch'} · in ${_clock(d.punchIn)}'
+                                          : 'Half day · ${_clock(d.punchIn)} – ${_clock(d.punchOut)}',
+                                    'leave' => d.label ?? 'On leave',
+                                    _ => d.label ?? 'Missed punch',
+                                  },
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Color(0xFF717171),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payslipRow(
+    String label,
+    String value, {
+    String? sub,
+    bool strong = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
+                    color: const Color(0xFF222222),
+                  ),
+                ),
+                if (sub != null && sub.isNotEmpty)
+                  Text(
+                    sub,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF717171),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+              color: const Color(0xFF222222),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2302,7 +2857,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           // A filtered list answers a question about the days in it, so it
           // ends on the day that was tapped — today's punches at the foot of
           // a list today may not even be in is an answer to nothing.
-          if (_calendarDetailDay(days, todayFallback: false) case final detail?) ...[
+          if (_calendarDetailDay(days, todayFallback: false)
+              case final detail?) ...[
             const SizedBox(height: 16),
             AttendanceDayDetail(
               day: detail,
@@ -2376,8 +2932,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   bool get _canPageAttendanceForward {
     final now = DateTime.now();
     final furthest = DateTime(now.year, now.month + _attendanceMonthsAhead);
-    return DateTime(_attendanceMonth.year, _attendanceMonth.month + 1)
-        .isBefore(DateTime(furthest.year, furthest.month + 1));
+    return DateTime(
+      _attendanceMonth.year,
+      _attendanceMonth.month + 1,
+    ).isBefore(DateTime(furthest.year, furthest.month + 1));
   }
 
   Future<void> _changeAttendanceMonth(int delta) async {
@@ -4920,7 +5478,11 @@ class _LeaveYearSummaryCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 2, offset: Offset(0, 1)),
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
         ],
       ),
       child: Column(
@@ -6068,7 +6630,10 @@ class _HomeAttendanceCard extends StatelessWidget {
                 // has to punch at all (node 2412:82314).
                 if (punchIn != null || autoPresent)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF0FDF4),
                       borderRadius: BorderRadius.circular(99),
@@ -6122,80 +6687,84 @@ class _HomeAttendanceCard extends StatelessWidget {
                 style: TextStyle(color: Color(0xFF717171), fontSize: 13),
               ),
             ] else if (punchIn != null) ...[
-            // Only once the day has started: before that the slider is the
-            // whole card, and a pair of empty times under it said nothing.
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: const Color(0xFFEBEBEB),
-                valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+              // Only once the day has started: before that the slider is the
+              // whole card, and a pair of empty times under it said nothing.
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFFEBEBEB),
+                  valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'PUNCH-IN',
-                        style: TextStyle(
-                          color: Color(0xFF717171),
-                          fontSize: 10,
-                          height: 15 / 10,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: .25,
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PUNCH-IN',
+                          style: TextStyle(
+                            color: Color(0xFF717171),
+                            fontSize: 10,
+                            height: 15 / 10,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: .25,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _clock(punchIn),
-                        style: const TextStyle(
-                          color: Color(0xFF222222),
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w800,
+                        const SizedBox(height: 4),
+                        Text(
+                          _clock(punchIn),
+                          style: const TextStyle(
+                            color: Color(0xFF222222),
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Container(width: 1, height: 32, color: const Color(0xFFEBEBEB)),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'PUNCH-OUT',
-                        style: TextStyle(
-                          color: Color(0xFF717171),
-                          fontSize: 10,
-                          height: 15 / 10,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: .25,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        // Not required on a single-punch shift, rather than
-                        // missing: nobody is expected to punch out.
-                        singlePunch ? 'NR' : _clock(punchOut),
-                        style: const TextStyle(
-                          color: Color(0xFF222222),
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: const Color(0xFFEBEBEB),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PUNCH-OUT',
+                          style: TextStyle(
+                            color: Color(0xFF717171),
+                            fontSize: 10,
+                            height: 15 / 10,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: .25,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          // Not required on a single-punch shift, rather than
+                          // missing: nobody is expected to punch out.
+                          singlePunch ? 'NR' : _clock(punchOut),
+                          style: const TextStyle(
+                            color: Color(0xFF222222),
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         ),

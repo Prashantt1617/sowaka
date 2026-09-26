@@ -51,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_branded) return;
     _branded = true;
     final branding = OrgBranding.of(session.user.org);
+    OrgBranding.current.value = branding;
     await OrgBranding.remember(session.user.org);
     await AppIcon.use(branding.iosIconName);
   }

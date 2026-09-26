@@ -1044,10 +1044,7 @@ class CorrectionRules {
         ? absentOutcomes
         // Already a full day, so there is nothing to argue up to.
         : absentOutcomes.where((outcome) => outcome != 'Full day').toList();
-    return allowed
-        .map((outcome) => keys[outcome])
-        .whereType<String>()
-        .toList();
+    return allowed.map((outcome) => keys[outcome]).whereType<String>().toList();
   }
 
   /// The case a day falls into, named the way the policy names it. A
@@ -1370,8 +1367,7 @@ class ShiftPolicy {
       singlePunchDay ? punchIn != null : punchIn != null && punchOut != null;
 
   /// The case this day falls into, as this employee's policy names it.
-  String triggerFor({DateTime? punchIn, DateTime? punchOut}) =>
-      singlePunchDay
+  String triggerFor({DateTime? punchIn, DateTime? punchOut}) => singlePunchDay
       // One punch, so the only two cases are recorded and not recorded.
       ? (punchIn == null ? 'Both punches missing' : 'Both punches present')
       : CorrectionRules.triggerFor(punchIn: punchIn, punchOut: punchOut);
@@ -1610,3 +1606,208 @@ class AttendanceRegularization {
 
 String _clockLabel(DateTime value) =>
     '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
+
+// ---------------------------------------------------------------- payslips
+
+/// One rule's share of a month's loss of pay: how many times it fired and
+/// what that cost, with the rule itself so the app can say why.
+class PayslipDeductionLine {
+  const PayslipDeductionLine({
+    required this.label,
+    required this.count,
+    required this.days,
+    this.trigger,
+    this.every,
+    this.deductDays,
+  });
+
+  final String label;
+  final int count;
+  final double days;
+  final String? trigger;
+  final int? every;
+  final double? deductDays;
+
+  /// Named from the rule, not the stored label, so older slips read current.
+  String get name => switch (trigger) {
+    'late' => 'Late arrivals',
+    'early' => 'Early leaves',
+    'absent' => 'Absent days',
+    'half_day' => 'Half days',
+    'leave' => 'Leave days',
+    'missed_punch' => 'Missed punches',
+    _ => label,
+  };
+
+  factory PayslipDeductionLine.fromJson(Map<String, dynamic> json) {
+    return PayslipDeductionLine(
+      label: json['label'] as String? ?? '',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      days: (json['days'] as num?)?.toDouble() ?? 0,
+      trigger: json['trigger'] as String?,
+      every: (json['every'] as num?)?.toInt(),
+      deductDays: (json['deductDays'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class PayslipAmount {
+  const PayslipAmount({
+    required this.name,
+    required this.fullPaise,
+    required this.paidPaise,
+  });
+  final String name;
+  final int fullPaise;
+  final int paidPaise;
+
+  factory PayslipAmount.fromJson(Map<String, dynamic> json) => PayslipAmount(
+    name: json['name'] as String? ?? '',
+    fullPaise:
+        (json['fullPaise'] as num?)?.toInt() ??
+        (json['amountPaise'] as num?)?.toInt() ??
+        0,
+    paidPaise:
+        (json['paidPaise'] as num?)?.toInt() ??
+        (json['amountPaise'] as num?)?.toInt() ??
+        0,
+  );
+}
+
+/// A month's payslip as payroll produced it, plus the run it belongs to.
+class Payslip {
+  const Payslip({
+    required this.id,
+    required this.period,
+    required this.runStatus,
+    required this.employeeName,
+    required this.employeeId,
+    required this.designation,
+    required this.department,
+    required this.joiningDate,
+    required this.earnings,
+    required this.deductions,
+    required this.netPayablePaise,
+    required this.reimbursementsPaise,
+    required this.overtimePaise,
+    required this.workingDays,
+    required this.payableDays,
+    required this.lopDays,
+    required this.paidLeaveDaysApplied,
+    required this.lines,
+  });
+
+  final String id;
+  final String period;
+  final String runStatus;
+  final String employeeName;
+  final String employeeId;
+  final String designation;
+  final String department;
+
+  /// YYYY-MM-DD, or empty.
+  final String joiningDate;
+  final List<PayslipAmount> earnings;
+  final List<PayslipAmount> deductions;
+  final int netPayablePaise;
+  final int reimbursementsPaise;
+  final int overtimePaise;
+  final int workingDays;
+  final int payableDays;
+  final double lopDays;
+  final double paidLeaveDaysApplied;
+  final List<PayslipDeductionLine> lines;
+
+  int get monthlyPaise => earnings.fold(0, (sum, e) => sum + e.fullPaise);
+  int get lossOfPayPaise =>
+      earnings.fold(0, (sum, e) => sum + (e.fullPaise - e.paidPaise));
+  int get otherDeductionsPaise =>
+      deductions.fold(0, (sum, d) => sum + d.fullPaise);
+
+  factory Payslip.fromJson(
+    Map<String, dynamic> run,
+    Map<String, dynamic> json,
+  ) {
+    final inputs = json['inputs'] as Map<String, dynamic>? ?? const {};
+    return Payslip(
+      id: json['id'] as String? ?? '',
+      period: json['period'] as String? ?? run['period'] as String? ?? '',
+      runStatus: run['status'] as String? ?? 'draft',
+      employeeName: json['employeeName'] as String? ?? '',
+      employeeId: json['employeeId'] as String? ?? '',
+      designation: json['designation'] as String? ?? '',
+      department: json['department'] as String? ?? '',
+      joiningDate: json['joiningDate'] as String? ?? '',
+      earnings: (json['earnings'] as List<dynamic>? ?? const [])
+          .map((e) => PayslipAmount.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      deductions: (json['deductions'] as List<dynamic>? ?? const [])
+          .map((e) => PayslipAmount.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      netPayablePaise: (json['netPayablePaise'] as num?)?.toInt() ?? 0,
+      reimbursementsPaise: (json['reimbursementsPaise'] as num?)?.toInt() ?? 0,
+      overtimePaise: (inputs['overtimePaise'] as num?)?.toInt() ?? 0,
+      workingDays: (inputs['workingDays'] as num?)?.toInt() ?? 0,
+      payableDays: (inputs['payableDays'] as num?)?.toInt() ?? 0,
+      lopDays: (inputs['lopDays'] as num?)?.toDouble() ?? 0,
+      paidLeaveDaysApplied:
+          (inputs['paidLeaveDaysApplied'] as num?)?.toDouble() ?? 0,
+      lines: (inputs['attendanceDeductions'] as List<dynamic>? ?? const [])
+          .map((e) => PayslipDeductionLine.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+/// One graded day of the month behind a payslip.
+class PayslipDay {
+  const PayslipDay({
+    required this.date,
+    required this.status,
+    this.label,
+    this.punchIn,
+    this.punchOut,
+    this.lateByMinutes = 0,
+    this.earlyByMinutes = 0,
+  });
+
+  final DateTime date;
+  final String status;
+  final String? label;
+  final DateTime? punchIn;
+  final DateTime? punchOut;
+  final int lateByMinutes;
+  final int earlyByMinutes;
+
+  factory PayslipDay.fromJson(Map<String, dynamic> json) => PayslipDay(
+    date: DateTime.parse(json['date'] as String),
+    status: json['status'] as String? ?? '',
+    label: json['label'] as String?,
+    punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
+    punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
+    lateByMinutes: (json['lateByMinutes'] as num?)?.toInt() ?? 0,
+    earlyByMinutes: (json['earlyByMinutes'] as num?)?.toInt() ?? 0,
+  );
+
+  /// Whether this day counted towards a rule.
+  bool countsFor(String? trigger) => switch (trigger) {
+    'late' => lateByMinutes > 0 && status != 'missed_punch',
+    'early' => earlyByMinutes > 0 && status != 'missed_punch',
+    'absent' => status == 'absent',
+    'half_day' => status == 'half_day' || status == 'missed_punch',
+    'leave' => status == 'on_leave',
+    'missed_punch' => status == 'missed_punch',
+    _ => false,
+  };
+}
+
+/// Whose name and address the slip is printed under.
+class PayslipCompany {
+  const PayslipCompany({required this.name, required this.address});
+  final String name;
+  final String address;
+  factory PayslipCompany.fromJson(Map<String, dynamic> json) => PayslipCompany(
+    name: json['name'] as String? ?? '',
+    address: json['address'] as String? ?? '',
+  );
+}
