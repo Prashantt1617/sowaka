@@ -31,8 +31,10 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
   }, [userId, payslip.period]);
-  const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.count > 0);
+  const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
   const lopPaise = payslip.earnings.reduce((t, e) => t + (e.fullPaise - e.paidPaise), 0);
+  const totalDeducted = lines.reduce((t, l) => t + l.days, 0);
+  const covered = payslip.inputs.paidLeaveDaysApplied ?? 0;
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,30,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -60,10 +62,6 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>
                     {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
-                  <div style={{ fontSize: 14, color: '#6B4E12', marginTop: 3 }}>
-                    {line.count} {label.toLowerCase()} this month → <strong>{line.days} {line.days === 1 ? 'day' : 'days'}</strong> deducted
-                    {line.every ? ` (${Math.floor(line.count / line.every)} × ${line.every}${line.count % line.every ? `, ${line.count % line.every} left over` : ''})` : ''}
-                  </div>
                 </div>
                 {!days ? (
                   <div style={{ padding: '12px 4px', color: '#717171', fontSize: 14 }}>{error ? '' : 'Loading the days…'}</div>
@@ -78,7 +76,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                           <td style={{ padding: '9px 4px', borderBottom: '1px solid #F4F4F6', color: '#717171' }}>
                             {trigger === 'late' && `In at ${clock(d.punchIn)} · late by ${mins(d.lateByMinutes)}`}
                             {trigger === 'early' && `Out at ${clock(d.punchOut)} · left ${mins(d.earlyByMinutes ?? 0)} early`}
-                            {trigger === 'absent' && (d.label ?? 'Absent')}
+                            {trigger === 'absent' && 'Absent'}
                             {trigger === 'half_day' && (d.status === 'missed_punch' ? `Single punch · ${d.label ?? 'missed punch'} · in ${clock(d.punchIn)}` : `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`)}
                             {trigger === 'leave' && (d.label ?? 'On leave')}
                             {trigger === 'missed_punch' && (d.label ?? 'Missed punch')}
@@ -92,7 +90,23 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             );
           })}
         </div>
+        <div style={{ borderTop: '1px solid #EBEBEB', padding: '14px 22px', display: 'flex', flexDirection: 'column', gap: 6, background: '#FBFBFC', borderRadius: '0 0 16px 16px' }}>
+          <TotalRow label="Total deducted" value={`${fmt(totalDeducted)} ${totalDeducted === 1 ? 'day' : 'days'}`} />
+          {covered > 0 && <TotalRow label="Covered by paid leave" value={`−${fmt(Math.min(covered, totalDeducted))} ${Math.min(covered, totalDeducted) === 1 ? 'day' : 'days'}`} />}
+          <TotalRow strong label="Loss of pay" value={`${fmt(payslip.inputs.lopDays)} ${payslip.inputs.lopDays === 1 ? 'day' : 'days'} · ${inr(lopPaise)}`} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+function TotalRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: strong ? 16 : 15, fontWeight: strong ? 800 : 600, color: strong ? '#A8475F' : '#484848' }}>
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }

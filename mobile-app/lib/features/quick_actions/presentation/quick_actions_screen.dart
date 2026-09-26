@@ -285,9 +285,11 @@ List<AttendanceDayView> buildAttendanceDays({
         // Three bands, all from the shift HR configured: a full day, a half day,
         // and below that a day short enough to need a correction. With a single
         // punch there are no hours to band, so the punch alone makes the day.
-        final fullDay = duration == null || duration >= shift.minFullDay;
-        final halfDay = !fullDay && duration! >= shift.minHalfDay;
-        final short = !fullDay && !halfDay;
+        // The mark is the server's: the same four switchable rules, so this
+        // calendar and the HR dashboard can never read one day two ways.
+        final mark = shift.dayMark(record!.punchIn, record.punchOut, duration);
+        final halfDay = mark == DayMark.halfDay;
+        final short = mark == DayMark.absent;
         final late = shift.isLate(record!.punchIn!);
         final earlyOut =
             record.punchOut != null && shift.isEarlyOut(record.punchOut!);
@@ -1789,7 +1791,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Future<(PayslipCompany, List<Payslip>)>? _payslipsFuture;
   PayslipCompany _payslipCompany = const PayslipCompany(name: '', address: '');
   Payslip? _payslip;
-  Future<List<PayslipDay>>? _payslipDaysFuture;
   bool _downloading = false;
 
   static String _inr(int paise) =>
@@ -1817,42 +1818,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   static String _days(double days) => days == days.roundToDouble()
       ? days.round().toString()
       : days.toStringAsFixed(1);
-  static String _clock(DateTime? at) => at == null
-      ? '—'
-      : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
-  static String _mins(int m) =>
-      m >= 60 ? '${m ~/ 60}h${m % 60 == 0 ? '' : ' ${m % 60}m'}' : '$m min';
-  static String _dayLabel(DateTime d) {
-    const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const mon = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${dow[d.weekday - 1]}, ${d.day.toString().padLeft(2, '0')} ${mon[d.month - 1]}';
-  }
-
-  (String, Color) _runStatusLook(String status) => switch (status) {
-    'paid' => ('Paid', const Color(0xFF16A34A)),
-    'approved' => ('Approved', const Color(0xFF16A34A)),
-    'pending_approval' => ('Pending approval', const Color(0xFF4A6FA5)),
-    'rejected' => ('Rejected', const Color(0xFFFB2C36)),
-    _ => ('Draft', const Color(0xFF717171)),
-  };
-
   void _openPayslip(Payslip slip) {
     setState(() {
       _payslip = slip;
-      _payslipDaysFuture = widget.bloc.api.fetchPayslipDays(slip.id);
     });
     _open(_QuickPage.payslip);
   }
@@ -1914,23 +1882,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             return Column(
               children: [
                 for (final slip in slips) ...[
-                  Builder(
-                    builder: (context) {
-                      final (statusLabel, statusColor) = _runStatusLook(
-                        slip.runStatus,
-                      );
-                      return _QuickRequestCard(
-                        title: _monthOf(slip.period),
-                        subtitle:
-                            '${_inr(slip.netPayablePaise)} net · ${slip.payableDays}/${slip.workingDays} paid days',
-                        status: statusLabel,
-                        statusColor: statusColor,
-                        footerText: slip.lopDays > 0
-                            ? '${_days(slip.lopDays)} ${slip.lopDays == 1 ? 'day' : 'days'} loss of pay · ${_inr(slip.lossOfPayPaise)}'
-                            : 'No loss of pay',
-                        onViewDetails: () => _openPayslip(slip),
-                      );
-                    },
+                  _QuickRequestCard(
+                    title: _monthOf(slip.period),
+                    subtitle: '',
+                    status: '',
+                    statusColor: Colors.transparent,
+                    onViewDetails: () => _openPayslip(slip),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -1945,7 +1902,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   Widget _payslipDetail() {
     final slip = _payslip;
     if (slip == null) return _payslipHub();
-    final (statusLabel, statusColor) = _runStatusLook(slip.runStatus);
     final docked = slip.lines.where((line) => line.days > 0).toList();
     final covered = slip.paidLeaveDaysApplied;
     return _HubScaffold(
@@ -1957,7 +1913,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        // The figure that matters, and the days behind it.
+        // The figure that matters.
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -1968,39 +1924,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    _inr(slip.netPayablePaise),
-                    style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: statusColor.withValues(alpha: .35),
-                      ),
-                    ),
-                    child: Text(
-                      statusLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: statusColor,
-                      ),
-                    ),
-                  ),
-                ],
+              Text(
+                _inr(slip.netPayablePaise),
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
               ),
               const Text(
                 'Total net pay',
@@ -2010,14 +1940,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 14),
-              _payslipRow(
-                'Paid days',
-                '${slip.payableDays} of ${slip.workingDays}',
-              ),
-              _payslipRow('Loss of pay days', _days(slip.lopDays)),
-              if (covered > 0)
-                _payslipRow('Covered by paid leave', _days(covered)),
             ],
           ),
         ),
@@ -2088,10 +2010,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ],
           ),
         ),
-        if (slip.lopDays > 0) ...[
-          const SizedBox(height: 14),
-          _lossOfPayReasons(slip, docked),
-        ],
         const SizedBox(height: 18),
         SizedBox(
           width: double.infinity,
@@ -2119,140 +2037,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
         const SizedBox(height: 24),
       ],
-    );
-  }
-
-  /// Why pay was lost: each rule that fired, and every day that counted
-  /// towards it — the same explanation HR sees on the dashboard.
-  Widget _lossOfPayReasons(Payslip slip, List<PayslipDeductionLine> docked) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Why there is a loss of pay',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${_days(slip.lopDays)} of ${slip.workingDays} paid days deducted · ${_inr(slip.lossOfPayPaise)}',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF717171)),
-          ),
-          FutureBuilder<List<PayslipDay>>(
-            future: _payslipDaysFuture,
-            builder: (context, snapshot) {
-              final days = snapshot.data;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final line in docked) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFBF1DD),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFF1DDB2)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${line.name}: every ${line.every ?? '—'} → ${line.deductDays == null ? '—' : _days(line.deductDays!)} paid ${line.deductDays == 1 ? 'day' : 'days'}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF222222),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${line.count} ${line.name.toLowerCase()} this month → ${_days(line.days)} ${line.days == 1 ? 'day' : 'days'} deducted'
-                            '${line.every != null && line.every! > 0 ? ' (${line.count ~/ line.every!} × ${line.every}${line.count % line.every! > 0 ? ', ${line.count % line.every!} left over' : ''})' : ''}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF6B4E12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (days == null)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          'Loading the days…',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF717171),
-                          ),
-                        ),
-                      )
-                    else
-                      for (final d in days.where(
-                        (d) => d.countsFor(line.trigger),
-                      ))
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 7),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 108,
-                                child: Text(
-                                  _dayLabel(d.date),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF222222),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  switch (line.trigger) {
-                                    'late' =>
-                                      'In at ${_clock(d.punchIn)} · late by ${_mins(d.lateByMinutes)}',
-                                    'early' =>
-                                      'Out at ${_clock(d.punchOut)} · left ${_mins(d.earlyByMinutes)} early',
-                                    'absent' => d.label ?? 'Absent',
-                                    'half_day' =>
-                                      d.status == 'missed_punch'
-                                          ? 'Single punch · ${d.label ?? 'missed punch'} · in ${_clock(d.punchIn)}'
-                                          : 'Half day · ${_clock(d.punchIn)} – ${_clock(d.punchOut)}',
-                                    'leave' => d.label ?? 'On leave',
-                                    _ => d.label ?? 'Missed punch',
-                                  },
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Color(0xFF717171),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
-      ),
     );
   }
 
@@ -5991,14 +5775,16 @@ class _QuickRequestCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontSize: 12,
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

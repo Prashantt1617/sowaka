@@ -57,7 +57,12 @@ class _FeedbackList extends StatelessWidget {
     final data = state.dashboard!;
     // Feedback only flows downward, so the viewer's own manager — present in
     // the team list — is never someone to review.
-    final reviewable = data.team.where((item) => !item.isManager).toList();
+    // Only the viewer's own direct reports can be reviewed — never
+    // themselves, a peer, or the person they report to. The server refuses
+    // anything else, so offering it here only sets up a failure.
+    final reviewable = data.team
+        .where((item) => item.reportsToViewer && !item.isSelf)
+        .toList();
     final open = reviewable
         .where((item) => item.status != FeedbackStatus.sent)
         .toList();
@@ -1210,7 +1215,10 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                 _listeningField = null;
                 _transcribingField = null;
               });
-              showAppToast(context, 'Voice input unavailable: ${error.errorMsg}');
+              showAppToast(
+                context,
+                'Voice input unavailable: ${error.errorMsg}',
+              );
             },
           );
     _speechInitialized = available;

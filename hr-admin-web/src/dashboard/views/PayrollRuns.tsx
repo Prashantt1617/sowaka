@@ -178,7 +178,7 @@ export function PayrollRuns() {
                     <Td><div style={{ fontWeight: 700 }}>{p.employeeName}</div></Td>
                     <Td><span style={{ color: '#717171' }}>{p.department || '—'}</span></Td>
                     <Td right>
-                      {p.inputs.lopDays > 0 && (p.inputs.attendanceDeductions ?? []).some((l) => l.count > 0) ? (
+                      {p.inputs.lopDays > 0 && (p.inputs.attendanceDeductions ?? []).some((l) => l.days > 0) ? (
                         <button type="button" onClick={() => setExplain(p)} title="Why is there a loss of pay?" style={lopLink}>{p.inputs.lopDays}</button>
                       ) : (
                         <span style={{ color: p.inputs.lopDays ? '#A8475F' : '#9197A2', fontWeight: 700 }}>{p.inputs.lopDays}</span>

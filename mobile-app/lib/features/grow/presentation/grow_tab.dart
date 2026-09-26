@@ -27,9 +27,11 @@ class _GrowTabState extends State<_GrowTab> {
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
     final period = _EmployeeGrowthPage._currentPeriod();
-    // Feedback only flows downward: the viewer's own manager is in the team
-    // list but must never appear as someone to review.
-    final team = data.team.where((member) => !member.isManager).toList();
+    // Feedback only flows downward, to direct reports: never the viewer, a
+    // peer, or the viewer's own manager, all of whom are in the team list.
+    final team = data.team
+        .where((member) => member.reportsToViewer && !member.isSelf)
+        .toList();
     // "Given" counts reports whose review for the current period is already
     // sent — the same signal the team list shows as a green dot.
     final given = team
@@ -644,7 +646,10 @@ class _GrowthTeamRow extends StatelessWidget {
                       // The same "Pending" pill the month cards use — a bare
                       // amber square said nothing about what was missing.
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFEFDDA),
                           borderRadius: BorderRadius.circular(8),
@@ -969,53 +974,56 @@ class _GrowthMonthCard extends StatelessWidget {
           // in a row.
           if (collapsible)
             InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Text(
-                    _periodTitle(record.period),
-                    style: const TextStyle(
-                      color: Color(0xFF101828),
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  ...[
-                    const SizedBox(width: 6),
-                    AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: const Icon(
-                        Icons.expand_more_rounded,
-                        size: 20,
-                        color: Color(0xFF6A7282),
-                      ),
-                    ),
-                  ],
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0x17675AFF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${record.overallScore.toStringAsFixed(1)} / 5',
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      _periodTitle(record.period),
                       style: const TextStyle(
-                        color: Color(0xFF4F46E5),
-                        fontSize: 12.5,
+                        color: Color(0xFF101828),
+                        fontSize: 15.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                ],
+                    ...[
+                      const SizedBox(width: 6),
+                      AnimatedRotation(
+                        turns: expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 20,
+                          color: Color(0xFF6A7282),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0x17675AFF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${record.overallScore.toStringAsFixed(1)} / 5',
+                        style: const TextStyle(
+                          color: Color(0xFF4F46E5),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
             ),
           if (expanded) ...[
             if (collapsible) const Divider(height: 1, color: Color(0xFFF3F4F6)),
