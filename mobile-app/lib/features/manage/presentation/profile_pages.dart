@@ -41,7 +41,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ('Comment:', leave.reason),
             ],
             decision: LeaveDecision.pending,
-            busy: bloc.isBusy(DecideLeave(leave.id, LeaveDecision.approved)),
+            approving: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.declined),
+            ),
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
             onReject: () async {
@@ -76,8 +81,11 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ),
             ],
             decision: LeaveDecision.pending,
-            busy: bloc.isBusy(
+            approving: bloc.isBusy(
               DecideOvertime(request.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideOvertime(request.id, LeaveDecision.declined),
             ),
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
@@ -908,7 +916,8 @@ class _ProfileRequestCard extends StatelessWidget {
     this.onApprove,
     this.onReject,
     this.readOnly = false,
-    this.busy = false,
+    this.approving = false,
+    this.declining = false,
   });
 
   final IconData icon;
@@ -919,8 +928,10 @@ class _ProfileRequestCard extends StatelessWidget {
   final VoidCallback? onReject;
   final bool readOnly;
 
-  /// The decision is in flight; see [_TeamRequestCard.busy].
-  final bool busy;
+  /// The decision is in flight; see [_TeamRequestCard.approving].
+  final bool approving;
+  final bool declining;
+  bool get busy => approving || declining;
 
   @override
   Widget build(BuildContext context) {
@@ -1016,6 +1027,7 @@ class _ProfileRequestCard extends StatelessWidget {
                     background: busy ? MColors.line : MColors.approveTint,
                     foreground: busy ? MColors.inkFaint : MColors.approveInk,
                     onTap: busy ? null : onApprove,
+                    busy: approving,
                     radius: 8,
                   ),
                 ),
@@ -1026,6 +1038,7 @@ class _ProfileRequestCard extends StatelessWidget {
                     background: busy ? MColors.line : MColors.rejectTint,
                     foreground: busy ? MColors.inkFaint : MColors.rejectInk,
                     onTap: busy ? null : onReject,
+                    busy: declining,
                     radius: 8,
                   ),
                 ),

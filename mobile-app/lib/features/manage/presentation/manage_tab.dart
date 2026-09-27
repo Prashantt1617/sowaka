@@ -1262,8 +1262,10 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final alreadySent = member.status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
     final complete = scored.length == state.recordParams.length;
-    // A save or a send is still travelling.
-    final writing = bloc.isBusy(const SaveFeedback());
+    // A save or a send is still travelling: both wait, the one tapped spins.
+    final saving = bloc.isBusy(const SaveFeedback());
+    final sending = bloc.isBusy(const SendFeedback());
+    final writing = saving || sending;
     // Weighted the way the server scores a sent review, so the number here is
     // the number that gets saved rather than a plain average that drifts from
     // it whenever the weights are uneven.
@@ -1425,6 +1427,7 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                                 onTap: writing
                                     ? null
                                     : () => bloc.add(const SaveFeedback()),
+                                busy: saving,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1440,6 +1443,7 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                                 onTap: complete && !writing
                                     ? () => bloc.add(const SendFeedback())
                                     : null,
+                                busy: sending,
                               ),
                             ),
                           ],
@@ -1461,6 +1465,7 @@ class _FeedbackActionButton extends StatelessWidget {
     required this.foreground,
     required this.onTap,
     this.border,
+    this.busy = false,
   });
 
   final String label;
@@ -1468,6 +1473,9 @@ class _FeedbackActionButton extends StatelessWidget {
   final Color foreground;
   final VoidCallback? onTap;
   final Color? border;
+
+  /// The review is on its way: a spinner in place of the label.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -1500,15 +1508,29 @@ class _FeedbackActionButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: border == null ? null : Border.all(color: border!),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontSize: 14,
-                height: 20 / 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: busy
+                ? SizedBox(
+                    height: 20,
+                    child: Center(
+                      child: SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: foreground,
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 14,
+                      height: 20 / 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
           ),
         ),
       ),

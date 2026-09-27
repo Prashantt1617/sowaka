@@ -376,10 +376,14 @@ class ManagerBloc {
     SubmitOvertimeApplication() => 'overtime:apply',
     SubmitReimbursementApplication() => 'reimbursement:apply',
     SubmitAttendanceRegularization() => 'attendance:apply',
-    DecideLeave(:final leaveId) => 'leave:decide:$leaveId',
-    DecideOvertime(:final overtimeId) => 'overtime:decide:$overtimeId',
-    DecideAttendanceRegularization(:final id) => 'attendance:decide:$id',
-    SaveFeedback() || SendFeedback() => 'feedback:write',
+    DecideLeave(:final leaveId, :final decision) =>
+      'leave:decide:$leaveId:${decision.name}',
+    DecideOvertime(:final overtimeId, :final decision) =>
+      'overtime:decide:$overtimeId:${decision.name}',
+    DecideAttendanceRegularization(:final id, :final decision) =>
+      'attendance:decide:$id:${decision.name}',
+    SaveFeedback() => 'feedback:save',
+    SendFeedback() => 'feedback:send',
     NominateAward() => 'award:nominate',
     PunchRecorded() => 'attendance:punch',
     _ => null,

@@ -27,6 +27,13 @@ class QuickActionsController extends ChangeNotifier {
   /// the alternative to punching in — someone who is not coming in at all.
   void openLeave() => _state?._open(_QuickPage.leave);
 
+  /// The person's own overtime requests, for a notification about one.
+  void openOvertime() => _state?._open(_QuickPage.overtime);
+
+  /// The attendance calendar, for a notification about a punch or a
+  /// correction of their own.
+  void openCalendar() => _state?._open(_QuickPage.calendar);
+
   void _attach(_QuickActionsScreenState state) {
     _state = state;
   }
@@ -1036,6 +1043,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(
         enabled: _leaveFormComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitLeaveApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1630,6 +1638,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         label: 'Apply Overtime',
         // Off until the date and duration are both valid for the policy.
         enabled: _overtimeFormComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitOvertimeApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -2215,6 +2224,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       trailing: _LeaveHeaderButton(
         label: 'Apply',
         enabled: _reimbursementComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitReimbursementApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -5220,30 +5230,45 @@ class _LeaveHeaderButton extends StatelessWidget {
     required this.onTap,
     this.enabled = true,
     this.label = 'Apply Leave',
+    this.busy = false,
   });
 
   final VoidCallback? onTap;
   final bool enabled;
   final String label;
 
+  /// The request is on its way: the button keeps its colour, stops answering,
+  /// and shows a spinner where the label was.
+  final bool busy;
+
   @override
   Widget build(BuildContext context) {
+    final live = enabled || busy;
     return Material(
-      color: enabled ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
+      color: live ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: enabled ? onTap : null,
+        onTap: enabled && !busy ? onTap : null,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: enabled ? Colors.white : const Color(0xFF9CA3AF),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  label,
+                  style: TextStyle(
+                    color: live ? Colors.white : const Color(0xFF9CA3AF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
         ),
       ),
     );

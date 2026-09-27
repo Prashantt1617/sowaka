@@ -273,34 +273,118 @@ class _ManagerScreenState extends State<ManagerScreen> {
     );
   }
 
+  /// Takes a tapped notification to the thing it is about, not just to a
+  /// tab: the post, the request queue, the person, the review.
   void _handleNotificationDestination(Map<String, dynamic> data) {
     if (!mounted) return;
     final destination = '${data['destination'] ?? ''}';
+    final postId = '${data['postId'] ?? ''}';
+    final employeeUserId = '${data['employeeUserId'] ?? ''}';
     setState(() => _profileOpen = false);
+    Navigator.of(context).popUntil((route) => route.isFirst);
     switch (destination) {
       case 'connect_post':
       case 'connect_comment':
-      case 'employee_profile':
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
+        if (postId.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _connectComposerController.openPost(
+              postId,
+              comments: destination == 'connect_comment',
+            ),
+          );
+        }
+      case 'employee_profile':
+        if (!_openTeamMember(employeeUserId)) {
+          _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+        }
       case 'manage_leave':
         _bloc
           ..add(const ChangeManagerTab(ManagerTab.manage))
           ..add(const OpenLeaveRequests());
-      case 'grow_feedback':
-      case 'feedback_session':
-        _bloc.add(const ChangeManagerTab(ManagerTab.grow));
-      case 'nomination_submission':
-      case 'nomination_review':
+      case 'manage_attendance':
       case 'attendance_team':
       case 'attendance_report':
       case 'team_leave_calendar':
+      case 'nomination_submission':
+      case 'nomination_review':
         _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+      case 'grow_feedback':
+      case 'feedback_session':
+        _bloc.add(const ChangeManagerTab(ManagerTab.grow));
+        final member = _teamMember(employeeUserId);
+        if (member != null && _bloc.state.canManage) {
+          _bloc.add(OpenFeedbackRecord(member.id));
+        }
       case 'profile_leaves':
       case 'profile_recognition':
         setState(() => _profileOpen = true);
+      case '':
+        _openRequestNotification(data);
       default:
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
     }
+  }
+
+  /// Requests carry no destination, only what kind they are and whose side
+  /// the reader is on: `inbox` is the manager's queue, `mine` the person's own.
+  void _openRequestNotification(Map<String, dynamic> data) {
+    final type = '${data['type'] ?? ''}';
+    final inbox = '${data['view'] ?? ''}' == 'inbox' && _bloc.state.canManage;
+    if (inbox) {
+      _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+      switch (type) {
+        case 'leave':
+          _bloc.add(const OpenLeaveRequests());
+        case 'overtime':
+          _bloc.add(const OpenOvertimeRequests());
+        case 'attendance':
+          _bloc.add(const OpenAttendanceCorrections());
+      }
+      return;
+    }
+    _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      switch (type) {
+        case 'leave':
+          _quickActionsController.openLeave();
+        case 'overtime':
+          _quickActionsController.openOvertime();
+        case 'attendance':
+          _quickActionsController.openCalendar();
+      }
+    });
+  }
+
+  TeamMember? _teamMember(String userId) {
+    if (userId.isEmpty) return null;
+    final dashboard = _bloc.state.dashboard;
+    if (dashboard == null) return null;
+    return [...dashboard.team, ...dashboard.recognitionCandidates]
+        .where((member) => member.userId == userId)
+        .firstOrNull;
+  }
+
+  /// Opens a teammate's profile page over the Manage tab. False when the
+  /// person is not someone this viewer can see.
+  bool _openTeamMember(String userId) {
+    final member = _teamMember(userId);
+    final dashboard = _bloc.state.dashboard;
+    if (member == null || dashboard == null) return false;
+    _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _TeamMemberProfilePage(
+          member: member,
+          data: dashboard,
+          bloc: _bloc,
+          onNotifications: () => _openNotifications(context),
+          onOpenComposer: _connectComposerController.openComposer,
+          canManage: _bloc.state.canManage,
+        ),
+      ),
+    );
+    return true;
   }
 
   Future<void> _logout() async {

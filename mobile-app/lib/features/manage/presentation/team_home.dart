@@ -795,7 +795,12 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: leave.decision,
             responseNote: leave.managerNote,
-            busy: bloc.isBusy(DecideLeave(leave.id, LeaveDecision.approved)),
+            approving: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.declined),
+            ),
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
             onReject: () async {
@@ -839,8 +844,11 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: request.decision,
             responseNote: request.managerNote,
-            busy: bloc.isBusy(
+            approving: bloc.isBusy(
               DecideOvertime(request.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideOvertime(request.id, LeaveDecision.declined),
             ),
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
@@ -883,10 +891,16 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: request.decision,
             responseNote: request.managerNote,
-            busy: bloc.isBusy(
+            approving: bloc.isBusy(
               DecideAttendanceRegularization(
                 request.id,
                 LeaveDecision.approved,
+              ),
+            ),
+            declining: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.declined,
               ),
             ),
             onApprove: () => bloc.add(
@@ -1129,7 +1143,8 @@ class _TeamRequestCard extends StatelessWidget {
     required this.decision,
     this.onApprove,
     this.onReject,
-    this.busy = false,
+    this.approving = false,
+    this.declining = false,
     this.responseNote = '',
   });
 
@@ -1142,9 +1157,12 @@ class _TeamRequestCard extends StatelessWidget {
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
 
-  /// The decision is already on its way to the server: both buttons go flat
-  /// and stop answering, so a second tap cannot decide the same request twice.
-  final bool busy;
+  /// The decision is already on its way to the server: both buttons stop
+  /// answering, so a second tap cannot decide the same request twice, and the
+  /// one that was tapped shows a spinner.
+  final bool approving;
+  final bool declining;
+  bool get busy => approving || declining;
 
   /// The note left with the decision, shown once a request has been reviewed.
   final String responseNote;
@@ -1248,6 +1266,7 @@ class _TeamRequestCard extends StatelessWidget {
                     background: busy ? MColors.line : MColors.approveTint,
                     foreground: busy ? MColors.inkFaint : MColors.approveInk,
                     onTap: busy ? null : onApprove,
+                    busy: approving,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1257,6 +1276,7 @@ class _TeamRequestCard extends StatelessWidget {
                     background: busy ? MColors.line : MColors.rejectTint,
                     foreground: busy ? MColors.inkFaint : MColors.rejectInk,
                     onTap: busy ? null : onReject,
+                    busy: declining,
                   ),
                 ),
               ],
@@ -1376,6 +1396,7 @@ class _TeamDecisionButton extends StatelessWidget {
     required this.foreground,
     required this.onTap,
     this.radius = 16,
+    this.busy = false,
   });
 
   final String label;
@@ -1383,6 +1404,10 @@ class _TeamDecisionButton extends StatelessWidget {
   final Color foreground;
   final VoidCallback? onTap;
   final double radius;
+
+  /// This is the decision on its way to the server: a spinner where the
+  /// label was, so the wait is visible and not just a greyed-out button.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -1394,7 +1419,18 @@ class _TeamDecisionButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
+          child: busy
+              ? Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: foreground,
+                    ),
+                  ),
+                )
+              : Text(
             label,
             textAlign: TextAlign.center,
             style: TextStyle(

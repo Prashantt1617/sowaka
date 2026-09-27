@@ -39,6 +39,11 @@ class ConnectComposerController {
   }
 
   void openComposer() => _state?._openPostTypePicker();
+
+  /// Brings one post into view — a notification about it was tapped — and
+  /// opens its comments when that is what the notification was about.
+  void openPost(String postId, {bool comments = false}) =>
+      _state?._revealPost(postId, comments: comments);
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -66,6 +71,10 @@ class ConnectFeedScreen extends StatefulWidget {
 
 class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   late final ConnectBloc _bloc;
+  final _feedScroll = ScrollController();
+
+  /// One key per post card, so a card can be found and scrolled to.
+  final _postKeys = <String, GlobalKey>{};
 
   // AuthUser carries no initials/avatarColor fields of its own, so the
   // signed-in viewer's comment-composer avatar is derived the same way the
@@ -119,6 +128,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   void dispose() {
     widget.composerController?._detach(this);
     _bloc.dispose();
+    _feedScroll.dispose();
     super.dispose();
   }
 
@@ -227,6 +237,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         color: _ConnectColors.terra,
         onRefresh: _bloc.refresh,
         child: ListView.separated(
+          controller: _feedScroll,
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
           itemCount: posts.length + 1,
           separatorBuilder: (_, _) => const SizedBox(height: 16),
@@ -246,13 +257,13 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             // viewer's own team — rather than sitting inside a standard post.
             if (post.type == ConnectPostType.relayGame) {
               return Padding(
-                key: ValueKey(post.id),
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: RelayPostCard(post: post, session: widget.session),
               );
             }
             return _ConnectPostCard(
-              key: ValueKey(post.id),
+              key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
               post: post,
               busy: state.busyPostId == post.id,
               canManage:
@@ -406,6 +417,41 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       builder: (_) => _BlockPersonSheet(name: name),
     );
     if (confirmed == true) await _bloc.blockPerson(userId, name);
+  }
+
+  /// Scrolls until the post's card is on screen. Cards are built lazily, so
+  /// this walks down a screen at a time until the card exists, then settles
+  /// it near the top. A post not in the loaded feed is fetched first.
+  Future<void> _revealPost(String postId, {bool comments = false}) async {
+    if (!_bloc.state.posts.any((post) => post.id == postId)) {
+      await _bloc.refresh();
+    }
+    if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
+      return;
+    }
+    for (var step = 0; step < 60; step++) {
+      final card = _postKeys[postId]?.currentContext;
+      if (card != null) {
+        await Scrollable.ensureVisible(
+          card,
+          alignment: 0.08,
+          duration: const Duration(milliseconds: 280),
+        );
+        break;
+      }
+      if (!_feedScroll.hasClients) return;
+      final position = _feedScroll.position;
+      if (position.pixels >= position.maxScrollExtent) break;
+      _feedScroll.jumpTo(
+        (position.pixels + position.viewportDimension * 0.9).clamp(
+          0.0,
+          position.maxScrollExtent,
+        ),
+      );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    if (comments && mounted) await _openComments(postId);
   }
 
   Future<void> _openComments(String postId) {
