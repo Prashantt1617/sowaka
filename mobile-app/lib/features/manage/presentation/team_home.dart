@@ -212,8 +212,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
   List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
     if (members.where((member) => member.isManager).firstOrNull case final m?)
       m,
-    if (members.where((member) => member.isSelf).firstOrNull case final me?)
-      me,
+    if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
   ];
 
   /// A team's name above its people.
@@ -770,153 +769,160 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
     final bloc = widget.bloc;
     final entries =
         <(DateTime date, String who, String kind, Widget card, bool pending)>[
-      for (final leave in data.leaves)
-        (
-          leave.requestedOn,
-          leave.who,
-          'leave',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _LeaveRequestDetailPage(leave: leave, bloc: bloc),
-              ),
-            ),
-            initial: leave.initial,
-            avatarIndex: leave.avatarIndex,
-            name: leave.who,
-            role: leave.team,
-            rows: [
-              ('Type:', leave.type),
-              ('Date:', _leaveDateRange(leave)),
-              ('Comment:', leave.reason),
-            ],
-            decision: leave.decision,
-            responseNote: leave.managerNote,
-            approving: bloc.isBusy(
-              DecideLeave(leave.id, LeaveDecision.approved),
-            ),
-            declining: bloc.isBusy(
-              DecideLeave(leave.id, LeaveDecision.declined),
-            ),
-            onApprove: () =>
-                bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
-            onReject: () async {
-              final reason = await _showDeclineReasonSheet(context);
-              if (reason == null) return;
-              bloc.add(
-                DecideLeave(
-                  leave.id,
-                  LeaveDecision.declined,
-                  managerNote: reason,
+          for (final leave in data.leaves)
+            (
+              leave.requestedOn,
+              leave.who,
+              'leave',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        _LeaveRequestDetailPage(leave: leave, bloc: bloc),
+                  ),
                 ),
-              );
-            },
-          ),
-          leave.decision == LeaveDecision.pending,
-        ),
-      for (final request in data.overtime)
-        (
-          request.requestedOn,
-          request.who,
-          'overtime',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _OvertimeRequestDetailPage(request: request, bloc: bloc),
-              ),
-            ),
-            initial: request.initial,
-            avatarIndex: request.avatarIndex,
-            name: request.who,
-            role: request.team,
-            rows: [
-              ('Type:', 'Overtime'),
-              ('Date:', _managerDate(request.workDate)),
-              ('Overtime hrs:', request.hoursLabel),
-              (
-                'Comment:',
-                request.note.isEmpty ? request.timeRangeLabel : request.note,
-              ),
-            ],
-            decision: request.decision,
-            responseNote: request.managerNote,
-            approving: bloc.isBusy(
-              DecideOvertime(request.id, LeaveDecision.approved),
-            ),
-            declining: bloc.isBusy(
-              DecideOvertime(request.id, LeaveDecision.declined),
-            ),
-            onApprove: () =>
-                bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
-            onReject: () async {
-              final reason = await _showDeclineReasonSheet(context);
-              if (reason == null) return;
-              bloc.add(
-                DecideOvertime(
-                  request.id,
-                  LeaveDecision.declined,
-                  managerNote: reason,
+                initial: leave.initial,
+                avatarIndex: leave.avatarIndex,
+                name: leave.who,
+                role: leave.team,
+                rows: [
+                  ('Type:', leave.type),
+                  ('Date:', _leaveDateRange(leave)),
+                  ('Comment:', leave.reason),
+                ],
+                decision: leave.decision,
+                responseNote: leave.managerNote,
+                approving: bloc.isBusy(
+                  DecideLeave(leave.id, LeaveDecision.approved),
                 ),
-              );
-            },
-          ),
-          request.decision == LeaveDecision.pending,
-        ),
-      for (final request in data.managerRegularizations)
-        (
-          request.createdAt,
-          request.who,
-          'correction',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _AttendanceCorrectionDetailPage(request: request, bloc: bloc),
+                declining: bloc.isBusy(
+                  DecideLeave(leave.id, LeaveDecision.declined),
+                ),
+                onApprove: () =>
+                    bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
+                onReject: () async {
+                  final reason = await _showDeclineReasonSheet(context);
+                  if (reason == null) return;
+                  bloc.add(
+                    DecideLeave(
+                      leave.id,
+                      LeaveDecision.declined,
+                      managerNote: reason,
+                    ),
+                  );
+                },
               ),
+              leave.decision == LeaveDecision.pending,
             ),
-            initial: request.initial,
-            avatarIndex: request.avatarIndex,
-            name: request.who,
-            role: request.team,
-            rows: [
-              ('Type:', 'Correction'),
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              // The reason belongs on the detail page, not on the card: the
-              // list is for deciding at a glance what each request is for.
-            ],
-            decision: request.decision,
-            responseNote: request.managerNote,
-            approving: bloc.isBusy(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.approved,
+          for (final request in data.overtime)
+            (
+              request.requestedOn,
+              request.who,
+              'overtime',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _OvertimeRequestDetailPage(
+                      request: request,
+                      bloc: bloc,
+                    ),
+                  ),
+                ),
+                initial: request.initial,
+                avatarIndex: request.avatarIndex,
+                name: request.who,
+                role: request.team,
+                rows: [
+                  ('Type:', 'Overtime'),
+                  ('Date:', _managerDate(request.workDate)),
+                  ('Overtime hrs:', request.hoursLabel),
+                  (
+                    'Comment:',
+                    request.note.isEmpty
+                        ? request.timeRangeLabel
+                        : request.note,
+                  ),
+                ],
+                decision: request.decision,
+                responseNote: request.managerNote,
+                approving: bloc.isBusy(
+                  DecideOvertime(request.id, LeaveDecision.approved),
+                ),
+                declining: bloc.isBusy(
+                  DecideOvertime(request.id, LeaveDecision.declined),
+                ),
+                onApprove: () => bloc.add(
+                  DecideOvertime(request.id, LeaveDecision.approved),
+                ),
+                onReject: () async {
+                  final reason = await _showDeclineReasonSheet(context);
+                  if (reason == null) return;
+                  bloc.add(
+                    DecideOvertime(
+                      request.id,
+                      LeaveDecision.declined,
+                      managerNote: reason,
+                    ),
+                  );
+                },
               ),
+              request.decision == LeaveDecision.pending,
             ),
-            declining: bloc.isBusy(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.declined,
+          for (final request in data.managerRegularizations)
+            (
+              request.createdAt,
+              request.who,
+              'correction',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _AttendanceCorrectionDetailPage(
+                      request: request,
+                      bloc: bloc,
+                    ),
+                  ),
+                ),
+                initial: request.initial,
+                avatarIndex: request.avatarIndex,
+                name: request.who,
+                role: request.team,
+                rows: [
+                  ('Type:', 'Correction'),
+                  ('Date:', _shortAttendanceDate(request.workDate)),
+                  ('Correction:', _attendancePeriod(request)),
+                  // The reason belongs on the detail page, not on the card: the
+                  // list is for deciding at a glance what each request is for.
+                ],
+                decision: request.decision,
+                responseNote: request.managerNote,
+                approving: bloc.isBusy(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.approved,
+                  ),
+                ),
+                declining: bloc.isBusy(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.declined,
+                  ),
+                ),
+                onApprove: () => bloc.add(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.approved,
+                  ),
+                ),
+                onReject: () => bloc.add(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.declined,
+                  ),
+                ),
               ),
+              request.decision == LeaveDecision.pending,
             ),
-            onApprove: () => bloc.add(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.approved,
-              ),
-            ),
-            onReject: () => bloc.add(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.declined,
-              ),
-            ),
-          ),
-          request.decision == LeaveDecision.pending,
-        ),
-    ];
+        ];
 
     var filtered = switch (_mode) {
       _RequestViewMode.leaveOnly =>
@@ -1429,14 +1435,14 @@ class _TeamDecisionButton extends StatelessWidget {
                   ),
                 )
               : Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: foreground,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
         ),
       ),
     );
@@ -1642,17 +1648,14 @@ class _TeamFacesCard extends StatelessWidget {
   final List<TeamMember> members;
   final VoidCallback onTap;
 
-  /// Five faces, then a count for the rest (node 2503:92493).
+  /// At most five faces, then a count for the rest (node 2503:92493).
   static const _shown = 5;
+  static const _face = 56.0;
+  static const _gap = 4.0;
+  static const _overlap = -10.0;
 
   @override
   Widget build(BuildContext context) {
-    final overflowing = members.length > _shown;
-    final faces = overflowing ? members.take(_shown).toList() : members;
-    final rest = overflowing ? members.length - faces.length : 0;
-    // Faces overlap only to make room for the +N bubble; a team that fits
-    // outright is shown in full with an ordinary gap between faces.
-    final overlap = overflowing ? -10.0 : 4.0;
     return _TeamCardShell(
       onTap: onTap,
       child: Column(
@@ -1681,82 +1684,101 @@ class _TeamFacesCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 56,
-            child: Row(
-              children: [
-                for (final member in faces)
-                  Padding(
-                    padding: EdgeInsets.only(right: overlap),
-                    child: SizedBox(
-                      width: 56,
-                      height: 56,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.fromBorderSide(
-                                BorderSide(color: Colors.white, width: 1.4),
-                              ),
-                            ),
-                            child: _TeamMemberPhoto(member: member, size: 56),
-                          ),
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color:
-                                    member.todayStatus ==
-                                        TeamPresenceStatus.present
-                                    ? const Color(0xFF00C950)
-                                    : const Color(0xFFDDDDDD),
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 1.114,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (rest > 0)
-                  Container(
-                    width: 56,
-                    height: 56,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0571A6),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.4),
-                    ),
-                    child: Text(
-                      '+$rest',
-                      style: const TextStyle(
-                        fontFamily: 'Sora',
-                        color: Colors.white,
-                        fontSize: 16,
-                        height: 16.2 / 16,
-                        letterSpacing: -0.16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            height: _face,
+            child: LayoutBuilder(builder: _faces),
           ),
         ],
       ),
     );
   }
-}
 
+  /// The row of faces, cut to the width the card actually has. A department
+  /// card sits indented under the trunk, so the five the design shows do not
+  /// always fit side by side; when they do not, the faces overlap and the
+  /// last place goes to a +N bubble.
+  Widget _faces(BuildContext context, BoxConstraints box) {
+    final width = box.maxWidth;
+    final fitsWithGap = ((width + _gap) / (_face + _gap)).floor();
+    final overflowing = members.length > fitsWithGap || members.length > _shown;
+    final int shown;
+    if (!overflowing) {
+      shown = members.length;
+    } else {
+      // Overlapped faces plus one bubble: n faces take (n-1)·(face+overlap)
+      // + face, and the bubble another face+overlap on top.
+      final overlapped = ((width - _face) / (_face + _overlap)).floor();
+      shown = (overlapped - 1).clamp(1, _shown - 1);
+    }
+    final faces = members.take(shown).toList();
+    final rest = members.length - faces.length;
+    final step = overflowing ? _overlap : _gap;
+    return Row(
+      children: [
+        for (final (index, member) in faces.indexed)
+          Padding(
+            padding: EdgeInsets.only(
+              right: index == faces.length - 1 && rest == 0 ? 0 : step,
+            ),
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.fromBorderSide(
+                        BorderSide(color: Colors.white, width: 1.4),
+                      ),
+                    ),
+                    child: _TeamMemberPhoto(member: member, size: 56),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: member.todayStatus == TeamPresenceStatus.present
+                            ? const Color(0xFF00C950)
+                            : const Color(0xFFDDDDDD),
+                        border: Border.all(color: Colors.white, width: 1.114),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (rest > 0)
+          Container(
+            width: _face,
+            height: _face,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0571A6),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.4),
+            ),
+            child: Text(
+              '+$rest',
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Colors.white,
+                fontSize: 16,
+                height: 16.2 / 16,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 /// The trunk and one card's stub, dashed as the design draws them: #9197A2 at
 /// 2px with a 4/4 dash (the line SVGs behind nodes 2503:92892 and 2503:92402).
@@ -1793,8 +1815,12 @@ class _BranchLinePainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
     final cardHeight = size.height - gap;
     final middle = cardHeight / 2;
-    _dashed(canvas, paint, Offset(_x, first ? -leadIn : 0),
-        Offset(_x, last ? middle : size.height));
+    _dashed(
+      canvas,
+      paint,
+      Offset(_x, first ? -leadIn : 0),
+      Offset(_x, last ? middle : size.height),
+    );
     _dashed(canvas, paint, Offset(_x, middle), Offset(_x + _stub, middle));
   }
 
@@ -2028,4 +2054,3 @@ class _OpenTeamBox extends StatelessWidget {
     );
   }
 }
-
