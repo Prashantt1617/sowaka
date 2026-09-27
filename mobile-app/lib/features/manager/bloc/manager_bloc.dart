@@ -15,6 +15,7 @@ class ManagerState {
     required this.tab,
     required this.view,
     required this.canManage,
+    this.teamSection = TeamSection.myTeam,
     this.dashboard,
     this.selectedMemberId,
     this.recordParams = const <FeedbackParam>[],
@@ -44,6 +45,7 @@ class ManagerState {
   final ManagerTab tab;
   final ManagerView view;
   final bool canManage;
+  final TeamSection teamSection;
   final ManagerDashboard? dashboard;
   final int? selectedMemberId;
   final List<FeedbackParam> recordParams;
@@ -72,6 +74,7 @@ class ManagerState {
     ManagerTab? tab,
     ManagerView? view,
     bool? canManage,
+    TeamSection? teamSection,
     ManagerDashboard? dashboard,
     int? selectedMemberId,
     bool clearSelectedMember = false,
@@ -93,6 +96,7 @@ class ManagerState {
       tab: tab ?? this.tab,
       view: view ?? this.view,
       canManage: canManage ?? this.canManage,
+      teamSection: teamSection ?? this.teamSection,
       dashboard: dashboard ?? this.dashboard,
       selectedMemberId: clearSelectedMember
           ? null
@@ -134,28 +138,10 @@ class CloseFeedbackList extends ManagerEvent {
   const CloseFeedbackList();
 }
 
-class OpenLeaveRequests extends ManagerEvent {
-  const OpenLeaveRequests();
-}
-
-class CloseLeaveRequests extends ManagerEvent {
-  const CloseLeaveRequests();
-}
-
-class OpenOvertimeRequests extends ManagerEvent {
-  const OpenOvertimeRequests();
-}
-
-class CloseOvertimeRequests extends ManagerEvent {
-  const CloseOvertimeRequests();
-}
-
-class OpenAttendanceCorrections extends ManagerEvent {
-  const OpenAttendanceCorrections();
-}
-
-class CloseAttendanceCorrections extends ManagerEvent {
-  const CloseAttendanceCorrections();
+/// Switches the Team tab between the team list and the request queue.
+class ShowTeamSection extends ManagerEvent {
+  const ShowTeamSection(this.section);
+  final TeamSection section;
 }
 
 class OpenFeedbackRecord extends ManagerEvent {
@@ -527,18 +513,8 @@ class ManagerBloc {
               feedbackFilter: FeedbackFilter.all,
             ),
           );
-        case OpenLeaveRequests():
-          _emit(_state.copyWith(view: ManagerView.leaveRequests));
-        case CloseLeaveRequests():
-          _emit(_state.copyWith(view: ManagerView.home));
-        case OpenOvertimeRequests():
-          _emit(_state.copyWith(view: ManagerView.overtimeRequests));
-        case CloseOvertimeRequests():
-          _emit(_state.copyWith(view: ManagerView.home));
-        case OpenAttendanceCorrections():
-          _emit(_state.copyWith(view: ManagerView.attendanceCorrections));
-        case CloseAttendanceCorrections():
-          _emit(_state.copyWith(view: ManagerView.home));
+        case ShowTeamSection(:final section):
+          _emit(_state.copyWith(view: ManagerView.home, teamSection: section));
         case OpenFeedbackRecord(:final memberId):
           final member = _state.dashboard?.team
               .where((item) => item.id == memberId)

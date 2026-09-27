@@ -30,24 +30,17 @@ void main() {
     bloc.dispose();
   });
 
-  test('manager request queues open and return to the action hub', () async {
+  test('the Team tab opens on the request queue and returns to the team', () async {
     final bloc = ManagerBloc(session: _session('manager'));
 
-    bloc.add(const OpenLeaveRequests());
+    bloc.add(const ShowTeamSection(TeamSection.requests));
     await Future<void>.delayed(Duration.zero);
-    expect(bloc.state.view, ManagerView.leaveRequests);
-
-    bloc.add(const CloseLeaveRequests());
-    await Future<void>.delayed(Duration.zero);
+    expect(bloc.state.teamSection, TeamSection.requests);
     expect(bloc.state.view, ManagerView.home);
 
-    bloc.add(const OpenOvertimeRequests());
+    bloc.add(const ShowTeamSection(TeamSection.myTeam));
     await Future<void>.delayed(Duration.zero);
-    expect(bloc.state.view, ManagerView.overtimeRequests);
-
-    bloc.add(const CloseOvertimeRequests());
-    await Future<void>.delayed(Duration.zero);
-    expect(bloc.state.view, ManagerView.home);
+    expect(bloc.state.teamSection, TeamSection.myTeam);
 
     bloc.dispose();
   });

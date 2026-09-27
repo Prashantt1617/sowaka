@@ -1,7 +1,5 @@
 part of '../../manager/presentation/manager_screen.dart';
 
-enum _TeamSection { myTeam, requests }
-
 class _TeamHome extends StatefulWidget {
   const _TeamHome({
     required this.state,
@@ -22,12 +20,11 @@ class _TeamHome extends StatefulWidget {
 }
 
 class _TeamHomeState extends State<_TeamHome> {
-  _TeamSection _section = _TeamSection.myTeam;
-
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
     final canManage = widget.state.canManage;
+    final section = widget.state.teamSection;
     final pendingRequests =
         data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
         data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
@@ -64,9 +61,10 @@ class _TeamHomeState extends State<_TeamHome> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _TeamSegmentedControl(
-                      section: _section,
+                      section: section,
                       pendingRequests: pendingRequests,
-                      onChanged: (value) => setState(() => _section = value),
+                      onChanged: (value) =>
+                          widget.bloc.add(ShowTeamSection(value)),
                     ),
                   ),
                 ],
@@ -75,7 +73,7 @@ class _TeamHomeState extends State<_TeamHome> {
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: !canManage || _section == _TeamSection.myTeam
+            child: !canManage || section == TeamSection.myTeam
                 ? _MyTeamView(
                     data: data,
                     bloc: widget.bloc,
@@ -99,9 +97,9 @@ class _TeamSegmentedControl extends StatelessWidget {
     required this.onChanged,
   });
 
-  final _TeamSection section;
+  final TeamSection section;
   final int pendingRequests;
-  final ValueChanged<_TeamSection> onChanged;
+  final ValueChanged<TeamSection> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -115,8 +113,8 @@ class _TeamSegmentedControl extends StatelessWidget {
           Expanded(
             child: _SegmentTab(
               label: 'My Team',
-              selected: section == _TeamSection.myTeam,
-              onTap: () => onChanged(_TeamSection.myTeam),
+              selected: section == TeamSection.myTeam,
+              onTap: () => onChanged(TeamSection.myTeam),
             ),
           ),
           Expanded(
@@ -124,8 +122,8 @@ class _TeamSegmentedControl extends StatelessWidget {
               label: pendingRequests == 0
                   ? 'Requests'
                   : 'Requests · $pendingRequests',
-              selected: section == _TeamSection.requests,
-              onTap: () => onChanged(_TeamSection.requests),
+              selected: section == TeamSection.requests,
+              onTap: () => onChanged(TeamSection.requests),
             ),
           ),
         ],

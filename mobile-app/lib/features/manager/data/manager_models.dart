@@ -1,12 +1,10 @@
 enum ManagerTab { manage, grow, connect, games, quick }
 
-enum ManagerView {
-  home,
-  feedbackList,
-  leaveRequests,
-  overtimeRequests,
-  attendanceCorrections,
-}
+enum ManagerView { home, feedbackList }
+
+/// The two halves of the Team tab. Held in app state rather than in the
+/// widget, so a notification can land on Requests directly.
+enum TeamSection { myTeam, requests }
 
 enum FeedbackStatus { pending, saved, sent, missed }
 

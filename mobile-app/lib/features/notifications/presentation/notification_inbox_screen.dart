@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_config.dart';
@@ -125,30 +126,49 @@ class _InboxTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The row every pushed screen wears — Leave, Overtime, Reimbursements:
+    // a square tile with the back chevron, then the title.
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
         MediaQuery.paddingOf(context).top + 8,
-        16,
-        14,
+        18,
+        12,
       ),
       decoration: const BoxDecoration(
-        color: MColors.bg,
-        border: Border(bottom: BorderSide(color: MColors.line)),
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          RoundIconButton(icon: Icons.chevron_left_rounded, onTap: onBack),
-          const SizedBox(height: 10),
-          const Text(
-            'Notifications',
-            style: TextStyle(
-              color: MColors.ink,
-              fontSize: 30,
-              fontWeight: FontWeight.w800,
-              height: 1.08,
-              letterSpacing: -0.6,
+          Material(
+            color: MColors.bg,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: onBack,
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 38,
+                height: 38,
+                child: Center(
+                  child: SvgPicture.asset(
+                    'assets/icons/chevron_back.svg',
+                    width: 20,
+                    height: 20,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Notifications',
+              style: TextStyle(
+                color: MColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -178,17 +198,17 @@ class _NotificationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: unread ? look.tint : MColors.line),
+            border: Border.all(color: MColors.line),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: look.tint,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(look.icon, color: look.ink, size: 20),
               ),
@@ -271,13 +291,20 @@ class _NotificationCard extends StatelessWidget {
   }
 }
 
-/// Which icon and tint a notification wears, from what it is about.
+/// Which icon and tint a notification wears, from what it is about. Each
+/// pair is one of the app's colour families, tint and ink together, the
+/// way the action cards are coloured.
 class _NotificationLook {
   const _NotificationLook(this.icon, this.tint, this.ink);
 
   final IconData icon;
   final Color tint;
   final Color ink;
+
+  static const _teal = Color(0xFF4F8C89);
+  static const _tealTint = Color(0xFFDEEBE9);
+  static const _sage = Color(0xFF4C5840);
+  static const _sageTint = Color(0xFFE7EFE4);
 
   static _NotificationLook of(String scenario) {
     if (scenario.startsWith('leave')) {
@@ -299,8 +326,8 @@ class _NotificationLook {
         scenario.contains('attendance')) {
       return const _NotificationLook(
         Icons.fingerprint_rounded,
-        MColors.sageTint,
-        MColors.sageDeep,
+        _sageTint,
+        _sage,
       );
     }
     if (scenario.startsWith('feedback')) {
@@ -317,7 +344,8 @@ class _NotificationLook {
         MColors.gold,
       );
     }
-    if (scenario == 'new_joiner' || scenario.contains('birthday') ||
+    if (scenario == 'new_joiner' ||
+        scenario.contains('birthday') ||
         scenario.contains('anniversary')) {
       return const _NotificationLook(
         Icons.celebration_rounded,
@@ -329,11 +357,7 @@ class _NotificationLook {
         scenario.startsWith('poll') ||
         scenario.startsWith('comment') ||
         scenario.startsWith('connect')) {
-      return const _NotificationLook(
-        Icons.forum_rounded,
-        MColors.sageTint,
-        MColors.teal,
-      );
+      return const _NotificationLook(Icons.forum_rounded, _tealTint, _teal);
     }
     return const _NotificationLook(
       Icons.notifications_rounded,

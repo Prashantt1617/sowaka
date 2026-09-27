@@ -27,21 +27,6 @@ class _ManageContent extends StatelessWidget {
         onOpenComposer: onOpenComposer,
       ),
       ManagerView.feedbackList => _FeedbackList(state: state, bloc: bloc),
-      ManagerView.leaveRequests => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.leave,
-      ),
-      ManagerView.overtimeRequests => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.overtime,
-      ),
-      ManagerView.attendanceCorrections => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.attendance,
-      ),
     };
   }
 }

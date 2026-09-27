@@ -223,12 +223,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
       _bloc.add(const CloseApplyLeave());
     } else if (state.view == ManagerView.feedbackList) {
       _bloc.add(const CloseFeedbackList());
-    } else if (state.view == ManagerView.leaveRequests) {
-      _bloc.add(const CloseLeaveRequests());
-    } else if (state.view == ManagerView.overtimeRequests) {
-      _bloc.add(const CloseOvertimeRequests());
-    } else if (state.view == ManagerView.attendanceCorrections) {
-      _bloc.add(const CloseAttendanceCorrections());
+    } else if (state.tab == ManagerTab.manage &&
+        state.teamSection == TeamSection.requests) {
+      _bloc.add(const ShowTeamSection(TeamSection.myTeam));
     } else if (state.tab == ManagerTab.quick &&
         _quickActionsController.canGoBack) {
       _quickActionsController.handleBack();
@@ -299,9 +296,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
           _bloc.add(const ChangeManagerTab(ManagerTab.manage));
         }
       case 'manage_leave':
-        _bloc
-          ..add(const ChangeManagerTab(ManagerTab.manage))
-          ..add(const OpenLeaveRequests());
+        _openTeamRequests();
       case 'manage_attendance':
       case 'attendance_team':
       case 'attendance_report':
@@ -332,15 +327,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     final type = '${data['type'] ?? ''}';
     final inbox = '${data['view'] ?? ''}' == 'inbox' && _bloc.state.canManage;
     if (inbox) {
-      _bloc.add(const ChangeManagerTab(ManagerTab.manage));
-      switch (type) {
-        case 'leave':
-          _bloc.add(const OpenLeaveRequests());
-        case 'overtime':
-          _bloc.add(const OpenOvertimeRequests());
-        case 'attendance':
-          _bloc.add(const OpenAttendanceCorrections());
-      }
+      _openTeamRequests();
       return;
     }
     _bloc.add(const ChangeManagerTab(ManagerTab.quick));
@@ -354,6 +341,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
           _quickActionsController.openCalendar();
       }
     });
+  }
+
+  /// The manager's request queue: the Requests half of the Team tab, where
+  /// leave, overtime and corrections all sit together.
+  void _openTeamRequests() {
+    _bloc
+      ..add(const ChangeManagerTab(ManagerTab.manage))
+      ..add(const ShowTeamSection(TeamSection.requests));
   }
 
   TeamMember? _teamMember(String userId) {
