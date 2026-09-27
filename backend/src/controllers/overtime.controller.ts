@@ -13,6 +13,7 @@ export async function createOvertime(req: Request, res: Response, next: NextFunc
       workDate: String(req.body.workDate ?? ''),
       startTime: String(req.body.startTime ?? ''),
       endTime: String(req.body.endTime ?? ''),
+      duration: req.body.duration == null ? undefined : String(req.body.duration),
       note: req.body.note == null ? undefined : String(req.body.note),
     });
     res.status(201).json({ success: true, overtime });

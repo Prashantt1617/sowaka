@@ -257,11 +257,15 @@ class SubmitOvertimeApplication extends ManagerEvent {
     required this.workDate,
     required this.startTime,
     required this.endTime,
+    required this.duration,
     required this.note,
   });
   final DateTime workDate;
   final DateTime startTime;
   final DateTime endTime;
+
+  /// 'half_day' or 'full_day', as picked on the form.
+  final String duration;
   final String note;
 }
 
@@ -688,12 +692,14 @@ class ManagerBloc {
           :final workDate,
           :final startTime,
           :final endTime,
+          :final duration,
           :final note,
         ):
           final request = await _service.submitOvertime(
             workDate: workDate,
             startTime: startTime,
             endTime: endTime,
+            duration: duration,
             note: note,
           );
           final data = _state.dashboard;

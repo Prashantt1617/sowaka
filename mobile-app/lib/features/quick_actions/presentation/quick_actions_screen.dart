@@ -1031,9 +1031,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Widget _applyLeaveForm() {
-    final double? balanceForType = _leaveType == null
-        ? null
-        : _balanceFor(_leaveType!)?.remaining;
+    final balanceItem = _leaveType == null ? null : _balanceFor(_leaveType!);
+    final double? balanceForType = balanceItem?.remaining;
     return _HubScaffold(
       key: const ValueKey('apply-leave'),
       title: 'Leave',
@@ -1082,7 +1081,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 'Sick Leave' => 'sick',
                 'Earned Leave' => 'earned',
                 _ => 'comp-off',
-              }} days',
+              }} days'
+              '${balanceItem?.monthly ?? false ? ' for ${balanceItem!.periodLabel}' : ''}',
               style: const TextStyle(
                 color: Color(0xFF2563EB),
                 fontSize: 12,
@@ -1759,8 +1759,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         showAppToast(context, 'Pick a date and a duration to continue.');
         return;
       }
-      // The claim carries the hours the duration is worth on this employee's own
-      // shift, so the server classifies it as the same thing they picked.
+      // The claim is the half or full day they picked. The times sent with it
+      // are what that day is worth on this employee's own shift, for the record.
       final worked = _overtimeWorked;
       final start = widget.dashboard.shift.startMinutes ?? 9 * 60;
       final startDateTime = DateTime(
@@ -1775,6 +1775,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           workDate: date,
           startTime: startDateTime,
           endTime: startDateTime.add(worked),
+          duration: duration == 'Full day' ? 'full_day' : 'half_day',
           note: _overtimeNote.text.trim(),
         ),
       );
@@ -3100,14 +3101,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         // submitted as a half day is filed, and paid back, as the wrong thing.
         // The hours come from the org's shift policy, never a fixed day.
         final shift = widget.dashboard.shift;
-        final worked = (_answers['Duration'] ?? _choice) == 'Full day'
-            ? shift.minFullDay
-            : shift.minHalfDay;
+        final fullDay = (_answers['Duration'] ?? _choice) == 'Full day';
+        final worked = fullDay ? shift.minFullDay : shift.minHalfDay;
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
             startTime: _from,
             endTime: _from.add(worked),
+            duration: fullDay ? 'full_day' : 'half_day',
             note: _answers['Note'] ?? '',
           ),
         );
@@ -5426,9 +5427,12 @@ class _LeaveBalanceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'days available',
-            style: TextStyle(color: Color(0xFF222222), fontSize: 10),
+          Text(
+            // A monthly type is this month's figure, and lapses with it.
+            item.monthly ? 'days for ${item.periodLabel}' : 'days available',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF222222), fontSize: 10),
           ),
         ],
       ),

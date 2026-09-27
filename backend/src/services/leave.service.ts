@@ -10,6 +10,7 @@ import {
   approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor,
   managerMayDecide, weekOffGridFor,
 } from './shift.service';
+import { overtimeDurationOf } from '../models/overtime.model';
 import { COMP_OFF_CREDIT, LeaveTypeKey, LeaveTypeRule, processYearEnd } from '../models/shift.model';
 import { carriedFromRun as carriedFromYearEndRun } from './leave-year-end.service';
 
@@ -377,7 +378,7 @@ async function compOffByMonth(userId: string, from: Date, to: Date): Promise<(mo
   const byMonth = new Map<string, number>();
   for (const request of approved) {
     const key = `${request.workDate.getUTCFullYear()}-${request.workDate.getUTCMonth()}`;
-    byMonth.set(key, (byMonth.get(key) ?? 0) + COMP_OFF_CREDIT[request.hours >= fullDayHours ? 'full_day' : 'half_day']);
+    byMonth.set(key, (byMonth.get(key) ?? 0) + COMP_OFF_CREDIT[overtimeDurationOf(request, fullDayHours)]);
   }
   return (monthStart) => round(byMonth.get(`${monthStart.getUTCFullYear()}-${monthStart.getUTCMonth()}`) ?? 0);
 }
@@ -385,9 +386,8 @@ async function compOffByMonth(userId: string, from: Date, to: Date): Promise<(mo
 /**
  * Days of comp-off earned by approved overtime in a window.
  *
- * An overtime record stores the hours worked, so which of the two durations it
- * was is decided against the org's own full-day threshold — the same figure the
- * attendance calendar grades a day by, never a fixed eight hours.
+ * Each request is the half or full day that was claimed; a record from before
+ * that was stored is graded by its hours against the shift's full-day threshold.
  */
 async function compOffCreditedIn(userId: string, from: Date, to: Date): Promise<number> {
   const [approved, fullDayHours] = await Promise.all([
@@ -397,7 +397,7 @@ async function compOffCreditedIn(userId: string, from: Date, to: Date): Promise<
   return round(
     approved.reduce(
       (total, request) =>
-        total + COMP_OFF_CREDIT[request.hours >= fullDayHours ? 'full_day' : 'half_day'],
+        total + COMP_OFF_CREDIT[overtimeDurationOf(request, fullDayHours)],
       0,
     ),
   );

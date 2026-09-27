@@ -1,9 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { overtimeRequests, users } from '../config/db';
-import { OvertimeRequest, OvertimeStatus } from '../models/overtime.model';
+import { OvertimeRequest, OvertimeStatus, overtimeDurationOf } from '../models/overtime.model';
 import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { getCompanyConfig } from './company-settings.service';
+import type { OvertimeDuration } from '../models/shift.model';
 import { fullDayHoursFor, policyForUser } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 
@@ -11,7 +12,7 @@ const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
 export async function createOvertimeRequest(
   userId: string,
-  input: { workDate: string; startTime: string; endTime: string; note?: string },
+  input: { workDate: string; startTime: string; endTime: string; duration?: string; note?: string },
 ) {
   const employee = await requireEmployeeWithManager(userId);
   const workDate = parseDateOnly(input.workDate, 'workDate');
@@ -42,6 +43,15 @@ export async function createOvertimeRequest(
   const hours = Math.round(((endTime.getTime() - startTime.getTime()) / 3_600_000) * 100) / 100;
   if (hours <= 0) throw new OvertimeError(400, 'End time must be after start time');
   if (hours > 16) throw new OvertimeError(400, 'Overtime duration looks too long — check the times');
+  // A claim is a half day or a full day, as the person chose. An app that
+  // predates the choice sends only times; those are graded by the hours.
+  const chosen = input.duration?.trim();
+  if (chosen && chosen !== 'half_day' && chosen !== 'full_day') {
+    throw new OvertimeError(400, 'Duration must be half_day or full_day');
+  }
+  const duration: OvertimeDuration = chosen === 'half_day' || chosen === 'full_day'
+    ? chosen
+    : overtimeDurationOf({ hours }, await fullDayHoursFor(userId));
 
   // Team gate. Overtime of any length may be logged for any past day: a long
   // stretch on a working day is exactly what overtime is for, and refusing it
@@ -71,6 +81,7 @@ export async function createOvertimeRequest(
     startTime,
     endTime,
     hours,
+    duration,
     note,
     status: 'pending',
     createdAt: now,
@@ -80,17 +91,18 @@ export async function createOvertimeRequest(
   await notifyOvertimeSubmitted({
     employeeUserId: userId,
     workDate,
-    duration: await durationLabel(userId, hours),
+    duration: labelOf(duration),
     reason: note ?? '',
   });
-  return toView({ ...request, _id: result.insertedId }, employee);
+  return toView({ ...request, _id: result.insertedId }, employee, await fullDayHoursFor(userId));
 }
 
 export async function getMyOvertimeRequests(userId: string) {
   const employee = await users().findOne({ userId });
   if (!employee) throw new OvertimeError(404, 'Employee not found');
   const requests = await overtimeRequests().find({ userId }).sort({ createdAt: -1 }).toArray();
-  return requests.map((request) => toView(request, employee));
+  const fullDayHours = await fullDayHoursFor(userId);
+  return requests.map((request) => toView(request, employee, fullDayHours));
 }
 
 export async function getManagerOvertimeInbox(managerUserId: string) {
@@ -103,9 +115,10 @@ export async function getManagerOvertimeInbox(managerUserId: string) {
     .find({ userId: { $in: employeeIds } })
     .toArray();
   const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
+  const hoursByUser = await fullDayHoursByUser(employeeIds);
   return requests.flatMap((request) => {
     const employee = employeeById.get(request.userId);
-    return employee ? [toView(request, employee)] : [];
+    return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
   });
 }
 
@@ -156,19 +169,21 @@ export async function decideOvertime(
   await notifyOvertimeDecided({
     employeeUserId: request.userId,
     workDate: request.workDate,
-    duration: await durationLabel(request.userId, request.hours),
+    duration: await durationLabel(request),
     approved: decision === 'approved',
     comment: managerNote ?? '',
   });
-  return toView(updated, employee);
+  return toView(updated, employee, await fullDayHoursFor(request.userId));
 }
 
-/**
- * "Full day" or "Half day", against the org's own full-day threshold — the
- * same figure the attendance calendar grades a day by.
- */
-async function durationLabel(userId: string, hours: number): Promise<string> {
-  return hours >= (await fullDayHoursFor(userId)) ? 'Full day' : 'Half day';
+/** "Full day" or "Half day", for the notification copy. */
+function labelOf(duration: OvertimeDuration): string {
+  return duration === 'full_day' ? 'Full day' : 'Half day';
+}
+
+/** The duration a stored request was for, in the notification's words. */
+async function durationLabel(request: Pick<OvertimeRequest, 'userId' | 'duration' | 'hours'>): Promise<string> {
+  return labelOf(overtimeDurationOf(request, await fullDayHoursFor(request.userId)));
 }
 
 /** Org-wide list of every overtime request, for the HR dashboard. */
@@ -180,9 +195,10 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
     .find({ userId: { $in: employees.map((e) => e.userId) } })
     .sort({ status: -1, createdAt: -1 })
     .toArray();
+  const hoursByUser = await fullDayHoursByUser(requests.map((request) => request.userId));
   return requests.flatMap((request) => {
     const employee = employeeById.get(request.userId);
-    return employee ? [toView(request, employee)] : [];
+    return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
   });
 }
 
@@ -231,14 +247,24 @@ export async function adminDecideOvertime(
   await notifyOvertimeDecided({
     employeeUserId: request.userId,
     workDate: request.workDate,
-    duration: await durationLabel(request.userId, request.hours),
+    duration: await durationLabel(request),
     approved: decision === 'approved',
     comment: managerNote ?? '',
   });
-  return toView(updated, employee);
+  return toView(updated, employee, await fullDayHoursFor(request.userId));
 }
 
-function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User) {
+/**
+ * The full-day threshold for each of several people, looked up once per
+ * person rather than once per request when shaping a list.
+ */
+async function fullDayHoursByUser(userIds: string[]): Promise<Map<string, number>> {
+  const unique = [...new Set(userIds)];
+  const hours = await Promise.all(unique.map((userId) => fullDayHoursFor(userId)));
+  return new Map(unique.map((userId, index) => [userId, hours[index]]));
+}
+
+function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User, fullDayHours: number) {
   return {
     id: request._id.toHexString(),
     userId: request.userId,
@@ -250,6 +276,9 @@ function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User) {
     startTime: request.startTime.toISOString(),
     endTime: request.endTime.toISOString(),
     hours: request.hours,
+    // The half or full day that was claimed, which is what the comp-off is
+    // credited as; an older record is graded by its hours.
+    duration: overtimeDurationOf(request, fullDayHours),
     note: request.note,
     managerNote: request.managerNote,
     status: request.status,

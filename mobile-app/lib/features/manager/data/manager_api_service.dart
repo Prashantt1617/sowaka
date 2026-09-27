@@ -442,6 +442,7 @@ class ManagerApiService {
     required DateTime workDate,
     required DateTime startTime,
     required DateTime endTime,
+    required String duration,
     required String note,
   }) async {
     final json = await _request(
@@ -451,6 +452,9 @@ class ManagerApiService {
         'workDate': _dateOnly(workDate),
         'startTime': startTime.toUtc().toIso8601String(),
         'endTime': endTime.toUtc().toIso8601String(),
+        // The claim itself: 'half_day' or 'full_day'. The times above are
+        // what the day is worth on this shift, kept for the record.
+        'duration': duration,
         'note': note,
       },
     );
