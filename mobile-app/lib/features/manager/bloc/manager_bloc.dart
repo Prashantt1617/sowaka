@@ -368,7 +368,43 @@ class ManagerBloc {
 
   Stream<ManagerState> get stream => _controller.stream;
 
-  Future<bool> add(ManagerEvent event) => _handle(event);
+  /// Anything that changes something on the server, keyed so that a second
+  /// tap on the same button while the first is still travelling is dropped
+  /// rather than filing a duplicate request or deciding a request twice.
+  static String? _mutationKey(ManagerEvent event) => switch (event) {
+    SubmitLeaveApplication() => 'leave:apply',
+    SubmitOvertimeApplication() => 'overtime:apply',
+    SubmitReimbursementApplication() => 'reimbursement:apply',
+    SubmitAttendanceRegularization() => 'attendance:apply',
+    DecideLeave(:final leaveId) => 'leave:decide:$leaveId',
+    DecideOvertime(:final overtimeId) => 'overtime:decide:$overtimeId',
+    DecideAttendanceRegularization(:final id) => 'attendance:decide:$id',
+    SaveFeedback() || SendFeedback() => 'feedback:write',
+    NominateAward() => 'award:nominate',
+    PunchRecorded() => 'attendance:punch',
+    _ => null,
+  };
+
+  final Set<String> _inFlight = <String>{};
+
+  /// True while [event]'s button should read as busy.
+  bool isBusy(ManagerEvent event) {
+    final key = _mutationKey(event);
+    return key != null && _inFlight.contains(key);
+  }
+
+  Future<bool> add(ManagerEvent event) async {
+    final key = _mutationKey(event);
+    if (key == null) return _handle(event);
+    if (!_inFlight.add(key)) return false;
+    _emit(_state);
+    try {
+      return await _handle(event);
+    } finally {
+      _inFlight.remove(key);
+      _emit(_state);
+    }
+  }
 
   void setManagerPhoto(String url) {
     _emit(

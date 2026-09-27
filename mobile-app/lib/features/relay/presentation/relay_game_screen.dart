@@ -197,17 +197,38 @@ class _RelayGameScreenState extends State<RelayGameScreen> {
     }
 
     if (state == null) {
+      // Nothing to show yet, or nothing to show at all ("not on a team"):
+      // the same cross the lobby wears, so this is never a dead end.
       return Scaffold(
         body: RelayBackdrop(
           scroll: false,
-          child: Center(
-            child: _problem == null
-                ? const CircularProgressIndicator(color: Colors.white)
-                : Text(
-                    _problem!,
-                    textAlign: TextAlign.center,
-                    style: RelayStyle.sora(15, color: Colors.white),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _close,
+                    child: RelayStyle.svg('cross', width: 24, height: 24),
                   ),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: _problem == null
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            _problem!,
+                            textAlign: TextAlign.center,
+                            style: RelayStyle.sora(15, color: Colors.white),
+                          ),
+                        ),
+                ),
+              ),
+            ],
           ),
         ),
       );

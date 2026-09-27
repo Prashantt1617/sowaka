@@ -155,7 +155,11 @@ export interface PlayerSnapshot {
 async function videoUrlFor(event: RelayEvent): Promise<string> {
   const key = event.instructionsVideoUrl ?? '';
   if (!key) return '';
-  return memo(`video:${event.id}:${key}`, 20 * 60_000, () =>
+  // Held for less time than a signed link stays valid (300s TTL, issued up
+  // to 120s into its step, so 180s at worst). The old 20-minute hold handed
+  // out links that S3 had already refused for most of each window, and the
+  // video sat on a spinner.
+  return memo(`video:${event.id}:${key}`, 60_000, () =>
     presignConnectMedia(key).catch(() => ''),
   );
 }

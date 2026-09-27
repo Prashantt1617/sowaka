@@ -795,6 +795,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: leave.decision,
             responseNote: leave.managerNote,
+            busy: bloc.isBusy(DecideLeave(leave.id, LeaveDecision.approved)),
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
             onReject: () async {
@@ -838,6 +839,9 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: request.decision,
             responseNote: request.managerNote,
+            busy: bloc.isBusy(
+              DecideOvertime(request.id, LeaveDecision.approved),
+            ),
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
             onReject: () async {
@@ -879,6 +883,12 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
             ],
             decision: request.decision,
             responseNote: request.managerNote,
+            busy: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.approved,
+              ),
+            ),
             onApprove: () => bloc.add(
               DecideAttendanceRegularization(
                 request.id,
@@ -1119,6 +1129,7 @@ class _TeamRequestCard extends StatelessWidget {
     required this.decision,
     this.onApprove,
     this.onReject,
+    this.busy = false,
     this.responseNote = '',
   });
 
@@ -1130,6 +1141,10 @@ class _TeamRequestCard extends StatelessWidget {
   final LeaveDecision decision;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
+
+  /// The decision is already on its way to the server: both buttons go flat
+  /// and stop answering, so a second tap cannot decide the same request twice.
+  final bool busy;
 
   /// The note left with the decision, shown once a request has been reviewed.
   final String responseNote;
@@ -1230,18 +1245,18 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: MColors.approveTint,
-                    foreground: MColors.approveInk,
-                    onTap: onApprove!,
+                    background: busy ? MColors.line : MColors.approveTint,
+                    foreground: busy ? MColors.inkFaint : MColors.approveInk,
+                    onTap: busy ? null : onApprove,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: MColors.rejectTint,
-                    foreground: MColors.rejectInk,
-                    onTap: onReject!,
+                    background: busy ? MColors.line : MColors.rejectTint,
+                    foreground: busy ? MColors.inkFaint : MColors.rejectInk,
+                    onTap: busy ? null : onReject,
                   ),
                 ),
               ],
@@ -1366,7 +1381,7 @@ class _TeamDecisionButton extends StatelessWidget {
   final String label;
   final Color background;
   final Color foreground;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final double radius;
 
   @override
