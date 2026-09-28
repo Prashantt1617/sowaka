@@ -465,6 +465,7 @@ class LeaveRequest {
   const LeaveRequest({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -485,6 +486,9 @@ class LeaveRequest {
 
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -531,6 +535,7 @@ class LeaveRequest {
           employee['department'] as String? ??
           employee['designation'] as String? ??
           'Team',
+      photoUrl: employee['photoUrl'] as String?,
       type: '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
@@ -558,6 +563,7 @@ class LeaveRequest {
     return LeaveRequest(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -637,6 +643,7 @@ class OvertimeRequest {
   const OvertimeRequest({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -655,6 +662,9 @@ class OvertimeRequest {
 
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -697,6 +707,7 @@ class OvertimeRequest {
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
+      photoUrl: employee['photoUrl'] as String?,
       team: employee['department'] as String? ?? 'Team',
       workDate: DateTime.parse(json['workDate'] as String),
       startTime:
@@ -725,6 +736,7 @@ class OvertimeRequest {
     return OvertimeRequest(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -747,6 +759,7 @@ class ReimbursementClaim {
   const ReimbursementClaim({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -765,6 +778,9 @@ class ReimbursementClaim {
 
   final String id;
   final String userId;
+
+  /// The claimant's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -804,6 +820,7 @@ class ReimbursementClaim {
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
+      photoUrl: employee['photoUrl'] as String?,
       team: employee['department'] as String? ?? 'Team',
       category: category.isEmpty
           ? 'Other'
@@ -831,6 +848,7 @@ class ReimbursementClaim {
     return ReimbursementClaim(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -1672,6 +1690,7 @@ class AttendanceRegularization {
   const AttendanceRegularization({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.workDate,
     required this.note,
     required this.status,
@@ -1687,6 +1706,9 @@ class AttendanceRegularization {
   });
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final DateTime workDate;
   final String note;
   final String status;
@@ -1737,6 +1759,8 @@ class AttendanceRegularization {
     team:
         (json['employee'] as Map<String, dynamic>?)?['department'] as String? ??
         'Team',
+    photoUrl:
+        (json['employee'] as Map<String, dynamic>?)?['photoUrl'] as String?,
     createdAt:
         DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),

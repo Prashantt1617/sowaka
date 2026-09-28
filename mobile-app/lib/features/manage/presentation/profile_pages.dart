@@ -303,11 +303,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       label: 'Department',
                       value: member.team,
                     ),
-                    _ProfileRow(
-                      iconAsset: 'assets/icons/work_manager.svg',
-                      label: 'Manager',
-                      value: member.managerName ?? data.managerName,
-                    ),
+                    if (_nonEmpty(member.managerName) case final name?)
+                      _ProfileRow(
+                        iconAsset: 'assets/icons/work_manager.svg',
+                        label: 'Manager',
+                        value: name,
+                      ),
                     if (member.employmentType case final type?)
                       _ProfileRow(
                         iconAsset: 'assets/icons/work_employment_type.svg',
@@ -684,7 +685,11 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             ? 'People Manager'
             : 'Team Member');
     final department = _nonEmpty(user.department) ?? dashboard.managerTeam;
-    final reportsTo = _nonEmpty(user.managerName) ?? dashboard.approverName;
+    // Nobody above them: the row goes rather than reading "Your manager",
+    // which is a placeholder, not an answer.
+    final reportsTo = dashboard.hasManager
+        ? (_nonEmpty(user.managerName) ?? _nonEmpty(dashboard.approverName))
+        : null;
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -901,11 +906,12 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             label: 'Department / team',
                             value: department,
                           ),
-                          _ProfileRow(
-                            iconAsset: 'assets/icons/work_manager.svg',
-                            label: 'Reports to',
-                            value: reportsTo,
-                          ),
+                          if (reportsTo case final name?)
+                            _ProfileRow(
+                              iconAsset: 'assets/icons/work_manager.svg',
+                              label: 'Reports to',
+                              value: name,
+                            ),
                         ],
                       ),
                       if (dashboard.myOrgChart.length > 1) ...[

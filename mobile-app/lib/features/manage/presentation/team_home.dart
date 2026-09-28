@@ -783,6 +783,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: leave.initial,
                 avatarIndex: leave.avatarIndex,
+                photoUrl: leave.photoUrl,
                 name: leave.who,
                 role: leave.team,
                 rows: [
@@ -830,6 +831,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: request.initial,
                 avatarIndex: request.avatarIndex,
+                photoUrl: request.photoUrl,
                 name: request.who,
                 role: request.team,
                 rows: [
@@ -884,6 +886,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: request.initial,
                 avatarIndex: request.avatarIndex,
+                photoUrl: request.photoUrl,
                 name: request.who,
                 role: request.team,
                 rows: [
@@ -1141,6 +1144,7 @@ class _TeamRequestCard extends StatelessWidget {
     this.onViewDetails,
     required this.initial,
     required this.avatarIndex,
+    this.photoUrl,
     required this.name,
     required this.role,
     required this.rows,
@@ -1154,6 +1158,9 @@ class _TeamRequestCard extends StatelessWidget {
 
   final String initial;
   final int avatarIndex;
+
+  /// The requester's own photo. Their initial stands in when there is none.
+  final String? photoUrl;
   final String name;
   final String role;
   final List<(String label, String value)> rows;
@@ -1196,7 +1203,12 @@ class _TeamRequestCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              AvatarBadge(initial: initial, index: avatarIndex, size: 35),
+              AvatarBadge(
+                initial: initial,
+                index: avatarIndex,
+                size: 35,
+                photoUrl: photoUrl,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
