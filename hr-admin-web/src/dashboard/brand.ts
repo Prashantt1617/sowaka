@@ -54,9 +54,21 @@ export function rememberBrandOrg(org: string | undefined) {
   }
 }
 
+/** Every company's dashboard is a subdomain of this; the backend allows the same. */
+const PRODUCT_DOMAIN = 'getsowaka.com';
+
+function hostname(): string {
+  return typeof window === 'undefined' ? '' : window.location.hostname.toLowerCase();
+}
+
+/** On the product domain the host alone says whose dashboard this is. */
+function onProductDomain(): boolean {
+  const host = hostname();
+  return host === PRODUCT_DOMAIN || host.endsWith(`.${PRODUCT_DOMAIN}`);
+}
+
 function fromHostname(): string | null {
-  const host = typeof window === 'undefined' ? '' : window.location.hostname;
-  const label = host.split('.')[0]?.toLowerCase() ?? '';
+  const label = hostname().split('.')[0] ?? '';
   return label in BRANDS ? label : null;
 }
 
@@ -74,8 +86,18 @@ export function useBrand(): Brand {
   const byUser = (user?.org ?? '').toLowerCase()
     || Object.keys(BRANDS).find((k) => (user?.company ?? '').toLowerCase().includes(k))
     || '';
-  const org = fromHostname() ?? (byUser || fromStorage()) ?? '';
-  return BRANDS[org] ?? {};
+  // On convrse.getsowaka.com the host decides, and nothing remembered on the
+  // device can put another company's face on it. Elsewhere — the CloudFront
+  // host, localhost — the signed-in user decides, then the last sign-in.
+  const org = onProductDomain()
+    ? (fromHostname() ?? '')
+    : (byUser || fromStorage() || '');
+  const brand = BRANDS[org] ?? {};
+  // The backdrop is the company's own room, and only they stand in it: it
+  // shows on their subdomain or to their own signed-in user, never because
+  // someone from that company last used this browser.
+  const certain = onProductDomain() || org === byUser;
+  return certain ? brand : { ...brand, backdrop: undefined };
 }
 
 /**
