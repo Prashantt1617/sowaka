@@ -27,21 +27,6 @@ class _ManageContent extends StatelessWidget {
         onOpenComposer: onOpenComposer,
       ),
       ManagerView.feedbackList => _FeedbackList(state: state, bloc: bloc),
-      ManagerView.leaveRequests => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.leave,
-      ),
-      ManagerView.overtimeRequests => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.overtime,
-      ),
-      ManagerView.attendanceCorrections => _RequestList(
-        state: state,
-        bloc: bloc,
-        type: _RequestType.attendance,
-      ),
     };
   }
 }
@@ -1262,6 +1247,10 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final alreadySent = member.status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
     final complete = scored.length == state.recordParams.length;
+    // A save or a send is still travelling: both wait, the one tapped spins.
+    final saving = bloc.isBusy(const SaveFeedback());
+    final sending = bloc.isBusy(const SendFeedback());
+    final writing = saving || sending;
     // Weighted the way the server scores a sent review, so the number here is
     // the number that gets saved rather than a plain average that drifts from
     // it whenever the weights are uneven.
@@ -1409,28 +1398,37 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                         padding: const EdgeInsets.only(top: 4, bottom: 8),
                         child: Row(
                           children: [
+                            // A review already on its way to the server takes
+                            // both buttons with it: sending twice would mail
+                            // the person's manager the same review again.
                             Expanded(
                               child: _FeedbackActionButton(
                                 label: 'Save',
                                 background: const Color(0xFFF7F7F9),
-                                foreground: const Color(0xFF0571A6),
+                                foreground: writing
+                                    ? const Color(0xFF96B7C7)
+                                    : const Color(0xFF0571A6),
                                 border: const Color(0xFFEBEBEB),
-                                onTap: () => bloc.add(const SaveFeedback()),
+                                onTap: writing
+                                    ? null
+                                    : () => bloc.add(const SaveFeedback()),
+                                busy: saving,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: _FeedbackActionButton(
                                 label: alreadySent ? 'Update' : 'Send',
-                                background: complete
+                                background: complete && !writing
                                     ? const Color(0xFF0571A6)
                                     : const Color(0xFF96B7C7),
                                 foreground: Colors.white,
                                 // Sends straight away — the extra confirmation
                                 // sheet added a step without adding safety.
-                                onTap: complete
+                                onTap: complete && !writing
                                     ? () => bloc.add(const SendFeedback())
                                     : null,
+                                busy: sending,
                               ),
                             ),
                           ],
@@ -1452,6 +1450,7 @@ class _FeedbackActionButton extends StatelessWidget {
     required this.foreground,
     required this.onTap,
     this.border,
+    this.busy = false,
   });
 
   final String label;
@@ -1459,6 +1458,9 @@ class _FeedbackActionButton extends StatelessWidget {
   final Color foreground;
   final VoidCallback? onTap;
   final Color? border;
+
+  /// The review is on its way: a spinner in place of the label.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -1491,15 +1493,29 @@ class _FeedbackActionButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: border == null ? null : Border.all(color: border!),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontSize: 14,
-                height: 20 / 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: busy
+                ? SizedBox(
+                    height: 20,
+                    child: Center(
+                      child: SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: foreground,
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 14,
+                      height: 20 / 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
           ),
         ),
       ),

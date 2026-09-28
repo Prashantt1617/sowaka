@@ -4,11 +4,9 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env';
 import { s3EncryptionParams } from '../utils/s3-encryption.util';
-import { stablePresignDate } from '../utils/presign.util';
 import { connectMedia } from '../config/db';
 
 export type ConnectMediaFile = {
@@ -74,30 +72,50 @@ export async function deleteConnectMedia(objectKey: string) {
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
 }
 
-export async function presignConnectMedia(objectKey: string) {
-  if (objectKey.startsWith('mongo/')) {
-    // A relative path, not the bytes. Inlining these as `data:` URIs meant one
-    // feed response carried every image in the feed — the same author photo
-    // repeated once per post — pushing a single payload past 20MB. Relative
-    // rather than absolute because clients reach this API on different hosts
-    // (LAN IP from a phone, localhost on desktop); each resolves it against
-    // its own base URL.
-    return `/media/${encodeURIComponent(objectKey)}`;
-  }
-  validateConfiguration();
-  return getSignedUrl(
-    getClient(),
-    new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }),
-    { expiresIn: env.s3.presignTtl, signingDate: stablePresignDate() },
-  );
+/**
+ * Streams one stored object back, for the `/media` route to serve. Kept here
+ * so the bucket and its encryption settings stay in one place.
+ */
+/**
+ * True only for a key this service itself wrote.
+ *
+ * The bucket is shared: reimbursement receipts, leave documents (medical
+ * notes) and HR's employee files live beside Connect media under their own
+ * prefixes. `/media/:key` is deliberately unauthenticated, so it must be
+ * unable to name anything but a Connect object — a receipt's key is visible
+ * to anyone ever shown its download link, and would otherwise be readable
+ * for ever by anyone at all.
+ */
+export function isConnectMediaKey(objectKey: string): boolean {
+  const prefix = env.s3.connectMediaPrefix.replace(/^\/+|\/+$/g, '');
+  return prefix.length > 0 && objectKey.startsWith(`${prefix}/`);
 }
 
-/**
- * Resolves a stored profile-photo key to something an app can render, tolerating
- * both the current key form and legacy inline `data:` URIs left in user
- * documents. Returns undefined rather than throwing: a missing photo must never
- * fail the request that happened to include it.
- */
+export async function readConnectMedia(objectKey: string, range?: string) {
+  if (!isConnectMediaKey(objectKey)) {
+    throw new Error(`Refusing to read a key outside the Connect media prefix: ${objectKey}`);
+  }
+  validateConfiguration();
+  const object = await getClient().send(
+    new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey, Range: range }),
+  );
+  return {
+    body: object.Body as NodeJS.ReadableStream | undefined,
+    contentType: object.ContentType ?? 'application/octet-stream',
+    contentLength: object.ContentLength,
+    // Present only for a ranged read, as "bytes 0-999/22880555".
+    contentRange: object.ContentRange,
+  };
+}
+
+export async function presignConnectMedia(objectKey: string) {
+  // Always a path on this API, never the bucket's own host. Phones on
+  // networks that filter *.amazonaws.com (a common Private DNS or ad-block
+  // rule) could resolve the API but not S3, so a feed of images and video sat
+  // buffering forever. One host to reach means one host to allow.
+  return `/media/${encodeURIComponent(objectKey)}`;
+}
+
 export async function resolveProfilePhoto(
   user: { profilePhotoKey?: string; profilePhotoUrl?: string } | null | undefined,
 ): Promise<string | undefined> {

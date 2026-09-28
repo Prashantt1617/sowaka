@@ -4,7 +4,6 @@ import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument } from './s3-receipt.service';
-import { generateNewJoineePost } from './connect.service';
 
 export class AdminError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -128,8 +127,8 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     ? await users().findOne({ userId: employee.managerUserId, ...(admin.org ? { org: admin.org } : {}) })
     : undefined;
   await users().insertOne(employee);
-  try { await generateNewJoineePost(employee, manager ?? undefined); }
-  catch (error) { await users().deleteOne({ userId: employee.userId }); throw error; }
+  // The welcome post is switched off: adding an employee no longer announces
+  // them on Connect. [generateNewJoineePost] is kept for when it comes back.
   return employee;
 }
 

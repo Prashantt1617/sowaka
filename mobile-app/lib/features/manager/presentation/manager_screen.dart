@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../manage/presentation/team_faces_layout.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -49,9 +50,19 @@ part '../../manager_shell/presentation/manager_tab_content.dart';
 const int _maxLeaveApplyDays = 30;
 
 class ManagerScreen extends StatefulWidget {
-  const ManagerScreen({super.key, required this.session, this.justOnboarded = false});
+  const ManagerScreen({
+    super.key,
+    required this.session,
+    this.justOnboarded = false,
+    this.bloc,
+  });
 
   final AuthSession session;
+
+  /// Supplied only by tests, which drive the screen from a fake service
+  /// rather than the network. Null everywhere else, and the screen makes
+  /// its own.
+  final ManagerBloc? bloc;
 
   /// Straight out of onboarding: the punch screen waits until next launch.
   final bool justOnboarded;
@@ -62,6 +73,10 @@ class ManagerScreen extends StatefulWidget {
 
 class _ManagerScreenState extends State<ManagerScreen> {
   late final ManagerBloc _bloc;
+
+  /// False when a test supplied the bloc: it owns it, and disposing it here
+  /// would close a stream the test still reads.
+  late final bool _ownsBloc;
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
@@ -77,8 +92,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _session = widget.session;
     _quickActionsController = QuickActionsController()
       ..addListener(_refreshBackState);
-    _bloc = ManagerBloc(session: widget.session)
-      ..add(const LoadManagerDashboard());
+    final supplied = widget.bloc;
+    _ownsBloc = supplied == null;
+    _bloc = supplied ?? ManagerBloc(session: widget.session);
+    if (_ownsBloc) _bloc.add(const LoadManagerDashboard());
     AppNotificationService.instance.attachSession(widget.session);
     // Onboarding has just taken two screens of their time; the punch screen
     // holds until the next launch, and after that it never opens by itself
@@ -111,7 +128,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _quickActionsController
       ..removeListener(_refreshBackState)
       ..dispose();
-    _bloc.dispose();
+    if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     super.dispose();
   }
@@ -223,12 +240,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
       _bloc.add(const CloseApplyLeave());
     } else if (state.view == ManagerView.feedbackList) {
       _bloc.add(const CloseFeedbackList());
-    } else if (state.view == ManagerView.leaveRequests) {
-      _bloc.add(const CloseLeaveRequests());
-    } else if (state.view == ManagerView.overtimeRequests) {
-      _bloc.add(const CloseOvertimeRequests());
-    } else if (state.view == ManagerView.attendanceCorrections) {
-      _bloc.add(const CloseAttendanceCorrections());
+    } else if (state.tab == ManagerTab.manage &&
+        state.teamSection == TeamSection.requests) {
+      _bloc.add(const ShowTeamSection(TeamSection.myTeam));
     } else if (state.tab == ManagerTab.quick &&
         _quickActionsController.canGoBack) {
       _quickActionsController.handleBack();
@@ -273,34 +287,116 @@ class _ManagerScreenState extends State<ManagerScreen> {
     );
   }
 
+  /// Takes a tapped notification to the thing it is about, not just to a
+  /// tab: the post, the request queue, the person, the review.
   void _handleNotificationDestination(Map<String, dynamic> data) {
     if (!mounted) return;
     final destination = '${data['destination'] ?? ''}';
+    final postId = '${data['postId'] ?? ''}';
+    final employeeUserId = '${data['employeeUserId'] ?? ''}';
     setState(() => _profileOpen = false);
+    Navigator.of(context).popUntil((route) => route.isFirst);
     switch (destination) {
       case 'connect_post':
       case 'connect_comment':
-      case 'employee_profile':
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
+        if (postId.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _connectComposerController.openPost(
+              postId,
+              comments: destination == 'connect_comment',
+            ),
+          );
+        }
+      case 'employee_profile':
+        if (!_openTeamMember(employeeUserId)) {
+          _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+        }
       case 'manage_leave':
-        _bloc
-          ..add(const ChangeManagerTab(ManagerTab.manage))
-          ..add(const OpenLeaveRequests());
-      case 'grow_feedback':
-      case 'feedback_session':
-        _bloc.add(const ChangeManagerTab(ManagerTab.grow));
-      case 'nomination_submission':
-      case 'nomination_review':
+        _openTeamRequests();
+      case 'manage_attendance':
       case 'attendance_team':
       case 'attendance_report':
       case 'team_leave_calendar':
+      case 'nomination_submission':
+      case 'nomination_review':
         _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+      case 'grow_feedback':
+      case 'feedback_session':
+        _bloc.add(const ChangeManagerTab(ManagerTab.grow));
+        final member = _teamMember(employeeUserId);
+        if (member != null && _bloc.state.canManage) {
+          _bloc.add(OpenFeedbackRecord(member.id));
+        }
       case 'profile_leaves':
       case 'profile_recognition':
         setState(() => _profileOpen = true);
+      case '':
+        _openRequestNotification(data);
       default:
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
     }
+  }
+
+  /// Requests carry no destination, only what kind they are and whose side
+  /// the reader is on: `inbox` is the manager's queue, `mine` the person's own.
+  void _openRequestNotification(Map<String, dynamic> data) {
+    final type = '${data['type'] ?? ''}';
+    final inbox = '${data['view'] ?? ''}' == 'inbox' && _bloc.state.canManage;
+    if (inbox) {
+      _openTeamRequests();
+      return;
+    }
+    _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      switch (type) {
+        case 'leave':
+          _quickActionsController.openLeave();
+        case 'overtime':
+          _quickActionsController.openOvertime();
+        case 'attendance':
+          _quickActionsController.openCalendar();
+      }
+    });
+  }
+
+  /// The manager's request queue: the Requests half of the Team tab, where
+  /// leave, overtime and corrections all sit together.
+  void _openTeamRequests() {
+    _bloc
+      ..add(const ChangeManagerTab(ManagerTab.manage))
+      ..add(const ShowTeamSection(TeamSection.requests));
+  }
+
+  TeamMember? _teamMember(String userId) {
+    if (userId.isEmpty) return null;
+    final dashboard = _bloc.state.dashboard;
+    if (dashboard == null) return null;
+    return [...dashboard.team, ...dashboard.recognitionCandidates]
+        .where((member) => member.userId == userId)
+        .firstOrNull;
+  }
+
+  /// Opens a teammate's profile page over the Manage tab. False when the
+  /// person is not someone this viewer can see.
+  bool _openTeamMember(String userId) {
+    final member = _teamMember(userId);
+    final dashboard = _bloc.state.dashboard;
+    if (member == null || dashboard == null) return false;
+    _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _TeamMemberProfilePage(
+          member: member,
+          data: dashboard,
+          bloc: _bloc,
+          onNotifications: () => _openNotifications(context),
+          onOpenComposer: _connectComposerController.openComposer,
+          canManage: _bloc.state.canManage,
+        ),
+      ),
+    );
+    return true;
   }
 
   Future<void> _logout() async {

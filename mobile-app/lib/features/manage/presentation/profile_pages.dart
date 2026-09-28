@@ -22,8 +22,24 @@ class _TeamMemberProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pushed as its own route, so it sits outside the shell's StreamBuilder
+    // and would never hear the bloc. Without this the Approve and Decline
+    // buttons here could not go busy: their spinner state is read once, at
+    // build, and nothing would rebuild them.
+    return StreamBuilder<ManagerState>(
+      stream: bloc.stream,
+      initialData: bloc.state,
+      builder: (context, _) => _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
+    // The dashboard as it stands now, not the copy handed over when this page
+    // was pushed. Deciding a request updates the bloc, and reading the old
+    // copy left the card sitting there, still pending, under its own toast.
+    final data = bloc.state.dashboard ?? this.data;
 
     final openRequests = <(DateTime date, Widget card)>[
       for (final leave in data.leaves.where(
@@ -41,6 +57,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ('Comment:', leave.reason),
             ],
             decision: LeaveDecision.pending,
+            approving: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideLeave(leave.id, LeaveDecision.declined),
+            ),
             onApprove: () =>
                 bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
             onReject: () async {
@@ -75,6 +97,12 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ),
             ],
             decision: LeaveDecision.pending,
+            approving: bloc.isBusy(
+              DecideOvertime(request.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideOvertime(request.id, LeaveDecision.declined),
+            ),
             onApprove: () =>
                 bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
             onReject: () async {
@@ -106,6 +134,18 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ('Comment:', request.note),
             ],
             decision: LeaveDecision.pending,
+            approving: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.approved,
+              ),
+            ),
+            declining: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.declined,
+              ),
+            ),
             onApprove: () => bloc.add(
               DecideAttendanceRegularization(
                 request.id,
@@ -904,6 +944,8 @@ class _ProfileRequestCard extends StatelessWidget {
     this.onApprove,
     this.onReject,
     this.readOnly = false,
+    this.approving = false,
+    this.declining = false,
   });
 
   final IconData icon;
@@ -913,6 +955,11 @@ class _ProfileRequestCard extends StatelessWidget {
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
   final bool readOnly;
+
+  /// The decision is in flight; see [_TeamRequestCard.approving].
+  final bool approving;
+  final bool declining;
+  bool get busy => approving || declining;
 
   @override
   Widget build(BuildContext context) {
@@ -1005,9 +1052,10 @@ class _ProfileRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: MColors.approveTint,
-                    foreground: MColors.approveInk,
-                    onTap: onApprove!,
+                    background: busy ? MColors.line : MColors.approveTint,
+                    foreground: busy ? MColors.inkFaint : MColors.approveInk,
+                    onTap: busy ? null : onApprove,
+                    busy: approving,
                     radius: 8,
                   ),
                 ),
@@ -1015,9 +1063,10 @@ class _ProfileRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: MColors.rejectTint,
-                    foreground: MColors.rejectInk,
-                    onTap: onReject!,
+                    background: busy ? MColors.line : MColors.rejectTint,
+                    foreground: busy ? MColors.inkFaint : MColors.rejectInk,
+                    onTap: busy ? null : onReject,
+                    busy: declining,
                     radius: 8,
                   ),
                 ),

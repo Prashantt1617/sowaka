@@ -15,6 +15,7 @@ class ManagerState {
     required this.tab,
     required this.view,
     required this.canManage,
+    this.teamSection = TeamSection.myTeam,
     this.dashboard,
     this.selectedMemberId,
     this.recordParams = const <FeedbackParam>[],
@@ -44,6 +45,7 @@ class ManagerState {
   final ManagerTab tab;
   final ManagerView view;
   final bool canManage;
+  final TeamSection teamSection;
   final ManagerDashboard? dashboard;
   final int? selectedMemberId;
   final List<FeedbackParam> recordParams;
@@ -72,6 +74,7 @@ class ManagerState {
     ManagerTab? tab,
     ManagerView? view,
     bool? canManage,
+    TeamSection? teamSection,
     ManagerDashboard? dashboard,
     int? selectedMemberId,
     bool clearSelectedMember = false,
@@ -93,6 +96,7 @@ class ManagerState {
       tab: tab ?? this.tab,
       view: view ?? this.view,
       canManage: canManage ?? this.canManage,
+      teamSection: teamSection ?? this.teamSection,
       dashboard: dashboard ?? this.dashboard,
       selectedMemberId: clearSelectedMember
           ? null
@@ -134,28 +138,10 @@ class CloseFeedbackList extends ManagerEvent {
   const CloseFeedbackList();
 }
 
-class OpenLeaveRequests extends ManagerEvent {
-  const OpenLeaveRequests();
-}
-
-class CloseLeaveRequests extends ManagerEvent {
-  const CloseLeaveRequests();
-}
-
-class OpenOvertimeRequests extends ManagerEvent {
-  const OpenOvertimeRequests();
-}
-
-class CloseOvertimeRequests extends ManagerEvent {
-  const CloseOvertimeRequests();
-}
-
-class OpenAttendanceCorrections extends ManagerEvent {
-  const OpenAttendanceCorrections();
-}
-
-class CloseAttendanceCorrections extends ManagerEvent {
-  const CloseAttendanceCorrections();
+/// Switches the Team tab between the team list and the request queue.
+class ShowTeamSection extends ManagerEvent {
+  const ShowTeamSection(this.section);
+  final TeamSection section;
 }
 
 class OpenFeedbackRecord extends ManagerEvent {
@@ -271,11 +257,15 @@ class SubmitOvertimeApplication extends ManagerEvent {
     required this.workDate,
     required this.startTime,
     required this.endTime,
+    required this.duration,
     required this.note,
   });
   final DateTime workDate;
   final DateTime startTime;
   final DateTime endTime;
+
+  /// 'half_day' or 'full_day', as picked on the form.
+  final String duration;
   final String note;
 }
 
@@ -368,7 +358,47 @@ class ManagerBloc {
 
   Stream<ManagerState> get stream => _controller.stream;
 
-  Future<bool> add(ManagerEvent event) => _handle(event);
+  /// Anything that changes something on the server, keyed so that a second
+  /// tap on the same button while the first is still travelling is dropped
+  /// rather than filing a duplicate request or deciding a request twice.
+  static String? _mutationKey(ManagerEvent event) => switch (event) {
+    SubmitLeaveApplication() => 'leave:apply',
+    SubmitOvertimeApplication() => 'overtime:apply',
+    SubmitReimbursementApplication() => 'reimbursement:apply',
+    SubmitAttendanceRegularization() => 'attendance:apply',
+    DecideLeave(:final leaveId, :final decision) =>
+      'leave:decide:$leaveId:${decision.name}',
+    DecideOvertime(:final overtimeId, :final decision) =>
+      'overtime:decide:$overtimeId:${decision.name}',
+    DecideAttendanceRegularization(:final id, :final decision) =>
+      'attendance:decide:$id:${decision.name}',
+    SaveFeedback() => 'feedback:save',
+    SendFeedback() => 'feedback:send',
+    NominateAward() => 'award:nominate',
+    PunchRecorded() => 'attendance:punch',
+    _ => null,
+  };
+
+  final Set<String> _inFlight = <String>{};
+
+  /// True while [event]'s button should read as busy.
+  bool isBusy(ManagerEvent event) {
+    final key = _mutationKey(event);
+    return key != null && _inFlight.contains(key);
+  }
+
+  Future<bool> add(ManagerEvent event) async {
+    final key = _mutationKey(event);
+    if (key == null) return _handle(event);
+    if (!_inFlight.add(key)) return false;
+    _emit(_state);
+    try {
+      return await _handle(event);
+    } finally {
+      _inFlight.remove(key);
+      _emit(_state);
+    }
+  }
 
   void setManagerPhoto(String url) {
     _emit(
@@ -487,18 +517,8 @@ class ManagerBloc {
               feedbackFilter: FeedbackFilter.all,
             ),
           );
-        case OpenLeaveRequests():
-          _emit(_state.copyWith(view: ManagerView.leaveRequests));
-        case CloseLeaveRequests():
-          _emit(_state.copyWith(view: ManagerView.home));
-        case OpenOvertimeRequests():
-          _emit(_state.copyWith(view: ManagerView.overtimeRequests));
-        case CloseOvertimeRequests():
-          _emit(_state.copyWith(view: ManagerView.home));
-        case OpenAttendanceCorrections():
-          _emit(_state.copyWith(view: ManagerView.attendanceCorrections));
-        case CloseAttendanceCorrections():
-          _emit(_state.copyWith(view: ManagerView.home));
+        case ShowTeamSection(:final section):
+          _emit(_state.copyWith(view: ManagerView.home, teamSection: section));
         case OpenFeedbackRecord(:final memberId):
           final member = _state.dashboard?.team
               .where((item) => item.id == memberId)
@@ -672,12 +692,14 @@ class ManagerBloc {
           :final workDate,
           :final startTime,
           :final endTime,
+          :final duration,
           :final note,
         ):
           final request = await _service.submitOvertime(
             workDate: workDate,
             startTime: startTime,
             endTime: endTime,
+            duration: duration,
             note: note,
           );
           final data = _state.dashboard;

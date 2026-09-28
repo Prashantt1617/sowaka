@@ -39,6 +39,11 @@ class ConnectComposerController {
   }
 
   void openComposer() => _state?._openPostTypePicker();
+
+  /// Brings one post into view — a notification about it was tapped — and
+  /// opens its comments when that is what the notification was about.
+  void openPost(String postId, {bool comments = false}) =>
+      _state?._revealPost(postId, comments: comments);
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -49,12 +54,17 @@ class ConnectFeedScreen extends StatefulWidget {
     this.recognitionCandidates = const [],
     this.composerController,
     this.onOpenPerson,
+    this.bloc,
   });
 
   final AuthSession session;
   final Widget profileAction;
   final List<ConnectTeammate> recognitionCandidates;
   final ConnectComposerController? composerController;
+
+  /// Supplied only by tests, which load the feed from a fake service rather
+  /// than the network. Null everywhere else, and the screen makes its own.
+  final ConnectBloc? bloc;
 
   /// Opens a tagged person's profile — supplied by the shell, which owns the
   /// team data and the profile route.
@@ -66,6 +76,14 @@ class ConnectFeedScreen extends StatefulWidget {
 
 class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   late final ConnectBloc _bloc;
+
+  /// False when a test supplied the bloc: it owns it, and loading or
+  /// disposing here would fight the test.
+  late final bool _ownsBloc;
+  final _feedScroll = ScrollController();
+
+  /// One key per post card, so a card can be found and scrolled to.
+  final _postKeys = <String, GlobalKey>{};
 
   // AuthUser carries no initials/avatarColor fields of its own, so the
   // signed-in viewer's comment-composer avatar is derived the same way the
@@ -84,9 +102,14 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   @override
   void initState() {
     super.initState();
-    _bloc = ConnectBloc(session: widget.session)..load();
+    final supplied = widget.bloc;
+    _ownsBloc = supplied == null;
+    _bloc = supplied ?? ConnectBloc(session: widget.session);
+    if (_ownsBloc) {
+      _bloc.load();
+      _loadTaggablePeople();
+    }
     widget.composerController?._attach(this);
-    _loadTaggablePeople();
   }
 
   Future<void> _loadTaggablePeople() async {
@@ -118,7 +141,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   @override
   void dispose() {
     widget.composerController?._detach(this);
-    _bloc.dispose();
+    if (_ownsBloc) _bloc.dispose();
+    _feedScroll.dispose();
     super.dispose();
   }
 
@@ -227,6 +251,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         color: _ConnectColors.terra,
         onRefresh: _bloc.refresh,
         child: ListView.separated(
+          controller: _feedScroll,
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
           itemCount: posts.length + 1,
           separatorBuilder: (_, _) => const SizedBox(height: 16),
@@ -246,13 +271,13 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             // viewer's own team — rather than sitting inside a standard post.
             if (post.type == ConnectPostType.relayGame) {
               return Padding(
-                key: ValueKey(post.id),
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: RelayPostCard(post: post, session: widget.session),
               );
             }
             return _ConnectPostCard(
-              key: ValueKey(post.id),
+              key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
               post: post,
               busy: state.busyPostId == post.id,
               canManage:
@@ -406,6 +431,46 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       builder: (_) => _BlockPersonSheet(name: name),
     );
     if (confirmed == true) await _bloc.blockPerson(userId, name);
+  }
+
+  /// Scrolls until the post's card is on screen. Cards are built lazily, so
+  /// this walks down a screen at a time until the card exists, then settles
+  /// it near the top. A post not in the loaded feed is fetched first.
+  Future<void> _revealPost(String postId, {bool comments = false}) async {
+    if (!_bloc.state.posts.any((post) => post.id == postId)) {
+      await _bloc.refresh();
+    }
+    if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
+      return;
+    }
+    // From the top: the search below only walks downward, and a notification
+    // is usually about a post that has just arrived at the top of the feed.
+    if (_feedScroll.hasClients) _feedScroll.jumpTo(0);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    for (var step = 0; step < 60; step++) {
+      final card = _postKeys[postId]?.currentContext;
+      if (card != null) {
+        await Scrollable.ensureVisible(
+          card,
+          alignment: 0.08,
+          duration: const Duration(milliseconds: 280),
+        );
+        break;
+      }
+      if (!_feedScroll.hasClients) return;
+      final position = _feedScroll.position;
+      if (position.pixels >= position.maxScrollExtent) break;
+      _feedScroll.jumpTo(
+        (position.pixels + position.viewportDimension * 0.9).clamp(
+          0.0,
+          position.maxScrollExtent,
+        ),
+      );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    if (comments && mounted) await _openComments(postId);
   }
 
   Future<void> _openComments(String postId) {
@@ -2830,15 +2895,21 @@ class _ChallengePoints extends StatelessWidget {
             fit: BoxFit.contain,
           ),
           const SizedBox(width: 4),
-          Text(
-            '$points pts per vote received',
-            style: const TextStyle(
-              fontFamily: _soraFont,
-              fontSize: 12,
-              height: 16.2 / 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.16,
-              color: Color(0xFFFFCC00),
+          // Narrow phones and larger text sizes both eat into this line, so
+          // it gives way rather than running past the edge of the card.
+          Flexible(
+            child: Text(
+              '$points pts per vote received',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 12,
+                height: 16.2 / 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: Color(0xFFFFCC00),
+              ),
             ),
           ),
         ],
@@ -2936,16 +3007,25 @@ class _ChallengeTitleRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          title.isEmpty ? fallbackTitle : title,
-          style: const TextStyle(
-            fontFamily: _soraFont,
-            fontSize: 20,
-            height: 28 / 20,
-            fontWeight: FontWeight.w700,
-            color: _CaptionColors.ink,
+        // The title takes what is left after the leaderboard link and wraps
+        // rather than running off the card: whoever sets up a contest writes
+        // the question, and "Whose reaction is like this?" already overflowed
+        // a phone by 47 pixels.
+        Expanded(
+          child: Text(
+            title.isEmpty ? fallbackTitle : title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 20,
+              height: 28 / 20,
+              fontWeight: FontWeight.w700,
+              color: _CaptionColors.ink,
+            ),
           ),
         ),
+        const SizedBox(width: 12),
         GestureDetector(
           onTap: () => _openLeaderboard(context, post),
           behavior: HitTestBehavior.opaque,

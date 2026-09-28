@@ -29,11 +29,11 @@ export type Overtime = {
   appliedOn: string;
   otDate: string;
   duration: OtDuration;
+  hours: number;
   day: string;
   status: ReqStatus;
   manager: string;
   eRemark: string; // employee note / reason
-  project: string;
   mRemark: string;
   ord: number;
   refISO: string; // canonical date for range filtering (overtime work date)

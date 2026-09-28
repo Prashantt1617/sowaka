@@ -134,7 +134,7 @@ function OvertimeDrawer() {
             { label: 'OVERTIME DATE', value: d.otDate },
             { label: 'DAY', value: d.day },
             { label: 'DURATION', value: d.duration },
-            { label: 'PROJECT', value: d.project || '—' },
+            { label: 'HOURS', value: String(d.hours) },
           ]}
         />
         <RemarkBlock label="EMPLOYEE NOTE" text={d.eRemark || 'No note provided.'} filled={!!d.eRemark} marginBottom={16} />

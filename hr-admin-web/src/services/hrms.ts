@@ -25,9 +25,9 @@ export type OvertimeDTO = {
   userId: string;
   employee: { name: string; department?: string };
   workDate: string;
+  /** Graded by the server against the requester's shift. */
   duration: 'half_day' | 'full_day';
   hours: number;
-  project: string;
   note?: string;
   managerNote?: string;
   status: 'pending' | 'approved' | 'declined';

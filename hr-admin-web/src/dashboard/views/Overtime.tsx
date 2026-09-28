@@ -34,7 +34,7 @@ export function Overtime() {
         { header: 'Overtime date', value: (r) => r.otDate },
         { header: 'Day', value: (r) => r.day },
         { header: 'Duration', value: (r) => r.duration },
-        { header: 'Project', value: (r) => r.project },
+        { header: 'Hours', value: (r) => String(r.hours) },
         { header: 'Note', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
         { header: 'Status', value: (r) => r.status },

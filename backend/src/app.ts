@@ -12,7 +12,14 @@ export const app = express();
 
 app.use(requestContext);
 app.use(helmet());
-app.use(cors({ origin: env.corsOrigins }));
+app.use(
+  cors({
+    // The fixed list, plus any company's own subdomain of the product domain.
+    // No Origin header (curl, native apps) passes as before.
+    origin: (origin, done) =>
+      done(null, !origin || env.corsOrigins.includes(origin) || env.isDashboardOrigin(origin)),
+  }),
+);
 // A month of attendance for a large org is over a megabyte of JSON and
 // compresses ten to one; every other response is small enough not to notice.
 app.use(compression());

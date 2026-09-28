@@ -111,13 +111,14 @@ export async function closeYearForUser(
 async function compOffEarned(userId: string, start: Date, end: Date): Promise<number> {
   const { overtimeRequests } = await import('../config/db');
   const { COMP_OFF_CREDIT } = await import('../models/shift.model');
+  const { overtimeDurationOf } = await import('../models/overtime.model');
   const { fullDayHoursFor } = await import('./shift.service');
   const [approved, fullDay] = await Promise.all([
     overtimeRequests().find({ userId, status: 'approved', workDate: { $gte: start, $lte: end } }).toArray(),
     fullDayHoursFor(userId),
   ]);
   return round(approved.reduce(
-    (total, request) => total + COMP_OFF_CREDIT[request.hours >= fullDay ? 'full_day' : 'half_day'],
+    (total, request) => total + COMP_OFF_CREDIT[overtimeDurationOf(request, fullDay)],
     0,
   ));
 }

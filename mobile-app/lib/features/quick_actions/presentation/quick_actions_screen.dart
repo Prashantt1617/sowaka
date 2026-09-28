@@ -27,6 +27,13 @@ class QuickActionsController extends ChangeNotifier {
   /// the alternative to punching in — someone who is not coming in at all.
   void openLeave() => _state?._open(_QuickPage.leave);
 
+  /// The person's own overtime requests, for a notification about one.
+  void openOvertime() => _state?._open(_QuickPage.overtime);
+
+  /// The attendance calendar, for a notification about a punch or a
+  /// correction of their own.
+  void openCalendar() => _state?._open(_QuickPage.calendar);
+
   void _attach(_QuickActionsScreenState state) {
     _state = state;
   }
@@ -840,19 +847,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       imageAsset:
                           'assets/icons/action_card_reimbursement_money.png',
                     ),
-                    _HomeActionCard(
-                      icon: Icons.receipt_long_rounded,
-                      color: const Color(0xFF2E7D6B),
-                      tint: const Color(0xFFDFF0EA),
-                      title: 'Manage payslips',
-                      subtitle: 'View & download',
-                      onTap: () {
-                        _payslipsFuture ??= widget.bloc.api.fetchMyPayslips();
-                        _open(_QuickPage.payslips);
-                      },
-                      imageAsset:
-                          'assets/icons/action_card_reimbursement_money.png',
-                    ),
+                    // Payslips are built and served, but the way in waits for
+                    // the next release — the card is all that is held back.
                     _HomeActionCard(
                       icon: Icons.edit_note_rounded,
                       color: const Color(0xFF8A6AA0),
@@ -1035,9 +1031,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Widget _applyLeaveForm() {
-    final double? balanceForType = _leaveType == null
-        ? null
-        : _balanceFor(_leaveType!)?.remaining;
+    final balanceItem = _leaveType == null ? null : _balanceFor(_leaveType!);
+    final double? balanceForType = balanceItem?.remaining;
     return _HubScaffold(
       key: const ValueKey('apply-leave'),
       title: 'Leave',
@@ -1046,7 +1041,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(
-        enabled: _leaveFormComplete,
+        enabled: _leaveFormComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitLeaveApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1085,7 +1081,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 'Sick Leave' => 'sick',
                 'Earned Leave' => 'earned',
                 _ => 'comp-off',
-              }} days',
+              }} days'
+              '${balanceItem?.monthly ?? false ? ' for ${balanceItem!.periodLabel}' : ''}',
               style: const TextStyle(
                 color: Color(0xFF2563EB),
                 fontSize: 12,
@@ -1453,47 +1450,55 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _submitLeaveApplication() async {
-    if (!_leaveFormComplete) return;
-    // The server still records a type, and casual is what an unlimited day is
-    // taken as — the balance it would spend is simply never counted.
-    final type = _leaveType ?? 'Casual Leave';
-    final from = _leaveFrom!;
-    final to = _leaveTo ?? from;
-    final sent = await widget.bloc.add(
-      SubmitLeaveApplication(
-        type: type.replaceAll(' Leave', ''),
-        startDate: from,
-        endDate: to,
-        reason: _leaveReason.text.trim(),
-        halfDay: _leaveDuration == 'Half Day' && _isSingleDayLeave,
-        documentName: _leaveAttachmentName,
-        documentBytes: _leaveAttachmentBytes,
-      ),
-    );
-    if (!mounted || !sent) return;
-    _leaveHistoryView = false;
-    _showSubmitted(
-      RequestSummary(
-        screenTitle: 'Leave',
-        successTitle: 'Leave Applied',
-        successBody: 'Leave has been sent to your manager for review',
-        rows: [
-          if (widget.dashboard.shift.leaveBalanceTracked)
-            SummaryRow('Leave Type', type.replaceAll(' Leave', '')),
-          SummaryRow('Start Date', _summaryDate(from)),
-          SummaryRow('End Date', _summaryDate(to)),
-          SummaryRow(
-            'Duration',
-            _leaveDuration == 'Half Day' && _isSingleDayLeave
-                ? 'Half Day'
-                : 'Full Day',
-          ),
-        ],
-        reason: _leaveReason.text.trim(),
-        documentName: _leaveAttachmentName,
-      ),
-      _QuickPage.leave,
-    );
+    // One tap files one request: a second while the first is still in
+    // flight files a duplicate the manager then has to sort out.
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      if (!_leaveFormComplete) return;
+      // The server still records a type, and casual is what an unlimited day is
+      // taken as — the balance it would spend is simply never counted.
+      final type = _leaveType ?? 'Casual Leave';
+      final from = _leaveFrom!;
+      final to = _leaveTo ?? from;
+      final sent = await widget.bloc.add(
+        SubmitLeaveApplication(
+          type: type.replaceAll(' Leave', ''),
+          startDate: from,
+          endDate: to,
+          reason: _leaveReason.text.trim(),
+          halfDay: _leaveDuration == 'Half Day' && _isSingleDayLeave,
+          documentName: _leaveAttachmentName,
+          documentBytes: _leaveAttachmentBytes,
+        ),
+      );
+      if (!mounted || !sent) return;
+      _leaveHistoryView = false;
+      _showSubmitted(
+        RequestSummary(
+          screenTitle: 'Leave',
+          successTitle: 'Leave Applied',
+          successBody: 'Leave has been sent to your manager for review',
+          rows: [
+            if (widget.dashboard.shift.leaveBalanceTracked)
+              SummaryRow('Leave Type', type.replaceAll(' Leave', '')),
+            SummaryRow('Start Date', _summaryDate(from)),
+            SummaryRow('End Date', _summaryDate(to)),
+            SummaryRow(
+              'Duration',
+              _leaveDuration == 'Half Day' && _isSingleDayLeave
+                  ? 'Half Day'
+                  : 'Full Day',
+            ),
+          ],
+          reason: _leaveReason.text.trim(),
+          documentName: _leaveAttachmentName,
+        ),
+        _QuickPage.leave,
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   /// "Friday, 21 Aug" — the date format the summary screens use.
@@ -1632,7 +1637,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       trailing: _LeaveHeaderButton(
         label: 'Apply Overtime',
         // Off until the date and duration are both valid for the policy.
-        enabled: _overtimeFormComplete,
+        enabled: _overtimeFormComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitOvertimeApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -1742,46 +1748,55 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _submitOvertimeApplication() async {
-    final date = _overtimeDate;
-    final duration = _overtimeDuration;
-    if (date == null || duration == null) {
-      showAppToast(context, 'Pick a date and a duration to continue.');
-      return;
+    // One tap files one request: a second while the first is still in
+    // flight files a duplicate the manager then has to sort out.
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final date = _overtimeDate;
+      final duration = _overtimeDuration;
+      if (date == null || duration == null) {
+        showAppToast(context, 'Pick a date and a duration to continue.');
+        return;
+      }
+      // The claim is the half or full day they picked. The times sent with it
+      // are what that day is worth on this employee's own shift, for the record.
+      final worked = _overtimeWorked;
+      final start = widget.dashboard.shift.startMinutes ?? 9 * 60;
+      final startDateTime = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        start ~/ 60,
+        start % 60,
+      );
+      final sent = await widget.bloc.add(
+        SubmitOvertimeApplication(
+          workDate: date,
+          startTime: startDateTime,
+          endTime: startDateTime.add(worked),
+          duration: duration == 'Full day' ? 'full_day' : 'half_day',
+          note: _overtimeNote.text.trim(),
+        ),
+      );
+      if (!mounted || !sent) return;
+      _showSubmitted(
+        RequestSummary(
+          screenTitle: 'Overtime',
+          successTitle: 'Overtime Applied',
+          successBody: 'Overtime has been sent to your manager for review',
+          rows: [
+            SummaryRow('Date', _summaryDate(date)),
+            SummaryRow('Start Time', _summaryClock(startDateTime)),
+            SummaryRow('End Time', _summaryClock(startDateTime.add(worked))),
+          ],
+          reason: _overtimeNote.text.trim(),
+        ),
+        _QuickPage.overtime,
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
-    // The claim carries the hours the duration is worth on this employee's own
-    // shift, so the server classifies it as the same thing they picked.
-    final worked = _overtimeWorked;
-    final start = widget.dashboard.shift.startMinutes ?? 9 * 60;
-    final startDateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      start ~/ 60,
-      start % 60,
-    );
-    final sent = await widget.bloc.add(
-      SubmitOvertimeApplication(
-        workDate: date,
-        startTime: startDateTime,
-        endTime: startDateTime.add(worked),
-        note: _overtimeNote.text.trim(),
-      ),
-    );
-    if (!mounted || !sent) return;
-    _showSubmitted(
-      RequestSummary(
-        screenTitle: 'Overtime',
-        successTitle: 'Overtime Applied',
-        successBody: 'Overtime has been sent to your manager for review',
-        rows: [
-          SummaryRow('Date', _summaryDate(date)),
-          SummaryRow('Start Time', _summaryClock(startDateTime)),
-          SummaryRow('End Time', _summaryClock(startDateTime.add(worked))),
-        ],
-        reason: _overtimeNote.text.trim(),
-      ),
-      _QuickPage.overtime,
-    );
   }
 
   // ---------------------------------------------------------------- payslips
@@ -2209,7 +2224,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       trailing: _LeaveHeaderButton(
         label: 'Apply',
-        enabled: _reimbursementComplete,
+        enabled: _reimbursementComplete && !_submitting,
+        busy: _submitting,
         onTap: _submitReimbursementApplication,
       ),
       backgroundColor: const Color(0xFFF7F7F9),
@@ -2346,36 +2362,44 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _submitReimbursementApplication() async {
-    if (!_reimbursementComplete) return;
-    final date = _reimbursementDate!;
-    final category = _reimbursementCategory!;
-    final amount = double.parse(_reimbursementAmount.text.trim());
-    final sent = await widget.bloc.add(
-      SubmitReimbursementApplication(
-        expenseDate: date,
-        amount: amount.toStringAsFixed(2),
-        category: category,
-        receiptName: _reimbursementReceiptName ?? '',
-        receiptBytes: _reimbursementReceiptBytes,
-        note: _reimbursementDescription.text.trim(),
-      ),
-    );
-    if (!mounted || !sent) return;
-    _showSubmitted(
-      RequestSummary(
-        screenTitle: 'Reimbursement',
-        successTitle: 'Reimbursement Applied',
-        successBody: 'Your claim has been sent for review',
-        rows: [
-          SummaryRow('Category', category),
-          SummaryRow('Expense Date', _summaryDate(date)),
-          SummaryRow('Amount', _money(amount)),
-        ],
-        reason: _reimbursementDescription.text.trim(),
-        documentName: _reimbursementReceiptName,
-      ),
-      _QuickPage.reimbursements,
-    );
+    // One tap files one request: a second while the first is still in
+    // flight files a duplicate the manager then has to sort out.
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      if (!_reimbursementComplete) return;
+      final date = _reimbursementDate!;
+      final category = _reimbursementCategory!;
+      final amount = double.parse(_reimbursementAmount.text.trim());
+      final sent = await widget.bloc.add(
+        SubmitReimbursementApplication(
+          expenseDate: date,
+          amount: amount.toStringAsFixed(2),
+          category: category,
+          receiptName: _reimbursementReceiptName ?? '',
+          receiptBytes: _reimbursementReceiptBytes,
+          note: _reimbursementDescription.text.trim(),
+        ),
+      );
+      if (!mounted || !sent) return;
+      _showSubmitted(
+        RequestSummary(
+          screenTitle: 'Reimbursement',
+          successTitle: 'Reimbursement Applied',
+          successBody: 'Your claim has been sent for review',
+          rows: [
+            SummaryRow('Category', category),
+            SummaryRow('Expense Date', _summaryDate(date)),
+            SummaryRow('Amount', _money(amount)),
+          ],
+          reason: _reimbursementDescription.text.trim(),
+          documentName: _reimbursementReceiptName,
+        ),
+        _QuickPage.reimbursements,
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   Widget _policies() {
@@ -3077,14 +3101,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         // submitted as a half day is filed, and paid back, as the wrong thing.
         // The hours come from the org's shift policy, never a fixed day.
         final shift = widget.dashboard.shift;
-        final worked = (_answers['Duration'] ?? _choice) == 'Full day'
-            ? shift.minFullDay
-            : shift.minHalfDay;
+        final fullDay = (_answers['Duration'] ?? _choice) == 'Full day';
+        final worked = fullDay ? shift.minFullDay : shift.minHalfDay;
         submitted = await widget.bloc.add(
           SubmitOvertimeApplication(
             workDate: _from,
             startTime: _from,
             endTime: _from.add(worked),
+            duration: fullDay ? 'full_day' : 'half_day',
             note: _answers['Note'] ?? '',
           ),
         );
@@ -5207,30 +5231,45 @@ class _LeaveHeaderButton extends StatelessWidget {
     required this.onTap,
     this.enabled = true,
     this.label = 'Apply Leave',
+    this.busy = false,
   });
 
   final VoidCallback? onTap;
   final bool enabled;
   final String label;
 
+  /// The request is on its way: the button keeps its colour, stops answering,
+  /// and shows a spinner where the label was.
+  final bool busy;
+
   @override
   Widget build(BuildContext context) {
+    final live = enabled || busy;
     return Material(
-      color: enabled ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
+      color: live ? const Color(0xFF0571A6) : const Color(0xFFE5E7EB),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: enabled ? onTap : null,
+        onTap: enabled && !busy ? onTap : null,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: enabled ? Colors.white : const Color(0xFF9CA3AF),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  label,
+                  style: TextStyle(
+                    color: live ? Colors.white : const Color(0xFF9CA3AF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
         ),
       ),
     );
@@ -5388,9 +5427,12 @@ class _LeaveBalanceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'days available',
-            style: TextStyle(color: Color(0xFF222222), fontSize: 10),
+          Text(
+            // A monthly type is this month's figure, and lapses with it.
+            item.monthly ? 'days for ${item.periodLabel}' : 'days available',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF222222), fontSize: 10),
           ),
         ],
       ),

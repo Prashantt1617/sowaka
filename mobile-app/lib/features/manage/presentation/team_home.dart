@@ -1,7 +1,5 @@
 part of '../../manager/presentation/manager_screen.dart';
 
-enum _TeamSection { myTeam, requests }
-
 class _TeamHome extends StatefulWidget {
   const _TeamHome({
     required this.state,
@@ -22,12 +20,11 @@ class _TeamHome extends StatefulWidget {
 }
 
 class _TeamHomeState extends State<_TeamHome> {
-  _TeamSection _section = _TeamSection.myTeam;
-
   @override
   Widget build(BuildContext context) {
     final data = widget.state.dashboard!;
     final canManage = widget.state.canManage;
+    final section = widget.state.teamSection;
     final pendingRequests =
         data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
         data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
@@ -64,9 +61,10 @@ class _TeamHomeState extends State<_TeamHome> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _TeamSegmentedControl(
-                      section: _section,
+                      section: section,
                       pendingRequests: pendingRequests,
-                      onChanged: (value) => setState(() => _section = value),
+                      onChanged: (value) =>
+                          widget.bloc.add(ShowTeamSection(value)),
                     ),
                   ),
                 ],
@@ -75,7 +73,7 @@ class _TeamHomeState extends State<_TeamHome> {
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: !canManage || _section == _TeamSection.myTeam
+            child: !canManage || section == TeamSection.myTeam
                 ? _MyTeamView(
                     data: data,
                     bloc: widget.bloc,
@@ -99,9 +97,9 @@ class _TeamSegmentedControl extends StatelessWidget {
     required this.onChanged,
   });
 
-  final _TeamSection section;
+  final TeamSection section;
   final int pendingRequests;
-  final ValueChanged<_TeamSection> onChanged;
+  final ValueChanged<TeamSection> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -115,8 +113,8 @@ class _TeamSegmentedControl extends StatelessWidget {
           Expanded(
             child: _SegmentTab(
               label: 'My Team',
-              selected: section == _TeamSection.myTeam,
-              onTap: () => onChanged(_TeamSection.myTeam),
+              selected: section == TeamSection.myTeam,
+              onTap: () => onChanged(TeamSection.myTeam),
             ),
           ),
           Expanded(
@@ -124,8 +122,8 @@ class _TeamSegmentedControl extends StatelessWidget {
               label: pendingRequests == 0
                   ? 'Requests'
                   : 'Requests · $pendingRequests',
-              selected: section == _TeamSection.requests,
-              onTap: () => onChanged(_TeamSection.requests),
+              selected: section == TeamSection.requests,
+              onTap: () => onChanged(TeamSection.requests),
             ),
           ),
         ],
@@ -214,8 +212,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
   List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
     if (members.where((member) => member.isManager).firstOrNull case final m?)
       m,
-    if (members.where((member) => member.isSelf).firstOrNull case final me?)
-      me,
+    if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
   ];
 
   /// A team's name above its people.
@@ -772,129 +769,160 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
     final bloc = widget.bloc;
     final entries =
         <(DateTime date, String who, String kind, Widget card, bool pending)>[
-      for (final leave in data.leaves)
-        (
-          leave.requestedOn,
-          leave.who,
-          'leave',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _LeaveRequestDetailPage(leave: leave, bloc: bloc),
-              ),
-            ),
-            initial: leave.initial,
-            avatarIndex: leave.avatarIndex,
-            name: leave.who,
-            role: leave.team,
-            rows: [
-              ('Type:', leave.type),
-              ('Date:', _leaveDateRange(leave)),
-              ('Comment:', leave.reason),
-            ],
-            decision: leave.decision,
-            responseNote: leave.managerNote,
-            onApprove: () =>
-                bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
-            onReject: () async {
-              final reason = await _showDeclineReasonSheet(context);
-              if (reason == null) return;
-              bloc.add(
-                DecideLeave(
-                  leave.id,
-                  LeaveDecision.declined,
-                  managerNote: reason,
+          for (final leave in data.leaves)
+            (
+              leave.requestedOn,
+              leave.who,
+              'leave',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        _LeaveRequestDetailPage(leave: leave, bloc: bloc),
+                  ),
                 ),
-              );
-            },
-          ),
-          leave.decision == LeaveDecision.pending,
-        ),
-      for (final request in data.overtime)
-        (
-          request.requestedOn,
-          request.who,
-          'overtime',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _OvertimeRequestDetailPage(request: request, bloc: bloc),
-              ),
-            ),
-            initial: request.initial,
-            avatarIndex: request.avatarIndex,
-            name: request.who,
-            role: request.team,
-            rows: [
-              ('Type:', 'Overtime'),
-              ('Date:', _managerDate(request.workDate)),
-              ('Overtime hrs:', request.hoursLabel),
-              (
-                'Comment:',
-                request.note.isEmpty ? request.timeRangeLabel : request.note,
-              ),
-            ],
-            decision: request.decision,
-            responseNote: request.managerNote,
-            onApprove: () =>
-                bloc.add(DecideOvertime(request.id, LeaveDecision.approved)),
-            onReject: () async {
-              final reason = await _showDeclineReasonSheet(context);
-              if (reason == null) return;
-              bloc.add(
-                DecideOvertime(
-                  request.id,
-                  LeaveDecision.declined,
-                  managerNote: reason,
+                initial: leave.initial,
+                avatarIndex: leave.avatarIndex,
+                name: leave.who,
+                role: leave.team,
+                rows: [
+                  ('Type:', leave.type),
+                  ('Date:', _leaveDateRange(leave)),
+                  ('Comment:', leave.reason),
+                ],
+                decision: leave.decision,
+                responseNote: leave.managerNote,
+                approving: bloc.isBusy(
+                  DecideLeave(leave.id, LeaveDecision.approved),
                 ),
-              );
-            },
-          ),
-          request.decision == LeaveDecision.pending,
-        ),
-      for (final request in data.managerRegularizations)
-        (
-          request.createdAt,
-          request.who,
-          'correction',
-          _TeamRequestCard(
-            onViewDetails: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    _AttendanceCorrectionDetailPage(request: request, bloc: bloc),
+                declining: bloc.isBusy(
+                  DecideLeave(leave.id, LeaveDecision.declined),
+                ),
+                onApprove: () =>
+                    bloc.add(DecideLeave(leave.id, LeaveDecision.approved)),
+                onReject: () async {
+                  final reason = await _showDeclineReasonSheet(context);
+                  if (reason == null) return;
+                  bloc.add(
+                    DecideLeave(
+                      leave.id,
+                      LeaveDecision.declined,
+                      managerNote: reason,
+                    ),
+                  );
+                },
               ),
+              leave.decision == LeaveDecision.pending,
             ),
-            initial: request.initial,
-            avatarIndex: request.avatarIndex,
-            name: request.who,
-            role: request.team,
-            rows: [
-              ('Type:', 'Correction'),
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              // The reason belongs on the detail page, not on the card: the
-              // list is for deciding at a glance what each request is for.
-            ],
-            decision: request.decision,
-            responseNote: request.managerNote,
-            onApprove: () => bloc.add(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.approved,
+          for (final request in data.overtime)
+            (
+              request.requestedOn,
+              request.who,
+              'overtime',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _OvertimeRequestDetailPage(
+                      request: request,
+                      bloc: bloc,
+                    ),
+                  ),
+                ),
+                initial: request.initial,
+                avatarIndex: request.avatarIndex,
+                name: request.who,
+                role: request.team,
+                rows: [
+                  ('Type:', 'Overtime'),
+                  ('Date:', _managerDate(request.workDate)),
+                  ('Overtime hrs:', request.hoursLabel),
+                  (
+                    'Comment:',
+                    request.note.isEmpty
+                        ? request.timeRangeLabel
+                        : request.note,
+                  ),
+                ],
+                decision: request.decision,
+                responseNote: request.managerNote,
+                approving: bloc.isBusy(
+                  DecideOvertime(request.id, LeaveDecision.approved),
+                ),
+                declining: bloc.isBusy(
+                  DecideOvertime(request.id, LeaveDecision.declined),
+                ),
+                onApprove: () => bloc.add(
+                  DecideOvertime(request.id, LeaveDecision.approved),
+                ),
+                onReject: () async {
+                  final reason = await _showDeclineReasonSheet(context);
+                  if (reason == null) return;
+                  bloc.add(
+                    DecideOvertime(
+                      request.id,
+                      LeaveDecision.declined,
+                      managerNote: reason,
+                    ),
+                  );
+                },
               ),
+              request.decision == LeaveDecision.pending,
             ),
-            onReject: () => bloc.add(
-              DecideAttendanceRegularization(
-                request.id,
-                LeaveDecision.declined,
+          for (final request in data.managerRegularizations)
+            (
+              request.createdAt,
+              request.who,
+              'correction',
+              _TeamRequestCard(
+                onViewDetails: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _AttendanceCorrectionDetailPage(
+                      request: request,
+                      bloc: bloc,
+                    ),
+                  ),
+                ),
+                initial: request.initial,
+                avatarIndex: request.avatarIndex,
+                name: request.who,
+                role: request.team,
+                rows: [
+                  ('Type:', 'Correction'),
+                  ('Date:', _shortAttendanceDate(request.workDate)),
+                  ('Correction:', _attendancePeriod(request)),
+                  // The reason belongs on the detail page, not on the card: the
+                  // list is for deciding at a glance what each request is for.
+                ],
+                decision: request.decision,
+                responseNote: request.managerNote,
+                approving: bloc.isBusy(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.approved,
+                  ),
+                ),
+                declining: bloc.isBusy(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.declined,
+                  ),
+                ),
+                onApprove: () => bloc.add(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.approved,
+                  ),
+                ),
+                onReject: () => bloc.add(
+                  DecideAttendanceRegularization(
+                    request.id,
+                    LeaveDecision.declined,
+                  ),
+                ),
               ),
+              request.decision == LeaveDecision.pending,
             ),
-          ),
-          request.decision == LeaveDecision.pending,
-        ),
-    ];
+        ];
 
     var filtered = switch (_mode) {
       _RequestViewMode.leaveOnly =>
@@ -1119,6 +1147,8 @@ class _TeamRequestCard extends StatelessWidget {
     required this.decision,
     this.onApprove,
     this.onReject,
+    this.approving = false,
+    this.declining = false,
     this.responseNote = '',
   });
 
@@ -1130,6 +1160,13 @@ class _TeamRequestCard extends StatelessWidget {
   final LeaveDecision decision;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
+
+  /// The decision is already on its way to the server: both buttons stop
+  /// answering, so a second tap cannot decide the same request twice, and the
+  /// one that was tapped shows a spinner.
+  final bool approving;
+  final bool declining;
+  bool get busy => approving || declining;
 
   /// The note left with the decision, shown once a request has been reviewed.
   final String responseNote;
@@ -1230,18 +1267,20 @@ class _TeamRequestCard extends StatelessWidget {
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Approve',
-                    background: MColors.approveTint,
-                    foreground: MColors.approveInk,
-                    onTap: onApprove!,
+                    background: busy ? MColors.line : MColors.approveTint,
+                    foreground: busy ? MColors.inkFaint : MColors.approveInk,
+                    onTap: busy ? null : onApprove,
+                    busy: approving,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _TeamDecisionButton(
                     label: 'Reject',
-                    background: MColors.rejectTint,
-                    foreground: MColors.rejectInk,
-                    onTap: onReject!,
+                    background: busy ? MColors.line : MColors.rejectTint,
+                    foreground: busy ? MColors.inkFaint : MColors.rejectInk,
+                    onTap: busy ? null : onReject,
+                    busy: declining,
                   ),
                 ),
               ],
@@ -1361,13 +1400,18 @@ class _TeamDecisionButton extends StatelessWidget {
     required this.foreground,
     required this.onTap,
     this.radius = 16,
+    this.busy = false,
   });
 
   final String label;
   final Color background;
   final Color foreground;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final double radius;
+
+  /// This is the decision on its way to the server: a spinner where the
+  /// label was, so the wait is visible and not just a greyed-out button.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -1379,15 +1423,26 @@ class _TeamDecisionButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: foreground,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
+          child: busy
+              ? Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: foreground,
+                    ),
+                  ),
+                )
+              : Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
         ),
       ),
     );
@@ -1593,17 +1648,8 @@ class _TeamFacesCard extends StatelessWidget {
   final List<TeamMember> members;
   final VoidCallback onTap;
 
-  /// Five faces, then a count for the rest (node 2503:92493).
-  static const _shown = 5;
-
   @override
   Widget build(BuildContext context) {
-    final overflowing = members.length > _shown;
-    final faces = overflowing ? members.take(_shown).toList() : members;
-    final rest = overflowing ? members.length - faces.length : 0;
-    // Faces overlap only to make room for the +N bubble; a team that fits
-    // outright is shown in full with an ordinary gap between faces.
-    final overlap = overflowing ? -10.0 : 4.0;
     return _TeamCardShell(
       onTap: onTap,
       child: Column(
@@ -1632,74 +1678,93 @@ class _TeamFacesCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 56,
-            child: Row(
-              children: [
-                for (final member in faces)
-                  Padding(
-                    padding: EdgeInsets.only(right: overlap),
-                    child: SizedBox(
-                      width: 56,
-                      height: 56,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.fromBorderSide(
-                                BorderSide(color: Colors.white, width: 1.4),
-                              ),
-                            ),
-                            child: _TeamMemberPhoto(member: member, size: 56),
-                          ),
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color:
-                                    member.todayStatus ==
-                                        TeamPresenceStatus.present
-                                    ? const Color(0xFF00C950)
-                                    : const Color(0xFFDDDDDD),
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 1.114,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (rest > 0)
-                  Container(
-                    width: 56,
-                    height: 56,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0571A6),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.4),
-                    ),
-                    child: Text(
-                      '+$rest',
-                      style: const TextStyle(
-                        fontFamily: 'Sora',
-                        color: Colors.white,
-                        fontSize: 16,
-                        height: 16.2 / 16,
-                        letterSpacing: -0.16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
+            height: TeamFacesLayout.face,
+            child: LayoutBuilder(builder: _faces),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The faces, laid out in the width the card actually has.
+  ///
+  /// A department card sits indented under the trunk, so the five the design
+  /// shows do not always fit side by side. When they do not, the faces are
+  /// pulled over each other and the last place goes to a +N bubble. Drawn in
+  /// a Stack rather than with negative padding, which RenderPadding rejects.
+  Widget _faces(BuildContext context, BoxConstraints box) {
+    final width = box.maxWidth.isFinite
+        ? box.maxWidth
+        : TeamFacesLayout.face * TeamFacesLayout.maxShown + 1;
+    final layout = TeamFacesLayout.forWidth(width, members.length);
+    if (layout.faceCount == 0 && layout.rest == 0) {
+      return const SizedBox.shrink();
+    }
+    final faces = members.take(layout.faceCount).toList();
+    return Stack(
+      children: [
+        for (final (index, member) in faces.indexed)
+          Positioned(left: index * layout.step, child: _face_(member)),
+        if (layout.rest > 0)
+          Positioned(
+            left: faces.length * layout.step,
+            child: Container(
+              width: TeamFacesLayout.face,
+              height: TeamFacesLayout.face,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0571A6),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.4),
+              ),
+              child: Text(
+                '+${layout.rest}',
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Colors.white,
+                  fontSize: 16,
+                  height: 16.2 / 16,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// One face: the photo, ringed in white so overlapping faces stay apart,
+  /// with the presence dot on its corner.
+  Widget _face_(TeamMember member) {
+    return SizedBox(
+      width: TeamFacesLayout.face,
+      height: TeamFacesLayout.face,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(
+                BorderSide(color: Colors.white, width: 1.4),
+              ),
+            ),
+            child: _TeamMemberPhoto(member: member, size: TeamFacesLayout.face),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: member.todayStatus == TeamPresenceStatus.present
+                    ? const Color(0xFF00C950)
+                    : const Color(0xFFDDDDDD),
+                border: Border.all(color: Colors.white, width: 1.114),
+              ),
             ),
           ),
         ],
@@ -1707,7 +1772,6 @@ class _TeamFacesCard extends StatelessWidget {
     );
   }
 }
-
 
 /// The trunk and one card's stub, dashed as the design draws them: #9197A2 at
 /// 2px with a 4/4 dash (the line SVGs behind nodes 2503:92892 and 2503:92402).
@@ -1744,8 +1808,12 @@ class _BranchLinePainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
     final cardHeight = size.height - gap;
     final middle = cardHeight / 2;
-    _dashed(canvas, paint, Offset(_x, first ? -leadIn : 0),
-        Offset(_x, last ? middle : size.height));
+    _dashed(
+      canvas,
+      paint,
+      Offset(_x, first ? -leadIn : 0),
+      Offset(_x, last ? middle : size.height),
+    );
     _dashed(canvas, paint, Offset(_x, middle), Offset(_x + _stub, middle));
   }
 
@@ -1979,4 +2047,3 @@ class _OpenTeamBox extends StatelessWidget {
     );
   }
 }
-

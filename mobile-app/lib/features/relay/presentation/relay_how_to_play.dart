@@ -189,20 +189,9 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
                   ),
                 )
               else
-                // The design's own crop of the poster, not a centred cover.
-                LayoutBuilder(
-                  builder: (context, box) => Stack(
-                    children: [
-                      Positioned(
-                        left: -0.1445 * box.maxWidth,
-                        top: -0.7653 * box.maxHeight,
-                        width: 1.2881 * box.maxWidth,
-                        height: 2.3267 * box.maxHeight,
-                        child: Image.asset('${RelayStyle.asset}/video_poster.png', fit: BoxFit.fill),
-                      ),
-                    ],
-                  ),
-                ),
+                // A still from the instructions video, cut to the tile's
+                // shape, so it fills edge to edge.
+                Image.asset('${RelayStyle.asset}/video_poster.jpg', fit: BoxFit.cover),
               if (!playing)
                 Center(
                   child: Container(

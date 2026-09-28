@@ -1,12 +1,10 @@
 enum ManagerTab { manage, grow, connect, games, quick }
 
-enum ManagerView {
-  home,
-  feedbackList,
-  leaveRequests,
-  overtimeRequests,
-  attendanceCorrections,
-}
+enum ManagerView { home, feedbackList }
+
+/// The two halves of the Team tab. Held in app state rather than in the
+/// widget, so a notification can land on Requests directly.
+enum TeamSection { myTeam, requests }
 
 enum FeedbackStatus { pending, saved, sent, missed }
 
@@ -315,6 +313,12 @@ class TeamMember {
       userId: userId,
       name: name,
       isManager: isManager,
+      // Who someone is to the viewer does not change when their review does.
+      // Dropping these three here once emptied the Team tab's Direct Reports
+      // and the feedback list five seconds after they loaded.
+      isSelf: isSelf,
+      reportsToViewer: reportsToViewer,
+      reportCount: reportCount,
       initial: initial,
       team: team,
       score: score ?? this.score,
@@ -344,20 +348,57 @@ class TeamMember {
 }
 
 class LeaveBalanceItem {
-  const LeaveBalanceItem({required this.remaining, required this.total});
+  const LeaveBalanceItem({
+    required this.remaining,
+    required this.total,
+    this.monthly = false,
+    this.period = '',
+  });
 
   /// Days, which can be fractional — comp-off is credited in halves and a
   /// half-day leave spends half a day.
   final double remaining;
   final double total;
 
+  /// Processed at the end of every month: what is left lapses or carries
+  /// per the rule, so these are this month's days, not the year's.
+  final bool monthly;
+
+  /// The month the figures are for, as yyyy-mm, when [monthly].
+  final String period;
+
+  /// "September", for a monthly balance; empty otherwise.
+  String get periodLabel {
+    if (!monthly) return '';
+    final month = int.tryParse(period.split('-').elementAtOrNull(1) ?? '');
+    if (month == null || month < 1 || month > 12) return 'this month';
+    return _monthName(month);
+  }
+
   factory LeaveBalanceItem.fromJson(Map<String, dynamic> json) {
     return LeaveBalanceItem(
       remaining: (json['remaining'] as num?)?.toDouble() ?? 0,
       total: (json['total'] as num?)?.toDouble() ?? 0,
+      monthly: json['cadence'] == 'monthly',
+      period: json['period'] as String? ?? '',
     );
   }
 }
+
+String _monthName(int month) => const [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+][month - 1];
 
 /// Trims a trailing `.0` so 12 reads as "12" and 0.5 as "0.5".
 String formatDays(double value) => value == value.roundToDouble()
@@ -530,6 +571,9 @@ class LeaveRequest {
       decision: decision ?? this.decision,
       managerNote: managerNote ?? this.managerNote,
       decidedByRole: decidedByRole,
+      halfDay: halfDay,
+      documentName: documentName,
+      documentUrl: documentUrl,
     );
   }
 }
@@ -606,6 +650,7 @@ class OvertimeRequest {
     required this.decision,
     required this.managerNote,
     this.decidedByRole = '',
+    this.duration = '',
   });
 
   final String id;
@@ -624,6 +669,9 @@ class OvertimeRequest {
   final String managerNote;
   final String decidedByRole; // 'admin' = overridden from the HR dashboard
 
+  /// 'half_day' or 'full_day' from the server; empty from an older one.
+  final String duration;
+
   bool get decidedByAdmin => decidedByRole == 'admin';
 
   /// What was applied for, in the words the form used: a half day or a full
@@ -631,9 +679,11 @@ class OvertimeRequest {
   /// what anybody chose.
   String get hoursLabel => halfDayClaim ? 'Half day' : 'Full day';
 
-  /// Under six hours is the half day; the policies in use put a half day at
-  /// four and a full one at eight.
-  bool get halfDayClaim => hours < 6;
+  /// The server grades the claim against the requester's own shift and says
+  /// so; that is the day the comp-off is credited as, so it is what shows.
+  /// A server that has not sent it yet is judged at six hours, as before.
+  bool get halfDayClaim =>
+      duration.isNotEmpty ? duration == 'half_day' : hours < 6;
 
   String get timeRangeLabel =>
       '${_clockLabel(startTime)} – ${_clockLabel(endTime)}';
@@ -667,6 +717,7 @@ class OvertimeRequest {
       },
       managerNote: json['managerNote'] as String? ?? '',
       decidedByRole: json['decidedByRole'] as String? ?? '',
+      duration: json['duration'] as String? ?? '',
     );
   }
 
@@ -682,6 +733,7 @@ class OvertimeRequest {
       startTime: startTime,
       endTime: endTime,
       hours: hours,
+      duration: duration,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,
@@ -790,6 +842,7 @@ class ReimbursementClaim {
       receiptUrl: receiptUrl,
       note: note,
       status: status ?? this.status,
+      managerNote: managerNote,
       createdAt: createdAt,
       decidedByRole: decidedByRole,
     );
