@@ -36,6 +36,10 @@ class _TeamMemberProfilePage extends StatelessWidget {
   Widget _build(BuildContext context) {
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
+    // The dashboard as it stands now, not the copy handed over when this page
+    // was pushed. Deciding a request updates the bloc, and reading the old
+    // copy left the card sitting there, still pending, under its own toast.
+    final data = bloc.state.dashboard ?? this.data;
 
     final openRequests = <(DateTime date, Widget card)>[
       for (final leave in data.leaves.where(
@@ -130,6 +134,18 @@ class _TeamMemberProfilePage extends StatelessWidget {
               ('Comment:', request.note),
             ],
             decision: LeaveDecision.pending,
+            approving: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.approved,
+              ),
+            ),
+            declining: bloc.isBusy(
+              DecideAttendanceRegularization(
+                request.id,
+                LeaveDecision.declined,
+              ),
+            ),
             onApprove: () => bloc.add(
               DecideAttendanceRegularization(
                 request.id,
