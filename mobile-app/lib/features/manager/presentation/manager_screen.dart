@@ -50,9 +50,19 @@ part '../../manager_shell/presentation/manager_tab_content.dart';
 const int _maxLeaveApplyDays = 30;
 
 class ManagerScreen extends StatefulWidget {
-  const ManagerScreen({super.key, required this.session, this.justOnboarded = false});
+  const ManagerScreen({
+    super.key,
+    required this.session,
+    this.justOnboarded = false,
+    this.bloc,
+  });
 
   final AuthSession session;
+
+  /// Supplied only by tests, which drive the screen from a fake service
+  /// rather than the network. Null everywhere else, and the screen makes
+  /// its own.
+  final ManagerBloc? bloc;
 
   /// Straight out of onboarding: the punch screen waits until next launch.
   final bool justOnboarded;
@@ -63,6 +73,10 @@ class ManagerScreen extends StatefulWidget {
 
 class _ManagerScreenState extends State<ManagerScreen> {
   late final ManagerBloc _bloc;
+
+  /// False when a test supplied the bloc: it owns it, and disposing it here
+  /// would close a stream the test still reads.
+  late final bool _ownsBloc;
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
@@ -78,8 +92,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _session = widget.session;
     _quickActionsController = QuickActionsController()
       ..addListener(_refreshBackState);
-    _bloc = ManagerBloc(session: widget.session)
-      ..add(const LoadManagerDashboard());
+    final supplied = widget.bloc;
+    _ownsBloc = supplied == null;
+    _bloc = supplied ?? ManagerBloc(session: widget.session);
+    if (_ownsBloc) _bloc.add(const LoadManagerDashboard());
     AppNotificationService.instance.attachSession(widget.session);
     // Onboarding has just taken two screens of their time; the punch screen
     // holds until the next launch, and after that it never opens by itself
@@ -112,7 +128,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _quickActionsController
       ..removeListener(_refreshBackState)
       ..dispose();
-    _bloc.dispose();
+    if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     super.dispose();
   }

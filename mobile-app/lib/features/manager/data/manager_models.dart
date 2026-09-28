@@ -313,6 +313,12 @@ class TeamMember {
       userId: userId,
       name: name,
       isManager: isManager,
+      // Who someone is to the viewer does not change when their review does.
+      // Dropping these three here once emptied the Team tab's Direct Reports
+      // and the feedback list five seconds after they loaded.
+      isSelf: isSelf,
+      reportsToViewer: reportsToViewer,
+      reportCount: reportCount,
       initial: initial,
       team: team,
       score: score ?? this.score,
