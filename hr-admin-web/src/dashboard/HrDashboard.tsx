@@ -1,6 +1,7 @@
 import { StoreProvider, useStore } from './store';
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
 import { Sidebar, Topbar, Toast } from './Chrome';
 import { Overview } from './views/Overview';
@@ -158,6 +159,9 @@ function AccessDenied() {
 
 function Gate() {
   const { user } = useAuth();
+  // Under the provider, and above both the sign-in screen and the shell, so
+  // the tab wears the company on convrse.getsowaka.com before anyone signs in.
+  useBrandDocument();
   if (!user) return <LoginScreen />;
   // Rule 4: the dashboard is only for select users granted dashboard access.
   if (!user.dashboardAccess) return <AccessDenied />;

@@ -8,6 +8,8 @@
 // own subdomains), the signed-in user, and failing both the last company that
 // signed in on this device — so the sign-in screen, where nobody is signed in
 // yet, still wears the right face on the second visit.
+import { useEffect } from 'react';
+
 import { useAuth } from './auth/AuthContext';
 
 export type Brand = {
@@ -74,4 +76,28 @@ export function useBrand(): Brand {
     || '';
   const org = fromHostname() ?? (byUser || fromStorage()) ?? '';
   return BRANDS[org] ?? {};
+}
+
+/**
+ * The browser tab wears the company too: their name in the title and their
+ * icon as the favicon, so a bookmark to convrse.getsowaka.com reads as
+ * theirs. Sowaka's own when there is no company.
+ */
+export function useBrandDocument() {
+  const brand = useBrand();
+  useEffect(() => {
+    document.title = brand.name ? `${brand.name} · HR Admin` : 'Sowaka HRMS · HR Admin';
+    // Only a company's icon is set; without one the tab keeps the browser's
+    // default rather than pointing at a file that is not there.
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"][data-brand]');
+    if (!brand.icon) {
+      link?.remove();
+      return;
+    }
+    const target = link ?? document.head.appendChild(
+      Object.assign(document.createElement('link'), { rel: 'icon' }),
+    );
+    target.dataset.brand = '';
+    target.href = brand.icon;
+  }, [brand.name, brand.icon]);
 }
