@@ -1648,12 +1648,6 @@ class _TeamFacesCard extends StatelessWidget {
   final List<TeamMember> members;
   final VoidCallback onTap;
 
-  /// At most five faces, then a count for the rest (node 2503:92493).
-  static const _shown = 5;
-  static const _face = 56.0;
-  static const _gap = 4.0;
-  static const _overlap = -10.0;
-
   @override
   Widget build(BuildContext context) {
     return _TeamCardShell(
@@ -1684,7 +1678,7 @@ class _TeamFacesCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: _face,
+            height: TeamFacesLayout.face,
             child: LayoutBuilder(builder: _faces),
           ),
         ],
@@ -1692,90 +1686,89 @@ class _TeamFacesCard extends StatelessWidget {
     );
   }
 
-  /// The row of faces, cut to the width the card actually has. A department
-  /// card sits indented under the trunk, so the five the design shows do not
-  /// always fit side by side; when they do not, the faces overlap and the
-  /// last place goes to a +N bubble.
+  /// The faces, laid out in the width the card actually has.
+  ///
+  /// A department card sits indented under the trunk, so the five the design
+  /// shows do not always fit side by side. When they do not, the faces are
+  /// pulled over each other and the last place goes to a +N bubble. Drawn in
+  /// a Stack rather than with negative padding, which RenderPadding rejects.
   Widget _faces(BuildContext context, BoxConstraints box) {
-    final width = box.maxWidth;
-    final fitsWithGap = ((width + _gap) / (_face + _gap)).floor();
-    final overflowing = members.length > fitsWithGap || members.length > _shown;
-    final int shown;
-    if (!overflowing) {
-      shown = members.length;
-    } else {
-      // Overlapped faces plus one bubble: n faces take (n-1)·(face+overlap)
-      // + face, and the bubble another face+overlap on top.
-      final overlapped = ((width - _face) / (_face + _overlap)).floor();
-      shown = (overlapped - 1).clamp(1, _shown - 1);
+    final width = box.maxWidth.isFinite
+        ? box.maxWidth
+        : TeamFacesLayout.face * TeamFacesLayout.maxShown + 1;
+    final layout = TeamFacesLayout.forWidth(width, members.length);
+    if (layout.faceCount == 0 && layout.rest == 0) {
+      return const SizedBox.shrink();
     }
-    final faces = members.take(shown).toList();
-    final rest = members.length - faces.length;
-    final step = overflowing ? _overlap : _gap;
-    return Row(
+    final faces = members.take(layout.faceCount).toList();
+    return Stack(
       children: [
         for (final (index, member) in faces.indexed)
-          Padding(
-            padding: EdgeInsets.only(
-              right: index == faces.length - 1 && rest == 0 ? 0 : step,
-            ),
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.fromBorderSide(
-                        BorderSide(color: Colors.white, width: 1.4),
-                      ),
-                    ),
-                    child: _TeamMemberPhoto(member: member, size: 56),
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: member.todayStatus == TeamPresenceStatus.present
-                            ? const Color(0xFF00C950)
-                            : const Color(0xFFDDDDDD),
-                        border: Border.all(color: Colors.white, width: 1.114),
-                      ),
-                    ),
-                  ),
-                ],
+          Positioned(left: index * layout.step, child: _face_(member)),
+        if (layout.rest > 0)
+          Positioned(
+            left: faces.length * layout.step,
+            child: Container(
+              width: TeamFacesLayout.face,
+              height: TeamFacesLayout.face,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0571A6),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.4),
               ),
-            ),
-          ),
-        if (rest > 0)
-          Container(
-            width: _face,
-            height: _face,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0571A6),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.4),
-            ),
-            child: Text(
-              '+$rest',
-              style: const TextStyle(
-                fontFamily: 'Sora',
-                color: Colors.white,
-                fontSize: 16,
-                height: 16.2 / 16,
-                letterSpacing: -0.16,
-                fontWeight: FontWeight.w600,
+              child: Text(
+                '+${layout.rest}',
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Colors.white,
+                  fontSize: 16,
+                  height: 16.2 / 16,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
       ],
+    );
+  }
+
+  /// One face: the photo, ringed in white so overlapping faces stay apart,
+  /// with the presence dot on its corner.
+  Widget _face_(TeamMember member) {
+    return SizedBox(
+      width: TeamFacesLayout.face,
+      height: TeamFacesLayout.face,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(
+                BorderSide(color: Colors.white, width: 1.4),
+              ),
+            ),
+            child: _TeamMemberPhoto(member: member, size: TeamFacesLayout.face),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: member.todayStatus == TeamPresenceStatus.present
+                    ? const Color(0xFF00C950)
+                    : const Color(0xFFDDDDDD),
+                border: Border.all(color: Colors.white, width: 1.114),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

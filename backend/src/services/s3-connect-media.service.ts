@@ -76,7 +76,25 @@ export async function deleteConnectMedia(objectKey: string) {
  * Streams one stored object back, for the `/media` route to serve. Kept here
  * so the bucket and its encryption settings stay in one place.
  */
+/**
+ * True only for a key this service itself wrote.
+ *
+ * The bucket is shared: reimbursement receipts, leave documents (medical
+ * notes) and HR's employee files live beside Connect media under their own
+ * prefixes. `/media/:key` is deliberately unauthenticated, so it must be
+ * unable to name anything but a Connect object — a receipt's key is visible
+ * to anyone ever shown its download link, and would otherwise be readable
+ * for ever by anyone at all.
+ */
+export function isConnectMediaKey(objectKey: string): boolean {
+  const prefix = env.s3.connectMediaPrefix.replace(/^\/+|\/+$/g, '');
+  return prefix.length > 0 && objectKey.startsWith(`${prefix}/`);
+}
+
 export async function readConnectMedia(objectKey: string, range?: string) {
+  if (!isConnectMediaKey(objectKey)) {
+    throw new Error(`Refusing to read a key outside the Connect media prefix: ${objectKey}`);
+  }
   validateConfiguration();
   const object = await getClient().send(
     new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey, Range: range }),

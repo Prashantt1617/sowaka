@@ -22,6 +22,18 @@ class _TeamMemberProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pushed as its own route, so it sits outside the shell's StreamBuilder
+    // and would never hear the bloc. Without this the Approve and Decline
+    // buttons here could not go busy: their spinner state is read once, at
+    // build, and nothing would rebuild them.
+    return StreamBuilder<ManagerState>(
+      stream: bloc.stream,
+      initialData: bloc.state,
+      builder: (context, _) => _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
 

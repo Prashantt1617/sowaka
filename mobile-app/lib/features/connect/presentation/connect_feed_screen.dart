@@ -429,6 +429,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
       return;
     }
+    // From the top: the search below only walks downward, and a notification
+    // is usually about a post that has just arrived at the top of the feed.
+    if (_feedScroll.hasClients) _feedScroll.jumpTo(0);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     for (var step = 0; step < 60; step++) {
       final card = _postKeys[postId]?.currentContext;
       if (card != null) {

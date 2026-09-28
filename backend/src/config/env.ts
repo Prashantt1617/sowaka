@@ -31,10 +31,19 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN ?? '')
  * domain is allowed, alongside the fixed list. `DASHBOARD_DOMAIN` moves it.
  */
 const dashboardDomain = (process.env.DASHBOARD_DOMAIN ?? 'getsowaka.com').trim().toLowerCase();
-const dashboardOrigin = new RegExp(
-  `^https://([a-z0-9-]+\\.)?${dashboardDomain.replace(/\./g, '\\.')}$`,
-  'i',
-);
+
+/** The domain itself, or one label under it. Compared, not pattern-matched:
+ *  a regex built from an env value turns a typo into a hole. */
+function isDashboardOrigin(origin: string): boolean {
+  if (!dashboardDomain) return false;
+  const lower = origin.trim().toLowerCase();
+  if (!lower.startsWith('https://')) return false;
+  const host = lower.slice('https://'.length);
+  if (host === dashboardDomain) return true;
+  if (!host.endsWith(`.${dashboardDomain}`)) return false;
+  const label = host.slice(0, -(dashboardDomain.length + 1));
+  return /^[a-z0-9-]+$/.test(label);
+}
 
 /** `"a, b"` -> `['a','b']`; `*` or `all` means unrestricted, i.e. empty. */
 function orgList(raw: string | undefined): string[] {
@@ -70,8 +79,8 @@ export const env = {
   isLocal: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? ''),
   port: Number(process.env.PORT ?? 4000),
   corsOrigins: [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])],
-  /** True for an origin the dashboard may call from; see [dashboardOrigin]. */
-  isDashboardOrigin: (origin: string) => dashboardOrigin.test(origin),
+  /** True for an origin the dashboard may call from; see [isDashboardOrigin]. */
+  isDashboardOrigin,
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
   // Where notification emails point their "view this" links.
   appWebUrl: process.env.APP_WEB_URL ?? 'https://dikcsyvq9i7v1.cloudfront.net',

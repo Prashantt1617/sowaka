@@ -191,7 +191,7 @@ class _RelayHowToPlayState extends State<RelayHowToPlay> {
               else
                 // A still from the instructions video, cut to the tile's
                 // shape, so it fills edge to edge.
-                Image.asset('${RelayStyle.asset}/video_poster.png', fit: BoxFit.cover),
+                Image.asset('${RelayStyle.asset}/video_poster.jpg', fit: BoxFit.cover),
               if (!playing)
                 Center(
                   child: Container(

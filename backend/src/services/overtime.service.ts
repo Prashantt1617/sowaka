@@ -49,9 +49,15 @@ export async function createOvertimeRequest(
   if (chosen && chosen !== 'half_day' && chosen !== 'full_day') {
     throw new OvertimeError(400, 'Duration must be half_day or full_day');
   }
-  const duration: OvertimeDuration = chosen === 'half_day' || chosen === 'full_day'
-    ? chosen
-    : overtimeDurationOf({ hours }, await fullDayHoursFor(userId));
+  // The hours worked set the ceiling: a claim may be for less than what was
+  // put in, never more. Without this the duration is simply taken on trust,
+  // and a modified client could claim a full day's comp-off for a minute.
+  const earned = overtimeDurationOf({ hours }, await fullDayHoursFor(userId));
+  if (chosen === 'full_day' && earned === 'half_day') {
+    throw new OvertimeError(400, 'A full day needs a full day of hours');
+  }
+  const duration: OvertimeDuration =
+    chosen === 'half_day' || chosen === 'full_day' ? chosen : earned;
 
   // Team gate. Overtime of any length may be logged for any past day: a long
   // stretch on a working day is exactly what overtime is for, and refusing it
