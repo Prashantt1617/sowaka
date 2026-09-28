@@ -24,6 +24,7 @@ Map<String, dynamic> row({
 };
 
 void main() {
+  copyKeepsEverything();
   // What the server sends a manager: the person above them, themselves, and
   // the people who report to them.
   final team = [
@@ -65,5 +66,57 @@ void main() {
     final reviewable =
         team.where((m) => m.reportsToViewer && !m.isSelf).toList();
     expect(reviewable.map((m) => m.name), isNot(contains('Demo Admin')));
+  });
+}
+
+/// Copying a request to record a decision must not quietly reset the rest of
+/// it. `TeamMember` lost who a person was to the viewer this way; these three
+/// carry fields the Requests list reads back out.
+void copyKeepsEverything() {
+  test('deciding a leave keeps its half day and its document', () {
+    final leave = LeaveRequest(
+      id: 'l1',
+      who: 'Haider',
+      initial: 'H',
+      avatarIndex: 0,
+      team: 'Faculty',
+      type: 'casual',
+      start: DateTime(2026, 9, 29),
+      end: DateTime(2026, 9, 29),
+      days: 0.5,
+      reason: 'Dentist',
+      requestedOn: DateTime(2026, 9, 28),
+      decision: LeaveDecision.pending,
+      managerNote: '',
+      halfDay: true,
+      documentName: 'note.pdf',
+      documentUrl: '/media/note.pdf',
+    );
+    final decided = leave.copyWith(decision: LeaveDecision.approved);
+    expect(decided.halfDay, isTrue);
+    expect(decided.documentName, 'note.pdf');
+    expect(decided.documentUrl, '/media/note.pdf');
+  });
+
+  test('deciding overtime keeps whether it was claimed as a full day', () {
+    final overtime = OvertimeRequest(
+      id: 'o1',
+      who: 'Naveen',
+      initial: 'N',
+      avatarIndex: 0,
+      team: 'Faculty',
+      workDate: DateTime(2026, 9, 20),
+      startTime: DateTime(2026, 9, 20, 10),
+      endTime: DateTime(2026, 9, 20, 18),
+      hours: 8,
+      duration: 'full_day',
+      note: 'Admissions desk',
+      requestedOn: DateTime(2026, 9, 21),
+      decision: LeaveDecision.pending,
+      managerNote: '',
+    );
+    final decided = overtime.copyWith(decision: LeaveDecision.approved);
+    expect(decided.duration, 'full_day');
+    expect(decided.halfDayClaim, isFalse);
   });
 }

@@ -571,6 +571,9 @@ class LeaveRequest {
       decision: decision ?? this.decision,
       managerNote: managerNote ?? this.managerNote,
       decidedByRole: decidedByRole,
+      halfDay: halfDay,
+      documentName: documentName,
+      documentUrl: documentUrl,
     );
   }
 }
@@ -730,6 +733,7 @@ class OvertimeRequest {
       startTime: startTime,
       endTime: endTime,
       hours: hours,
+      duration: duration,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,
@@ -838,6 +842,7 @@ class ReimbursementClaim {
       receiptUrl: receiptUrl,
       note: note,
       status: status ?? this.status,
+      managerNote: managerNote,
       createdAt: createdAt,
       decidedByRole: decidedByRole,
     );
