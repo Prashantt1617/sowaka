@@ -34,6 +34,12 @@ export interface StatutoryRegistration {
   deductor?: DeductorDetails;
 }
 
+/** A tab in the app's bottom bar, as the app names them. */
+export type AppTab = 'connect' | 'team' | 'grow' | 'actions' | 'games' | 'care' | 'talk';
+
+/** What a company gets when it has never been given a list. */
+export const DEFAULT_APP_TABS: AppTab[] = ['connect', 'team', 'grow', 'actions'];
+
 export interface Company {
   id: string;
   name: string;
@@ -52,6 +58,14 @@ export interface Company {
   reviewCycleStartDay?: number;
   paySchedule?: PaySchedule;
   statutoryRegistration?: StatutoryRegistration;
+  /**
+   * Which tabs this company's people see in the app, by key: connect, team,
+   * grow, actions, games, care, talk. Absent means the four the app has always had,
+   * so nothing changes for a company that predates this. Written by Sowaka,
+   * not by the client's own HR dashboard; the control dashboard that sets it
+   * comes later, a script does it until then.
+   */
+  enabledTabs?: AppTab[];
   createdAt?: number;
   updatedAt?: Date;
 }

@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
+import 'tab_specs.dart';
 
 /// A tablet is wide enough that a phone layout stops being a layout: the nav
 /// stretches across a metre of glass and the content runs edge to edge. The
@@ -119,34 +120,14 @@ class _NavigationRail extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _RailButton(
-                    label: 'Connect',
-                    iconAsset: 'assets/icons/nav_connect.svg',
-                    activeIconAsset: 'assets/icons/nav_connect_active.svg',
-                    selected: state.tab == ManagerTab.connect,
-                    onTap: () => _select(context, ManagerTab.connect),
-                  ),
-                  _RailButton(
-                    label: 'Team',
-                    iconAsset: 'assets/icons/nav_team.svg',
-                    activeIconAsset: 'assets/icons/nav_team_active.svg',
-                    selected: state.tab == ManagerTab.manage,
-                    onTap: () => _select(context, ManagerTab.manage),
-                  ),
-                  _RailButton(
-                    label: 'Grow',
-                    iconAsset: 'assets/icons/nav_grow.svg',
-                    activeIconAsset: 'assets/icons/nav_grow_active.svg',
-                    selected: state.tab == ManagerTab.grow,
-                    onTap: () => _select(context, ManagerTab.grow),
-                  ),
-                  _RailButton(
-                    label: 'Actions',
-                    iconAsset: 'assets/icons/nav_actions.svg',
-                    activeIconAsset: 'assets/icons/nav_actions_active.svg',
-                    selected: state.tab == ManagerTab.quick,
-                    onTap: () => _select(context, ManagerTab.quick),
-                  ),
+                  for (final tab in visibleTabs(bloc.session.user.enabledTabs))
+                    _RailButton(
+                      label: tabSpecFor(tab).label,
+                      iconAsset: tabSpecFor(tab).iconAsset,
+                      activeIconAsset: tabSpecFor(tab).activeIconAsset,
+                      selected: state.tab == tab,
+                      onTap: () => _select(context, tab),
+                    ),
                 ],
               ),
             ),

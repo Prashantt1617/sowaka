@@ -40,4 +40,6 @@ export interface AuthUser {
     label: string;
     period: string;
   };
+  /** The tabs this person's company shows in the app; see Company.enabledTabs. */
+  enabledTabs?: string[];
 }

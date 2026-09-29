@@ -104,7 +104,35 @@ export interface User {
    * (`Company.overtimeDisabledDepartments`) — either one blocks.
    */
   overtimeEligible?: boolean;
+  /**
+   * Offers counselling sessions through Talk. Counsellors are one pool across
+   * every company: a Toyota employee books a Sowaka counsellor. Profiles and
+   * hours are Sowaka's to manage, from the control dashboard later and by
+   * script until then.
+   */
+  isCounsellor?: boolean;
+  counsellor?: CounsellorProfile;
   createdAt?: number;
   updatedAt?: Date;
   lastLoginAt?: Date;
+}
+
+/** One stretch of a counsellor's day they take bookings in. */
+export interface CounsellorHours {
+  /** JS weekday, 0 = Sunday .. 6 = Saturday. */
+  weekday: number;
+  /** 'HH:mm' in the counsellor's timezone. */
+  start: string;
+  end: string;
+}
+
+export interface CounsellorProfile {
+  /** Their login in Sowaka's Zoom account; meetings are created as this user. */
+  zoomUserId: string;
+  workingHours: CounsellorHours[];
+  slotMinutes: number;
+  /** IANA name, e.g. Asia/Kolkata. */
+  timezone: string;
+  /** A line under their name on the picker. */
+  headline?: string;
 }

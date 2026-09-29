@@ -77,6 +77,16 @@ class OrgBranding {
       homeLogoAsset: 'assets/images/acmt_logo.png',
       iosIconName: 'AppIconAcmt',
     ),
+    'toyota': OrgBranding(
+      org: 'toyota',
+      wordmark: 'Toyota',
+      tagline: 'Your app is powered by',
+      // The wordmark with the emblem beside it, drawn for a white ground.
+      logoAsset: 'assets/images/toyota_logo.png',
+      light: true,
+      homeLogoAsset: 'assets/images/toyota_logo.png',
+      iosIconName: 'AppIconToyota',
+    ),
   };
 
   /// The branding for an org id, or Sowaka's when there is none for it.

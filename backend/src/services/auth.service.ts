@@ -8,6 +8,7 @@ import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
 import { sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
+import { DEFAULT_APP_TABS } from '../models/company.model';
 
 const defaultCompany = 'Sowaka';
 
@@ -223,6 +224,9 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     joiningDate: toIsoDate(user.joiningDate),
     birthday: toIsoDate(user.birthday),
     recognition: user.recognition,
+    // The app draws only the tabs it is told about. A company that has never
+    // been given a list gets the four the app has always had.
+    enabledTabs: company?.enabledTabs?.length ? company.enabledTabs : DEFAULT_APP_TABS,
     dashboardAccess: user.dashboardAccess === true,
     isLeadership: user.isLeadership === true,
   };

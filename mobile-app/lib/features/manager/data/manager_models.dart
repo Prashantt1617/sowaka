@@ -1,4 +1,34 @@
-enum ManagerTab { manage, grow, connect, games, quick }
+/// The tabs the app can show. The order is the IndexedStack's order in the
+/// shell, so new tabs go on the end; which of them a person sees, and in what
+/// order, comes from [visibleTabs].
+enum ManagerTab { manage, grow, connect, games, quick, care, talk }
+
+/// The keys a company's tab list uses, as the server sends them.
+const Map<String, ManagerTab> _tabByKey = {
+  'connect': ManagerTab.connect,
+  'team': ManagerTab.manage,
+  'grow': ManagerTab.grow,
+  'actions': ManagerTab.quick,
+  'games': ManagerTab.games,
+  'care': ManagerTab.care,
+  'talk': ManagerTab.talk,
+};
+
+/// What a company gets when it has never been given a list.
+const List<String> defaultTabKeys = ['connect', 'team', 'grow', 'actions'];
+
+/// The bottom bar, in order, for a company's key list. Unknown keys are
+/// skipped so an older app survives a newer server; an empty or entirely
+/// unknown list falls back to the four the app has always had.
+List<ManagerTab> visibleTabs(List<String> keys) {
+  final tabs = <ManagerTab>[];
+  for (final key in keys) {
+    final tab = _tabByKey[key.trim().toLowerCase()];
+    if (tab != null && !tabs.contains(tab)) tabs.add(tab);
+  }
+  if (tabs.isNotEmpty) return tabs;
+  return [for (final key in defaultTabKeys) _tabByKey[key]!];
+}
 
 enum ManagerView { home, feedbackList }
 

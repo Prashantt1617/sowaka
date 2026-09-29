@@ -30,12 +30,15 @@ class ManagerState {
     this.error,
   });
 
-  factory ManagerState.initial({required bool canManage}) {
+  factory ManagerState.initial({
+    required bool canManage,
+    ManagerTab firstTab = ManagerTab.connect,
+  }) {
     return ManagerState(
       status: ManagerLoadStatus.initial,
       // Everyone lands on Connect: the feed is what the app is opened for, and
       // a manager's own tabs are one tap away.
-      tab: ManagerTab.connect,
+      tab: firstTab,
       view: ManagerView.home,
       canManage: canManage,
     );
@@ -336,8 +339,17 @@ class ClearManagerMessage extends ManagerEvent {
 
 class ManagerBloc {
   ManagerBloc({required AuthSession session, ManagerApiService? service})
-    : _service = service ?? ManagerApiService(session: session),
-      _state = ManagerState.initial(canManage: session.user.role == 'manager');
+    : this.session = session,
+      _service = service ?? ManagerApiService(session: session),
+      _state = ManagerState.initial(
+        canManage: session.user.role == 'manager',
+        // Land on the first tab the company shows. That is Connect for every
+        // company today, but a list is a list.
+        firstTab: visibleTabs(session.user.enabledTabs).first,
+      );
+
+  /// Who is signed in. The bottom bar reads the company's tab list from here.
+  final AuthSession session;
 
   final ManagerApiService _service;
 

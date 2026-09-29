@@ -153,6 +153,24 @@ export const env = {
     kmsKeyId: process.env.AWS_S3_KMS_KEY_ID ?? '',
     presignTtl: Number(process.env.AWS_S3_PRESIGN_TTL ?? 300),
   },
+  /**
+   * Sowaka's own Zoom account, as a server-to-server app: the backend creates
+   * a meeting for every counselling session as the counsellor, and nobody is
+   * ever asked to sign in to Zoom. All three come from the app's page on
+   * marketplace.zoom.us. Absent on a developer's machine, where a session gets
+   * a placeholder link instead so the flow can still be walked through.
+   */
+  zoom: {
+    accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
+    clientId: process.env.ZOOM_CLIENT_ID ?? '',
+    clientSecret: process.env.ZOOM_CLIENT_SECRET ?? '',
+    /**
+     * Who hosts a meeting when the counsellor has no Zoom user of their own.
+     * A single-user account hosts everything as its owner; once counsellors
+     * are added to the account, their profile's zoomUserId takes over.
+     */
+    hostUser: process.env.ZOOM_HOST_USER ?? '',
+  },
   zohoSmtp: {
     host: process.env.ZOHO_SMTP_HOST ?? 'smtp.zoho.com',
     port: Number(process.env.ZOHO_SMTP_PORT ?? 465),

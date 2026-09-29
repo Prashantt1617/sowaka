@@ -33,7 +33,11 @@ import '../../shared/startup_prefs.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
+import '../../manager_shell/presentation/tab_specs.dart';
+import '../../talk/presentation/talk_tab.dart';
+import '../../garden/presentation/garden_screen.dart';
 
+part '../../care/presentation/care_tab.dart';
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
 part '../../grow/presentation/grow_tab.dart';
