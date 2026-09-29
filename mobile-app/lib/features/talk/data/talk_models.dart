@@ -9,6 +9,12 @@ class Counsellor {
     required this.headline,
     required this.slotMinutes,
     this.photoUrl,
+    this.about = '',
+    this.yearsExperience,
+    this.languages = const [],
+    this.focusLabels = const [],
+    this.ageRange = '',
+    this.gender = '',
   });
 
   final String userId;
@@ -17,7 +23,20 @@ class Counsellor {
   final int slotMinutes;
   final String? photoUrl;
 
+  /// The Help profile: a paragraph on their approach, and the facts.
+  final String about;
+  final int? yearsExperience;
+  final List<String> languages;
+  final List<String> focusLabels;
+  final String ageRange;
+  final String gender;
+
   String get initial => name.isEmpty ? '?' : name[0].toUpperCase();
+  String get firstName => name.trim().split(' ').first;
+
+  /// 'Counsellor · 8 years of experience'
+  String get experienceLine =>
+      yearsExperience == null ? 'Counsellor' : 'Counsellor · $yearsExperience years of experience';
 
   factory Counsellor.fromJson(Map<String, dynamic> json) => Counsellor(
     userId: json['userId'] as String? ?? '',
@@ -25,6 +44,12 @@ class Counsellor {
     headline: json['headline'] as String? ?? '',
     slotMinutes: (json['slotMinutes'] as num?)?.toInt() ?? 50,
     photoUrl: json['photoUrl'] as String?,
+    about: json['about'] as String? ?? '',
+    yearsExperience: (json['yearsExperience'] as num?)?.toInt(),
+    languages: [for (final l in (json['languages'] as List<dynamic>? ?? const [])) '$l'],
+    focusLabels: [for (final l in (json['focusLabels'] as List<dynamic>? ?? const [])) '$l'],
+    ageRange: json['ageRange'] as String? ?? '',
+    gender: json['gender'] as String? ?? '',
   );
 }
 

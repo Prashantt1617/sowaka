@@ -28,6 +28,8 @@ import { ReimbursementTypeError } from '../services/reimbursement-type.service';
 import { TalkError } from '../services/talk.service';
 import { ZoomError } from '../services/zoom.service';
 import { GardenError } from '../services/garden.service';
+import { HelpError } from '../services/help.service';
+import { CareError } from '../services/care.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
   logger.warn('Route not found', requestLogContext(request, 404));
@@ -104,6 +106,8 @@ function getStatusCode(error: unknown): number {
     || error instanceof TalkError
     || error instanceof ZoomError
     || error instanceof GardenError
+    || error instanceof HelpError
+    || error instanceof CareError
     || error instanceof ReimbursementTypeError
     || error instanceof ReportError
   ) {

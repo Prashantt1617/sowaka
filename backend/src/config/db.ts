@@ -40,6 +40,7 @@ import { ReimbursementType } from '../models/reimbursement-type.model';
 import { ConnectBlock, ContentReport } from '../models/moderation.model';
 import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
+import { JournalEntry } from '../models/care.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -242,6 +243,10 @@ export function gardenNotes(): Collection<GardenNote> {
   return getDb().collection<GardenNote>('gratitude_notes');
 }
 
+export function journalEntries(): Collection<JournalEntry> {
+  return getDb().collection<JournalEntry>('care_journal_entries');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   await database
     .collection<OtpChallenge>('otp_challenges')
@@ -269,6 +274,11 @@ async function ensureIndexes(database: Db): Promise<void> {
   await garden.createIndex({ org: 1, season: 1, createdAt: -1 });
   await garden.createIndex({ toUserId: 1, season: 1 });
   await garden.createIndex({ fromUserId: 1, createdAt: -1 });
+
+  const journal = database.collection<JournalEntry>('care_journal_entries');
+  await journal.createIndex({ id: 1 }, { unique: true });
+  // A person's week, oldest first; the digest walks every person the same way.
+  await journal.createIndex({ userId: 1, createdAt: 1 });
 
   const usersCollection = database.collection<User>('users');
   // Legacy index from the earlier auth-only schema (keyed on `id`); replaced by `userId`.

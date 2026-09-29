@@ -18,9 +18,109 @@ const ALL_TABS: AppTab[] = ['connect', 'team', 'games', 'care', 'talk'];
 
 const WEEKDAY_HOURS = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '10:00', end: '18:00' }));
 
-const COUNSELLORS: { email: string; headline: string }[] = [
-  { email: '7009981594kritik@gmail.com', headline: 'Workplace wellbeing' },
-  { email: 'tanvi@getsowaka.com', headline: 'Stress and burnout' },
+type Profile = Pick<
+  CounsellorProfile,
+  'headline' | 'about' | 'yearsExperience' | 'languages' | 'focusAreas' | 'supports' | 'goals' | 'ageRange' | 'gender'
+>;
+
+// The two real counsellors. Sample text until Sowaka writes its own; the
+// control dashboard edits it later.
+const COUNSELLORS: { email: string; profile: Profile }[] = [
+  {
+    email: '7009981594kritik@gmail.com',
+    profile: {
+      headline: 'Workplace wellbeing',
+      about: 'A practical, collaborative space to make sense of pressure at work, find your footing through change, and decide what you would like to do next.',
+      yearsExperience: 6,
+      languages: ['English', 'Hindi'],
+      focusAreas: ['work', 'change', 'self', 'money'],
+      supports: ['overwhelmed', 'drained', 'switch-off', 'expectations', 'decision', 'adjusting', 'uncertainty'],
+      goals: ['forward', 'understand', 'settled'],
+      ageRange: 'young',
+      gender: 'man',
+    },
+  },
+  {
+    email: 'tanvi@getsowaka.com',
+    profile: {
+      headline: 'Stress and burnout',
+      about: 'A warm, reflective space to explore what you are feeling, the relationships around you, and small steps that make everyday life more manageable.',
+      yearsExperience: 5,
+      languages: ['English', 'Hindi', 'Marathi'],
+      focusAreas: ['self', 'relationships', 'family', 'work'],
+      supports: ['overwhelmed', 'low', 'disconnected', 'conflict', 'express', 'boundaries', 'drained'],
+      goals: ['heard', 'understand', 'settled', 'relationship'],
+      ageRange: 'young',
+      gender: 'woman',
+    },
+  },
+];
+
+// Sample counsellors, so the intake has a pool to choose from while the real
+// one is two people. They live in a company of their own that nobody signs
+// in to, so they never appear on any Team tab or dashboard.
+const DEMO_ORG = 'sowaka-care';
+const DEMO_COUNSELLORS: { name: string; email: string; profile: Profile }[] = [
+  {
+    name: 'Ananya Rao',
+    email: 'ananya.rao@care.sowaka.demo',
+    profile: {
+      headline: 'Work stress and burnout',
+      about: 'A warm, collaborative space to make sense of what you’re feeling and explore practical steps at your pace.',
+      yearsExperience: 8,
+      languages: ['English', 'Hindi'],
+      focusAreas: ['work', 'self', 'relationships'],
+      supports: ['overwhelmed', 'drained', 'switch-off', 'expectations', 'boundaries'],
+      goals: ['forward', 'understand', 'settled'],
+      ageRange: 'mid',
+      gender: 'woman',
+    },
+  },
+  {
+    name: 'Kabir Mehta',
+    email: 'kabir.mehta@care.sowaka.demo',
+    profile: {
+      headline: 'Life changes and family',
+      about: 'A conversational approach that gives you room to reflect, notice patterns, and decide what you would like to do next.',
+      yearsExperience: 6,
+      languages: ['English', 'Hindi'],
+      focusAreas: ['work', 'family', 'change', 'self'],
+      supports: ['conflict', 'decision', 'express', 'adjusting', 'expectations'],
+      goals: ['forward', 'understand'],
+      ageRange: 'young',
+      gender: 'man',
+    },
+  },
+  {
+    name: 'Mira Shah',
+    email: 'mira.shah@care.sowaka.demo',
+    profile: {
+      headline: 'Relationships, parenting and loss',
+      about: 'A gentle, reflective approach to relationships, parenting, and loss, with room to talk at your own pace.',
+      yearsExperience: 7,
+      languages: ['English', 'Gujarati'],
+      focusAreas: ['relationships', 'parenting', 'grief', 'self'],
+      supports: ['disconnected', 'missing', 'responsibility', 'me-time', 'express'],
+      goals: ['heard', 'relationship', 'settled'],
+      ageRange: 'mid',
+      gender: 'woman',
+    },
+  },
+  {
+    name: 'Leena Iyer',
+    email: 'leena.iyer@care.sowaka.demo',
+    profile: {
+      headline: 'Family and changing responsibilities',
+      about: 'A supportive conversation about family relationships, changing responsibilities, and the experiences that shape you.',
+      yearsExperience: 18,
+      languages: ['English', 'Tamil'],
+      focusAreas: ['family', 'parenting', 'grief', 'change'],
+      supports: ['conflict', 'responsibility', 'missing', 'me-time', 'adjusting'],
+      goals: ['heard', 'relationship'],
+      ageRange: 'older',
+      gender: 'woman',
+    },
+  },
 ];
 
 // name@toyota.in, as asked. The first is a manager the rest report to, so the
@@ -82,24 +182,64 @@ async function main() {
     console.log(`  ${existing ? 'kept   ' : 'created'} ${person.name} <${person.email}>`);
   }
 
-  // 3. The counsellors.
-  for (const { email, headline } of COUNSELLORS) {
+  // 3. The counsellors. Hours and Zoom settings already on the record are
+  // kept; the profile text is what this file says, so a re-run refreshes it.
+  const makeCounsellor = async (email: string, profile: Profile) => {
     const row = await users().findOne({ email });
     if (!row) {
       console.log(`  ! no user ${email}; not made a counsellor`);
-      continue;
+      return;
     }
-    const profile: CounsellorProfile = {
+    const full: CounsellorProfile = {
       // Empty: they have no Zoom user of their own yet, so the account's host
       // (ZOOM_HOST_USER) creates their meetings.
-      zoomUserId: '',
+      zoomUserId: row.counsellor?.zoomUserId ?? '',
       workingHours: row.counsellor?.workingHours?.length ? row.counsellor.workingHours : WEEKDAY_HOURS,
       slotMinutes: row.counsellor?.slotMinutes ?? 50,
       timezone: row.counsellor?.timezone ?? 'Asia/Kolkata',
-      headline: row.counsellor?.headline ?? headline,
+      ...profile,
     };
-    await users().updateOne({ email }, { $set: { isCounsellor: true, counsellor: profile, updatedAt: now } });
-    console.log(`  counsellor ${row.name} <${email}> · ${profile.workingHours.length} days · ${profile.slotMinutes} min`);
+    await users().updateOne({ email }, { $set: { isCounsellor: true, counsellor: full, updatedAt: now } });
+    console.log(`  counsellor ${row.name} <${email}> · ${full.workingHours.length} days · ${full.slotMinutes} min`);
+  };
+  for (const { email, profile } of COUNSELLORS) await makeCounsellor(email, profile);
+
+  // 3b. The sample counsellors, in their own company with no tabs.
+  await companies().updateOne(
+    { id: DEMO_ORG },
+    {
+      $set: { name: 'Sowaka Care', enabledTabs: [], updatedAt: now },
+      $setOnInsert: { id: DEMO_ORG, weekoffDays: [0, 6], createdAt: Date.now() },
+    },
+    { upsert: true },
+  );
+  for (const person of DEMO_COUNSELLORS) {
+    const existing = await users().findOne({ email: person.email });
+    await users().updateOne(
+      { email: person.email },
+      {
+        $set: {
+          userId: existing?.userId ?? randomUUID(),
+          email: person.email,
+          name: person.name,
+          org: DEMO_ORG,
+          role: 'employee',
+          designation: 'Counsellor',
+          department: 'Care',
+          location: 'Bengaluru',
+          employeeType: 'full_time',
+          lifecycleStatus: 'active',
+          onboardingStatus: 'completed',
+          noticeStatus: 'none',
+          isLeadership: false,
+          dashboardAccess: false,
+          updatedAt: now,
+        },
+        $setOnInsert: { createdAt: Date.now() },
+      },
+      { upsert: true },
+    );
+    await makeCounsellor(person.email, person.profile);
   }
   // 4. A few notes in the garden, so the first open is not an empty meadow.
   // Only when the season has none: re-running never doubles them up.

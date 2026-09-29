@@ -41,7 +41,7 @@ TabSpec tabSpecFor(ManagerTab tab) => switch (tab) {
     activeIconAsset: 'assets/icons/nav_care_active.svg',
   ),
   ManagerTab.talk => const TabSpec(
-    label: 'Talk',
+    label: 'Help',
     iconAsset: 'assets/icons/nav_talk.svg',
     activeIconAsset: 'assets/icons/nav_talk_active.svg',
   ),

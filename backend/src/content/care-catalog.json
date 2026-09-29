@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "_note": "Media Sowaka provides. A null url means not provided yet; the app shows the card and says the file is on its way. Move videos are keyed '<stretch>/<step>' with steps counted from 1: eyes, neck, shoulders, spine, wrists, legs. Topics are the ten on Help home: edit the text here and it changes in the app on its next open. Money worries stays reflective, never advice.",
+  "topics": [
+    {
+      "id": "stress",
+      "name": "Stress & overwhelm",
+      "intro": "When there is a lot on your mind.",
+      "article": "Making sense of what’s weighing on you",
+      "question": "What is asking for most of your energy right now?",
+      "tool": "One thing at a time",
+      "toolBody": "List what is on your mind. Choose one thing you could make smaller, share, or leave for another day."
+    },
+    {
+      "id": "burnout",
+      "name": "Burnout",
+      "intro": "When your energy feels stretched thin.",
+      "article": "Noticing what takes—and gives—energy",
+      "question": "What has felt especially draining lately?",
+      "tool": "Your energy map",
+      "toolBody": "Make two lists: things that take energy, and things that give a little back. Notice one change you would like to explore."
+    },
+    {
+      "id": "work",
+      "name": "Pressure at work",
+      "intro": "Deadlines, expectations, and everything in between.",
+      "article": "Untangling expectations at work",
+      "question": "Which expectation at work feels hardest to carry?",
+      "tool": "Prepare a conversation",
+      "toolBody": "What is happening? What is the impact on you? What would you like to ask for? Use these three questions to sketch a conversation."
+    },
+    {
+      "id": "balance",
+      "name": "Work–life balance",
+      "intro": "When work keeps spilling into the rest of life.",
+      "article": "Where does your workday end?",
+      "question": "Where would you like a little more space between work and life?",
+      "tool": "A boundary worth trying",
+      "toolBody": "Name one boundary you would like to explore, who needs to know about it, and what might make it easier to keep."
+    },
+    {
+      "id": "parent",
+      "name": "New parenthood",
+      "intro": "Finding your way through a new chapter.",
+      "article": "Making room for your needs, too",
+      "question": "What kind of support would feel useful to you this week?",
+      "tool": "Your support circle",
+      "toolBody": "Write down the practical help, company, or time you would appreciate. Then think about who you might ask."
+    },
+    {
+      "id": "couples",
+      "name": "Marriage & relationships",
+      "intro": "Newly married, finding a rhythm, or navigating change together.",
+      "article": "Getting to know your shared everyday",
+      "question": "What would you like your partner to understand about your day?",
+      "tool": "A conversation starter",
+      "toolBody": "Try finishing these sentences: “Something I appreciate is…” and “Something I would like us to talk about is…”"
+    },
+    {
+      "id": "family",
+      "name": "Family pressure",
+      "intro": "Your needs, their expectations, and the space between.",
+      "article": "Understanding the expectations you carry",
+      "question": "Which family expectation would you like more room to question?",
+      "tool": "What matters to you?",
+      "toolBody": "Write down what you want, what others are hoping for, and where you might need a clearer conversation."
+    },
+    {
+      "id": "loss",
+      "name": "Grief & loss",
+      "intro": "A place to explore what loss means for you.",
+      "article": "There is no single story of loss",
+      "question": "What would you like to put into words about your loss?",
+      "tool": "A letter, if you feel like it",
+      "toolBody": "Write to a person, a part of your life, or yourself. There is no need to finish it, share it, or make it positive."
+    },
+    {
+      "id": "money",
+      "name": "Money worries",
+      "intro": "Space to talk about the pressure money can bring.",
+      "article": "The feelings around money",
+      "question": "What about money feels most uncertain right now?",
+      "tool": "Separate the worry from the next step",
+      "toolBody": "Describe what is worrying you, what information you are missing, and one question you would like help answering."
+    },
+    {
+      "id": "change",
+      "name": "Life changes",
+      "intro": "When things are shifting around you.",
+      "article": "Finding your footing in a transition",
+      "question": "What is changing, and what would you like to hold on to?",
+      "tool": "What stays, what changes",
+      "toolBody": "List what is changing and what feels steady. Choose one familiar thing you would like to make room for."
+    }
+  ],
+  "moveVideos": {
+    "eyes/1": null,
+    "eyes/2": null,
+    "eyes/3": null,
+    "eyes/4": null,
+    "eyes/5": null,
+    "neck/1": null,
+    "neck/2": null,
+    "neck/3": null,
+    "neck/4": null,
+    "neck/5": null,
+    "shoulders/1": null,
+    "shoulders/2": null,
+    "shoulders/3": null,
+    "shoulders/4": null,
+    "shoulders/5": null,
+    "spine/1": null,
+    "spine/2": null,
+    "spine/3": null,
+    "spine/4": null,
+    "spine/5": null,
+    "spine/6": null,
+    "spine/7": null,
+    "wrists/1": null,
+    "wrists/2": null,
+    "wrists/3": null,
+    "wrists/4": null,
+    "wrists/5": null,
+    "legs/1": null,
+    "legs/2": null,
+    "legs/3": null,
+    "legs/4": null,
+    "legs/5": null,
+    "legs/6": null,
+    "legs/7": null,
+    "legs/8": null
+  },
+  "listen": {
+    "meditations": [
+      {
+        "id": "listen-moment",
+        "title": "Come back to this moment",
+        "meta": "5 min · Guided meditation",
+        "url": null
+      },
+      {
+        "id": "listen-pause",
+        "title": "A pause between things",
+        "meta": "3 min · Guided meditation",
+        "url": null
+      },
+      {
+        "id": "listen-evening",
+        "title": "An evening exhale",
+        "meta": "8 min · Guided meditation",
+        "url": null
+      }
+    ],
+    "affirmations": [
+      {
+        "id": "affirm-time",
+        "title": "You can take your time",
+        "meta": "2 min · Affirmations",
+        "url": null
+      },
+      {
+        "id": "affirm-all",
+        "title": "You don’t have to do it all",
+        "meta": "3 min · Affirmations",
+        "url": null
+      },
+      {
+        "id": "affirm-voice",
+        "title": "A kinder inner voice",
+        "meta": "3 min · Affirmations",
+        "url": null
+      }
+    ]
+  },
+  "sleep": {
+    "rest": [
+      {
+        "id": "sleep-settle",
+        "title": "Let the day settle",
+        "meta": "10 min · Guided rest",
+        "url": null
+      },
+      {
+        "id": "sleep-nothing",
+        "title": "Nothing more to do",
+        "meta": "12 min · Guided rest",
+        "url": null
+      }
+    ],
+    "stories": [
+      {
+        "id": "story-sea",
+        "title": "The little house by the sea",
+        "meta": "20 min · Sleep story",
+        "url": null
+      },
+      {
+        "id": "story-orchard",
+        "title": "A walk through the orchard",
+        "meta": "15 min · Sleep story",
+        "url": null
+      }
+    ],
+    "sounds": [
+      {
+        "id": "sound-rain",
+        "title": "Rain at the window",
+        "meta": "30 min · Soundscape",
+        "url": null
+      },
+      {
+        "id": "sound-shore",
+        "title": "A quiet shoreline",
+        "meta": "30 min · Soundscape",
+        "url": null
+      }
+    ]
+  },
+  "prompts": [
+    "What’s taking up space in your mind?",
+    "What would make today feel a little lighter?",
+    "What do you wish someone understood?",
+    "What is one small thing you appreciated recently?"
+  ],
+  "topicVideos": {
+    "stress": null,
+    "burnout": null,
+    "work": null,
+    "balance": null,
+    "parent": null,
+    "couples": null,
+    "family": null,
+    "loss": null,
+    "money": null,
+    "change": null
+  }
+}

@@ -112,6 +112,13 @@ export interface User {
    */
   isCounsellor?: boolean;
   counsellor?: CounsellorProfile;
+  /**
+   * Help: the four answers given on the first open, and the counsellor they
+   * led to. Read by the person and, later, by Sowaka's counsellor dashboard;
+   * never by the company's HR dashboard or any report.
+   */
+  helpIntake?: HelpIntake;
+  helpMatch?: HelpMatch;
   createdAt?: number;
   updatedAt?: Date;
   lastLoginAt?: Date;
@@ -135,4 +142,41 @@ export interface CounsellorProfile {
   timezone: string;
   /** A line under their name on the picker. */
   headline?: string;
+  /** A paragraph on their approach, on the profile. */
+  about?: string;
+  yearsExperience?: number;
+  /** Languages they hold sessions in, as the intake names them. */
+  languages?: string[];
+  /** Topic ids from the intake they have experience with. */
+  focusAreas?: string[];
+  /** Difficulty ids from the intake they support people with. */
+  supports?: string[];
+  /** Goal ids from the intake their approach suits. */
+  goals?: string[];
+  ageRange?: CounsellorAgeRange;
+  gender?: CounsellorGender;
+}
+
+export type CounsellorAgeRange = 'young' | 'mid' | 'older';
+export type CounsellorGender = 'woman' | 'man' | 'nonbinary';
+
+/** What someone answered on the first open of Help. Skipped is empty. */
+export interface HelpIntake {
+  topics: string[];
+  needs: string[];
+  goal: string;
+  languages: string[];
+  ageRange: string;
+  gender: string;
+  answeredAt: Date;
+}
+
+export interface HelpMatch {
+  counsellorUserId: string;
+  reasons: string[];
+  /** Preferences this counsellor does not meet; empty on a true match. */
+  unmet: string[];
+  /** How it was set: from the answers, accepted as the closest, or by Sowaka. */
+  source: 'intake' | 'fallback' | 'dashboard';
+  setAt: Date;
 }

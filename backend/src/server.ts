@@ -7,12 +7,14 @@ import { startNotificationScheduler, stopNotificationScheduler } from './service
 import { closeConnectRealtime, initConnectRealtime } from './services/connect-realtime.service';
 import { closeRelayRealtime, initRelayRealtime } from './services/relay-realtime.service';
 import { closeRedis } from './config/redis';
+import { startCareScheduler, stopCareScheduler } from './services/care.service';
 
 async function start(): Promise<void> {
   await connectDb();
   logger.info('Connected to MongoDB', { database: env.mongoDbName });
   startConnectScheduler();
   startNotificationScheduler();
+  startCareScheduler();
 
 
 logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v1.cloudfront.net'})
@@ -37,6 +39,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     server.close();
     stopConnectScheduler();
     stopNotificationScheduler();
+    stopCareScheduler();
     await closeRedis();
     await closeDb();
     process.exit(0);

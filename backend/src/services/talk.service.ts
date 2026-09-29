@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { companies, talkSessions, users } from '../config/db';
 import { TALK_BOOKING_HORIZON_DAYS, TalkSession } from '../models/talk.model';
 import { CounsellorProfile, User } from '../models/user.model';
+import { HELP_TOPICS } from '../models/help.model';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { env } from '../config/env';
 import { createZoomMeeting, ZoomError } from './zoom.service';
@@ -31,6 +32,15 @@ export interface CounsellorView {
   headline: string;
   photoUrl?: string;
   slotMinutes: number;
+  /** The Help profile. Empty strings and lists where nothing was set. */
+  about: string;
+  yearsExperience: number | null;
+  languages: string[];
+  /** Topic ids the counsellor works with, with their labels for chips. */
+  focusAreas: string[];
+  focusLabels: string[];
+  ageRange: string;
+  gender: string;
 }
 
 export interface SlotView {
@@ -64,9 +74,9 @@ async function requireTalkUser(userId: string): Promise<User & { org: string }> 
   return user as User & { org: string };
 }
 
-type CounsellorRow = User & { counsellor: CounsellorProfile };
+export type CounsellorRow = User & { counsellor: CounsellorProfile };
 
-async function counsellorRows(): Promise<CounsellorRow[]> {
+export async function counsellorRows(): Promise<CounsellorRow[]> {
   const rows = await users()
     .find({ isCounsellor: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } })
     .sort({ name: 1 })
@@ -76,13 +86,22 @@ async function counsellorRows(): Promise<CounsellorRow[]> {
   return rows.flatMap((row) => (row.counsellor ? [row as CounsellorRow] : []));
 }
 
-async function toCounsellorView(row: CounsellorRow): Promise<CounsellorView> {
+export async function toCounsellorView(row: CounsellorRow): Promise<CounsellorView> {
+  const profile = row.counsellor;
+  const focusAreas = profile.focusAreas ?? [];
   return {
     userId: row.userId,
     name: row.name,
-    headline: row.counsellor.headline ?? row.designation ?? 'Counsellor',
+    headline: profile.headline ?? row.designation ?? 'Counsellor',
     photoUrl: await resolveProfilePhoto(row),
-    slotMinutes: row.counsellor.slotMinutes,
+    slotMinutes: profile.slotMinutes,
+    about: profile.about ?? '',
+    yearsExperience: profile.yearsExperience ?? null,
+    languages: profile.languages ?? [],
+    focusAreas,
+    focusLabels: focusAreas.map((id) => HELP_TOPICS.find((t) => t.id === id)?.label ?? id),
+    ageRange: profile.ageRange ?? '',
+    gender: profile.gender ?? '',
   };
 }
 

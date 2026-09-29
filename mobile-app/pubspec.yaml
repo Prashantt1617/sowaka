@@ -90,6 +90,7 @@ flutter:
     # The Gratitude Garden's tree, its flowers and fruit, and its insects.
     - assets/garden/
     - assets/garden/kinds/
+    - assets/care/
     # Flutter does not recurse into asset folders; the relay game's own art.
     - assets/games/relay/
     # First-run screens: the photo step, the interest chips and the logos.
