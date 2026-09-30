@@ -355,13 +355,29 @@ function shiftSetupChanged(org: string): void {
   for (const listener of setupListeners) listener(org);
 }
 
+/**
+ * Names are unique per org across deleted templates too (the index says so),
+ * because a retired template still grades the days it covered. Said plainly
+ * rather than surfacing as a duplicate-key 500.
+ */
+async function requireNameFree(org: string, name: string, exceptId?: ObjectId) {
+  const clash = await shiftTemplates().findOne(
+    exceptId ? { org, name, _id: { $ne: exceptId } } : { org, name },
+  );
+  if (!clash) return;
+  throw new ShiftError(
+    409,
+    clash.deletedAt
+      ? 'A deleted shift still holds that name. Choose a different name.'
+      : 'A shift with that name already exists',
+  );
+}
+
 export async function createShift(callerId: string, input: ShiftInput) {
   const org = await requireOrg(callerId);
   shiftSetupChanged(org);
   const name = text(input.name, 'Shift name', MAX_NAME);
-  if (await shiftTemplates().findOne({ org, name, deletedAt: { $exists: false } })) {
-    throw new ShiftError(409, 'A shift with that name already exists');
-  }
+  await requireNameFree(org, name);
   // A new template starts from the org's default template — the shift everyone
   // is on unless assigned elsewhere. The org policy document only answers when
   // an org has no default yet.
@@ -386,9 +402,7 @@ export async function updateShift(callerId: string, shiftId: string, input: Shif
   const current = await shiftTemplates().findOne({ _id, org, deletedAt: { $exists: false } });
   if (!current) throw new ShiftError(404, 'Shift not found');
   const name = text(input.name, 'Shift name', MAX_NAME);
-  if (await shiftTemplates().findOne({ org, name, _id: { $ne: _id }, deletedAt: { $exists: false } })) {
-    throw new ShiftError(409, 'A shift with that name already exists');
-  }
+  await requireNameFree(org, name, _id);
   // A template saved before templates carried a policy edits from the org's.
   const base = current.policy ?? (await getOrgShiftPolicy(org));
   const policy = toPolicyRules((input.policy ?? {}) as Record<string, unknown>, base);

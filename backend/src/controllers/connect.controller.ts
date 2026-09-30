@@ -207,7 +207,8 @@ function connectPostInput(req: Request) {
   }
   return {
     type: stringField(req.body.type ?? body.type),
-    removeMedia: req.body.removeMedia === 'true' || body.removeMedia === true,
+    // Multipart sends the flag as the string 'true'; a JSON post sends a boolean.
+    removeMedia: req.body.removeMedia === 'true' || req.body.removeMedia === true || body.removeMedia === true,
     body: parseBody(req.body.body) ?? body.body ?? body,
     media: (files.media ?? []).map(toMediaFile),
     pollOptionImages: (files.pollOptionImages ?? []).map(toMediaFile),

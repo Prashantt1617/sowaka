@@ -169,10 +169,14 @@ export async function recordPunch(
         : 'short';
     await notifyPunchedOut(userId, now, worked, band);
   }
+  // The same shape as a row of `mine`, since the app swaps the day's row for
+  // this: leaving out the day type would blank a regularised day until refresh.
   return {
+    id: updated?._id?.toHexString(),
     workDate,
     punchIn: updated?.punchIn?.toISOString(),
     punchOut: updated?.punchOut?.toISOString(),
+    dayType: updated?.dayType,
     office: location?.officeName,
   };
 }
