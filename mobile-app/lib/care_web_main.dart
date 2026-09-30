@@ -33,24 +33,56 @@ void main() {
   runApp(CareWebApp(session: _sessionFromAddress()));
 }
 
-/// The token from `#token=…`, remembered for this browser tab.
+/// The token from `#token=…`, remembered for this browser tab. The same
+/// fragment carries `embed=1` when the app's own web view opened the page,
+/// which hides the page's back row (the app's bar is the way back) and is
+/// remembered the same way so a reload inside the app stays embedded.
 AuthSession? _sessionFromAddress() {
   String? token;
   try {
     final fragment = Uri.base.fragment;
-    final fromAddress = Uri.splitQueryString(fragment)['token'];
+    final params = Uri.splitQueryString(fragment);
+    final fromAddress = params['token'];
+    // The app's web view says so in the address, and older app builds say
+    // so by their browser: an iOS web view carries no "Safari" in its agent
+    // string, and an Android one carries "; wv".
+    final agent = web.window.navigator.userAgent;
+    final inAppView =
+        (RegExp(r'iPhone|iPad').hasMatch(agent) && !agent.contains('Safari')) ||
+        agent.contains('; wv');
+    if (params['embed'] == '1' || inAppView) {
+      careEmbedded = true;
+      web.window.sessionStorage.setItem('sowaka.embed', '1');
+    } else if (web.window.sessionStorage.getItem('sowaka.embed') == '1') {
+      careEmbedded = true;
+    }
     if (fromAddress != null && fromAddress.isNotEmpty) {
       token = fromAddress;
       web.window.sessionStorage.setItem('sowaka.token', token);
-      web.window.history.replaceState(null, '', Uri.base.replace(fragment: '').toString());
     } else {
       token = web.window.sessionStorage.getItem('sowaka.token');
+    }
+    if (fragment.isNotEmpty) {
+      web.window.history.replaceState(
+        null,
+        '',
+        Uri.base.replace(fragment: '').toString(),
+      );
     }
   } catch (_) {
     // No storage, no token: the pages that need none still open.
   }
   if (token == null || token.isEmpty) return null;
-  return AuthSession(token: token, user: const AuthUser(id: '', email: '', name: '', role: 'employee', company: ''));
+  return AuthSession(
+    token: token,
+    user: const AuthUser(
+      id: '',
+      email: '',
+      name: '',
+      role: 'employee',
+      company: '',
+    ),
+  );
 }
 
 class CareWebApp extends StatefulWidget {
@@ -66,7 +98,9 @@ class CareWebApp extends StatefulWidget {
 class _CareWebAppState extends State<CareWebApp> {
   final _catalog = ValueNotifier<CareCatalog?>(null);
   String? _error;
-  late final CareApiService? _care = widget.session == null ? null : CareApiService(session: widget.session!);
+  late final CareApiService? _care = widget.session == null
+      ? null
+      : CareApiService(session: widget.session!);
 
   @override
   void initState() {
@@ -76,12 +110,18 @@ class _CareWebAppState extends State<CareWebApp> {
 
   Future<void> _load() async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/care/public-catalog'));
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/care/public-catalog'),
+      );
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      _catalog.value = CareCatalog.fromJson(json['catalog'] as Map<String, dynamic>? ?? const {});
+      _catalog.value = CareCatalog.fromJson(
+        json['catalog'] as Map<String, dynamic>? ?? const {},
+      );
     } catch (_) {
       // The screens still open; what they play says it is on its way.
-      setState(() => _error = 'Could not reach Sowaka. Some clips may not play.');
+      setState(
+        () => _error = 'Could not reach Sowaka. Some clips may not play.',
+      );
       _catalog.value = CareCatalog.empty;
     }
   }
@@ -97,30 +137,56 @@ class _CareWebAppState extends State<CareWebApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: CareColors.blue),
         useMaterial3: true,
       ),
-      onGenerateRoute: (settings) {
-        final path = Uri.parse(settings.name ?? '/').path.replaceAll(RegExp(r'/+$'), '');
-        final topicMatch = RegExp(r'^/topic/([a-z-]+)$').firstMatch(path);
-        Widget screen(CareCatalog catalog) {
-          if (topicMatch != null) return _topic(catalog, topicMatch.group(1)!);
-          return switch (path) {
-            '/move' => MoveScreen(catalog: catalog),
-            '/breathe' => BreatheScreen(catalog: catalog),
-            '/listen' => ListenScreen(catalog: catalog),
-            '/sleep' => SleepScreen(catalog: catalog),
-            _ => _CareIndex(error: _error, topics: _care == null ? const [] : (catalog.topics.isEmpty ? helpTopicList : catalog.topics)),
-          };
-        }
-        return MaterialPageRoute(
-          settings: settings,
-          builder: (_) => _PhoneFrame(
-            child: ValueListenableBuilder<CareCatalog?>(
-              valueListenable: _catalog,
-              builder: (_, catalog, _) => catalog == null ? const Scaffold(backgroundColor: CareColors.bg, body: CareSpinner()) : screen(catalog),
-            ),
-          ),
-        );
-      },
+      // Inside the app a deep link such as /move is the whole stack: the
+      // app's own bar is the way back, and the index would only duplicate
+      // the app's Care tab. In a plain browser the index sits underneath,
+      // so the page's back link has somewhere to go.
+      onGenerateInitialRoutes: (initial) => [
+        if (!careEmbedded && initial != '/')
+          _route(const RouteSettings(name: '/')),
+        _route(RouteSettings(name: initial)),
+      ],
+      onGenerateRoute: _route,
     );
+  }
+
+  Route<dynamic> _route(RouteSettings settings) {
+    {
+      final path = Uri.parse(
+        settings.name ?? '/',
+      ).path.replaceAll(RegExp(r'/+$'), '');
+      final topicMatch = RegExp(r'^/topic/([a-z-]+)$').firstMatch(path);
+      Widget screen(CareCatalog catalog) {
+        if (topicMatch != null) return _topic(catalog, topicMatch.group(1)!);
+        return switch (path) {
+          '/move' => MoveScreen(catalog: catalog),
+          '/breathe' => BreatheScreen(catalog: catalog),
+          '/listen' => ListenScreen(catalog: catalog),
+          '/sleep' => SleepScreen(catalog: catalog),
+          _ => _CareIndex(
+            error: _error,
+            topics: _care == null
+                ? const []
+                : (catalog.topics.isEmpty ? helpTopicList : catalog.topics),
+          ),
+        };
+      }
+
+      return MaterialPageRoute(
+        settings: settings,
+        builder: (_) => _PhoneFrame(
+          child: ValueListenableBuilder<CareCatalog?>(
+            valueListenable: _catalog,
+            builder: (_, catalog, _) => catalog == null
+                ? const Scaffold(
+                    backgroundColor: CareColors.bg,
+                    body: CareSpinner(),
+                  )
+                : screen(catalog),
+          ),
+        ),
+      );
+    }
   }
 }
 
@@ -132,9 +198,19 @@ extension on _CareWebAppState {
     final topic = topics.where((t) => t.id == id).firstOrNull;
     final care = _care;
     final session = widget.session;
-    if (topic == null) return _CareIndex(error: 'That topic is not here any more.', topics: topics);
+    if (topic == null)
+      return _CareIndex(
+        error: 'That topic is not here any more.',
+        topics: topics,
+      );
     if (care == null || session == null) {
-      return const CarePage(children: [CareNotice('Open this topic from the Sowaka app, so what you write is saved to you.')]);
+      return const CarePage(
+        children: [
+          CareNotice(
+            'Open this topic from the Sowaka app, so what you write is saved to you.',
+          ),
+        ],
+      );
     }
     return topicScreenFor(
       topic: topic,
@@ -165,7 +241,10 @@ class _PhoneFrame extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: ClipRRect(borderRadius: BorderRadius.circular(0), child: child),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(0),
+            child: child,
+          ),
         ),
       ),
     );
@@ -188,14 +267,44 @@ class _CareIndex extends StatelessWidget {
         const SizedBox(height: 10),
         const CareHeading('A little space\nfor you.', size: 36),
         const SizedBox(height: 12),
-        const CareCopy('Choose what feels right.\nWhenever you need it.', size: 13.5),
-        if (error case final message?) ...[const SizedBox(height: 14), CareNotice(message)],
+        const CareCopy(
+          'Choose what feels right.\nWhenever you need it.',
+          size: 13.5,
+        ),
+        if (error case final message?) ...[
+          const SizedBox(height: 14),
+          CareNotice(message),
+        ],
         const SizedBox(height: 24),
         for (final (path, name, sub, icon, color) in const [
-          ('/move', 'Move', 'Choose a body area', Icons.accessibility_new_rounded, CareColors.sage),
-          ('/breathe', 'Breathe', 'Start with how you feel', Icons.air_rounded, CareColors.sky),
-          ('/listen', 'Listen', 'Meditations & affirmations', Icons.headphones_outlined, CareColors.lilac),
-          ('/sleep', 'Sleep', 'Ease into rest', Icons.nightlight_outlined, CareColors.night),
+          (
+            '/move',
+            'Move',
+            'Choose a body area',
+            Icons.accessibility_new_rounded,
+            CareColors.sage,
+          ),
+          (
+            '/breathe',
+            'Breathe',
+            'Start with how you feel',
+            Icons.air_rounded,
+            CareColors.sky,
+          ),
+          (
+            '/listen',
+            'Listen',
+            'Meditations & affirmations',
+            Icons.headphones_outlined,
+            CareColors.lilac,
+          ),
+          (
+            '/sleep',
+            'Sleep',
+            'Ease into rest',
+            Icons.nightlight_outlined,
+            CareColors.night,
+          ),
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -215,12 +324,31 @@ class _CareIndex extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 19, fontWeight: FontWeight.w700)),
-                            Text(sub, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12.5)),
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontFamily: careFont,
+                                color: CareColors.ink,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              sub,
+                              style: const TextStyle(
+                                fontFamily: careFont,
+                                color: CareColors.muted,
+                                fontSize: 12.5,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.arrow_outward_rounded, color: CareColors.ink, size: 18),
+                      const Icon(
+                        Icons.arrow_outward_rounded,
+                        color: CareColors.ink,
+                        size: 18,
+                      ),
                     ],
                   ),
                 ),
@@ -229,12 +357,18 @@ class _CareIndex extends StatelessWidget {
           ),
         if (topics.isNotEmpty) ...[
           const SizedBox(height: 14),
-          const CareSectionTitle('Explore a topic', size: 20),
+          const CareSectionTitle('Explore what’s on your mind', size: 20),
           const SizedBox(height: 12),
           for (final topic in topics)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: CareResourceRow(title: topic.name, meta: topic.intro, icon: topic.icon, onTap: () => Navigator.of(context).pushNamed('/topic/${topic.id}')),
+              child: CareResourceRow(
+                title: topic.name,
+                meta: topic.intro,
+                icon: topic.icon,
+                onTap: () =>
+                    Navigator.of(context).pushNamed('/topic/${topic.id}'),
+              ),
             ),
         ],
       ],

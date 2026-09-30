@@ -123,14 +123,14 @@ const DEMO_COUNSELLORS: { name: string; email: string; profile: Profile }[] = [
   },
 ];
 
-// name@toyota.in, as asked. The first is a manager the rest report to, so the
+// name@tfsin.demo, as asked. The first is a manager the rest report to, so the
 // Team tab has something to show as well.
 const PEOPLE: { name: string; email: string; designation: string; department: string; role: 'manager' | 'employee' }[] = [
-  { name: 'Arjun Mehta', email: 'arjun@toyota.in', designation: 'Plant HR Lead', department: 'People', role: 'manager' },
-  { name: 'Priya Nair', email: 'priya@toyota.in', designation: 'Quality Engineer', department: 'Quality', role: 'employee' },
-  { name: 'Rohan Iyer', email: 'rohan@toyota.in', designation: 'Line Supervisor', department: 'Production', role: 'employee' },
-  { name: 'Sneha Rao', email: 'sneha@toyota.in', designation: 'Supply Analyst', department: 'Supply Chain', role: 'employee' },
-  { name: 'Vikram Desai', email: 'vikram@toyota.in', designation: 'Service Advisor', department: 'After Sales', role: 'employee' },
+  { name: 'Arjun Mehta', email: 'arjun@tfsin.demo', designation: 'Plant HR Lead', department: 'People', role: 'manager' },
+  { name: 'Priya Nair', email: 'priya@tfsin.demo', designation: 'Quality Engineer', department: 'Quality', role: 'employee' },
+  { name: 'Rohan Iyer', email: 'rohan@tfsin.demo', designation: 'Line Supervisor', department: 'Production', role: 'employee' },
+  { name: 'Sneha Rao', email: 'sneha@tfsin.demo', designation: 'Supply Analyst', department: 'Supply Chain', role: 'employee' },
+  { name: 'Vikram Desai', email: 'vikram@tfsin.demo', designation: 'Service Advisor', department: 'After Sales', role: 'employee' },
 ];
 
 async function main() {
@@ -195,7 +195,7 @@ async function main() {
       // (ZOOM_HOST_USER) creates their meetings.
       zoomUserId: row.counsellor?.zoomUserId ?? '',
       workingHours: row.counsellor?.workingHours?.length ? row.counsellor.workingHours : WEEKDAY_HOURS,
-      slotMinutes: row.counsellor?.slotMinutes ?? 50,
+      slotMinutes: row.counsellor?.slotMinutes ?? 40,
       timezone: row.counsellor?.timezone ?? 'Asia/Kolkata',
       ...profile,
     };
@@ -253,14 +253,14 @@ async function main() {
     }
     const id = (email: string) => byEmail.get(email)!;
     const samples: Array<[string, string, GardenNote['kind'], string]> = [
-      ['sneha@toyota.in', 'rohan@toyota.in', 'hibiscus', 'Covered the late shift so I could get to my daughter’s school thing.'],
-      ['arjun@toyota.in', 'priya@toyota.in', 'apple', 'Your root-cause write-up taught the whole line something.'],
-      ['vikram@toyota.in', 'sneha@toyota.in', 'orange', 'The Monday huddle had energy again because of you.'],
-      ['priya@toyota.in', 'arjun@toyota.in', 'tulip', 'Thanks for the loaner laptop, no questions asked.'],
-      ['rohan@toyota.in', 'priya@toyota.in', 'sunflower', 'Every shift is warmer with you on it.'],
-      ['sneha@toyota.in', 'vikram@toyota.in', 'grapes', 'You got the two teams talking to each other.'],
-      ['arjun@toyota.in', 'sneha@toyota.in', 'lotus', 'Calm on the audit day when nobody else was.'],
-      ['vikram@toyota.in', 'priya@toyota.in', 'mango', 'Stayed past close to get the delivery out. Extra mile, truly.'],
+      ['sneha@tfsin.demo', 'rohan@tfsin.demo', 'hibiscus', 'Covered the late shift so I could get to my daughter’s school thing.'],
+      ['arjun@tfsin.demo', 'priya@tfsin.demo', 'apple', 'Your root-cause write-up taught the whole line something.'],
+      ['vikram@tfsin.demo', 'sneha@tfsin.demo', 'orange', 'The Monday huddle had energy again because of you.'],
+      ['priya@tfsin.demo', 'arjun@tfsin.demo', 'tulip', 'Thanks for the loaner laptop, no questions asked.'],
+      ['rohan@tfsin.demo', 'priya@tfsin.demo', 'sunflower', 'Every shift is warmer with you on it.'],
+      ['sneha@tfsin.demo', 'vikram@tfsin.demo', 'grapes', 'You got the two teams talking to each other.'],
+      ['arjun@tfsin.demo', 'sneha@tfsin.demo', 'lotus', 'Calm on the audit day when nobody else was.'],
+      ['vikram@tfsin.demo', 'priya@tfsin.demo', 'mango', 'Stayed past close to get the delivery out. Extra mile, truly.'],
     ];
     const base = Date.now() - 6 * 3_600_000;
     let n = 0;

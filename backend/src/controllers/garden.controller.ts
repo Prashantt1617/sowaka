@@ -32,12 +32,12 @@ export async function timelineHandler(req: Request, res: Response, next: NextFun
 
 export async function giveHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const note = await giveNote(requireUserId(req), {
+    const gift = await giveNote(requireUserId(req), {
       toUserId: String(req.body.toUserId ?? ''),
       kind: String(req.body.kind ?? ''),
       note: String(req.body.note ?? ''),
     });
-    res.status(201).json({ success: true, note });
+    res.status(201).json({ success: true, ...gift });
   } catch (error) {
     next(error);
   }

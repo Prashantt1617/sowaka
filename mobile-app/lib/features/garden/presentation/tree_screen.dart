@@ -281,7 +281,14 @@ class _NoteSheetState extends State<_NoteSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(note.fromUserId == note.toUserId ? '${note.fromName}, to themselves' : note.fromName, style: const TextStyle(fontFamily: 'Sora', color: MColors.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+                      Text(
+                        note.grown != null
+                            ? 'Grew on ${note.removable ? 'your' : "${note.toName.split(' ').first}'s"} tree'
+                            : note.fromUserId == note.toUserId
+                            ? '${note.fromName}, to themselves'
+                            : note.fromName,
+                        style: const TextStyle(fontFamily: 'Sora', color: MColors.ink, fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
                       Text('${kind.name} · ${kind.meaning}', style: const TextStyle(color: MColors.inkSoft, fontSize: 12.5)),
                     ],
                   ),
@@ -290,7 +297,13 @@ class _NoteSheetState extends State<_NoteSheet> {
               ],
             ),
             const SizedBox(height: 14),
-            Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45)),
+            if (note.grown case final grown?)
+              Text(
+                note.removable ? grown.line : 'Grew when ${note.toName.split(' ').first} gave ${grown.forName.split(' ').first} a ${kindOf(grown.kind).name}',
+                style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45),
+              )
+            else
+              Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45)),
             const SizedBox(height: 10),
             Text(_when(note.createdAt), style: const TextStyle(color: MColors.inkFaint, fontSize: 12, fontWeight: FontWeight.w600)),
             if (note.removable) ...[

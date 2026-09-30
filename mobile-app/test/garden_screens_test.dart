@@ -73,7 +73,19 @@ void main() {
     final client = MockClient((request) async {
       if (request.method == 'POST' && request.url.path.endsWith('/garden/notes')) {
         posted = jsonDecode(request.body) as Map<String, dynamic>;
-        return http.Response(jsonEncode({'success': true, 'note': _note('new', 'apple', 'Taught me the jig.')}), 201);
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'note': _note('new', 'hibiscus', 'Taught me the jig.'),
+            'grown': {
+              ..._note('fruit', 'mango', ''),
+              'to': {'userId': 'p', 'name': 'Priya'},
+              'removable': true,
+              'grown': {'forUserId': 'r', 'forName': 'Rohan Iyer', 'kind': 'hibiscus'},
+            },
+          }),
+          201,
+        );
       }
       return http.Response(jsonEncode({'success': true}), 200);
     });
@@ -99,25 +111,37 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    // Fruit, then apple: the meaning shows before you go on.
-    await tester.tap(find.text('Fruit'));
+    // Flowers only: there is no Fruit to pick. The meaning shows before you
+    // go on.
+    expect(find.text('Fruit'), findsNothing);
+    expect(find.text('Apple'), findsNothing);
+    await tester.tap(find.text('Hibiscus'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Apple'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('You helped me learn something', findRichText: true), findsOneWidget);
+    expect(find.textContaining('You showed up when it mattered', findRichText: true), findsOneWidget);
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
 
     expect(find.text('Everyone at Toyota will see this'), findsOneWidget);
-    expect(find.text('2 of 3 left today'), findsOneWidget);
+    // What is left today sits beside the garden's Give button, not here.
+    expect(find.textContaining('left today'), findsNothing);
     await tester.enterText(find.byType(TextField), 'Taught me the jig.');
     await tester.pumpAndSettle();
     await tester.tap(find.text("Add to Rohan's tree"));
     await tester.pumpAndSettle();
 
     expect(posted?['toUserId'], 'r');
-    expect(posted?['kind'], 'apple');
+    expect(posted?['kind'], 'hibiscus');
     expect(posted?['note'], 'Taught me the jig.');
+
+    // The success page: both trees, the flower given, the fruit that grew.
+    expect(find.text("Rohan's tree grew 🌸"), findsOneWidget);
+    expect(find.text('Your tree'), findsOneWidget);
+    expect(find.text("Rohan's tree"), findsOneWidget);
+    expect(find.text('You gave Rohan a Hibiscus'), findsOneWidget);
+    expect(find.text('A Mango grew on your tree'), findsOneWidget);
+    expect(find.text('Grew when you gave Rohan a Hibiscus'), findsOneWidget);
+    await tester.tap(find.text('Back to the garden'));
+    await tester.pumpAndSettle();
     expect(result?.id, 'new');
   });
 }

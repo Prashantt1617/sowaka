@@ -3,8 +3,7 @@ import {
   availabilityHandler,
   bookSessionHandler,
   listCounsellorsHandler,
-  listSessionsHandler,
-} from '../controllers/talk.controller';
+  listSessionsHandler, checkInHandler, reviewHandler } from '../controllers/talk.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 
 /**
@@ -18,3 +17,5 @@ talkRouter.get('/counsellors', listCounsellorsHandler);
 talkRouter.get('/availability', availabilityHandler);
 talkRouter.get('/sessions', listSessionsHandler);
 talkRouter.post('/sessions', bookSessionHandler);
+talkRouter.put('/sessions/:sessionId/check-in', checkInHandler);
+talkRouter.put('/sessions/:sessionId/review', reviewHandler);

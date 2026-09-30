@@ -3,7 +3,6 @@ part of '../../manager/presentation/manager_screen.dart';
 class _GameEntry {
   const _GameEntry({
     required this.title,
-    required this.subtitle,
     required this.image,
     required this.color,
     this.url,
@@ -11,7 +10,6 @@ class _GameEntry {
   });
 
   final String title;
-  final String subtitle;
 
   /// Bundled thumbnail asset (see pubspec `assets/games/`).
   final String image;
@@ -19,59 +17,21 @@ class _GameEntry {
   /// Accent colour for the "Play now" affordance.
   final Color color;
 
-  /// A live, playable game exposes a hosted URL. A `null` url marks the
-  /// tile as "coming soon" — it renders blurred and is not tappable.
+  /// A hosted game opens at this URL.
   final String? url;
 
   /// A game built into the app rather than hosted: what to open.
   final Widget Function(AuthSession session)? screen;
-
-  bool get comingSoon => url == null && screen == null;
 }
 
+/// Only what can be played today. A game that does not exist yet is not
+/// shown at all, rather than as a blurred "coming soon" tile.
 final List<_GameEntry> _gamesCatalog = [
   _GameEntry(
     title: 'Gratitude Garden',
-    subtitle: 'Grow each other\'s trees',
     image: 'assets/games/gratitude-garden.jpg',
     color: MColors.sageDeep,
     screen: (session) => GardenScreen(session: session),
-  ),
-  const _GameEntry(
-    title: 'Scribble',
-    subtitle: 'Coming soon',
-    image: 'assets/games/scribble.jpg',
-    color: MColors.terra,
-  ),
-  const _GameEntry(
-    title: 'Find your Mate',
-    subtitle: 'Coming soon',
-    image: 'assets/games/find-your-mate.jpg',
-    color: MColors.plum,
-  ),
-  const _GameEntry(
-    title: 'Know your Nation',
-    subtitle: 'Coming soon',
-    image: 'assets/games/know-your-nation.jpg',
-    color: MColors.teal,
-  ),
-  const _GameEntry(
-    title: 'Step Challenge',
-    subtitle: 'Coming soon',
-    image: 'assets/games/step-challenge.png',
-    color: MColors.gold,
-  ),
-  const _GameEntry(
-    title: 'Fitness Challenge',
-    subtitle: 'Coming soon',
-    image: 'assets/games/fitness-challenge.png',
-    color: MColors.sage,
-  ),
-  const _GameEntry(
-    title: 'Bingo Live',
-    subtitle: 'Coming soon',
-    image: 'assets/games/bingo-live.png',
-    color: MColors.live,
   ),
 ];
 
@@ -154,17 +114,15 @@ class _GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = PressableCard(
+    return PressableCard(
       padding: const EdgeInsets.all(8),
-      onTap: entry.comingSoon
-          ? null
-          : () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => entry.screen != null
-                    ? entry.screen!(session)
-                    : WebGameScreen(title: entry.title, url: entry.url!),
-              ),
-            ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => entry.screen != null
+              ? entry.screen!(session)
+              : WebGameScreen(title: entry.title, url: entry.url!),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -196,87 +154,25 @@ class _GameCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                if (entry.comingSoon)
-                  Text(
-                    entry.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: MColors.inkSoft,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )
-                else
-                  Row(
-                    children: [
-                      Text(
-                        'Play now',
-                        style: TextStyle(
-                          color: entry.color,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 3),
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 14,
+                Row(
+                  children: [
+                    Text(
+                      'Play now',
+                      style: TextStyle(
                         color: entry.color,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 3),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 14,
+                      color: entry.color,
+                    ),
+                  ],
+                ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!entry.comingSoon) return card;
-
-    return Stack(
-      children: [
-        ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(sigmaX: 2.6, sigmaY: 2.6),
-          child: card,
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-        const Positioned.fill(child: Center(child: _ComingSoonBadge())),
-      ],
-    );
-  }
-}
-
-class _ComingSoonBadge extends StatelessWidget {
-  const _ComingSoonBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: MColors.ink,
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_rounded, size: 13, color: Colors.white),
-          SizedBox(width: 6),
-          Text(
-            'Coming soon',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
             ),
           ),
         ],

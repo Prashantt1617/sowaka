@@ -205,7 +205,7 @@ class _GriefTopicScreenState extends State<GriefTopicScreen> {
             children: [
               const CareSectionTitle('Your counsellor', size: 22),
               const SizedBox(height: 4),
-              const CareCopy('Matched for you', size: 12.5),
+
               const SizedBox(height: 14),
               if (_loadingMatch)
                 const CareSpinner()
@@ -263,7 +263,7 @@ class _GriefTopicScreenState extends State<GriefTopicScreen> {
                 ),
               const SizedBox(height: 10),
               const CareMicro(
-                'A session is 50 minutes on video. You can share as much or as little as you feel ready to.',
+                'A session is 40 minutes on video. You can share as much or as little as you feel ready to.',
               ),
             ],
           ),

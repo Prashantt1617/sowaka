@@ -44,30 +44,45 @@ bool get _hasNativeGallery =>
 ///
 /// [allowedExtensions] applies to the Files branch only — the camera and the
 /// gallery hand back their own formats, which are images by construction.
+/// With [allowVideo] the sheet also offers recording a video and choosing
+/// one from the library, for surfaces that take a clip as well as a photo.
 /// Returns null when the person backs out at any step.
 Future<PickedImage?> pickImageFrom(
   BuildContext context, {
   List<String> allowedExtensions = const ['jpg', 'jpeg', 'png'],
+  bool allowVideo = false,
 }) async {
   if (!_hasNativeGallery) {
     return _pickFromFiles(allowedExtensions);
   }
 
-  final source = await _askSource(context);
+  final source = await _askSource(context, allowVideo: allowVideo);
   if (source == null) return null;
   if (source == _ImageSource.files) return _pickFromFiles(allowedExtensions);
 
   try {
-    final picked = await ImagePicker().pickImage(
-      source: source == _ImageSource.camera
-          ? ImageSource.camera
-          : ImageSource.gallery,
-      // Big enough for any surface the app shows a photo on, and small enough
-      // that a 12-megapixel phone capture does not become a 6 MB upload.
-      maxWidth: 2048,
-      maxHeight: 2048,
-      imageQuality: 90,
-    );
+    final picker = ImagePicker();
+    final picked = switch (source) {
+      _ImageSource.recordVideo || _ImageSource.galleryVideo =>
+        await picker.pickVideo(
+          source: source == _ImageSource.recordVideo
+              ? ImageSource.camera
+              : ImageSource.gallery,
+          // Long enough for a message to the team, short enough to upload.
+          maxDuration: const Duration(minutes: 5),
+        ),
+      _ => await picker.pickImage(
+        source: source == _ImageSource.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        // Big enough for any surface the app shows a photo on, and small
+        // enough that a 12-megapixel phone capture does not become a 6 MB
+        // upload.
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 90,
+      ),
+    };
     if (picked == null) return null;
     return PickedImage(
       path: picked.path,
@@ -75,7 +90,10 @@ Future<PickedImage?> pickImageFrom(
       size: await File(picked.path).length(),
       extension: picked.name.contains('.')
           ? picked.name.split('.').last.toLowerCase()
-          : 'jpg',
+          : (source == _ImageSource.recordVideo ||
+                    source == _ImageSource.galleryVideo
+                ? 'mp4'
+                : 'jpg'),
     );
   } on PlatformException catch (error) {
     // A denied camera or photo permission arrives here rather than as a crash.
@@ -180,9 +198,12 @@ Future<PickedImage?> _pickFromFiles(List<String> allowedExtensions) async {
   );
 }
 
-enum _ImageSource { camera, gallery, files }
+enum _ImageSource { camera, gallery, recordVideo, galleryVideo, files }
 
-Future<_ImageSource?> _askSource(BuildContext context) {
+Future<_ImageSource?> _askSource(
+  BuildContext context, {
+  bool allowVideo = false,
+}) {
   return showModalBottomSheet<_ImageSource>(
     context: context,
     backgroundColor: Colors.white,
@@ -214,6 +235,20 @@ Future<_ImageSource?> _askSource(BuildContext context) {
             label: 'Choose from gallery',
             onTap: () => Navigator.pop(sheetContext, _ImageSource.gallery),
           ),
+          if (allowVideo) ...[
+            _SourceTile(
+              icon: Icons.videocam_rounded,
+              label: 'Record a video',
+              onTap: () =>
+                  Navigator.pop(sheetContext, _ImageSource.recordVideo),
+            ),
+            _SourceTile(
+              icon: Icons.video_library_rounded,
+              label: 'Choose a video',
+              onTap: () =>
+                  Navigator.pop(sheetContext, _ImageSource.galleryVideo),
+            ),
+          ],
           _SourceTile(
             icon: Icons.folder_outlined,
             label: 'Browse files',

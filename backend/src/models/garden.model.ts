@@ -1,10 +1,12 @@
 /**
- * Gratitude Garden: one note is one flower or fruit on someone's tree.
+ * Gratitude Garden: one note is one flower on someone's tree.
  *
  * Every person in a company has a tree. A note is given by one person to
- * another (or to themselves), names a kind, and carries a few words. The
- * whole company reads it, on the receiver's tree and on the timeline. A
- * season is a calendar month; when it turns, the garden starts clean.
+ * another (or to themselves), names a flower, and carries a few words. The
+ * whole company reads it, on the receiver's tree and on the timeline. Fruit
+ * is never given: when a flower lands on someone else's tree, a fruit grows
+ * on the giver's own, at random. A season is a calendar month; when it
+ * turns, the garden starts clean.
  */
 export const FLOWER_KINDS = ['sunflower', 'hibiscus', 'tulip', 'blossom', 'daisy', 'lotus', 'rose'] as const;
 export const FRUIT_KINDS = ['apple', 'orange', 'strawberry', 'grapes', 'mango', 'lemon'] as const;
@@ -40,6 +42,11 @@ export interface GardenNote {
   createdAt: Date;
   /** Set when the receiver takes it off their tree. */
   removedAt?: Date;
+  /**
+   * On a fruit only: it grew on the giver's tree because of this flower they
+   * gave. Grown fruit counts toward nothing and never appears on the timeline.
+   */
+  grown?: { noteId: string; forUserId: string; kind: GardenKind };
 }
 
 /** How many a person may give in a day, in total. */

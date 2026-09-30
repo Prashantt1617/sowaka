@@ -287,6 +287,7 @@ class HelpHome {
     this.match,
     this.noMatch,
     this.upcoming,
+    this.awaitingReview,
     this.history = const [],
   });
 
@@ -296,6 +297,9 @@ class HelpHome {
   /// When the answers fit nobody: the closest, with what they do not meet.
   final HelpMatch? noMatch;
   final TalkSession? upcoming;
+
+  /// A session that finished recently and has not been spoken about yet.
+  final TalkSession? awaitingReview;
   final List<TalkSession> history;
 
   factory HelpHome.fromJson(Map<String, dynamic> json) => HelpHome(
@@ -311,6 +315,9 @@ class HelpHome {
         : null,
     upcoming: json['upcoming'] is Map<String, dynamic>
         ? TalkSession.fromJson(json['upcoming'] as Map<String, dynamic>)
+        : null,
+    awaitingReview: json['awaitingReview'] is Map<String, dynamic>
+        ? TalkSession.fromJson(json['awaitingReview'] as Map<String, dynamic>)
         : null,
     history: [
       for (final row in (json['history'] as List<dynamic>? ?? const []))

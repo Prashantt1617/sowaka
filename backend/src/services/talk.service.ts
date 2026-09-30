@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { companies, talkSessions, users } from '../config/db';
-import { TALK_BOOKING_HORIZON_DAYS, TalkSession } from '../models/talk.model';
+import {
+  SESSION_FEELINGS, SESSION_NOTE_MAX, SESSION_REVIEW_WINDOW_DAYS,
+  SessionFeeling, TALK_BOOKING_HORIZON_DAYS, TalkSession,
+} from '../models/talk.model';
 import { CounsellorProfile, User } from '../models/user.model';
 import { HELP_TOPICS } from '../models/help.model';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -54,13 +57,21 @@ export interface SlotView {
 
 export interface SessionView {
   id: string;
-  counsellor: { userId: string; name: string; headline: string; photoUrl?: string };
+  counsellor: {
+    userId: string; name: string; headline: string; photoUrl?: string;
+    /** The rest of the person, so a session can show the same card the list does. */
+    yearsExperience?: number | null; languages?: string[]; focusLabels?: string[];
+  };
   startsAt: string;
   endsAt: string;
   status: TalkSession['status'];
   joinUrl?: string;
   /** The link is a stand-in from a machine with no Zoom credentials. */
   placeholderLink: boolean;
+  /** What they said just before joining, once they have. */
+  checkIn?: { feeling: SessionFeeling; note?: string };
+  /** What they made of it afterwards, once they have said. */
+  review?: { rating: number; note?: string };
 }
 
 /** The person, provided their company shows Talk. */
@@ -261,6 +272,11 @@ async function toSessionView(session: TalkSession, counsellor: User | null): Pro
       name: counsellor?.name ?? 'Counsellor',
       headline: counsellor?.counsellor?.headline ?? counsellor?.designation ?? 'Counsellor',
       photoUrl: await resolveProfilePhoto(counsellor),
+      yearsExperience: counsellor?.counsellor?.yearsExperience ?? null,
+      languages: counsellor?.counsellor?.languages ?? [],
+      focusLabels: (counsellor?.counsellor?.focusAreas ?? []).map(
+        (id) => HELP_TOPICS.find((t) => t.id === id)?.label ?? id,
+      ),
     },
     startsAt: session.startsAt.toISOString(),
     endsAt: session.endsAt.toISOString(),
@@ -268,7 +284,81 @@ async function toSessionView(session: TalkSession, counsellor: User | null): Pro
     // The join link is the client's; the host link never leaves the server.
     joinUrl: status === 'cancelled' ? undefined : session.zoom?.joinUrl,
     placeholderLink: session.zoom?.placeholder === true,
+    ...(session.checkIn ? { checkIn: { feeling: session.checkIn.feeling, note: session.checkIn.note } } : {}),
+    ...(session.review ? { review: { rating: session.review.rating, note: session.review.note } } : {}),
   };
+}
+
+/**
+ * "How did you feel about the session?" answered afterwards: a rating out of
+ * five and, if they like, a few words. One per session; asked again it is
+ * replaced.
+ */
+export async function reviewSession(
+  viewerUserId: string,
+  sessionId: string,
+  input: { rating: unknown; note?: string },
+): Promise<SessionView> {
+  await requireTalkUser(viewerUserId);
+  const rating = Math.trunc(Number(input.rating));
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) throw new TalkError(400, 'Rate the session from one to five');
+  const note = (input.note ?? '').trim();
+  if (note.length > SESSION_NOTE_MAX) throw new TalkError(400, `Keep it under ${SESSION_NOTE_MAX} characters`);
+  const session = await talkSessions().findOne({ id: sessionId, clientUserId: viewerUserId });
+  if (!session) throw new TalkError(404, 'Session not found');
+  if (session.status === 'cancelled') throw new TalkError(409, 'That session was cancelled');
+  if (session.endsAt.getTime() > Date.now()) throw new TalkError(409, 'That session has not happened yet');
+  const review = { rating, ...(note ? { note } : {}), at: new Date() };
+  await talkSessions().updateOne({ id: session.id }, { $set: { review, updatedAt: new Date() } });
+  const counsellor = await users().findOne({ userId: session.counsellorUserId });
+  return toSessionView({ ...session, review }, counsellor);
+}
+
+/**
+ * The session that finished recently and has not been spoken about yet, if
+ * there is one. Older than the window, the question is dropped rather than
+ * kept asking.
+ */
+export async function sessionAwaitingReview(viewerUserId: string): Promise<SessionView | null> {
+  await requireTalkUser(viewerUserId);
+  const since = new Date(Date.now() - SESSION_REVIEW_WINDOW_DAYS * 86_400_000);
+  const session = await talkSessions().findOne(
+    {
+      clientUserId: viewerUserId,
+      status: { $ne: 'cancelled' },
+      review: { $exists: false },
+      endsAt: { $lte: new Date(), $gte: since },
+    },
+    { sort: { endsAt: -1 } },
+  );
+  if (!session) return null;
+  const counsellor = await users().findOne({ userId: session.counsellorUserId });
+  return toSessionView(session, counsellor);
+}
+
+/**
+ * "How are you feeling?" answered just before joining. One answer per
+ * session; asked again it is replaced. Only the person who booked may say,
+ * and only while the session is still to come or under way.
+ */
+export async function checkInSession(
+  viewerUserId: string,
+  sessionId: string,
+  input: { feeling: string; note?: string },
+): Promise<SessionView> {
+  await requireTalkUser(viewerUserId);
+  const feeling = input.feeling.trim() as SessionFeeling;
+  if (!(SESSION_FEELINGS as readonly string[]).includes(feeling)) throw new TalkError(400, 'Pick how you are feeling');
+  const note = (input.note ?? '').trim();
+  if (note.length > SESSION_NOTE_MAX) throw new TalkError(400, `Keep it under ${SESSION_NOTE_MAX} characters`);
+  const session = await talkSessions().findOne({ id: sessionId, clientUserId: viewerUserId });
+  if (!session) throw new TalkError(404, 'Session not found');
+  if (session.status !== 'booked') throw new TalkError(409, 'That session is not on');
+  if (session.endsAt.getTime() < Date.now()) throw new TalkError(409, 'That session has ended');
+  const checkIn = { feeling, ...(note ? { note } : {}), at: new Date() };
+  await talkSessions().updateOne({ id: session.id }, { $set: { checkIn, updatedAt: new Date() } });
+  const counsellor = await users().findOne({ userId: session.counsellorUserId });
+  return toSessionView({ ...session, checkIn }, counsellor);
 }
 
 export async function listMySessions(viewerUserId: string): Promise<{ upcoming: SessionView[]; past: SessionView[] }> {

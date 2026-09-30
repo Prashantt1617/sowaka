@@ -447,6 +447,12 @@ class CareSectionTitle extends StatelessWidget {
   );
 }
 
+/// True when the Care web pages are showing inside the app's own web view,
+/// which already draws a back row that returns to the app. The first page
+/// then draws none of its own, so there is one way back, not two, and it
+/// never leads to the web index the app has no use for.
+bool careEmbedded = false;
+
 /// A scrolling page on the Care background, with the in-page back link.
 class CarePage extends StatelessWidget {
   const CarePage({
@@ -467,6 +473,9 @@ class CarePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final back = backLabel;
+    // Inside the app's web view the app's bar is the way back from the first
+    // page; deeper pages still return to the one before.
+    final hideBack = careEmbedded && (ModalRoute.of(context)?.isFirst ?? false);
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
@@ -474,7 +483,7 @@ class CarePage extends StatelessWidget {
         child: ListView(
           padding: padding,
           children: [
-            if (back != null) ...[
+            if (back != null && !hideBack) ...[
               CareBackLink(
                 back,
                 onTap: onBack ?? () => Navigator.of(context).maybePop(),

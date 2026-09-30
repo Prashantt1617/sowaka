@@ -596,6 +596,19 @@ class _GiveFeedbackButton extends StatelessWidget {
   }
 }
 
+/// Whether the profile carries the working day: attendance, requests, the
+/// reporting line. True for every company that has any of the work tabs, and
+/// for one that was never given a list at all, so nobody loses what they had.
+bool profileShowsWork(List<String> enabledTabs) =>
+    enabledTabs.isEmpty ||
+    enabledTabs.contains('actions') ||
+    enabledTabs.contains('team') ||
+    enabledTabs.contains('grow');
+
+/// Whether the profile carries Help: the counsellor, why they were matched,
+/// and the sessions. A company with Help and no work tabs sees this instead.
+bool profileShowsHelp(List<String> enabledTabs) => enabledTabs.contains('talk');
+
 class _ProfileScreen extends StatefulWidget {
   const _ProfileScreen({
     required this.session,
@@ -690,6 +703,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final reportsTo = dashboard.hasManager
         ? (_nonEmpty(user.managerName) ?? _nonEmpty(dashboard.approverName))
         : null;
+    // What this company's app is for.
+    final tabs = user.enabledTabs;
+    final worksHere = profileShowsWork(tabs);
+    final helpHere = profileShowsHelp(tabs);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -857,70 +874,78 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 22),
-                      _AttendanceCard(
-                        date: today,
-                        present: todayRecord?.punchIn != null,
-                        punchIn: todayRecord?.punchIn,
-                        punchOut: todayRecord?.punchOut,
-                        onPunch: dashboard.shift.punchesFromApp
-                            ? (type) => _startProfilePunch(
-                                context,
-                                bloc,
-                                dashboard,
-                                type,
-                              )
-                            : null,
-                        autoPresent: dashboard.shift.markedPresentAutomatically,
-                        singlePunch: dashboard.shift.singlePunchDay,
-                      ),
-                      _MyRequestsSection(data: dashboard),
-                      const SizedBox(height: 18),
-                      const _SectionTitle(title: 'Profile'),
-                      const SizedBox(height: 8),
-                      _InfoCard(
-                        children: [
-                          _ProfileRow(
-                            iconAsset: 'assets/icons/profile_email.svg',
-                            label: 'Email',
-                            value: user.email,
-                          ),
-                          _ProfileRow(
-                            iconAsset: 'assets/icons/profile_joining_date.svg',
-                            label: 'Joined',
-                            value: _formatDate(user.joiningDate),
-                          ),
-                          _ProfileRow(
-                            icon: Icons.cake_outlined,
-                            label: 'Date of birth',
-                            value: _formatDate(user.birthday),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      const _SectionTitle(title: 'Work Role'),
-                      const SizedBox(height: 8),
-                      _InfoCard(
-                        children: [
-                          _ProfileRow(
-                            iconAsset: 'assets/icons/work_department.svg',
-                            label: 'Department / team',
-                            value: department,
-                          ),
-                          if (reportsTo case final name?)
-                            _ProfileRow(
-                              iconAsset: 'assets/icons/work_manager.svg',
-                              label: 'Reports to',
-                              value: name,
-                            ),
-                        ],
-                      ),
-                      if (dashboard.myOrgChart.length > 1) ...[
-                        const SizedBox(height: 22),
-                        const _SectionTitle(title: 'Org Chart'),
-                        const SizedBox(height: 8),
-                        _OrgChartCard(nodes: dashboard.myOrgChart),
+                      if (!worksHere && helpHere)
+                        HelpProfileSection(session: session),
+                      if (worksHere) ...[
+                        _AttendanceCard(
+                          date: today,
+                          present: todayRecord?.punchIn != null,
+                          punchIn: todayRecord?.punchIn,
+                          punchOut: todayRecord?.punchOut,
+                          onPunch: dashboard.shift.punchesFromApp
+                              ? (type) => _startProfilePunch(
+                                  context,
+                                  bloc,
+                                  dashboard,
+                                  type,
+                                )
+                              : null,
+                          autoPresent:
+                              dashboard.shift.markedPresentAutomatically,
+                          singlePunch: dashboard.shift.singlePunchDay,
+                        ),
+                        _MyRequestsSection(data: dashboard),
                       ],
                       const SizedBox(height: 18),
+                      if (worksHere) ...[
+                        const _SectionTitle(title: 'Profile'),
+                        const SizedBox(height: 8),
+                        _InfoCard(
+                          children: [
+                            _ProfileRow(
+                              iconAsset: 'assets/icons/profile_email.svg',
+                              label: 'Email',
+                              value: user.email,
+                            ),
+                            _ProfileRow(
+                              iconAsset:
+                                  'assets/icons/profile_joining_date.svg',
+                              label: 'Joined',
+                              value: _formatDate(user.joiningDate),
+                            ),
+                            _ProfileRow(
+                              icon: Icons.cake_outlined,
+                              label: 'Date of birth',
+                              value: _formatDate(user.birthday),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        const _SectionTitle(title: 'Work Role'),
+                        const SizedBox(height: 8),
+                        _InfoCard(
+                          children: [
+                            _ProfileRow(
+                              iconAsset: 'assets/icons/work_department.svg',
+                              label: 'Department / team',
+                              value: department,
+                            ),
+                            if (reportsTo case final name?)
+                              _ProfileRow(
+                                iconAsset: 'assets/icons/work_manager.svg',
+                                label: 'Reports to',
+                                value: name,
+                              ),
+                          ],
+                        ),
+                        if (dashboard.myOrgChart.length > 1) ...[
+                          const SizedBox(height: 22),
+                          const _SectionTitle(title: 'Org Chart'),
+                          const SizedBox(height: 8),
+                          _OrgChartCard(nodes: dashboard.myOrgChart),
+                        ],
+                        const SizedBox(height: 18),
+                      ],
                       _LogoutButton(onPressed: onLogout),
                       // Below the logout button and deliberately small: it is
                       // a footnote about this person's own account, not a

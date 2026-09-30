@@ -1,14 +1,22 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../talk/data/talk_api_service.dart';
+import '../../talk/data/talk_models.dart';
 import 'help_models.dart';
 
 /// Help, from the server: the intake, the match, a counsellor's profile.
 /// Booking goes through the Talk service it carries.
+/// Bumped whenever the person's counsellor changes, so every screen showing
+/// it reloads rather than holding the one it fetched. Help and the profile
+/// read the same match; without this, changing it on one left the other
+/// showing yesterday's answer until it was opened again.
+final helpMatchChanged = ValueNotifier<int>(0);
+
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
@@ -65,10 +73,13 @@ class HelpApiService {
     return raw is Map<String, dynamic> ? HelpIntake.fromJson(raw) : null;
   }
 
-  Future<HelpMatchResult> saveIntake(HelpIntake intake) async =>
-      HelpMatchResult.fromJson(
-        await _request('PUT', '/help/intake', body: intake.toJson()),
-      );
+  Future<HelpMatchResult> saveIntake(HelpIntake intake) async {
+    final result = HelpMatchResult.fromJson(
+      await _request('PUT', '/help/intake', body: intake.toJson()),
+    );
+    helpMatchChanged.value++;
+    return result;
+  }
 
   /// Accepts a counsellor although a preference goes unmet.
   Future<HelpMatch> acceptCounsellor(String counsellorId) async {
@@ -77,7 +88,37 @@ class HelpApiService {
       '/help/match',
       body: {'counsellorUserId': counsellorId},
     );
-    return HelpMatch.fromJson(json['match'] as Map<String, dynamic>);
+    final match = HelpMatch.fromJson(json['match'] as Map<String, dynamic>);
+    helpMatchChanged.value++;
+    return match;
+  }
+
+  /// "How did you feel about the session?", answered afterwards.
+  Future<TalkSession> review(
+    String sessionId, {
+    required int rating,
+    String note = '',
+  }) async {
+    final json = await _request(
+      'PUT',
+      '/talk/sessions/$sessionId/review',
+      body: {'rating': rating, 'note': note},
+    );
+    return TalkSession.fromJson(json['session'] as Map<String, dynamic>);
+  }
+
+  /// "How are you feeling?" just before joining a session.
+  Future<TalkSession> checkIn(
+    String sessionId, {
+    required String feeling,
+    String note = '',
+  }) async {
+    final json = await _request(
+      'PUT',
+      '/talk/sessions/$sessionId/check-in',
+      body: {'feeling': feeling, 'note': note},
+    );
+    return TalkSession.fromJson(json['session'] as Map<String, dynamic>);
   }
 
   Future<CounsellorDetail> counsellor(String counsellorId) async =>

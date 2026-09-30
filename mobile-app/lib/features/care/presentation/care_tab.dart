@@ -71,7 +71,9 @@ class _CareTabState extends State<CareTab> {
       _open(native);
       return;
     }
-    _open(CareWebScreen(title: title, url: '$base$path'));
+    // `embed=1`: the page hides its own back row, since this screen's bar
+    // is the way back to the app.
+    _open(CareWebScreen(title: title, url: '$base$path#embed=1'));
   }
 
   @override

@@ -35,6 +35,7 @@ import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
 import '../../manager_shell/presentation/tab_specs.dart';
+import '../../help/presentation/help_profile_section.dart';
 import '../../help/presentation/help_tab.dart';
 import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';

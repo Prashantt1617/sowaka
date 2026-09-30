@@ -14,8 +14,7 @@ import {
   counsellorRows,
   listMySessions,
   SessionView,
-  toCounsellorView,
-} from './talk.service';
+  toCounsellorView, sessionAwaitingReview } from './talk.service';
 
 /**
  * Help: a matched counsellor first, chosen from the person's own answers.
@@ -55,6 +54,8 @@ export interface HelpHomeView {
    */
   noMatch: { counsellor: CounsellorView; unmet: string[]; reasons: string[] } | null;
   upcoming: SessionView | null;
+  /** A session that finished recently and has not been spoken about yet. */
+  awaitingReview: SessionView | null;
   /** Sessions had, with anyone, newest first. */
   history: SessionView[];
 }
@@ -112,12 +113,16 @@ async function noMatchView(user: User, rows: MatchableCounsellor[]) {
 export async function helpHome(viewerUserId: string): Promise<HelpHomeView> {
   const user = await requireHelpUser(viewerUserId);
   const rows = await pool();
-  const sessions = await listMySessions(viewerUserId);
+  const [sessions, awaitingReview] = await Promise.all([
+    listMySessions(viewerUserId),
+    sessionAwaitingReview(viewerUserId),
+  ]);
   return {
     intakeDone: Boolean(user.helpIntake),
     match: await matchView(user, rows),
     noMatch: await noMatchView(user, rows),
     upcoming: sessions.upcoming[0] ?? null,
+    awaitingReview,
     history: sessions.past,
   };
 }

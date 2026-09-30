@@ -94,7 +94,30 @@ class TalkSession {
     this.counsellorPhotoUrl,
     this.joinUrl,
     this.placeholderLink = false,
+    this.checkIn,
+    this.review,
+    this.counsellorYears,
+    this.counsellorLanguages = const [],
+    this.counsellorFocusLabels = const [],
   });
+
+  /// The rest of the counsellor, so a session can show the same card the
+  /// list does.
+  final int? counsellorYears;
+  final List<String> counsellorLanguages;
+  final List<String> counsellorFocusLabels;
+
+  /// The counsellor as the list and the profile know them.
+  Counsellor get counsellor => Counsellor(
+    userId: counsellorId,
+    name: counsellorName,
+    headline: counsellorHeadline,
+    slotMinutes: endsAt.difference(startsAt).inMinutes,
+    photoUrl: counsellorPhotoUrl,
+    yearsExperience: counsellorYears,
+    languages: counsellorLanguages,
+    focusLabels: counsellorFocusLabels,
+  );
 
   final String id;
   final String counsellorId;
@@ -108,6 +131,30 @@ class TalkSession {
 
   /// The link is a stand-in from a server with no Zoom credentials.
   final bool placeholderLink;
+
+  /// How they said they felt just before joining, once they have.
+  final SessionCheckIn? checkIn;
+
+  /// What they made of it afterwards, once they have said.
+  final SessionReview? review;
+
+  TalkSession withCheckIn(SessionCheckIn? value) => TalkSession(
+    id: id,
+    counsellorId: counsellorId,
+    counsellorName: counsellorName,
+    counsellorHeadline: counsellorHeadline,
+    startsAt: startsAt,
+    endsAt: endsAt,
+    status: status,
+    counsellorPhotoUrl: counsellorPhotoUrl,
+    joinUrl: joinUrl,
+    placeholderLink: placeholderLink,
+    checkIn: value,
+    review: review,
+    counsellorYears: counsellorYears,
+    counsellorLanguages: counsellorLanguages,
+    counsellorFocusLabels: counsellorFocusLabels,
+  );
 
   String get counsellorInitial =>
       counsellorName.isEmpty ? '?' : counsellorName[0].toUpperCase();
@@ -130,8 +177,78 @@ class TalkSession {
       },
       joinUrl: json['joinUrl'] as String?,
       placeholderLink: json['placeholderLink'] == true,
+      checkIn: json['checkIn'] is Map<String, dynamic>
+          ? SessionCheckIn.fromJson(json['checkIn'] as Map<String, dynamic>)
+          : null,
+      review: json['review'] is Map<String, dynamic>
+          ? SessionReview.fromJson(json['review'] as Map<String, dynamic>)
+          : null,
+      counsellorYears: (counsellor['yearsExperience'] as num?)?.toInt(),
+      counsellorLanguages: [
+        for (final l in (counsellor['languages'] as List<dynamic>? ?? const [])) '$l',
+      ],
+      counsellorFocusLabels: [
+        for (final l in (counsellor['focusLabels'] as List<dynamic>? ?? const [])) '$l',
+      ],
     );
   }
+}
+
+/// The five answers to "how are you feeling?", asked just before joining.
+class SessionFeeling {
+  const SessionFeeling(this.key, this.label, this.face);
+
+  final String key;
+  final String label;
+  final String face;
+}
+
+const sessionFeelings = [
+  SessionFeeling('low', 'Low', '😔'),
+  SessionFeeling('anxious', 'Anxious', '😟'),
+  SessionFeeling('okay', 'Okay', '😐'),
+  SessionFeeling('hopeful', 'Hopeful', '🙂'),
+  SessionFeeling('good', 'Good', '😊'),
+];
+
+SessionFeeling feelingOf(String key) =>
+    sessionFeelings.firstWhere((f) => f.key == key, orElse: () => sessionFeelings[2]);
+
+class SessionCheckIn {
+  const SessionCheckIn({required this.feeling, this.note = ''});
+
+  final String feeling;
+  final String note;
+
+  factory SessionCheckIn.fromJson(Map<String, dynamic> json) => SessionCheckIn(
+    feeling: json['feeling'] as String? ?? 'okay',
+    note: json['note'] as String? ?? '',
+  );
+}
+
+/// What someone made of a session afterwards: one to five, and words if
+/// they had any.
+class SessionReview {
+  const SessionReview({required this.rating, this.note = ''});
+
+  final int rating;
+  final String note;
+
+  /// What each rating says, in the order the stars are tapped.
+  static const labels = [
+    'Not for me',
+    'Could be better',
+    'Okay',
+    'Really good',
+    'Exactly what I needed',
+  ];
+
+  String get label => rating >= 1 && rating <= 5 ? labels[rating - 1] : '';
+
+  factory SessionReview.fromJson(Map<String, dynamic> json) => SessionReview(
+    rating: (json['rating'] as num?)?.toInt() ?? 0,
+    note: json['note'] as String? ?? '',
+  );
 }
 
 class TalkSessions {

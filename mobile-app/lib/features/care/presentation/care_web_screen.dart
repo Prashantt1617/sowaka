@@ -55,11 +55,10 @@ class _CareWebScreenState extends State<CareWebScreen> {
     }
   }
 
-  Future<void> _back() async {
-    if (await _controller.canGoBack()) {
-      await _controller.goBack();
-      return;
-    }
+  /// Back on this bar returns to the app, always. The page keeps its own
+  /// back links for moving within itself, so stepping through the web
+  /// view's history here only made Care feel two pages deep.
+  void _back() {
     if (mounted) Navigator.of(context).pop();
   }
 

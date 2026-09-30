@@ -1,7 +1,8 @@
 /// Gratitude Garden: what the server sends, parsed once.
 ///
-/// Every person in the company has a tree. A note is a flower or a fruit
-/// someone put on it, with a few words. The whole company reads it.
+/// Every person in the company has a tree. A note is a flower someone put on
+/// it, with a few words; the whole company reads it. Fruit is never given:
+/// it grows on your own tree when a flower you gave lands on someone else's.
 class GardenKind {
   const GardenKind(this.key, this.name, this.meaning, {required this.isFlower});
 
@@ -118,7 +119,7 @@ class GardenView {
       ],
       trees: trees,
       givenToday: (json['givenToday'] as num?)?.toInt() ?? 0,
-      dailyLimit: (json['dailyLimit'] as num?)?.toInt() ?? 3,
+      dailyLimit: (json['dailyLimit'] as num?)?.toInt() ?? 5,
     );
   }
 }
@@ -136,6 +137,7 @@ class GardenNote {
     required this.removable,
     this.fromPhotoUrl,
     this.toPhotoUrl,
+    this.grown,
   });
 
   final String id;
@@ -151,6 +153,9 @@ class GardenNote {
 
   /// On the viewer's own tree, so they may take it off.
   final bool removable;
+
+  /// On a fruit only: the flower this grew from, and who it went to.
+  final GrownFrom? grown;
 
   GardenKind get kindInfo => kindOf(kind);
 
@@ -169,8 +174,45 @@ class GardenNote {
       toPhotoUrl: to['photoUrl'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
       removable: json['removable'] == true,
+      grown: json['grown'] is Map<String, dynamic>
+          ? GrownFrom.fromJson(json['grown'] as Map<String, dynamic>)
+          : null,
     );
   }
+}
+
+/// Why a fruit is on a tree: the flower its owner gave, and to whom.
+class GrownFrom {
+  const GrownFrom({required this.forUserId, required this.forName, required this.kind});
+
+  final String forUserId;
+  final String forName;
+  final String kind;
+
+  /// "Grew when you gave Rohan a Hibiscus".
+  String get line => 'Grew when you gave ${forName.split(' ').first} a ${kindOf(kind).name}';
+
+  factory GrownFrom.fromJson(Map<String, dynamic> json) => GrownFrom(
+    forUserId: json['forUserId'] as String? ?? '',
+    forName: json['forName'] as String? ?? 'Someone',
+    kind: json['kind'] as String? ?? 'hibiscus',
+  );
+}
+
+/// What comes back from giving: the flower, and the fruit that grew on the
+/// giver's tree when the flower went to someone else.
+class GardenGift {
+  const GardenGift({required this.note, this.grown});
+
+  final GardenNote note;
+  final GardenNote? grown;
+
+  factory GardenGift.fromJson(Map<String, dynamic> json) => GardenGift(
+    note: GardenNote.fromJson(json['note'] as Map<String, dynamic>),
+    grown: json['grown'] is Map<String, dynamic>
+        ? GardenNote.fromJson(json['grown'] as Map<String, dynamic>)
+        : null,
+  );
 }
 
 class TreeView {

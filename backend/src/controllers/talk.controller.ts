@@ -4,8 +4,7 @@ import {
   bookSession,
   listCounsellors,
   listMySessions,
-  TalkError,
-} from '../services/talk.service';
+  TalkError, checkInSession, reviewSession } from '../services/talk.service';
 
 function requireUserId(req: Request): string {
   if (!req.auth?.userId) throw new TalkError(401, 'Authentication required');
@@ -32,6 +31,30 @@ export async function availabilityHandler(req: Request, res: Response, next: Nex
 export async function listSessionsHandler(req: Request, res: Response, next: NextFunction) {
   try {
     res.json({ success: true, ...(await listMySessions(requireUserId(req))) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function reviewHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const session = await reviewSession(requireUserId(req), String(req.params.sessionId ?? ''), {
+      rating: req.body.rating,
+      note: typeof req.body.note === 'string' ? req.body.note : undefined,
+    });
+    res.json({ success: true, session });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function checkInHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const session = await checkInSession(requireUserId(req), String(req.params.sessionId ?? ''), {
+      feeling: String(req.body.feeling ?? ''),
+      note: typeof req.body.note === 'string' ? req.body.note : undefined,
+    });
+    res.json({ success: true, session });
   } catch (error) {
     next(error);
   }

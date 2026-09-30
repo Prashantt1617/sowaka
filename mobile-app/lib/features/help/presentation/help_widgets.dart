@@ -216,6 +216,58 @@ class FocusChips extends StatelessWidget {
 }
 
 /// 'Counsellor   Ananya Rao', one line of a summary.
+/// A counsellor as the list shows them: the person, two focus areas at
+/// most, and an arrow. The whole card opens their profile.
+class CounsellorListCard extends StatelessWidget {
+  const CounsellorListCard({
+    super.key,
+    required this.counsellor,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Counsellor counsellor;
+  final VoidCallback onTap;
+
+  /// Lines under the person and before the arrow row, when a page has more
+  /// to say on the same card.
+  final List<Widget>? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = counsellor;
+    return CareCard(
+      key: ValueKey('counsellor-${c.userId}'),
+      onTap: onTap,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CounsellorPerson(counsellor: c),
+          ...?trailing,
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: c.focusLabels.isEmpty
+                    ? const SizedBox.shrink()
+                    : CareCopy(c.focusLabels.take(2).join(' · '), size: 12.5),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: CareColors.blue,
+                size: 20,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SummaryLine extends StatelessWidget {
   const SummaryLine(this.label, this.value, {super.key});
 
@@ -354,6 +406,185 @@ class SessionRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A session that has happened: the same row, which opens on a tap to show
+/// how the person felt before it and what they made of it after.
+///
+/// Closed to start with, so a list of sessions reads as a list rather than a
+/// wall; the words are there for whoever wants them.
+class SessionHistoryRow extends StatefulWidget {
+  const SessionHistoryRow({
+    super.key,
+    required this.session,
+    required this.onOpen,
+    this.title,
+  });
+
+  final TalkSession session;
+
+  /// The session's own page, from the link inside.
+  final VoidCallback onOpen;
+  final String? title;
+
+  @override
+  State<SessionHistoryRow> createState() => _SessionHistoryRowState();
+}
+
+class _SessionHistoryRowState extends State<SessionHistoryRow> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = widget.session;
+    final checkIn = session.checkIn;
+    final review = session.review;
+    return Material(
+      color: CareColors.paper,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => setState(() => _open = !_open),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: CareColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title ?? session.counsellorName,
+                          style: const TextStyle(
+                            fontFamily: careFont,
+                            color: CareColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${talkDate(session.startsAt)} · ${talkTime(session.startsAt)} · Video call',
+                          style: const TextStyle(
+                            fontFamily: careFont,
+                            color: CareColors.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _open ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: CareColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+              if (_open) ...[
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _BeforeAfter(
+                        label: 'Before',
+                        value: checkIn == null
+                            ? ''
+                            : '${feelingOf(checkIn.feeling).face} ${feelingOf(checkIn.feeling).label}',
+                        note: checkIn?.note ?? '',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _BeforeAfter(
+                        label: 'After',
+                        value: review == null
+                            ? ''
+                            : '${'★' * review.rating}${'☆' * (5 - review.rating)}',
+                        note: review?.note ?? '',
+                        gold: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                CareLink('Open session', size: 12.5, onTap: widget.onOpen),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BeforeAfter extends StatelessWidget {
+  const _BeforeAfter({
+    required this.label,
+    required this.value,
+    required this.note,
+    this.gold = false,
+  });
+
+  final String label;
+  final String value;
+  final String note;
+  final bool gold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: CareColors.bg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CareEyebrow(label),
+          const SizedBox(height: 4),
+          Text(
+            value.isEmpty ? 'Not answered' : value,
+            style: TextStyle(
+              fontFamily: careFont,
+              color: value.isEmpty
+                  ? CareColors.muted
+                  : gold
+                  ? const Color(0xFFE0A526)
+                  : CareColors.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: gold ? 1 : 0,
+            ),
+          ),
+          if (note.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              '“$note”',
+              style: const TextStyle(
+                fontFamily: careFont,
+                color: CareColors.muted,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
