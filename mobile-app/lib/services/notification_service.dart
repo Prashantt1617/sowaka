@@ -113,6 +113,30 @@ class AppNotificationService {
     await requestPermission();
   }
 
+  /// Signing out: the device stops standing for this account, so pushes for
+  /// it no longer land here once someone else signs in, or nobody does.
+  /// Best effort — a phone offline still signs out.
+  Future<void> detachSession() async {
+    final session = _session;
+    _session = null;
+    if (session == null) return;
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/notifications/devices'),
+        headers: {
+          'Authorization': 'Bearer ${session.token}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'token': token}),
+      );
+      debugPrint('FCM device token unregistered (${response.statusCode})');
+    } catch (error) {
+      debugPrint('FCM device token unregister failed: $error');
+    }
+  }
+
   Future<void> _registerCurrentToken() async {
     if (_session == null) return;
     try {

@@ -15,6 +15,7 @@ import '../../../routes/app_routes.dart';
 import '../../../services/api_config.dart';
 import '../../manager_shell/presentation/tablet_shell.dart';
 import '../../../services/linkified_text.dart';
+import '../../auth/data/auth_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../connect/data/connect_models.dart';
@@ -103,8 +104,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (_ownsBloc) _bloc.add(const LoadManagerDashboard());
     AppNotificationService.instance.attachSession(widget.session);
     // Onboarding has just taken two screens of their time; the punch screen
-    // holds until the next launch, and after that it never opens by itself
-    // again.
+    // holds until the next launch. It opens by itself once a working day, on
+    // the first launch of the day, for people on a geotagged shift.
     if (widget.justOnboarded) {
       unawaited(const StartupPrefs().markPunchPromptShown());
     } else {
@@ -142,19 +143,20 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (mounted) setState(() {});
   }
 
-  /// Whether the punch screen is still owed a showing on this device.
+  /// Whether the punch screen has already had today's showing on this device.
   ///
-  /// It gets exactly one, ever: the first launch after onboarding. Read once
-  /// here so the build method never waits on storage.
+  /// It gets one a day: the first launch of a working day. Read once here so
+  /// the build method never waits on storage.
   bool _punchPromptUsed = true;
 
   /// Whether to open the day on the punch screen.
   ///
-  /// Only for people who punch from the app, only before the day's first
-  /// punch, and never on a day nobody was due to work — opening a week-off on
-  /// "Ready to start your day?" is the app misreading its own policy.
+  /// Only for people on a geotagged shift, only before the day's first punch,
+  /// and never on a day nobody was due to work — the week-offs HR set on the
+  /// shift and the company holidays. Opening a week-off on "Ready to start
+  /// your day?" is the app misreading its own policy.
   bool _shouldOfferPunch(ManagerDashboard dashboard) {
-    if (!dashboard.shift.punchesFromApp) return false;
+    if (!dashboard.shift.punchIsGeofenced) return false;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     if (dashboard.shift.isWeekOff(today)) return false;
@@ -217,7 +219,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   /// Where the app opens, and where back returns to.
   ///
-  /// Connect, unless the punch screen has had its one showing and the day
+  /// Connect, unless the punch screen has had today's showing and the day
   /// still has no punch — then Quick Actions, where the punch card is.
   ManagerTab get _defaultTab {
     final dashboard = _bloc.state.dashboard;
@@ -423,6 +425,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
       ),
     );
     if (confirmed != true) return;
+    // The server forgets the session and the device before the phone does,
+    // so the token dies now and pushes for this account stop landing here.
+    // Bounded, and never in the way: offline, the phone still signs out.
+    final token = _session.token;
+    await Future.wait<void>([
+      AuthApiService().logout(token).catchError((_) {}),
+      AppNotificationService.instance.detachSession(),
+    ]).timeout(const Duration(seconds: 5), onTimeout: () => []);
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(
