@@ -1,11 +1,6 @@
 import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
-import {
-  sendFeedbackDueReminders,
-  sendFeedbackOverdueReminders,
-  sendLeavePlanningReport,
-  sendMissedFeedbackSummaries,
-  sendWeeklyAttendanceReport,
-} from './notification-digests.service';
+import { sendLeavePlanningReport, sendWeeklyAttendanceReport } from './notification-digests.service';
+import { runFeedbackCycleMessages } from './feedback-cycle-scheduler.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -47,9 +42,8 @@ export function startNotificationScheduler() {
         if (istHour === 9) {
           await run('sendTodayLifecycleNotifications', sendTodayLifecycleNotifications);
           await run('sendPendingLeaveReminders', sendPendingLeaveReminders);
-          if (daysLeftInMonth === 2) await run('sendFeedbackDueReminders', sendFeedbackDueReminders);
-          if (daysLeftInMonth === 0) await run('sendFeedbackOverdueReminders', sendFeedbackOverdueReminders);
-          if (istDay === 1) await run('sendMissedFeedbackSummaries', sendMissedFeedbackSummaries);
+          // Two messages a cycle, to managers only, on the org's own cycle dates.
+          await run('runFeedbackCycleMessages', () => runFeedbackCycleMessages());
           if (weekday === 'Mon') await run('sendWeeklyAttendanceReport', sendWeeklyAttendanceReport);
         }
         if (istHour === 16 && weekday === 'Fri') await run('sendLeavePlanningReport', sendLeavePlanningReport);

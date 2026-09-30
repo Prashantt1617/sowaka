@@ -1,4 +1,4 @@
-import { attendanceRecords, feedbackRecords, leaves, users } from '../config/db';
+import { attendanceRecords, leaves, users } from '../config/db';
 import { env } from '../config/env';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -26,21 +26,6 @@ import { notifyUsers } from './notification.service';
 
 const link = () => env.appWebUrl;
 
-/** `YYYY-MM` for the month containing `date`. */
-function period(date: Date): string {
-  return date.toISOString().slice(0, 7);
-}
-
-function monthLabel(value: string): string {
-  const [year, month] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, 1))
-    .toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
-
-function dayLabel(date: Date): string {
-  return date.toLocaleString('en-US', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-}
-
 /** Managers paired with their active direct reports; managers with none are skipped. */
 async function managersWithReports(): Promise<Map<string, { manager: User; reports: User[] }>> {
   const active = await users()
@@ -56,78 +41,6 @@ async function managersWithReports(): Promise<Map<string, { manager: User; repor
     grouped.set(manager.userId, entry);
   }
   return grouped;
-}
-
-/** Reports with no `sent` feedback for `forPeriod`, keyed by manager. */
-async function pendingFeedback(forPeriod: string) {
-  const grouped = await managersWithReports();
-  const sent = await feedbackRecords()
-    .find({ period: forPeriod, status: 'sent' })
-    .toArray();
-  const sentPairs = new Set(sent.map((record) => `${record.managerUserId}:${record.employeeUserId}`));
-  return [...grouped.values()]
-    .map(({ manager, reports }) => ({
-      manager,
-      reports: reports.filter((report) => !sentPairs.has(`${manager.userId}:${report.userId}`)),
-    }))
-    .filter((entry) => entry.reports.length > 0);
-}
-
-/** #13 — two days before month end. Manager and employee get separate copy. */
-export async function sendFeedbackDueReminders(now = new Date()): Promise<void> {
-  const current = period(now);
-  const due = endOfMonth(now);
-  const day = dayLabel(due);
-  for (const { manager, reports } of await pendingFeedback(current)) {
-    for (const report of reports) {
-      await notifyUsers([manager.userId], {
-        scenario: 'feedback_due', title: 'Feedback due in 2 days',
-        body: `Only 2 days left to send ${report.name}'s feedback — it closes ${day}.`,
-        data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-      });
-      await notifyUsers([report.userId], {
-        scenario: 'feedback_due', title: 'Feedback in 2 days',
-        body: `${manager.name} reviews you on ${day} — 2 days away. Worth thinking about the month.`,
-        data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-      });
-    }
-  }
-}
-
-/** #14 — final day of the month, the last chance before the record is Missed. */
-export async function sendFeedbackOverdueReminders(now = new Date()): Promise<void> {
-  const current = period(now);
-  const month = monthLabel(current);
-  const end = dayLabel(endOfMonth(now));
-  for (const { manager, reports } of await pendingFeedback(current)) {
-    for (const report of reports) {
-      await notifyUsers([manager.userId], {
-        scenario: 'feedback_overdue', title: 'Feedback overdue',
-        body: `Feedback for ${report.name} is overdue - send it before month end.`,
-        data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-      });
-      await notifyUsers([report.userId], {
-        scenario: 'feedback_overdue', title: 'Feedback pending',
-        body: `Your ${month} feedback from ${manager.name} is pending.`,
-        data: { destination: 'grow_feedback', employeeUserId: report.userId, period: current },
-      });
-    }
-  }
-}
-
-/** #15 — 1st of the month: one summary per manager for the month just ended. */
-export async function sendMissedFeedbackSummaries(now = new Date()): Promise<void> {
-  const closed = period(previousMonth(now));
-  const month = monthLabel(closed);
-  const next = monthLabel(period(now));
-  for (const { manager, reports } of await pendingFeedback(closed)) {
-    const names = reports.map((report) => report.name);
-    await notifyUsers([manager.userId], {
-      scenario: 'feedback_missed', title: 'Missed feedback',
-      body: `You missed ${names.length} feedback session${names.length === 1 ? '' : 's'} in ${month}: ${names.join(', ')}`,
-      data: { destination: 'grow_feedback', period: closed },
-    });
-  }
 }
 
 /**
@@ -211,13 +124,7 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function endOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
-}
 
-function previousMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1));
-}
 
 function monthsBack(date: Date, months: number): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - months, 1));
