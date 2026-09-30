@@ -153,37 +153,73 @@ async function completeLogin(user: User): Promise<AuthUser> {
 }
 
 /**
- * Colleagues shown on the post-login welcome screen. Scoped to the viewer's org
- * and projected deliberately: a full user document carries the profile photo,
- * and this runs right after sign-in.
+ * The people shown on the post-login welcome screen: your own team, not the
+ * whole company. The same idea of a team as the manager workspace: your
+ * manager heading it, whoever reports to your manager and works in your
+ * department, and your own reports if you have any. Someone with none of
+ * those sees their department instead, and with no department either the
+ * screen simply has no team section.
+ *
+ * Projected deliberately: a full user document carries the profile photo, and
+ * this runs right after sign-in.
  */
 export async function getTeammates(viewerUserId: string, limit = 12) {
   const viewer = await users().findOne(
     { userId: viewerUserId },
-    { projection: { _id: 0, org: 1, email: 1 } },
+    { projection: { _id: 0, org: 1, email: 1, managerUserId: 1, department: 1 } },
   );
   if (!viewer) return { teammates: [], total: 0 };
   const org = viewer.org ?? viewer.email.split('@').at(1) ?? 'default';
-  const filter: Filter<User> = {
+  const projection = {
+    _id: 0, userId: 1, name: 1, designation: 1, department: 1,
+    role: 1, profilePhotoKey: 1, profilePhotoUrl: 1, managerUserId: 1,
+  };
+  const inOrg: Filter<User> = {
     userId: { $ne: viewerUserId },
     lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
     $or: [{ org }, { email: { $regex: `@${org}$` } }],
   };
-  const [rows, total] = await Promise.all([
-    users()
-      .find(filter, {
-        projection: {
-          _id: 0, userId: 1, name: 1, designation: 1, department: 1,
-          role: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
-        },
-      })
+  const department = viewer.department ?? '';
+
+  const related = await users()
+    .find(
+      {
+        ...inOrg,
+        $and: [
+          {
+            $or: [
+              ...(viewer.managerUserId
+                ? [{ userId: viewer.managerUserId }, { managerUserId: viewer.managerUserId }]
+                : []),
+              { managerUserId: viewerUserId },
+            ],
+          },
+        ],
+      },
+      { projection },
+    )
+    .sort({ name: 1 })
+    .toArray();
+  const manager = related.find((row) => row.userId === viewer.managerUserId);
+  const team = [
+    ...(manager ? [manager] : []),
+    ...related.filter(
+      (row) =>
+        row.userId !== viewer.managerUserId &&
+        (row.managerUserId === viewerUserId || (row.department ?? '') === department),
+    ),
+  ];
+
+  let rows = team;
+  if (rows.length === 0 && department.length > 0) {
+    rows = await users()
+      .find({ ...inOrg, department }, { projection })
       .sort({ name: 1 })
-      .limit(limit)
-      .toArray(),
-    users().countDocuments(filter),
-  ]);
+      .toArray();
+  }
+  const total = rows.length;
   const teammates = await Promise.all(
-    rows.map(async (row) => ({
+    rows.slice(0, limit).map(async (row) => ({
       userId: row.userId,
       name: row.name,
       designation: row.designation ?? row.role ?? 'Teammate',
