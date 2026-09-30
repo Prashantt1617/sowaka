@@ -2,20 +2,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// What this device remembers between launches about how the app should open.
 ///
-/// The punch screen used to appear on every cold start of a day with no
-/// punch, which is right for the one day someone forgets and wrong for the
-/// person who has already decided not to punch from the phone. It now gets
-/// exactly one showing, after which a missing punch changes only where the
-/// app opens — Quick Actions, with the punch card in reach.
+/// Someone on a geotagged shift opens onto the punch screen the first time
+/// they open the app on a working day, and only that once: after it, a
+/// missing punch changes only where the app opens — Quick Actions, with the
+/// punch card in reach. The showing is remembered by date, so tomorrow gets
+/// its own.
 class StartupPrefs {
   const StartupPrefs();
 
-  static const _punchPromptKey = 'startup.punchPromptShown';
+  static const _punchPromptDateKey = 'startup.punchPromptDate';
 
-  Future<bool> punchPromptShown() async {
+  static String _key(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  /// Whether the punch screen has already had today's showing.
+  Future<bool> punchPromptShown({DateTime? today}) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      return preferences.getBool(_punchPromptKey) ?? false;
+      return preferences.getString(_punchPromptDateKey) ==
+          _key(today ?? DateTime.now());
     } catch (_) {
       // Unreadable storage shows the prompt again rather than never: missing a
       // punch costs someone a correction request.
@@ -23,10 +28,13 @@ class StartupPrefs {
     }
   }
 
-  Future<void> markPunchPromptShown() async {
+  Future<void> markPunchPromptShown({DateTime? today}) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setBool(_punchPromptKey, true);
+      await preferences.setString(
+        _punchPromptDateKey,
+        _key(today ?? DateTime.now()),
+      );
     } catch (_) {
       // Then it shows once more next launch, which is the harmless direction.
     }

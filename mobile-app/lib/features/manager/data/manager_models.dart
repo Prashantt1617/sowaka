@@ -1,4 +1,34 @@
-enum ManagerTab { manage, grow, connect, games, quick }
+/// The tabs the app can show. The order is the IndexedStack's order in the
+/// shell, so new tabs go on the end; which of them a person sees, and in what
+/// order, comes from [visibleTabs].
+enum ManagerTab { manage, grow, connect, games, quick, care, talk }
+
+/// The keys a company's tab list uses, as the server sends them.
+const Map<String, ManagerTab> _tabByKey = {
+  'connect': ManagerTab.connect,
+  'team': ManagerTab.manage,
+  'grow': ManagerTab.grow,
+  'actions': ManagerTab.quick,
+  'games': ManagerTab.games,
+  'care': ManagerTab.care,
+  'talk': ManagerTab.talk,
+};
+
+/// What a company gets when it has never been given a list.
+const List<String> defaultTabKeys = ['connect', 'team', 'grow', 'actions'];
+
+/// The bottom bar, in order, for a company's key list. Unknown keys are
+/// skipped so an older app survives a newer server; an empty or entirely
+/// unknown list falls back to the four the app has always had.
+List<ManagerTab> visibleTabs(List<String> keys) {
+  final tabs = <ManagerTab>[];
+  for (final key in keys) {
+    final tab = _tabByKey[key.trim().toLowerCase()];
+    if (tab != null && !tabs.contains(tab)) tabs.add(tab);
+  }
+  if (tabs.isNotEmpty) return tabs;
+  return [for (final key in defaultTabKeys) _tabByKey[key]!];
+}
 
 enum ManagerView { home, feedbackList }
 
@@ -465,6 +495,7 @@ class LeaveRequest {
   const LeaveRequest({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -485,6 +516,9 @@ class LeaveRequest {
 
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -531,6 +565,7 @@ class LeaveRequest {
           employee['department'] as String? ??
           employee['designation'] as String? ??
           'Team',
+      photoUrl: employee['photoUrl'] as String?,
       type: '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
@@ -558,6 +593,7 @@ class LeaveRequest {
     return LeaveRequest(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -637,6 +673,7 @@ class OvertimeRequest {
   const OvertimeRequest({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -655,6 +692,9 @@ class OvertimeRequest {
 
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -697,6 +737,7 @@ class OvertimeRequest {
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
+      photoUrl: employee['photoUrl'] as String?,
       team: employee['department'] as String? ?? 'Team',
       workDate: DateTime.parse(json['workDate'] as String),
       startTime:
@@ -725,6 +766,7 @@ class OvertimeRequest {
     return OvertimeRequest(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -747,6 +789,7 @@ class ReimbursementClaim {
   const ReimbursementClaim({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.who,
     required this.initial,
     required this.avatarIndex,
@@ -765,6 +808,9 @@ class ReimbursementClaim {
 
   final String id;
   final String userId;
+
+  /// The claimant's own photo, when they have set one.
+  final String? photoUrl;
   final String who;
   final String initial;
   final int avatarIndex;
@@ -804,6 +850,7 @@ class ReimbursementClaim {
       who: name,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       avatarIndex: name.hashCode.abs() % 7,
+      photoUrl: employee['photoUrl'] as String?,
       team: employee['department'] as String? ?? 'Team',
       category: category.isEmpty
           ? 'Other'
@@ -831,6 +878,7 @@ class ReimbursementClaim {
     return ReimbursementClaim(
       id: id,
       userId: userId,
+      photoUrl: photoUrl,
       who: who,
       initial: initial,
       avatarIndex: avatarIndex,
@@ -1672,6 +1720,7 @@ class AttendanceRegularization {
   const AttendanceRegularization({
     required this.id,
     this.userId = '',
+    this.photoUrl,
     required this.workDate,
     required this.note,
     required this.status,
@@ -1687,6 +1736,9 @@ class AttendanceRegularization {
   });
   final String id;
   final String userId;
+
+  /// The requester's own photo, when they have set one.
+  final String? photoUrl;
   final DateTime workDate;
   final String note;
   final String status;
@@ -1737,6 +1789,8 @@ class AttendanceRegularization {
     team:
         (json['employee'] as Map<String, dynamic>?)?['department'] as String? ??
         'Team',
+    photoUrl:
+        (json['employee'] as Map<String, dynamic>?)?['photoUrl'] as String?,
     createdAt:
         DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),

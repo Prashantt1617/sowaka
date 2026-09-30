@@ -148,6 +148,32 @@ export async function sendNotificationEmail(
 }
 
 /**
+ * A one-off mail whose caller needs to know it was actually handed to SMTP,
+ * because it will act on that (the Care digest clears what it mailed). Same
+ * allowlist as every other mail. Never throws; false means not sent.
+ */
+export async function sendPlainEmail(email: string, subject: string, body: string): Promise<boolean> {
+  if (!(await isAllowedRecipient(email))) return false;
+  if (!transporter) {
+    logger.warn('SMTP is not configured; email not sent', { recipient: maskEmail(email), subject });
+    return false;
+  }
+  try {
+    await transporter.sendMail({
+      from: env.zohoSmtp.from,
+      to: email,
+      subject,
+      text: body,
+      html: bodyToHtml(body),
+    });
+    return true;
+  } catch (error) {
+    logger.error('Email delivery failed', { recipient: maskEmail(email), subject }, error);
+    return false;
+  }
+}
+
+/**
  * Renders the plain-text body as HTML: blank lines separate paragraphs, and a
  * line that is nothing but a URL becomes a link.
  */

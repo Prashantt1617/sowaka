@@ -2120,8 +2120,11 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
     });
     final firstName = _bodyString(widget.post, 'personName').split(' ').first;
     final yearWord = years == 1 ? 'year' : 'years';
+    // The card names the company; the wish should too, not Sowaka's.
+    final company = _bodyString(widget.post, 'companyName');
     widget.onCommentPrefill(
-      'Congratulations on $years $yearWord with Sowaka, $firstName! 🎉',
+      'Congratulations on $years $yearWord with '
+      '${company.isEmpty ? 'us' : company}, $firstName! 🎉',
     );
   }
 
@@ -2217,15 +2220,16 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // The popper lives in the label, like the birthday card's
+                  // cake; an icon beside it showed two.
                   _ActionButton(
                     label: done
-                        ? _bodyString(post, 'actionDoneLabel')
+                        ? (_bodyString(post, 'actionDoneLabel').isEmpty
+                              ? '🎉 Congratulations sent!'
+                              : _bodyString(post, 'actionDoneLabel'))
                         : (actionLabel.isEmpty
                               ? '🎉 Congratulations'
                               : actionLabel),
-                    icon: done
-                        ? Icons.check_rounded
-                        : Icons.celebration_rounded,
                     onTap: () => _congratulate(years),
                   ),
                 ],
@@ -2329,6 +2333,7 @@ class _KudosBody extends StatelessWidget {
                             initials: _bodyString(post, 'personInitials'),
                             color: _ConnectColors.teal,
                             size: 56,
+                            photoUrl: _bodyString(post, 'photoUrl'),
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -2933,7 +2938,7 @@ class _ChallengeClosedNote extends StatelessWidget {
         border: Border.all(color: _CaptionColors.border, width: 1.114),
       ),
       child: const Text(
-        'This challenge has closed. You can still like and comment.',
+        'This challenge has closed.',
         textAlign: TextAlign.center,
         style: TextStyle(
           fontFamily: _soraFont,
@@ -3732,9 +3737,15 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
   Future<void> _submit() async {
     final text = _caption.text.trim();
     final submit = widget.onSubmitCaption;
-    if (text.isEmpty || submit == null || _busy) return;
-    if (_needsPhoto && _photoPath == null) {
-      showAppToast(context, 'Add the photo you caught');
+    if (submit == null || _busy) return;
+    if (_needsPhoto) {
+      // The picture is the entry here; a story under it is welcome, not
+      // required.
+      if (_photoPath == null) {
+        showAppToast(context, 'Add the photo you caught');
+        return;
+      }
+    } else if (text.isEmpty) {
       return;
     }
     setState(() => _busy = true);
@@ -3990,22 +4001,30 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '"${entry.text}"',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: _soraFont,
-              fontSize: 14,
-              height: 16.2 / 14,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.16,
-              color: _CaptionColors.ink,
+          // A photo entry may come without a story. The line goes rather than
+          // standing there as an empty pair of quote marks.
+          if (entry.text.trim().isNotEmpty) ...[
+            Text(
+              '"${entry.text}"',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 14,
+                height: 16.2 / 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: _CaptionColors.ink,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 1, thickness: 1, color: _CaptionColors.border),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: _CaptionColors.border,
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               Container(
@@ -4281,7 +4300,9 @@ class _CaptionChallengeBodyState extends State<_CaptionChallengeBody> {
                 contentPadding: EdgeInsets.zero,
                 filled: false,
                 hintText: _needsPhoto
-                    ? (empty ? 'Be the first one to catch' : 'Your story...')
+                    ? (empty
+                          ? 'Be the first one to catch'
+                          : 'Your story (optional)...')
                     : (empty
                           ? 'Be the first one to caption'
                           : 'Your caption...'),
@@ -7127,6 +7148,13 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       ConnectPostType.kudos => {
         'personName': _person.text,
         'personInitials': _initials(_person.text),
+        // Who they are, not just what they are called: the server reads their
+        // photo from this, so the card wears their face and keeps wearing the
+        // current one after they change it.
+        'personUserId': widget.recognitionCandidates
+            .where((teammate) => teammate.name == _person.text.trim())
+            .map((teammate) => teammate.userId)
+            .firstWhere((id) => id.isNotEmpty, orElse: () => ''),
         'text': _text.text,
       },
       ConnectPostType.survey => {
@@ -7829,6 +7857,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   Widget _buildCommentRow(ConnectComment comment) {
     final gradient = _gradientFor(comment.id);
+    final photo = comment.photoUrl ?? '';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -7836,6 +7865,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           width: 40,
           height: 40,
           alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
@@ -7844,14 +7874,31 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               colors: gradient,
             ),
           ),
-          child: Text(
-            _initials(comment.name),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          // Their own face under the post where they have one; the initials
+          // stand in while it loads and if it fails.
+          child: photo.isEmpty
+              ? Text(
+                  _initials(comment.name),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : Image(
+                  image: _remoteImage(photo),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Text(
+                    _initials(comment.name),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
         ),
         const SizedBox(width: 12),
         Expanded(

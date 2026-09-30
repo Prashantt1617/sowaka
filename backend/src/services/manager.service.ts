@@ -18,7 +18,6 @@ import { currentPeriodFor, cycleInfoFor } from './cycle';
 import { shiftPolicyFor } from './shift.service';
 import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
-import { notifyFeedbackSubmitted } from './feedback-notifications.service';
 import {
   presignConnectMedia,
   resolveProfilePhoto,
@@ -654,12 +653,8 @@ export async function upsertFeedback(
     },
     { upsert: true, returnDocument: 'after' },
   );
-  if (effectiveStatus === 'sent' && existing?.status !== 'sent') {
-    // Notifies both sides: the manager gets their progress for the cycle, the
-    // employee gets the review. Only on the first send — re-editing a sent
-    // review should not re-announce it.
-    await notifyFeedbackSubmitted(managerUserId, employeeUserId, period, now);
-  }
+  // No message on submit: managers hear about the cycle twice, at its open
+  // and five days before it closes, with their done-versus-pending count.
   return record;
 }
 

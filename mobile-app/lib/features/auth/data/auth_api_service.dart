@@ -59,6 +59,21 @@ class AuthApiService {
     );
   }
 
+  /// Ends the session on the server too, so the token stops working now
+  /// rather than at expiry.
+  Future<void> logout(String token) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/auth/logout'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthApiException(
+        'Could not end the session',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   Future<AuthUser> fetchCurrentUser(String token) async {
     final uri = Uri.parse('$_baseUrl/auth/me');
     final response = await _client.get(

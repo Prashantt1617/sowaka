@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { companies, connectPosts, gameScores, users } from '../config/db';
+import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -124,7 +124,15 @@ export async function getConnectFeed(
   // author later uploads. Resolve the live photo for everyone shown in this
   // page in one query rather than trusting the stale snapshot.
   const authorIds = [
-    ...new Set(posts.map((post) => post.author.userId).filter((id): id is string => Boolean(id))),
+    ...new Set(
+      posts
+        .flatMap((post) => [
+          post.author.userId,
+          // Whoever commented, so their face shows under the post too.
+          ...post.comments.map((comment) => comment.userId),
+        ])
+        .filter((id): id is string => Boolean(id)),
+    ),
   ];
   const authors = await users()
     .find({ userId: { $in: authorIds } })
@@ -143,9 +151,33 @@ export async function getConnectFeed(
     ),
   );
 
+  const relayStatuses = await relayStatusesFor(posts);
   return Promise.all(
-    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds)),
+    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses)),
   );
+}
+
+/**
+ * Where each game post's event stands, in one query for the page. The post is
+ * written once, at publish, so on its own it cannot say the game has ended;
+ * without this the card guesses "live" from the start time until the
+ * player's own card arrives and it flips to "game over".
+ */
+async function relayStatusesFor(posts: ConnectPost[]): Promise<Map<string, string>> {
+  const eventIds = [
+    ...new Set(
+      posts
+        .filter((post) => post.type === 'relay_game')
+        .map((post) => post.body.eventId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  if (eventIds.length === 0) return new Map();
+  const events = await relayEvents()
+    .find({ id: { $in: eventIds } })
+    .project<{ id: string; status: string }>({ _id: 0, id: 1, status: 1 })
+    .toArray();
+  return new Map(events.map((event) => [event.id, event.status]));
 }
 
 /**
@@ -334,11 +366,13 @@ export async function addCaptionEntry(
 
   const limit = Number(post.body.captionLimit ?? 140);
   const text = textInput.trim().slice(0, limit);
-  if (!text) throw new ConnectError(400, 'Write your entry first');
-  // A photo-story entry is the picture plus the story — one without the other
-  // is not an entry, and the card has nowhere to show it.
-  if (post.type === 'photo_story_challenge' && !photo) {
-    throw new ConnectError(400, 'Add the photo you caught');
+  // A photo-story entry is the picture; the story under it is optional, and
+  // a good photo needs no caption. A caption challenge is words only, so
+  // there the text is the entry and is still required.
+  if (post.type === 'photo_story_challenge') {
+    if (!photo) throw new ConnectError(400, 'Add the photo you caught');
+  } else if (!text) {
+    throw new ConnectError(400, 'Write your entry first');
   }
   if (photo && !photo.contentType.startsWith('image/')) {
     throw new ConnectError(400, 'Entries must be a photo');
@@ -831,11 +865,43 @@ async function requireEditablePost(viewerUserId: string, postId: string) {
   return { post, viewer };
 }
 
+/**
+ * Each commenter's photo. The feed passes the map it already built for the
+ * page; a single post looks up only the faces it is missing.
+ */
+async function commentPhotoUrls(
+  comments: { userId: string }[],
+  known?: Map<string, string | undefined>,
+): Promise<Map<string, string | undefined>> {
+  const resolved = new Map<string, string | undefined>();
+  const missing: string[] = [];
+  for (const comment of comments) {
+    if (!comment.userId || resolved.has(comment.userId)) continue;
+    if (known?.has(comment.userId)) {
+      resolved.set(comment.userId, known.get(comment.userId));
+    } else if (!missing.includes(comment.userId)) {
+      missing.push(comment.userId);
+    }
+  }
+  if (missing.length === 0) return resolved;
+  const rows = await users()
+    .find({ userId: { $in: missing } })
+    .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      userId: 1,
+      profilePhotoKey: 1,
+      profilePhotoUrl: 1,
+    })
+    .toArray();
+  for (const row of rows) resolved.set(row.userId, await resolveProfilePhoto(row));
+  return resolved;
+}
+
 async function viewPost(
   post: ConnectPost,
   viewerUserId: string,
   authorPhotoUrls?: Map<string, string | undefined>,
   knownBlockedUserIds?: string[],
+  relayStatuses?: Map<string, string>,
 ) {
   // The feed resolves this once for the whole page; every other caller renders
   // a single post after a write and looks it up here.
@@ -864,10 +930,28 @@ async function viewPost(
   if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
     body.photoUrl = await presignConnectMedia(body.photoKey).catch(() => undefined);
   }
+  // Kudos name the person they are about; their face is read now rather than
+  // stored, so it follows whatever photo they have today.
+  if (typeof body.personUserId === 'string' && body.personUserId.length > 0) {
+    const person = await users().findOne(
+      { userId: body.personUserId },
+      { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+    );
+    body.photoUrl = (await resolveProfilePhoto(person)) ?? body.photoUrl;
+  }
   // Tags store ids only, so a tagged person's name and photo are always
   // current rather than frozen at the moment the post was written.
   if (Array.isArray(body.taggedUserIds) && body.taggedUserIds.length > 0) {
     body.taggedPeople = await resolveTaggedPeople(body.taggedUserIds as string[]);
+  }
+  // A game post carries its event's current status, so the feed card shows
+  // the right state on first paint rather than after its own fetch.
+  if (post.type === 'relay_game' && typeof body.eventId === 'string') {
+    const status = relayStatuses
+      ? relayStatuses.get(body.eventId)
+      : (await relayEvents().findOne({ id: body.eventId }, { projection: { _id: 0, status: 1 } }))
+          ?.status;
+    if (status) body.status = status;
   }
   const objectKeys = mediaObjectKeys(body);
   if (objectKeys.length > 0) {
@@ -1013,18 +1097,19 @@ async function viewPost(
       .filter((comment) => blockedUserIds.includes(comment.userId))
       .map((comment) => comment.id),
   );
-  const comments = post.comments
-    .filter(
-      (comment) =>
-        !hiddenCommentIds.has(comment.id) &&
-        !(comment.parentId && hiddenCommentIds.has(comment.parentId)),
-    )
-    .map((comment) => ({
-      ...comment,
-      likedBy: comment.likedBy ?? [],
-      likeCount: (comment.likedBy ?? []).length,
-      liked: (comment.likedBy ?? []).includes(viewerUserId),
-    }));
+  const visibleComments = post.comments.filter(
+    (comment) =>
+      !hiddenCommentIds.has(comment.id) &&
+      !(comment.parentId && hiddenCommentIds.has(comment.parentId)),
+  );
+  const commenterPhotos = await commentPhotoUrls(visibleComments, authorPhotoUrls);
+  const comments = visibleComments.map((comment) => ({
+    ...comment,
+    photoUrl: commenterPhotos.get(comment.userId),
+    likedBy: comment.likedBy ?? [],
+    likeCount: (comment.likedBy ?? []).length,
+    liked: (comment.likedBy ?? []).includes(viewerUserId),
+  }));
   return {
     ...post,
     author: { ...post.author, photoUrl: authorPhotoUrl },
@@ -1231,6 +1316,9 @@ function normalizePostBody(
         text: normalizeText(input.text, '', 700),
         personName: normalizeText(input.personName, 'Teammate', 80),
         personInitials: normalizeText(input.personInitials, 'T', 4),
+        // Who was recognised, so the card can wear their own face. Their photo
+        // is read per view rather than frozen here, as it is for tags.
+        personUserId: normalizeText(input.personUserId, '', 64),
       };
     case 'survey':
       return {

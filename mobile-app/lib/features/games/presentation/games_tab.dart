@@ -7,6 +7,7 @@ class _GameEntry {
     required this.image,
     required this.color,
     this.url,
+    this.screen,
   });
 
   final String title;
@@ -22,44 +23,51 @@ class _GameEntry {
   /// tile as "coming soon" — it renders blurred and is not tappable.
   final String? url;
 
-  bool get comingSoon => url == null;
+  /// A game built into the app rather than hosted: what to open.
+  final Widget Function(AuthSession session)? screen;
+
+  bool get comingSoon => url == null && screen == null;
 }
 
-const List<_GameEntry> _gamesCatalog = [
+final List<_GameEntry> _gamesCatalog = [
   _GameEntry(
+    title: 'Gratitude Garden',
+    subtitle: 'Grow each other\'s trees',
+    image: 'assets/games/gratitude-garden.jpg',
+    color: MColors.sageDeep,
+    screen: (session) => GardenScreen(session: session),
+  ),
+  const _GameEntry(
     title: 'Scribble',
-    subtitle: 'Draw it, guess it',
+    subtitle: 'Coming soon',
     image: 'assets/games/scribble.jpg',
     color: MColors.terra,
-    url: 'https://game-2-w8ur.onrender.com/',
   ),
-  _GameEntry(
+  const _GameEntry(
     title: 'Find your Mate',
-    subtitle: 'Match your teammates',
+    subtitle: 'Coming soon',
     image: 'assets/games/find-your-mate.jpg',
     color: MColors.plum,
-    url: 'https://game1-h13e.onrender.com/',
   ),
-  _GameEntry(
+  const _GameEntry(
     title: 'Know your Nation',
-    subtitle: 'Independence trivia',
+    subtitle: 'Coming soon',
     image: 'assets/games/know-your-nation.jpg',
     color: MColors.teal,
-    url: 'https://independence-trivia-next.vercel.app/play',
   ),
-  _GameEntry(
+  const _GameEntry(
     title: 'Step Challenge',
     subtitle: 'Coming soon',
     image: 'assets/games/step-challenge.png',
     color: MColors.gold,
   ),
-  _GameEntry(
+  const _GameEntry(
     title: 'Fitness Challenge',
     subtitle: 'Coming soon',
     image: 'assets/games/fitness-challenge.png',
     color: MColors.sage,
   ),
-  _GameEntry(
+  const _GameEntry(
     title: 'Bingo Live',
     subtitle: 'Coming soon',
     image: 'assets/games/bingo-live.png',
@@ -128,7 +136,7 @@ class _GamesTab extends StatelessWidget {
                     childAspectRatio: 0.82,
                   ),
               children: _gamesCatalog
-                  .map((entry) => _GameCard(entry: entry))
+                  .map((entry) => _GameCard(entry: entry, session: session))
                   .toList(),
             ),
           ),
@@ -139,9 +147,10 @@ class _GamesTab extends StatelessWidget {
 }
 
 class _GameCard extends StatelessWidget {
-  const _GameCard({required this.entry});
+  const _GameCard({required this.entry, required this.session});
 
   final _GameEntry entry;
+  final AuthSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -151,8 +160,9 @@ class _GameCard extends StatelessWidget {
           ? null
           : () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) =>
-                    WebGameScreen(title: entry.title, url: entry.url!),
+                builder: (_) => entry.screen != null
+                    ? entry.screen!(session)
+                    : WebGameScreen(title: entry.title, url: entry.url!),
               ),
             ),
       child: Column(

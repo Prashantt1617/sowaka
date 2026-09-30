@@ -12,6 +12,7 @@ import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from 
 import { orgUsers } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
   notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
 } from './request-notifications.service';
@@ -168,10 +169,14 @@ export async function recordPunch(
         : 'short';
     await notifyPunchedOut(userId, now, worked, band);
   }
+  // The same shape as a row of `mine`, since the app swaps the day's row for
+  // this: leaving out the day type would blank a regularised day until refresh.
   return {
+    id: updated?._id?.toHexString(),
     workDate,
     punchIn: updated?.punchIn?.toISOString(),
     punchOut: updated?.punchOut?.toISOString(),
+    dayType: updated?.dayType,
     office: location?.officeName,
   };
 }
@@ -691,17 +696,33 @@ async function enrichRegularizations(values: AttendanceRegularization[]) {
   const userIds = [...new Set(values.map((value) => value.userId))];
   const employeeIds = [...new Set(values.map((value) => value.employeeId))];
   const [employeeRows, punchRows] = await Promise.all([
-    users().find({ userId: { $in: userIds } }).project({ userId: 1, name: 1, department: 1 }).toArray(),
+    users()
+      .find({ userId: { $in: userIds } })
+      // The photo fields come too, or the row resolves a face it never read.
+      .project({ userId: 1, name: 1, department: 1, profilePhotoKey: 1, profilePhotoUrl: 1 })
+      .toArray(),
     attendanceRecords().find({ employeeId: { $in: employeeIds } }).toArray(),
   ]);
   const employeeById = new Map(employeeRows.map((value) => [value.userId, value]));
   const punchByKey = new Map(punchRows.map((value) => [`${value.employeeId}|${value.workDate}`, value]));
+  const photoByUser = new Map(
+    await Promise.all(
+      employeeRows.map(
+        async (row) => [row.userId, await resolveProfilePhoto(row)] as [string, string | undefined],
+      ),
+    ),
+  );
   return values.map((value) => {
     const employee = employeeById.get(value.userId);
     const punch = punchByKey.get(`${value.employeeId}|${value.workDate}`);
     return {
       ...toRegularizationView(value),
-      employee: { name: employee?.name ?? 'Employee', department: employee?.department ?? 'Team' },
+      employee: {
+        name: employee?.name ?? 'Employee',
+        department: employee?.department ?? 'Team',
+        // Their own face on the request card, where they have set one.
+        photoUrl: photoByUser.get(value.userId),
+      },
       // What the device actually recorded, so the manager can compare it with
       // the requested times carried by the request itself.
       punchIn: punch?.punchIn?.toISOString(),

@@ -18,6 +18,7 @@ class AuthUser {
     this.joiningDate,
     this.birthday,
     this.recognition,
+    this.enabledTabs = const [],
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -49,6 +50,10 @@ class AuthUser {
               json['recognition'] as Map<String, dynamic>,
             )
           : null,
+      enabledTabs: [
+        for (final value in (json['enabledTabs'] as List<dynamic>? ?? const []))
+          '$value',
+      ],
     );
   }
 
@@ -75,6 +80,11 @@ class AuthUser {
   final String? birthday;
   final UserRecognition? recognition;
 
+  /// Which tabs this person's company shows, by key, in the order the bottom
+  /// bar draws them. Empty means the company was never given a list, and the
+  /// app falls back to the four it has always had.
+  final List<String> enabledTabs;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -94,6 +104,7 @@ class AuthUser {
     'joiningDate': joiningDate,
     'birthday': birthday,
     'recognition': recognition?.toJson(),
+    'enabledTabs': enabledTabs,
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -115,6 +126,7 @@ class AuthUser {
     joiningDate: joiningDate,
     birthday: birthday,
     recognition: recognition,
+    enabledTabs: enabledTabs,
   );
 }
 

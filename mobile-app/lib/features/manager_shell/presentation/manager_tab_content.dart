@@ -89,6 +89,33 @@ class _TabContent extends StatelessWidget {
             size: 30,
           ),
         ),
+        // Still in ManagerTab order: care, then talk. Whether either is in the
+        // bar is the company's call; the stack simply has them ready.
+        CareTab(
+          key: const ValueKey('care-tab'),
+          session: session,
+          onOpenHelp: () => bloc.add(const ChangeManagerTab(ManagerTab.talk)),
+          onNotifications: () => _openNotifications(context),
+          profileAction: _ProfileAvatarAction(
+            key: const ValueKey('care-profile-avatar'),
+            initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
+            onTap: onOpenProfile,
+            size: 30,
+          ),
+        ),
+        HelpTab(
+          key: const ValueKey('help-tab'),
+          session: session,
+          onNotifications: () => _openNotifications(context),
+          profileAction: _ProfileAvatarAction(
+            key: const ValueKey('talk-profile-avatar'),
+            initial: state.dashboard!.managerInitial,
+            photoUrl: state.dashboard!.managerPhotoUrl,
+            onTap: onOpenProfile,
+            size: 30,
+          ),
+        ),
       ],
     );
   }

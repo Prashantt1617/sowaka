@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../shared/org_branding.dart';
 
+/// The brand's own colour, which "sowaka" is set in on the launch screen.
+const _splashInk = Color(0xFFB23500);
+
 /// Brand splash (node 1887:27413 → 1887:27433).
 ///
 /// Wears whichever company's mark this device last signed in to, so a Convrse
@@ -66,9 +69,10 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: widget.branding.light
-          ? Colors.white
-          : const Color(0xFF0571A6),
+      // One launch screen for every company: white, with "powered by sowaka"
+      // and nothing else. A company's own mark belongs inside the app, not on
+      // the way in.
+      backgroundColor: Colors.white,
       body: Center(
         child: AnimatedBuilder(
           animation: _controller,
@@ -99,38 +103,27 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// The brand's mark: Sowaka's wordmark in Anton, or — where a company has
-/// its own logo — that logo in its place (Figma 2759:41310).
+/// The brand's mark: Sowaka's wordmark in Anton. A company's own logo used to
+/// stand here and no longer does.
 class _Mark extends StatelessWidget {
   const _Mark({required this.branding});
 
   final OrgBranding branding;
 
-  /// The company logo's width on the splash. The design sets it against the
-  /// tagline under it, not against the screen, so it is a fixed size rather
-  /// than a fraction of the width.
-  static const _logoWidth = 200.0;
-
   @override
   Widget build(BuildContext context) {
-    final logo = branding.logoAsset;
-    if (logo != null) {
-      return Padding(
-        // The wordmark's own 23pt of leading, so what follows sits where it
-        // does on Sowaka's splash.
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Image.asset(logo, width: _logoWidth, fit: BoxFit.contain),
-      );
-    }
-    return Text(
-      branding.wordmark,
-      style: const TextStyle(
+    // A company's logo no longer opens the app; the screen carries the line
+    // under it instead. Sowaka's own wordmark still leads its own splash.
+    if (!branding.isSowaka) return const SizedBox.shrink();
+    return const Text(
+      'sowaka',
+      style: TextStyle(
         fontFamily: 'Anton',
         fontSize: 45,
         // The design's own line box: 68pt for a 45pt wordmark, which is the
         // whole gap down to the tagline.
         height: 68 / 45,
-        color: Colors.white,
+        color: _splashInk,
         letterSpacing: 0.5,
       ),
     );
@@ -151,49 +144,40 @@ class _Tagline extends StatelessWidget {
       return Text(
         branding.tagline,
         style: const TextStyle(
-          color: Colors.white,
+          color: Color(0xFF484848),
           fontSize: 13,
           height: 19.5 / 13,
           fontWeight: FontWeight.w400,
         ),
       );
     }
-    final color = branding.light
-        ? const Color(0xFF484848)
-        : Colors.white.withValues(alpha: 0.68);
-    final poweredBy = branding.poweredByLogoAsset;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           branding.tagline,
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: color,
+          style: const TextStyle(
+            color: Color(0xFF484848),
             fontWeight: FontWeight.w600,
             fontSize: 14,
             height: 19.5 / 14,
           ),
         ),
         const SizedBox(height: 6),
-        if (poweredBy != null)
-          Image.asset(poweredBy, width: 120, fit: BoxFit.contain)
-        else
-          Text(
-            'sowaka',
-            textAlign: TextAlign.center,
-            // The design's type spec — Anton 400, 100% line height, no tracking
-            // — set well under the company's logo rather than level with it:
-            // whose app this is comes first, who powers it second.
-            style: TextStyle(
-              fontFamily: 'Anton',
-              fontWeight: FontWeight.w400,
-              color: color,
-              fontSize: 30,
-              height: 1,
-              letterSpacing: 0,
-            ),
+        const Text(
+          'sowaka',
+          textAlign: TextAlign.center,
+          // The design's type spec — Anton 400, 100% line height, no tracking.
+          style: TextStyle(
+            fontFamily: 'Anton',
+            fontWeight: FontWeight.w400,
+            color: _splashInk,
+            fontSize: 30,
+            height: 1,
+            letterSpacing: 0,
           ),
+        ),
       ],
     );
   }

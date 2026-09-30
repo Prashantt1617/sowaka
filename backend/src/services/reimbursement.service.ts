@@ -9,6 +9,7 @@ import {
   uploadReimbursementReceipt,
 } from './s3-receipt.service';
 import { orgUsers } from './admin-scope';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 import { resolveTypeForClaim } from './reimbursement-type.service';
 
 const decisions = new Set<ReimbursementStatus>(['approved', 'declined', 'paid']);
@@ -225,6 +226,8 @@ async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: U
     employee: {
       name: employee.name,
       department: employee.department ?? employee.designation ?? 'Team',
+      // The manager's inbox card shows a face, as leave and overtime do.
+      photoUrl: await resolveProfilePhoto(employee),
     },
     expenseDate: claim.expenseDate.toISOString().slice(0, 10),
     amount: claim.amount,

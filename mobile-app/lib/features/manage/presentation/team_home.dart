@@ -207,12 +207,16 @@ class _MyTeamViewState extends State<_MyTeamView> {
   List<TeamMember> _coreOthers(List<TeamMember> members) =>
       _coreTeam(members).where((member) => !member.isSelf).toList();
 
-  /// "My Team" is just who you report to, not your peers too: your manager
-  /// and you (node 2488:91055).
+  /// "My Team": your manager heading it, then you, then the people who report
+  /// to the same manager in your department. The server already narrows the
+  /// peers to your department; anyone you lead belongs under Direct Reports.
   List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
     if (members.where((member) => member.isManager).firstOrNull case final m?)
       m,
     if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
+    ...members.where(
+      (member) => !member.isManager && !member.isSelf && !member.reportsToViewer,
+    ),
   ];
 
   /// A team's name above its people.
@@ -783,6 +787,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: leave.initial,
                 avatarIndex: leave.avatarIndex,
+                photoUrl: leave.photoUrl,
                 name: leave.who,
                 role: leave.team,
                 rows: [
@@ -830,6 +835,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: request.initial,
                 avatarIndex: request.avatarIndex,
+                photoUrl: request.photoUrl,
                 name: request.who,
                 role: request.team,
                 rows: [
@@ -884,6 +890,7 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 ),
                 initial: request.initial,
                 avatarIndex: request.avatarIndex,
+                photoUrl: request.photoUrl,
                 name: request.who,
                 role: request.team,
                 rows: [
@@ -1141,6 +1148,7 @@ class _TeamRequestCard extends StatelessWidget {
     this.onViewDetails,
     required this.initial,
     required this.avatarIndex,
+    this.photoUrl,
     required this.name,
     required this.role,
     required this.rows,
@@ -1154,6 +1162,9 @@ class _TeamRequestCard extends StatelessWidget {
 
   final String initial;
   final int avatarIndex;
+
+  /// The requester's own photo. Their initial stands in when there is none.
+  final String? photoUrl;
   final String name;
   final String role;
   final List<(String label, String value)> rows;
@@ -1196,7 +1207,12 @@ class _TeamRequestCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              AvatarBadge(initial: initial, index: avatarIndex, size: 35),
+              AvatarBadge(
+                initial: initial,
+                index: avatarIndex,
+                size: 35,
+                photoUrl: photoUrl,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(

@@ -24,6 +24,8 @@ class _BottomTabs extends StatelessWidget {
     // On a tablet the rail down the left is the navigation, and a second copy
     // along the bottom would be two answers to the same question.
     if (isTabletLayout(context)) return const SizedBox.shrink();
+    // Which tabs, and in what order, is the company's call, sent at sign-in.
+    final tabs = visibleTabs(bloc.session.user.enabledTabs);
     // Per node 638:14376. SafeArea sits *inside* the white container so the
     // home-indicator inset stays white instead of exposing the page behind it.
     return Container(
@@ -43,50 +45,20 @@ class _BottomTabs extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 9, 16, 8),
           child: Row(
-            spacing: 14,
+            // Six tabs need the room four never did.
+            spacing: tabs.length > 4 ? 4 : 14,
             children: [
-              _TabButton(
-                label: 'Connect',
-                iconAsset: 'assets/icons/nav_connect.svg',
-                activeIconAsset: 'assets/icons/nav_connect_active.svg',
-                selected: state.tab == ManagerTab.connect,
-                onTap: () {
-                  onBeforeChange?.call();
-                  bloc.add(const ChangeManagerTab(ManagerTab.connect));
-                },
-              ),
-              // Team is visible to everyone; individual contributors get the
-              // same list read-only, without the requests segment.
-              _TabButton(
-                label: 'Team',
-                iconAsset: 'assets/icons/nav_team.svg',
-                activeIconAsset: 'assets/icons/nav_team_active.svg',
-                selected: state.tab == ManagerTab.manage,
-                onTap: () {
-                  onBeforeChange?.call();
-                  bloc.add(const ChangeManagerTab(ManagerTab.manage));
-                },
-              ),
-              _TabButton(
-                label: 'Grow',
-                iconAsset: 'assets/icons/nav_grow.svg',
-                activeIconAsset: 'assets/icons/nav_grow_active.svg',
-                selected: state.tab == ManagerTab.grow,
-                onTap: () {
-                  onBeforeChange?.call();
-                  bloc.add(const ChangeManagerTab(ManagerTab.grow));
-                },
-              ),
-              _TabButton(
-                label: 'Actions',
-                iconAsset: 'assets/icons/nav_actions.svg',
-                activeIconAsset: 'assets/icons/nav_actions_active.svg',
-                selected: state.tab == ManagerTab.quick,
-                onTap: () {
-                  onBeforeChange?.call();
-                  bloc.add(const ChangeManagerTab(ManagerTab.quick));
-                },
-              ),
+              for (final tab in tabs)
+                _TabButton(
+                  label: tabSpecFor(tab).label,
+                  iconAsset: tabSpecFor(tab).iconAsset,
+                  activeIconAsset: tabSpecFor(tab).activeIconAsset,
+                  selected: state.tab == tab,
+                  onTap: () {
+                    onBeforeChange?.call();
+                    bloc.add(ChangeManagerTab(tab));
+                  },
+                ),
             ],
           ),
         ),

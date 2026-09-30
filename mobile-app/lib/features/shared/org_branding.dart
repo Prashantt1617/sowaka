@@ -60,9 +60,8 @@ class OrgBranding {
     'convrse': OrgBranding(
       org: 'convrse',
       wordmark: 'convrse.ai',
-      // The design's own line, with its typo ("You company's") corrected.
-      // The splash sets "sowaka" under it in the brand's own type.
-      tagline: 'Your company’s app is powered by',
+      // One line, with "sowaka" set under it in the brand's own type.
+      tagline: 'Your app is powered by',
       logoAsset: 'assets/images/convrse_splash_logo.png',
       iosIconName: 'AppIconConvrse',
       homeLogoAsset: 'assets/images/convrse_logo.png',
@@ -70,13 +69,23 @@ class OrgBranding {
     'acmt': OrgBranding(
       org: 'acmt',
       wordmark: 'ACMT',
-      tagline: 'Your company’s app is powered by',
+      tagline: 'Your app is powered by',
       // The crest is drawn for a white ground, so the splash goes light and
       // "sowaka" is set in dark type under "powered by".
       logoAsset: 'assets/images/acmt_logo.png',
       light: true,
       homeLogoAsset: 'assets/images/acmt_logo.png',
       iosIconName: 'AppIconAcmt',
+    ),
+    'toyota': OrgBranding(
+      org: 'toyota',
+      wordmark: 'Toyota',
+      tagline: 'Your app is powered by',
+      // The wordmark with the emblem beside it, drawn for a white ground.
+      logoAsset: 'assets/images/toyota_logo.png',
+      light: true,
+      homeLogoAsset: 'assets/images/toyota_logo.png',
+      iosIconName: 'AppIconToyota',
     ),
   };
 

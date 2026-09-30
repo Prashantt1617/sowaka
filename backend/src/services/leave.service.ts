@@ -6,6 +6,7 @@ import { orgUsers } from './admin-scope';
 import { notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
 import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
   approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor,
   managerMayDecide, weekOffGridFor,
@@ -26,6 +27,8 @@ export interface LeaveView {
     email: string;
     department?: string;
     designation?: string;
+    /** Their own face on the request card, where they have set one. */
+    photoUrl?: string;
   };
   type: Leave['type'];
   startDate: string;
@@ -503,12 +506,27 @@ function round(value: number): number {
 export async function getManagerLeaveInbox(managerUserId: string): Promise<LeaveView[]> {
   const reports = await users()
     .find({ managerUserId })
-    .project<Pick<User, 'userId' | 'name' | 'email' | 'department' | 'designation'>>({
+    .project<
+      Pick<
+        User,
+        | 'userId'
+        | 'name'
+        | 'email'
+        | 'department'
+        | 'designation'
+        | 'profilePhotoKey'
+        | 'profilePhotoUrl'
+      >
+    >({
       userId: 1,
       name: 1,
       email: 1,
       department: 1,
       designation: 1,
+      // Their face on the request card; without these the row comes back
+      // without a photo however well the view resolves one.
+      profilePhotoKey: 1,
+      profilePhotoUrl: 1,
     })
     .toArray();
 
@@ -761,6 +779,7 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Pr
       email: employee.email,
       department: employee.department,
       designation: employee.designation,
+      photoUrl: await resolveProfilePhoto(employee),
     },
     type: leave.type,
     startDate: leave.startDate.toISOString().slice(0, 10),

@@ -17,6 +17,10 @@ import { payslipRouter } from './payslip.routes';
 import { kpiRouter } from './kpi.routes';
 import { relayRouter } from './relay.routes';
 import { relayPlayerRouter } from './relay-player.routes';
+import { talkRouter } from './talk.routes';
+import { gardenRouter } from './garden.routes';
+import { helpRouter } from './help.routes';
+import { careRouter } from './care.routes';
 
 export const router = Router();
 
@@ -40,3 +44,7 @@ router.use('/admin/payroll', payrollRouter);
 router.use('/admin/kpi', kpiRouter);
 router.use('/admin/relay', relayRouter);
 router.use('/relay', relayPlayerRouter);
+router.use('/talk', talkRouter);
+router.use('/garden', gardenRouter);
+router.use('/help', helpRouter);
+router.use('/care', careRouter);

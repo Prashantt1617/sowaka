@@ -7,6 +7,7 @@ import { getCompanyConfig } from './company-settings.service';
 import type { OvertimeDuration } from '../models/shift.model';
 import { fullDayHoursFor, policyForUser } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 
 const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
@@ -100,7 +101,7 @@ export async function createOvertimeRequest(
     duration: labelOf(duration),
     reason: note ?? '',
   });
-  return toView({ ...request, _id: result.insertedId }, employee, await fullDayHoursFor(userId));
+  return await toView({ ...request, _id: result.insertedId }, employee, await fullDayHoursFor(userId));
 }
 
 export async function getMyOvertimeRequests(userId: string) {
@@ -108,7 +109,7 @@ export async function getMyOvertimeRequests(userId: string) {
   if (!employee) throw new OvertimeError(404, 'Employee not found');
   const requests = await overtimeRequests().find({ userId }).sort({ createdAt: -1 }).toArray();
   const fullDayHours = await fullDayHoursFor(userId);
-  return requests.map((request) => toView(request, employee, fullDayHours));
+  return await Promise.all(requests.map((request) => toView(request, employee, fullDayHours)));
 }
 
 export async function getManagerOvertimeInbox(managerUserId: string) {
@@ -122,10 +123,12 @@ export async function getManagerOvertimeInbox(managerUserId: string) {
     .toArray();
   const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
   const hoursByUser = await fullDayHoursByUser(employeeIds);
-  return requests.flatMap((request) => {
-    const employee = employeeById.get(request.userId);
-    return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
-  });
+  return await Promise.all(
+    requests.flatMap((request) => {
+      const employee = employeeById.get(request.userId);
+      return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
+    }),
+  );
 }
 
 export async function decideOvertime(
@@ -179,7 +182,7 @@ export async function decideOvertime(
     approved: decision === 'approved',
     comment: managerNote ?? '',
   });
-  return toView(updated, employee, await fullDayHoursFor(request.userId));
+  return await toView(updated, employee, await fullDayHoursFor(request.userId));
 }
 
 /** "Full day" or "Half day", for the notification copy. */
@@ -202,10 +205,12 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
     .sort({ status: -1, createdAt: -1 })
     .toArray();
   const hoursByUser = await fullDayHoursByUser(requests.map((request) => request.userId));
-  return requests.flatMap((request) => {
-    const employee = employeeById.get(request.userId);
-    return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
-  });
+  return await Promise.all(
+    requests.flatMap((request) => {
+      const employee = employeeById.get(request.userId);
+      return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
+    }),
+  );
 }
 
 /** Dashboard override for overtime — decidedByRole 'admin', no self-override (rule 8). */
@@ -257,7 +262,7 @@ export async function adminDecideOvertime(
     approved: decision === 'approved',
     comment: managerNote ?? '',
   });
-  return toView(updated, employee, await fullDayHoursFor(request.userId));
+  return await toView(updated, employee, await fullDayHoursFor(request.userId));
 }
 
 /**
@@ -270,13 +275,15 @@ async function fullDayHoursByUser(userIds: string[]): Promise<Map<string, number
   return new Map(unique.map((userId, index) => [userId, hours[index]]));
 }
 
-function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User, fullDayHours: number) {
+async function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User, fullDayHours: number) {
   return {
     id: request._id.toHexString(),
     userId: request.userId,
     employee: {
       name: employee.name,
       department: employee.department ?? employee.designation ?? 'Team',
+      // Their own face on the request card, where they have set one.
+      photoUrl: await resolveProfilePhoto(employee),
     },
     workDate: request.workDate.toISOString().slice(0, 10),
     startTime: request.startTime.toISOString(),

@@ -90,6 +90,16 @@ export async function postAudience(post: ConnectPost): Promise<User[]> {
 
 type Copy = { title: string; body: string };
 
+/** Their manager, their reports, or a teammate under the same manager and in the same department. */
+export function closeTo(person: User, other: User): boolean {
+  if (other.userId === person.userId) return false;
+  if (person.managerUserId && other.userId === person.managerUserId) return true;
+  if (other.managerUserId && other.managerUserId === person.userId) return true;
+  return Boolean(person.managerUserId)
+    && other.managerUserId === person.managerUserId
+    && (other.department ?? '') === (person.department ?? '');
+}
+
 /** First matching rule wins — this is the precedence, written as a list. */
 function pick(rules: Array<Copy | null | undefined | false>): Copy | null {
   for (const rule of rules) if (rule) return rule;
@@ -153,7 +163,14 @@ export async function notifyPostPublished(post: ConnectPost): Promise<number> {
   const celebrant = celebrantOf(post);
   const lifecycle = celebrant ? await lifecycleCopy(post) : null;
 
-  const recipients = audience.map((user) => {
+  // A birthday is told to the people around the person, not the whole
+  // company: their manager, anyone who reports to them, and whoever shares
+  // both their manager and their department. The card itself is still in
+  // everyone's feed; only the push is narrowed.
+  const person = post.type === 'birthday' ? audience.find((u) => u.userId === celebrant) : undefined;
+  const reached = person ? audience.filter((u) => closeTo(person, u)) : audience;
+
+  const recipients = reached.map((user) => {
     const role = creatorTypeFor(post, author, user);
     const iAmKudosRecipient = kudos.includes(user.userId);
     const otherKudos = kudos.filter((id) => id !== user.userId).length;

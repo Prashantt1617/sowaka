@@ -42,6 +42,11 @@ dependencies:
   shared_preferences: ^2.5.3
   speech_to_text: ^7.4.0
   webview_flutter: ^4.13.0
+  webview_flutter_android: ^4.12.0
+  webview_flutter_wkwebview: ^3.25.1
+  flutter_web_plugins:
+    sdk: flutter
+  web: ^1.1.0
   firebase_core: ^4.4.0
   firebase_messaging: ^16.1.1
   flutter_local_notifications: ^20.1.0
@@ -87,6 +92,10 @@ flutter:
     # shipped nowhere and their plus never drew.
     - assets/icons/team/
     - assets/games/
+    # The Gratitude Garden's tree, its flowers and fruit, and its insects.
+    - assets/garden/
+    - assets/garden/kinds/
+    - assets/care/
     # Flutter does not recurse into asset folders; the relay game's own art.
     - assets/games/relay/
     # First-run screens: the photo step, the interest chips and the logos.

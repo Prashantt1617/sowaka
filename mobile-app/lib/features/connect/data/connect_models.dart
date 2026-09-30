@@ -153,6 +153,7 @@ class ConnectComment {
     this.parentId,
     this.likeCount = 0,
     this.liked = false,
+    this.photoUrl,
   });
 
   final String id;
@@ -167,6 +168,9 @@ class ConnectComment {
   final int likeCount;
   final bool liked;
 
+  /// The commenter's own photo, when they have set one.
+  final String? photoUrl;
+
   factory ConnectComment.fromJson(Map<String, dynamic> json) {
     return ConnectComment(
       id: json['id'] as String? ?? '',
@@ -174,6 +178,7 @@ class ConnectComment {
       name: json['name'] as String? ?? 'Teammate',
       text: json['text'] as String? ?? '',
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      photoUrl: json['photoUrl'] as String?,
       parentId: json['parentId'] as String?,
       likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
       liked: json['liked'] as bool? ?? false,

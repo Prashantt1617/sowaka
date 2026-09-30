@@ -38,6 +38,9 @@ import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
 import { ConnectBlock, ContentReport } from '../models/moderation.model';
+import { TalkSession } from '../models/talk.model';
+import { GardenNote } from '../models/garden.model';
+import { CareWriting, JournalEntry } from '../models/care.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -232,6 +235,27 @@ export function kpiAssignments(): Collection<KpiAssignment> {
   return getDb().collection<KpiAssignment>('kpi_assignments');
 }
 
+export function talkSessions(): Collection<TalkSession> {
+  return getDb().collection<TalkSession>('talk_sessions');
+}
+
+export function gardenNotes(): Collection<GardenNote> {
+  return getDb().collection<GardenNote>('gratitude_notes');
+}
+
+export function journalEntries(): Collection<JournalEntry> {
+  return getDb().collection<JournalEntry>('care_journal_entries');
+}
+
+/** One document per catalogue: `{ id: 'catalog', ...CareCatalog }`. */
+export function careContent(): Collection<{ id: string } & Record<string, unknown>> {
+  return getDb().collection('care_content');
+}
+
+export function careWritings(): Collection<CareWriting> {
+  return getDb().collection<CareWriting>('care_writings');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   await database
     .collection<OtpChallenge>('otp_challenges')
@@ -241,6 +265,35 @@ async function ensureIndexes(database: Db): Promise<void> {
   await sessionsCollection.createIndex({ tokenHash: 1 }, { unique: true });
   await sessionsCollection.createIndex({ userId: 1 });
   await sessionsCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  const talk = database.collection<TalkSession>('talk_sessions');
+  await talk.createIndex({ id: 1 }, { unique: true });
+  // A counsellor's slot is taken once: the same start twice is refused at the
+  // index, not only by the check that runs before it.
+  await talk.createIndex(
+    { counsellorUserId: 1, startsAt: 1 },
+    { unique: true, partialFilterExpression: { status: 'booked' } },
+  );
+  await talk.createIndex({ clientUserId: 1, startsAt: -1 });
+
+  const garden = database.collection<GardenNote>('gratitude_notes');
+  await garden.createIndex({ id: 1 }, { unique: true });
+  // The garden and the timeline are one read per company per season; a tree
+  // is one read per person.
+  await garden.createIndex({ org: 1, season: 1, createdAt: -1 });
+  await garden.createIndex({ toUserId: 1, season: 1 });
+  await garden.createIndex({ fromUserId: 1, createdAt: -1 });
+
+  const writings = database.collection<CareWriting>('care_writings');
+  await writings.createIndex({ id: 1 }, { unique: true });
+  // One piece of writing per person per key; a letter has its own key.
+  await writings.createIndex({ userId: 1, key: 1 }, { unique: true });
+  await database.collection('care_content').createIndex({ id: 1 }, { unique: true });
+
+  const journal = database.collection<JournalEntry>('care_journal_entries');
+  await journal.createIndex({ id: 1 }, { unique: true });
+  // A person's week, oldest first; the digest walks every person the same way.
+  await journal.createIndex({ userId: 1, createdAt: 1 });
 
   const usersCollection = database.collection<User>('users');
   // Legacy index from the earlier auth-only schema (keyed on `id`); replaced by `userId`.
