@@ -36,7 +36,8 @@ class Stretch {
 
   String get tag => 'Body · $zone';
 
-  String photoUrl(int step) => 'https://www.getsowaka.com/breathe/image/$imageDir/${step + 1}.jpeg';
+  String photoUrl(int step) =>
+      'https://www.getsowaka.com/breathe/image/$imageDir/${step + 1}.jpeg';
 
   bool isPause(int step) => pauseSteps.contains(step);
 }
@@ -172,7 +173,11 @@ int pauseSeconds(String text) {
 
 /// One tappable zone on the silhouette, in the artwork's 860 by 1594 space.
 class BodyZone {
-  const BodyZone({required this.stretchKey, required this.ellipses, required this.dots});
+  const BodyZone({
+    required this.stretchKey,
+    required this.ellipses,
+    required this.dots,
+  });
 
   final String stretchKey;
 
@@ -184,12 +189,64 @@ class BodyZone {
 }
 
 const bodyZones = [
-  BodyZone(stretchKey: 'eyes', ellipses: [[415, 120, 82, 100]], dots: [[415, 120]]),
-  BodyZone(stretchKey: 'neck', ellipses: [[415, 268, 78, 66]], dots: [[415, 268]]),
-  BodyZone(stretchKey: 'shoulders', ellipses: [[312, 350, 78, 54], [522, 332, 78, 54]], dots: [[312, 350], [522, 332]]),
-  BodyZone(stretchKey: 'spine', ellipses: [[428, 620, 80, 172]], dots: [[428, 598]]),
-  BodyZone(stretchKey: 'wrists', ellipses: [[120, 700, 66, 52], [765, 655, 66, 52]], dots: [[120, 700], [765, 655]]),
-  BodyZone(stretchKey: 'legs', ellipses: [[445, 1180, 104, 274]], dots: [[445, 1180]]),
+  BodyZone(
+    stretchKey: 'eyes',
+    ellipses: [
+      [415, 120, 82, 100],
+    ],
+    dots: [
+      [415, 120],
+    ],
+  ),
+  BodyZone(
+    stretchKey: 'neck',
+    ellipses: [
+      [415, 268, 78, 66],
+    ],
+    dots: [
+      [415, 268],
+    ],
+  ),
+  BodyZone(
+    stretchKey: 'shoulders',
+    ellipses: [
+      [312, 350, 78, 54],
+      [522, 332, 78, 54],
+    ],
+    dots: [
+      [312, 350],
+      [522, 332],
+    ],
+  ),
+  BodyZone(
+    stretchKey: 'spine',
+    ellipses: [
+      [428, 620, 80, 172],
+    ],
+    dots: [
+      [428, 598],
+    ],
+  ),
+  BodyZone(
+    stretchKey: 'wrists',
+    ellipses: [
+      [120, 700, 66, 52],
+      [765, 655, 66, 52],
+    ],
+    dots: [
+      [120, 700],
+      [765, 655],
+    ],
+  ),
+  BodyZone(
+    stretchKey: 'legs',
+    ellipses: [
+      [445, 1180, 104, 274],
+    ],
+    dots: [
+      [445, 1180],
+    ],
+  ),
 ];
 
 const bodyArtWidth = 860.0;

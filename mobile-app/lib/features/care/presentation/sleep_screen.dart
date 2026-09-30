@@ -43,12 +43,18 @@ class _SleepScreenState extends State<SleepScreen> {
           runSpacing: 8,
           children: [
             for (final shelf in const ['Guided rest', 'Stories', 'Sounds'])
-              CareChoiceChip(shelf, selected: _shelf == shelf, onTap: () => setState(() => _shelf = shelf)),
+              CareChoiceChip(
+                shelf,
+                selected: _shelf == shelf,
+                onTap: () => setState(() => _shelf = shelf),
+              ),
           ],
         ),
         const SizedBox(height: 18),
         if (tracks.isEmpty)
-          const CareNotice('The shelf is being filled. Sowaka’s recordings arrive here.')
+          const CareNotice(
+            'The shelf is being filled. Sowaka’s recordings arrive here.',
+          )
         else
           for (final track in tracks)
             Padding(
@@ -58,7 +64,15 @@ class _SleepScreenState extends State<SleepScreen> {
                 meta: track.meta,
                 icon: icon,
                 tint: CareColors.night,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayerScreen(track: track, backLabel: 'Sleep', kind: PlayerKind.audio))),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PlayerScreen(
+                      track: track,
+                      backLabel: 'Sleep',
+                      kind: PlayerKind.audio,
+                    ),
+                  ),
+                ),
               ),
             ),
       ],

@@ -135,7 +135,7 @@ void main() {
     expect(find.text('A little support.\nA familiar face.'), findsOneWidget);
     expect(find.text('YOUR COUNSELLOR'), findsOneWidget);
     expect(find.text('Explore a topic'), findsOneWidget);
-    expect(find.text('Money worries'), findsOneWidget);
+    expect(find.text('Grief & loss'), findsOneWidget);
   });
 
   testWidgets('Help home shows the next session with Join, and the closest counsellor when nobody fits', (tester) async {

@@ -16,8 +16,16 @@ app.use(
   cors({
     // The fixed list, plus any company's own subdomain of the product domain.
     // No Origin header (curl, native apps) passes as before.
+    // The Care web pages call in with the person's token from wherever they
+    // are hosted, so that host is allowed too.
     origin: (origin, done) =>
-      done(null, !origin || env.corsOrigins.includes(origin) || env.isDashboardOrigin(origin)),
+      done(
+        null,
+        !origin ||
+          env.corsOrigins.includes(origin) ||
+          env.isDashboardOrigin(origin) ||
+          (env.careWebBase.length > 0 && origin === env.careWebBase),
+      ),
   }),
 );
 // A month of attendance for a large org is over a megabyte of JSON and

@@ -5,6 +5,7 @@ import '../../auth/data/auth_models.dart';
 import '../../care/data/care_api_service.dart';
 import '../../care/data/care_models.dart';
 import '../../care/presentation/care_theme.dart';
+import '../../care/presentation/care_web_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../shared/app_toast.dart';
 import '../../talk/data/talk_api_service.dart';
@@ -18,7 +19,7 @@ import 'counsellor_profile_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
 import 'session_details_screen.dart';
-import 'topic_screen.dart';
+import 'topics/topic_router.dart';
 
 /// Help: a matched counsellor first, chosen from the person's own answers on
 /// the first open; the session coming up; ten topics to explore under it.
@@ -45,8 +46,10 @@ class HelpTab extends StatefulWidget {
 }
 
 class _HelpTabState extends State<HelpTab> {
-  late final HelpApiService _service = widget.service ?? HelpApiService(session: widget.session);
-  late final CareApiService _care = widget.careService ?? CareApiService(session: widget.session);
+  late final HelpApiService _service =
+      widget.service ?? HelpApiService(session: widget.session);
+  late final CareApiService _care =
+      widget.careService ?? CareApiService(session: widget.session);
   HelpHome? _home;
 
   /// The topics' text, from the server; the app's own copy until it arrives.
@@ -63,13 +66,16 @@ class _HelpTabState extends State<HelpTab> {
   void initState() {
     super.initState();
     _load();
-    _care.catalog().then((catalog) {
-      if (!mounted) return;
-      setState(() {
-        _catalog = catalog;
-        if (catalog.topics.isNotEmpty) _topics = catalog.topics;
-      });
-    }).catchError((_) {});
+    _care
+        .catalog()
+        .then((catalog) {
+          if (!mounted) return;
+          setState(() {
+            _catalog = catalog;
+            if (catalog.topics.isNotEmpty) _topics = catalog.topics;
+          });
+        })
+        .catchError((_) {});
   }
 
   Future<void> _load() async {
@@ -86,9 +92,37 @@ class _HelpTabState extends State<HelpTab> {
       debugPrint('Help home failed: $error');
       setState(() {
         _loading = false;
-        _error = error is TalkApiException ? error.message : 'Could not load Help.';
+        _error = error is TalkApiException
+            ? error.message
+            : 'Could not load Help.';
       });
     }
+  }
+
+  /// A topic lives on the web when Sowaka has put the Care pages there; the
+  /// token rides in the address fragment, which never leaves the browser, so
+  /// the page can save the person's writing and show it again.
+  Future<void> _openTopic(HelpTopic topic) {
+    final base = _catalog.webBase;
+    if (base.isEmpty) {
+      return _push(
+        topicScreenFor(
+          topic: topic,
+          care: _care,
+          catalog: _catalog,
+          session: widget.session,
+          help: _service,
+          match: _home?.match ?? _home?.noMatch,
+        ),
+      );
+    }
+    return _push(
+      CareWebScreen(
+        title: topic.name,
+        url:
+            '$base/topic/${topic.id}#token=${Uri.encodeComponent(widget.session.token)}',
+      ),
+    );
   }
 
   Future<void> _push(Widget screen) async {
@@ -106,7 +140,12 @@ class _HelpTabState extends State<HelpTab> {
       });
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not open your answers.');
+      showAppToast(
+        context,
+        error is TalkApiException
+            ? error.message
+            : 'Could not open your answers.',
+      );
     }
   }
 
@@ -123,7 +162,12 @@ class _HelpTabState extends State<HelpTab> {
       await _load();
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not save that. Try again.');
+      showAppToast(
+        context,
+        error is TalkApiException
+            ? error.message
+            : 'Could not save that. Try again.',
+      );
     }
   }
 
@@ -134,7 +178,10 @@ class _HelpTabState extends State<HelpTab> {
     if (_loading) {
       body = const CareSpinner();
     } else if (_error case final message?) {
-      body = Padding(padding: const EdgeInsets.all(20), child: CareNotice(message, onRetry: _load));
+      body = Padding(
+        padding: const EdgeInsets.all(20),
+        child: CareNotice(message, onRetry: _load),
+      );
     } else if (home == null || !home.intakeDone || _editing) {
       body = HelpOnboarding(
         key: ValueKey(_editing ? 'edit' : 'first'),
@@ -157,7 +204,10 @@ class _HelpTabState extends State<HelpTab> {
       color: CareColors.bg,
       child: Column(
         children: [
-          AppHomeHeader(profileAction: widget.profileAction, onNotifications: widget.onNotifications),
+          AppHomeHeader(
+            profileAction: widget.profileAction,
+            onNotifications: widget.onNotifications,
+          ),
           Expanded(child: body),
         ],
       ),
@@ -179,21 +229,41 @@ class _HelpTabState extends State<HelpTab> {
           const SizedBox(height: 10),
           const CareHeading('A little support.\nA familiar face.', size: 36),
           const SizedBox(height: 12),
-          const CareCopy('Connect with your counsellor,\nor explore what’s on your mind.', size: 13.5),
+          const CareCopy(
+            'Connect with your counsellor,\nor explore what’s on your mind.',
+            size: 13.5,
+          ),
           const SizedBox(height: 22),
           if (upcoming != null) ...[
             _UpcomingCard(
               session: upcoming,
               onJoin: () => _join(upcoming),
-              onOpen: () => _push(SessionDetailsScreen(session: upcoming, service: _service, backLabel: 'Help')),
+              onOpen: () => _push(
+                SessionDetailsScreen(
+                  session: upcoming,
+                  service: _service,
+                  backLabel: 'Help',
+                ),
+              ),
             ),
             const SizedBox(height: 14),
           ],
           if (match != null)
             _CounsellorCard(
               match: match,
-              onProfile: () => _push(CounsellorProfileScreen(service: _service, counsellorId: match.counsellor.userId, backLabel: 'Help')),
-              onChoose: () => _push(ChooseSomeoneScreen(service: _service, matchedId: match.counsellor.userId)),
+              onProfile: () => _push(
+                CounsellorProfileScreen(
+                  service: _service,
+                  counsellorId: match.counsellor.userId,
+                  backLabel: 'Help',
+                ),
+              ),
+              onChoose: () => _push(
+                ChooseSomeoneScreen(
+                  service: _service,
+                  matchedId: match.counsellor.userId,
+                ),
+              ),
               onEdit: _editAnswers,
             )
           else if (noMatch != null)
@@ -203,17 +273,27 @@ class _HelpTabState extends State<HelpTab> {
                 children: [
                   const CareEyebrow('Your preferences, in view'),
                   const SizedBox(height: 12),
-                  const CareSectionTitle('Nobody fits every preference you set.'),
+                  const CareSectionTitle(
+                    'Nobody fits every preference you set.',
+                  ),
                   const SizedBox(height: 8),
-                  CareCopy('The closest is ${noMatch.counsellor.name}. Your choices haven’t been changed.', size: 13.5),
+                  CareCopy(
+                    'The closest is ${noMatch.counsellor.name}. Your choices haven’t been changed.',
+                    size: 13.5,
+                  ),
                   const SizedBox(height: 14),
                   CounsellorPerson(counsellor: noMatch.counsellor),
                   const SizedBox(height: 12),
                   UnmetNote(noMatch.unmet),
                   const SizedBox(height: 16),
-                  CarePrimaryButton('Show me who is available anyway', onTap: () => _accept(noMatch.counsellor)),
+                  CarePrimaryButton(
+                    'Show me who is available anyway',
+                    onTap: () => _accept(noMatch.counsellor),
+                  ),
                   const SizedBox(height: 4),
-                  Center(child: CareLink('Review my answers', onTap: _editAnswers)),
+                  Center(
+                    child: CareLink('Review my answers', onTap: _editAnswers),
+                  ),
                 ],
               ),
             )
@@ -224,7 +304,9 @@ class _HelpTabState extends State<HelpTab> {
                 children: [
                   const CareSectionTitle('No counsellor is available yet.'),
                   const SizedBox(height: 8),
-                  const CareCopy('One will be suggested here as soon as there is.'),
+                  const CareCopy(
+                    'One will be suggested here as soon as there is.',
+                  ),
                   const SizedBox(height: 10),
                   CareLink('Review my answers', onTap: _editAnswers),
                 ],
@@ -233,13 +315,21 @@ class _HelpTabState extends State<HelpTab> {
           const SizedBox(height: 26),
           const CareSectionTitle('Explore a topic', size: 22),
           const SizedBox(height: 6),
-          const CareCopy('Understand it. Try something. Talk it through.', size: 13.5),
+          const CareCopy(
+            'Understand it. Try something. Talk it through.',
+            size: 13.5,
+          ),
           const SizedBox(height: 14),
           GridView.builder(
             shrinkWrap: true,
             padding: EdgeInsets.zero,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 78),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              mainAxisExtent: 78,
+            ),
             itemCount: _topics.length,
             itemBuilder: (_, i) {
               final topic = _topics[i];
@@ -248,17 +338,32 @@ class _HelpTabState extends State<HelpTab> {
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
                   key: ValueKey('topic-${topic.id}'),
-                  onTap: () => _push(TopicScreen(topic: topic, service: _service, care: _care, catalog: _catalog, session: widget.session, matchedCounsellorId: match?.counsellor.userId)),
+                  onTap: () => _openTopic(topic),
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: CareColors.line)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: CareColors.line),
+                    ),
                     child: Row(
                       children: [
                         Icon(topic.icon, color: CareColors.blue, size: 22),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text(topic.name, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 13.5, fontWeight: FontWeight.w500, height: 1.3)),
+                          child: Text(
+                            topic.name,
+                            style: const TextStyle(
+                              fontFamily: careFont,
+                              color: CareColors.ink,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
+                              height: 1.3,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -274,7 +379,16 @@ class _HelpTabState extends State<HelpTab> {
             for (final session in home.history)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: SessionRow(session: session, onTap: () => _push(SessionDetailsScreen(session: session, service: _service, backLabel: 'Help'))),
+                child: SessionRow(
+                  session: session,
+                  onTap: () => _push(
+                    SessionDetailsScreen(
+                      session: session,
+                      service: _service,
+                      backLabel: 'Help',
+                    ),
+                  ),
+                ),
               ),
           ],
         ],
@@ -284,7 +398,12 @@ class _HelpTabState extends State<HelpTab> {
 }
 
 class _CounsellorCard extends StatelessWidget {
-  const _CounsellorCard({required this.match, required this.onProfile, required this.onChoose, required this.onEdit});
+  const _CounsellorCard({
+    required this.match,
+    required this.onProfile,
+    required this.onChoose,
+    required this.onEdit,
+  });
 
   final HelpMatch match;
   final VoidCallback onProfile;
@@ -301,7 +420,10 @@ class _CounsellorCard extends StatelessWidget {
           const CareEyebrow('Your counsellor'),
           const SizedBox(height: 18),
           CounsellorPerson(counsellor: c),
-          if (c.focusLabels.isNotEmpty) ...[const SizedBox(height: 14), FocusChips(c.focusLabels.take(3).toList())],
+          if (c.focusLabels.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            FocusChips(c.focusLabels.take(3).toList()),
+          ],
           const SizedBox(height: 10),
           CareLink('View profile & sessions', onTap: onProfile, size: 14),
           const SizedBox(height: 8),
@@ -310,14 +432,26 @@ class _CounsellorCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(match.unmet.isEmpty ? 'Matched for you' : 'Chosen by you', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12.5)),
+                child: Text(
+                  match.unmet.isEmpty ? 'Matched for you' : 'Chosen by you',
+                  style: const TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.muted,
+                    fontSize: 12.5,
+                  ),
+                ),
               ),
               CareLink('Edit answers', icon: null, onTap: onEdit, size: 12.5),
             ],
           ),
           Align(
             alignment: Alignment.centerRight,
-            child: CareLink('Choose someone else', icon: Icons.arrow_outward_rounded, onTap: onChoose, size: 12.5),
+            child: CareLink(
+              'Choose someone else',
+              icon: Icons.arrow_outward_rounded,
+              onTap: onChoose,
+              size: 12.5,
+            ),
           ),
         ],
       ),
@@ -326,7 +460,11 @@ class _CounsellorCard extends StatelessWidget {
 }
 
 class _UpcomingCard extends StatelessWidget {
-  const _UpcomingCard({required this.session, required this.onJoin, required this.onOpen});
+  const _UpcomingCard({
+    required this.session,
+    required this.onJoin,
+    required this.onOpen,
+  });
 
   final TalkSession session;
   final VoidCallback onJoin;
@@ -344,13 +482,29 @@ class _UpcomingCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             '${talkDate(session.startsAt)} · ${talkRange(session.startsAt, session.endsAt)}',
-            style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 17, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 4),
-          Text('With ${session.counsellorName} · Video call${session.placeholderLink ? ' · test link' : ''}', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 13)),
+          Text(
+            'With ${session.counsellorName} · Video call${session.placeholderLink ? ' · test link' : ''}',
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.muted,
+              fontSize: 13,
+            ),
+          ),
           if (session.joinUrl != null) ...[
             const SizedBox(height: 14),
-            CarePrimaryButton('Join session', icon: Icons.videocam_rounded, onTap: onJoin),
+            CarePrimaryButton(
+              'Join session',
+              icon: Icons.videocam_rounded,
+              onTap: onJoin,
+            ),
           ],
         ],
       ),

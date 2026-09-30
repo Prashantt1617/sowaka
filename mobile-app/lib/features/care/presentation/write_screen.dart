@@ -78,6 +78,8 @@ class _WriteScreenState extends State<WriteScreen> {
     super.dispose();
   }
 
+  bool _prefilled = false;
+
   Future<void> _load() async {
     try {
       final journal = await widget.service.journal();
@@ -85,10 +87,29 @@ class _WriteScreenState extends State<WriteScreen> {
       setState(() {
         _journal = journal;
         _error = null;
+        // A topic's or a tool's page picks up where it was left this week.
+        if (!_prefilled &&
+            widget.context != 'general' &&
+            _editing == null &&
+            _controller.text.isEmpty) {
+          _prefilled = true;
+          final previous = journal.entries
+              .where((e) => e.context == widget.context)
+              .firstOrNull;
+          if (previous != null) {
+            _editing = previous;
+            _writing = true;
+            _controller.text = previous.text;
+          }
+        }
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error is CareApiException ? error.message : 'Could not load your writing.');
+      setState(
+        () => _error = error is CareApiException
+            ? error.message
+            : 'Could not load your writing.',
+      );
     }
   }
 
@@ -103,7 +124,11 @@ class _WriteScreenState extends State<WriteScreen> {
       if (editing != null) {
         await widget.service.updateEntry(editing.id, text);
       } else {
-        await widget.service.addEntry(text: text, prompt: _prompt, context: widget.context);
+        await widget.service.addEntry(
+          text: text,
+          prompt: _prompt,
+          context: widget.context,
+        );
       }
       if (!mounted) return;
       _controller.clear();
@@ -115,7 +140,12 @@ class _WriteScreenState extends State<WriteScreen> {
       await _load();
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is CareApiException ? error.message : 'Could not save. Try again.');
+      showAppToast(
+        context,
+        error is CareApiException
+            ? error.message
+            : 'Could not save. Try again.',
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -132,7 +162,12 @@ class _WriteScreenState extends State<WriteScreen> {
       await _load();
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is CareApiException ? error.message : 'Could not remove it. Try again.');
+      showAppToast(
+        context,
+        error is CareApiException
+            ? error.message
+            : 'Could not remove it. Try again.',
+      );
     }
   }
 
@@ -158,7 +193,10 @@ class _WriteScreenState extends State<WriteScreen> {
         const SizedBox(height: 22),
         Container(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: CareColors.peach, borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+            color: CareColors.peach,
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -166,20 +204,40 @@ class _WriteScreenState extends State<WriteScreen> {
               const SizedBox(height: 10),
               Text(
                 _prompt,
-                style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 19, fontWeight: FontWeight.w500, height: 1.3, letterSpacing: -0.3),
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w500,
+                  height: 1.3,
+                  letterSpacing: -0.3,
+                ),
               ),
               const SizedBox(height: 10),
-              CareLink('Try another prompt', icon: Icons.shuffle_rounded, onTap: () => setState(() => _promptIndex++)),
+              CareLink(
+                'Try another prompt',
+                icon: Icons.shuffle_rounded,
+                onTap: () => setState(() => _promptIndex++),
+              ),
             ],
           ),
         ),
         const SizedBox(height: 18),
         if (!_writing)
-          CarePrimaryButton('Start writing', icon: Icons.edit_outlined, onTap: () => setState(() => _writing = true))
+          CarePrimaryButton(
+            'Start writing',
+            icon: Icons.edit_outlined,
+            onTap: () => setState(() => _writing = true),
+          )
         else ...[
           Text(
             _editing == null ? 'Your words' : 'Editing',
-            style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 13, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
@@ -187,27 +245,58 @@ class _WriteScreenState extends State<WriteScreen> {
             controller: _controller,
             minLines: 6,
             maxLines: 14,
-            style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 15, height: 1.6),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 15,
+              height: 1.6,
+            ),
             decoration: InputDecoration(
               hintText: 'Right now, I’m thinking about…',
-              hintStyle: const TextStyle(fontFamily: careFont, color: CareColors.muted),
+              hintStyle: const TextStyle(
+                fontFamily: careFont,
+                color: CareColors.muted,
+              ),
               filled: true,
               fillColor: CareColors.paper,
               contentPadding: const EdgeInsets.all(16),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: CareColors.line)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: CareColors.line)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: CareColors.blue, width: 1.5)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: CareColors.line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: CareColors.line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(
+                  color: CareColors.blue,
+                  width: 1.5,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          CarePrimaryButton(_editing == null ? 'Save' : 'Save changes', busy: _saving, onTap: _save),
+          CarePrimaryButton(
+            _editing == null ? 'Save' : 'Save changes',
+            busy: _saving,
+            onTap: _save,
+          ),
           if (_editing != null)
             TextButton(
               onPressed: () => setState(() {
                 _editing = null;
                 _controller.clear();
               }),
-              child: const Text('Cancel', style: TextStyle(fontFamily: careFont, color: CareColors.muted, fontWeight: FontWeight.w600)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
         ],
         const SizedBox(height: 10),
@@ -224,12 +313,18 @@ class _WriteScreenState extends State<WriteScreen> {
         else if (journal == null)
           const CareSpinner()
         else if (journal.entries.isEmpty)
-          const CareCopy('Nothing yet. What you save shows here until Sunday night.')
+          const CareCopy(
+            'Nothing yet. What you save shows here until Sunday night.',
+          )
         else
           for (final entry in journal.entries)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _EntryCard(entry: entry, onEdit: () => _edit(entry), onDelete: () => _delete(entry)),
+              child: _EntryCard(
+                entry: entry,
+                onEdit: () => _edit(entry),
+                onDelete: () => _delete(entry),
+              ),
             ),
       ],
     );
@@ -237,7 +332,11 @@ class _WriteScreenState extends State<WriteScreen> {
 }
 
 class _EntryCard extends StatelessWidget {
-  const _EntryCard({required this.entry, required this.onEdit, required this.onDelete});
+  const _EntryCard({
+    required this.entry,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final JournalEntry entry;
   final VoidCallback onEdit;
@@ -247,21 +346,57 @@ class _EntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-      decoration: BoxDecoration(color: CareColors.paper, borderRadius: BorderRadius.circular(16), border: Border.all(color: CareColors.line)),
+      decoration: BoxDecoration(
+        color: CareColors.paper,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: CareColors.line),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             '${talkDate(entry.createdAt)} · ${talkTime(entry.createdAt)}${entry.prompt != null ? ' · ${entry.prompt}' : ''}',
-            style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 11.5),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.muted,
+              fontSize: 11.5,
+            ),
           ),
           const SizedBox(height: 6),
-          Text(entry.text, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14, height: 1.55)),
+          Text(
+            entry.text,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 14,
+              height: 1.55,
+            ),
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(onPressed: onEdit, child: const Text('Edit', style: TextStyle(fontFamily: careFont, color: CareColors.blue, fontWeight: FontWeight.w700))),
-              TextButton(onPressed: onDelete, child: const Text('Remove', style: TextStyle(fontFamily: careFont, color: CareColors.muted, fontWeight: FontWeight.w600))),
+              TextButton(
+                onPressed: onEdit,
+                child: const Text(
+                  'Edit',
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.blue,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onDelete,
+                child: const Text(
+                  'Remove',
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
           ),
         ],

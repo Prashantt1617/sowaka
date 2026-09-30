@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../content/catalog_content.dart';
 import '../content/move_content.dart';
 import '../data/care_models.dart';
 import 'care_theme.dart';
@@ -15,7 +16,12 @@ class MoveScreen extends StatelessWidget {
   final CareCatalog catalog;
 
   void _pick(BuildContext context, String key) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => StretchScreen(stretch: stretchByKey(key), catalog: catalog)));
+    final stretch = stretchesFrom(catalog).firstWhere((s) => s.key == key);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StretchScreen(stretch: stretch, catalog: catalog),
+      ),
+    );
   }
 
   @override
@@ -26,18 +32,31 @@ class MoveScreen extends StatelessWidget {
       children: [
         const CareEyebrow('Move'),
         const SizedBox(height: 10),
-        const CareHeading('Which part of your\nbody do you want\nto stretch?', size: 23, color: CareColors.warmInk),
+        const CareHeading(
+          'Which part of your\nbody do you want\nto stretch?',
+          size: 23,
+          color: CareColors.warmInk,
+        ),
         const SizedBox(height: 6),
-        const CareCopy('Tap the area that needs attention', size: 13.5, color: CareColors.warmMuted),
+        const CareCopy(
+          'Tap the area that needs attention',
+          size: 13.5,
+          color: CareColors.warmMuted,
+        ),
         const SizedBox(height: 10),
-        Center(child: BodySilhouette(height: 340, onZone: (key) => _pick(context, key))),
+        Center(
+          child: BodySilhouette(
+            height: 340,
+            onZone: (key) => _pick(context, key),
+          ),
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           alignment: WrapAlignment.center,
           children: [
-            for (final stretch in stretches)
+            for (final stretch in stretchesFrom(catalog))
               Material(
                 color: stretch.chipBackground,
                 borderRadius: BorderRadius.circular(100),
@@ -46,10 +65,18 @@ class MoveScreen extends StatelessWidget {
                   onTap: () => _pick(context, stretch.key),
                   borderRadius: BorderRadius.circular(100),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 10,
+                    ),
                     child: Text(
                       stretch.zone,
-                      style: TextStyle(fontFamily: careFont, color: stretch.chipForeground, fontSize: 13, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontFamily: careFont,
+                        color: stretch.chipForeground,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -73,8 +100,12 @@ class BodySilhouette extends StatefulWidget {
   State<BodySilhouette> createState() => _BodySilhouetteState();
 }
 
-class _BodySilhouetteState extends State<BodySilhouette> with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
+class _BodySilhouetteState extends State<BodySilhouette>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  )..repeat();
 
   @override
   void dispose() {
@@ -113,7 +144,9 @@ class _BodySilhouetteState extends State<BodySilhouette> with SingleTickerProvid
             Image.asset('assets/care/body.png', fit: BoxFit.fill),
             AnimatedBuilder(
               animation: _pulse,
-              builder: (_, _) => CustomPaint(painter: _ZonesPainter(scale: scale, t: _pulse.value)),
+              builder: (_, _) => CustomPaint(
+                painter: _ZonesPainter(scale: scale, t: _pulse.value),
+              ),
             ),
           ],
         ),
@@ -137,8 +170,15 @@ class _ZonesPainter extends CustomPainter {
       final phase = (t + i * 0.2) % 1;
       final pulse = 0.45 + 0.4 * (0.5 - 0.5 * math.cos(phase * 2 * math.pi));
       for (final e in zone.ellipses) {
-        final rect = Rect.fromCenter(center: Offset(e[0] * scale, e[1] * scale), width: e[2] * 2 * scale, height: e[3] * 2 * scale);
-        canvas.drawOval(rect, Paint()..color = color.withValues(alpha: 0.3 * pulse));
+        final rect = Rect.fromCenter(
+          center: Offset(e[0] * scale, e[1] * scale),
+          width: e[2] * 2 * scale,
+          height: e[3] * 2 * scale,
+        );
+        canvas.drawOval(
+          rect,
+          Paint()..color = color.withValues(alpha: 0.3 * pulse),
+        );
         canvas.drawOval(
           rect,
           Paint()

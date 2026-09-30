@@ -23,8 +23,13 @@ const _horizonDays = 14;
 /// Review with Change on the counsellor and the time; then Confirm, which
 /// creates the meeting and shows the booked screen.
 class HelpBookingScreen extends StatefulWidget {
-  const HelpBookingScreen({super.key, required this.service, this.counsellor, this.mode, this.matchedId})
-    : assert(counsellor != null || mode != null, 'A counsellor or a mode');
+  const HelpBookingScreen({
+    super.key,
+    required this.service,
+    this.counsellor,
+    this.mode,
+    this.matchedId,
+  }) : assert(counsellor != null || mode != null, 'A counsellor or a mode');
 
   final HelpApiService service;
 
@@ -40,13 +45,17 @@ class HelpBookingScreen extends StatefulWidget {
 }
 
 class _HelpBookingScreenState extends State<HelpBookingScreen> {
-  HelpBookingMode get _mode => widget.counsellor != null ? HelpBookingMode.sameCounsellor : widget.mode!;
+  HelpBookingMode get _mode =>
+      widget.counsellor != null ? HelpBookingMode.sameCounsellor : widget.mode!;
 
   List<Counsellor>? _counsellors;
   String? _counsellorsError;
   final _slotsByDay = <String, List<TalkSlot>>{};
   final _loadingDays = <String>{};
-  late final List<DateTime> _days = [for (var i = 1; i <= _horizonDays; i++) DateTime.now().add(Duration(days: i))];
+  late final List<DateTime> _days = [
+    for (var i = 1; i <= _horizonDays; i++)
+      DateTime.now().add(Duration(days: i)),
+  ];
   late String _day = isoDay(_days.first);
 
   Counsellor? _counsellor;
@@ -71,10 +80,21 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
     try {
       final rows = await widget.service.talk.counsellors();
       if (!mounted) return;
-      setState(() => _counsellors = [for (final c in rows) if (c.userId != widget.matchedId || _mode == HelpBookingMode.sameCounsellor) c]);
+      setState(
+        () => _counsellors = [
+          for (final c in rows)
+            if (c.userId != widget.matchedId ||
+                _mode == HelpBookingMode.sameCounsellor)
+              c,
+        ],
+      );
     } catch (error) {
       if (!mounted) return;
-      setState(() => _counsellorsError = error is TalkApiException ? error.message : 'Could not load counsellors.');
+      setState(
+        () => _counsellorsError = error is TalkApiException
+            ? error.message
+            : 'Could not load counsellors.',
+      );
     }
   }
 
@@ -87,7 +107,10 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
       setState(() => _slotsByDay[day] = slots);
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not load slots.');
+      showAppToast(
+        context,
+        error is TalkApiException ? error.message : 'Could not load slots.',
+      );
     } finally {
       if (mounted) setState(() => _loadingDays.remove(day));
     }
@@ -107,14 +130,20 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
     final all = _slotsByDay[_day] ?? const [];
     final chosen = _counsellor;
     if (chosen == null) return all;
-    return [for (final slot in all) if (slot.counsellorIds.contains(chosen.userId)) slot];
+    return [
+      for (final slot in all)
+        if (slot.counsellorIds.contains(chosen.userId)) slot,
+    ];
   }
 
   List<Counsellor> get _counsellorsForSlot {
     final slot = _slot;
     final all = _counsellors ?? const [];
     if (slot == null) return all;
-    return [for (final c in all) if (slot.counsellorIds.contains(c.userId)) c];
+    return [
+      for (final c in all)
+        if (slot.counsellorIds.contains(c.userId)) c,
+    ];
   }
 
   Future<void> _openProfile(Counsellor c) async {
@@ -125,7 +154,9 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
           service: widget.service,
           counsellorId: c.userId,
           backLabel: chooseForTime ? 'Who is free' : 'Counsellors',
-          action: chooseForTime ? ProfileAction.chooseForTime : ProfileAction.bookBack,
+          action: chooseForTime
+              ? ProfileAction.chooseForTime
+              : ProfileAction.bookBack,
           fixedSlot: chooseForTime ? _slot : null,
         ),
       ),
@@ -140,7 +171,11 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
 
   void _continue() {
     if (_slot == null) return;
-    setState(() => _stage = _mode == HelpBookingMode.timeFirst && _counsellor == null ? _Stage.whoIsFree : _Stage.review);
+    setState(
+      () => _stage = _mode == HelpBookingMode.timeFirst && _counsellor == null
+          ? _Stage.whoIsFree
+          : _Stage.review,
+    );
   }
 
   Future<void> _confirm() async {
@@ -149,7 +184,10 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
     if (counsellor == null || slot == null) return;
     setState(() => _booking = true);
     try {
-      final booked = await widget.service.talk.book(counsellorId: counsellor.userId, startsAt: slot.startsAt);
+      final booked = await widget.service.talk.book(
+        counsellorId: counsellor.userId,
+        startsAt: slot.startsAt,
+      );
       if (!mounted) return;
       setState(() {
         _booked = booked;
@@ -157,7 +195,12 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not book. Try again.');
+      showAppToast(
+        context,
+        error is TalkApiException
+            ? error.message
+            : 'Could not book. Try again.',
+      );
       _slotsByDay.remove(_day);
       setState(() {
         _slot = null;
@@ -170,7 +213,14 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
   }
 
   void _changeCounsellor() {
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ChooseSomeoneScreen(service: widget.service, matchedId: widget.matchedId)));
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ChooseSomeoneScreen(
+          service: widget.service,
+          matchedId: widget.matchedId,
+        ),
+      ),
+    );
   }
 
   void _changeTime() {
@@ -186,7 +236,11 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
       case _Stage.whoIsFree:
         setState(() => _stage = _Stage.slots);
       case _Stage.review:
-        setState(() => _stage = _mode == HelpBookingMode.timeFirst ? _Stage.whoIsFree : _Stage.slots);
+        setState(
+          () => _stage = _mode == HelpBookingMode.timeFirst
+              ? _Stage.whoIsFree
+              : _Stage.slots,
+        );
       case _Stage.slots when _mode == HelpBookingMode.counsellorFirst:
         setState(() {
           _stage = _Stage.counsellors;
@@ -202,9 +256,15 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
 
   String get _backLabel => switch (_stage) {
     _Stage.counsellors => 'Choose someone else',
-    _Stage.slots => _mode == HelpBookingMode.counsellorFirst ? 'Counsellors' : _mode == HelpBookingMode.timeFirst ? 'Choose someone else' : 'Back',
+    _Stage.slots =>
+      _mode == HelpBookingMode.counsellorFirst
+          ? 'Counsellors'
+          : _mode == HelpBookingMode.timeFirst
+          ? 'Choose someone else'
+          : 'Back',
     _Stage.whoIsFree => 'Date & time',
-    _Stage.review => _mode == HelpBookingMode.timeFirst ? 'Who is free' : 'Date & time',
+    _Stage.review =>
+      _mode == HelpBookingMode.timeFirst ? 'Who is free' : 'Date & time',
     _Stage.booked => 'Help',
   };
 
@@ -218,27 +278,44 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
       child: Stack(
         children: [
           switch (_stage) {
-            _Stage.counsellors => _counsellorList(_counsellors, eyebrow: 'A counsellor', heading: 'Someone whose\napproach feels right.', copy: 'Choose a person, then a time that suits you both.'),
+            _Stage.counsellors => _counsellorList(
+              _counsellors,
+              eyebrow: 'A counsellor',
+              heading: 'Someone whose\napproach feels right.',
+              copy: 'Choose a person, then a time that suits you both.',
+            ),
             _Stage.slots => _dayAndSlots(),
             _Stage.whoIsFree => _counsellorList(
               _counsellorsForSlot,
               eyebrow: 'A time',
               heading: 'Who is free then.',
-              copy: _slot == null ? '' : 'Free on ${talkDate(_slot!.startsAt)} at ${talkTime(_slot!.startsAt)}.',
+              copy: _slot == null
+                  ? ''
+                  : 'Free on ${talkDate(_slot!.startsAt)} at ${talkTime(_slot!.startsAt)}.',
             ),
             _Stage.review => _review(),
             _Stage.booked => _bookedView(),
           },
           if (_booking)
             const Positioned.fill(
-              child: ColoredBox(color: Color(0x66FFFFFF), child: Center(child: CircularProgressIndicator(color: CareColors.blue))),
+              child: ColoredBox(
+                color: Color(0x66FFFFFF),
+                child: Center(
+                  child: CircularProgressIndicator(color: CareColors.blue),
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _counsellorList(List<Counsellor>? rows, {required String eyebrow, required String heading, required String copy}) {
+  Widget _counsellorList(
+    List<Counsellor>? rows, {
+    required String eyebrow,
+    required String heading,
+    required String copy,
+  }) {
     return CarePage(
       backLabel: _backLabel,
       onBack: _back,
@@ -266,7 +343,10 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CounsellorPerson(counsellor: c),
-                    if (c.focusLabels.isNotEmpty) ...[const SizedBox(height: 10), CareCopy(c.focusLabels.join(' · '), size: 12.5)],
+                    if (c.focusLabels.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      CareCopy(c.focusLabels.join(' · '), size: 12.5),
+                    ],
                     const SizedBox(height: 6),
                     CareLink('View profile', onTap: () => _openProfile(c)),
                   ],
@@ -291,13 +371,27 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CareEyebrow(chosen == null ? 'A time' : 'Book with ${chosen.firstName}'),
+              CareEyebrow(
+                chosen == null ? 'A time' : 'Book with ${chosen.firstName}',
+              ),
               const SizedBox(height: 10),
-              CareHeading(chosen == null ? 'When would\nsuit you?' : 'A time that\nsuits you both.', size: 28),
+              CareHeading(
+                chosen == null
+                    ? 'When would\nsuit you?'
+                    : 'A time that\nsuits you both.',
+                size: 28,
+              ),
               const SizedBox(height: 10),
-              CareCopy(chosen == null ? 'Choose a day and a time, then see who is free.' : 'Choose a day and a time.'),
+              CareCopy(
+                chosen == null
+                    ? 'Choose a day and a time, then see who is free.'
+                    : 'Choose a day and a time.',
+              ),
               const SizedBox(height: 18),
-              if (chosen != null) ...[CounsellorPerson(counsellor: chosen), const SizedBox(height: 18)],
+              if (chosen != null) ...[
+                CounsellorPerson(counsellor: chosen),
+                const SizedBox(height: 18),
+              ],
               const CareSectionTitle('Pick a day', size: 14),
             ],
           ),
@@ -310,7 +404,11 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: _days.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (_, index) => _DayChip(day: _days[index], selected: isoDay(_days[index]) == _day, onTap: () => _pickDay(_days[index])),
+            itemBuilder: (_, index) => _DayChip(
+              day: _days[index],
+              selected: isoDay(_days[index]) == _day,
+              onTap: () => _pickDay(_days[index]),
+            ),
           ),
         ),
         const SizedBox(height: 20),
@@ -324,20 +422,35 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
               if (loading)
                 const CareSpinner()
               else if (slots.isEmpty)
-                CareNotice(chosen == null ? 'Nobody is free that day. Try another.' : '${chosen.firstName} is not free that day. Try another.')
+                CareNotice(
+                  chosen == null
+                      ? 'Nobody is free that day. Try another.'
+                      : '${chosen.firstName} is not free that day. Try another.',
+                )
               else
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
                     for (final slot in slots)
-                      _SlotChip(slot: slot, showCount: chosen == null, selected: _slot?.startsAt == slot.startsAt, onTap: () => setState(() => _slot = slot)),
+                      _SlotChip(
+                        slot: slot,
+                        showCount: chosen == null,
+                        selected: _slot?.startsAt == slot.startsAt,
+                        onTap: () => setState(() => _slot = slot),
+                      ),
                   ],
                 ),
               const SizedBox(height: 24),
-              CarePrimaryButton('Continue', icon: Icons.arrow_forward_rounded, onTap: _slot == null ? null : _continue),
+              CarePrimaryButton(
+                'Continue',
+                icon: Icons.arrow_forward_rounded,
+                onTap: _slot == null ? null : _continue,
+              ),
               const SizedBox(height: 8),
-              const CareMicro('Times are shown in your own time zone. Sessions are 50 minutes, on video.'),
+              const CareMicro(
+                'Times are shown in your own time zone. Sessions are 50 minutes, on video.',
+              ),
             ],
           ),
         ),
@@ -358,11 +471,24 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
         const SizedBox(height: 10),
         const CareCopy('Check the details before booking.'),
         const SizedBox(height: 20),
-        _ReviewRow(label: 'Counsellor', value: c.name, onChange: _changeCounsellor),
-        _ReviewRow(label: 'Date & time', value: '${talkDate(slot.startsAt)}\n${talkRange(slot.startsAt, slot.endsAt)} · your time', onChange: _changeTime),
+        _ReviewRow(
+          label: 'Counsellor',
+          value: c.name,
+          onChange: _changeCounsellor,
+        ),
+        _ReviewRow(
+          label: 'Date & time',
+          value:
+              '${talkDate(slot.startsAt)}\n${talkRange(slot.startsAt, slot.endsAt)} · your time',
+          onChange: _changeTime,
+        ),
         SummaryLine('Session', '${c.slotMinutes} min · Video call'),
         const SizedBox(height: 24),
-        CarePrimaryButton('Confirm session', icon: Icons.check_rounded, onTap: _confirm),
+        CarePrimaryButton(
+          'Confirm session',
+          icon: Icons.check_rounded,
+          onTap: _confirm,
+        ),
         const SizedBox(height: 8),
         const CareMicro('A Zoom link is created for you and shows on Help.'),
       ],
@@ -379,15 +505,24 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
         const SizedBox(height: 10),
         const CareHeading('You’re booked.', size: 30),
         const SizedBox(height: 10),
-        CareCopy('${talkDate(booked.startsAt)} · ${talkRange(booked.startsAt, booked.endsAt)} with ${booked.counsellorName}.'),
+        CareCopy(
+          '${talkDate(booked.startsAt)} · ${talkRange(booked.startsAt, booked.endsAt)} with ${booked.counsellorName}.',
+        ),
         const SizedBox(height: 20),
         if (booked.joinUrl case final url?) ...[
-          CarePrimaryButton('Open the Zoom link', icon: Icons.videocam_rounded, onTap: () async {
-            final opened = await openExternalLink(url);
-            if (!opened && mounted) showAppToast(context, 'Could not open the link');
-          }),
+          CarePrimaryButton(
+            'Open the Zoom link',
+            icon: Icons.videocam_rounded,
+            onTap: () async {
+              final opened = await openExternalLink(url);
+              if (!opened && mounted)
+                showAppToast(context, 'Could not open the link');
+            },
+          ),
           const SizedBox(height: 8),
-          const CareMicro('The link stays on Help until the session, on your next session card.'),
+          const CareMicro(
+            'The link stays on Help until the session, on your next session card.',
+          ),
           const SizedBox(height: 16),
         ],
         CareLink('Back to Help', onTap: _back),
@@ -397,7 +532,11 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
 }
 
 class _ReviewRow extends StatelessWidget {
-  const _ReviewRow({required this.label, required this.value, required this.onChange});
+  const _ReviewRow({
+    required this.label,
+    required this.value,
+    required this.onChange,
+  });
 
   final String label;
   final String value;
@@ -406,7 +545,9 @@ class _ReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 12),
-    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CareColors.line))),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: CareColors.line)),
+    ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -414,9 +555,25 @@ class _ReviewRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(value, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 15, fontWeight: FontWeight.w600, height: 1.4)),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
+              ),
             ],
           ),
         ),
@@ -427,7 +584,11 @@ class _ReviewRow extends StatelessWidget {
 }
 
 class _DayChip extends StatelessWidget {
-  const _DayChip({required this.day, required this.selected, required this.onTap});
+  const _DayChip({
+    required this.day,
+    required this.selected,
+    required this.onTap,
+  });
 
   final DateTime day;
   final bool selected;
@@ -444,12 +605,34 @@ class _DayChip extends StatelessWidget {
         child: Container(
           width: 58,
           padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: selected ? CareColors.blue : CareColors.line)),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? CareColors.blue : CareColors.line,
+            ),
+          ),
           child: Column(
             children: [
-              Text(weekdayShort(day), style: TextStyle(fontFamily: careFont, color: selected ? Colors.white : CareColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+              Text(
+                weekdayShort(day),
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: selected ? Colors.white : CareColors.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text('${day.day}', style: TextStyle(fontFamily: careFont, color: selected ? Colors.white : CareColors.ink, fontSize: 18, fontWeight: FontWeight.w700, height: 1.1)),
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: selected ? Colors.white : CareColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                ),
+              ),
             ],
           ),
         ),
@@ -459,7 +642,12 @@ class _DayChip extends StatelessWidget {
 }
 
 class _SlotChip extends StatelessWidget {
-  const _SlotChip({required this.slot, required this.selected, required this.showCount, required this.onTap});
+  const _SlotChip({
+    required this.slot,
+    required this.selected,
+    required this.showCount,
+    required this.onTap,
+  });
 
   final TalkSlot slot;
   final bool selected;
@@ -477,13 +665,34 @@ class _SlotChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: selected ? CareColors.blue : CareColors.line)),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? CareColors.blue : CareColors.line,
+            ),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(talkTime(slot.startsAt), style: TextStyle(fontFamily: careFont, color: selected ? Colors.white : CareColors.ink, fontSize: 14, fontWeight: FontWeight.w700)),
+              Text(
+                talkTime(slot.startsAt),
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: selected ? Colors.white : CareColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               if (showCount)
-                Text(count == 1 ? '1 free' : '$count free', style: TextStyle(fontFamily: careFont, color: selected ? Colors.white70 : CareColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+                Text(
+                  count == 1 ? '1 free' : '$count free',
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: selected ? Colors.white70 : CareColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           ),
         ),

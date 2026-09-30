@@ -55,7 +55,7 @@ void main() {
     expect(find.text('Explore it in Help'), findsOneWidget);
   });
 
-  testWidgets('Move opens the body picker, then Neck Release with a countdown on its pause step', (tester) async {
+  testWidgets('Move opens the body picker, then Neck Release plays step by step and holds on its pause', (tester) async {
     _tall(tester);
     final client = MockClient((request) async => _ok({'catalog': {}}));
     await tester.pumpWidget(_app(_service(client)));
@@ -72,12 +72,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Neck Release'), findsOneWidget);
     expect(find.text('BODY · NECK'), findsOneWidget);
-    expect(find.text('Video on its way'), findsOneWidget);
+    // Without a clip yet, step one is its words for a few seconds.
+    expect(find.text('Step 1 of 5 · swipe to move on'), findsOneWidget);
+    expect(find.text('Moving on in 6'), findsOneWidget);
 
-    // Step 2 is a hold of three breaths: fifteen seconds, counting down.
-    await tester.tap(find.byKey(const ValueKey('step-2')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    // Then it moves on by itself to the hold: three breaths, fifteen seconds.
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Step 2 of 5 · swipe to move on'), findsOneWidget);
     expect(find.text('0:15'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('0:13'), findsOneWidget);

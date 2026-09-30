@@ -19,10 +19,20 @@ class _ListenScreenState extends State<ListenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tracks = _affirmations ? widget.catalog.affirmations : widget.catalog.meditations;
+    final tracks = _affirmations
+        ? widget.catalog.affirmations
+        : widget.catalog.meditations;
     final icons = _affirmations
-        ? [Icons.auto_awesome_outlined, Icons.favorite_border_rounded, Icons.local_florist_outlined]
-        : [Icons.eco_outlined, Icons.wb_cloudy_outlined, Icons.wb_twilight_rounded];
+        ? [
+            Icons.auto_awesome_outlined,
+            Icons.favorite_border_rounded,
+            Icons.local_florist_outlined,
+          ]
+        : [
+            Icons.eco_outlined,
+            Icons.wb_cloudy_outlined,
+            Icons.wb_twilight_rounded,
+          ];
     return CarePage(
       backLabel: 'Care',
       children: [
@@ -36,13 +46,23 @@ class _ListenScreenState extends State<ListenScreen> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            CareChoiceChip('Meditations', selected: !_affirmations, onTap: () => setState(() => _affirmations = false)),
-            CareChoiceChip('Affirmations', selected: _affirmations, onTap: () => setState(() => _affirmations = true)),
+            CareChoiceChip(
+              'Meditations',
+              selected: !_affirmations,
+              onTap: () => setState(() => _affirmations = false),
+            ),
+            CareChoiceChip(
+              'Affirmations',
+              selected: _affirmations,
+              onTap: () => setState(() => _affirmations = true),
+            ),
           ],
         ),
         const SizedBox(height: 18),
         if (tracks.isEmpty)
-          const CareNotice('The shelf is being filled. Sowaka’s recordings arrive here.')
+          const CareNotice(
+            'The shelf is being filled. Sowaka’s recordings arrive here.',
+          )
         else
           for (var i = 0; i < tracks.length; i++)
             Padding(
@@ -52,7 +72,13 @@ class _ListenScreenState extends State<ListenScreen> {
                 meta: tracks[i].meta,
                 icon: icons[i % icons.length],
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => PlayerScreen(track: tracks[i], backLabel: _affirmations ? 'Affirmations' : 'Listen', kind: PlayerKind.audio)),
+                  MaterialPageRoute(
+                    builder: (_) => PlayerScreen(
+                      track: tracks[i],
+                      backLabel: _affirmations ? 'Affirmations' : 'Listen',
+                      kind: PlayerKind.audio,
+                    ),
+                  ),
                 ),
               ),
             ),

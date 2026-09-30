@@ -41,14 +41,21 @@ enum _Screen { questions, result, review }
 
 class _HelpOnboardingState extends State<HelpOnboarding> {
   late HelpIntake _intake = widget.initial ?? HelpIntake.empty;
-  late _Screen _screen = widget.startOnReview ? _Screen.review : _Screen.questions;
+  late _Screen _screen = widget.startOnReview
+      ? _Screen.review
+      : _Screen.questions;
   int _step = 0;
   bool _editing = false;
   String _message = '';
   bool _saving = false;
   HelpMatchResult? _result;
 
-  static const _labels = ['Your world', 'What’s difficult', 'Your direction', 'Your comfort'];
+  static const _labels = [
+    'Your world',
+    'What’s difficult',
+    'Your direction',
+    'Your comfort',
+  ];
   static const _questions = [
     'What would you like\nto talk about?',
     'What would you like\nhelp with?',
@@ -159,7 +166,12 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
       });
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not save your answers. Try again.');
+      showAppToast(
+        context,
+        error is TalkApiException
+            ? error.message
+            : 'Could not save your answers. Try again.',
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -173,7 +185,12 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
       setState(() => _result = HelpMatchResult(match: match));
     } catch (error) {
       if (!mounted) return;
-      showAppToast(context, error is TalkApiException ? error.message : 'Could not save that. Try again.');
+      showAppToast(
+        context,
+        error is TalkApiException
+            ? error.message
+            : 'Could not save that. Try again.',
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -199,7 +216,12 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         },
         if (_saving)
           const Positioned.fill(
-            child: ColoredBox(color: Color(0x66FFFFFF), child: Center(child: CircularProgressIndicator(color: CareColors.blue))),
+            child: ColoredBox(
+              color: Color(0x66FFFFFF),
+              child: Center(
+                child: CircularProgressIndicator(color: CareColors.blue),
+              ),
+            ),
           ),
       ],
     );
@@ -217,9 +239,23 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         children: [
           Row(
             children: [
-              Text('Choose up to $limit', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+              Text(
+                'Choose up to $limit',
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12,
+                ),
+              ),
               const Spacer(),
-              Text('${selected.length} selected', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+              Text(
+                '${selected.length} selected',
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -234,7 +270,14 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Choose one to start', style: TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+          const Text(
+            'Choose one to start',
+            style: TextStyle(
+              fontFamily: careFont,
+              color: CareColors.muted,
+              fontSize: 12,
+            ),
+          ),
           const SizedBox(height: 10),
           for (final goal in helpGoals)
             Padding(
@@ -242,7 +285,11 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
               child: _OptionTile(
                 option: goal,
                 selected: _intake.goal == goal.id,
-                onTap: () => setState(() => _intake = _intake.copyWith(goal: _intake.goal == goal.id ? '' : goal.id)),
+                onTap: () => setState(
+                  () => _intake = _intake.copyWith(
+                    goal: _intake.goal == goal.id ? '' : goal.id,
+                  ),
+                ),
               ),
             ),
         ],
@@ -255,14 +302,22 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
             title: 'Language',
             hint: 'Choose any you’d feel comfortable speaking.',
             chips: [
-              CareChoiceChip('No preference', selected: _intake.languages.isEmpty, onTap: () => setState(() => _intake = _intake.copyWith(languages: const []))),
+              CareChoiceChip(
+                'No preference',
+                selected: _intake.languages.isEmpty,
+                onTap: () => setState(
+                  () => _intake = _intake.copyWith(languages: const []),
+                ),
+              ),
               for (final language in helpLanguages)
                 CareChoiceChip(
                   language,
                   selected: _intake.languages.contains(language),
                   onTap: () => setState(() {
                     final list = [..._intake.languages];
-                    list.contains(language) ? list.remove(language) : list.add(language);
+                    list.contains(language)
+                        ? list.remove(language)
+                        : list.add(language);
                     _intake = _intake.copyWith(languages: list);
                   }),
                 ),
@@ -271,17 +326,39 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           _PrefGroup(
             title: 'Counsellor’s age',
             chips: [
-              CareChoiceChip('No preference', selected: _intake.ageRange.isEmpty, onTap: () => setState(() => _intake = _intake.copyWith(ageRange: ''))),
+              CareChoiceChip(
+                'No preference',
+                selected: _intake.ageRange.isEmpty,
+                onTap: () =>
+                    setState(() => _intake = _intake.copyWith(ageRange: '')),
+              ),
               for (final age in helpAgeRanges)
-                CareChoiceChip(age.label, selected: _intake.ageRange == age.id, onTap: () => setState(() => _intake = _intake.copyWith(ageRange: age.id))),
+                CareChoiceChip(
+                  age.label,
+                  selected: _intake.ageRange == age.id,
+                  onTap: () => setState(
+                    () => _intake = _intake.copyWith(ageRange: age.id),
+                  ),
+                ),
             ],
           ),
           _PrefGroup(
             title: 'Counsellor’s gender',
             chips: [
-              CareChoiceChip('No preference', selected: _intake.gender.isEmpty, onTap: () => setState(() => _intake = _intake.copyWith(gender: ''))),
+              CareChoiceChip(
+                'No preference',
+                selected: _intake.gender.isEmpty,
+                onTap: () =>
+                    setState(() => _intake = _intake.copyWith(gender: '')),
+              ),
               for (final gender in helpGenders)
-                CareChoiceChip(gender.label, selected: _intake.gender == gender.id, onTap: () => setState(() => _intake = _intake.copyWith(gender: gender.id))),
+                CareChoiceChip(
+                  gender.label,
+                  selected: _intake.gender == gender.id,
+                  onTap: () => setState(
+                    () => _intake = _intake.copyWith(gender: gender.id),
+                  ),
+                ),
             ],
           ),
         ],
@@ -297,13 +374,30 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
             Expanded(
               child: step > 0 || _editing || widget.onCancel != null
                   ? CareBackLink('Back', onTap: _back)
-                  : const Text('Let’s make this feel like you', style: TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+                  : const Text(
+                      'Let’s make this feel like you',
+                      style: TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.muted,
+                        fontSize: 12,
+                      ),
+                    ),
             ),
             RichText(
               text: TextSpan(
-                style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12),
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12,
+                ),
                 children: [
-                  TextSpan(text: '${step + 1}', style: const TextStyle(color: CareColors.blue, fontWeight: FontWeight.w700)),
+                  TextSpan(
+                    text: '${step + 1}',
+                    style: const TextStyle(
+                      color: CareColors.blue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const TextSpan(text: ' / 4'),
                 ],
               ),
@@ -315,7 +409,13 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           children: [
             for (var n = 0; n < 4; n++) ...[
               Expanded(
-                child: Container(height: 4, decoration: BoxDecoration(color: n <= step ? CareColors.blue : CareColors.line, borderRadius: BorderRadius.circular(5))),
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: n <= step ? CareColors.blue : CareColors.line,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
               ),
               if (n < 3) const SizedBox(width: 6),
             ],
@@ -331,11 +431,22 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         body,
         if (_message.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Text(_message, style: const TextStyle(fontFamily: careFont, color: CareColors.clay, fontSize: 12.5)),
+          Text(
+            _message,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.clay,
+              fontSize: 12.5,
+            ),
+          ),
         ],
         const SizedBox(height: 26),
         CarePrimaryButton(
-          _editing ? 'Done' : step == 3 ? 'See my starting point' : 'Continue',
+          _editing
+              ? 'Done'
+              : step == 3
+              ? 'See my starting point'
+              : 'Continue',
           icon: Icons.arrow_forward_rounded,
           onTap: _canContinue ? _advance : null,
         ),
@@ -343,11 +454,22 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         Center(
           child: TextButton(
             onPressed: _skip,
-            child: Text(step == 3 ? 'Continue without preferences' : 'Skip for now', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 13, fontWeight: FontWeight.w600)),
+            child: Text(
+              step == 3 ? 'Continue without preferences' : 'Skip for now',
+              style: const TextStyle(
+                fontFamily: careFont,
+                color: CareColors.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 6),
-        const CareMicro('Your answers stay with you and your counsellor. Nobody at your company sees them.', align: TextAlign.center),
+        const CareMicro(
+          'Your answers stay with you and your counsellor. Nobody at your company sees them.',
+          align: TextAlign.center,
+        ),
       ],
     );
   }
@@ -367,9 +489,21 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           children: [
             const Icon(Icons.check_rounded, size: 16, color: CareColors.blue),
             const SizedBox(width: 6),
-            const Text('A place to begin', style: TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            const Text(
+              'A place to begin',
+              style: TextStyle(
+                fontFamily: careFont,
+                color: CareColors.blue,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const Spacer(),
-            CareLink('Edit answers', icon: null, onTap: () => setState(() => _screen = _Screen.review)),
+            CareLink(
+              'Edit answers',
+              icon: null,
+              onTap: () => setState(() => _screen = _Screen.review),
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -377,21 +511,36 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         const SizedBox(height: 10),
         const CareHeading('A little support,\nat your own pace.', size: 30),
         const SizedBox(height: 12),
-        CareCopy(blank ? 'Take your time exploring.\nYou can share more whenever you’re ready.' : 'Here’s a starting point from what you shared.\nYou can always choose differently.'),
+        CareCopy(
+          blank
+              ? 'Take your time exploring.\nYou can share more whenever you’re ready.'
+              : 'Here’s a starting point from what you shared.\nYou can always choose differently.',
+        ),
         const SizedBox(height: 22),
         if (match != null)
           CareCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CareEyebrow(match.unmet.isEmpty ? 'Suggested counsellor' : 'Your counsellor, as chosen'),
+                CareEyebrow(
+                  match.unmet.isEmpty
+                      ? 'Suggested counsellor'
+                      : 'Your counsellor, as chosen',
+                ),
                 const SizedBox(height: 16),
                 CounsellorPerson(counsellor: match.counsellor),
                 const SizedBox(height: 16),
                 ReasonList(match.reasons),
-                if (match.unmet.isNotEmpty) ...[const SizedBox(height: 10), UnmetNote(match.unmet)],
+                if (match.unmet.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  UnmetNote(match.unmet),
+                ],
                 const SizedBox(height: 18),
-                CarePrimaryButton('Go to Help', icon: Icons.arrow_forward_rounded, onTap: widget.onDone),
+                CarePrimaryButton(
+                  'Go to Help',
+                  icon: Icons.arrow_forward_rounded,
+                  onTap: widget.onDone,
+                ),
               ],
             ),
           )
@@ -404,7 +553,10 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
                 const SizedBox(height: 12),
                 const CareSectionTitle('Nobody fits every preference you set.'),
                 const SizedBox(height: 8),
-                CareCopy('The closest is ${noMatch.counsellor.name}. Your choices haven’t been changed.', size: 13.5),
+                CareCopy(
+                  'The closest is ${noMatch.counsellor.name}. Your choices haven’t been changed.',
+                  size: 13.5,
+                ),
                 const SizedBox(height: 14),
                 CounsellorPerson(counsellor: noMatch.counsellor),
                 const SizedBox(height: 12),
@@ -412,9 +564,17 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
                 const SizedBox(height: 10),
                 ReasonList(noMatch.reasons),
                 const SizedBox(height: 18),
-                CarePrimaryButton('Show me who is available anyway', onTap: () => _accept(noMatch.counsellor.userId)),
+                CarePrimaryButton(
+                  'Show me who is available anyway',
+                  onTap: () => _accept(noMatch.counsellor.userId),
+                ),
                 const SizedBox(height: 4),
-                Center(child: CareLink('Review counsellor preferences', onTap: () => _edit(3))),
+                Center(
+                  child: CareLink(
+                    'Review counsellor preferences',
+                    onTap: () => _edit(3),
+                  ),
+                ),
               ],
             ),
           )
@@ -425,14 +585,21 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
               children: [
                 const CareSectionTitle('No counsellor is available yet.'),
                 const SizedBox(height: 8),
-                const CareCopy('Your answers are saved. A counsellor will be suggested as soon as one is.'),
+                const CareCopy(
+                  'Your answers are saved. A counsellor will be suggested as soon as one is.',
+                ),
                 const SizedBox(height: 16),
                 CarePrimaryButton('Go to Help', onTap: widget.onDone),
               ],
             ),
           ),
         const SizedBox(height: 24),
-        CareSectionTitle(_intake.topics.isNotEmpty || _intake.needs.isNotEmpty ? 'Topics to start with' : 'A few topics to explore', size: 17),
+        CareSectionTitle(
+          _intake.topics.isNotEmpty || _intake.needs.isNotEmpty
+              ? 'Topics to start with'
+              : 'A few topics to explore',
+          size: 17,
+        ),
         const SizedBox(height: 4),
         const CareCopy('Your selected topics come first.'),
         const SizedBox(height: 12),
@@ -442,14 +609,29 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           children: [
             for (final topic in topics)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-                decoration: BoxDecoration(color: CareColors.paper, borderRadius: BorderRadius.circular(14), border: Border.all(color: CareColors.line)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: CareColors.paper,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: CareColors.line),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(topic.icon, size: 16, color: CareColors.blue),
                     const SizedBox(width: 7),
-                    Text(topic.label, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 13, fontWeight: FontWeight.w500)),
+                    Text(
+                      topic.label,
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -459,40 +641,79 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: CareColors.lilac, borderRadius: BorderRadius.circular(20)),
+            decoration: BoxDecoration(
+              color: CareColors.lilac,
+              borderRadius: BorderRadius.circular(20),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const CareEyebrow('What you’d like to work towards'),
                 const SizedBox(height: 8),
-                Text(goal.label, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 22, fontWeight: FontWeight.w500, height: 1.2)),
+                Text(
+                  goal.label,
+                  style: const TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
+                ),
               ],
             ),
           ),
         ],
         const SizedBox(height: 20),
-        const CareMicro('Your answers stay with you and your counsellor. Nobody at your company sees them.', align: TextAlign.center),
+        const CareMicro(
+          'Your answers stay with you and your counsellor. Nobody at your company sees them.',
+          align: TextAlign.center,
+        ),
       ],
     );
   }
 
   List<HelpOption> _recommendations() {
-    final ordered = [for (final id in _intake.topics) if (id != 'other' && id != 'unsure') id];
+    final ordered = [
+      for (final id in _intake.topics)
+        if (id != 'other' && id != 'unsure') id,
+    ];
     final goalTopic = switch (_intake.goal) {
       'relationship' => 'relationships',
       '' => null,
       _ => 'self',
     };
     if (goalTopic != null) ordered.add(goalTopic);
-    final ids = <String>{...ordered, 'self', 'work', 'relationships', 'change'}.take(4);
+    final ids = <String>{
+      ...ordered,
+      'self',
+      'work',
+      'relationships',
+      'change',
+    }.take(4);
     return [for (final id in ids) helpTopicById(id)!];
   }
 
   Widget _reviewScreen() {
     final rows = [
-      ('What you’d like to talk about', _intake.topics.map((id) => helpTopicById(id)?.label).whereType<String>().join(', ')),
-      ('What you’d like help with', _intake.needs.map((id) => helpAllNeeds[id]?.label).whereType<String>().join(', ')),
-      ('What you’d like to work towards', helpGoalById(_intake.goal)?.label ?? ''),
+      (
+        'What you’d like to talk about',
+        _intake.topics
+            .map((id) => helpTopicById(id)?.label)
+            .whereType<String>()
+            .join(', '),
+      ),
+      (
+        'What you’d like help with',
+        _intake.needs
+            .map((id) => helpAllNeeds[id]?.label)
+            .whereType<String>()
+            .join(', '),
+      ),
+      (
+        'What you’d like to work towards',
+        helpGoalById(_intake.goal)?.label ?? '',
+      ),
       (
         'Who you’d feel comfortable with',
         'Language: ${_intake.languages.isEmpty ? 'No preference' : _intake.languages.join(' or ')}\n'
@@ -506,13 +727,16 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
       children: [
         if (canReturn)
-          CareBackLink('Your space', onTap: () {
-            if (_result != null) {
-              setState(() => _screen = _Screen.result);
-            } else {
-              widget.onCancel?.call();
-            }
-          }),
+          CareBackLink(
+            'Your space',
+            onTap: () {
+              if (_result != null) {
+                setState(() => _screen = _Screen.result);
+              } else {
+                widget.onCancel?.call();
+              }
+            },
+          ),
         const SizedBox(height: 14),
         const CareEyebrow('A little about you'),
         const SizedBox(height: 10),
@@ -523,7 +747,9 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         for (var i = 0; i < rows.length; i++)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CareColors.line))),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: CareColors.line)),
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -531,9 +757,25 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${i + 1}. ${rows[i].$1}', style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14, fontWeight: FontWeight.w700)),
+                      Text(
+                        '${i + 1}. ${rows[i].$1}',
+                        style: const TextStyle(
+                          fontFamily: careFont,
+                          color: CareColors.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text(rows[i].$2.isEmpty ? 'Skipped for now' : rows[i].$2, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 13, height: 1.5)),
+                      Text(
+                        rows[i].$2.isEmpty ? 'Skipped for now' : rows[i].$2,
+                        style: const TextStyle(
+                          fontFamily: careFont,
+                          color: CareColors.muted,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -543,16 +785,28 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           ),
         const SizedBox(height: 22),
         if (_result != null)
-          CarePrimaryButton('Back to my space', icon: Icons.arrow_forward_rounded, onTap: () => setState(() => _screen = _Screen.result))
+          CarePrimaryButton(
+            'Back to my space',
+            icon: Icons.arrow_forward_rounded,
+            onTap: () => setState(() => _screen = _Screen.result),
+          )
         else
-          CarePrimaryButton('Save and see my starting point', icon: Icons.arrow_forward_rounded, onTap: _save),
+          CarePrimaryButton(
+            'Save and see my starting point',
+            icon: Icons.arrow_forward_rounded,
+            onTap: _save,
+          ),
       ],
     );
   }
 }
 
 class _OptionGrid extends StatelessWidget {
-  const _OptionGrid({required this.items, required this.selected, required this.onTap});
+  const _OptionGrid({
+    required this.items,
+    required this.selected,
+    required this.onTap,
+  });
 
   final List<HelpOption> items;
   final List<String> selected;
@@ -564,15 +818,28 @@ class _OptionGrid extends StatelessWidget {
       shrinkWrap: true,
       padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: 64),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        mainAxisExtent: 64,
+      ),
       itemCount: items.length,
-      itemBuilder: (_, i) => _OptionTile(option: items[i], selected: selected.contains(items[i].id), onTap: () => onTap(items[i].id)),
+      itemBuilder: (_, i) => _OptionTile(
+        option: items[i],
+        selected: selected.contains(items[i].id),
+        onTap: () => onTap(items[i].id),
+      ),
     );
   }
 }
 
 class _OptionTile extends StatelessWidget {
-  const _OptionTile({required this.option, required this.selected, required this.onTap});
+  const _OptionTile({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
 
   final HelpOption option;
   final bool selected;
@@ -593,7 +860,10 @@ class _OptionTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: selected ? CareColors.blue : CareColors.line, style: quiet && !selected ? BorderStyle.solid : BorderStyle.solid),
+            border: Border.all(
+              color: selected ? CareColors.blue : CareColors.line,
+              style: quiet && !selected ? BorderStyle.solid : BorderStyle.solid,
+            ),
           ),
           child: Row(
             children: [
@@ -602,10 +872,23 @@ class _OptionTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   option.label,
-                  style: TextStyle(fontFamily: careFont, color: quiet && !selected ? CareColors.muted : CareColors.ink, fontSize: 12.5, fontWeight: FontWeight.w500, height: 1.3),
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: quiet && !selected
+                        ? CareColors.muted
+                        : CareColors.ink,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                  ),
                 ),
               ),
-              if (selected) const Icon(Icons.check_rounded, size: 16, color: CareColors.blue),
+              if (selected)
+                const Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: CareColors.blue,
+                ),
             ],
           ),
         ),
@@ -628,8 +911,19 @@ class _PrefGroup extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14, fontWeight: FontWeight.w700)),
-          if (hint != null) ...[const SizedBox(height: 3), CareCopy(hint!, size: 12)],
+          Text(
+            title,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (hint != null) ...[
+            const SizedBox(height: 3),
+            CareCopy(hint!, size: 12),
+          ],
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: chips),
         ],

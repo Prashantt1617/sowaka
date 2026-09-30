@@ -1,33 +1,43 @@
 {
   "version": 1,
-  "_note": "Media Sowaka provides. A null url means not provided yet; the app shows the card and says the file is on its way. Move videos are keyed '<stretch>/<step>' with steps counted from 1: eyes, neck, shoulders, spine, wrists, legs. Topics are the ten on Help home: edit the text here and it changes in the app on its next open. Money worries stays reflective, never advice.",
+  "_note": "Care content. Everything the app and the web pages show for Care and the Help topics: the topics (kind decides the page: grief, balance, parents, couples, or generic), the Move stretches and Breathe moods, the Write prompts, the Listen and Sleep shelves, clip and sound urls under /media, and webBase. This file seeds the database (scripts/seed-care-catalog.ts); once in the database, the database copy is what is served, so edit it there.",
+  "webBase": "",
   "topics": [
     {
-      "id": "stress",
-      "name": "Stress & overwhelm",
-      "intro": "When there is a lot on your mind.",
-      "article": "Making sense of what’s weighing on you",
-      "question": "What is asking for most of your energy right now?",
-      "tool": "One thing at a time",
-      "toolBody": "List what is on your mind. Choose one thing you could make smaller, share, or leave for another day."
-    },
-    {
-      "id": "burnout",
-      "name": "Burnout",
-      "intro": "When your energy feels stretched thin.",
-      "article": "Noticing what takes—and gives—energy",
-      "question": "What has felt especially draining lately?",
-      "tool": "Your energy map",
-      "toolBody": "Make two lists: things that take energy, and things that give a little back. Notice one change you would like to explore."
-    },
-    {
-      "id": "work",
-      "name": "Pressure at work",
-      "intro": "Deadlines, expectations, and everything in between.",
-      "article": "Untangling expectations at work",
-      "question": "Which expectation at work feels hardest to carry?",
-      "tool": "Prepare a conversation",
-      "toolBody": "What is happening? What is the impact on you? What would you like to ask for? Use these three questions to sketch a conversation."
+      "id": "loss",
+      "name": "Grief & loss",
+      "intro": "A place to explore what loss means for you.",
+      "article": "There is no single story of loss",
+      "question": "What would you like to put into words about your loss?",
+      "tool": "A letter, if you feel like it",
+      "toolBody": "Write to a person, a part of your life, or yourself. There is no need to finish it, share it, or make it positive.",
+      "kind": "grief",
+      "content": {
+        "title": "A place to begin.",
+        "lede": "Whatever loss looks like for you.",
+        "cards": [
+          {
+            "eyebrow": "Loss takes many forms",
+            "title": "Some losses are hard to put into words.",
+            "body": "A death. A breakup. A friendship ending. Pregnancy loss. A change in your health, a role, or the future you imagined.",
+            "note": "Whatever you’re grieving, there is room to talk about it."
+          },
+          {
+            "eyebrow": "When your sense of self shifts",
+            "title": "“I don’t quite know who I am now.”",
+            "body": "You may miss the life you shared, being needed, or the future you pictured. Parts of who you are may feel uncertain.",
+            "note": "Grief can touch your energy, concentration, relationships, and sense of purpose."
+          },
+          {
+            "eyebrow": "You can start where you are",
+            "title": "“I don’t know where to start.”",
+            "body": "A counsellor can listen, help you explore what has changed, and work with you on what feels difficult right now.",
+            "note": "You can share as much or as little as you feel ready to. One sentence is enough to begin."
+          }
+        ],
+        "counsellorNote": "You don’t need to have the right words. Start with what’s on your mind.",
+        "bookLabel": "Book an appointment"
+      }
     },
     {
       "id": "balance",
@@ -36,16 +46,43 @@
       "article": "Where does your workday end?",
       "question": "Where would you like a little more space between work and life?",
       "tool": "A boundary worth trying",
-      "toolBody": "Name one boundary you would like to explore, who needs to know about it, and what might make it easier to keep."
-    },
-    {
-      "id": "parent",
-      "name": "New parenthood",
-      "intro": "Finding your way through a new chapter.",
-      "article": "Making room for your needs, too",
-      "question": "What kind of support would feel useful to you this week?",
-      "tool": "Your support circle",
-      "toolBody": "Write down the practical help, company, or time you would appreciate. Then think about who you might ask."
+      "toolBody": "Name one boundary you would like to explore, who needs to know about it, and what might make it easier to keep.",
+      "kind": "balance",
+      "content": {
+        "title": "My life, right now.",
+        "lede": "Make a little space for each part of your life. Tap an area to reflect.",
+        "areas": [
+          {
+            "id": "work",
+            "label": "Work"
+          },
+          {
+            "id": "movement",
+            "label": "Movement & fitness"
+          },
+          {
+            "id": "hobbies",
+            "label": "Hobbies & interests"
+          },
+          {
+            "id": "social",
+            "label": "Friends & social life"
+          },
+          {
+            "id": "relationship",
+            "label": "Relationship"
+          },
+          {
+            "id": "family",
+            "label": "Family"
+          }
+        ],
+        "prompts": {
+          "good": "What’s going well here?",
+          "attention": "What feels missing or needs more attention?"
+        },
+        "dotNote": "A dot marks an area with notes"
+      }
     },
     {
       "id": "couples",
@@ -54,81 +91,796 @@
       "article": "Getting to know your shared everyday",
       "question": "What would you like your partner to understand about your day?",
       "tool": "A conversation starter",
-      "toolBody": "Try finishing these sentences: “Something I appreciate is…” and “Something I would like us to talk about is…”"
+      "toolBody": "Try finishing these sentences: “Something I appreciate is…” and “Something I would like us to talk about is…”",
+      "kind": "couples",
+      "content": {
+        "title": "A little closer, every day.",
+        "lede": "Small questions, thoughtful gestures, and time for the two of you.",
+        "questions": [
+          "What is one small thing that would make today feel better for you?",
+          "Which moment from today would you like me to know about?",
+          "What has made you smile unexpectedly lately?",
+          "Is there something you have been looking forward to telling me?",
+          "When did we last have fun in a way you would like to repeat?",
+          "What is something I do that helps you feel noticed?",
+          "Which ordinary moment with us do you quietly love?",
+          "What is a memory of us that still makes you laugh?",
+          "What part of your week has taken more energy than I might realise?",
+          "When you have had a hard day, what kind of company feels good?",
+          "Is there something you would like encouragement with this week?",
+          "What is one thing we could make a little easier for each other?",
+          "What is something about you that I am still getting to know?",
+          "Which interest of yours would you like to share with me?",
+          "What would a restful evening together look like for you?",
+          "What is a small adventure you would like us to try?",
+          "Is there a way we show affection that you especially enjoy?",
+          "What helps you feel listened to when we talk?",
+          "When you need some time alone, how could we communicate that kindly?",
+          "What would help us feel more like a team this week?",
+          "Is there a conversation you would like us to make time for?",
+          "What helps you return to a conversation after a pause?",
+          "What is a difference between us that you have come to appreciate?",
+          "What do you wish we made more room for in our days?",
+          "What is a small tradition you would enjoy starting together?",
+          "What would you like us to celebrate more often?",
+          "What is one hope you have for the next few months?",
+          "Is there a shared goal we could take one small step toward?",
+          "What is something we have learned together?",
+          "What kind of support feels most useful from me right now?",
+          "What is something you appreciate about how we have grown?",
+          "What would you like our next chapter to have more of?"
+        ],
+        "starters": [
+          {
+            "label": "My day",
+            "name": "About my day",
+            "copy": "Let each other into the little things.",
+            "items": [
+              "One moment that stayed with me today was…",
+              "Today I felt most like myself when…",
+              "Something that took more out of me than I expected was…"
+            ]
+          },
+          {
+            "label": "Appreciation",
+            "name": "Something I appreciate",
+            "copy": "Say the thing you might usually leave unsaid.",
+            "items": [
+              "When you ___, I felt ___. Thank you for…",
+              "A small thing you did that I noticed was…",
+              "Something I admire about you lately is…"
+            ]
+          },
+          {
+            "label": "On my mind",
+            "name": "Something to talk about",
+            "copy": "Make space for a conversation that matters.",
+            "items": [
+              "There’s something on my mind. Would now be a good time to talk about ___?",
+              "Something I’d like us to understand better is…",
+              "I’ve been feeling ___ about ___. I’d like to hear how it feels for you."
+            ]
+          }
+        ],
+        "letterCues": [
+          "A moment with you I keep coming back to…",
+          "Something I appreciate about you…",
+          "Something I’m looking forward to with you…"
+        ],
+        "shorts": [
+          {
+            "id": "couples-short-1",
+            "topic": "Conflict",
+            "cover": "A gentler start",
+            "time": "60 sec",
+            "title": "A gentler way into a hard conversation",
+            "try": "I’ve been feeling ___ about ___. Could we find a time to talk it through?",
+            "frames": [
+              [
+                "Start with one moment.",
+                "“When our plans changed yesterday, I felt out of the loop.” A specific moment can be easier to discuss than “you always” or “you never.”"
+              ],
+              [
+                "Name what you need.",
+                "Try making a clear request: “Could we check with each other before changing our plans?” Leave room to hear their experience too."
+              ],
+              [
+                "Make room for a pause.",
+                "If either of you needs a break, agree on a time to return. The conversation can wait until you both feel ready."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "couples-short-2",
+            "topic": "Bids for connection",
+            "cover": "The little invitations",
+            "time": "45 sec",
+            "title": "Notice the little invitations",
+            "try": "What is one small way you reach out to me that I might sometimes miss?",
+            "frames": [
+              [
+                "“Look at this.”",
+                "A funny photo, a story from the day, a small sigh. Sometimes these are invitations for a little attention or connection."
+              ],
+              [
+                "Meet the invitation.",
+                "Put down what you’re doing for a moment, ask a question, or say “tell me more.” A response can be small and still thoughtful."
+              ],
+              [
+                "If now isn’t a good time…",
+                "You can say, “I want to hear this. Can we talk after I finish?” Then make a little room to come back."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "couples-short-3",
+            "topic": "Shared meaning",
+            "cover": "Your kind of us",
+            "time": "60 sec",
+            "title": "Make a ritual that feels like you",
+            "try": "What small tradition would feel like “us” and be easy to enjoy together?",
+            "frames": [
+              [
+                "Begin with something ordinary.",
+                "Tea on the balcony. A song while cooking. A walk with no agenda. A shared ritual can be small."
+              ],
+              [
+                "Ask what it means to you.",
+                "Is this a moment of play, comfort, celebration, or belonging? You might each find something different in it."
+              ],
+              [
+                "Make it yours together.",
+                "Choose something you both want. Try it once, talk about how it felt, and change it as your lives change."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "couples-short-4",
+            "topic": "Shared goals",
+            "cover": "A dream, a small step",
+            "time": "45 sec",
+            "title": "One small step toward a shared goal",
+            "try": "What is one thing we both want to make more room for, and one small step we could try?",
+            "frames": [
+              [
+                "Make room for both hopes.",
+                "Each share something you would like more of in the next few months. Listen before deciding what comes next."
+              ],
+              [
+                "Find a point of overlap.",
+                "A goal might be more rest, time together, learning something, or planning a trip. It should feel chosen by both of you."
+              ],
+              [
+                "Choose one small step.",
+                "Decide what feels manageable this week and who wants to do what. Pick a time to check in and adjust together."
+              ]
+            ],
+            "url": null
+          }
+        ]
+      }
     },
     {
-      "id": "family",
-      "name": "Family pressure",
-      "intro": "Your needs, their expectations, and the space between.",
-      "article": "Understanding the expectations you carry",
-      "question": "Which family expectation would you like more room to question?",
-      "tool": "What matters to you?",
-      "toolBody": "Write down what you want, what others are hoping for, and where you might need a clearer conversation."
-    },
-    {
-      "id": "loss",
-      "name": "Grief & loss",
-      "intro": "A place to explore what loss means for you.",
-      "article": "There is no single story of loss",
-      "question": "What would you like to put into words about your loss?",
-      "tool": "A letter, if you feel like it",
-      "toolBody": "Write to a person, a part of your life, or yourself. There is no need to finish it, share it, or make it positive."
-    },
-    {
-      "id": "money",
-      "name": "Money worries",
-      "intro": "Space to talk about the pressure money can bring.",
-      "article": "The feelings around money",
-      "question": "What about money feels most uncertain right now?",
-      "tool": "Separate the worry from the next step",
-      "toolBody": "Describe what is worrying you, what information you are missing, and one question you would like help answering."
-    },
-    {
-      "id": "change",
-      "name": "Life changes",
-      "intro": "When things are shifting around you.",
-      "article": "Finding your footing in a transition",
-      "question": "What is changing, and what would you like to hold on to?",
-      "tool": "What stays, what changes",
-      "toolBody": "List what is changing and what feels steady. Choose one familiar thing you would like to make room for."
+      "id": "parent",
+      "name": "New parenthood",
+      "intro": "Finding your way through a new chapter.",
+      "article": "Making room for your needs, too",
+      "question": "What kind of support would feel useful to you this week?",
+      "tool": "Your support circle",
+      "toolBody": "Write down the practical help, company, or time you would appreciate. Then think about who you might ask.",
+      "kind": "parents",
+      "content": {
+        "title": "You’re growing into this, too.",
+        "lede": "For the beautiful, messy, still-figuring-it-out days.",
+        "stories": [
+          {
+            "id": "story-1",
+            "title": "I love you. I miss parts of my old life.",
+            "teaser": "Making room for love and longing in the same day.",
+            "collection": "both",
+            "body": [
+              "I found an old photo of myself getting ready to go out. Nothing special: a shirt I liked, music playing, nowhere urgent to be. I missed that version of an ordinary evening.",
+              "Then my baby made a tiny, ridiculous sound, and I laughed. Both feelings were there.",
+              "For a while, I thought missing my old life meant I wasn’t grateful enough for this one. Now I’m trying to describe what I miss more precisely: choosing my own pace, finishing a conversation, feeling like myself. I don’t have a neat answer. This week, I asked for an hour to do something familiar. It felt good to have that little space."
+            ]
+          },
+          {
+            "id": "story-2",
+            "title": "I wanted someone to ask about me.",
+            "teaser": "One honest conversation beneath all the baby updates.",
+            "collection": "mother",
+            "body": [
+              "Every call began with the same lovely question: “How’s the baby?” I had plenty to say. New expressions, changing routines, another photograph. Somehow, by the end, I hadn’t said much about myself.",
+              "One afternoon, a friend asked, “And how has today been for you?” I almost gave my usual answer. Instead, I told her I felt stretched thin and a little lonely.",
+              "She didn’t turn it into advice. We talked about my day, then hers. Later, I sent another friend a message: “I’d love some company. Could we talk about something other than baby things for a while?” It was a small request, but it sounded like me."
+            ]
+          },
+          {
+            "id": "story-3",
+            "title": "We’re getting to know each other.",
+            "teaser": "Finding connection in ordinary moments of care.",
+            "collection": "father",
+            "body": [
+              "I imagined there would be a moment when I suddenly felt confident as a dad. Instead, there were lots of ordinary moments when I was learning.",
+              "I started talking to my baby while getting their clothes ready. Completely unremarkable things: the weather, a song stuck in my head, why I could never find the other sock. At first, I felt a bit silly.",
+              "Over time, this became something I looked forward to. I was learning their expressions and finding my own way to be present. I still have uncertain days. But caring for them gives us time together, and the other sock remains an excellent topic of conversation."
+            ]
+          }
+        ],
+        "letterPrompts": [
+          "Something you did today that I want to remember…",
+          "A very ordinary moment with you that meant something to me…",
+          "Today, you made me laugh when…",
+          "Something I’m learning about being your parent…",
+          "One thing about my life right now that I’d love you to know someday…"
+        ],
+        "moments": [
+          {
+            "moment": "Reading a little together",
+            "prompt": "What did I notice about our time together?"
+          },
+          {
+            "moment": "Getting ready for the day",
+            "prompt": "What am I beginning to learn about you?"
+          },
+          {
+            "moment": "A walk together",
+            "prompt": "What did we see or hear that I want to remember?"
+          },
+          {
+            "moment": "Telling you about my day",
+            "prompt": "What would I like you to know about me?"
+          },
+          {
+            "moment": "An everyday care moment",
+            "prompt": "What felt familiar today? What am I still figuring out?"
+          }
+        ],
+        "videos": [
+          {
+            "id": "parents-video-1",
+            "category": "Rest",
+            "title": "A pause for tired days",
+            "label": "Feeling exhausted",
+            "duration": "1 min",
+            "frames": [
+              [
+                "You can put something down.",
+                "For this moment, choose one thing that does not need to be finished right now."
+              ],
+              [
+                "What would help a little?",
+                "Company, practical help, a quieter room, or time to rest? Choose something that fits this day."
+              ],
+              [
+                "Give the need some words.",
+                "“Could you take care of ___ for a while so I can ___?” You can make the request small and specific."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "parents-video-2",
+            "category": "Rest",
+            "title": "Nothing to do, for a moment",
+            "label": "Guided deep rest",
+            "duration": "5 min",
+            "frames": [
+              [
+                "A little room to rest.",
+                "Choose a moment when your baby is safely cared for and you can pause. Find a comfortable, supported position."
+              ],
+              [
+                "Notice what is holding you.",
+                "The chair, the cushion, the bed. Let your breathing find its own pace. There is no task to complete here."
+              ],
+              [
+                "Return in your own time.",
+                "Notice the room around you. Take a little time before moving on to the next part of your day."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "parents-video-3",
+            "category": "Control",
+            "title": "When plans keep changing",
+            "label": "Finding a little control",
+            "duration": "1 min",
+            "frames": [
+              [
+                "Some days won’t follow the plan.",
+                "Name one thing that feels uncertain today. You do not need to solve the whole day at once."
+              ],
+              [
+                "Look for one choice you have.",
+                "Could you simplify a task, postpone something, or ask someone to take one thing on?"
+              ],
+              [
+                "Make the next step small.",
+                "Choose what feels manageable now. You can change the plan again when you need to."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "parents-video-4",
+            "category": "Emotions",
+            "title": "Making room for how you feel",
+            "label": "Understanding emotions",
+            "duration": "2 min",
+            "frames": [
+              [
+                "Start with your own words.",
+                "Tired, tender, joyful, lonely, unsure — or something else entirely. What word fits this moment?"
+              ],
+              [
+                "You don’t have to explain it away.",
+                "You can ask someone to listen without asking them to fix it. “Could I tell you how today has felt?”"
+              ],
+              [
+                "Support can include a professional.",
+                "If changes in your mood feel persistent or worrying, talk with a health professional. You can ask for support without finding perfect words."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "parents-video-5",
+            "category": "Hormones",
+            "title": "Why everything can feel different",
+            "label": "Hormones & change",
+            "duration": "2 min",
+            "frames": [
+              [
+                "A lot is changing.",
+                "After birth, hormonal changes, physical recovery, sleep, and new responsibilities can all be part of how you feel."
+              ],
+              [
+                "Your experience deserves attention.",
+                "Difficult feelings do not need to be dismissed as “just hormones.” There is room to talk about what is happening for you."
+              ],
+              [
+                "Bring your questions.",
+                "A health professional can help you understand changes and find support that fits. This video would be led by a perinatal clinician."
+              ]
+            ],
+            "url": null
+          },
+          {
+            "id": "parents-video-6",
+            "category": "Movement",
+            "title": "Moving at your own pace",
+            "label": "Gentle postnatal movement",
+            "duration": "4 min",
+            "frames": [
+              [
+                "Recovery is personal.",
+                "This planned video introduces gentle postnatal movement with a qualified postnatal clinician."
+              ],
+              [
+                "Start with what fits your recovery.",
+                "The right starting point depends on your birth and recovery. A clinician can help you choose suitable movements."
+              ],
+              [
+                "A guided session, when ready.",
+                "The final video would demonstrate clinician-selected movements and adaptations. Exercises are not demonstrated in this storyboard."
+              ]
+            ],
+            "url": null
+          }
+        ],
+        "collections": {
+          "mother": {
+            "label": "For mothers",
+            "title": "Me, alongside motherhood",
+            "copy": "Space for your identity, your needs, and the changes you’re finding your way through.",
+            "story": 1,
+            "videos": [
+              3,
+              5
+            ]
+          },
+          "father": {
+            "label": "For fathers",
+            "title": "Finding my way as Dad",
+            "copy": "Space for your feelings, your confidence, and your own connection with your child.",
+            "story": 2,
+            "videos": [
+              0,
+              2
+            ]
+          }
+        },
+        "motherPrompts": {
+          "feel": "How do you feel?",
+          "need": "What do you need?"
+        }
+      }
     }
   ],
-  "moveVideos": {
-    "eyes/1": null,
-    "eyes/2": null,
-    "eyes/3": null,
-    "eyes/4": null,
-    "eyes/5": null,
-    "neck/1": null,
-    "neck/2": null,
-    "neck/3": null,
-    "neck/4": null,
-    "neck/5": null,
-    "shoulders/1": null,
-    "shoulders/2": null,
-    "shoulders/3": null,
-    "shoulders/4": null,
-    "shoulders/5": null,
-    "spine/1": null,
-    "spine/2": null,
-    "spine/3": null,
-    "spine/4": null,
-    "spine/5": null,
-    "spine/6": null,
-    "spine/7": null,
-    "wrists/1": null,
-    "wrists/2": null,
-    "wrists/3": null,
-    "wrists/4": null,
-    "wrists/5": null,
-    "legs/1": null,
-    "legs/2": null,
-    "legs/3": null,
-    "legs/4": null,
-    "legs/5": null,
-    "legs/6": null,
-    "legs/7": null,
-    "legs/8": null
+  "stretches": [
+    {
+      "key": "eyes",
+      "zone": "Eyes",
+      "name": "Palming & Reset",
+      "sub": "Your eyes are muscles too — give them a moment of rest.",
+      "steps": [
+        "Rub your palms together quickly until they feel warm.",
+        "Close your eyes and cup your warm palms gently over them.",
+        "No pressure — just warmth and complete darkness.",
+        "Stay here for 30 seconds and breathe slowly.",
+        "Open your eyes. Trace a slow figure-eight in the air with your gaze."
+      ],
+      "pauseSteps": [
+        3,
+        4
+      ]
+    },
+    {
+      "key": "neck",
+      "zone": "Neck",
+      "name": "Neck Release",
+      "sub": "Unwind hours of desk tension in under two minutes.",
+      "steps": [
+        "Sit tall. Slowly drop your right ear toward your right shoulder.",
+        "Hold for 3 deep breaths — feel the left side of your neck soften.",
+        "Roll your chin slowly down to your chest. Breathe.",
+        "Continue over to your left shoulder. Hold for 3 breaths.",
+        "Add 3 shoulder rolls forward, 3 back. Shake it out."
+      ],
+      "pauseSteps": [
+        2,
+        4
+      ]
+    },
+    {
+      "key": "shoulders",
+      "zone": "Shoulders",
+      "name": "Shoulder Release",
+      "sub": "Melt the tension you carry up around your ears.",
+      "steps": [
+        "Roll both shoulders up toward your ears, then back and down — 5 slow rolls.",
+        "Reverse — roll them forward and down 5 times.",
+        "Bring your right arm across your chest; draw it in with your left hand. Hold 20 seconds.",
+        "Switch — left arm across your chest. Hold 20 seconds.",
+        "Reach both arms overhead, interlace your fingers and press your palms to the sky. Hold 3 breaths."
+      ],
+      "pauseSteps": [
+        3,
+        4
+      ]
+    },
+    {
+      "key": "spine",
+      "zone": "Spine & Back",
+      "name": "Full Spine Sequence",
+      "sub": "Stretch your spine in every direction it can move.",
+      "steps": [
+        "Flexion — round your spine forward, tuck your chin, draw your navel in. Hold 3 breaths.",
+        "Extension — arch back, lift your chest and gaze gently upward. Hold 3 breaths.",
+        "Side bend left — reach your right arm overhead and lean left. Hold 3 breaths.",
+        "Side bend right — reach your left arm overhead and lean right. Hold 3 breaths.",
+        "Rotation left — sit tall and twist gently to the left. Hold 3 breaths.",
+        "Rotation right — sit tall and twist gently to the right. Hold 3 breaths.",
+        "Return to centre and rest. Let your spine settle for 30 seconds."
+      ],
+      "pauseSteps": [
+        7
+      ]
+    },
+    {
+      "key": "wrists",
+      "zone": "Wrists",
+      "name": "Wrist Reset",
+      "sub": "Essential for anyone who types or scrolls all day.",
+      "steps": [
+        "Extend both arms in front of you, palms facing down.",
+        "Make slow circles with both wrists — 5 in each direction.",
+        "Shake your hands out loosely for 5 seconds.",
+        "Press your palms together at chest height.",
+        "Slowly lower your hands toward your waist, palms together. Hold 20s."
+      ],
+      "pauseSteps": [
+        5
+      ]
+    },
+    {
+      "key": "legs",
+      "zone": "Legs",
+      "name": "Legs Reset",
+      "sub": "Your legs carry you everywhere — give them this.",
+      "steps": [
+        "Sit at the very edge of your chair.",
+        "Straighten your right leg, heel resting on the floor.",
+        "Sit tall and hinge slowly forward from your hips — not your back.",
+        "Reach toward your foot. Hold 20 seconds, breathing deeply.",
+        "Switch legs. Repeat twice on each side.",
+        "Chair squats — stand in front of the seat, feet hip-width apart.",
+        "Lower slowly as if to sit, lightly tap the seat, then stand tall. Do 10 reps.",
+        "Stand and rest, hands on hips. Breathe for 20 seconds."
+      ],
+      "pauseSteps": [
+        4,
+        8
+      ]
+    }
+  ],
+  "moods": [
+    {
+      "key": "angry",
+      "label": "Angry",
+      "want": "Calm",
+      "name": "Long Exhale Breathing",
+      "sub": "A longer exhale switches on your calming response. Let each out-breath be slow and complete.",
+      "kind": "breath",
+      "rounds": 5,
+      "pattern": [
+        [
+          "Breathe in",
+          4
+        ],
+        [
+          "Breathe out",
+          6
+        ]
+      ]
+    },
+    {
+      "key": "anxious",
+      "label": "Anxious",
+      "want": "Grounded",
+      "name": "Feet Press + Box Breathing",
+      "sub": "Four even sides. Ground through your feet while the breath moves around the box.",
+      "kind": "breath",
+      "note": "Press both feet firmly into the floor — feel the ground hold you — as you breathe.",
+      "rounds": 4,
+      "square": true,
+      "pattern": [
+        [
+          "Breathe in",
+          4
+        ],
+        [
+          "Hold",
+          4
+        ],
+        [
+          "Breathe out",
+          4
+        ],
+        [
+          "Hold",
+          4
+        ]
+      ],
+      "poseUrl": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F0ef816fc-244d-44ac-9acc-29a1c1dada90-pose-anxious.jpg"
+    },
+    {
+      "key": "jealous",
+      "label": "Jealous",
+      "want": "Content",
+      "name": "Gratitude Pause",
+      "sub": "Comparison fades when your attention turns to what is already yours.",
+      "kind": "steps",
+      "steps": [
+        "Place one hand on your heart and close your eyes.",
+        "Take a slow breath and bring to mind one thing you are grateful for.",
+        "Name two more — small and ordinary still count.",
+        "Rest here and feel the warmth of each one. Hold 20 seconds.",
+        "Open your eyes and carry that fullness with you."
+      ],
+      "pauseSteps": [
+        4
+      ]
+    },
+    {
+      "key": "scrolling",
+      "label": "Can’t stop scrolling",
+      "want": "Present",
+      "name": "5-4-3-2-1 Sensory Reset",
+      "sub": "Pull your mind out of the feed and back into the room through your senses.",
+      "kind": "steps",
+      "steps": [
+        "Look around and name 5 things you can see.",
+        "Notice 4 things you can feel — your seat, your feet, the air.",
+        "Listen for 3 things you can hear.",
+        "Find 2 things you can smell.",
+        "Notice 1 thing you can taste. You are here now."
+      ],
+      "pauseSteps": []
+    },
+    {
+      "key": "nervous",
+      "label": "Nervous",
+      "want": "Confident",
+      "name": "Mountain Pose + Power Breath",
+      "sub": "Stand like a mountain and breathe with power — your posture tells your brain you are ready.",
+      "kind": "breath",
+      "note": "",
+      "rounds": 5,
+      "pattern": [
+        [
+          "Breathe in",
+          4
+        ],
+        [
+          "Hold",
+          2
+        ],
+        [
+          "Release",
+          4
+        ]
+      ],
+      "poseUrl": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F61540fc2-d840-42ec-8c74-5046d24c797b-pose-nervous.jpg"
+    },
+    {
+      "key": "sleep",
+      "label": "Can’t switch off",
+      "want": "Sleep",
+      "name": "4-6 Breathing",
+      "sub": "A short in-breath and a long out-breath ease you toward rest. Let it slow you all the way down.",
+      "kind": "breath",
+      "rounds": 6,
+      "pattern": [
+        [
+          "Breathe in",
+          4
+        ],
+        [
+          "Breathe out",
+          6
+        ]
+      ]
+    }
+  ],
+  "moveClips": {
+    "eyes": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fc66d89d9-8e54-4030-92f4-98a68a057e79-eys_1_.mp4",
+        "steps": [
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F42f3c314-fece-4d83-b7fd-a08338f4df69-eys_2_.mp4",
+        "steps": [
+          2
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F05f3ca4a-2c18-42d1-9c9d-449feaea9cdf-eys_3_.mp4",
+        "steps": [
+          5
+        ]
+      }
+    ],
+    "neck": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F3d005cf1-faf7-487c-b512-29c5f7b1e178-neck_1_.mp4",
+        "steps": [
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fc37153fa-d0d7-4d30-81bf-0e48e4049eee-neck_2_.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa0ba29a3-28c6-46e5-a7b0-b7edec8b1a61-neck_3_.mp4",
+        "steps": [
+          5
+        ]
+      }
+    ],
+    "shoulders": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa8c06e7f-1abd-40f3-878e-c9c3fe1fa565-shoulder_1_.mp4",
+        "steps": [
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+        "steps": [
+          2
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F333d9764-2c46-48fb-a75e-182ddb34bc0a-shoulder_3.mp4",
+        "steps": [
+          5
+        ]
+      }
+    ],
+    "spine": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Ffc806272-da90-4a06-b413-224f36b9bfb8-spin_1_.mp4",
+        "steps": [
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fed6d3358-b454-437b-8535-0b1f69a8039c-spin_2_.mp4",
+        "steps": [
+          2
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F61132d1b-80a5-4832-a97d-8476b3622818-spin_3_.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F752cb637-5da9-4d09-9258-a2312393cfdc-spin_4.mp4",
+        "steps": [
+          4
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F3b491034-0c49-4d74-8ced-c921c6457f94-spin_5_.mp4",
+        "steps": [
+          5
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F5dd6a497-d801-47b8-a92f-c5041f797ae2-spin_6_.mp4",
+        "steps": [
+          6
+        ]
+      }
+    ],
+    "wrists": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fd8b985eb-4184-4553-b04d-a5872562e903-wrist_1_.mp4",
+        "steps": [
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F78fc2472-94c0-4fe8-9a3e-dbe8f4fa0c92-wrist_2_3_.mp4",
+        "steps": [
+          2,
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F12b88d37-2a55-4187-b366-ecdb64038426-wrist_5_.mp4",
+        "steps": [
+          5
+        ]
+      }
+    ],
+    "legs": [
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fd1dd4e2b-395e-4074-bfa9-c2f9c2552e16-leg.mp4",
+        "steps": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    ]
+  },
+  "breatheSounds": {
+    "angry": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fb56a02e8-4310-4354-86d4-d610748f2aef-calm.mp3",
+    "anxious": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4f03a8f2-7d73-4c53-a8c4-ab5fb9259532-_Calming_Ocean_Waves_On_The_Shore_.mp3",
+    "jealous": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa303f895-d5b9-4f86-adc2-26dd1ae2a512-Relaxing_Flute_Nature_Sounds_Me_.mp3",
+    "scrolling": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fbd6aa494-4adb-4260-b339-2245b6874846-_Beautiful_Nature_River_Falls_Footage_48KBPS.mp3",
+    "nervous": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa303f895-d5b9-4f86-adc2-26dd1ae2a512-Relaxing_Flute_Nature_Sounds_Me_.mp3",
+    "sleep": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4f03a8f2-7d73-4c53-a8c4-ab5fb9259532-_Calming_Ocean_Waves_On_The_Shore_.mp3"
   },
   "listen": {
     "meditations": [
@@ -136,19 +888,19 @@
         "id": "listen-moment",
         "title": "Come back to this moment",
         "meta": "5 min · Guided meditation",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4955a6f9-af17-4996-900f-040c43bdcb55-come_back_to_this_movement_.App.mp3"
       },
       {
         "id": "listen-pause",
         "title": "A pause between things",
         "meta": "3 min · Guided meditation",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fbb4c2028-405f-494c-96e6-34fa4173c304-a_pause_btw_things_.mp3"
       },
       {
         "id": "listen-evening",
         "title": "An evening exhale",
         "meta": "8 min · Guided meditation",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fb5e9873c-7e90-443c-a37d-6748c3bcdec8-a_evening_exhale_guided_meditation.App.mp3"
       }
     ],
     "affirmations": [
@@ -156,19 +908,19 @@
         "id": "affirm-time",
         "title": "You can take your time",
         "meta": "2 min · Affirmations",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fae30ba5b-5d10-49d0-aa83-0fbf65977848-you_can_take_your_time_.mp3"
       },
       {
         "id": "affirm-all",
         "title": "You don’t have to do it all",
         "meta": "3 min · Affirmations",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F43e9be68-9f65-42ee-a378-02ebf6f59e8a-you_dont_have_to_do_everything_alone_.mp3"
       },
       {
         "id": "affirm-voice",
         "title": "A kinder inner voice",
         "meta": "3 min · Affirmations",
-        "url": null
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F6e7b61a8-7464-40bd-83d2-f51e4e5ad183-inner_voice_.mp3"
       }
     ]
   },
@@ -203,6 +955,12 @@
     ],
     "sounds": [
       {
+        "id": "sound-drift",
+        "title": "Drift off",
+        "meta": "10 min · Soundscape",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F59c2983d-05df-48e8-b508-c1498e15eebe-sleep.mp3"
+      },
+      {
         "id": "sound-rain",
         "title": "Rain at the window",
         "meta": "30 min · Soundscape",
@@ -223,15 +981,9 @@
     "What is one small thing you appreciated recently?"
   ],
   "topicVideos": {
-    "stress": null,
-    "burnout": null,
-    "work": null,
     "balance": null,
     "parent": null,
     "couples": null,
-    "family": null,
-    "loss": null,
-    "money": null,
-    "change": null
+    "loss": null
   }
 }

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import catalogFile from '../content/care-catalog.json';
-import { companies, journalEntries, users } from '../config/db';
-import { CareCatalog, JOURNAL_KEEP_DAYS, JournalEntry } from '../models/care.model';
+import { careContent, careWritings, companies, journalEntries, users } from '../config/db';
+import { CareCatalog, CareWriting, JOURNAL_KEEP_DAYS, JournalEntry } from '../models/care.model';
 import { User } from '../models/user.model';
+import { env } from '../config/env';
 import { sendPlainEmail } from './email.service';
 import { logger } from '../utils/logger';
 
@@ -42,18 +43,109 @@ async function requireCareUser(userId: string): Promise<User & { org: string }> 
 // ---------------------------------------------------------------------------
 // Catalogue
 
-/**
- * The media Sowaka provides, from a JSON file beside the code so a swap is a
- * file change, not a code change. Bundled at build time.
- */
-export function careCatalog(): CareCatalog {
-  const { _note: _drop, ...catalog } = catalogFile as CareCatalog & { _note?: string };
+/** The file's content, what the database starts from. */
+export function catalogFromFile(): CareCatalog {
+  const { _note: _drop, ...catalog } = catalogFile as unknown as CareCatalog & { _note?: string };
   return catalog;
+}
+
+/**
+ * Everything Care shows, read from the database so a topic, a line or a clip
+ * changes without a deploy. The file seeds it and stands in until it is
+ * seeded. Cached for a minute per process.
+ */
+let cached: { at: number; catalog: CareCatalog } | undefined;
+
+export async function careCatalog(): Promise<CareCatalog> {
+  if (cached && Date.now() - cached.at < 60_000) return cached.catalog;
+  let catalog = catalogFromFile();
+  try {
+    const stored = await careContent().findOne({ id: 'catalog' }, { projection: { _id: 0, id: 0 } });
+    if (stored) catalog = stored as unknown as CareCatalog;
+  } catch (error) {
+    logger.warn('Care catalogue: database read failed, serving the file', {}, error);
+  }
+  // The web address comes from the environment where one is set, so the same
+  // content serves a developer's machine (own screens) and production (the web).
+  catalog = { ...catalog, webBase: env.careWebBase || catalog.webBase || '' };
+  cached = { at: Date.now(), catalog };
+  return catalog;
+}
+
+/** Replaces the stored catalogue; what the seed script and, later, the dashboard call. */
+export async function storeCatalog(catalog: CareCatalog): Promise<void> {
+  await careContent().replaceOne({ id: 'catalog' }, { id: 'catalog', ...catalog }, { upsert: true });
+  cached = undefined;
 }
 
 export async function getCatalog(viewerUserId: string): Promise<CareCatalog> {
   await requireCareUser(viewerUserId);
   return careCatalog();
+}
+
+// ---------------------------------------------------------------------------
+// Kept writing: letters, a story, the life areas, a love letter, the
+// motherhood fields. Kept until the person removes it, never mailed by
+// itself, never shown to the company.
+
+export interface WritingView {
+  key: string;
+  fields: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const KEY_PATTERN = /^[a-z]+:[A-Za-z0-9._:-]{1,80}$/;
+const MAX_FIELD_CHARS = 10_000;
+
+function toWritingView(w: CareWriting): WritingView {
+  return { key: w.key, fields: w.fields, createdAt: w.createdAt.toISOString(), updatedAt: w.updatedAt.toISOString() };
+}
+
+function cleanKey(value: unknown): string {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!KEY_PATTERN.test(key)) throw new CareError(400, 'That is not a writing key');
+  return key;
+}
+
+function cleanFields(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CareError(400, 'Fields must be an object of text');
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9]{0,30}$/.test(k)) continue;
+    out[k] = typeof v === 'string' ? v.replace(/\r\n/g, '\n').slice(0, MAX_FIELD_CHARS) : String(v ?? '');
+  }
+  return out;
+}
+
+/** The person's writing whose keys start with `prefix`, newest first. */
+export async function listWritings(viewerUserId: string, prefix: string): Promise<WritingView[]> {
+  await requireCareUser(viewerUserId);
+  const filter: Record<string, unknown> = { userId: viewerUserId };
+  const p = prefix.trim();
+  if (p) filter.key = { $regex: `^${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` };
+  const rows = await careWritings().find(filter).sort({ updatedAt: -1 }).toArray();
+  return rows.map(toWritingView);
+}
+
+export async function putWriting(viewerUserId: string, rawKey: unknown, rawFields: unknown): Promise<WritingView> {
+  const user = await requireCareUser(viewerUserId);
+  const key = cleanKey(rawKey);
+  const fields = cleanFields(rawFields);
+  const now = new Date();
+  const updated = await careWritings().findOneAndUpdate(
+    { userId: viewerUserId, key },
+    { $set: { fields, updatedAt: now }, $setOnInsert: { id: randomUUID(), userId: viewerUserId, org: user.org, key, createdAt: now } },
+    { upsert: true, returnDocument: 'after' },
+  );
+  if (!updated) throw new CareError(500, 'Could not save');
+  return toWritingView(updated);
+}
+
+export async function deleteWriting(viewerUserId: string, rawKey: unknown): Promise<void> {
+  await requireCareUser(viewerUserId);
+  const result = await careWritings().deleteOne({ userId: viewerUserId, key: cleanKey(rawKey) });
+  if (result.deletedCount === 0) throw new CareError(404, 'That writing is no longer here');
 }
 
 // ---------------------------------------------------------------------------

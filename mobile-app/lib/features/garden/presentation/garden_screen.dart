@@ -12,6 +12,7 @@ import '../data/garden_models.dart';
 import 'garden_layout.dart';
 import 'garden_painters.dart';
 import 'garden_search.dart';
+import 'floating_tree.dart';
 import 'garden_widgets.dart';
 import 'give_flow.dart';
 import 'tree_screen.dart';
@@ -198,7 +199,21 @@ class _GardenScreenState extends State<GardenScreen> {
               subtitle: garden == null ? null : '${_seasonName(garden.season)} · ${garden.daysLeft} ${garden.daysLeft == 1 ? 'day' : 'days'} left',
               onBack: () => Navigator.of(context).pop(),
               transparent: true,
-              trailing: RoundTile(label: 'Find someone', onTap: _search, child: const Icon(Icons.search_rounded, color: MColors.inkSoft, size: 20)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ValueListenableBuilder<bool>(
+                    valueListenable: FloatingTreeSettings.enabled,
+                    builder: (_, on, _) => RoundTile(
+                      label: on ? 'Hide my tree from other screens' : 'Show my tree on every screen',
+                      onTap: () => FloatingTreeSettings.set(!on),
+                      child: Icon(on ? Icons.park_rounded : Icons.park_outlined, color: on ? GardenColors.blue : MColors.inkSoft, size: 20),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  RoundTile(label: 'Find someone', onTap: _search, child: const Icon(Icons.search_rounded, color: MColors.inkSoft, size: 20)),
+                ],
+              ),
             ),
           ),
           Positioned(

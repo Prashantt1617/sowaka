@@ -24,7 +24,9 @@ class ChooseSomeoneScreen extends StatelessWidget {
         const SizedBox(height: 10),
         const CareHeading('What would you\nlike to choose first?', size: 30),
         const SizedBox(height: 12),
-        const CareCopy('Find your next conversation in the way that works for you.'),
+        const CareCopy(
+          'Find your next conversation in the way that works for you.',
+        ),
         const SizedBox(height: 22),
         RouteCard(
           key: const ValueKey('route-counsellor'),
@@ -32,7 +34,15 @@ class ChooseSomeoneScreen extends StatelessWidget {
           title: 'A counsellor',
           copy: 'Find someone whose approach feels right,\nthen choose a time.',
           action: 'Browse counsellors',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => HelpBookingScreen(service: service, mode: HelpBookingMode.counsellorFirst, matchedId: matchedId))),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => HelpBookingScreen(
+                service: service,
+                mode: HelpBookingMode.counsellorFirst,
+                matchedId: matchedId,
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 14),
         RouteCard(
@@ -41,10 +51,20 @@ class ChooseSomeoneScreen extends StatelessWidget {
           title: 'A time',
           copy: 'Choose a convenient slot,\nthen see who’s available.',
           action: 'Choose a time',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => HelpBookingScreen(service: service, mode: HelpBookingMode.timeFirst, matchedId: matchedId))),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => HelpBookingScreen(
+                service: service,
+                mode: HelpBookingMode.timeFirst,
+                matchedId: matchedId,
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 16),
-        const CareMicro('Your current counsellor and session history stay in place while you explore.'),
+        const CareMicro(
+          'Your current counsellor and session history stay in place while you explore.',
+        ),
       ],
     );
   }

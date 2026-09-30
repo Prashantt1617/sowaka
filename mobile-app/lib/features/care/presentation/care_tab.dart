@@ -6,6 +6,7 @@ import '../data/care_api_service.dart';
 import '../data/care_models.dart';
 import 'breathe_screen.dart';
 import 'care_theme.dart';
+import 'care_web_screen.dart';
 import 'listen_screen.dart';
 import 'move_screen.dart';
 import 'sleep_screen.dart';
@@ -38,7 +39,8 @@ class CareTab extends StatefulWidget {
 }
 
 class _CareTabState extends State<CareTab> {
-  late final CareApiService _service = widget.service ?? CareApiService(session: widget.session);
+  late final CareApiService _service =
+      widget.service ?? CareApiService(session: widget.session);
 
   /// Read once; the screens under the tab take it as it is.
   CareCatalog _catalog = CareCatalog.empty;
@@ -46,15 +48,30 @@ class _CareTabState extends State<CareTab> {
   @override
   void initState() {
     super.initState();
-    _service.catalog().then((catalog) {
-      if (mounted) setState(() => _catalog = catalog);
-    }).catchError((_) {
-      // The activities still open; they say a file is on its way.
-    });
+    _service
+        .catalog()
+        .then((catalog) {
+          if (mounted) setState(() => _catalog = catalog);
+        })
+        .catchError((_) {
+          // The activities still open; they say a file is on its way.
+        });
   }
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  /// Move, Breathe and Listen live on the web when Sowaka has put them
+  /// there, so a changed clip or line needs no release; the app's own screen
+  /// otherwise.
+  void _openActivity(String path, String title, Widget native) {
+    final base = _catalog.webBase;
+    if (base.isEmpty) {
+      _open(native);
+      return;
+    }
+    _open(CareWebScreen(title: title, url: '$base$path'));
   }
 
   @override
@@ -63,7 +80,10 @@ class _CareTabState extends State<CareTab> {
       color: CareColors.bg,
       child: Column(
         children: [
-          AppHomeHeader(profileAction: widget.profileAction, onNotifications: widget.onNotifications),
+          AppHomeHeader(
+            profileAction: widget.profileAction,
+            onNotifications: widget.onNotifications,
+          ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
@@ -85,7 +105,11 @@ class _CareTabState extends State<CareTab> {
                             bottomRight: Radius.circular(72),
                           ),
                         ),
-                        child: const Icon(Icons.eco_outlined, color: CareColors.blue, size: 34),
+                        child: const Icon(
+                          Icons.eco_outlined,
+                          color: CareColors.blue,
+                          size: 34,
+                        ),
                       ),
                     ),
                     Column(
@@ -95,66 +119,98 @@ class _CareTabState extends State<CareTab> {
                         SizedBox(height: 10),
                         CareHeading('A little space\nfor you.', size: 36),
                         SizedBox(height: 12),
-                        CareCopy('Choose what feels right.\nWhenever you need it.', size: 13.5),
+                        CareCopy(
+                          'Choose what feels right.\nWhenever you need it.',
+                          size: 13.5,
+                        ),
                       ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 26),
-                _WriteCard(onTap: () => _open(WriteScreen(session: widget.session, service: _service, prompts: _catalog.prompts))),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _ActivityCard(
-                        key: const ValueKey('care-move'),
-                        name: 'Move',
-                        subtitle: 'Choose a body area',
-                        icon: Icons.accessibility_new_rounded,
-                        color: CareColors.sage,
-                        onTap: () => _open(MoveScreen(catalog: _catalog)),
-                      ),
+                _WriteCard(
+                  onTap: () => _open(
+                    WriteScreen(
+                      session: widget.session,
+                      service: _service,
+                      prompts: _catalog.prompts,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ActivityCard(
-                        key: const ValueKey('care-breathe'),
-                        name: 'Breathe',
-                        subtitle: 'Start with how you feel',
-                        icon: Icons.air_rounded,
-                        color: CareColors.sky,
-                        onTap: () => _open(const BreatheScreen()),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _ActivityCard(
-                        key: const ValueKey('care-listen'),
-                        name: 'Listen',
-                        subtitle: 'Meditations & affirmations',
-                        icon: Icons.headphones_outlined,
-                        color: CareColors.lilac,
-                        onTap: () => _open(ListenScreen(catalog: _catalog)),
+                SizedBox(
+                  height: 156,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ActivityCard(
+                          key: const ValueKey('care-move'),
+                          name: 'Move',
+                          subtitle: 'Choose a body area',
+                          icon: Icons.accessibility_new_rounded,
+                          color: CareColors.sage,
+                          onTap: () => _openActivity(
+                            '/move',
+                            'Move',
+                            MoveScreen(catalog: _catalog),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ActivityCard(
-                        key: const ValueKey('care-sleep'),
-                        name: 'Sleep',
-                        subtitle: 'Ease into rest',
-                        icon: Icons.nightlight_outlined,
-                        color: CareColors.night,
-                        onTap: () => _open(SleepScreen(catalog: _catalog)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ActivityCard(
+                          key: const ValueKey('care-breathe'),
+                          name: 'Breathe',
+                          subtitle: 'Start with how you feel',
+                          icon: Icons.air_rounded,
+                          color: CareColors.sky,
+                          onTap: () => _openActivity(
+                            '/breathe',
+                            'Breathe',
+                            BreatheScreen(catalog: _catalog),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 156,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ActivityCard(
+                          key: const ValueKey('care-listen'),
+                          name: 'Listen',
+                          subtitle: 'Meditations & affirmations',
+                          icon: Icons.headphones_outlined,
+                          color: CareColors.lilac,
+                          onTap: () => _openActivity(
+                            '/listen',
+                            'Listen',
+                            ListenScreen(catalog: _catalog),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ActivityCard(
+                          key: const ValueKey('care-sleep'),
+                          name: 'Sleep',
+                          subtitle: 'Ease into rest',
+                          icon: Icons.nightlight_outlined,
+                          color: CareColors.night,
+                          // Sleep stays in the app: a web page falls silent
+                          // when the phone locks, and this one is for lying
+                          // in the dark.
+                          onTap: () => _open(SleepScreen(catalog: _catalog)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 if (widget.onOpenHelp != null) ...[
                   const SizedBox(height: 22),
@@ -169,13 +225,31 @@ class _CareTabState extends State<CareTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Something on your mind?', style: TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14)),
+                                Text(
+                                  'Something on your mind?',
+                                  style: TextStyle(
+                                    fontFamily: careFont,
+                                    color: CareColors.ink,
+                                    fontSize: 14,
+                                  ),
+                                ),
                                 SizedBox(height: 2),
-                                Text('Explore it in Help', style: TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 14, fontWeight: FontWeight.w700)),
+                                Text(
+                                  'Explore it in Help',
+                                  style: TextStyle(
+                                    fontFamily: careFont,
+                                    color: CareColors.blue,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Icon(Icons.arrow_forward_rounded, color: CareColors.blue),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            color: CareColors.blue,
+                          ),
                         ],
                       ),
                     ),
@@ -223,25 +297,56 @@ class _WriteCard extends StatelessWidget {
                       bottomRight: Radius.circular(40),
                     ),
                   ),
-                  child: const Icon(Icons.edit_outlined, color: CareColors.blue, size: 26),
+                  child: const Icon(
+                    Icons.edit_outlined,
+                    color: CareColors.blue,
+                    size: 26,
+                  ),
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [
-                  Text('Write', style: TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 20, fontWeight: FontWeight.w700)),
+                  Text(
+                    'Write',
+                    style: TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.ink,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   SizedBox(height: 12),
                   Text(
                     'What’s taking up space\nin your mind?',
-                    style: TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 24, fontWeight: FontWeight.w500, height: 1.2, letterSpacing: -0.4),
+                    style: TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.ink,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                      letterSpacing: -0.4,
+                    ),
                   ),
                   SizedBox(height: 16),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Find a prompt', style: TextStyle(fontFamily: careFont, color: CareColors.clay, fontSize: 13, fontWeight: FontWeight.w600)),
+                      Text(
+                        'Find a prompt',
+                        style: TextStyle(
+                          fontFamily: careFont,
+                          color: CareColors.clay,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       SizedBox(width: 6),
-                      Icon(Icons.arrow_forward_rounded, size: 16, color: CareColors.clay),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: CareColors.clay,
+                      ),
                     ],
                   ),
                 ],
@@ -255,7 +360,14 @@ class _WriteCard extends StatelessWidget {
 }
 
 class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({super.key, required this.name, required this.subtitle, required this.icon, required this.color, required this.onTap});
+  const _ActivityCard({
+    super.key,
+    required this.name,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   final String name;
   final String subtitle;
@@ -280,13 +392,35 @@ class _ActivityCard extends StatelessWidget {
                 children: [
                   Icon(icon, color: CareColors.blue, size: 26),
                   const Spacer(),
-                  const Icon(Icons.arrow_outward_rounded, color: CareColors.ink, size: 18),
+                  const Icon(
+                    Icons.arrow_outward_rounded,
+                    color: CareColors.ink,
+                    size: 18,
+                  ),
                 ],
               ),
-              const SizedBox(height: 22),
-              Text(name, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 19, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              Text(
+                name,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12.5, height: 1.4)),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
             ],
           ),
         ),

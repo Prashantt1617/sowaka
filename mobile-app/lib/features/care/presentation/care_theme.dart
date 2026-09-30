@@ -50,7 +50,13 @@ class CareEyebrow extends StatelessWidget {
 }
 
 class CareHeading extends StatelessWidget {
-  const CareHeading(this.text, {super.key, this.size = 32, this.color = CareColors.ink, this.align = TextAlign.start});
+  const CareHeading(
+    this.text, {
+    super.key,
+    this.size = 32,
+    this.color = CareColors.ink,
+    this.align = TextAlign.start,
+  });
 
   final String text;
   final double size;
@@ -73,7 +79,13 @@ class CareHeading extends StatelessWidget {
 }
 
 class CareCopy extends StatelessWidget {
-  const CareCopy(this.text, {super.key, this.size = 13, this.color = CareColors.muted, this.align = TextAlign.start});
+  const CareCopy(
+    this.text, {
+    super.key,
+    this.size = 13,
+    this.color = CareColors.muted,
+    this.align = TextAlign.start,
+  });
 
   final String text;
   final double size;
@@ -84,7 +96,12 @@ class CareCopy extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     textAlign: align,
-    style: TextStyle(fontFamily: careFont, color: color, fontSize: size, height: 1.6),
+    style: TextStyle(
+      fontFamily: careFont,
+      color: color,
+      fontSize: size,
+      height: 1.6,
+    ),
   );
 }
 
@@ -106,11 +123,20 @@ class CareBackLink extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.arrow_back_rounded, size: 16, color: CareColors.muted),
+            const Icon(
+              Icons.arrow_back_rounded,
+              size: 16,
+              color: CareColors.muted,
+            ),
             const SizedBox(width: 6),
             Text(
               label,
-              style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontFamily: careFont,
+                color: CareColors.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -121,7 +147,14 @@ class CareBackLink extends StatelessWidget {
 
 /// The handoff's primary action: full width, blue, rounded.
 class CarePrimaryButton extends StatelessWidget {
-  const CarePrimaryButton(this.label, {super.key, this.onTap, this.icon, this.pill = false, this.busy = false});
+  const CarePrimaryButton(
+    this.label, {
+    super.key,
+    this.onTap,
+    this.icon,
+    this.pill = false,
+    this.busy = false,
+  });
 
   final String label;
   final VoidCallback? onTap;
@@ -144,10 +177,20 @@ class CarePrimaryButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(pill ? 100 : 14),
           child: Container(
             constraints: BoxConstraints(minHeight: pill ? 54 : 46),
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: pill ? 15 : 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: pill ? 15 : 12,
+            ),
             alignment: Alignment.center,
             child: busy
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.2,
+                    ),
+                  )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -163,7 +206,10 @@ class CarePrimaryButton extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (icon != null) ...[const SizedBox(width: 8), Icon(icon, size: 17, color: Colors.white)],
+                      if (icon != null) ...[
+                        const SizedBox(width: 8),
+                        Icon(icon, size: 17, color: Colors.white),
+                      ],
                     ],
                   ),
           ),
@@ -175,7 +221,13 @@ class CarePrimaryButton extends StatelessWidget {
 
 /// A quiet text action in the app's blue.
 class CareLink extends StatelessWidget {
-  const CareLink(this.label, {super.key, required this.onTap, this.icon = Icons.arrow_forward_rounded, this.size = 13});
+  const CareLink(
+    this.label, {
+    super.key,
+    required this.onTap,
+    this.icon = Icons.arrow_forward_rounded,
+    this.size = 13,
+  });
 
   final String label;
   final VoidCallback onTap;
@@ -194,10 +246,18 @@ class CareLink extends StatelessWidget {
           Flexible(
             child: Text(
               label,
-              style: TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: size, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontFamily: careFont,
+                color: CareColors.blue,
+                fontSize: size,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          if (icon != null) ...[const SizedBox(width: 5), Icon(icon, size: size + 3, color: CareColors.blue)],
+          if (icon != null) ...[
+            const SizedBox(width: 5),
+            Icon(icon, size: size + 3, color: CareColors.blue),
+          ],
         ],
       ),
     ),
@@ -206,7 +266,14 @@ class CareLink extends StatelessWidget {
 
 /// A white card with the app's shadow, as the app draws cards today.
 class CareCard extends StatelessWidget {
-  const CareCard({super.key, required this.child, this.padding = const EdgeInsets.all(18), this.color = Colors.white, this.onTap, this.radius = 22});
+  const CareCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(18),
+    this.color = Colors.white,
+    this.onTap,
+    this.radius = 22,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -221,7 +288,13 @@ class CareCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: const Color(0xFFECEFF3)),
-        boxShadow: const [BoxShadow(color: Color(0x14141E28), blurRadius: 24, offset: Offset(0, 8))],
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14141E28),
+            blurRadius: 24,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -239,7 +312,12 @@ class CareCard extends StatelessWidget {
 
 /// The handoff's choice chip: a pill with a border, blue when chosen.
 class CareChoiceChip extends StatelessWidget {
-  const CareChoiceChip(this.label, {super.key, required this.selected, required this.onTap});
+  const CareChoiceChip(
+    this.label, {
+    super.key,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
   final bool selected;
@@ -256,7 +334,9 @@ class CareChoiceChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: selected ? CareColors.blue : CareColors.line),
+          border: Border.all(
+            color: selected ? CareColors.blue : CareColors.line,
+          ),
         ),
         child: Text(
           label,
@@ -274,7 +354,14 @@ class CareChoiceChip extends StatelessWidget {
 
 /// A row on a shelf: an icon tile, a title, a line of meta, a chevron.
 class CareResourceRow extends StatelessWidget {
-  const CareResourceRow({super.key, required this.title, required this.meta, required this.icon, required this.onTap, this.tint = CareColors.lilac});
+  const CareResourceRow({
+    super.key,
+    required this.title,
+    required this.meta,
+    required this.icon,
+    required this.onTap,
+    this.tint = CareColors.lilac,
+  });
 
   final String title;
   final String meta;
@@ -291,13 +378,19 @@ class CareResourceRow extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: CareColors.line)),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: CareColors.line),
+        ),
         child: Row(
           children: [
             Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(13)),
+              decoration: BoxDecoration(
+                color: tint,
+                borderRadius: BorderRadius.circular(13),
+              ),
               child: Icon(icon, color: CareColors.blue, size: 21),
             ),
             const SizedBox(width: 12),
@@ -307,10 +400,23 @@ class CareResourceRow extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14, fontWeight: FontWeight.w700, height: 1.25),
+                    style: const TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
                   ),
                   const SizedBox(height: 2),
-                  Text(meta, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+                  Text(
+                    meta,
+                    style: const TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -331,13 +437,26 @@ class CareSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: size, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+    style: TextStyle(
+      fontFamily: careFont,
+      color: CareColors.ink,
+      fontSize: size,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.3,
+    ),
   );
 }
 
 /// A scrolling page on the Care background, with the in-page back link.
 class CarePage extends StatelessWidget {
-  const CarePage({super.key, required this.children, this.backLabel, this.onBack, this.background = CareColors.bg, this.padding = const EdgeInsets.fromLTRB(20, 8, 20, 32)});
+  const CarePage({
+    super.key,
+    required this.children,
+    this.backLabel,
+    this.onBack,
+    this.background = CareColors.bg,
+    this.padding = const EdgeInsets.fromLTRB(20, 8, 20, 32),
+  });
 
   final List<Widget> children;
   final String? backLabel;
@@ -356,7 +475,10 @@ class CarePage extends StatelessWidget {
           padding: padding,
           children: [
             if (back != null) ...[
-              CareBackLink(back, onTap: onBack ?? () => Navigator.of(context).maybePop()),
+              CareBackLink(
+                back,
+                onTap: onBack ?? () => Navigator.of(context).maybePop(),
+              ),
               const SizedBox(height: 14),
             ],
             ...children,
@@ -378,7 +500,12 @@ class CareMicro extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     textAlign: align,
-    style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 11.5, height: 1.5),
+    style: const TextStyle(
+      fontFamily: careFont,
+      color: CareColors.muted,
+      fontSize: 11.5,
+      height: 1.5,
+    ),
   );
 }
 
@@ -400,7 +527,17 @@ class CareNotice extends StatelessWidget {
     child: Row(
       children: [
         Expanded(child: CareCopy(text, size: 13.5)),
-        if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('Retry', style: TextStyle(color: CareColors.blue, fontWeight: FontWeight.w700))),
+        if (onRetry != null)
+          TextButton(
+            onPressed: onRetry,
+            child: const Text(
+              'Retry',
+              style: TextStyle(
+                color: CareColors.blue,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
       ],
     ),
   );

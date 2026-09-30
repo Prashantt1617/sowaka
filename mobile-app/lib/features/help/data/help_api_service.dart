@@ -25,21 +25,39 @@ class HelpApiService {
     'Content-Type': 'application/json',
   };
 
-  Future<Map<String, dynamic>> _request(String method, String path, {Map<String, dynamic>? body}) async {
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
     final uri = Uri.parse('$_baseUrl$path');
     final response = switch (method) {
-      'POST' => await _client.post(uri, headers: _headers, body: jsonEncode(body ?? const {})),
-      'PUT' => await _client.put(uri, headers: _headers, body: jsonEncode(body ?? const {})),
+      'POST' => await _client.post(
+        uri,
+        headers: _headers,
+        body: jsonEncode(body ?? const {}),
+      ),
+      'PUT' => await _client.put(
+        uri,
+        headers: _headers,
+        body: jsonEncode(body ?? const {}),
+      ),
       _ => await _client.get(uri, headers: _headers),
     };
-    final json = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body) as Map<String, dynamic>;
+    final json = response.body.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw TalkApiException(json['message'] as String? ?? 'Something went wrong. Try again.', statusCode: response.statusCode);
+      throw TalkApiException(
+        json['message'] as String? ?? 'Something went wrong. Try again.',
+        statusCode: response.statusCode,
+      );
     }
     return json;
   }
 
-  Future<HelpHome> home() async => HelpHome.fromJson(await _request('GET', '/help/home'));
+  Future<HelpHome> home() async =>
+      HelpHome.fromJson(await _request('GET', '/help/home'));
 
   Future<HelpIntake?> intake() async {
     final json = await _request('GET', '/help/intake');
@@ -48,14 +66,22 @@ class HelpApiService {
   }
 
   Future<HelpMatchResult> saveIntake(HelpIntake intake) async =>
-      HelpMatchResult.fromJson(await _request('PUT', '/help/intake', body: intake.toJson()));
+      HelpMatchResult.fromJson(
+        await _request('PUT', '/help/intake', body: intake.toJson()),
+      );
 
   /// Accepts a counsellor although a preference goes unmet.
   Future<HelpMatch> acceptCounsellor(String counsellorId) async {
-    final json = await _request('POST', '/help/match', body: {'counsellorUserId': counsellorId});
+    final json = await _request(
+      'POST',
+      '/help/match',
+      body: {'counsellorUserId': counsellorId},
+    );
     return HelpMatch.fromJson(json['match'] as Map<String, dynamic>);
   }
 
   Future<CounsellorDetail> counsellor(String counsellorId) async =>
-      CounsellorDetail.fromJson(await _request('GET', '/help/counsellors/$counsellorId'));
+      CounsellorDetail.fromJson(
+        await _request('GET', '/help/counsellors/$counsellorId'),
+      );
 }

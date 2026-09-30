@@ -26,6 +26,8 @@ class Mood {
     this.square = false,
     this.steps = const [],
     this.pauseSteps = const [],
+    this.poseAsset,
+    this.poseUrl,
   });
 
   final String key;
@@ -50,6 +52,11 @@ class Mood {
   final List<String> steps;
   final List<int> pauseSteps;
 
+  /// A picture of the pose to hold, shown above the breath: the catalogue's
+  /// photo where there is one, the app's own otherwise.
+  final String? poseAsset;
+  final String? poseUrl;
+
   String get tag => 'Mood · $label → $want';
 
   bool isPause(int step) => pauseSteps.contains(step);
@@ -62,7 +69,8 @@ const moods = [
     want: 'Calm',
     color: Color(0xFFB03A2E),
     name: 'Long Exhale Breathing',
-    sub: 'A longer exhale switches on your calming response. Let each out-breath be slow and complete.',
+    sub:
+        'A longer exhale switches on your calming response. Let each out-breath be slow and complete.',
     kind: RemedyKind.breath,
     rounds: 5,
     pattern: [BreathPhase('Breathe in', 4), BreathPhase('Breathe out', 6)],
@@ -73,12 +81,20 @@ const moods = [
     want: 'Grounded',
     color: Color(0xFFB0502E),
     name: 'Feet Press + Box Breathing',
-    sub: 'Four even sides. Ground through your feet while the breath moves around the box.',
+    sub:
+        'Four even sides. Ground through your feet while the breath moves around the box.',
     kind: RemedyKind.breath,
-    note: 'Press both feet firmly into the floor — feel the ground hold you — as you breathe.',
+    note:
+        'Press both feet firmly into the floor — feel the ground hold you — as you breathe.',
     rounds: 4,
     square: true,
-    pattern: [BreathPhase('Breathe in', 4), BreathPhase('Hold', 4), BreathPhase('Breathe out', 4), BreathPhase('Hold', 4)],
+    poseAsset: 'assets/care/pose_anxious.jpg',
+    pattern: [
+      BreathPhase('Breathe in', 4),
+      BreathPhase('Hold', 4),
+      BreathPhase('Breathe out', 4),
+      BreathPhase('Hold', 4),
+    ],
   ),
   Mood(
     key: 'jealous',
@@ -103,7 +119,8 @@ const moods = [
     want: 'Present',
     color: Color(0xFFB07B26),
     name: '5-4-3-2-1 Sensory Reset',
-    sub: 'Pull your mind out of the feed and back into the room through your senses.',
+    sub:
+        'Pull your mind out of the feed and back into the room through your senses.',
     kind: RemedyKind.steps,
     steps: [
       'Look around and name 5 things you can see.',
@@ -119,11 +136,17 @@ const moods = [
     want: 'Confident',
     color: Color(0xFF8A6AA0),
     name: 'Mountain Pose + Power Breath',
-    sub: 'Stand like a mountain and breathe with power — your posture tells your brain you are ready.',
+    sub:
+        'Stand like a mountain and breathe with power — your posture tells your brain you are ready.',
     kind: RemedyKind.breath,
-    note: 'Stand tall, feet hip-width apart, shoulders back, crown of your head lifting.',
+    note:
+        'Stand tall, feet hip-width apart, shoulders back, crown of your head lifting.',
     rounds: 5,
-    pattern: [BreathPhase('Breathe in', 4), BreathPhase('Hold', 2), BreathPhase('Release', 4)],
+    pattern: [
+      BreathPhase('Breathe in', 4),
+      BreathPhase('Hold', 2),
+      BreathPhase('Release', 4),
+    ],
   ),
   Mood(
     key: 'sleep',
@@ -131,7 +154,8 @@ const moods = [
     want: 'Sleep',
     color: Color(0xFF3F7B78),
     name: '4-6 Breathing',
-    sub: 'A short in-breath and a long out-breath ease you toward rest. Let it slow you all the way down.',
+    sub:
+        'A short in-breath and a long out-breath ease you toward rest. Let it slow you all the way down.',
     kind: RemedyKind.breath,
     rounds: 6,
     pattern: [BreathPhase('Breathe in', 4), BreathPhase('Breathe out', 6)],

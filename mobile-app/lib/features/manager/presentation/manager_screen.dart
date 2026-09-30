@@ -37,6 +37,7 @@ import '../../manager_shell/presentation/tab_specs.dart';
 import '../../help/presentation/help_tab.dart';
 import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
+import '../../garden/presentation/floating_tree.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -525,6 +526,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
                       ),
                       if (state.applyLeaveOpen)
                         _ApplyLeaveSheet(state: state, bloc: _bloc),
+                      // Their own tree, over every tab, when the garden is on.
+                      if (!keyboardOpen)
+                        Positioned.fill(
+                          child: FloatingTree(session: _session, refreshKey: state.tab),
+                        ),
                     ],
                   ),
           ),

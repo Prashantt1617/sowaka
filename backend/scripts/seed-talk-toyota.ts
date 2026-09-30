@@ -14,7 +14,7 @@ import { AppTab } from '../src/models/company.model';
 import { CounsellorProfile, User } from '../src/models/user.model';
 
 const ORG = 'toyota';
-const ALL_TABS: AppTab[] = ['connect', 'team', 'games', 'care', 'talk'];
+const ALL_TABS: AppTab[] = ['connect', 'games', 'care', 'talk'];
 
 const WEEKDAY_HOURS = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '10:00', end: '18:00' }));
 

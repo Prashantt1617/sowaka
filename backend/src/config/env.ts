@@ -160,6 +160,12 @@ export const env = {
    * marketplace.zoom.us. Absent on a developer's machine, where a session gets
    * a placeholder link instead so the flow can still be walked through.
    */
+  /**
+   * Where the Care web pages live (https://care.getsowaka.com). Set in
+   * production so the app opens them; unset, the app shows its own screens,
+   * which is what a developer's machine wants.
+   */
+  careWebBase: (process.env.CARE_WEB_BASE ?? '').replace(/\/+$/, ''),
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
     clientId: process.env.ZOOM_CLIENT_ID ?? '',

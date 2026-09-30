@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
+import '../../../services/api_config.dart';
 import '../content/breathe_content.dart';
 import '../content/move_content.dart' show pauseSeconds;
 import 'care_theme.dart';
@@ -11,9 +13,12 @@ import 'stretch_screen.dart' show StepCard;
 /// list of steps. Gentle slows every phase by a third; the phone's reduce
 /// motion setting keeps the count and drops the animation.
 class BreathScreen extends StatefulWidget {
-  const BreathScreen({super.key, required this.mood});
+  const BreathScreen({super.key, required this.mood, this.soundUrl});
 
   final Mood mood;
+
+  /// A sound to play quietly behind the breath, when Sowaka has one for the mood.
+  final String? soundUrl;
 
   @override
   State<BreathScreen> createState() => _BreathScreenState();
@@ -34,12 +39,33 @@ class _BreathScreenState extends State<BreathScreen> {
   int? _left;
   Timer? _pause;
 
+  // Background sound.
+  VideoPlayerController? _sound;
+  bool _muted = false;
+
   Mood get mood => widget.mood;
   double get _mult => _gentle ? 1.3 : 1;
 
   @override
   void initState() {
     super.initState();
+    final url = widget.soundUrl;
+    if (url != null && url.isNotEmpty) {
+      final sound = VideoPlayerController.networkUrl(
+        Uri.parse(resolveMediaUrl(url)),
+      );
+      _sound = sound;
+      sound
+          .initialize()
+          .then((_) {
+            if (!mounted) return;
+            sound.setLooping(true);
+            sound.setVolume(0.7);
+            sound.play();
+            setState(() {});
+          })
+          .catchError((_) {});
+    }
     if (mood.kind == RemedyKind.breath) {
       _timer = Timer(const Duration(milliseconds: 650), _start);
     } else {
@@ -51,7 +77,15 @@ class _BreathScreenState extends State<BreathScreen> {
   void dispose() {
     _timer?.cancel();
     _pause?.cancel();
+    _sound?.dispose();
     super.dispose();
+  }
+
+  void _toggleMute() {
+    final sound = _sound;
+    if (sound == null) return;
+    setState(() => _muted = !_muted);
+    sound.setVolume(_muted ? 0 : 0.7);
   }
 
   void _start() {
@@ -153,19 +187,68 @@ class _BreathScreenState extends State<BreathScreen> {
         Center(
           child: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
-                decoration: BoxDecoration(color: CareColors.blueTint, borderRadius: BorderRadius.circular(100)),
-                child: Text(
-                  mood.tag.toUpperCase(),
-                  style: const TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.8),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: CareColors.blueTint,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text(
+                      mood.tag.toUpperCase(),
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.blue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                  if (_sound != null) ...[
+                    const SizedBox(width: 8),
+                    Material(
+                      color: CareColors.blueTint,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: _toggleMute,
+                        child: SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: Icon(
+                            _muted
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
+                            size: 16,
+                            color: CareColors.blue,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 14),
-              CareHeading(mood.name, size: 29, color: CareColors.warmInk, align: TextAlign.center),
+              CareHeading(
+                mood.name,
+                size: 29,
+                color: CareColors.warmInk,
+                align: TextAlign.center,
+              ),
               if (!isBreath) ...[
                 const SizedBox(height: 8),
-                CareCopy(mood.sub, size: 14.5, color: CareColors.warmMuted, align: TextAlign.center),
+                CareCopy(
+                  mood.sub,
+                  size: 14.5,
+                  color: CareColors.warmMuted,
+                  align: TextAlign.center,
+                ),
               ],
             ],
           ),
@@ -173,30 +256,61 @@ class _BreathScreenState extends State<BreathScreen> {
         const SizedBox(height: 20),
         if (isBreath) _breath() else _steps(),
         const SizedBox(height: 26),
-        CarePrimaryButton(isBreath ? '↺  Breathe again' : '↺  Do it again', pill: true, onTap: _again),
+        CarePrimaryButton(
+          isBreath ? '↺  Breathe again' : '↺  Do it again',
+          pill: true,
+          onTap: _again,
+        ),
         const SizedBox(height: 4),
         TextButton(
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-          child: const Text('Choose something else', style: TextStyle(fontFamily: careFont, color: CareColors.warmMuted, fontSize: 14, fontWeight: FontWeight.w600)),
+          onPressed: () =>
+              Navigator.of(context).popUntil((route) => route.isFirst),
+          child: const Text(
+            'Choose something else',
+            style: TextStyle(
+              fontFamily: careFont,
+              color: CareColors.warmMuted,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );
   }
 
   Widget _steps() {
-    final n = _left ?? (mood.isPause(_open) ? pauseSeconds(mood.steps[_open]) : 0);
+    final n =
+        _left ?? (mood.isPause(_open) ? pauseSeconds(mood.steps[_open]) : 0);
     final label = '${n ~/ 60}:${(n % 60).toString().padLeft(2, '0')}';
     return Column(
       children: [
         for (var i = 0; i < mood.steps.length; i++) ...[
-          StepCard(number: i + 1, text: mood.steps[i], open: _open == i, onTap: () => _toggle(i)),
+          StepCard(
+            number: i + 1,
+            text: mood.steps[i],
+            open: _open == i,
+            onTap: () => _toggle(i),
+          ),
           if (_open == i && mood.isPause(i))
             Container(
               margin: const EdgeInsets.only(top: 11),
               height: 120,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: CareColors.blueTint, borderRadius: BorderRadius.circular(20), border: Border.all(color: CareColors.blue)),
-              child: Text(label, style: const TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 32, fontWeight: FontWeight.w800)),
+              decoration: BoxDecoration(
+                color: CareColors.blueTint,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: CareColors.blue),
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.blue,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           const SizedBox(height: 11),
         ],
@@ -206,33 +320,96 @@ class _BreathScreenState extends State<BreathScreen> {
 
   Widget _breath() {
     final reduce = MediaQuery.of(context).disableAnimations;
-    final phase = _started && !_done && _round < mood.rounds ? mood.pattern[_phase] : null;
+    final phase = _started && !_done && _round < mood.rounds
+        ? mood.pattern[_phase]
+        : null;
     final label = _done ? 'Done' : phase?.label ?? 'Ready';
-    final count = _done ? '✓' : phase == null ? '·' : '${phase.seconds - _tick}';
-    final roundLabel = 'Round ${(_done ? mood.rounds : _round + 1).clamp(1, mood.rounds)} of ${mood.rounds}';
+    final count = _done
+        ? '✓'
+        : phase == null
+        ? '·'
+        : '${phase.seconds - _tick}';
+    final roundLabel =
+        'Round ${(_done ? mood.rounds : _round + 1).clamp(1, mood.rounds)} of ${mood.rounds}';
     final note = mood.note;
-    final phaseDuration = Duration(milliseconds: ((phase?.seconds ?? 1) * 880 * _mult).round());
+    final phaseDuration = Duration(
+      milliseconds: ((phase?.seconds ?? 1) * 880 * _mult).round(),
+    );
     return Column(
       children: [
-        Text(roundLabel, key: const ValueKey('round-label'), style: const TextStyle(fontFamily: careFont, color: CareColors.warmFaint, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-        const SizedBox(height: 22),
-        if (mood.square && note != null) ...[_Note(note), const SizedBox(height: 24)],
+        Text(
+          roundLabel,
+          key: const ValueKey('round-label'),
+          style: const TextStyle(
+            fontFamily: careFont,
+            color: CareColors.warmFaint,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 18),
+        // The pose to hold, from the catalogue's photo or the app's own.
+        if ((mood.poseUrl ?? mood.poseAsset) case final pose?) ...[
+          _PoseCard(pose),
+          const SizedBox(height: 18),
+        ],
+        if (mood.square && note != null) ...[
+          _Note(note),
+          const SizedBox(height: 24),
+        ],
         if (mood.square)
-          _Box(phaseIndex: _phase, active: phase != null, label: label, count: count, duration: Duration(milliseconds: ((phase?.seconds ?? 1) * 1000 * _mult).round()), reduce: reduce)
+          _Box(
+            phaseIndex: _phase,
+            active: phase != null,
+            label: label,
+            count: count,
+            duration: Duration(
+              milliseconds: ((phase?.seconds ?? 1) * 1000 * _mult).round(),
+            ),
+            reduce: reduce,
+          )
         else
-          _Circle(phaseLabel: label, count: count, active: phase != null, duration: phaseDuration, reduce: reduce),
+          _Circle(
+            phaseLabel: label,
+            count: count,
+            active: phase != null,
+            duration: phaseDuration,
+            reduce: reduce,
+          ),
         const SizedBox(height: 22),
-        if (!mood.square && note != null) ...[_Note(note), const SizedBox(height: 6)],
-        Text(mood.square ? 'Breathe around the box' : 'Breathe with the circle', style: const TextStyle(fontFamily: careFont, color: Color(0xFF988C7C), fontSize: 14)),
+        if (!mood.square && note != null) ...[
+          _Note(note),
+          const SizedBox(height: 6),
+        ],
+        Text(
+          mood.square ? 'Breathe around the box' : 'Breathe with the circle',
+          style: const TextStyle(
+            fontFamily: careFont,
+            color: Color(0xFF988C7C),
+            fontSize: 14,
+          ),
+        ),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(color: const Color(0xFFF1ECE3), borderRadius: BorderRadius.circular(100)),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1ECE3),
+            borderRadius: BorderRadius.circular(100),
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _SpeedChip('Standard', selected: !_gentle, onTap: () => _setGentle(false)),
-              _SpeedChip('Gentle', selected: _gentle, onTap: () => _setGentle(true)),
+              _SpeedChip(
+                'Standard',
+                selected: !_gentle,
+                onTap: () => _setGentle(false),
+              ),
+              _SpeedChip(
+                'Gentle',
+                selected: _gentle,
+                onTap: () => _setGentle(true),
+              ),
             ],
           ),
         ),
@@ -252,7 +429,13 @@ class _Note extends StatelessWidget {
     child: Text(
       text,
       textAlign: TextAlign.center,
-      style: const TextStyle(fontFamily: careFont, color: CareColors.warmMuted, fontSize: 13.5, fontStyle: FontStyle.italic, height: 1.55),
+      style: const TextStyle(
+        fontFamily: careFont,
+        color: CareColors.warmMuted,
+        fontSize: 13.5,
+        fontStyle: FontStyle.italic,
+        height: 1.55,
+      ),
     ),
   );
 }
@@ -275,7 +458,15 @@ class _SpeedChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(100),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        child: Text(label, style: TextStyle(fontFamily: careFont, color: selected ? CareColors.blue : CareColors.warmMuted, fontSize: 12, fontWeight: FontWeight.w700)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: careFont,
+            color: selected ? CareColors.blue : CareColors.warmMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     ),
   );
@@ -284,7 +475,13 @@ class _SpeedChip extends StatelessWidget {
 /// The circle: a ring and a core that swell on the in-breath and settle on
 /// the out-breath, over most of the phase.
 class _Circle extends StatelessWidget {
-  const _Circle({required this.phaseLabel, required this.count, required this.active, required this.duration, required this.reduce});
+  const _Circle({
+    required this.phaseLabel,
+    required this.count,
+    required this.active,
+    required this.duration,
+    required this.reduce,
+  });
 
   final String phaseLabel;
   final String count;
@@ -307,7 +504,14 @@ class _Circle extends StatelessWidget {
             scale: reduce ? 1 : (_in ? 1.32 : 1),
             duration: d,
             curve: Curves.easeInOut,
-            child: Container(width: 218, height: 218, decoration: BoxDecoration(color: CareColors.blue.withValues(alpha: 0.22), shape: BoxShape.circle)),
+            child: Container(
+              width: 218,
+              height: 218,
+              decoration: BoxDecoration(
+                color: CareColors.blue.withValues(alpha: 0.22),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
           AnimatedScale(
             scale: reduce ? 1 : (_in ? 1.12 : 1),
@@ -319,14 +523,40 @@ class _Circle extends StatelessWidget {
               decoration: BoxDecoration(
                 color: CareColors.blue,
                 shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: CareColors.blue.withValues(alpha: 0.45), blurRadius: 44, offset: const Offset(0, 16))],
+                boxShadow: [
+                  BoxShadow(
+                    color: CareColors.blue.withValues(alpha: 0.45),
+                    blurRadius: 44,
+                    offset: const Offset(0, 16),
+                  ),
+                ],
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(phaseLabel.toUpperCase(), key: const ValueKey('phase-label'), style: const TextStyle(fontFamily: careFont, color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
+                  Text(
+                    phaseLabel.toUpperCase(),
+                    key: const ValueKey('phase-label'),
+                    style: const TextStyle(
+                      fontFamily: careFont,
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
                   const SizedBox(height: 3),
-                  Text(count, key: const ValueKey('phase-count'), style: const TextStyle(fontFamily: careFont, color: Colors.white, fontSize: 52, fontWeight: FontWeight.w800, height: 1)),
+                  Text(
+                    count,
+                    key: const ValueKey('phase-count'),
+                    style: const TextStyle(
+                      fontFamily: careFont,
+                      color: Colors.white,
+                      fontSize: 52,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -339,7 +569,14 @@ class _Circle extends StatelessWidget {
 
 /// The box: a marker travelling one side per phase, up, across, down, back.
 class _Box extends StatelessWidget {
-  const _Box({required this.phaseIndex, required this.active, required this.label, required this.count, required this.duration, required this.reduce});
+  const _Box({
+    required this.phaseIndex,
+    required this.active,
+    required this.label,
+    required this.count,
+    required this.duration,
+    required this.reduce,
+  });
 
   final int phaseIndex;
   final bool active;
@@ -350,33 +587,89 @@ class _Box extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const String? pose = null;
     const size = 216.0;
-    final ends = [Alignment.topLeft, Alignment.topRight, Alignment.bottomRight, Alignment.bottomLeft];
+    final ends = [
+      Alignment.topLeft,
+      Alignment.topRight,
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+    ];
     final target = active ? ends[phaseIndex % 4] : Alignment.bottomLeft;
     return SizedBox(
       width: size,
-      height: size,
+      height: pose == null ? size : size * 1.3,
       child: Stack(
         children: [
           Positioned.fill(
             child: Container(
               margin: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: CareColors.blue.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(22)),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: CareColors.blue.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: pose == null
+                  ? null
+                  : Image.asset(
+                      pose,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                    ),
             ),
           ),
           Positioned.fill(
             child: Container(
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(28), border: Border.all(color: CareColors.blue.withValues(alpha: 0.34), width: 3)),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: CareColors.blue.withValues(alpha: 0.34),
+                  width: 3,
+                ),
+              ),
             ),
           ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label.toUpperCase(), key: const ValueKey('phase-label'), style: const TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
-                const SizedBox(height: 3),
-                Text(count, key: const ValueKey('phase-count'), style: const TextStyle(fontFamily: careFont, color: CareColors.blue, fontSize: 54, fontWeight: FontWeight.w800, height: 1)),
-              ],
+          Align(
+            alignment: pose == null ? Alignment.center : Alignment.bottomCenter,
+            child: Container(
+              margin: EdgeInsets.only(bottom: pose == null ? 0 : 22),
+              padding: pose == null
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: pose == null
+                  ? null
+                  : BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label.toUpperCase(),
+                    key: const ValueKey('phase-label'),
+                    style: const TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.blue,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    count,
+                    key: const ValueKey('phase-count'),
+                    style: TextStyle(
+                      fontFamily: careFont,
+                      color: CareColors.blue,
+                      fontSize: pose == null ? 54 : 40,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           AnimatedAlign(
@@ -392,14 +685,57 @@ class _Box extends StatelessWidget {
                   color: CareColors.blue,
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: CareColors.blue.withValues(alpha: 0.18), spreadRadius: 5),
-                    BoxShadow(color: CareColors.blue.withValues(alpha: 0.5), blurRadius: 16, offset: const Offset(0, 6)),
+                    BoxShadow(
+                      color: CareColors.blue.withValues(alpha: 0.18),
+                      spreadRadius: 5,
+                    ),
+                    BoxShadow(
+                      color: CareColors.blue.withValues(alpha: 0.5),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The pose to hold, as a photo above the breath.
+class _PoseCard extends StatelessWidget {
+  const _PoseCard(this.source);
+
+  /// A `/media` path or https address from the catalogue, or an app asset.
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final network = source.startsWith('/') || source.startsWith('http');
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: AspectRatio(
+        aspectRatio: 3 / 2,
+        child: network
+            ? Image.network(
+                resolveMediaUrl(source),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const ColoredBox(
+                  color: CareColors.blueTint,
+                  child: Icon(
+                    Icons.self_improvement_rounded,
+                    color: CareColors.blue,
+                    size: 40,
+                  ),
+                ),
+                loadingBuilder: (_, child, progress) => progress == null
+                    ? child
+                    : const ColoredBox(color: CareColors.blueTint),
+              )
+            : Image.asset(source, fit: BoxFit.cover),
       ),
     );
   }

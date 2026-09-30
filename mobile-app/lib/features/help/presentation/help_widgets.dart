@@ -15,7 +15,12 @@ class CounsellorFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = counsellor.photoUrl;
-    final initials = counsellor.name.trim().split(RegExp(r'\s+')).take(2).map((w) => w.isEmpty ? '' : w[0].toUpperCase()).join();
+    final initials = counsellor.name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .take(2)
+        .map((w) => w.isEmpty ? '' : w[0].toUpperCase())
+        .join();
     final fallback = Container(
       width: size,
       height: size,
@@ -29,7 +34,15 @@ class CounsellorFace extends StatelessWidget {
           bottomRight: Radius.circular(size * 0.2),
         ),
       ),
-      child: Text(initials, style: TextStyle(fontFamily: careFont, color: CareColors.clay, fontSize: size * 0.34, fontWeight: FontWeight.w500)),
+      child: Text(
+        initials,
+        style: TextStyle(
+          fontFamily: careFont,
+          color: CareColors.clay,
+          fontSize: size * 0.34,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
     if (url == null || url.isEmpty) return fallback;
     return ClipRRect(
@@ -39,14 +52,24 @@ class CounsellorFace extends StatelessWidget {
         bottomLeft: Radius.circular(size * 0.2),
         bottomRight: Radius.circular(size * 0.2),
       ),
-      child: Image(image: avatarImageProvider(url), width: size, height: size, fit: BoxFit.cover, errorBuilder: (_, _, _) => fallback),
+      child: Image(
+        image: avatarImageProvider(url),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      ),
     );
   }
 }
 
 /// Face, name, 'Counsellor · 8 years of experience', languages.
 class CounsellorPerson extends StatelessWidget {
-  const CounsellorPerson({super.key, required this.counsellor, this.large = false});
+  const CounsellorPerson({
+    super.key,
+    required this.counsellor,
+    this.large = false,
+  });
 
   final Counsellor counsellor;
   final bool large;
@@ -62,11 +85,26 @@ class CounsellorPerson extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(counsellor.name, style: TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: large ? 26 : 22, fontWeight: FontWeight.w500, height: 1.15, letterSpacing: -0.4)),
+              Text(
+                counsellor.name,
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.ink,
+                  fontSize: large ? 26 : 22,
+                  fontWeight: FontWeight.w500,
+                  height: 1.15,
+                  letterSpacing: -0.4,
+                ),
+              ),
               const SizedBox(height: 4),
               Text(
                 '${counsellor.experienceLine}${counsellor.languages.isEmpty ? '' : '\n${counsellor.languages.join(' · ')}'}',
-                style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12.5, height: 1.5),
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 12.5,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -91,9 +129,26 @@ class ReasonList extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.check_rounded, size: 16, color: CareColors.blue)),
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: CareColors.blue,
+                ),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: Text(reason, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 13.5, height: 1.45))),
+              Expanded(
+                child: Text(
+                  reason,
+                  style: const TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.ink,
+                    fontSize: 13.5,
+                    height: 1.45,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -110,10 +165,19 @@ class UnmetNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    decoration: BoxDecoration(color: CareColors.peach, borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(
+      color: CareColors.peach,
+      borderRadius: BorderRadius.circular(12),
+    ),
     child: Text(
       'Not met: ${unmet.join(' · ')}',
-      style: const TextStyle(fontFamily: careFont, color: CareColors.clay, fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
+      style: const TextStyle(
+        fontFamily: careFont,
+        color: CareColors.clay,
+        fontSize: 12.5,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
     ),
   );
 }
@@ -132,8 +196,20 @@ class FocusChips extends StatelessWidget {
       for (final label in labels)
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(color: CareColors.paper, borderRadius: BorderRadius.circular(100), border: Border.all(color: CareColors.line)),
-          child: Text(label, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 12.5, fontWeight: FontWeight.w500)),
+          decoration: BoxDecoration(
+            color: CareColors.paper,
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(color: CareColors.line),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ),
     ],
   );
@@ -149,12 +225,35 @@ class SummaryLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 11),
-    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CareColors.line))),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: CareColors.line)),
+    ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 92, child: Text(label, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12.5))),
-        Expanded(child: Text(value, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.45))),
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.muted,
+              fontSize: 12.5,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              height: 1.45,
+            ),
+          ),
+        ),
       ],
     ),
   );
@@ -162,7 +261,12 @@ class SummaryLine extends StatelessWidget {
 
 /// One past or coming session, as a row on a list.
 class SessionRow extends StatelessWidget {
-  const SessionRow({super.key, required this.session, required this.onTap, this.title});
+  const SessionRow({
+    super.key,
+    required this.session,
+    required this.onTap,
+    this.title,
+  });
 
   final TalkSession session;
   final VoidCallback onTap;
@@ -184,17 +288,39 @@ class SessionRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: CareColors.line)),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: CareColors.line),
+          ),
           child: Row(
             children: [
               Container(
                 width: 50,
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(color: CareColors.sage, borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: CareColors.sage,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
                   children: [
-                    Text('${local.day}', style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 18, fontWeight: FontWeight.w700, height: 1)),
-                    Text(talkDate(local).split(' ').last, style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 11)),
+                    Text(
+                      '${local.day}',
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        height: 1,
+                      ),
+                    ),
+                    Text(
+                      talkDate(local).split(' ').last,
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -203,9 +329,24 @@ class SessionRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title ?? session.counsellorName, style: const TextStyle(fontFamily: careFont, color: CareColors.ink, fontSize: 14, fontWeight: FontWeight.w700)),
+                    Text(
+                      title ?? session.counsellorName,
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text('$status · ${talkTime(session.startsAt)} · Video call', style: const TextStyle(fontFamily: careFont, color: CareColors.muted, fontSize: 12)),
+                    Text(
+                      '$status · ${talkTime(session.startsAt)} · Video call',
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: CareColors.muted,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -220,7 +361,14 @@ class SessionRow extends StatelessWidget {
 
 /// A card that leads somewhere: icon, title, copy, a blue tertiary line.
 class RouteCard extends StatelessWidget {
-  const RouteCard({super.key, required this.icon, required this.title, required this.copy, required this.action, required this.onTap});
+  const RouteCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.copy,
+    required this.action,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String title;
