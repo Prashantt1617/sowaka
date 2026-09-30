@@ -780,12 +780,16 @@ class StepCard extends StatelessWidget {
     required this.text,
     required this.open,
     required this.onTap,
+    this.chevron = true,
   });
 
   final int number;
   final String text;
   final bool open;
   final VoidCallback onTap;
+
+  /// Off for a list that runs on its own, where there is nothing to unfold.
+  final bool chevron;
 
   @override
   Widget build(BuildContext context) {
@@ -837,16 +841,18 @@ class StepCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              AnimatedRotation(
-                turns: open ? 0.5 : 0,
-                duration: const Duration(milliseconds: 250),
-                child: Icon(
-                  Icons.expand_more_rounded,
-                  color: open ? CareColors.blue : const Color(0xFFC2B6A6),
-                  size: 20,
+              if (chevron) ...[
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 250),
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    color: open ? CareColors.blue : const Color(0xFFC2B6A6),
+                    size: 20,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

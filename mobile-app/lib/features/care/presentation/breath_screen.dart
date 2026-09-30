@@ -34,10 +34,17 @@ class _BreathScreenState extends State<BreathScreen> {
   bool _done = false;
   bool _started = false;
 
-  // Step list.
-  int _open = 0;
-  int? _left;
-  Timer? _pause;
+  // Step list: runs on its own, like a Move routine. Each step is read for
+  // four seconds, a hold counts its own seconds down, and the list
+  // scrolls to keep the current step in view.
+  static const _stepSeconds = 4;
+  int _current = 0;
+  int _left = 0;
+  bool _stepsDone = false;
+  Timer? _stepTimer;
+  late final List<GlobalKey> _stepKeys = [
+    for (final _ in mood.steps) GlobalKey(),
+  ];
 
   // Background sound.
   VideoPlayerController? _sound;
@@ -69,14 +76,14 @@ class _BreathScreenState extends State<BreathScreen> {
     if (mood.kind == RemedyKind.breath) {
       _timer = Timer(const Duration(milliseconds: 650), _start);
     } else {
-      _startPauseIfNeeded(0);
+      _timer = Timer(const Duration(milliseconds: 650), () => _runStep(0));
     }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _pause?.cancel();
+    _stepTimer?.cancel();
     _sound?.dispose();
     super.dispose();
   }
@@ -135,8 +142,7 @@ class _BreathScreenState extends State<BreathScreen> {
       });
       _timer = Timer(const Duration(milliseconds: 450), _start);
     } else {
-      setState(() => _open = 0);
-      _startPauseIfNeeded(0);
+      _runStep(0);
     }
   }
 
@@ -146,36 +152,40 @@ class _BreathScreenState extends State<BreathScreen> {
     if (mood.kind == RemedyKind.breath) _again();
   }
 
-  void _startPauseIfNeeded(int step) {
-    _pause?.cancel();
-    if (!mood.isPause(step)) {
-      _left = null;
-      return;
-    }
-    _left = pauseSeconds(mood.steps[step]);
-    _pause = Timer.periodic(const Duration(seconds: 1), (timer) {
+  /// Makes step [i] the current one and starts its clock: a hold's own
+  /// seconds, or a short reading time for anything else. When it runs out the
+  /// next step takes over; after the last, the routine is done.
+  void _runStep(int i) {
+    _stepTimer?.cancel();
+    setState(() {
+      _current = i;
+      _stepsDone = false;
+      _left = mood.isPause(i) ? pauseSeconds(mood.steps[i]) : _stepSeconds;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showCurrent());
+    _stepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
-      setState(() {
-        _left = (_left ?? 1) - 1;
-        if ((_left ?? 0) <= 0) {
-          _left = 0;
-          timer.cancel();
-        }
-      });
+      setState(() => _left = _left - 1);
+      if (_left > 0) return;
+      timer.cancel();
+      if (i + 1 < mood.steps.length) {
+        _runStep(i + 1);
+      } else {
+        setState(() => _stepsDone = true);
+      }
     });
   }
 
-  void _toggle(int step) {
-    setState(() {
-      if (_open == step) {
-        _open = -1;
-        _pause?.cancel();
-        _left = null;
-      } else {
-        _open = step;
-        _startPauseIfNeeded(step);
-      }
-    });
+  /// Brings the current step into view, so the phone can sit propped up.
+  void _showCurrent() {
+    final context = _stepKeys[_current].currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0.2,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -280,19 +290,28 @@ class _BreathScreenState extends State<BreathScreen> {
   }
 
   Widget _steps() {
-    final n =
-        _left ?? (mood.isPause(_open) ? pauseSeconds(mood.steps[_open]) : 0);
-    final label = '${n ~/ 60}:${(n % 60).toString().padLeft(2, '0')}';
+    final label =
+        '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
     return Column(
       children: [
+        // The pose to hold through the steps, when the catalogue has one.
+        if ((mood.poseUrl ?? mood.poseAsset) case final pose?) ...[
+          _PoseCard(pose),
+          const SizedBox(height: 18),
+        ],
         for (var i = 0; i < mood.steps.length; i++) ...[
-          StepCard(
-            number: i + 1,
-            text: mood.steps[i],
-            open: _open == i,
-            onTap: () => _toggle(i),
+          KeyedSubtree(
+            key: _stepKeys[i],
+            child: StepCard(
+              number: i + 1,
+              text: mood.steps[i],
+              open: i == _current,
+              chevron: false,
+              // A tap jumps to a step; otherwise they run on their own.
+              onTap: () => _runStep(i),
+            ),
           ),
-          if (_open == i && mood.isPause(i))
+          if (_current == i && mood.isPause(i) && !_stepsDone)
             Container(
               margin: const EdgeInsets.only(top: 11),
               height: 120,
