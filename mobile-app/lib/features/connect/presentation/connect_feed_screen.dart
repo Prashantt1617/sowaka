@@ -2120,8 +2120,11 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
     });
     final firstName = _bodyString(widget.post, 'personName').split(' ').first;
     final yearWord = years == 1 ? 'year' : 'years';
+    // The card names the company; the wish should too, not Sowaka's.
+    final company = _bodyString(widget.post, 'companyName');
     widget.onCommentPrefill(
-      'Congratulations on $years $yearWord with Sowaka, $firstName! 🎉',
+      'Congratulations on $years $yearWord with '
+      '${company.isEmpty ? 'us' : company}, $firstName! 🎉',
     );
   }
 
@@ -2217,15 +2220,16 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // The popper lives in the label, like the birthday card's
+                  // cake; an icon beside it showed two.
                   _ActionButton(
                     label: done
-                        ? _bodyString(post, 'actionDoneLabel')
+                        ? (_bodyString(post, 'actionDoneLabel').isEmpty
+                              ? '🎉 Congratulations sent!'
+                              : _bodyString(post, 'actionDoneLabel'))
                         : (actionLabel.isEmpty
                               ? '🎉 Congratulations'
                               : actionLabel),
-                    icon: done
-                        ? Icons.check_rounded
-                        : Icons.celebration_rounded,
                     onTap: () => _congratulate(years),
                   ),
                 ],
