@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { companies, connectPosts, gameScores, users } from '../config/db';
+import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
@@ -151,9 +151,33 @@ export async function getConnectFeed(
     ),
   );
 
+  const relayStatuses = await relayStatusesFor(posts);
   return Promise.all(
-    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds)),
+    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses)),
   );
+}
+
+/**
+ * Where each game post's event stands, in one query for the page. The post is
+ * written once, at publish, so on its own it cannot say the game has ended;
+ * without this the card guesses "live" from the start time until the
+ * player's own card arrives and it flips to "game over".
+ */
+async function relayStatusesFor(posts: ConnectPost[]): Promise<Map<string, string>> {
+  const eventIds = [
+    ...new Set(
+      posts
+        .filter((post) => post.type === 'relay_game')
+        .map((post) => post.body.eventId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  if (eventIds.length === 0) return new Map();
+  const events = await relayEvents()
+    .find({ id: { $in: eventIds } })
+    .project<{ id: string; status: string }>({ _id: 0, id: 1, status: 1 })
+    .toArray();
+  return new Map(events.map((event) => [event.id, event.status]));
 }
 
 /**
@@ -877,6 +901,7 @@ async function viewPost(
   viewerUserId: string,
   authorPhotoUrls?: Map<string, string | undefined>,
   knownBlockedUserIds?: string[],
+  relayStatuses?: Map<string, string>,
 ) {
   // The feed resolves this once for the whole page; every other caller renders
   // a single post after a write and looks it up here.
@@ -918,6 +943,15 @@ async function viewPost(
   // current rather than frozen at the moment the post was written.
   if (Array.isArray(body.taggedUserIds) && body.taggedUserIds.length > 0) {
     body.taggedPeople = await resolveTaggedPeople(body.taggedUserIds as string[]);
+  }
+  // A game post carries its event's current status, so the feed card shows
+  // the right state on first paint rather than after its own fetch.
+  if (post.type === 'relay_game' && typeof body.eventId === 'string') {
+    const status = relayStatuses
+      ? relayStatuses.get(body.eventId)
+      : (await relayEvents().findOne({ id: body.eventId }, { projection: { _id: 0, status: 1 } }))
+          ?.status;
+    if (status) body.status = status;
   }
   const objectKeys = mediaObjectKeys(body);
   if (objectKeys.length > 0) {

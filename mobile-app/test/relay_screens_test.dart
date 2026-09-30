@@ -503,6 +503,38 @@ void main() {
     }
   });
 
+  testWidgets('a finished game reads game over from the post alone, before the card arrives', (tester) async {
+    final post = ConnectPost.fromJson({
+      'id': 'p1',
+      'type': 'relay_game',
+      'author': {'name': 'Sowaka', 'userId': 'x'},
+      'body': {
+        'title': 'Hint Relay',
+        'status': 'finished',
+        'startsAt': DateTime.now().subtract(const Duration(hours: 2)).toUtc().toIso8601String(),
+      },
+    });
+    await _render(
+      tester,
+      _phones.values.first,
+      ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          RelayPostCard(
+            post: post,
+            session: const AuthSession(
+              token: 't',
+              user: AuthUser(id: 'u', email: 'e', name: 'n', role: 'employee', company: 'c'),
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(find.text('GAME OVER'), findsOneWidget);
+    expect(find.text('LIVE'), findsNothing);
+    expect(find.text('View Leaderboard'), findsOneWidget);
+  });
+
   group('the score reveal', () {
     test('the handoff\'s examples end on the right score', () {
       for (final (seconds, score, last) in [(120, 20, 80), (60, 40, 70), (40, 75, 95), (20, 100, 110)]) {

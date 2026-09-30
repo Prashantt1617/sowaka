@@ -84,10 +84,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
 
   /// Where the game is, from the server's word where it has one and the clock
   /// otherwise — a card loaded before kick-off turns live on its own.
+  ///
+  /// The post carries the event's status too, so a finished game reads "game
+  /// over" from the first frame instead of "live" until this viewer's own
+  /// card arrives.
   _CardPhase get _phase {
-    final card = _card;
-    if (card != null && card.isFinished) return _CardPhase.over;
-    if (card != null && card.isLive) return _CardPhase.live;
+    final status = _card?.status ?? (_body['status'] as String? ?? '');
+    if (status == 'finished') return _CardPhase.over;
+    if (status == 'live') return _CardPhase.live;
     final at = _startsAt;
     if (at != null && at.isAfter(DateTime.now())) return _CardPhase.upcoming;
     return at == null ? _CardPhase.upcoming : _CardPhase.live;
