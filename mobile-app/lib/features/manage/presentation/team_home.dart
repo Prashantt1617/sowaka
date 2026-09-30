@@ -207,12 +207,16 @@ class _MyTeamViewState extends State<_MyTeamView> {
   List<TeamMember> _coreOthers(List<TeamMember> members) =>
       _coreTeam(members).where((member) => !member.isSelf).toList();
 
-  /// "My Team" is just who you report to, not your peers too: your manager
-  /// and you (node 2488:91055).
+  /// "My Team": your manager heading it, then you, then the people who report
+  /// to the same manager in your department. The server already narrows the
+  /// peers to your department; anyone you lead belongs under Direct Reports.
   List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
     if (members.where((member) => member.isManager).firstOrNull case final m?)
       m,
     if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
+    ...members.where(
+      (member) => !member.isManager && !member.isSelf && !member.reportsToViewer,
+    ),
   ];
 
   /// A team's name above its people.
