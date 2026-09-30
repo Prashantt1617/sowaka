@@ -425,14 +425,19 @@ class _ManagerScreenState extends State<ManagerScreen> {
       ),
     );
     if (confirmed != true) return;
-    // The server forgets the session and the device before the phone does,
-    // so the token dies now and pushes for this account stop landing here.
-    // Bounded, and never in the way: offline, the phone still signs out.
+    // The server forgets the device, then the session, before the phone
+    // does, so pushes for this account stop landing here and the token dies
+    // now. The device first: unregistering needs the token that logout
+    // revokes. Bounded, and never in the way: offline, the phone still
+    // signs out.
     final token = _session.token;
-    await Future.wait<void>([
-      AuthApiService().logout(token).catchError((_) {}),
-      AppNotificationService.instance.detachSession(),
-    ]).timeout(const Duration(seconds: 5), onTimeout: () => []);
+    await AppNotificationService.instance
+        .detachSession()
+        .timeout(const Duration(seconds: 4), onTimeout: () {});
+    await AuthApiService()
+        .logout(token)
+        .timeout(const Duration(seconds: 4))
+        .catchError((_) {});
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(

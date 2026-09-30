@@ -140,7 +140,7 @@ async function mailManager(manager: User, mail: Mail, copyOthers: boolean): Prom
   await sendNotificationEmail(manager.email, mail.subject, mail.body.replaceAll('{firstName}', first), cc);
 }
 
-/** Once per manager per cycle: the scheduler runs hourly and re-derives everything. */
+/** Once per manager per cycle: the daily run re-derives everything, so it checks what was sent. */
 async function alreadySent(userId: string, scenario: string, period: string): Promise<boolean> {
   return Boolean(await notifications().findOne({ userId, scenario, 'data.period': period }));
 }

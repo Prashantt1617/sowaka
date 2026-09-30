@@ -507,7 +507,7 @@ class _ShortScreen extends StatelessWidget {
       meta: '${s['cover']}',
       frames: [
         for (final f in (s['frames'] as List<dynamic>? ?? const []))
-          [for (final x in (f as List<dynamic>)) '$x'],
+          [for (final x in (f is List ? f : const [])) '$x'],
       ],
       url: (s['url'] as String?) ?? catalog.topicVideos[id],
       footer: Column(

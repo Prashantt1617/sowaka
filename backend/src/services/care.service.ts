@@ -259,7 +259,7 @@ function istDateLabel(at: Date): string {
 
 function digestBody(name: string, entries: JournalEntry[]): string {
   const lines: string[] = [];
-  lines.push(`Hi ${name.split(' ')[0] || 'there'},`);
+  lines.push(`Hi ${(name ?? '').split(' ')[0] || 'there'},`);
   lines.push('');
   lines.push('Here is what you wrote in Care this week. It has been cleared from the app, as promised, and is yours to keep.');
   for (const entry of [...entries].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {

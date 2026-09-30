@@ -653,13 +653,8 @@ export async function upsertFeedback(
     },
     { upsert: true, returnDocument: 'after' },
   );
-  if (effectiveStatus === 'sent' && existing?.status !== 'sent') {
-    // Notifies both sides: the manager gets their progress for the cycle, the
-    // employee gets the review. Only on the first send — re-editing a sent
-    // review should not re-announce it.
-    // No message on submit: managers hear about the cycle twice, at its open
-    // and five days before it closes, with their done-versus-pending count.
-  }
+  // No message on submit: managers hear about the cycle twice, at its open
+  // and five days before it closes, with their done-versus-pending count.
   return record;
 }
 

@@ -224,7 +224,7 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  frame[0],
+                  frame.isEmpty ? '' : frame[0],
                   style: const TextStyle(
                     fontFamily: careFont,
                     color: CareColors.ink,

@@ -229,7 +229,7 @@ Widget videoScreen(
     meta: '${v['duration']} · ${v['label']}',
     frames: [
       for (final f in (v['frames'] as List<dynamic>? ?? const []))
-        [for (final s in (f as List<dynamic>)) '$s'],
+        [for (final s in (f is List ? f : const [])) '$s'],
     ],
     url: (v['url'] as String?) ?? catalog.topicVideos[id],
   );
