@@ -32,10 +32,10 @@ class HelpProfileSection extends StatefulWidget {
 class _HelpProfileSectionState extends State<HelpProfileSection> {
   late final HelpApiService _service =
       widget.service ?? HelpApiService(session: widget.session);
-  // What was fetched last, so opening the profile draws immediately. The
-  // fresh answer replaces it a moment later.
-  HelpHome? _home = lastHelpHome;
-  late bool _loading = lastHelpHome == null;
+  // What was fetched last for this person, so opening the profile draws
+  // immediately. The fresh answer replaces it a moment later.
+  late HelpHome? _home = helpHomeFor(widget.session.user.id);
+  late bool _loading = _home == null;
 
   @override
   void initState() {

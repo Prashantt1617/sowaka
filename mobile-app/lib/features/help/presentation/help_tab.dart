@@ -109,6 +109,24 @@ class _HelpTabState extends State<HelpTab> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(HelpTab old) {
+    super.didUpdateWidget(old);
+    // Help loads in the background, so the question about a finished session
+    // often has nowhere to go at that moment. It gets asked when Help is the
+    // tab on screen, which may be a tap later.
+    if (widget.visible && !old.visible) _askAboutAwaiting();
+  }
+
+  /// Puts the question about a finished session, if there is one and this is
+  /// the first time this run.
+  void _askAboutAwaiting() {
+    final session = _home?.awaitingReview;
+    if (session != null && widget.visible && _asked.add(session.id)) {
+      unawaited(_askOnce(session));
+    }
+  }
+
   Future<void> _load() async {
     try {
       final home = await _service.home();
@@ -118,13 +136,7 @@ class _HelpTabState extends State<HelpTab> {
         _loading = false;
         _error = null;
       });
-      // A session that has finished and not been spoken about: asked once,
-      // on Help, and only if this device has not asked before. Anywhere
-      // else it would arrive over whatever they were doing.
-      final session = home.awaitingReview;
-      if (session != null && widget.visible && _asked.add(session.id)) {
-        unawaited(_askOnce(session));
-      }
+      _askAboutAwaiting();
     } catch (error) {
       if (!mounted) return;
       debugPrint('Help home failed: $error');

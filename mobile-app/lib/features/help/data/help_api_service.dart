@@ -17,9 +17,25 @@ import 'help_models.dart';
 /// showing yesterday's answer until it was opened again.
 final helpMatchChanged = ValueNotifier<int>(0);
 
-/// The last Help home this app fetched, so a screen that needs it can draw
-/// straight away and refresh behind rather than opening on a spinner.
-HelpHome? lastHelpHome;
+/// The last Help home this app fetched, and whose it was, so a screen that
+/// needs it can draw straight away and refresh behind rather than opening on
+/// a spinner.
+///
+/// Whose matters: the app outlives a sign-out, and without the name on it the
+/// next person to sign in on the same phone opened their profile on somebody
+/// else's counsellor.
+HelpHome? _lastHelpHome;
+String? _lastHelpHomeFor;
+
+/// What was last fetched for [userId], when that is who is asking.
+HelpHome? helpHomeFor(String userId) =>
+    _lastHelpHomeFor == userId ? _lastHelpHome : null;
+
+/// Forgets it. Called when the person signs out.
+void forgetHelpHome() {
+  _lastHelpHome = null;
+  _lastHelpHomeFor = null;
+}
 
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
@@ -70,7 +86,8 @@ class HelpApiService {
 
   Future<HelpHome> home() async {
     final home = HelpHome.fromJson(await _request('GET', '/help/home'));
-    lastHelpHome = home;
+    _lastHelpHome = home;
+    _lastHelpHomeFor = session.user.id;
     return home;
   }
 

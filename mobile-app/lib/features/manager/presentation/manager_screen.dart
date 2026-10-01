@@ -35,6 +35,7 @@ import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
 import '../../manager_shell/presentation/tab_specs.dart';
+import '../../help/data/help_api_service.dart';
 import '../../help/presentation/help_profile_section.dart';
 import '../../help/presentation/help_tab.dart';
 import '../../care/presentation/care_tab.dart';
@@ -439,6 +440,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
         .logout(token)
         .timeout(const Duration(seconds: 4))
         .catchError((_) {});
+    // Nothing of theirs is left behind for whoever signs in next.
+    forgetHelpHome();
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(
