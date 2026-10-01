@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../services/linkified_text.dart';
@@ -16,6 +17,7 @@ import '../data/help_models.dart';
 import '../data/help_topics.dart';
 import 'choose_someone_screen.dart';
 import 'after_session_screen.dart';
+import '../../shared/session_prompts.dart';
 import 'help_booking_screen.dart';
 import 'counsellor_profile_screen.dart';
 import 'help_onboarding.dart';
@@ -31,11 +33,16 @@ class HelpTab extends StatefulWidget {
     required this.session,
     required this.profileAction,
     required this.onNotifications,
+    this.visible = true,
     this.service,
     this.careService,
   });
 
   final AuthSession session;
+
+  /// Whether Help is the tab on screen. The question about a finished
+  /// session is only put when it is.
+  final bool visible;
   final Widget profileAction;
   final VoidCallback onNotifications;
 
@@ -68,9 +75,10 @@ class _HelpTabState extends State<HelpTab> {
   /// matched from Help home rather than landing on them.
   bool _starting = false;
 
-  /// Sessions already asked about on this device, so opening Help again does
-  /// not put the same question up twice. The card stays either way until it
-  /// is answered or the server stops offering it.
+  /// A session this run has already asked about, so a reload does not put
+  /// the question up twice in one sitting. Across launches the device's own
+  /// record decides; the card on Help home stays either way, until the
+  /// session is spoken about or the server stops offering it.
   final _asked = <String>{};
 
   @override
@@ -110,11 +118,12 @@ class _HelpTabState extends State<HelpTab> {
         _loading = false;
         _error = null;
       });
-      // A session that has finished and not been spoken about: ask once,
-      // the first time Help is opened after it.
+      // A session that has finished and not been spoken about: asked once,
+      // on Help, and only if this device has not asked before. Anywhere
+      // else it would arrive over whatever they were doing.
       final session = home.awaitingReview;
-      if (session != null && _asked.add(session.id)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _askAbout(session));
+      if (session != null && widget.visible && _asked.add(session.id)) {
+        unawaited(_askOnce(session));
       }
     } catch (error) {
       if (!mounted) return;
@@ -126,6 +135,14 @@ class _HelpTabState extends State<HelpTab> {
             : 'Could not load Help.';
       });
     }
+  }
+
+  /// Asks about a finished session, unless this device already has.
+  Future<void> _askOnce(TalkSession session) async {
+    if (await const SessionPrompts().alreadyAsked(session.id)) return;
+    await const SessionPrompts().markAsked(session.id);
+    if (!mounted) return;
+    await _askAbout(session);
   }
 
   /// Opens "How did you feel about the session?" for a finished session.
@@ -458,9 +475,9 @@ class _HelpTabState extends State<HelpTab> {
             for (final session in home.history)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: SessionHistoryRow(
+                child: SessionRow(
                   session: session,
-                  onOpen: () => _push(
+                  onTap: () => _push(
                     SessionDetailsScreen(
                       session: session,
                       service: _service,

@@ -731,7 +731,11 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
           ),
-          _ProfilePageTopBar(onBack: onBack),
+          _ProfilePageTopBar(
+            onBack: onBack,
+            // The Help profile is titled as the design draws it.
+            title: !worksHere && helpHere ? 'My Profile' : 'Profile',
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
@@ -854,20 +858,25 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             Text(
                               user.name,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF222222),
-                                fontSize: 24,
+                              style: TextStyle(
+                                color: const Color(0xFF222222),
+                                fontSize: !worksHere && helpHere ? 26 : 24,
                                 height: 32 / 24,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              designation,
-                              style: const TextStyle(
+                              !worksHere && helpHere && department.isNotEmpty
+                                  ? '$designation • $department'
+                                  : designation,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
                                 color: MColors.inkSoft,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                fontSize: !worksHere && helpHere ? 15 : 16,
+                                fontWeight: !worksHere && helpHere
+                                    ? FontWeight.w400
+                                    : FontWeight.w600,
                               ),
                             ),
                           ],

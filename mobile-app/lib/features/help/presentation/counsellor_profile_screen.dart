@@ -199,17 +199,13 @@ class _CounsellorProfileScreenState extends State<CounsellorProfileScreen> {
         for (var i = 0; i < all.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: all[i].status == TalkSessionStatus.booked
-                ? SessionRow(
-                    session: all[i],
-                    title: 'Coming up',
-                    onTap: () => _openSession(all[i]),
-                  )
-                : SessionHistoryRow(
-                    session: all[i],
-                    title: 'Session ${all.length - i}',
-                    onOpen: () => _openSession(all[i]),
-                  ),
+            child: SessionRow(
+              session: all[i],
+              title: all[i].status == TalkSessionStatus.booked
+                  ? 'Coming up'
+                  : 'Session ${all.length - i}',
+              onTap: () => _openSession(all[i]),
+            ),
           ),
       ],
     );

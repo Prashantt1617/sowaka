@@ -5,8 +5,8 @@ import '../data/garden_models.dart';
 
 /// Where everything stands in the garden.
 ///
-/// The meadow is a tall canvas the person pans and zooms. Trees sit on a
-/// loose grid, three across, with a little seeded jitter so it reads as a
+/// The meadow is a canvas the person pans and zooms. Trees sit on a loose
+/// grid as wide as it is tall, with a little seeded jitter so it reads as a
 /// garden rather than a car park, and the viewer's own tree is placed at the
 /// middle so "me" has somewhere to go. Pure and deterministic: the same
 /// people give the same garden every time.
@@ -17,7 +17,18 @@ class GardenLayout {
   final List<TreePlot> plots;
   final List<Decor> decor;
 
-  static const columns = 3;
+  /// The fewest columns, so a garden of three or four still reads as a row
+  /// of trees rather than a line of them.
+  static const minColumns = 3;
+
+  /// How many trees stand across, for a garden that fills its space in both
+  /// directions. A fixed three columns turned a company of twenty-six into a
+  /// ribbon nine rows long, with the whole width of the meadow unused.
+  static int columnsFor(int people) {
+    if (people <= minColumns) return max(1, people);
+    final square = sqrt(people * spacingY / spacingX);
+    return min(people, max(minColumns, square.round()));
+  }
 
   /// How far apart trees stand. Close enough to feel like one garden.
   static const spacingX = 168.0;
@@ -34,6 +45,7 @@ class GardenLayout {
       final me = ordered.removeAt(meIndex);
       ordered.insert(middle, me);
     }
+    final columns = columnsFor(ordered.length);
     final rows = max(1, (ordered.length / columns).ceil());
     final size = Size(
       padding * 2 + (columns - 1) * spacingX + treeWidth,

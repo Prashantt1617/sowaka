@@ -42,7 +42,8 @@ class _AfterSessionScreenState extends State<AfterSessionScreen> {
 
   bool get _canSwitch {
     final match = widget.match;
-    return match != null && match.counsellor.userId != widget.session.counsellorId;
+    return match != null &&
+        match.counsellor.userId != widget.session.counsellorId;
   }
 
   String get _first => widget.session.counsellorName.split(' ').first;
@@ -101,7 +102,9 @@ class _AfterSessionScreenState extends State<AfterSessionScreen> {
                 onPressed: () => setState(() => _rating = star),
                 iconSize: 36,
                 icon: Icon(
-                  star <= _rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                  star <= _rating
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
                   color: star <= _rating
                       ? const Color(0xFFE0A526)
                       : CareColors.line,

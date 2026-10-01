@@ -115,17 +115,20 @@ void main() {
     });
   });
 
-  testWidgets('the Help profile shows the counsellor and why', (tester) async {
+  testWidgets('the Help profile shows the counsellor, as the design has it', (
+    tester,
+  ) async {
     await _pumpSection(tester, _home(matched: true));
 
-    expect(find.text('YOUR COUNSELLOR'), findsOneWidget);
     expect(find.text('Ananya Rao'), findsOneWidget);
-    expect(find.text('WHY ANANYA'), findsOneWidget);
-    expect(
-      find.text('Experience supporting people with switching off after work'),
-      findsOneWidget,
-    );
-    expect(find.text('Edit my answers'), findsOneWidget);
+    expect(find.text('8 yrs experience'), findsOneWidget);
+    expect(find.text('View profile'), findsOneWidget);
+    expect(find.text('Change'), findsOneWidget);
+    expect(find.text('MY WELLBEING'), findsOneWidget);
+    expect(find.text('Session history'), findsOneWidget);
+    expect(find.text('My preferences'), findsOneWidget);
+    // Why they were matched is on their own page, not here.
+    expect(find.textContaining('switching off after work'), findsNothing);
     // Matching happens once: having answered, nobody is asked again.
     expect(find.text('Match with a counsellor'), findsNothing);
   });
@@ -134,8 +137,9 @@ void main() {
     await _pumpSection(tester, _home(matched: false, intakeDone: false));
 
     // The card's title and its button say the same thing.
-    expect(find.text('Match with a counsellor'), findsWidgets);
-    expect(find.text('Edit my answers'), findsNothing);
+    expect(find.text('Match with a counsellor'), findsOneWidget);
+    expect(find.text('Answer the questions'), findsOneWidget);
+    expect(find.text('My preferences'), findsNothing);
   });
 
   testWidgets('answered but nobody free says so, and does not ask again', (
@@ -143,7 +147,7 @@ void main() {
   ) async {
     await _pumpSection(tester, _home(matched: false));
 
-    expect(find.text('Nobody is available yet.'), findsOneWidget);
+    expect(find.text('Nobody is available yet'), findsOneWidget);
     expect(find.text('Match with a counsellor'), findsNothing);
   });
 }

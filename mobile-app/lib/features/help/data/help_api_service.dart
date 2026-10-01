@@ -17,6 +17,10 @@ import 'help_models.dart';
 /// showing yesterday's answer until it was opened again.
 final helpMatchChanged = ValueNotifier<int>(0);
 
+/// The last Help home this app fetched, so a screen that needs it can draw
+/// straight away and refresh behind rather than opening on a spinner.
+HelpHome? lastHelpHome;
+
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
@@ -64,8 +68,11 @@ class HelpApiService {
     return json;
   }
 
-  Future<HelpHome> home() async =>
-      HelpHome.fromJson(await _request('GET', '/help/home'));
+  Future<HelpHome> home() async {
+    final home = HelpHome.fromJson(await _request('GET', '/help/home'));
+    lastHelpHome = home;
+    return home;
+  }
 
   Future<HelpIntake?> intake() async {
     final json = await _request('GET', '/help/intake');

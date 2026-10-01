@@ -7,10 +7,19 @@ import '../../talk/presentation/talk_format.dart';
 
 /// A counsellor's face: their photo, or their initials on a soft tile.
 class CounsellorFace extends StatelessWidget {
-  const CounsellorFace({super.key, required this.counsellor, this.size = 64});
+  const CounsellorFace({
+    super.key,
+    required this.counsellor,
+    this.size = 64,
+    this.round = false,
+  });
 
   final Counsellor counsellor;
   final double size;
+
+  /// A plain circle, as the profile draws them, rather than the arch Help
+  /// uses elsewhere.
+  final bool round;
 
   @override
   Widget build(BuildContext context) {
@@ -21,19 +30,19 @@ class CounsellorFace extends StatelessWidget {
         .take(2)
         .map((w) => w.isEmpty ? '' : w[0].toUpperCase())
         .join();
+    final shape = round
+        ? BorderRadius.circular(size * 0.5)
+        : BorderRadius.only(
+            topLeft: Radius.circular(size * 0.5),
+            topRight: Radius.circular(size * 0.5),
+            bottomLeft: Radius.circular(size * 0.2),
+            bottomRight: Radius.circular(size * 0.2),
+          );
     final fallback = Container(
       width: size,
       height: size,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: CareColors.peach,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(size * 0.5),
-          topRight: Radius.circular(size * 0.5),
-          bottomLeft: Radius.circular(size * 0.2),
-          bottomRight: Radius.circular(size * 0.2),
-        ),
-      ),
+      decoration: BoxDecoration(color: CareColors.peach, borderRadius: shape),
       child: Text(
         initials,
         style: TextStyle(
@@ -46,12 +55,7 @@ class CounsellorFace extends StatelessWidget {
     );
     if (url == null || url.isEmpty) return fallback;
     return ClipRRect(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(size * 0.5),
-        topRight: Radius.circular(size * 0.5),
-        bottomLeft: Radius.circular(size * 0.2),
-        bottomRight: Radius.circular(size * 0.2),
-      ),
+      borderRadius: shape,
       child: Image(
         image: avatarImageProvider(url),
         width: size,
@@ -411,129 +415,11 @@ class SessionRow extends StatelessWidget {
   }
 }
 
-/// A session that has happened: the same row, which opens on a tap to show
-/// how the person felt before it and what they made of it after.
-///
-/// Closed to start with, so a list of sessions reads as a list rather than a
-/// wall; the words are there for whoever wants them.
-class SessionHistoryRow extends StatefulWidget {
-  const SessionHistoryRow({
+/// One half of the pair a finished session carries: how they felt before it,
+/// and what they made of it after.
+class BeforeAfterBox extends StatelessWidget {
+  const BeforeAfterBox({
     super.key,
-    required this.session,
-    required this.onOpen,
-    this.title,
-  });
-
-  final TalkSession session;
-
-  /// The session's own page, from the link inside.
-  final VoidCallback onOpen;
-  final String? title;
-
-  @override
-  State<SessionHistoryRow> createState() => _SessionHistoryRowState();
-}
-
-class _SessionHistoryRowState extends State<SessionHistoryRow> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final session = widget.session;
-    final checkIn = session.checkIn;
-    final review = session.review;
-    return Material(
-      color: CareColors.paper,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => setState(() => _open = !_open),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: CareColors.line),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title ?? session.counsellorName,
-                          style: const TextStyle(
-                            fontFamily: careFont,
-                            color: CareColors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${talkDate(session.startsAt)} · ${talkTime(session.startsAt)} · Video call',
-                          style: const TextStyle(
-                            fontFamily: careFont,
-                            color: CareColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: _open ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: const Icon(
-                      Icons.chevron_right_rounded,
-                      color: CareColors.muted,
-                    ),
-                  ),
-                ],
-              ),
-              if (_open) ...[
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _BeforeAfter(
-                        label: 'Before',
-                        value: checkIn == null
-                            ? ''
-                            : '${feelingOf(checkIn.feeling).face} ${feelingOf(checkIn.feeling).label}',
-                        note: checkIn?.note ?? '',
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _BeforeAfter(
-                        label: 'After',
-                        value: review == null
-                            ? ''
-                            : '${'★' * review.rating}${'☆' * (5 - review.rating)}',
-                        note: review?.note ?? '',
-                        gold: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                CareLink('Open session', size: 12.5, onTap: widget.onOpen),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BeforeAfter extends StatelessWidget {
-  const _BeforeAfter({
     required this.label,
     required this.value,
     required this.note,

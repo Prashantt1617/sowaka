@@ -319,14 +319,20 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
     bool filters = false,
   }) {
     // The two filters offer only what the counsellors actually have.
-    final languages = <String>{for (final c in rows ?? const <Counsellor>[]) ...c.languages}.toList()..sort();
-    final focuses = <String>{for (final c in rows ?? const <Counsellor>[]) ...c.focusLabels}.toList()..sort();
+    final languages = <String>{
+      for (final c in rows ?? const <Counsellor>[]) ...c.languages,
+    }.toList()..sort();
+    final focuses = <String>{
+      for (final c in rows ?? const <Counsellor>[]) ...c.focusLabels,
+    }.toList()..sort();
     final shown = rows == null || !filters
         ? rows
         : [
             for (final c in rows)
-              if ((_languageFilter == null || c.languages.contains(_languageFilter)) &&
-                  (_focusFilter == null || c.focusLabels.contains(_focusFilter)))
+              if ((_languageFilter == null ||
+                      c.languages.contains(_languageFilter)) &&
+                  (_focusFilter == null ||
+                      c.focusLabels.contains(_focusFilter)))
                 c,
           ];
     return CarePage(
@@ -337,9 +343,19 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
         if (copy.isNotEmpty) ...[const SizedBox(height: 10), CareCopy(copy)],
         if (filters && rows != null && rows.isNotEmpty) ...[
           const SizedBox(height: 14),
-          _filterRow('Language', languages, _languageFilter, (v) => setState(() => _languageFilter = v)),
+          _filterRow(
+            'Language',
+            languages,
+            _languageFilter,
+            (v) => setState(() => _languageFilter = v),
+          ),
           const SizedBox(height: 8),
-          _filterRow('Focus area', focuses, _focusFilter, (v) => setState(() => _focusFilter = v)),
+          _filterRow(
+            'Focus area',
+            focuses,
+            _focusFilter,
+            (v) => setState(() => _focusFilter = v),
+          ),
         ],
         const SizedBox(height: 20),
         if (_counsellorsError case final message?)
@@ -347,7 +363,11 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
         else if (shown == null)
           const CareSpinner()
         else if (shown.isEmpty)
-          CareNotice(filters ? 'Nobody matches those filters yet.' : 'No counsellor is free then. Try another time.')
+          CareNotice(
+            filters
+                ? 'Nobody matches those filters yet.'
+                : 'No counsellor is free then. Try another time.',
+          )
         else
           for (final c in shown)
             Padding(

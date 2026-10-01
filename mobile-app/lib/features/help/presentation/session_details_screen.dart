@@ -74,10 +74,8 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     if (_session.checkIn == null) {
       final checkIn = await Navigator.of(context).push<SessionCheckIn?>(
         MaterialPageRoute(
-          builder: (_) => BeforeCheckInScreen(
-            session: _session,
-            service: widget.service,
-          ),
+          builder: (_) =>
+              BeforeCheckInScreen(session: _session, service: widget.service),
           fullscreenDialog: true,
         ),
       );
@@ -99,13 +97,9 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     return CarePage(
       backLabel: widget.backLabel,
       children: [
-        CareEyebrow('Your session · ${session.counsellorName}'),
-        const SizedBox(height: 10),
-        CareHeading(
-          upcoming ? 'Your next session' : 'A session you had',
-          size: 28,
-        ),
-        const SizedBox(height: 16),
+        // The counsellor's own card says whose session this is and when; a
+        // title above it only said it again.
+        const SizedBox(height: 4),
         // The counsellor's card as the list shows it, with the when and how
         // long on it; the card opens their profile.
         CounsellorListCard(
@@ -128,8 +122,44 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
               'Time',
               '${talkRange(session.startsAt, session.endsAt)} · your time',
             ),
-            SummaryLine('Session', '${counsellor.slotMinutes} min · Video call'),
-            if (session.checkIn case final checkIn?)
+            SummaryLine(
+              'Session',
+              '${counsellor.slotMinutes} min · Video call',
+            ),
+            // How they felt going in, and what they made of it coming out.
+            // Only once the session has happened; before that there is
+            // nothing to show and the countdown says so.
+            if (!upcoming &&
+                (session.checkIn != null || session.review != null)) ...[
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: BeforeAfterBox(
+                      label: 'Before',
+                      value: session.checkIn == null
+                          ? ''
+                          : '${feelingOf(session.checkIn!.feeling).face} '
+                                '${feelingOf(session.checkIn!.feeling).label}',
+                      note: session.checkIn?.note ?? '',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: BeforeAfterBox(
+                      label: 'After',
+                      value: session.review == null
+                          ? ''
+                          : '${'★' * session.review!.rating}'
+                                '${'☆' * (5 - session.review!.rating)}',
+                      note: session.review?.note ?? '',
+                      gold: true,
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (session.checkIn case final checkIn?)
               SummaryLine(
                 'Before',
                 '${feelingOf(checkIn.feeling).face} ${feelingOf(checkIn.feeling).label}'

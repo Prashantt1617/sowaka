@@ -9,6 +9,7 @@ GardenPerson _p(String name, {bool me = false}) =>
     GardenPerson(userId: name.toLowerCase(), name: name, department: 'Plant', isMe: me);
 
 void main() {
+  _spreadTests();
   test('the same people give the same garden', () {
     final people = [_p('Priya', me: true), _p('Arjun'), _p('Rohan'), _p('Sneha'), _p('Vikram')];
     final a = GardenLayout.build(people);
@@ -69,5 +70,43 @@ void main() {
     expect(view.leftToday, 2);
     expect(kindOf('daisy').meaning, 'A kindness I noticed');
     expect(kindOf('nonsense').key, gardenKinds.first.key, reason: 'an unknown kind still draws something');
+  });
+}
+
+void _spreadTests() {
+  group('the garden fills its space in both directions', () {
+    test('a company of twenty-six is no longer a ribbon', () {
+      expect(GardenLayout.columnsFor(26), 6);
+      final world = GardenLayout.build([
+        for (var i = 0; i < 26; i++)
+          GardenPerson(
+            userId: '$i',
+            name: 'Person $i',
+            department: 'Team',
+            isMe: i == 0,
+          ),
+      ]).worldSize;
+      // Within a third of square, rather than twice as tall as wide.
+      expect(world.width / world.height, closeTo(1, 0.33));
+    });
+
+    test('a handful of people still stand in a row', () {
+      expect(GardenLayout.columnsFor(1), 1);
+      expect(GardenLayout.columnsFor(3), 3);
+      expect(GardenLayout.columnsFor(4), GardenLayout.minColumns);
+    });
+
+    test('a large company grows in both directions', () {
+      final world = GardenLayout.build([
+        for (var i = 0; i < 218; i++)
+          GardenPerson(
+            userId: '$i',
+            name: 'Person $i',
+            department: 'Team',
+            isMe: i == 0,
+          ),
+      ]).worldSize;
+      expect(world.width / world.height, closeTo(1, 0.33));
+    });
   });
 }
