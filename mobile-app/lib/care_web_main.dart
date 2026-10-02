@@ -176,7 +176,16 @@ AuthSession? _sessionFromAddress() {
   try {
     final fragment = Uri.base.fragment;
     final params = Uri.splitQueryString(fragment);
-    careTopInset = double.tryParse(params['top'] ?? '') ?? 0;
+    // Kept for the tab, like the token, so a reload still starts below it.
+    final top = params['top'];
+    if (top != null && top.isNotEmpty) {
+      web.window.sessionStorage.setItem('sowaka.top', top);
+    }
+    careTopInset =
+        double.tryParse(
+          top ?? web.window.sessionStorage.getItem('sowaka.top') ?? '',
+        ) ??
+        0;
     final fromAddress = params['token'];
     if (fromAddress != null && fromAddress.isNotEmpty) {
       token = fromAddress;
