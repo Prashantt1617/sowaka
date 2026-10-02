@@ -16,24 +16,36 @@ class PlayerScreen extends StatelessWidget {
     required this.track,
     required this.backLabel,
     required this.kind,
+    this.night = false,
   });
 
   final CareTrack track;
   final String backLabel;
   final PlayerKind kind;
 
+  /// Opened from Sleep: the same night sky behind it, the words in white.
+  final bool night;
+
   @override
   Widget build(BuildContext context) {
     final url = track.url;
     final isVideo = kind == PlayerKind.video;
-    return CarePage(
+    final page = CarePage(
       backLabel: backLabel,
+      background: night ? Colors.transparent : CareColors.bg,
       children: [
-        CareEyebrow(isVideo ? 'Video session' : 'Audio session'),
-        const SizedBox(height: 10),
-        CareHeading(track.title, size: 28),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[
+          CareEyebrow(isVideo ? 'Video session' : 'Audio session'),
+          const SizedBox(height: 10),
+        ],
+        CareHeading(
+          track.title,
+          size: 28,
+          color: night ? Colors.white : CareColors.ink,
+        ),
         const SizedBox(height: 6),
-        CareCopy(track.meta),
+        CareCopy(track.meta, color: night ? Colors.white70 : CareColors.muted),
         const SizedBox(height: 22),
         if (url == null || url.isEmpty)
           Container(
@@ -77,6 +89,29 @@ class PlayerScreen extends StatelessWidget {
               ),
             ),
           ),
+      ],
+    );
+    if (!night) return page;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: Color(0xFF0B1118)),
+        Image.asset(
+          'assets/care/sleep_background.jpg',
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x80000000), Color(0x14000000), Color(0x99000000)],
+              stops: [0, 0.45, 1],
+            ),
+          ),
+        ),
+        page,
       ],
     );
   }

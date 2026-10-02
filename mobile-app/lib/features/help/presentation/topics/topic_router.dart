@@ -34,7 +34,12 @@ Widget topicScreenFor({
           backLabel: backLabel,
         );
     case 'balance':
-      return BalanceTopicScreen(topic: topic, care: care, backLabel: backLabel);
+      return BalanceTopicScreen(
+        topic: topic,
+        care: care,
+        session: session,
+        backLabel: backLabel,
+      );
     case 'parents':
       return ParentsTopicScreen(
         topic: topic,

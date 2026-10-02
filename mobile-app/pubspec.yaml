@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.2+23
+version: 1.3.3+24
 
 environment:
   sdk: ^3.10.4
@@ -119,6 +119,10 @@ flutter:
     - family: PressStart2P
       fonts:
         - asset: assets/fonts/press_start/PressStart2P-Regular.ttf
+    # Grief & loss is written by hand, in fountain-pen ink.
+    - family: La Belle Aurore
+      fonts:
+        - asset: assets/fonts/la_belle_aurore/LaBelleAurore-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

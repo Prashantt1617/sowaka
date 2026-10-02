@@ -73,8 +73,8 @@ class _ParentsTopicScreenState extends State<ParentsTopicScreen> {
     return CarePage(
       backLabel: widget.backLabel,
       children: [
-        CareEyebrow(t.name),
-        const SizedBox(height: 10),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[CareEyebrow(t.name), const SizedBox(height: 10)],
         CareHeading(
           t.text('title', 'You’re growing into this, too.'),
           size: 30,
