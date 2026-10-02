@@ -24,19 +24,20 @@
           },
           {
             "eyebrow": "When your sense of self shifts",
-            "title": "“I don’t quite know who I am now.”",
+            "title": "I don’t quite know who I am now.",
             "body": "You may miss the life you shared, being needed, or the future you pictured. Parts of who you are may feel uncertain.",
             "note": "Grief can touch your energy, concentration, relationships, and sense of purpose."
           },
           {
             "eyebrow": "You can start where you are",
-            "title": "“I don’t know where to start.”",
+            "title": "I don’t know where to start.",
             "body": "A counsellor can listen, help you explore what has changed, and work with you on what feels difficult right now.",
             "note": "You can share as much or as little as you feel ready to. One sentence is enough to begin."
           }
         ],
         "counsellorNote": "You don’t need to have the right words. Start with what’s on your mind.",
-        "bookLabel": "Book an appointment"
+        "bookLabel": "Book an appointment",
+        "writePrompt": "What does your loss feel like?"
       }
     },
     {
@@ -50,38 +51,44 @@
       "kind": "balance",
       "content": {
         "title": "My life, right now.",
-        "lede": "Make a little space for each part of your life. Tap an area to reflect.",
+        "lede": "Turn the wheel, or tap the part of life you’d like to think about.",
         "areas": [
+          {
+            "id": "family",
+            "label": "Family"
+          },
           {
             "id": "work",
             "label": "Work"
           },
           {
             "id": "movement",
-            "label": "Movement & fitness"
+            "label": "Fitness"
           },
           {
             "id": "hobbies",
-            "label": "Hobbies & interests"
+            "label": "Hobbies"
           },
           {
             "id": "social",
-            "label": "Friends & social life"
+            "label": "Social life"
           },
           {
             "id": "relationship",
             "label": "Relationship"
-          },
-          {
-            "id": "family",
-            "label": "Family"
           }
         ],
         "prompts": {
           "good": "What’s going well here?",
           "attention": "What feels missing or needs more attention?"
         },
-        "dotNote": "A dot marks an area with notes"
+        "dotNote": "A dot marks an area with notes",
+        "namedTitle": "{name}’s life, right now.",
+        "emptyNote": "Wherever it lands, you can write about that part of life. Only if you want to.",
+        "importanceIntro": "Different parts of life need different amounts of you at different times.",
+        "importanceQuestion": "How important is this area for you right now?",
+        "veryImportant": "Very important",
+        "canWait": "Can wait"
       }
     },
     {
@@ -94,7 +101,7 @@
       "toolBody": "Try finishing these sentences: “Something I appreciate is…” and “Something I would like us to talk about is…”",
       "kind": "couples",
       "content": {
-        "title": "A little closer, every day.",
+        "title": "Time for two of you",
         "lede": "Small questions, thoughtful gestures, and time for the two of you.",
         "questions": [
           "What is one small thing that would make today feel better for you?",
@@ -159,6 +166,30 @@
               "There’s something on my mind. Would now be a good time to talk about ___?",
               "Something I’d like us to understand better is…",
               "I’ve been feeling ___ about ___. I’d like to hear how it feels for you."
+            ]
+          },
+          {
+            "label": "Memories",
+            "name": "A memory of us",
+            "copy": "Go back to a moment that is only yours.",
+            "items": [
+              "What do you remember most about the day we met?",
+              "When did you first feel at home with me?",
+              "Which trip, or day out, would you love to live again?",
+              "What is a meal we shared that you still think about?",
+              "Is there a hard time we came through together that you feel proud of?"
+            ]
+          },
+          {
+            "label": "Curiosity",
+            "name": "Something I wonder about you",
+            "copy": "Ask the things you have never thought to ask.",
+            "items": [
+              "What did you dream of becoming when you were ten?",
+              "Who shaped you more than I might realise?",
+              "What is something you have changed your mind about lately?",
+              "Is there a place you would love to show me one day?",
+              "If you had a whole day just for yourself, how would you spend it?"
             ]
           }
         ],
@@ -260,6 +291,19 @@
             ],
             "url": null
           }
+        ],
+        "wordsTitle": "Find the first words",
+        "wordsLede": "For the things you want to share.",
+        "letterTitle": "A love letter",
+        "letterLede": "A thoughtful gesture, in your own words.",
+        "letterPrompts": [
+          "A moment with you I keep coming back to…",
+          "Something I appreciate about you…",
+          "Something I’m looking forward to with you…",
+          "The first time I knew…",
+          "What I love about the way you…",
+          "Thank you for the time you…",
+          "When I think of us in ten years…"
         ]
       }
     },
@@ -511,14 +555,14 @@
       "steps": [
         "Rub your palms together quickly until they feel warm.",
         "Close your eyes and cup your warm palms gently over them.",
-        "No pressure — just warmth and complete darkness.",
-        "Stay here for 30 seconds and breathe slowly.",
+        "Keep your eyes closed, slowly breathe for 30 sec. Open your eyes when you hear a ping.",
         "Open your eyes. Trace a slow figure-eight in the air with your gaze."
       ],
       "pauseSteps": [
-        3,
-        4
-      ]
+        3
+      ],
+      "holdLabel": "Breathe",
+      "holdPing": true
     },
     {
       "key": "neck",
@@ -535,7 +579,8 @@
       "pauseSteps": [
         2,
         4
-      ]
+      ],
+      "breathCycles": true
     },
     {
       "key": "shoulders",
@@ -570,7 +615,8 @@
       ],
       "pauseSteps": [
         7
-      ]
+      ],
+      "breathCycles": true
     },
     {
       "key": "wrists",
@@ -667,16 +713,21 @@
       "sub": "Comparison fades when your attention turns to what is already yours.",
       "kind": "steps",
       "steps": [
-        "Place one hand on your heart and close your eyes.",
-        "Take a slow breath and bring to mind one thing you are grateful for.",
-        "Name two more — small and ordinary still count.",
-        "Rest here and feel the warmth of each one. Hold 20 seconds.",
-        "Open your eyes and carry that fullness with you."
+        "Place one hand on your heart and take a deep breath.",
+        "Type one thing you are grateful for.",
+        "Type two more. Small and ordinary still count.",
+        "Sit with these for 30 seconds.",
+        "Carry that fullness with you."
       ],
-      "pauseSteps": [
-        4
-      ],
-      "poseUrl": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fe8971bfd-97d1-49e4-8ad1-322c515935a9-pose-jealous.jpg"
+      "pauseSteps": [],
+      "poseUrl": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fe8971bfd-97d1-49e4-8ad1-322c515935a9-pose-jealous.jpg",
+      "writeSteps": {
+        "2": 1,
+        "3": 2
+      },
+      "sitStep": 4,
+      "sitSeconds": 30,
+      "readSeconds": 6
     },
     {
       "key": "scrolling",
@@ -698,26 +749,36 @@
       "key": "nervous",
       "label": "Nervous",
       "want": "Confident",
-      "name": "Mountain Pose + Power Breath",
-      "sub": "Stand like a mountain and breathe with power — your posture tells your brain you are ready.",
-      "kind": "breath",
-      "note": "",
-      "rounds": 5,
-      "pattern": [
-        [
-          "Breathe in",
-          4
-        ],
-        [
-          "Hold",
-          2
-        ],
-        [
-          "Release",
-          4
-        ]
+      "name": "Steady Seat Breathing",
+      "sub": "Let your body settle first, then a slow, even breath steadies you.",
+      "kind": "steps",
+      "steps": [
+        "Rest your back on the chair and place your feet on the ground.",
+        "Gently roll your shoulders back once, then let them drop.",
+        "Unclench your jaw.",
+        "Breathe gently in through your nose for 4 counts, then out through your mouth for 4. Repeat 5 times without holding or forcing your breath."
       ],
-      "poseUrl": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F61540fc2-d840-42ec-8c74-5046d24c797b-pose-nervous.jpg"
+      "pauseSteps": [
+        4
+      ],
+      "readSeconds": 6,
+      "paged": true,
+      "clips": [
+        {
+          "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+          "steps": [
+            2
+          ],
+          "until": 4
+        }
+      ],
+      "photos": {
+        "1": "assets/care/nervous_seated.jpg"
+      },
+      "breathHolds": {
+        "4": 5
+      },
+      "breathSeconds": 8
     },
     {
       "key": "sleep",
@@ -756,7 +817,7 @@
       {
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F05f3ca4a-2c18-42d1-9c9d-449feaea9cdf-eys_3_.mp4",
         "steps": [
-          5
+          4
         ]
       }
     ],
@@ -875,32 +936,25 @@
       }
     ]
   },
-  "breatheSounds": {
-    "angry": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fb56a02e8-4310-4354-86d4-d610748f2aef-calm.mp3",
-    "anxious": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4f03a8f2-7d73-4c53-a8c4-ab5fb9259532-_Calming_Ocean_Waves_On_The_Shore_.mp3",
-    "jealous": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa303f895-d5b9-4f86-adc2-26dd1ae2a512-Relaxing_Flute_Nature_Sounds_Me_.mp3",
-    "scrolling": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fbd6aa494-4adb-4260-b339-2245b6874846-_Beautiful_Nature_River_Falls_Footage_48KBPS.mp3",
-    "nervous": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa303f895-d5b9-4f86-adc2-26dd1ae2a512-Relaxing_Flute_Nature_Sounds_Me_.mp3",
-    "sleep": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4f03a8f2-7d73-4c53-a8c4-ab5fb9259532-_Calming_Ocean_Waves_On_The_Shore_.mp3"
-  },
+  "breatheSounds": {},
   "listen": {
     "meditations": [
       {
         "id": "listen-moment",
         "title": "Come back to this moment",
-        "meta": "5 min · Guided meditation",
+        "meta": "7 min · Guided meditation",
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F4955a6f9-af17-4996-900f-040c43bdcb55-come_back_to_this_movement_.App.mp3"
       },
       {
         "id": "listen-pause",
         "title": "A pause between things",
-        "meta": "3 min · Guided meditation",
+        "meta": "5 min · Guided meditation",
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fbb4c2028-405f-494c-96e6-34fa4173c304-a_pause_btw_things_.mp3"
       },
       {
         "id": "listen-evening",
         "title": "An evening exhale",
-        "meta": "8 min · Guided meditation",
+        "meta": "6 min · Guided meditation",
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fb5e9873c-7e90-443c-a37d-6748c3bcdec8-a_evening_exhale_guided_meditation.App.mp3"
       }
     ],
@@ -908,7 +962,7 @@
       {
         "id": "affirm-time",
         "title": "You can take your time",
-        "meta": "2 min · Affirmations",
+        "meta": "7 min · Affirmations",
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fae30ba5b-5d10-49d0-aa83-0fbf65977848-you_can_take_your_time_.mp3"
       },
       {

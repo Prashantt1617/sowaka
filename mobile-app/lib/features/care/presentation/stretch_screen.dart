@@ -17,10 +17,20 @@ class StretchScreen extends StatefulWidget {
     super.key,
     required this.stretch,
     required this.catalog,
+    this.clips,
+    this.breathe = false,
   });
 
   final Stretch stretch;
   final CareCatalog catalog;
+
+  /// The clips to play, where they are not the catalogue's Move clips for
+  /// this stretch: a Breathe exercise brings its own.
+  final List<MoveClip>? clips;
+
+  /// Opened from Breathe: it ends without "Do it again", and the way out is
+  /// to another emotion.
+  final bool breathe;
 
   @override
   State<StretchScreen> createState() => _StretchScreenState();
@@ -28,14 +38,29 @@ class StretchScreen extends StatefulWidget {
 
 /// What one page of the routine is.
 class _Segment {
-  const _Segment({required this.steps, this.url, this.holdSeconds});
+  const _Segment({
+    required this.steps,
+    this.url,
+    this.holdSeconds,
+    this.breaths,
+    this.until,
+  });
 
   /// Zero-based indexes of the steps this page shows.
   final List<int> steps;
   final String? url;
 
+  /// Seconds in where the clip stops and holds its frame; null plays it all.
+  final double? until;
+
   /// Set when the page is a hold: how long.
   final int? holdSeconds;
+
+  /// Set when the hold is shown as breaths in and out: how many.
+  final int? breaths;
+
+  /// How long the breaths take: the hold's seconds, or five a breath.
+  int get breathSeconds => holdSeconds ?? (breaths ?? 0) * 5;
 }
 
 class _StretchScreenState extends State<StretchScreen> {
@@ -47,7 +72,7 @@ class _StretchScreenState extends State<StretchScreen> {
   /// Turns the stretch's steps and Sowaka's clips into pages, in step order.
   List<_Segment> _plan() {
     final s = widget.stretch;
-    final clips = widget.catalog.clipsFor(s.key);
+    final clips = widget.clips ?? widget.catalog.clipsFor(s.key);
     final firstStepOf = <int, MoveClip>{};
     final covered = <int>{};
     for (final clip in clips) {
@@ -68,14 +93,36 @@ class _StretchScreenState extends State<StretchScreen> {
         final hold = steps.length == 1 && s.isPause(steps.first)
             ? pauseSeconds(s.steps[steps.first])
             : null;
-        pages.add(_Segment(steps: steps, url: clip.url, holdSeconds: hold));
+        // A move held for a few breaths keeps its breaths under the words.
+        final breaths = hold == null && steps.length == 1 && s.breathCycles
+            ? holdBreaths(s.steps[steps.first])
+            : null;
+        pages.add(
+          _Segment(
+            steps: steps,
+            url: clip.url,
+            holdSeconds: hold,
+            breaths: breaths,
+            until: clip.until,
+          ),
+        );
       } else if (covered.contains(i)) {
         continue;
       } else {
+        final hold = s.isPause(i);
+        // A hold breathed a set number of times lasts that many breaths.
+        final breathed = hold ? s.breathHolds[i] : null;
         pages.add(
           _Segment(
             steps: [i],
-            holdSeconds: s.isPause(i) ? pauseSeconds(s.steps[i]) : null,
+            holdSeconds: breathed != null
+                ? breathed * s.breathSeconds
+                : hold
+                ? pauseSeconds(s.steps[i])
+                : null,
+            breaths:
+                breathed ??
+                (hold && s.breathCycles ? holdBreaths(s.steps[i]) : null),
           ),
         );
       }
@@ -124,7 +171,7 @@ class _StretchScreenState extends State<StretchScreen> {
               child: Column(
                 children: [
                   CareBackLink(
-                    'Move',
+                    widget.breathe ? 'Breathe' : 'Move',
                     onTap: () => Navigator.of(context).maybePop(),
                   ),
                   const SizedBox(height: 10),
@@ -139,7 +186,9 @@ class _StretchScreenState extends State<StretchScreen> {
                   const SizedBox(height: 6),
                   Text(
                     _finished
-                        ? 'That’s the whole stretch.'
+                        ? (widget.breathe
+                              ? 'That’s the whole routine.'
+                              : 'That’s the whole stretch.')
                         : 'Step ${_segments[_page].steps.first + 1} of ${s.steps.length} · swipe to move on',
                     style: const TextStyle(
                       fontFamily: careFont,
@@ -189,7 +238,7 @@ class _StretchScreenState extends State<StretchScreen> {
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
               child: Column(
                 children: [
-                  if (_finished)
+                  if (_finished && !widget.breathe)
                     CarePrimaryButton(
                       '↺  Do it again',
                       pill: true,
@@ -199,8 +248,10 @@ class _StretchScreenState extends State<StretchScreen> {
                     onPressed: () => Navigator.of(
                       context,
                     ).popUntil((route) => route.isFirst),
-                    child: const Text(
-                      'Choose something else',
+                    child: Text(
+                      widget.breathe
+                          ? 'Choose another emotion'
+                          : 'Choose something else',
                       style: TextStyle(
                         fontFamily: careFont,
                         color: CareColors.warmMuted,
@@ -282,6 +333,14 @@ class _SegmentPageState extends State<_SegmentPage> {
   Timer? _timer;
   int _left = 0;
 
+  /// When this page's clock began, so breaths in and out keep time with it.
+  DateTime? _clockStarted;
+
+  /// A clip held for breaths moves on once the clip and the breaths are done.
+  Timer? _breathTimer;
+  bool _clipDone = false;
+  bool _breathsDone = false;
+
   /// Which of the page's steps is current, as the clip plays.
   int _current = 0;
 
@@ -328,6 +387,7 @@ class _SegmentPageState extends State<_SegmentPage> {
           });
       controller.addListener(_onVideoTick);
       if (widget.active && widget.segment.holdSeconds != null) _startClock();
+      if (widget.active) _startBreaths();
     } else if (widget.active) {
       _startClock();
     }
@@ -346,18 +406,21 @@ class _SegmentPageState extends State<_SegmentPage> {
           video.play();
         }
         if (widget.segment.holdSeconds != null) _startClock();
+        _startBreaths();
       } else {
         _startClock();
       }
     } else {
       video?.pause();
       _timer?.cancel();
+      _breathTimer?.cancel();
     }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _breathTimer?.cancel();
     _video?.removeListener(_onVideoTick);
     _video?.dispose();
     super.dispose();
@@ -366,21 +429,55 @@ class _SegmentPageState extends State<_SegmentPage> {
   void _startClock() {
     _timer?.cancel();
     _left = widget.segment.holdSeconds ?? _readingSeconds;
+    _clockStarted = DateTime.now();
     setState(() {});
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() => _left = _left - 1);
       if (_left <= 0) {
         timer.cancel();
+        if (widget.segment.holdSeconds != null && widget.stretch.holdPing) {
+          careHoldPing?.call();
+        }
         _finish();
       }
     });
   }
 
+  /// The breaths of a clip held for breaths, timed from when the page shows.
+  void _startBreaths() {
+    final breaths = widget.segment.breaths;
+    if (breaths == null || widget.segment.holdSeconds != null) return;
+    _clipDone = false;
+    _breathsDone = false;
+    _clockStarted = DateTime.now();
+    _breathTimer?.cancel();
+    _breathTimer = Timer(Duration(seconds: widget.segment.breathSeconds), () {
+      _breathsDone = true;
+      _finishClip();
+    });
+  }
+
+  void _finishClip() {
+    if (!mounted) return;
+    final waiting = widget.segment.breaths != null && !_breathsDone;
+    if (_clipDone && !waiting) _finish();
+  }
+
   void _onVideoTick() {
     final video = _video;
     if (video == null || !mounted || !video.value.isInitialized) return;
-    final duration = video.value.duration.inMilliseconds;
+    final until = widget.segment.until;
+    // A clip cut short stops at its second and holds that frame.
+    if (until != null &&
+        video.value.isPlaying &&
+        video.value.position.inMilliseconds >= until * 1000) {
+      video.pause();
+    }
+    final full = video.value.duration.inMilliseconds;
+    final duration = until == null
+        ? full
+        : (until * 1000).round().clamp(0, full);
     final position = video.value.position.inMilliseconds;
     final steps = widget.segment.steps.length;
     if (duration > 0 && steps > 1) {
@@ -399,7 +496,9 @@ class _SegmentPageState extends State<_SegmentPage> {
         position >= duration - 200 &&
         !video.value.isPlaying &&
         !_ended) {
-      _finish();
+      // It stays on its last frame while any breaths are still to come.
+      _clipDone = true;
+      _finishClip();
     }
   }
 
@@ -416,15 +515,17 @@ class _SegmentPageState extends State<_SegmentPage> {
   Widget build(BuildContext context) {
     final s = widget.stretch;
     final seg = widget.segment;
+    final media = _media();
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: AspectRatio(aspectRatio: 3 / 2, child: _media()),
+        if (media != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: AspectRatio(aspectRatio: 3 / 2, child: media),
+            ),
           ),
-        ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -439,6 +540,14 @@ class _SegmentPageState extends State<_SegmentPage> {
                     current: i == _current,
                   ),
                 ),
+              // Over a clip, the breaths go under the words; a hold's disc
+              // shows them itself.
+              if (seg.breaths != null && seg.url != null)
+                BreathGuide(
+                  breaths: seg.breaths!,
+                  seconds: seg.breathSeconds,
+                  startedAt: widget.active ? _clockStarted : null,
+                ),
             ],
           ),
         ),
@@ -446,7 +555,9 @@ class _SegmentPageState extends State<_SegmentPage> {
     );
   }
 
-  Widget _media() {
+  /// The clip, the countdown, a photo, or the words in a box; nothing for a
+  /// step that is its words alone.
+  Widget? _media() {
     final seg = widget.segment;
     final video = _video;
     if (video != null) {
@@ -476,21 +587,22 @@ class _SegmentPageState extends State<_SegmentPage> {
               child: VideoPlayer(video),
             ),
           ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 10,
-            child: VideoProgressIndicator(
-              video,
-              allowScrubbing: true,
-              padding: EdgeInsets.zero,
-              colors: const VideoProgressColors(
-                playedColor: CareColors.blue,
-                bufferedColor: Colors.white70,
-                backgroundColor: Colors.white38,
+          if (seg.until == null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 10,
+              child: VideoProgressIndicator(
+                video,
+                allowScrubbing: true,
+                padding: EdgeInsets.zero,
+                colors: const VideoProgressColors(
+                  playedColor: CareColors.blue,
+                  bufferedColor: Colors.white70,
+                  backgroundColor: Colors.white38,
+                ),
               ),
             ),
-          ),
           if (seg.holdSeconds != null)
             Positioned(
               left: 12,
@@ -505,7 +617,7 @@ class _SegmentPageState extends State<_SegmentPage> {
                   borderRadius: BorderRadius.circular(100),
                 ),
                 child: Text(
-                  'Hold  ${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
+                  '${widget.stretch.holdLabel}  ${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
                   key: const ValueKey('pause-timer'),
                   style: const TextStyle(
                     fontFamily: careFont,
@@ -544,9 +656,24 @@ class _SegmentPageState extends State<_SegmentPage> {
     }
     if (seg.holdSeconds != null) {
       return _Countdown(
+        word: widget.stretch.holdLabel,
         label: '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
+        breaths: seg.breaths,
+        seconds: seg.holdSeconds!,
+        startedAt: widget.active ? _clockStarted : null,
       );
     }
+    if (widget.stretch.photos[seg.steps.first] case final photo?) {
+      return photo.startsWith('assets/')
+          ? Image.asset(photo, fit: BoxFit.cover)
+          : Image.network(
+              resolveMediaUrl(photo),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  const ColoredBox(color: CareColors.blueTint),
+            );
+    }
+    if (widget.stretch.wordsOnly) return null;
     return Container(
       color: CareColors.blueTint,
       alignment: Alignment.center,
@@ -645,11 +772,130 @@ class _StepLine extends StatelessWidget {
   );
 }
 
-/// A hold: a breathing blue disc with the seconds left.
-class _Countdown extends StatefulWidget {
-  const _Countdown({required this.label});
+/// Where a run of breaths is: in or out, and how full (0 to 1).
+/// Each breath takes an equal share of [seconds], half in and half out.
+({bool breathingIn, double grow}) breathAt(
+  int breaths,
+  int seconds,
+  DateTime? startedAt,
+) {
+  final total = seconds * 1000;
+  final cycle = total / breaths;
+  final elapsed = startedAt == null
+      ? 0.0
+      : DateTime.now()
+            .difference(startedAt)
+            .inMilliseconds
+            .clamp(0, total - 1)
+            .toDouble();
+  final within = elapsed % cycle;
+  final half = cycle / 2;
+  final breathingIn = within < half;
+  final t = breathingIn ? within / half : 1 - (within - half) / half;
+  return (
+    breathingIn: breathingIn,
+    grow: Curves.easeInOut.transform(t.clamp(0.0, 1.0)),
+  );
+}
 
+/// A circle in the middle that fills breathing in and empties breathing
+/// out, with the word for which: under a step held for breaths over a clip,
+/// and under the gratitudes in Breathe.
+class BreathGuide extends StatefulWidget {
+  const BreathGuide({
+    super.key,
+    required this.breaths,
+    required this.seconds,
+    required this.startedAt,
+  });
+
+  final int breaths;
+  final int seconds;
+  final DateTime? startedAt;
+
+  @override
+  State<BreathGuide> createState() => _BreathGuideState();
+}
+
+class _BreathGuideState extends State<BreathGuide>
+    with SingleTickerProviderStateMixin {
+  // Only a heartbeat to redraw by; the breath is read from the clock.
+  late final AnimationController _tick = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _tick.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.of(context).disableAnimations;
+    return AnimatedBuilder(
+      animation: _tick,
+      builder: (_, _) {
+        final b = breathAt(widget.breaths, widget.seconds, widget.startedAt);
+        final grow = still ? 1.0 : b.grow;
+        return Padding(
+          padding: const EdgeInsets.only(top: 18, bottom: 6),
+          child: Column(
+            children: [
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(
+                  child: Container(
+                    width: 18 + 30 * grow,
+                    height: 18 + 30 * grow,
+                    decoration: BoxDecoration(
+                      color: CareColors.blue.withValues(
+                        alpha: 0.35 + 0.5 * grow,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                b.breathingIn ? 'Breathe in' : 'Breathe out',
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A hold: a breathing blue disc with the seconds left, or, for a hold
+/// counted in breaths, each breath in and out and which one it is.
+class _Countdown extends StatefulWidget {
+  const _Countdown({
+    required this.word,
+    required this.label,
+    required this.seconds,
+    this.breaths,
+    this.startedAt,
+  });
+
+  /// Over the seconds: 'Hold', or 'Breathe'.
+  final String word;
   final String label;
+  final int seconds;
+  final int? breaths;
+
+  /// When the hold began; null until the page is the one showing.
+  final DateTime? startedAt;
 
   @override
   State<_Countdown> createState() => _CountdownState();
@@ -682,13 +928,21 @@ class _CountdownState extends State<_Countdown>
       child: AnimatedBuilder(
         animation: _breathe,
         builder: (_, _) {
-          final scale = 1 + 0.16 * Curves.easeInOut.transform(_breathe.value);
+          final breath = widget.breaths == null
+              ? null
+              : breathAt(widget.breaths!, widget.seconds, widget.startedAt);
+          final grow = breath?.grow ?? _breathe.value;
+          final scale = breath == null
+              ? 1 + 0.16 * Curves.easeInOut.transform(grow)
+              : 0.86 + 0.3 * grow;
           return Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                width: 150 * (1 + 0.06 * _breathe.value),
-                height: 150 * (1 + 0.06 * _breathe.value),
+                width:
+                    150 * (breath == null ? 1 + 0.06 * grow : 0.9 + 0.2 * grow),
+                height:
+                    150 * (breath == null ? 1 + 0.06 * grow : 0.9 + 0.2 * grow),
                 decoration: BoxDecoration(
                   color: CareColors.blue.withValues(alpha: 0.16),
                   shape: BoxShape.circle,
@@ -713,9 +967,9 @@ class _CountdownState extends State<_Countdown>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
-                        'HOLD',
-                        style: TextStyle(
+                      Text(
+                        breath == null ? widget.word.toUpperCase() : 'BREATHE',
+                        style: const TextStyle(
                           fontFamily: careFont,
                           color: Colors.white70,
                           fontSize: 10,
@@ -725,7 +979,9 @@ class _CountdownState extends State<_Countdown>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        widget.label,
+                        breath == null
+                            ? widget.label
+                            : (breath.breathingIn ? 'In' : 'Out'),
                         key: const ValueKey('pause-timer'),
                         style: const TextStyle(
                           fontFamily: careFont,
@@ -781,6 +1037,7 @@ class StepCard extends StatelessWidget {
     required this.open,
     required this.onTap,
     this.chevron = true,
+    this.child,
   });
 
   final int number;
@@ -790,6 +1047,9 @@ class StepCard extends StatelessWidget {
 
   /// Off for a list that runs on its own, where there is nothing to unfold.
   final bool chevron;
+
+  /// Under the words, inside the card: boxes to type in, or lines to read.
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -808,51 +1068,61 @@ class StepCard extends StatelessWidget {
               color: open ? CareColors.blue : const Color(0xFFF0E9DD),
             ),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 30,
-                height: 30,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: open ? CareColors.blue : CareColors.blueTint,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  '$number',
-                  style: TextStyle(
-                    fontFamily: careFont,
-                    color: open ? Colors.white : CareColors.blue,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+              Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: open ? CareColors.blue : CareColors.blueTint,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$number',
+                      style: TextStyle(
+                        fontFamily: careFont,
+                        color: open ? Colors.white : CareColors.blue,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: const TextStyle(
+                        fontFamily: careFont,
+                        color: Color(0xFF3A332C),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w500,
+                        height: 1.6,
+                      ),
+                    ),
+                  ),
+                  if (chevron) ...[
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: open ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 250),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: open ? CareColors.blue : const Color(0xFFC2B6A6),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    fontFamily: careFont,
-                    color: Color(0xFF3A332C),
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w500,
-                    height: 1.6,
-                  ),
+              if (child case final child?)
+                Padding(
+                  padding: const EdgeInsets.only(left: 44, top: 12),
+                  child: child,
                 ),
-              ),
-              if (chevron) ...[
-                const SizedBox(width: 8),
-                AnimatedRotation(
-                  turns: open ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  child: Icon(
-                    Icons.expand_more_rounded,
-                    color: open ? CareColors.blue : const Color(0xFFC2B6A6),
-                    size: 20,
-                  ),
-                ),
-              ],
             ],
           ),
         ),

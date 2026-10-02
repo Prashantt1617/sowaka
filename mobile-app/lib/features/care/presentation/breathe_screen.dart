@@ -4,6 +4,7 @@ import '../content/catalog_content.dart';
 import '../data/care_models.dart';
 import 'breath_screen.dart';
 import 'care_theme.dart';
+import 'stretch_screen.dart';
 
 /// Breathe: how are you feeling? Six moods, each with where it takes you.
 class BreatheScreen extends StatelessWidget {
@@ -16,8 +17,11 @@ class BreatheScreen extends StatelessWidget {
     return CarePage(
       backLabel: 'Care',
       children: [
-        const CareEyebrow('Breathe'),
-        const SizedBox(height: 10),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[
+          const CareEyebrow('Breathe'),
+          const SizedBox(height: 10),
+        ],
         const CareHeading(
           'How are you\nfeeling?',
           size: 25,
@@ -35,10 +39,17 @@ class BreatheScreen extends StatelessWidget {
                   key: ValueKey('mood-${mood.key}'),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => BreathScreen(
-                        mood: mood,
-                        soundUrl: catalog.breatheSounds[mood.key],
-                      ),
+                      builder: (_) => mood.paged
+                          ? StretchScreen(
+                              stretch: stretchFromMood(mood),
+                              catalog: catalog,
+                              clips: mood.clips,
+                              breathe: true,
+                            )
+                          : BreathScreen(
+                              mood: mood,
+                              soundUrl: catalog.breatheSounds[mood.key],
+                            ),
                     ),
                   ),
                   child: Container(
