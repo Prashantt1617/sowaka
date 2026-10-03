@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../routes/app_routes.dart';
+import '../../auth/data/auth_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -75,6 +77,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Signed in as someone else: sign out and start again at the email screen.
+  Future<void> _changeEmail() async {
+    final session = _session;
+    if (session == null) return;
+    await AuthApiService()
+        .logout(session.token)
+        .timeout(const Duration(seconds: 4))
+        .catchError((_) {});
+    await AuthSessionStore().clear();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = _session;
@@ -84,6 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
         session: session,
         api: ManagerApiService(session: session),
         onDone: _finishOnboarding,
+        onChangeEmail: _changeEmail,
       );
     }
     return ManagerScreen(

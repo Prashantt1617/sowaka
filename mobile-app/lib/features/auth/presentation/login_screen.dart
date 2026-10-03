@@ -102,6 +102,16 @@ class _LoginScreenState extends State<LoginScreen>
     _bloc.add(const EditAuthEmail());
   }
 
+  /// The wrong address signed in: that session ends on the server, without
+  /// holding them up, and they are back at the email screen.
+  void _changeEmail(AuthSession session) {
+    AuthApiService()
+        .logout(session.token)
+        .timeout(const Duration(seconds: 4))
+        .catchError((_) {});
+    _editEmail();
+  }
+
   /// Keeps what first-run gathered on the session the rest of the app reads,
   /// so "Meet your team" shows their new photo and nothing asks again.
   Future<void> _finishOnboarding(
@@ -208,6 +218,7 @@ class _LoginScreenState extends State<LoginScreen>
                     api: ManagerApiService(session: signedIn),
                     onDone: (photoUrl, interests) =>
                         _finishOnboarding(signedIn, photoUrl, interests),
+                    onChangeEmail: () => _changeEmail(signedIn),
                   ),
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
