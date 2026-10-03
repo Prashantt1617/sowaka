@@ -121,7 +121,7 @@ class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
       children: [
         // The app's bar already names the page on the web.
         if (!careWebPages) ...[CareEyebrow(t.name), const SizedBox(height: 10)],
-        CareHeading(t.text('title', 'Time for two of you'), size: 30),
+        CareHeading(t.text('title', 'Understand each other better'), size: 30),
         const SizedBox(height: 22),
         // The quizzes for two come first, each hidden until the server can keep it.
         PairQuizCard(

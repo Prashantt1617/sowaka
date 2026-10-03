@@ -45,7 +45,10 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
       ? _Screen.review
       : _Screen.questions;
   int _step = 0;
-  bool _editing = false;
+
+  /// Walking the questions again from the summary of saved answers: the
+  /// last one saves, and back from the first returns to the summary.
+  bool _walking = false;
   String _message = '';
   bool _saving = false;
 
@@ -115,11 +118,6 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
 
   Future<void> _advance() async {
     _message = '';
-    if (_editing) {
-      setState(() => _editing = false);
-      await _save();
-      return;
-    }
     if (_step < 3) {
       setState(() => _step++);
       return;
@@ -142,9 +140,9 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
 
   void _back() {
     _message = '';
-    if (_editing) {
+    if (_walking && _step == 0) {
       setState(() {
-        _editing = false;
+        _walking = false;
         _screen = _Screen.review;
       });
     } else if (_step > 0) {
@@ -175,11 +173,12 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
     }
   }
 
-  void _edit(int step) {
+  /// From the summary: all four questions again, the saved answers chosen.
+  void _editAll() {
     setState(() {
-      _step = step;
+      _step = 0;
       _screen = _Screen.questions;
-      _editing = true;
+      _walking = true;
       _message = '';
     });
   }
@@ -350,7 +349,7 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         Row(
           children: [
             Expanded(
-              child: step > 0 || _editing || widget.onCancel != null
+              child: step > 0 || _walking || widget.onCancel != null
                   ? CareBackLink('Back', onTap: _back)
                   : const Text(
                       'Let’s make this feel like you',
@@ -420,29 +419,32 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         ],
         const SizedBox(height: 26),
         CarePrimaryButton(
-          _editing
-              ? 'Done'
-              : step == 3
-              ? 'See my counsellor'
-              : 'Continue',
+          step < 3
+              ? 'Continue'
+              : _walking
+              ? 'Save my preferences'
+              : 'See my counsellor',
           icon: Icons.arrow_forward_rounded,
           onTap: _canContinue ? _advance : null,
         ),
-        const SizedBox(height: 6),
-        Center(
-          child: TextButton(
-            onPressed: _skip,
-            child: Text(
-              step == 3 ? 'Continue without preferences' : 'Skip for now',
-              style: const TextStyle(
-                fontFamily: careFont,
-                color: CareColors.muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+        // Changing saved preferences is not something to skip through.
+        if (!widget.startOnReview) ...[
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton(
+              onPressed: _skip,
+              child: Text(
+                step == 3 ? 'Continue without preferences' : 'Skip for now',
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
-        ),
+        ],
         const SizedBox(height: 6),
         const CareMicro(
           'Your answers stay with you and your counsellor. Nobody at your company sees them.',
@@ -528,16 +530,11 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
                     ],
                   ),
                 ),
-                CareLink('Edit', icon: null, onTap: () => _edit(i)),
               ],
             ),
           ),
         const SizedBox(height: 22),
-        CarePrimaryButton(
-          'Save answers',
-          icon: Icons.arrow_forward_rounded,
-          onTap: _save,
-        ),
+        CarePrimaryButton('Edit', icon: Icons.edit_outlined, onTap: _editAll),
       ],
     );
   }

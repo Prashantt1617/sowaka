@@ -70,12 +70,24 @@ class _HelpProfileSectionState extends State<HelpProfileSection> {
     }
   }
 
+  /// A page is opening, or open: a second tap does nothing.
+  bool _opening = false;
+
   Future<void> _push(Widget screen) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (_opening) return;
+    _opening = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => screen),
+      );
+    } finally {
+      _opening = false;
+    }
     if (mounted) await _load();
   }
 
   Future<void> _editAnswers() async {
+    if (_opening) return;
     HelpIntake? intake;
     try {
       intake = await _service.intake();

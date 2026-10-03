@@ -480,25 +480,6 @@ class _HelpTabState extends State<HelpTab> {
               );
             },
           ),
-          if (home.history.isNotEmpty) ...[
-            const SizedBox(height: 26),
-            const CareSectionTitle('Your sessions', size: 17),
-            const SizedBox(height: 10),
-            for (final session in home.history)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: SessionRow(
-                  session: session,
-                  onTap: () => _push(
-                    SessionDetailsScreen(
-                      session: session,
-                      service: _service,
-                      backLabel: 'Help',
-                    ),
-                  ),
-                ),
-              ),
-          ],
         ],
       ),
     );
