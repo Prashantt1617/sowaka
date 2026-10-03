@@ -18,7 +18,6 @@ import '../data/help_topics.dart';
 import 'choose_someone_screen.dart';
 import 'after_session_screen.dart';
 import '../../shared/session_prompts.dart';
-import 'help_booking_screen.dart';
 import 'counsellor_profile_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
@@ -339,13 +338,6 @@ class _HelpTabState extends State<HelpTab> {
                   service: _service,
                   counsellorId: match.counsellor.userId,
                   backLabel: 'Help',
-                ),
-              ),
-              // Straight to a time with them; the profile is a tap away.
-              onTalk: () => _push(
-                HelpBookingScreen(
-                  service: _service,
-                  counsellor: match.counsellor,
                 ),
               ),
               onChoose: () => _push(
