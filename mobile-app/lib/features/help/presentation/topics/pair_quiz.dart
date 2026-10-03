@@ -935,107 +935,28 @@ class AttachmentSpec extends PairQuizSpec {
   String summary(Map raw) => names[_style(raw)] ?? '';
 
   @override
-  Widget question(
-    int i,
-    String? current,
-    ValueChanged<String> onAnswer,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const CareCopy(
-        'Think about how you generally feel in close relationships: a partner, or close friends and family.',
-        size: 13,
-      ),
-      const SizedBox(height: 14),
-      AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        child: Text(
-          statements[i],
-          key: ValueKey(i),
-          style: const TextStyle(
-            fontFamily: careFont,
-            color: CareColors.ink,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            height: 1.35,
-          ),
-        ),
-      ),
-      const SizedBox(height: 18),
-      const CareCopy('How much do you agree?', size: 13),
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          for (var v = 1; v <= 5; v++) ...[
-            if (v > 1) const SizedBox(width: 8),
-            Expanded(
-              child: Semantics(
-                button: true,
-                label:
-                    '$v${v == 1
-                        ? ', strongly disagree'
-                        : v == 5
-                        ? ', strongly agree'
-                        : ''}',
-                child: Material(
-                  color: current == '$v' ? _Rose.ink : Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: current == '$v' ? _Rose.ink : CareColors.line,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => onAnswer('$v'),
-                    child: SizedBox(
-                      height: 52,
-                      child: Center(
-                        child: Text(
-                          '$v',
-                          style: TextStyle(
-                            fontFamily: careFont,
-                            color: current == '$v'
-                                ? Colors.white
-                                : CareColors.ink,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-      const SizedBox(height: 8),
-      const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget question(int i, String? current, ValueChanged<String> onAnswer) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Strongly disagree',
-            style: TextStyle(
+            statements[i],
+            style: const TextStyle(
               fontFamily: careFont,
-              color: CareColors.muted,
-              fontSize: 11.5,
+              color: CareColors.ink,
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
             ),
           ),
-          Text(
-            'Strongly agree',
-            style: TextStyle(
-              fontFamily: careFont,
-              color: CareColors.muted,
-              fontSize: 11.5,
-            ),
+          const SizedBox(height: 22),
+          _AgreeSlider(
+            initial: int.tryParse(current ?? ''),
+            last: i == count - 1,
+            onDone: (v) => onAnswer('$v'),
           ),
         ],
-      ),
-    ],
-  );
+      );
 
   @override
   Widget result(Map raw) {
@@ -1969,4 +1890,117 @@ class _Bar extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// How much someone agrees, on a slider from strongly disagree to strongly
+/// agree: five stops, named in words rather than numbers. Next shows once
+/// they have moved it, so nobody lands on the middle by not answering.
+class _AgreeSlider extends StatefulWidget {
+  const _AgreeSlider({
+    required this.initial,
+    required this.last,
+    required this.onDone,
+  });
+
+  /// The answer given before, when they came back to this one.
+  final int? initial;
+  final bool last;
+  final ValueChanged<int> onDone;
+
+  @override
+  State<_AgreeSlider> createState() => _AgreeSliderState();
+}
+
+class _AgreeSliderState extends State<_AgreeSlider> {
+  static const _words = [
+    'Strongly disagree',
+    'Disagree',
+    'Not sure',
+    'Agree',
+    'Strongly agree',
+  ];
+
+  late int? _value = widget.initial;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = _value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Text(
+            value == null ? 'Move the slider' : _words[value - 1],
+            style: TextStyle(
+              fontFamily: careFont,
+              color: value == null ? CareColors.muted : _Rose.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 6,
+            activeTrackColor: value == null ? _Rose.line : _Rose.ink,
+            inactiveTrackColor: _Rose.line,
+            thumbColor: value == null ? Colors.white : _Rose.ink,
+            overlayColor: _Rose.ink.withValues(alpha: 0.12),
+            activeTickMarkColor: Colors.white,
+            inactiveTickMarkColor: _Rose.soft,
+            thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 13,
+              elevation: 3,
+            ),
+            showValueIndicator: ShowValueIndicator.never,
+          ),
+          child: Slider(
+            min: 1,
+            max: 5,
+            divisions: 4,
+            value: (value ?? 3).toDouble(),
+            semanticFormatterCallback: (v) => _words[v.round() - 1],
+            onChanged: (v) => setState(() => _value = v.round()),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Strongly disagree',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 11.5,
+                ),
+              ),
+              Text(
+                'Strongly agree',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        AnimatedOpacity(
+          opacity: value == null ? 0.35 : 1,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: value == null,
+            child: _Wide(
+              widget.last ? 'See my result' : 'Next',
+              onTap: () => widget.onDone(value!),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

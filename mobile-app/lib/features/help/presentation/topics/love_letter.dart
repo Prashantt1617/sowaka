@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../auth/data/auth_api_service.dart';
 import '../../../care/data/care_api_service.dart';
 import '../../../care/presentation/care_theme.dart';
 import '../../../care/presentation/share_writing.dart';
@@ -75,9 +76,22 @@ class _LoveLetterState extends State<LoveLetter> {
   bool _promptOff = false;
   bool _saved = false;
 
+  /// The first name the letter is signed with.
+  String _name = '';
+
   @override
   void initState() {
     super.initState();
+    _name = _first(widget.care.session.user.name);
+    // The web pages know only the token: ask who it is.
+    if (_name.isEmpty) {
+      AuthApiService()
+          .fetchCurrentUser(widget.care.session.token)
+          .then((user) {
+            if (mounted) setState(() => _name = _first(user.name));
+          })
+          .catchError((_) {});
+    }
     widget.care
         .writings('loveletter:main')
         .then((rows) {
@@ -108,6 +122,11 @@ class _LoveLetterState extends State<LoveLetter> {
     _focus.dispose();
     super.dispose();
   }
+
+  static String _first(String name) => name.trim().split(RegExp(r'\s+')).first;
+
+  /// How the letter ends: "With love," and their name.
+  String get _signoff => _name.isEmpty ? 'With love' : 'With love,\n$_name';
 
   String? get _promptText => _promptOff || widget.prompts.isEmpty
       ? null
@@ -145,9 +164,10 @@ class _LoveLetterState extends State<LoveLetter> {
       date: _dateLine(DateTime.now()),
       prompt: _promptText,
       body: body,
+      signoff: _signoff,
     );
     if (!mounted) return;
-    final text = [?_promptText, body].join('\n');
+    final text = [?_promptText, body, '', _signoff].join('\n');
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -207,7 +227,7 @@ class _LoveLetterState extends State<LoveLetter> {
                 left: 34,
                 right: 30,
                 top: 84,
-                height: _paperHeight - 84 - 42,
+                height: _paperHeight - 84 - 42 - 72,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: _focus.requestFocus,
@@ -275,6 +295,16 @@ class _LoveLetterState extends State<LoveLetter> {
                     onTap: _nextPrompt,
                   ),
                 ),
+              // Signed at the foot of the letter, in the same hand.
+              Positioned(
+                right: 40,
+                top: _paperHeight - 42 - 72,
+                child: Text(
+                  _signoff,
+                  textAlign: TextAlign.right,
+                  style: _hand(21, LetterColors.ink),
+                ),
+              ),
               Positioned(
                 right: 14,
                 top: _paperHeight - 46,
@@ -441,12 +471,13 @@ class _ShareSheet extends StatelessWidget {
 }
 
 /// The letter drawn as a picture, twice the size for a crisp image: the
-/// paper, the date, the prompt if there is one, and the words in the same
-/// hand, with a small seal in the corner. The page grows with the letter.
+/// paper, the date, the prompt if there is one, the words in the same hand
+/// and the signature, with a small seal in the corner. The page grows with the letter.
 Future<Uint8List> letterPicture({
   required String date,
   required String? prompt,
   required String body,
+  required String signoff,
 }) async {
   const w = 360.0, k = 2.0, left = 34.0, right = 34.0;
   TextPainter lay(String text, double size, Color color) => TextPainter(
@@ -456,7 +487,15 @@ Future<Uint8List> letterPicture({
   final p = prompt == null ? null : lay(prompt, 21, LetterColors.inkSoft);
   final b = lay(body, 21, LetterColors.ink);
   final d = lay(date, 18, LetterColors.inkSoft);
-  final h = math.max(480.0, 92 + (p?.height ?? 0) + b.height + 80);
+  final sig = TextPainter(
+    text: TextSpan(text: signoff, style: _hand(21, LetterColors.ink)),
+    textAlign: TextAlign.right,
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: w - left - right);
+  final h = math.max(
+    480.0,
+    92 + (p?.height ?? 0) + b.height + 16 + sig.height + 80,
+  );
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder)..scale(k);
@@ -475,6 +514,8 @@ Future<Uint8List> letterPicture({
     y += p.height;
   }
   b.paint(canvas, Offset(left, y));
+  y += b.height + 16;
+  sig.paint(canvas, Offset(w - right - 30 - sig.width, y));
   canvas.save();
   canvas.translate(w - 66, h - 66);
   canvas.rotate(-10 * math.pi / 180);
