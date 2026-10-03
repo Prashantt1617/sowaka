@@ -304,7 +304,277 @@
           "What I love about the way you…",
           "Thank you for the time you…",
           "When I think of us in ten years…"
-        ]
+        ],
+        "loveQuiz": {
+          "names": {
+            "W": "Words of affirmation",
+            "Q": "Quality time",
+            "A": "Acts of service",
+            "T": "Physical touch",
+            "G": "Receiving gifts"
+          },
+          "means": {
+            "W": "Kind words land deepest: hearing that you are appreciated, admired, encouraged.",
+            "Q": "Undivided attention is what feels like love: time together, phones down.",
+            "A": "Help speaks loudest: a chore handled, a load lifted, a plan taken care of.",
+            "T": "Closeness says it best: a hug, a hand held, sitting near each other.",
+            "G": "A thoughtful gift, big or small, says “I was thinking of you.”"
+          },
+          "how": {
+            "W": "Say it out loud: what you admire, what you are grateful for. A text in the middle of the day counts.",
+            "Q": "Plan time with nothing else in it. Put the phone away and ask about their day, then really listen.",
+            "A": "Notice the chore they dread and do it before they ask. Take something off their plate this week.",
+            "T": "A hug hello and goodbye, a hand on the shoulder, sitting close on the couch.",
+            "G": "Small and personal beats big: their favourite snack, something they mentioned once."
+          },
+          "questions": [
+            [
+              [
+                "W",
+                "Hearing someone say they’re proud of you"
+              ],
+              [
+                "Q",
+                "Spending an evening together with phones put away"
+              ]
+            ],
+            [
+              [
+                "A",
+                "Someone handling a chore you’ve been dreading"
+              ],
+              [
+                "T",
+                "A long hug at the end of a hard day"
+              ]
+            ],
+            [
+              [
+                "G",
+                "A small souvenir someone picked up thinking of you"
+              ],
+              [
+                "W",
+                "A note telling you what they love about you"
+              ]
+            ],
+            [
+              [
+                "Q",
+                "A long walk with deep conversation"
+              ],
+              [
+                "A",
+                "Someone cooking you dinner when you’re exhausted"
+              ]
+            ],
+            [
+              [
+                "T",
+                "Holding hands while you’re out together"
+              ],
+              [
+                "G",
+                "A surprise gift for no particular reason"
+              ]
+            ],
+            [
+              [
+                "W",
+                "A heartfelt compliment in front of others"
+              ],
+              [
+                "A",
+                "Someone running an errand so you don’t have to"
+              ]
+            ],
+            [
+              [
+                "Q",
+                "A weekend trip with just the two of you"
+              ],
+              [
+                "T",
+                "Cuddling on the couch during a movie"
+              ]
+            ],
+            [
+              [
+                "G",
+                "Something you mentioned once, remembered and bought"
+              ],
+              [
+                "Q",
+                "Someone clearing their schedule to be with you"
+              ]
+            ],
+            [
+              [
+                "A",
+                "Someone fixing something that’s been broken for weeks"
+              ],
+              [
+                "G",
+                "A thoughtful birthday present"
+              ]
+            ],
+            [
+              [
+                "T",
+                "A reassuring hand on your shoulder"
+              ],
+              [
+                "W",
+                "Hearing “I appreciate you” out of the blue"
+              ]
+            ],
+            [
+              [
+                "Q",
+                "Someone giving you their full, undistracted attention"
+              ],
+              [
+                "W",
+                "A kind text message during your workday"
+              ]
+            ],
+            [
+              [
+                "T",
+                "A back rub after a long day"
+              ],
+              [
+                "A",
+                "Someone doing the dishes without being asked"
+              ]
+            ],
+            [
+              [
+                "W",
+                "Encouraging words before something difficult"
+              ],
+              [
+                "G",
+                "A little treat left for you to find"
+              ]
+            ],
+            [
+              [
+                "A",
+                "Help getting ready for a stressful event"
+              ],
+              [
+                "Q",
+                "Trying a new activity together"
+              ]
+            ],
+            [
+              [
+                "G",
+                "A handwritten card with a small present"
+              ],
+              [
+                "T",
+                "A kiss hello and goodbye every day"
+              ]
+            ],
+            [
+              [
+                "A",
+                "Someone taking a task off your plate"
+              ],
+              [
+                "W",
+                "Being told you’re doing a great job"
+              ]
+            ],
+            [
+              [
+                "T",
+                "Sitting close together, even in silence"
+              ],
+              [
+                "Q",
+                "A long, unhurried meal together"
+              ]
+            ],
+            [
+              [
+                "Q",
+                "Someone showing up for something important to you"
+              ],
+              [
+                "G",
+                "A gift that shows they really know you"
+              ]
+            ],
+            [
+              [
+                "G",
+                "Flowers or a favourite snack brought home"
+              ],
+              [
+                "A",
+                "Someone planning the details so you can relax"
+              ]
+            ],
+            [
+              [
+                "W",
+                "A thoughtful message on a hard day"
+              ],
+              [
+                "T",
+                "Being held when you’re upset"
+              ]
+            ]
+          ]
+        },
+        "attachmentQuiz": {
+          "statements": [
+            "I often worry that the people I’m close to don’t care about me as much as I care about them.",
+            "I feel uncomfortable when someone wants to get very emotionally close to me.",
+            "If someone I love is distant or slow to reply, I assume something is wrong between us.",
+            "I find it easy to turn to people I’m close to for comfort and support.",
+            "I need a lot of reassurance that I’m loved and wanted.",
+            "I prefer not to depend on others, even when I’m struggling.",
+            "I worry about being abandoned or replaced.",
+            "It’s hard for me to open up about my feelings, even to people I trust.",
+            "I feel secure that the people close to me will be there when I need them.",
+            "When a relationship gets serious, I feel an urge to pull back or keep my space."
+          ],
+          "names": {
+            "secure": "Secure",
+            "anxious": "Anxious",
+            "avoidant": "Avoidant",
+            "fearful": "Fearful-avoidant"
+          },
+          "means": {
+            "secure": "Closeness and independence both feel fairly comfortable to you. You tend to trust that the people you love will be there, without needing a lot of reassurance.",
+            "anxious": "Closeness matters a great deal to you, and you may sometimes wonder whether others care as much as you do. Small signs of distance can feel big, and reassurance helps you settle.",
+            "avoidant": "You value your independence and like to handle things yourself. When someone wants a lot of emotional closeness, a little space can feel safer than leaning in.",
+            "fearful": "You want closeness and also want to protect yourself from getting hurt, so you can feel pulled both ways: drawn toward people, then wanting some distance."
+          },
+          "try": {
+            "secure": "Your steadiness helps you both. Keep saying what you feel and need out loud, so your partner never has to guess.",
+            "anxious": "When worry starts, say it gently instead of watching for signs: “I’m feeling a bit unsure, can we check in?” Asking is allowed.",
+            "avoidant": "When you need space, say so and say when you’ll be back: “I need an hour, then let’s talk.” It keeps the door open.",
+            "fearful": "Notice the pull and the push without blaming yourself. Share one small feeling at a time, at a pace that feels safe."
+          },
+          "pairs": {
+            "secure+secure": "You both tend to feel safe with closeness and with time apart. That gives you a steady base. Keep checking in, even when things feel easy.",
+            "secure+anxious": "One of you tends to feel settled; the other can worry when things go quiet. Small, steady signs of care, like a quick message or keeping to plans, go a long way.",
+            "secure+avoidant": "One of you is happy to lean in; the other likes room to breathe. Patience and an open door, without pressure, help closeness grow at its own pace.",
+            "secure+fearful": "One of you tends to feel steady; the other can feel pulled between wanting closeness and wanting distance. Calm, predictable care helps trust build over time.",
+            "anxious+anxious": "You both care deeply about closeness, and you can both worry when things feel uncertain. Reassure each other often, and say a worry out loud before it grows.",
+            "anxious+avoidant": "When unsure, one of you reaches for closeness and the other looks for space. It is a common pattern, and it can turn into one following while the other steps back. Naming it together, kindly, takes much of the sting out.",
+            "anxious+fearful": "You both feel things deeply and can both worry about getting hurt. Gentle reassurance and patience on both sides help you feel safe with each other.",
+            "avoidant+avoidant": "You both value independence and room to breathe. That can feel easy, but feelings can also go unsaid. Make a little regular time to share how you’re really doing.",
+            "avoidant+fearful": "You both tend to protect yourselves with some distance. Closeness may come slowly, and that is okay. Small, low-pressure moments of openness help.",
+            "fearful+fearful": "You both want closeness and can both feel wary of it. Go gently, be patient with the push and pull, and notice the small moments of trust."
+          },
+          "gentle": "A reflection tool, not a clinical assessment. Styles are tendencies, not labels: they can differ between relationships and change over time."
+        }
       }
     },
     {

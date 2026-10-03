@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { getPairQuiz, getPartnerQuiz, removePairQuiz, saveMyAnswers, savePartnerAnswers, sharePairLink } from '../services/pair-quiz.service';
 import { addEntry, careCatalog, CareError, deleteEntry, deleteWriting, getCatalog, listJournal, listWritings, putWriting, updateEntry } from '../services/care.service';
 
 function requireUserId(req: Request): string {
@@ -84,6 +85,61 @@ export async function deleteEntryHandler(req: Request, res: Response, next: Next
   try {
     await deleteEntry(requireUserId(req), String(req.params.id ?? ''));
     res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// The quizzes for two: love languages and attachment styles.
+
+export async function getPairQuizHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, quiz: await getPairQuiz(requireUserId(req), req.params.kind) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function saveMyAnswersHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    res.json({ success: true, quiz: await saveMyAnswers(requireUserId(req), req.params.kind, body.answers) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function sharePairLinkHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, quiz: await sharePairLink(requireUserId(req), req.params.kind) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removePairQuizHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    await removePairQuiz(requireUserId(req), req.params.kind);
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** The partner's link: no sign-in; the link is the key. */
+export async function getPartnerQuizHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, quiz: await getPartnerQuiz(req.params.code) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function savePartnerAnswersHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    res.json({ success: true, quiz: await savePartnerAnswers(req.params.code, body.answers, body.name) });
   } catch (error) {
     next(error);
   }

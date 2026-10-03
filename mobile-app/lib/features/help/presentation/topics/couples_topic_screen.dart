@@ -7,6 +7,7 @@ import '../../../care/data/care_models.dart';
 import '../../../care/presentation/care_theme.dart';
 import '../../../shared/app_toast.dart';
 import '../../data/help_topics.dart';
+import 'pair_quiz.dart';
 import 'love_letter.dart';
 
 /// The note for two: blush paper, rose ink.
@@ -172,6 +173,23 @@ class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
             ...t.strings('letterPrompts'),
             if (t.strings('letterPrompts').isEmpty) ...t.strings('letterCues'),
           ],
+        ),
+        // The two quizzes for two, each hidden until the server can keep it.
+        const SizedBox(height: 30),
+        PairQuizCard(
+          care: widget.care,
+          spec: LoveSpec(
+            LoveQuiz(t.content['loveQuiz'] as Map<String, dynamic>?),
+          ),
+          webBase: widget.catalog.webBase,
+        ),
+        const SizedBox(height: 20),
+        PairQuizCard(
+          care: widget.care,
+          spec: AttachmentSpec(
+            t.content['attachmentQuiz'] as Map<String, dynamic>?,
+          ),
+          webBase: widget.catalog.webBase,
         ),
       ],
     );

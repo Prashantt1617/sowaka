@@ -99,3 +99,26 @@ export interface CareCatalog {
 
 /** How long an entry lives before it is mailed and cleared, at most. */
 export const JOURNAL_KEEP_DAYS = 7;
+
+/** The quizzes for two on Time for two of you. */
+export type PairQuizKind = 'love' | 'attachment';
+
+/**
+ * A quiz for two: a person's answers, and their partner's, who answers on a
+ * private link with no account. Seen only by the two of them; never by the
+ * company. One per person per kind.
+ */
+export interface PairQuiz {
+  id: string;
+  userId: string;
+  org: string;
+  kind: PairQuizKind;
+  /** The partner's link; unguessable, and it lapses. */
+  code: string;
+  /** Love: twenty letters, W, Q, A, T or G. Attachment: ten digits, 1 to 5. */
+  mine?: { answers: string; at: Date };
+  partner?: { name: string; answers: string; at: Date };
+  linkExpiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}

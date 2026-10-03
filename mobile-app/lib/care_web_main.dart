@@ -19,6 +19,7 @@ import 'features/care/presentation/move_screen.dart';
 import 'features/care/presentation/sleep_screen.dart';
 import 'features/help/data/help_api_service.dart';
 import 'features/help/data/help_topics.dart';
+import 'features/help/presentation/topics/pair_quiz.dart';
 import 'features/help/presentation/topics/topic_router.dart';
 import 'services/api_config.dart';
 
@@ -42,6 +43,8 @@ void main() {
   careWheelTick = _tick;
   careWheelChime = _chime;
   careShareImage = _shareImage;
+  careShareText = _shareText;
+  careOpenUrl = (url) => web.window.location.href = url;
   // The app's one back arrow asks the page first: a page within the page
   // goes back to the one before; at the first, the page says no and the app
   // takes the person home.
@@ -153,6 +156,18 @@ Future<bool> _shareImage(Uint8List png, String fileName, String title) async {
       web.FilePropertyBag(type: 'image/png'),
     );
     final data = web.ShareData(files: <web.File>[file].toJS, title: title);
+    if (!web.window.navigator.canShare(data)) return false;
+    await web.window.navigator.share(data).toDart;
+    return true;
+  } catch (error) {
+    return error.toString().contains('AbortError');
+  }
+}
+
+/// Hands words to the phone's share sheet; false where there is none.
+Future<bool> _shareText(String text) async {
+  try {
+    final data = web.ShareData(text: text);
     if (!web.window.navigator.canShare(data)) return false;
     await web.window.navigator.share(data).toDart;
     return true;
@@ -289,8 +304,21 @@ class _CareWebAppState extends State<CareWebApp> {
         settings.name ?? '/',
       ).path.replaceAll(RegExp(r'/+$'), '');
       final topicMatch = RegExp(r'^/topic/([a-z-]+)$').firstMatch(path);
+      // A partner's link to a quiz for two: no sign-in, the link is the key.
+      final pairMatch = RegExp(
+        r'^/together/([A-Za-z0-9_-]{16})$',
+      ).firstMatch(path);
       Widget screen(CareCatalog catalog) {
         if (topicMatch != null) return _topic(catalog, topicMatch.group(1)!);
+        if (pairMatch != null) {
+          final couples = catalog.topics
+              .where((t) => t.kind == 'couples')
+              .firstOrNull;
+          return PairPartnerScreen(
+            code: pairMatch.group(1)!,
+            content: couples?.content ?? const {},
+          );
+        }
         return switch (path) {
           '/move' => MoveScreen(catalog: catalog),
           '/breathe' => BreatheScreen(catalog: catalog),

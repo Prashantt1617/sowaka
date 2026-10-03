@@ -30,7 +30,7 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DIGEST_HOUR_IST = 21;
 const MAX_ENTRY_CHARS = 8000;
 
-async function requireCareUser(userId: string): Promise<User & { org: string }> {
+export async function requireCareUser(userId: string): Promise<User & { org: string }> {
   const user = await users().findOne({ userId });
   if (!user) throw new CareError(404, 'User not found');
   const company = user.org ? await companies().findOne({ id: user.org }) : null;
