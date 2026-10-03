@@ -7,7 +7,7 @@ import '../../auth/data/auth_models.dart';
 import '../data/garden_api_service.dart';
 import '../data/garden_models.dart';
 import 'garden_widgets.dart';
-import 'tree_screen.dart';
+import 'garden_screen.dart';
 
 /// Whether the person's own tree floats over every screen. Set from the
 /// garden, kept on the device, on by default.
@@ -143,19 +143,11 @@ class _FloatingTreeState extends State<FloatingTree> with TickerProviderStateMix
 
   GardenPerson? get _me => _garden?.people.where((p) => p.isMe).firstOrNull;
 
+  /// Opens the whole garden, where their own tree is a tap away.
   Future<void> _open() async {
-    final garden = _garden;
-    final me = _me;
-    if (garden == null || me == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TreeScreen(
-          service: _service,
-          person: me,
-          companyName: widget.session.user.company,
-          leftToday: garden.leftToday,
-          dailyLimit: garden.dailyLimit,
-        ),
+        builder: (_) => GardenScreen(session: widget.session, service: _service),
       ),
     );
     _load(force: true);

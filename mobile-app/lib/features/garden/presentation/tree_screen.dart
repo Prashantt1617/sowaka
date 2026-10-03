@@ -84,18 +84,9 @@ class _TreeScreenState extends State<TreeScreen> with SingleTickerProviderStateM
       ),
     );
     if (note == null || !mounted) return;
-    final tree = _tree;
-    setState(() {
-      _changed = true;
-      _leftToday = (_leftToday - 1).clamp(0, widget.dailyLimit);
-      if (tree != null) _tree = TreeView(person: tree.person, notes: [...tree.notes, note]);
-      _arrivingId = note.id;
-      _selectedId = null;
-    });
-    _burst.forward(from: 0).whenComplete(() {
-      if (mounted) setState(() => _arrivingId = null);
-    });
-    showAppToast(context, 'You added a ${note.kindInfo.name.toLowerCase()} to ${widget.person.isMe ? 'your' : "${widget.person.firstName}'s"} tree');
+    // The giving has shown both trees already: straight back to the garden,
+    // which reloads to show it.
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _open(GardenNote note) async {
@@ -303,7 +294,8 @@ class _NoteSheetState extends State<_NoteSheet> {
                 style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45),
               )
             else
-              Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45)),
+              if (note.note.trim().isNotEmpty)
+                Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 15, height: 1.45)),
             const SizedBox(height: 10),
             Text(_when(note.createdAt), style: const TextStyle(color: MColors.inkFaint, fontSize: 12, fontWeight: FontWeight.w600)),
             if (note.removable) ...[

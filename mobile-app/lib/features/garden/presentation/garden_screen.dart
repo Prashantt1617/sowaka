@@ -562,7 +562,8 @@ class _TimelineCard extends StatelessWidget {
                   style: const TextStyle(color: MColors.ink, fontSize: 12.5),
                 ),
                 const SizedBox(height: 4),
-                Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 13, height: 1.4)),
+                if (note.note.trim().isNotEmpty)
+                  Text('"${note.note}"', style: const TextStyle(color: MColors.ink, fontSize: 13, height: 1.4)),
               ],
             ),
           ),

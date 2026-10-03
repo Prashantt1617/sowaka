@@ -48,7 +48,8 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
   Future<void> _send() async {
     final kind = _kind;
     final text = _note.text.trim();
-    if (kind == null || text.isEmpty || _sending) return;
+    // The words are optional: a flower can say it on its own.
+    if (kind == null || _sending) return;
     setState(() => _sending = true);
     try {
       final gift = await widget.service.give(toUserId: widget.to.userId, kind: kind.key, note: text);
@@ -225,7 +226,9 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
           onChanged: (_) => setState(() {}),
           style: const TextStyle(color: MColors.ink, fontSize: 14.5, height: 1.4),
           decoration: InputDecoration(
-            hintText: widget.to.isMe ? 'What do you want to remember about this week?' : 'What did $_who do?',
+            hintText: widget.to.isMe
+                ? 'What do you want to remember about this week? (optional)'
+                : 'What did $_who do? (optional)',
             hintStyle: const TextStyle(color: MColors.inkFaint),
             filled: true,
             fillColor: Colors.white,
@@ -248,9 +251,9 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
             ? const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(color: GardenColors.blue)))
             : ActionButton(
                 label: 'Add to $_tree',
-                background: _note.text.trim().isEmpty ? MColors.line : GardenColors.blue,
-                foreground: _note.text.trim().isEmpty ? MColors.inkFaint : Colors.white,
-                onTap: _note.text.trim().isEmpty ? null : _send,
+                background: GardenColors.blue,
+                foreground: Colors.white,
+                onTap: _send,
               ),
       ],
     );

@@ -213,7 +213,7 @@ export async function giveNote(
   const kind = input.kind.trim() as GardenKind;
   if (!(FLOWER_KINDS as readonly string[]).includes(kind)) throw new GardenError(400, 'Pick a flower');
   const note = input.note.trim();
-  if (!note) throw new GardenError(400, 'Write a few words');
+  // The words are optional: a flower can say it on its own.
   if (note.length > GARDEN_NOTE_MAX) throw new GardenError(400, `Keep it under ${GARDEN_NOTE_MAX} characters`);
   const receiver = await users().findOne({ userId: input.toUserId, org: viewer.org, ...ACTIVE });
   if (!receiver) throw new GardenError(404, 'Nobody by that name in your garden');
