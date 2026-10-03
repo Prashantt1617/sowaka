@@ -6,6 +6,7 @@ import '../../talk/data/talk_api_service.dart';
 import '../data/help_api_service.dart';
 import '../data/help_models.dart';
 import 'help_widgets.dart';
+import 'keep_counsellor_screen.dart';
 
 /// The first open of Help: four questions, each skippable, then a starting
 /// point. Also how the answers are edited later, from Help home.
@@ -155,8 +156,24 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await widget.service.saveIntake(_intake);
+      final result = await widget.service.saveIntake(_intake);
       if (!mounted) return;
+      // New answers never switch the counsellor by themselves: when they
+      // fit someone else better, the person is asked, keeping by default.
+      final current = result.match?.counsellor;
+      final suggested = result.suggestion?.counsellor;
+      if (current != null && suggested != null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => KeepCounsellorScreen(
+              service: widget.service,
+              current: current,
+              suggested: suggested,
+            ),
+          ),
+        );
+        if (!mounted) return;
+      }
       // Straight back to Help, where the matched counsellor's card is: a
       // landing screen in between only said the same thing twice.
       widget.onDone();
