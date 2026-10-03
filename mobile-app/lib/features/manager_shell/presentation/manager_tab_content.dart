@@ -17,15 +17,8 @@ class _TabContent extends StatelessWidget {
   final ConnectComposerController connectComposerController;
   final VoidCallback onOpenProfile;
 
-  Future<void> _openNotifications(BuildContext context) async {
-    await AppNotificationService.instance.requestPermission();
-    if (!context.mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NotificationInboxScreen(session: session),
-      ),
-    );
-  }
+  Future<void> _openNotifications(BuildContext context) =>
+      openNotificationInbox(context, session);
 
   @override
   Widget build(BuildContext context) {

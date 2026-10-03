@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -52,6 +53,20 @@ class _CareWebScreenState extends State<CareWebScreen> {
       )
       ..setNavigationDelegate(
         NavigationDelegate(
+          // The page stays on its own site; anything else it opens, such as
+          // WhatsApp with a partner's link, goes to the phone.
+          onNavigationRequest: (request) {
+            final to = Uri.tryParse(request.url);
+            final home = Uri.parse(widget.url).host;
+            if (to == null ||
+                to.scheme == 'about' ||
+                ((to.scheme == 'https' || to.scheme == 'http') &&
+                    to.host == home)) {
+              return NavigationDecision.navigate;
+            }
+            launchUrl(to, mode: LaunchMode.externalApplication);
+            return NavigationDecision.prevent;
+          },
           onPageStarted: (_) {
             if (mounted) setState(() => _loading = true);
           },

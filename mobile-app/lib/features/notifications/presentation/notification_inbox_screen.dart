@@ -13,6 +13,29 @@ import '../../manager/presentation/manager_screen.dart';
 /// Everything the app has told this person, newest first. A tap marks the
 /// notification read and takes them to what it is about — the post, the
 /// request, the review — through the same door a push notification uses.
+bool _inboxOpening = false;
+
+/// Opens the inbox from a bell. Taps while it is opening or already open do
+/// nothing, so a quick double tap can't stack copies of it.
+Future<void> openNotificationInbox(
+  BuildContext context,
+  AuthSession session,
+) async {
+  if (_inboxOpening) return;
+  _inboxOpening = true;
+  try {
+    await AppNotificationService.instance.requestPermission();
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationInboxScreen(session: session),
+      ),
+    );
+  } finally {
+    _inboxOpening = false;
+  }
+}
+
 class NotificationInboxScreen extends StatefulWidget {
   const NotificationInboxScreen({super.key, required this.session});
   final AuthSession session;

@@ -40,7 +40,7 @@ import { ReimbursementType } from '../models/reimbursement-type.model';
 import { ConnectBlock, ContentReport } from '../models/moderation.model';
 import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
-import { CareWriting, JournalEntry } from '../models/care.model';
+import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -252,6 +252,10 @@ export function careContent(): Collection<{ id: string } & Record<string, unknow
   return getDb().collection('care_content');
 }
 
+export function pairQuizzes(): Collection<PairQuiz> {
+  return getDb().collection<PairQuiz>('care_pair_quizzes');
+}
+
 export function careWritings(): Collection<CareWriting> {
   return getDb().collection<CareWriting>('care_writings');
 }
@@ -289,6 +293,10 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One piece of writing per person per key; a letter has its own key.
   await writings.createIndex({ userId: 1, key: 1 }, { unique: true });
   await database.collection('care_content').createIndex({ id: 1 }, { unique: true });
+  // One quiz of each kind per person; a partner finds it by its link.
+  const pairs = database.collection<PairQuiz>('care_pair_quizzes');
+  await pairs.createIndex({ userId: 1, kind: 1 }, { unique: true });
+  await pairs.createIndex({ code: 1 }, { unique: true });
 
   const journal = database.collection<JournalEntry>('care_journal_entries');
   await journal.createIndex({ id: 1 }, { unique: true });

@@ -286,15 +286,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     await AuthSessionStore().save(_session);
   }
 
-  Future<void> _openNotifications(BuildContext context) async {
-    await AppNotificationService.instance.requestPermission();
-    if (!context.mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NotificationInboxScreen(session: _session),
-      ),
-    );
-  }
+  Future<void> _openNotifications(BuildContext context) =>
+      openNotificationInbox(context, _session);
 
   /// Takes a tapped notification to the thing it is about, not just to a
   /// tab: the post, the request queue, the person, the review.

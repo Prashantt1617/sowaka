@@ -479,6 +479,14 @@ void Function()? careWheelChime;
 Future<bool> Function(Uint8List png, String fileName, String title)?
 careShareImage;
 
+/// Shares words through the phone's own share sheet. The web build sets it;
+/// it answers false where that cannot be done.
+Future<bool> Function(String text)? careShareText;
+
+/// Goes to an address in this same page, so the app showing the page can
+/// hand it on (WhatsApp, a mail app). The web build sets it.
+void Function(String url)? careOpenUrl;
+
 /// Plays the ping at the end of a hold done with the eyes closed. The web
 /// build sets it; elsewhere a hold ends without a sound.
 void Function()? careHoldPing;

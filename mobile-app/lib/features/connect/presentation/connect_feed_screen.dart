@@ -20,7 +20,6 @@ import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
-import '../../../services/notification_service.dart';
 import '../../relay/presentation/relay_post_card.dart';
 import '../../shared/app_toast.dart';
 
@@ -172,16 +171,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               children: [
                 AppHomeHeader(
                   profileAction: widget.profileAction,
-                  onNotifications: () async {
-                    await AppNotificationService.instance.requestPermission();
-                    if (!context.mounted) return;
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            NotificationInboxScreen(session: widget.session),
-                      ),
-                    );
-                  },
+                  onNotifications: () =>
+                      openNotificationInbox(context, widget.session),
                   onQuickCreate: _openPostTypePicker,
                 ),
                 Expanded(child: _buildBody(state)),
