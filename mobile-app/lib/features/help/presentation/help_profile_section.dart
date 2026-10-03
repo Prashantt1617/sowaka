@@ -7,6 +7,7 @@ import '../data/help_api_service.dart';
 import '../data/help_models.dart';
 import 'choose_someone_screen.dart';
 import 'counsellor_profile_screen.dart';
+import 'help_booking_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
 import 'session_details_screen.dart';
@@ -163,16 +164,23 @@ class _HelpProfileSectionState extends State<HelpProfileSection> {
             ),
           )
         else
-          _CounsellorCard(
+          YourCounsellorCard(
             counsellor: match.counsellor,
-            onView: () => _push(
+            onProfile: () => _push(
               CounsellorProfileScreen(
                 service: _service,
                 counsellorId: match.counsellor.userId,
                 backLabel: 'Profile',
               ),
             ),
-            onChange: () => _push(
+            // Straight to a time with them; the profile is a tap away.
+            onTalk: () => _push(
+              HelpBookingScreen(
+                service: _service,
+                counsellor: match.counsellor,
+              ),
+            ),
+            onChoose: () => _push(
               ChooseSomeoneScreen(
                 service: _service,
                 matchedId: match.counsellor.userId,
@@ -258,87 +266,6 @@ class SessionHistoryScreen extends StatelessWidget {
 
 /// The counsellor, drawn as the profile design has it: the photo, the name,
 /// the years, then the way to their page and the way to somebody else.
-class _CounsellorCard extends StatelessWidget {
-  const _CounsellorCard({
-    required this.counsellor,
-    required this.onView,
-    required this.onChange,
-  });
-
-  final Counsellor counsellor;
-  final VoidCallback onView;
-  final VoidCallback onChange;
-
-  @override
-  Widget build(BuildContext context) {
-    final years = counsellor.yearsExperience;
-    return _PlainCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CounsellorFace(counsellor: counsellor, size: 46, round: true),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      counsellor.name,
-                      style: const TextStyle(
-                        fontFamily: careFont,
-                        color: CareColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.1,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      years == null
-                          ? counsellor.headline
-                          : '$years yrs experience',
-                      style: const TextStyle(
-                        fontFamily: careFont,
-                        color: _Profile.muted,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _OutlineAction('View profile', onTap: onView)),
-              const SizedBox(width: 14),
-              GestureDetector(
-                onTap: onChange,
-                behavior: HitTestBehavior.opaque,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  child: Text(
-                    'Change',
-                    style: TextStyle(
-                      fontFamily: careFont,
-                      color: _Profile.muted,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// The outlined blue pill the design uses for the quieter of two actions.
 class _OutlineAction extends StatelessWidget {
   const _OutlineAction(this.label, {required this.onTap});
