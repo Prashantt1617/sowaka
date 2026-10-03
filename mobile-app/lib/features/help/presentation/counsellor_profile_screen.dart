@@ -87,7 +87,6 @@ class _CounsellorProfileScreenState extends State<CounsellorProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final detail = _detail;
-    final slot = widget.fixedSlot;
     return CarePage(
       backLabel: widget.backLabel,
       children: [
@@ -102,106 +101,51 @@ class _CounsellorProfileScreenState extends State<CounsellorProfileScreen> {
           const SizedBox(height: 14),
           CounsellorPerson(counsellor: detail.counsellor, large: true),
           const SizedBox(height: 18),
-          if (slot != null)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: CareColors.sage,
-                borderRadius: BorderRadius.circular(16),
+          // The same page whichever way it was reached: a slot chosen earlier
+          // still books when the button is tapped, without a banner.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _Tab(
+                'About & match',
+                selected: !_sessionsTab,
+                onTap: () => setState(() => _sessionsTab = false),
               ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.schedule_rounded,
-                    size: 18,
-                    color: CareColors.blue,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Free ${talkDate(slot.startsAt)} at ${talkTime(slot.startsAt)}',
-                      style: const TextStyle(
-                        fontFamily: careFont,
-                        color: CareColors.ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+              _Tab(
+                'Your sessions (${detail.upcoming.length + detail.past.length})',
+                selected: _sessionsTab,
+                // Nothing to show until there has been a session.
+                enabled: detail.upcoming.isNotEmpty || detail.past.isNotEmpty,
+                onTap: () => setState(() => _sessionsTab = true),
               ),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _Tab(
-                  'About & match',
-                  selected: !_sessionsTab,
-                  onTap: () => setState(() => _sessionsTab = false),
-                ),
-                _Tab(
-                  'Your sessions (${detail.upcoming.length + detail.past.length})',
-                  selected: _sessionsTab,
-                  onTap: () => setState(() => _sessionsTab = true),
-                ),
-              ],
-            ),
-          const SizedBox(height: 20),
-          if (_sessionsTab && slot == null)
-            _sessions(detail)
-          else
-            _about(detail),
-          const SizedBox(height: 26),
-          CarePrimaryButton(
-            widget.action == ProfileAction.chooseForTime
-                ? 'Choose ${detail.counsellor.firstName} for this time'
-                : 'Book with ${detail.counsellor.firstName}',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () => _book(detail.counsellor),
+            ],
           ),
-          if (!detail.matched) ...[
-            const SizedBox(height: 10),
-            const CareMicro(
-              'Your current counsellor and session history stay in place while you explore.',
-              align: TextAlign.center,
-            ),
-          ],
+          const SizedBox(height: 20),
+          if (_sessionsTab) ...[
+            _sessions(detail),
+            const SizedBox(height: 26),
+            _bookButton(detail),
+          ] else
+            // The button sits right under the about text, inside _about.
+            _about(detail),
         ],
       ],
     );
   }
+
+  // The same words whichever way the profile was reached.
+  Widget _bookButton(CounsellorDetail detail) => CarePrimaryButton(
+    'Book with ${detail.counsellor.firstName}',
+    icon: Icons.arrow_forward_rounded,
+    onTap: () => _book(detail.counsellor),
+  );
 
   Widget _about(CounsellorDetail detail) {
     final c = detail.counsellor;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (detail.reasons.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: CareColors.blueTint,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CareSectionTitle(
-                  detail.matched
-                      ? 'Why you’re matched'
-                      : 'How ${c.firstName} fits what you shared',
-                  size: 15,
-                ),
-                const SizedBox(height: 10),
-                ReasonList(detail.reasons),
-                if (detail.unmet.isNotEmpty) UnmetNote(detail.unmet),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
         CareSectionTitle('About ${c.firstName}', size: 16),
         const SizedBox(height: 8),
         CareCopy(
@@ -209,9 +153,12 @@ class _CounsellorProfileScreenState extends State<CounsellorProfileScreen> {
           size: 13.5,
           color: CareColors.ink,
         ),
-        if (c.focusLabels.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          FocusChips(c.focusLabels),
+        // Booking comes straight after the about text, before the details.
+        const SizedBox(height: 16),
+        _bookButton(detail),
+        if (detail.unmet.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          UnmetNote(detail.unmet),
         ],
         const SizedBox(height: 12),
         if (c.yearsExperience != null)
@@ -257,33 +204,51 @@ class _CounsellorProfileScreenState extends State<CounsellorProfileScreen> {
               title: all[i].status == TalkSessionStatus.booked
                   ? 'Coming up'
                   : 'Session ${all.length - i}',
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => SessionDetailsScreen(
-                      session: all[i],
-                      service: widget.service,
-                      backLabel: 'Sessions',
-                    ),
-                  ),
-                );
-                if (mounted) _load();
-              },
+              onTap: () => _openSession(all[i]),
             ),
           ),
       ],
     );
   }
+
+  /// The session's own page, and a refresh when it comes back: booking from
+  /// there changes what this list holds.
+  Future<void> _openSession(TalkSession session) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SessionDetailsScreen(
+          session: session,
+          service: widget.service,
+          backLabel: 'Sessions',
+        ),
+      ),
+    );
+    if (mounted) _load();
+  }
 }
 
 class _Tab extends StatelessWidget {
-  const _Tab(this.label, {required this.selected, required this.onTap});
+  const _Tab(
+    this.label, {
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
+  /// Greyed and inert when there is nothing behind it.
+  final bool enabled;
+
   @override
-  Widget build(BuildContext context) =>
-      CareChoiceChip(label, selected: selected, onTap: onTap);
+  Widget build(BuildContext context) => enabled
+      ? CareChoiceChip(label, selected: selected, onTap: onTap)
+      : Opacity(
+          opacity: .45,
+          child: IgnorePointer(
+            child: CareChoiceChip(label, selected: false, onTap: () {}),
+          ),
+        );
 }

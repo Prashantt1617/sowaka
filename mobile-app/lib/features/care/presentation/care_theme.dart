@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 /// The look Care and Help share: the handoff's sizes and card colours, set in
@@ -107,42 +109,50 @@ class CareCopy extends StatelessWidget {
 
 /// "← Care": the in-page back the handoff uses instead of a bar.
 class CareBackLink extends StatelessWidget {
-  const CareBackLink(this.label, {super.key, required this.onTap});
+  const CareBackLink(
+    this.label, {
+    super.key,
+    required this.onTap,
+    this.color = CareColors.muted,
+  });
 
   final String label;
   final VoidCallback onTap;
 
+  /// Muted on the light pages; lighter over a photo.
+  final Color color;
+
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.arrow_back_rounded,
-              size: 16,
-              color: CareColors.muted,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: careFont,
-                color: CareColors.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    // The web pages draw no back of their own; the app's bar is the way out.
+    if (careWebPages) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_back_rounded, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// The handoff's primary action: full width, blue, rounded.
@@ -447,6 +457,32 @@ class CareSectionTitle extends StatelessWidget {
   );
 }
 
+/// True only in the web build of the Care pages. The app leaves it false,
+/// so nothing about its own screens changes.
+bool careWebPages = false;
+
+/// On a web page the app shows right up to the top of the screen (Sleep), the
+/// height of the phone's status bar, so the words start below it.
+double careTopInset = 0;
+
+/// The life wheel's sounds on the web: woken by the first touch (a phone
+/// allows sound only from one), a soft tick as a peg passes the arrow, and a
+/// gentle chime where it stops. The web build sets them; elsewhere the wheel
+/// turns quietly.
+void Function()? careWheelWake;
+void Function(double strength)? careWheelTick;
+void Function()? careWheelChime;
+
+/// Shares a picture (a PNG) through the phone's own share sheet. The web
+/// build sets it; it answers false where a picture cannot be shared, and the
+/// caller offers the words instead.
+Future<bool> Function(Uint8List png, String fileName, String title)?
+careShareImage;
+
+/// Plays the ping at the end of a hold done with the eyes closed. The web
+/// build sets it; elsewhere a hold ends without a sound.
+void Function()? careHoldPing;
+
 /// A scrolling page on the Care background, with the in-page back link.
 class CarePage extends StatelessWidget {
   const CarePage({
@@ -456,6 +492,7 @@ class CarePage extends StatelessWidget {
     this.onBack,
     this.background = CareColors.bg,
     this.padding = const EdgeInsets.fromLTRB(20, 8, 20, 32),
+    this.footer,
   });
 
   final List<Widget> children;
@@ -464,24 +501,42 @@ class CarePage extends StatelessWidget {
   final Color background;
   final EdgeInsetsGeometry padding;
 
+  /// Held at the bottom of the screen, under the page as it scrolls.
+  final Widget? footer;
+
   @override
   Widget build(BuildContext context) {
     final back = backLabel;
+    // The web pages draw no back of their own: inside the app its bar
+    // returns to Care, and in a browser the browser's back does.
+    final hideBack = careWebPages;
+    // Inside a full-screen page (Sleep), start below the status bar and the
+    // app's floating arrow.
+    final under = careWebPages && careTopInset > 0;
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: padding,
+        child: Column(
           children: [
-            if (back != null) ...[
-              CareBackLink(
-                back,
-                onTap: onBack ?? () => Navigator.of(context).maybePop(),
+            Expanded(
+              child: ListView(
+                padding: under
+                    ? padding.add(EdgeInsets.only(top: careTopInset + 52))
+                    : padding,
+                children: [
+                  if (back != null && !hideBack) ...[
+                    CareBackLink(
+                      back,
+                      onTap: onBack ?? () => Navigator.of(context).maybePop(),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  ...children,
+                ],
               ),
-              const SizedBox(height: 14),
-            ],
-            ...children,
+            ),
+            ?footer,
           ],
         ),
       ),

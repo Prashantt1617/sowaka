@@ -36,8 +36,11 @@ class _ListenScreenState extends State<ListenScreen> {
     return CarePage(
       backLabel: 'Care',
       children: [
-        const CareEyebrow('Listen'),
-        const SizedBox(height: 10),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[
+          const CareEyebrow('Listen'),
+          const SizedBox(height: 10),
+        ],
         const CareHeading('A softer place\nto put your attention.'),
         const SizedBox(height: 10),
         const CareCopy('Press pause on the noise for a little while.'),

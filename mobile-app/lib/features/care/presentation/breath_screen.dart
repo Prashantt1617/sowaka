@@ -7,11 +7,11 @@ import '../../../services/api_config.dart';
 import '../content/breathe_content.dart';
 import '../content/move_content.dart' show pauseSeconds;
 import 'care_theme.dart';
-import 'stretch_screen.dart' show StepCard;
+import 'stretch_screen.dart' show BreathGuide, StepCard;
 
 /// One mood's remedy: a timed breath with the circle or the box, or a short
-/// list of steps. Gentle slows every phase by a third; the phone's reduce
-/// motion setting keeps the count and drops the animation.
+/// list of steps. The phone's reduce motion setting keeps the count and
+/// drops the animation.
 class BreathScreen extends StatefulWidget {
   const BreathScreen({super.key, required this.mood, this.soundUrl});
 
@@ -24,20 +24,20 @@ class BreathScreen extends StatefulWidget {
   State<BreathScreen> createState() => _BreathScreenState();
 }
 
-class _BreathScreenState extends State<BreathScreen> {
+class _BreathScreenState extends State<BreathScreen>
+    with WidgetsBindingObserver {
   // Breath engine.
   Timer? _timer;
   int _round = 0;
   int _phase = 0;
   int _tick = 0;
-  bool _gentle = false;
   bool _done = false;
   bool _started = false;
 
   // Step list: runs on its own, like a Move routine. Each step is read for
-  // four seconds, a hold counts its own seconds down, and the list
-  // scrolls to keep the current step in view.
-  static const _stepSeconds = 4;
+  // a few seconds, a hold counts its own seconds down, a step asking for
+  // words waits for them, and the list scrolls to keep the current step in
+  // view.
   int _current = 0;
   int _left = 0;
   bool _stepsDone = false;
@@ -46,16 +46,37 @@ class _BreathScreenState extends State<BreathScreen> {
     for (final _ in mood.steps) GlobalKey(),
   ];
 
+  // Words typed where a step asks for them: a box per line, kept in memory
+  // for this screen only and brought back by the step that sits with them.
+  // Nothing typed is saved or sent.
+  late final Map<int, List<TextEditingController>> _boxes = {
+    for (final e in mood.writeSteps.entries)
+      e.key: [for (var b = 0; b < e.value; b++) TextEditingController()],
+  };
+  final Set<TextEditingController> _kept = {};
+
+  /// When the step that sits with the written lines began breathing.
+  DateTime? _sitStarted;
+
+  List<String> get _written => [
+    for (final step in _boxes.keys.toList()..sort())
+      for (final box in _boxes[step]!)
+        if (_kept.contains(box)) box.text.trim(),
+  ];
+
   // Background sound.
   VideoPlayerController? _sound;
   bool _muted = false;
 
+  /// Paused because the page went out of sight, so it picks up on return.
+  bool _pausedAway = false;
+
   Mood get mood => widget.mood;
-  double get _mult => _gentle ? 1.3 : 1;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final url = widget.soundUrl;
     if (url != null && url.isNotEmpty) {
       final sound = VideoPlayerController.networkUrl(
@@ -67,6 +88,13 @@ class _BreathScreenState extends State<BreathScreen> {
           .then((_) {
             if (!mounted) return;
             sound.setLooping(true);
+            // Out of sight before it loaded: wait for the page to return.
+            if (WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) {
+              _pausedAway = true;
+              setState(() {});
+              return;
+            }
             sound.setVolume(0.7);
             sound.play();
             setState(() {});
@@ -80,10 +108,34 @@ class _BreathScreenState extends State<BreathScreen> {
     }
   }
 
+  /// A sound behind the breath belongs to this page: it stops when the page
+  /// is left or hidden (the app closing the web page, the phone locking)
+  /// and comes back with it.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final sound = _sound;
+    if (sound == null || !sound.value.isInitialized) return;
+    if (state == AppLifecycleState.resumed) {
+      if (_pausedAway) {
+        _pausedAway = false;
+        sound.setVolume(_muted ? 0 : 0.7);
+        sound.play();
+      }
+    } else if (sound.value.isPlaying) {
+      _pausedAway = true;
+      sound.pause();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _stepTimer?.cancel();
+    for (final box in _boxes.values.expand((b) => b)) {
+      box.dispose();
+    }
+    _sound?.pause();
     _sound?.dispose();
     super.dispose();
   }
@@ -116,7 +168,7 @@ class _BreathScreenState extends State<BreathScreen> {
       return;
     }
     setState(() {});
-    _timer = Timer(Duration(milliseconds: (1000 * _mult).round()), () {
+    _timer = Timer(const Duration(seconds: 1), () {
       _tick++;
       if (_tick >= mood.pattern[_phase].seconds) {
         _tick = 0;
@@ -130,50 +182,59 @@ class _BreathScreenState extends State<BreathScreen> {
     });
   }
 
-  void _again() {
-    if (mood.kind == RemedyKind.breath) {
-      _timer?.cancel();
-      setState(() {
-        _started = false;
-        _done = false;
-        _round = 0;
-        _phase = 0;
-        _tick = 0;
-      });
-      _timer = Timer(const Duration(milliseconds: 450), _start);
-    } else {
-      _runStep(0);
-    }
-  }
-
-  void _setGentle(bool value) {
-    if (_gentle == value) return;
-    setState(() => _gentle = value);
-    if (mood.kind == RemedyKind.breath) _again();
-  }
-
   /// Makes step [i] the current one and starts its clock: a hold's own
   /// seconds, or a short reading time for anything else. When it runs out the
   /// next step takes over; after the last, the routine is done.
   void _runStep(int i) {
     _stepTimer?.cancel();
+    final sitting = i == mood.sitStep && _written.isNotEmpty;
     setState(() {
       _current = i;
       _stepsDone = false;
-      _left = mood.isPause(i) ? pauseSeconds(mood.steps[i]) : _stepSeconds;
+      _sitStarted = null;
+      _left = mood.isPause(i) ? pauseSeconds(mood.steps[i]) : mood.readSeconds;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _showCurrent());
+    // A step asking for words waits until every box is done.
+    if (_boxes[i] case final boxes? when !boxes.every(_kept.contains)) return;
+    if (sitting) {
+      _sit(i);
+      return;
+    }
     _stepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() => _left = _left - 1);
       if (_left > 0) return;
       timer.cancel();
-      if (i + 1 < mood.steps.length) {
-        _runStep(i + 1);
-      } else {
-        setState(() => _stepsDone = true);
-      }
+      _after(i);
     });
+  }
+
+  /// On to the step after [i], or the end of the list.
+  void _after(int i) {
+    if (i + 1 < mood.steps.length) {
+      _runStep(i + 1);
+    } else {
+      setState(() => _stepsDone = true);
+    }
+  }
+
+  /// Breathes with what was written for the step's seconds, then moves on.
+  void _sit(int i) {
+    setState(() => _sitStarted = DateTime.now());
+    _stepTimer = Timer(Duration(seconds: mood.sitSeconds), () {
+      if (!mounted) return;
+      setState(() => _sitStarted = null);
+      _after(i);
+    });
+  }
+
+  /// A box is done: it goes, and once a step's boxes are all done, the list
+  /// moves on.
+  void _keep(int step, TextEditingController box) {
+    if (box.text.trim().isEmpty) return;
+    setState(() => _kept.add(box));
+    if (_current == step && _boxes[step]!.every(_kept.contains)) _after(step);
   }
 
   /// Brings the current step into view, so the phone can sit propped up.
@@ -193,6 +254,22 @@ class _BreathScreenState extends State<BreathScreen> {
     final isBreath = mood.kind == RemedyKind.breath;
     return CarePage(
       backLabel: 'Breathe',
+      footer: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
+        child: TextButton(
+          onPressed: () =>
+              Navigator.of(context).popUntil((route) => route.isFirst),
+          child: const Text(
+            'Choose another emotion',
+            style: TextStyle(
+              fontFamily: careFont,
+              color: CareColors.warmMuted,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
       children: [
         Center(
           child: Column(
@@ -265,33 +342,12 @@ class _BreathScreenState extends State<BreathScreen> {
         ),
         const SizedBox(height: 20),
         if (isBreath) _breath() else _steps(),
-        const SizedBox(height: 26),
-        CarePrimaryButton(
-          isBreath ? '↺  Breathe again' : '↺  Do it again',
-          pill: true,
-          onTap: _again,
-        ),
-        const SizedBox(height: 4),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).popUntil((route) => route.isFirst),
-          child: const Text(
-            'Choose something else',
-            style: TextStyle(
-              fontFamily: careFont,
-              color: CareColors.warmMuted,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
       ],
     );
   }
 
   Widget _steps() {
-    final label =
-        '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
+    final label = '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
     return Column(
       children: [
         // The pose to hold through the steps, when the catalogue has one.
@@ -309,6 +365,7 @@ class _BreathScreenState extends State<BreathScreen> {
               chevron: false,
               // A tap jumps to a step; otherwise they run on their own.
               onTap: () => _runStep(i),
+              child: _stepExtra(i),
             ),
           ),
           if (_current == i && mood.isPause(i) && !_stepsDone)
@@ -337,6 +394,59 @@ class _BreathScreenState extends State<BreathScreen> {
     );
   }
 
+  /// Inside a step's card: its boxes while it is the current one, or the
+  /// written lines once the list reaches the step that sits with them.
+  Widget? _stepExtra(int i) {
+    if (_boxes[i] case final boxes? when i == _current) {
+      final open = [
+        for (final b in boxes)
+          if (!_kept.contains(b)) b,
+      ];
+      if (open.isEmpty) return null;
+      return Column(
+        children: [
+          for (final box in open)
+            Padding(
+              padding: EdgeInsets.only(top: box == open.first ? 0 : 8),
+              child: _WriteBox(
+                key: ObjectKey(box),
+                controller: box,
+                autofocus: box == open.first,
+                onDone: () => _keep(i, box),
+              ),
+            ),
+        ],
+      );
+    }
+    final written = _written;
+    if (i == mood.sitStep && _current >= i && written.isNotEmpty) {
+      final started = _sitStarted;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            written.join(', '),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              height: 1.5,
+            ),
+          ),
+          // A breath is five seconds, half in and half out.
+          if (i == _current && started != null)
+            BreathGuide(
+              breaths: (mood.sitSeconds / 5).round().clamp(1, 60),
+              seconds: mood.sitSeconds,
+              startedAt: started,
+            ),
+        ],
+      );
+    }
+    return null;
+  }
+
   Widget _breath() {
     final reduce = MediaQuery.of(context).disableAnimations;
     final phase = _started && !_done && _round < mood.rounds
@@ -351,9 +461,7 @@ class _BreathScreenState extends State<BreathScreen> {
     final roundLabel =
         'Round ${(_done ? mood.rounds : _round + 1).clamp(1, mood.rounds)} of ${mood.rounds}';
     final note = mood.note;
-    final phaseDuration = Duration(
-      milliseconds: ((phase?.seconds ?? 1) * 880 * _mult).round(),
-    );
+    final phaseDuration = Duration(milliseconds: (phase?.seconds ?? 1) * 880);
     return Column(
       children: [
         Text(
@@ -368,8 +476,10 @@ class _BreathScreenState extends State<BreathScreen> {
           ),
         ),
         const SizedBox(height: 18),
-        // The pose to hold, from the catalogue's photo or the app's own.
-        if ((mood.poseUrl ?? mood.poseAsset) case final pose?) ...[
+        // The pose to hold, from the catalogue's photo or the app's own. The
+        // box holds it inside the square instead.
+        if ((mood.poseUrl ?? mood.poseAsset) case final pose?
+            when !mood.square) ...[
           _PoseCard(pose),
           const SizedBox(height: 18),
         ],
@@ -379,13 +489,14 @@ class _BreathScreenState extends State<BreathScreen> {
         ],
         if (mood.square)
           _Box(
+            pattern: mood.pattern,
             phaseIndex: _phase,
             active: phase != null,
+            done: _done,
+            pose: mood.poseUrl ?? mood.poseAsset,
             label: label,
             count: count,
-            duration: Duration(
-              milliseconds: ((phase?.seconds ?? 1) * 1000 * _mult).round(),
-            ),
+            duration: Duration(milliseconds: (phase?.seconds ?? 1) * 1000),
             reduce: reduce,
           )
         else
@@ -396,42 +507,10 @@ class _BreathScreenState extends State<BreathScreen> {
             duration: phaseDuration,
             reduce: reduce,
           ),
-        const SizedBox(height: 22),
         if (!mood.square && note != null) ...[
+          const SizedBox(height: 22),
           _Note(note),
-          const SizedBox(height: 6),
         ],
-        Text(
-          mood.square ? 'Breathe around the box' : 'Breathe with the circle',
-          style: const TextStyle(
-            fontFamily: careFont,
-            color: Color(0xFF988C7C),
-            fontSize: 14,
-          ),
-        ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF1ECE3),
-            borderRadius: BorderRadius.circular(100),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SpeedChip(
-                'Standard',
-                selected: !_gentle,
-                onTap: () => _setGentle(false),
-              ),
-              _SpeedChip(
-                'Gentle',
-                selected: _gentle,
-                onTap: () => _setGentle(true),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -454,38 +533,6 @@ class _Note extends StatelessWidget {
         fontSize: 13.5,
         fontStyle: FontStyle.italic,
         height: 1.55,
-      ),
-    ),
-  );
-}
-
-class _SpeedChip extends StatelessWidget {
-  const _SpeedChip(this.label, {required this.selected, required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: selected ? Colors.white : Colors.transparent,
-    borderRadius: BorderRadius.circular(100),
-    elevation: selected ? 1 : 0,
-    shadowColor: const Color(0x1A2A2420),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(100),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: careFont,
-            color: selected ? CareColors.blue : CareColors.warmMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     ),
   );
@@ -587,28 +634,73 @@ class _Circle extends StatelessWidget {
 }
 
 /// The box: a marker travelling one side per phase, up, across, down, back.
+/// Box breathing: a dot goes round the square, a side a phase: breathe in
+/// up the left, hold along the top, breathe out down the right, hold along
+/// the bottom. With a photo of the pose, the photo sits inside the square
+/// and each side's phase beside it, the one being breathed showing its
+/// seconds; without one, the phase and its seconds sit inside.
 class _Box extends StatelessWidget {
   const _Box({
+    required this.pattern,
     required this.phaseIndex,
     required this.active,
+    required this.done,
     required this.label,
     required this.count,
     required this.duration,
     required this.reduce,
+    this.pose,
   });
 
+  final List<BreathPhase> pattern;
   final int phaseIndex;
   final bool active;
+  final bool done;
   final String label;
   final String count;
   final Duration duration;
   final bool reduce;
 
+  /// The pose to hold: a `/media` path or https address, or an app asset.
+  final String? pose;
+
+  static const _size = 196.0;
+
   @override
   Widget build(BuildContext context) {
-    const String? pose = null;
-    const size = 216.0;
-    final ends = [
+    if (pose == null) return _square();
+    BreathPhase? phaseOn(int side) =>
+        side < pattern.length ? pattern[side] : null;
+    bool breathing(int side) => active && phaseIndex % 4 == side;
+    return Column(
+      children: [
+        _BoxPill(phaseOn(1), current: breathing(1), count: count),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 66,
+              child: _BoxSide(phaseOn(0), current: breathing(0), count: count),
+            ),
+            const SizedBox(width: 8),
+            _square(),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 66,
+              child: _BoxSide(phaseOn(2), current: breathing(2), count: count),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _BoxPill(phaseOn(3), current: breathing(3), count: count),
+      ],
+    );
+  }
+
+  Widget _square() {
+    final pose = this.pose;
+    const ends = [
       Alignment.topLeft,
       Alignment.topRight,
       Alignment.bottomRight,
@@ -616,8 +708,8 @@ class _Box extends StatelessWidget {
     ];
     final target = active ? ends[phaseIndex % 4] : Alignment.bottomLeft;
     return SizedBox(
-      width: size,
-      height: pose == null ? size : size * 1.3,
+      width: _size,
+      height: _size,
       child: Stack(
         children: [
           Positioned.fill(
@@ -625,16 +717,12 @@ class _Box extends StatelessWidget {
               margin: const EdgeInsets.all(10),
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                color: CareColors.blue.withValues(alpha: 0.07),
+                color: pose == null
+                    ? CareColors.blue.withValues(alpha: 0.07)
+                    : Colors.white,
                 borderRadius: BorderRadius.circular(22),
               ),
-              child: pose == null
-                  ? null
-                  : Image.asset(
-                      pose,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                    ),
+              child: pose == null ? null : _PoseImage(pose),
             ),
           ),
           Positioned.fill(
@@ -648,19 +736,8 @@ class _Box extends StatelessWidget {
               ),
             ),
           ),
-          Align(
-            alignment: pose == null ? Alignment.center : Alignment.bottomCenter,
-            child: Container(
-              margin: EdgeInsets.only(bottom: pose == null ? 0 : 22),
-              padding: pose == null
-                  ? EdgeInsets.zero
-                  : const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: pose == null
-                  ? null
-                  : BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.88),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
+          if (pose == null)
+            Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -679,18 +756,40 @@ class _Box extends StatelessWidget {
                   Text(
                     count,
                     key: const ValueKey('phase-count'),
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontFamily: careFont,
                       color: CareColors.blue,
-                      fontSize: pose == null ? 54 : 40,
+                      fontSize: 54,
                       fontWeight: FontWeight.w800,
                       height: 1,
                     ),
                   ),
                 ],
               ),
+            )
+          else if (done)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: const Text(
+                  'Done  ✓',
+                  key: ValueKey('phase-label'),
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.blue,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ),
-          ),
           AnimatedAlign(
             alignment: target,
             duration: reduce ? const Duration(milliseconds: 300) : duration,
@@ -724,6 +823,193 @@ class _Box extends StatelessWidget {
   }
 }
 
+/// A phase along the top or bottom of the box: a small pill, filled with
+/// its seconds while it is the one being breathed.
+class _BoxPill extends StatelessWidget {
+  const _BoxPill(this.phase, {required this.current, required this.count});
+
+  final BreathPhase? phase;
+  final bool current;
+  final String count;
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = this.phase;
+    if (phase == null) return const SizedBox(height: 28);
+    // A set width, so the pill stays small and does not jump as its
+    // seconds come and go.
+    return Center(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        width: 96,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: current ? CareColors.blue : CareColors.blueTint,
+          borderRadius: BorderRadius.circular(100),
+        ),
+        child: Text(
+          current ? '${phase.label} · ${count}s' : phase.label,
+          style: TextStyle(
+            fontFamily: careFont,
+            color: current
+                ? Colors.white
+                : CareColors.blue.withValues(alpha: 0.55),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A phase beside the left or right of the box, with its seconds under it
+/// while it is the one being breathed.
+class _BoxSide extends StatelessWidget {
+  const _BoxSide(this.phase, {required this.current, required this.count});
+
+  final BreathPhase? phase;
+  final bool current;
+  final String count;
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = this.phase;
+    if (phase == null) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          phase.label.replaceFirst(' ', '\n'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: careFont,
+            color: current
+                ? CareColors.blue
+                : CareColors.blue.withValues(alpha: 0.45),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
+          ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 34,
+          child: current
+              ? Text(
+                  count,
+                  style: const TextStyle(
+                    fontFamily: careFont,
+                    color: CareColors.blue,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                  ),
+                )
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// A box for a few words, up to 250 characters, with its own small Done.
+/// Enter works as Done.
+class _WriteBox extends StatelessWidget {
+  const _WriteBox({
+    super.key,
+    required this.controller,
+    required this.onDone,
+    this.autofocus = false,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onDone;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final edge = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: CareColors.line),
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            autofocus: autofocus,
+            maxLength: 250,
+            minLines: 1,
+            maxLines: 5,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.done,
+            textCapitalization: TextCapitalization.sentences,
+            onSubmitted: (_) => onDone(),
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.45,
+            ),
+            decoration: InputDecoration(
+              counterText: '',
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 11,
+              ),
+              enabledBorder: edge,
+              border: edge,
+              focusedBorder: edge.copyWith(
+                borderSide: const BorderSide(
+                  color: CareColors.blue,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: controller,
+          builder: (_, value, _) {
+            final ready = value.text.trim().isNotEmpty;
+            return Opacity(
+              opacity: ready ? 1 : 0.35,
+              child: Material(
+                color: CareColors.blue,
+                borderRadius: BorderRadius.circular(100),
+                child: InkWell(
+                  onTap: ready ? onDone : null,
+                  borderRadius: BorderRadius.circular(100),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    child: Text(
+                      'Done',
+                      style: TextStyle(
+                        fontFamily: careFont,
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 /// The pose to hold, as a photo above the breath.
 class _PoseCard extends StatelessWidget {
   const _PoseCard(this.source);
@@ -733,29 +1019,38 @@ class _PoseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final network = source.startsWith('/') || source.startsWith('http');
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
-      child: AspectRatio(
-        aspectRatio: 3 / 2,
-        child: network
-            ? Image.network(
-                resolveMediaUrl(source),
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const ColoredBox(
-                  color: CareColors.blueTint,
-                  child: Icon(
-                    Icons.self_improvement_rounded,
-                    color: CareColors.blue,
-                    size: 40,
-                  ),
-                ),
-                loadingBuilder: (_, child, progress) => progress == null
-                    ? child
-                    : const ColoredBox(color: CareColors.blueTint),
-              )
-            : Image.asset(source, fit: BoxFit.cover),
+      child: AspectRatio(aspectRatio: 3 / 2, child: _PoseImage(source)),
+    );
+  }
+}
+
+/// A pose photo filling its space: a `/media` path or https address from the
+/// catalogue, or an app asset.
+class _PoseImage extends StatelessWidget {
+  const _PoseImage(this.source);
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final network = source.startsWith('/') || source.startsWith('http');
+    if (!network) return Image.asset(source, fit: BoxFit.cover);
+    return Image.network(
+      resolveMediaUrl(source),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => const ColoredBox(
+        color: CareColors.blueTint,
+        child: Icon(
+          Icons.self_improvement_rounded,
+          color: CareColors.blue,
+          size: 40,
+        ),
       ),
+      loadingBuilder: (_, child, progress) => progress == null
+          ? child
+          : const ColoredBox(color: CareColors.blueTint),
     );
   }
 }

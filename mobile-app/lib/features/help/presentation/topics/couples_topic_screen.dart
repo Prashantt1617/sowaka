@@ -1,15 +1,33 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../care/data/care_api_service.dart';
 import '../../../care/data/care_models.dart';
 import '../../../care/presentation/care_theme.dart';
-import '../../../care/presentation/share_writing.dart';
 import '../../../shared/app_toast.dart';
 import '../../data/help_topics.dart';
-import 'topic_widgets.dart';
+import 'love_letter.dart';
 
-/// Marriage & relationships: one question a day, conversation starters, a
-/// love letter, and short lessons for two.
+/// The note for two: blush paper, rose ink.
+class _Rose {
+  static const ink = Color(0xFF8E3B55);
+  static const soft = Color(0xFFEFB2C0);
+  static const stamp = Color(0xFFB0365A);
+  static const noteHi = Color(0xFFFFFAF8);
+  static const noteLo = Color(0xFFFCEDEE);
+  static const back = Color(0xFFF8E1E4);
+  static const line = Color(0xFFF0D3D7);
+}
+
+const _months = [
+  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', //
+  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+];
+
+/// Marriage & relationships: time for two. A note to talk from, in five
+/// kinds of conversation, stamped once you have talked about it; and a love
+/// letter, written by hand, kept privately, shared as a picture.
 class CouplesTopicScreen extends StatefulWidget {
   const CouplesTopicScreen({
     super.key,
@@ -29,61 +47,58 @@ class CouplesTopicScreen extends StatefulWidget {
 }
 
 class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
-  /// Refresh moves along the pool for today only.
-  int _offset = 0;
   int _category = 0;
   int _starter = 0;
-  bool _talked = false;
-  bool _hasLetter = false;
+
+  /// The starters talked about today, by a short mark of their words. A
+  /// stamp lasts the day, as it always has.
+  final Set<String> _talked = {};
 
   String get _today {
     final d = DateTime.now();
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
-  List<String> get _questions => widget.topic.strings('questions');
+  String get _todayKey => 'couples:done:$_today';
 
-  /// The same question for everyone on the same day: days since a fixed
-  /// epoch, around the pool.
-  int get _dayIndex {
-    final days = DateTime.now().difference(DateTime(2026, 1, 1)).inDays;
-    return _questions.isEmpty ? 0 : (days + _offset) % _questions.length;
+  /// A starter's mark: 's' and eight hex digits of its words.
+  static String _mark(String starter) {
+    var h = 0x811c9dc5;
+    for (final c in starter.codeUnits) {
+      h = ((h ^ c) * 0x01000193) & 0xffffffff;
+    }
+    return 's${h.toRadixString(16).padLeft(8, '0')}';
   }
-
-  String get _question => _questions.isEmpty ? '' : _questions[_dayIndex];
 
   @override
   void initState() {
     super.initState();
-    _load();
+    widget.care
+        .writings(_todayKey)
+        .then((rows) {
+          if (!mounted || rows.isEmpty) return;
+          final marks = RegExp(r'^s[0-9a-f]{8}$');
+          setState(
+            () => _talked.addAll(rows.first.fields.keys.where(marks.hasMatch)),
+          );
+        })
+        .catchError((_) {});
   }
 
-  Future<void> _load() async {
+  Future<void> _setTalked(String starter, bool talked) async {
+    final mark = _mark(starter);
+    setState(() => talked ? _talked.add(mark) : _talked.remove(mark));
     try {
-      final marks = await widget.care.writings('couples:done:$_today');
-      final letters = await widget.care.writings('loveletter:main');
-      if (!mounted) return;
-      setState(() {
-        _talked = marks.any((w) => w.field('question') == _question);
-        _hasLetter =
-            letters.isNotEmpty && letters.first.field('body').trim().isNotEmpty;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _toggleTalked() async {
-    final key = 'couples:done:$_today';
-    final next = !_talked;
-    setState(() => _talked = next);
-    try {
-      if (next) {
-        await widget.care.putWriting(key, {'question': _question});
+      if (_talked.isEmpty) {
+        await widget.care.deleteWriting(_todayKey);
       } else {
-        await widget.care.deleteWriting(key);
+        await widget.care.putWriting(_todayKey, {
+          for (final m in _talked) m: '1',
+        });
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _talked = !next);
+      setState(() => talked ? _talked.remove(mark) : _talked.add(mark));
       showAppToast(
         context,
         error is CareApiException ? error.message : 'Could not save that.',
@@ -91,488 +106,584 @@ class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
     }
   }
 
-  Future<void> _push(Widget screen) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-    if (mounted) _load();
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = widget.topic;
-    final starters = t.list('starters');
-    final cat = starters.isEmpty ? null : starters[_category % starters.length];
-    final items = cat == null
+    final kinds = t.list('starters');
+    final kind = kinds.isEmpty ? null : kinds[_category % kinds.length];
+    final items = kind == null
         ? const <String>[]
-        : [for (final s in (cat['items'] as List<dynamic>? ?? const [])) '$s'];
+        : [for (final s in (kind['items'] as List<dynamic>? ?? const [])) '$s'];
     final starter = items.isEmpty ? '' : items[_starter % items.length];
-    final shorts = t.list('shorts');
     return CarePage(
       backLabel: widget.backLabel,
       children: [
-        CareEyebrow(t.name),
-        const SizedBox(height: 10),
-        CareHeading(t.text('title', 'A little closer, every day.'), size: 30),
-        const SizedBox(height: 8),
-        CareCopy(t.text('lede', t.intro)),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[CareEyebrow(t.name), const SizedBox(height: 10)],
+        CareHeading(t.text('title', 'Time for two of you'), size: 30),
         const SizedBox(height: 22),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: CareColors.sky,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        CareSectionTitle(
+          t.text('wordsTitle', 'Find the first words'),
+          size: 18,
+        ),
+        const SizedBox(height: 4),
+        CareCopy(
+          t.text('wordsLede', 'For the things you want to share.'),
+          size: 12.5,
+        ),
+        const SizedBox(height: 12),
+        if (kind != null) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Row(
-                children: const [
-                  Expanded(child: CareEyebrow('Today’s question')),
-                  Icon(Icons.forum_outlined, color: CareColors.blue, size: 20),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _question,
-                style: const TextStyle(
-                  fontFamily: careFont,
-                  color: CareColors.ink,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25,
-                  letterSpacing: -0.3,
+              for (var i = 0; i < kinds.length; i++)
+                _RoseChip(
+                  '${kinds[i]['label']}',
+                  on: i == _category % kinds.length,
+                  onTap: () => setState(() {
+                    _category = i;
+                    _starter = 0;
+                  }),
                 ),
-              ),
-              const SizedBox(height: 10),
-              CareCopy(
-                _talked
-                    ? 'You made a little space for each other.'
-                    : 'Take turns. Listen. See where it takes you.',
-                size: 13,
-              ),
-              const SizedBox(height: 16),
-              CarePrimaryButton(
-                _talked ? 'We talked about this' : 'We talked about this',
-                icon: _talked ? Icons.check_rounded : Icons.circle_outlined,
-                onTap: _toggleTalked,
-              ),
-              const SizedBox(height: 6),
-              Center(
-                child: CareLink(
-                  'Refresh question',
-                  icon: Icons.refresh_rounded,
-                  onTap: () => setState(() => _offset++),
-                ),
-              ),
             ],
           ),
-        ),
-        const SizedBox(height: 26),
-        const CareSectionTitle('Find the first words', size: 18),
-        const SizedBox(height: 4),
-        const CareCopy('For the things you want to share.', size: 12.5),
-        const SizedBox(height: 12),
-        if (cat != null)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: CareColors.line),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (var i = 0; i < starters.length; i++)
-                      CareChoiceChip(
-                        '${starters[i]['label']}',
-                        selected: i == _category % starters.length,
-                        onTap: () => setState(() {
-                          _category = i;
-                          _starter = 0;
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  '“$starter”',
-                  style: const TextStyle(
-                    fontFamily: careFont,
-                    color: CareColors.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w500,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    CareLink(
-                      'Try this opener',
-                      onTap: () => _push(
-                        _OpenerScreen(
-                          category: cat,
-                          starter: starter,
-                          backLabel: t.name,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => setState(() => _starter++),
-                      icon: const Icon(
-                        Icons.shuffle_rounded,
-                        color: CareColors.blue,
-                      ),
-                      tooltip: 'Another starter',
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          const SizedBox(height: 16),
+          _TalkNote(
+            name: '${kind['name'] ?? kind['label'] ?? ''}',
+            starter: starter,
+            copy: '${kind['copy'] ?? ''}',
+            talked: _talked.contains(_mark(starter)),
+            onAnother: () => setState(() => _starter++),
+            onTalked: (v) => _setTalked(starter, v),
           ),
-        const SizedBox(height: 26),
-        const CareSectionTitle('Make time for us', size: 18),
+        ],
+        const SizedBox(height: 34),
+        CareSectionTitle(t.text('letterTitle', 'A love letter'), size: 18),
         const SizedBox(height: 4),
-        const CareCopy('A thoughtful gesture, in your own words.', size: 12.5),
-        const SizedBox(height: 12),
-        TopicBanner(
-          color: CareColors.peach,
-          eyebrow: 'Something to do',
-          title: 'A letter, just for them',
-          copy: 'You don’t need perfect words. Start with one thing you mean.',
-          action: _hasLetter ? 'Revisit your letter' : 'Write a love letter',
-          icon: Icons.mail_outline_rounded,
-          onTap: () => _push(_LoveLetterScreen(topic: t, care: widget.care)),
+        CareCopy(
+          t.text('letterLede', 'A thoughtful gesture, in your own words.'),
+          size: 12.5,
         ),
-        const SizedBox(height: 26),
-        const CareSectionTitle('Little lessons for two', size: 18),
-        const SizedBox(height: 4),
-        const CareCopy('A fresh perspective, in a minute or less.', size: 12.5),
-        const SizedBox(height: 12),
-        for (var i = 0; i < shorts.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: CareResourceRow(
-              title: '${shorts[i]['title']}',
-              meta: '${shorts[i]['topic']} · ${shorts[i]['time']}',
-              icon: Icons.play_circle_outline_rounded,
-              tint: i.isEven ? CareColors.sage : CareColors.lilac,
-              onTap: () => _push(
-                _ShortScreen(
-                  topic: t,
-                  shorts: shorts,
-                  index: i,
-                  catalog: widget.catalog,
-                ),
-              ),
-            ),
-          ),
+        const SizedBox(height: 14),
+        LoveLetter(
+          care: widget.care,
+          prompts: [
+            ...t.strings('letterPrompts'),
+            if (t.strings('letterPrompts').isEmpty) ...t.strings('letterCues'),
+          ],
+        ),
       ],
     );
   }
 }
 
-class _OpenerScreen extends StatelessWidget {
-  const _OpenerScreen({
-    required this.category,
+class _RoseChip extends StatelessWidget {
+  const _RoseChip(this.label, {required this.on, required this.onTap});
+
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: on ? _Rose.ink : Colors.white,
+    shape: StadiumBorder(
+      side: BorderSide(color: on ? _Rose.ink : CareColors.line),
+    ),
+    child: InkWell(
+      customBorder: const StadiumBorder(),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: careFont,
+            color: on ? Colors.white : CareColors.ink,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// One starter on blush paper, a second sheet tucked behind it. Talked about,
+/// it takes a rose ink stamp in its corner; the stamp, or the bar, takes it
+/// off again.
+class _TalkNote extends StatefulWidget {
+  const _TalkNote({
+    required this.name,
     required this.starter,
-    required this.backLabel,
+    required this.copy,
+    required this.talked,
+    required this.onAnother,
+    required this.onTalked,
   });
 
-  final Map<String, dynamic> category;
+  final String name;
   final String starter;
-  final String backLabel;
+  final String copy;
+  final bool talked;
+  final VoidCallback onAnother;
+  final ValueChanged<bool> onTalked;
 
   @override
-  Widget build(BuildContext context) {
-    return CarePage(
-      backLabel: backLabel,
-      children: [
-        const CareEyebrow('A conversation starter'),
-        const SizedBox(height: 10),
-        CareHeading('${category['name'] ?? ''}', size: 28),
-        const SizedBox(height: 8),
-        CareCopy('${category['copy'] ?? ''}'),
-        const SizedBox(height: 20),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: CareColors.peach,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Text(
-            '“$starter”',
-            style: const TextStyle(
-              fontFamily: careFont,
-              color: CareColors.ink,
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              height: 1.3,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const CareCopy(
-          'Use your own words. Then make room for your partner’s experience too.',
-          size: 14,
-          color: CareColors.ink,
-        ),
-        const SizedBox(height: 8),
-        const CareMicro(
-          'If now isn’t a good moment, agree on a time to come back to it together.',
-        ),
-      ],
-    );
-  }
+  State<_TalkNote> createState() => _TalkNoteState();
 }
 
-/// A love letter, kept, with three cues; Finish for now shows it to read.
-class _LoveLetterScreen extends StatefulWidget {
-  const _LoveLetterScreen({required this.topic, required this.care});
-
-  final HelpTopic topic;
-  final CareApiService care;
-
-  @override
-  State<_LoveLetterScreen> createState() => _LoveLetterScreenState();
-}
-
-class _LoveLetterScreenState extends State<_LoveLetterScreen> {
-  final _body = TextEditingController();
-  late final KeptSaver _saver = KeptSaver(
-    care: widget.care,
-    key: 'loveletter:main',
-    onSaved: () {
-      if (mounted) setState(() => _saved = true);
-    },
-    onError: (m) {
-      if (mounted) showAppToast(context, m);
-    },
+class _TalkNoteState extends State<_TalkNote>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 440),
+    value: 1,
   );
-  bool _loaded = false;
-  bool _saved = false;
 
   @override
-  void initState() {
-    super.initState();
-    widget.care
-        .writings('loveletter:main')
-        .then((rows) {
-          if (!mounted) return;
-          if (rows.isNotEmpty) _body.text = rows.first.field('body');
-          setState(() => _loaded = true);
-        })
-        .catchError((_) {
-          if (mounted) setState(() => _loaded = true);
-        });
+  void didUpdateWidget(covariant _TalkNote old) {
+    super.didUpdateWidget(old);
+    // The stamp is pressed when this starter becomes talked about.
+    if (widget.talked && !old.talked && widget.starter == old.starter) {
+      _press.forward(from: 0);
+    }
   }
 
   @override
   void dispose() {
-    _saver.flush();
-    _saver.dispose();
-    _body.dispose();
+    _press.dispose();
     super.dispose();
   }
 
-  Future<void> _finish() async {
-    if (_body.text.trim().isEmpty) {
-      showAppToast(context, 'Write a few words first');
-      return;
-    }
-    await _saver.flush();
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ReadingScreen(
-          backLabel: 'Keep writing',
-          eyebrow: 'Your letter · only you can see it',
-          title: 'A letter, just for them',
-          paragraphs: _body.text.trim().split(RegExp(r'\n\s*\n')),
-          shareTitle: 'A letter, just for you',
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final cues = widget.topic.strings('letterCues');
-    return CarePage(
-      backLabel: widget.topic.name,
-      children: [
-        const CareEyebrow('Something to do · on your own'),
-        const SizedBox(height: 10),
-        const CareHeading('A letter,\njust for them.', size: 28),
-        const SizedBox(height: 8),
-        const CareCopy(
-          'A few honest lines can be enough. Keep it for yourself, or share it when you choose.',
-        ),
-        const SizedBox(height: 18),
-        if (cues.isNotEmpty)
+    final now = DateTime.now();
+    return AnimatedBuilder(
+      animation: _press,
+      builder: (_, child) {
+        // the card gives a little as the stamp lands
+        final p = _press.value;
+        final dip = p < 0.35 ? p / 0.35 : 1 - (p - 0.35) / 0.65;
+        return Transform.translate(
+          offset: Offset(0, widget.talked ? 2 * dip.clamp(0.0, 1.0) : 0),
+          child: child,
+        );
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // the second sheet, tucked behind
+          Positioned(
+            left: 8,
+            right: 4,
+            top: 12,
+            bottom: -8,
+            child: Transform.rotate(
+              angle: 2.4 * math.pi / 180,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _Rose.back,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: _Rose.line),
+                ),
+              ),
+            ),
+          ),
           Container(
-            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: CareColors.peach,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: _Rose.line),
+              gradient: const LinearGradient(
+                begin: Alignment(-0.1, -1),
+                end: Alignment(0.1, 1),
+                colors: [_Rose.noteHi, _Rose.noteHi, _Rose.noteLo],
+                stops: [0, 0.35, 1],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _Rose.ink.withValues(alpha: 0.07),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+                BoxShadow(
+                  color: _Rose.ink.withValues(alpha: 0.3),
+                  blurRadius: 34,
+                  spreadRadius: -20,
+                  offset: const Offset(0, 20),
+                ),
+              ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const CareEyebrow(
-                  'A few places to begin',
-                  color: CareColors.clay,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 14, 0),
+                  child: Row(
+                    children: [
+                      const CustomPaint(
+                        size: Size(36, 26),
+                        painter: _TwoHearts(),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.name.toUpperCase(),
+                          style: const TextStyle(
+                            fontFamily: careFont,
+                            color: _Rose.ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      ),
+                      _RoundButton(
+                        icon: Icons.shuffle_rounded,
+                        label: 'Another starter',
+                        onTap: widget.onAnother,
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                for (final c in cues)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      c,
-                      style: const TextStyle(
-                        fontFamily: careFont,
-                        color: CareColors.ink,
-                        fontSize: 14,
-                        height: 1.5,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    transitionBuilder: (child, a) => FadeTransition(
+                      opacity: a,
+                      child: SlideTransition(
+                        position: Tween(
+                          begin: const Offset(0, 0.06),
+                          end: Offset.zero,
+                        ).animate(a),
+                        child: child,
                       ),
                     ),
+                    child: Column(
+                      key: ValueKey(widget.starter),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '“${widget.starter}”',
+                          style: const TextStyle(
+                            fontFamily: careFont,
+                            color: CareColors.ink,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        if (widget.copy.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          CareCopy(widget.copy, size: 13),
+                        ],
+                      ],
+                    ),
                   ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 16, bottom: 14),
+                  child: CustomPaint(
+                    size: Size(double.infinity, 2),
+                    painter: _Tear(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                  child: widget.talked
+                      ? _TalkedBar(onTap: () => widget.onTalked(false))
+                      : _TalkButton(onTap: () => widget.onTalked(true)),
+                ),
               ],
             ),
           ),
-        const SizedBox(height: 16),
-        if (!_loaded)
-          const CareSpinner()
-        else ...[
-          KeptField(
-            label: 'Your letter',
-            controller: _body,
-            hint: 'Dear you,',
-            minLines: 8,
-            onChanged: () {
-              setState(() => _saved = false);
-              _saver.schedule({'body': _body.text});
-            },
-          ),
-          const SizedBox(height: 8),
-          KeptNote(saved: _saved),
-          const SizedBox(height: 14),
-          CarePrimaryButton(
-            'Finish for now',
-            icon: Icons.check_rounded,
-            onTap: _finish,
-          ),
-          const SizedBox(height: 8),
-          if (_body.text.trim().isNotEmpty)
-            Center(
-              child: ShareLink(
-                title: 'A letter, just for you',
-                text: _body.text,
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-/// A short lesson: its storyboard or clip, a starter to try, and the next one.
-class _ShortScreen extends StatelessWidget {
-  const _ShortScreen({
-    required this.topic,
-    required this.shorts,
-    required this.index,
-    required this.catalog,
-  });
-
-  final HelpTopic topic;
-  final List<Map<String, dynamic>> shorts;
-  final int index;
-  final CareCatalog catalog;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = shorts[index];
-    final id = '${s['id']}';
-    final starters = topic.list('starters');
-    return StoryboardScreen(
-      backLabel: topic.name,
-      eyebrow: '${s['topic']} · ${s['time']}',
-      title: '${s['title']}',
-      meta: '${s['cover']}',
-      frames: [
-        for (final f in (s['frames'] as List<dynamic>? ?? const []))
-          [for (final x in (f is List ? f : const [])) '$x'],
-      ],
-      url: (s['url'] as String?) ?? catalog.topicVideos[id],
-      footer: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: CareColors.peach,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const CareEyebrow(
-                  'Try the conversation starter',
-                  color: CareColors.clay,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '“${s['try']}”',
-                  style: const TextStyle(
-                    fontFamily: careFont,
-                    color: CareColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (starters.isNotEmpty)
-                  CareLink(
-                    'Open it',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => _OpenerScreen(
-                          category: starters.last,
-                          starter: '${s['try']}',
-                          backLabel: '${s['title']}',
+          if (widget.talked)
+            Positioned(
+              right: -8,
+              bottom: -14,
+              child: Semantics(
+                button: true,
+                label: 'We talked about this. Tap to take the mark off.',
+                child: GestureDetector(
+                  onTap: () => widget.onTalked(false),
+                  child: AnimatedBuilder(
+                    animation: _press,
+                    builder: (_, child) {
+                      final p = Curves.easeOutBack.transform(_press.value);
+                      final scale = 1.7 - 0.7 * p;
+                      return Opacity(
+                        opacity: (_press.value * 1.8).clamp(0.0, 0.9),
+                        child: Transform.scale(scale: scale, child: child),
+                      );
+                    },
+                    child: Transform.rotate(
+                      angle: -14 * math.pi / 180,
+                      child: CustomPaint(
+                        size: const Size(92, 92),
+                        painter: _StampPainter(
+                          '${now.day} ${_months[now.month - 1]}',
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (index + 1 < shorts.length) ...[
-            const SizedBox(height: 14),
-            CarePrimaryButton(
-              'Next short',
-              icon: Icons.arrow_forward_rounded,
-              onTap: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => _ShortScreen(
-                    topic: topic,
-                    shorts: shorts,
-                    index: index + 1,
-                    catalog: catalog,
-                  ),
                 ),
               ),
             ),
-          ],
         ],
       ),
     );
   }
+}
+
+class _TalkButton extends StatelessWidget {
+  const _TalkButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: _Rose.ink,
+    borderRadius: BorderRadius.circular(14),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: const SizedBox(
+        height: 50,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'We talked about this',
+              style: TextStyle(
+                fontFamily: careFont,
+                color: Colors.white,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.favorite_border_rounded, color: Colors.white, size: 17),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Talked about: the whole bar takes the mark off again.
+class _TalkedBar extends StatelessWidget {
+  const _TalkedBar({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'You talked about this. Tap to take the mark off.',
+    child: Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: _Rose.line),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          // room on the right for the stamp
+          padding: const EdgeInsets.fromLTRB(12, 0, 84, 0),
+          child: SizedBox(
+            height: 50,
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    color: _Rose.ink,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'You talked about this',
+                  style: TextStyle(
+                    fontFamily: careFont,
+                    color: _Rose.ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: Material(
+      color: Colors.white,
+      shape: const CircleBorder(side: BorderSide(color: _Rose.line)),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(icon, size: 19, color: _Rose.ink),
+        ),
+      ),
+    ),
+  );
+}
+
+Path _heart() => Path()
+  ..moveTo(12, 21.2)
+  ..cubicTo(11.6, 21, 3.2, 16, 2.3, 10.1)
+  ..cubicTo(1.7, 6.4, 4.2, 3.5, 7.4, 3.5)
+  ..cubicTo(9.4, 3.5, 11, 4.6, 12, 6.2)
+  ..cubicTo(13, 4.6, 14.6, 3.5, 16.6, 3.5)
+  ..cubicTo(19.8, 3.5, 22.3, 6.4, 21.7, 10.1)
+  ..cubicTo(20.8, 16, 12.4, 21, 12, 21.2)
+  ..close();
+
+/// Two hearts overlapping: one filled, one drawn.
+class _TwoHearts extends CustomPainter {
+  const _TwoHearts();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 36);
+    canvas.drawPath(
+      _heart().shift(const Offset(0, 1)),
+      Paint()..color = _Rose.soft,
+    );
+    canvas.drawPath(
+      _heart().shift(const Offset(11, 1)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8
+        ..strokeJoin = StrokeJoin.round
+        ..color = _Rose.ink,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _TwoHearts old) => false;
+}
+
+/// The dashed line across the note, above its button.
+class _Tear extends CustomPainter {
+  const _Tear();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _Rose.line
+      ..strokeWidth = 1.5;
+    for (var x = 0.0; x < size.width; x += 9) {
+      canvas.drawLine(
+        Offset(x, 1),
+        Offset(math.min(x + 5, size.width), 1),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _Tear old) => false;
+}
+
+/// A round rose ink stamp: "We talked about this · together ·" around the
+/// ring, a heart and the day in the middle.
+class _StampPainter extends CustomPainter {
+  const _StampPainter(this.day);
+
+  final String day;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 100);
+    const c = Offset(50, 50);
+    final ink = Paint()
+      ..color = _Rose.stamp
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(c, 47, ink..strokeWidth = 2.6);
+    canvas.drawCircle(c, 43, ink..strokeWidth = 1);
+    canvas.drawCircle(c, 25, ink..strokeWidth = 1);
+    // the words around the ring, a letter at a time
+    const words = 'WE TALKED ABOUT THIS · TOGETHER · ';
+    final step = 2 * math.pi / words.length;
+    for (var i = 0; i < words.length; i++) {
+      final a = -math.pi * 0.75 + i * step;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: words[i],
+          style: const TextStyle(
+            fontFamily: careFont,
+            color: _Rose.stamp,
+            fontSize: 8.6,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      canvas.save();
+      canvas.translate(c.dx + math.cos(a) * 35, c.dy + math.sin(a) * 35);
+      canvas.rotate(a + math.pi / 2);
+      tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
+      canvas.restore();
+    }
+    canvas.save();
+    canvas.translate(41, 33);
+    canvas.scale(0.75);
+    canvas.drawPath(_heart(), Paint()..color = _Rose.stamp);
+    canvas.restore();
+    final date = TextPainter(
+      text: TextSpan(
+        text: day,
+        style: const TextStyle(
+          fontFamily: careFont,
+          color: _Rose.stamp,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    date.paint(canvas, Offset(50 - date.width / 2, 57));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StampPainter old) => old.day != day;
 }

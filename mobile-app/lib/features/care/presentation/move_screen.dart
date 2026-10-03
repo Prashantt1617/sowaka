@@ -30,8 +30,11 @@ class MoveScreen extends StatelessWidget {
       backLabel: 'Care',
       background: CareColors.bg,
       children: [
-        const CareEyebrow('Move'),
-        const SizedBox(height: 10),
+        // The app's bar already names the page on the web.
+        if (!careWebPages) ...[
+          const CareEyebrow('Move'),
+          const SizedBox(height: 10),
+        ],
         const CareHeading(
           'Which part of your\nbody do you want\nto stretch?',
           size: 23,

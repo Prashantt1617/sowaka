@@ -92,6 +92,13 @@ void main() {
     await tester.pumpWidget(_app(HelpApiService(session: _session, baseUrl: 'https://example.test', client: client), CareApiService(session: _session, baseUrl: 'https://example.test', client: client)));
     await tester.pumpAndSettle();
 
+    // Help home first, with the offer to be matched; the questions follow a tap.
+    expect(find.text('Support when\nyou need it'), findsOneWidget);
+    expect(find.text('What would you like\nto talk about?'), findsNothing);
+    // The title and the button share the words; the button comes last.
+    await tester.tap(find.text('Match with a counsellor').last);
+    await tester.pumpAndSettle();
+
     expect(find.text('What would you like\nto talk about?'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('option-work')));
     await tester.tap(find.byKey(const ValueKey('option-self')));
@@ -118,7 +125,7 @@ void main() {
     await tester.tap(find.text('English'));
     await tester.tap(find.text('Woman'));
     await tester.pump();
-    await tester.tap(find.text('See my starting point'));
+    await tester.tap(find.text('See my counsellor'));
     await tester.pumpAndSettle();
 
     expect(saved?['topics'], ['work', 'self']);
@@ -126,19 +133,21 @@ void main() {
     expect(saved?['goal'], 'forward');
     expect(saved?['languages'], ['English']);
     expect(saved?['gender'], 'woman');
-    expect(find.text('A little support,\nat your own pace.'), findsOneWidget);
+    // Saving lands on Help itself; there is no screen in between.
+    expect(find.text('Support when\nyou need it'), findsOneWidget);
     expect(find.text('Ananya Rao'), findsOneWidget);
-    expect(find.text('Sessions in English'), findsOneWidget);
-
-    await tester.tap(find.text('Go to Help'));
-    await tester.pumpAndSettle();
-    expect(find.text('A little support.\nA familiar face.'), findsOneWidget);
     expect(find.text('YOUR COUNSELLOR'), findsOneWidget);
-    expect(find.text('Explore a topic'), findsOneWidget);
+    // The card: the person, the profile link, Talk now, and one way out.
+    expect(find.text('Talk now'), findsOneWidget);
+    expect(find.text('Work & career'), findsNothing);
+    expect(find.text('Matched for you'), findsNothing);
+    expect(find.text('Edit answers'), findsNothing);
+    expect(find.text('Choose someone else'), findsOneWidget);
+    expect(find.text('Explore what’s on your mind'), findsOneWidget);
     expect(find.text('Grief & loss'), findsOneWidget);
   });
 
-  testWidgets('Help home shows the next session with Join, and the closest counsellor when nobody fits', (tester) async {
+  testWidgets('Help home shows the next session with View details, and the closest counsellor when nobody fits', (tester) async {
     _tall(tester);
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     final client = MockClient((request) async {
@@ -163,7 +172,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('YOUR NEXT SESSION'), findsOneWidget);
-    expect(find.text('Join session'), findsOneWidget);
+    // The link is on the details page, and only once it is time.
+    expect(find.text('Join session'), findsNothing);
+    expect(find.text('View details'), findsOneWidget);
     expect(find.text('Nobody fits every preference you set.'), findsOneWidget);
     expect(find.text('Not met: Counsellor’s gender: Man'), findsOneWidget);
     expect(find.text('Show me who is available anyway'), findsOneWidget);
@@ -206,7 +217,7 @@ void main() {
 
     await tester.tap(find.text('Choose someone else'));
     await tester.pumpAndSettle();
-    expect(find.text('What would you\nlike to choose first?'), findsOneWidget);
+    expect(find.text('How would you\nlike to choose?'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('route-counsellor')));
     await tester.pumpAndSettle();
 

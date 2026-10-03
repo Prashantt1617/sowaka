@@ -85,7 +85,8 @@ class OrgBranding {
       logoAsset: 'assets/images/toyota_logo.png',
       light: true,
       homeLogoAsset: 'assets/images/toyota_logo.png',
-      iosIconName: 'AppIconToyota',
+      // The icon on the phone stays Sowaka's: no alternate icon is asked for.
+      iosIconName: null,
     ),
   };
 

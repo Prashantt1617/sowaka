@@ -107,6 +107,9 @@ class _TabContent extends StatelessWidget {
         HelpTab(
           key: const ValueKey('help-tab'),
           session: session,
+          // Every tab is built; only one is looked at. Help asks about a
+          // finished session, and that question belongs on Help.
+          visible: state.tab == ManagerTab.talk,
           onNotifications: () => _openNotifications(context),
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('talk-profile-avatar'),

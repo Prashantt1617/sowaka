@@ -7289,6 +7289,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     final file = await pickImageFrom(
       context,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
+      // A post takes a clip as well as a photo, from the camera or the library.
+      allowVideo: true,
     );
     if (file == null) return;
     var path = file.path;

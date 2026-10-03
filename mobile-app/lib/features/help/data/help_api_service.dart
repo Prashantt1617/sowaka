@@ -1,14 +1,42 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../talk/data/talk_api_service.dart';
+import '../../talk/data/talk_models.dart';
 import 'help_models.dart';
 
 /// Help, from the server: the intake, the match, a counsellor's profile.
 /// Booking goes through the Talk service it carries.
+/// Bumped whenever the person's counsellor changes, so every screen showing
+/// it reloads rather than holding the one it fetched. Help and the profile
+/// read the same match; without this, changing it on one left the other
+/// showing yesterday's answer until it was opened again.
+final helpMatchChanged = ValueNotifier<int>(0);
+
+/// The last Help home this app fetched, and whose it was, so a screen that
+/// needs it can draw straight away and refresh behind rather than opening on
+/// a spinner.
+///
+/// Whose matters: the app outlives a sign-out, and without the name on it the
+/// next person to sign in on the same phone opened their profile on somebody
+/// else's counsellor.
+HelpHome? _lastHelpHome;
+String? _lastHelpHomeFor;
+
+/// What was last fetched for [userId], when that is who is asking.
+HelpHome? helpHomeFor(String userId) =>
+    _lastHelpHomeFor == userId ? _lastHelpHome : null;
+
+/// Forgets it. Called when the person signs out.
+void forgetHelpHome() {
+  _lastHelpHome = null;
+  _lastHelpHomeFor = null;
+}
+
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
@@ -56,8 +84,12 @@ class HelpApiService {
     return json;
   }
 
-  Future<HelpHome> home() async =>
-      HelpHome.fromJson(await _request('GET', '/help/home'));
+  Future<HelpHome> home() async {
+    final home = HelpHome.fromJson(await _request('GET', '/help/home'));
+    _lastHelpHome = home;
+    _lastHelpHomeFor = session.user.id;
+    return home;
+  }
 
   Future<HelpIntake?> intake() async {
     final json = await _request('GET', '/help/intake');
@@ -65,10 +97,13 @@ class HelpApiService {
     return raw is Map<String, dynamic> ? HelpIntake.fromJson(raw) : null;
   }
 
-  Future<HelpMatchResult> saveIntake(HelpIntake intake) async =>
-      HelpMatchResult.fromJson(
-        await _request('PUT', '/help/intake', body: intake.toJson()),
-      );
+  Future<HelpMatchResult> saveIntake(HelpIntake intake) async {
+    final result = HelpMatchResult.fromJson(
+      await _request('PUT', '/help/intake', body: intake.toJson()),
+    );
+    helpMatchChanged.value++;
+    return result;
+  }
 
   /// Accepts a counsellor although a preference goes unmet.
   Future<HelpMatch> acceptCounsellor(String counsellorId) async {
@@ -77,7 +112,37 @@ class HelpApiService {
       '/help/match',
       body: {'counsellorUserId': counsellorId},
     );
-    return HelpMatch.fromJson(json['match'] as Map<String, dynamic>);
+    final match = HelpMatch.fromJson(json['match'] as Map<String, dynamic>);
+    helpMatchChanged.value++;
+    return match;
+  }
+
+  /// "How did you feel about the session?", answered afterwards.
+  Future<TalkSession> review(
+    String sessionId, {
+    required int rating,
+    String note = '',
+  }) async {
+    final json = await _request(
+      'PUT',
+      '/talk/sessions/$sessionId/review',
+      body: {'rating': rating, 'note': note},
+    );
+    return TalkSession.fromJson(json['session'] as Map<String, dynamic>);
+  }
+
+  /// "How are you feeling?" just before joining a session.
+  Future<TalkSession> checkIn(
+    String sessionId, {
+    required String feeling,
+    String note = '',
+  }) async {
+    final json = await _request(
+      'PUT',
+      '/talk/sessions/$sessionId/check-in',
+      body: {'feeling': feeling, 'note': note},
+    );
+    return TalkSession.fromJson(json['session'] as Map<String, dynamic>);
   }
 
   Future<CounsellorDetail> counsellor(String counsellorId) async =>

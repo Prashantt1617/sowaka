@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../services/linkified_text.dart';
@@ -15,6 +16,9 @@ import '../data/help_api_service.dart';
 import '../data/help_models.dart';
 import '../data/help_topics.dart';
 import 'choose_someone_screen.dart';
+import 'after_session_screen.dart';
+import '../../shared/session_prompts.dart';
+import 'help_booking_screen.dart';
 import 'counsellor_profile_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
@@ -29,11 +33,16 @@ class HelpTab extends StatefulWidget {
     required this.session,
     required this.profileAction,
     required this.onNotifications,
+    this.visible = true,
     this.service,
     this.careService,
   });
 
   final AuthSession session;
+
+  /// Whether Help is the tab on screen. The question about a finished
+  /// session is only put when it is.
+  final bool visible;
   final Widget profileAction;
   final VoidCallback onNotifications;
 
@@ -62,10 +71,21 @@ class _HelpTabState extends State<HelpTab> {
   bool _editing = false;
   HelpIntake? _intakeForEdit;
 
+  /// Answering the four questions for the first time, after choosing to be
+  /// matched from Help home rather than landing on them.
+  bool _starting = false;
+
+  /// A session this run has already asked about, so a reload does not put
+  /// the question up twice in one sitting. Across launches the device's own
+  /// record decides; the card on Help home stays either way, until the
+  /// session is spoken about or the server stops offering it.
+  final _asked = <String>{};
+
   @override
   void initState() {
     super.initState();
     _load();
+    helpMatchChanged.addListener(_reload);
     _care
         .catalog()
         .then((catalog) {
@@ -78,6 +98,35 @@ class _HelpTabState extends State<HelpTab> {
         .catchError((_) {});
   }
 
+  /// The counsellor changed somewhere else in the app.
+  void _reload() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    helpMatchChanged.removeListener(_reload);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(HelpTab old) {
+    super.didUpdateWidget(old);
+    // Help loads in the background, so the question about a finished session
+    // often has nowhere to go at that moment. It gets asked when Help is the
+    // tab on screen, which may be a tap later.
+    if (widget.visible && !old.visible) _askAboutAwaiting();
+  }
+
+  /// Puts the question about a finished session, if there is one and this is
+  /// the first time this run.
+  void _askAboutAwaiting() {
+    final session = _home?.awaitingReview;
+    if (session != null && widget.visible && _asked.add(session.id)) {
+      unawaited(_askOnce(session));
+    }
+  }
+
   Future<void> _load() async {
     try {
       final home = await _service.home();
@@ -87,6 +136,7 @@ class _HelpTabState extends State<HelpTab> {
         _loading = false;
         _error = null;
       });
+      _askAboutAwaiting();
     } catch (error) {
       if (!mounted) return;
       debugPrint('Help home failed: $error');
@@ -97,6 +147,30 @@ class _HelpTabState extends State<HelpTab> {
             : 'Could not load Help.';
       });
     }
+  }
+
+  /// Asks about a finished session, unless this device already has.
+  Future<void> _askOnce(TalkSession session) async {
+    if (await const SessionPrompts().alreadyAsked(session.id)) return;
+    await const SessionPrompts().markAsked(session.id);
+    if (!mounted) return;
+    await _askAbout(session);
+  }
+
+  /// Opens "How did you feel about the session?" for a finished session.
+  Future<void> _askAbout(TalkSession session) async {
+    if (!mounted) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AfterSessionScreen(
+          session: session,
+          service: _service,
+          match: _home?.match,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+    if (mounted) await _load();
   }
 
   /// A topic lives on the web when Sowaka has put the Care pages there; the
@@ -120,7 +194,7 @@ class _HelpTabState extends State<HelpTab> {
       CareWebScreen(
         title: topic.name,
         url:
-            '$base/topic/${topic.id}#token=${Uri.encodeComponent(widget.session.token)}',
+            '$base/topic/${topic.id}#token=${Uri.encodeComponent(widget.session.token)}&embed=1',
       ),
     );
   }
@@ -149,13 +223,6 @@ class _HelpTabState extends State<HelpTab> {
     }
   }
 
-  Future<void> _join(TalkSession session) async {
-    final url = session.joinUrl;
-    if (url == null || url.isEmpty) return;
-    final opened = await openExternalLink(url);
-    if (!opened && mounted) showAppToast(context, 'Could not open the link');
-  }
-
   Future<void> _accept(Counsellor counsellor) async {
     try {
       await _service.acceptCounsellor(counsellor.userId);
@@ -182,16 +249,21 @@ class _HelpTabState extends State<HelpTab> {
         padding: const EdgeInsets.all(20),
         child: CareNotice(message, onRetry: _load),
       );
-    } else if (home == null || !home.intakeDone || _editing) {
+    } else if (home == null || _starting || _editing) {
       body = HelpOnboarding(
         key: ValueKey(_editing ? 'edit' : 'first'),
         service: _service,
         initial: _editing ? _intakeForEdit : null,
         startOnReview: _editing,
-        onCancel: _editing ? () => setState(() => _editing = false) : null,
+        onCancel: _editing
+            ? () => setState(() => _editing = false)
+            : _starting
+            ? () => setState(() => _starting = false)
+            : null,
         onDone: () {
           setState(() {
             _editing = false;
+            _starting = false;
             _loading = true;
           });
           _load();
@@ -227,18 +299,29 @@ class _HelpTabState extends State<HelpTab> {
         children: [
           const CareEyebrow('Help'),
           const SizedBox(height: 10),
-          const CareHeading('A little support.\nA familiar face.', size: 36),
-          const SizedBox(height: 12),
-          const CareCopy(
-            'Connect with your counsellor,\nor explore what’s on your mind.',
-            size: 13.5,
-          ),
+          const CareHeading('Support when\nyou need it', size: 36),
           const SizedBox(height: 22),
+          // The session that just happened, asking to be spoken about. Same
+          // card as the next session, in the warmer colour.
+          if (home.awaitingReview case final last?) ...[
+            _SessionCard(
+              session: last,
+              eyebrow: 'Your last session',
+              action: 'How did it go?',
+              color: CareColors.peach,
+              onTap: () => _askAbout(last),
+            ),
+            const SizedBox(height: 14),
+          ],
           if (upcoming != null) ...[
-            _UpcomingCard(
+            _SessionCard(
               session: upcoming,
-              onJoin: () => _join(upcoming),
-              onOpen: () => _push(
+              eyebrow: 'Your next session',
+              // The join link lives on the details page, and only once it is
+              // time.
+              action: 'View details',
+              color: CareColors.sage,
+              onTap: () => _push(
                 SessionDetailsScreen(
                   session: upcoming,
                   service: _service,
@@ -258,13 +341,43 @@ class _HelpTabState extends State<HelpTab> {
                   backLabel: 'Help',
                 ),
               ),
+              // Straight to a time with them; the profile is a tap away.
+              onTalk: () => _push(
+                HelpBookingScreen(
+                  service: _service,
+                  counsellor: match.counsellor,
+                ),
+              ),
               onChoose: () => _push(
                 ChooseSomeoneScreen(
                   service: _service,
                   matchedId: match.counsellor.userId,
                 ),
               ),
-              onEdit: _editAnswers,
+            )
+          else if (!home.intakeDone)
+            // Nobody lands on the questions: Help home offers the match, and
+            // the four questions follow when they choose it.
+            CareCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CareEyebrow('Your counsellor'),
+                  const SizedBox(height: 12),
+                  const CareSectionTitle('Match with a counsellor'),
+                  const SizedBox(height: 8),
+                  const CareCopy(
+                    'Four quick questions about what you’d like to talk about, and we’ll suggest someone who fits.',
+                    size: 13.5,
+                  ),
+                  const SizedBox(height: 16),
+                  CarePrimaryButton(
+                    'Match with a counsellor',
+                    icon: Icons.arrow_forward_rounded,
+                    onTap: () => setState(() => _starting = true),
+                  ),
+                ],
+              ),
             )
           else if (noMatch != null)
             CareCard(
@@ -313,12 +426,7 @@ class _HelpTabState extends State<HelpTab> {
               ),
             ),
           const SizedBox(height: 26),
-          const CareSectionTitle('Explore a topic', size: 22),
-          const SizedBox(height: 6),
-          const CareCopy(
-            'Understand it. Try something. Talk it through.',
-            size: 13.5,
-          ),
+          const CareSectionTitle('Explore what’s on your mind', size: 22),
           const SizedBox(height: 14),
           GridView.builder(
             shrinkWrap: true,
@@ -401,14 +509,14 @@ class _CounsellorCard extends StatelessWidget {
   const _CounsellorCard({
     required this.match,
     required this.onProfile,
+    required this.onTalk,
     required this.onChoose,
-    required this.onEdit,
   });
 
   final HelpMatch match;
   final VoidCallback onProfile;
+  final VoidCallback onTalk;
   final VoidCallback onChoose;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -420,30 +528,23 @@ class _CounsellorCard extends StatelessWidget {
           const CareEyebrow('Your counsellor'),
           const SizedBox(height: 18),
           CounsellorPerson(counsellor: c),
-          if (c.focusLabels.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            FocusChips(c.focusLabels.take(3).toList()),
-          ],
-          const SizedBox(height: 10),
-          CareLink('View profile & sessions', onTap: onProfile, size: 14),
-          const SizedBox(height: 8),
-          const Divider(color: CareColors.line, height: 1),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
-                child: Text(
-                  match.unmet.isEmpty ? 'Matched for you' : 'Chosen by you',
-                  style: const TextStyle(
-                    fontFamily: careFont,
-                    color: CareColors.muted,
-                    fontSize: 12.5,
-                  ),
+                child: CareLink(
+                  'View profile & sessions',
+                  onTap: onProfile,
+                  size: 14,
                 ),
               ),
-              CareLink('Edit answers', icon: null, onTap: onEdit, size: 12.5),
+              const SizedBox(width: 12),
+              _TalkNowButton(onTap: onTalk),
             ],
           ),
+          const SizedBox(height: 12),
+          const Divider(color: CareColors.line, height: 1),
+          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerRight,
             child: CareLink(
@@ -459,26 +560,64 @@ class _CounsellorCard extends StatelessWidget {
   }
 }
 
-class _UpcomingCard extends StatelessWidget {
-  const _UpcomingCard({
+/// The blue call to action beside the profile link: straight to booking.
+class _TalkNowButton extends StatelessWidget {
+  const _TalkNowButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: CareColors.blue,
+      borderRadius: BorderRadius.circular(100),
+      child: InkWell(
+        key: const ValueKey('talk-now'),
+        borderRadius: BorderRadius.circular(100),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+          child: Text(
+            'Talk now',
+            style: TextStyle(
+              fontFamily: careFont,
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The next session, and the one just had, are the same card: the day and
+/// time, who it was with, and one thing to do about it.
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({
     required this.session,
-    required this.onJoin,
-    required this.onOpen,
+    required this.eyebrow,
+    required this.action,
+    required this.color,
+    required this.onTap,
   });
 
   final TalkSession session;
-  final VoidCallback onJoin;
-  final VoidCallback onOpen;
+  final String eyebrow;
+  final String action;
+  final Color color;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return CareCard(
-      color: CareColors.sage,
-      onTap: onOpen,
+      color: color,
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CareEyebrow('Your next session'),
+          CareEyebrow(eyebrow),
           const SizedBox(height: 10),
           Text(
             '${talkDate(session.startsAt)} · ${talkRange(session.startsAt, session.endsAt)}',
@@ -491,21 +630,19 @@ class _UpcomingCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'With ${session.counsellorName} · Video call${session.placeholderLink ? ' · test link' : ''}',
+            'With ${session.counsellorName} · Video call',
             style: const TextStyle(
               fontFamily: careFont,
               color: CareColors.muted,
               fontSize: 13,
             ),
           ),
-          if (session.joinUrl != null) ...[
-            const SizedBox(height: 14),
-            CarePrimaryButton(
-              'Join session',
-              icon: Icons.videocam_rounded,
-              onTap: onJoin,
-            ),
-          ],
+          const SizedBox(height: 14),
+          CarePrimaryButton(
+            action,
+            icon: Icons.arrow_forward_rounded,
+            onTap: onTap,
+          ),
         ],
       ),
     );

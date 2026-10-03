@@ -5,9 +5,11 @@ import '../../shared/app_toast.dart';
 import '../data/garden_api_service.dart';
 import '../data/garden_models.dart';
 import 'garden_widgets.dart';
+import 'give_success.dart';
 
-/// Adding to someone's tree: flower or fruit, then the kind, then the words.
-/// Hands back the note once the server has it.
+/// Adding to someone's tree: a flower, then the words. Hands back the note
+/// once the server has it and the success page has been seen. Only flowers
+/// are given; the fruit that grows back is the server's doing.
 class GiveFlowScreen extends StatefulWidget {
   const GiveFlowScreen({
     super.key,
@@ -29,7 +31,6 @@ class GiveFlowScreen extends StatefulWidget {
 }
 
 class _GiveFlowScreenState extends State<GiveFlowScreen> {
-  bool _flowers = true;
   GardenKind? _kind;
   int _step = 0;
   final _note = TextEditingController();
@@ -50,9 +51,17 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
     if (kind == null || text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      final note = await widget.service.give(toUserId: widget.to.userId, kind: kind.key, note: text);
+      final gift = await widget.service.give(toUserId: widget.to.userId, kind: kind.key, note: text);
       if (!mounted) return;
-      Navigator.of(context).pop(note);
+      // Both trees, with the flower landing and the fruit growing, before
+      // the flow hands the note back.
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => GiveSuccessScreen(service: widget.service, to: widget.to, gift: gift, companyName: widget.companyName),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(gift.note);
     } catch (error) {
       if (!mounted) return;
       showAppToast(context, error is GardenApiException ? error.message : 'Could not add it. Try again.');
@@ -71,7 +80,7 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final kinds = [for (final k in gardenKinds) if (k.isFlower == _flowers) k];
+    final kinds = [for (final k in gardenKinds) if (k.isFlower) k];
     return PopScope(
       canPop: _step == 0,
       onPopInvokedWithResult: (didPop, _) {
@@ -101,14 +110,13 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
       children: [
-        Row(
-          spacing: 10,
-          children: [
-            Expanded(child: _Category(label: 'Flower', hint: 'for who they are', kind: 'hibiscus', on: _flowers, onTap: () => setState(() { _flowers = true; _kind = null; }))),
-            Expanded(child: _Category(label: 'Fruit', hint: 'for what they did', kind: 'apple', on: !_flowers, onTap: () => setState(() { _flowers = false; _kind = null; }))),
-          ],
+        const Text('Pick a flower', style: TextStyle(fontFamily: 'Sora', color: MColors.ink, fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text(
+          widget.to.isMe ? 'What it means shows before you go on.' : 'What it means shows before you go on. When it lands, a fruit grows on your own tree.',
+          style: const TextStyle(color: MColors.inkSoft, fontSize: 13, height: 1.4),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         GridView.count(
           crossAxisCount: 4,
           shrinkWrap: true,
@@ -228,13 +236,12 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
           ),
         ),
         const SizedBox(height: 6),
+        // How many are left today sits beside the garden's Give button; here
+        // the only thing worth saying is who will see it.
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: [
-            _Chip('Everyone at ${widget.companyName} will see this'),
-            _Chip('${widget.leftToday} of ${widget.dailyLimit} left today'),
-          ],
+          children: [_Chip('Everyone at ${widget.companyName} will see this')],
         ),
         const SizedBox(height: 20),
         _sending
@@ -246,40 +253,6 @@ class _GiveFlowScreenState extends State<GiveFlowScreen> {
                 onTap: _note.text.trim().isEmpty ? null : _send,
               ),
       ],
-    );
-  }
-}
-
-class _Category extends StatelessWidget {
-  const _Category({required this.label, required this.hint, required this.kind, required this.on, required this.onTap});
-
-  final String label;
-  final String hint;
-  final String kind;
-  final bool on;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: on ? GardenColors.blueTint : Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? GardenColors.blue : MColors.line)),
-          child: Column(
-            children: [
-              KindIcon(kind, size: 30),
-              const SizedBox(height: 6),
-              Text(label, style: const TextStyle(fontFamily: 'Sora', color: MColors.ink, fontSize: 14, fontWeight: FontWeight.w700)),
-              Text(hint, style: const TextStyle(color: MColors.inkSoft, fontSize: 11.5)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

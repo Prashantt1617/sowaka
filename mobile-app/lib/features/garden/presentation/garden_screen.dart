@@ -158,7 +158,8 @@ class _GardenScreenState extends State<GardenScreen> {
       ),
     );
     if (note == null || !mounted) return;
-    showAppToast(context, 'You added a ${note.kindInfo.name.toLowerCase()} to ${person.isMe ? 'your' : "${person.firstName}'s"} tree');
+    // The success page has already said what happened; the garden just
+    // reloads so both trees carry what grew.
     await _load();
   }
 
@@ -246,12 +247,33 @@ class _GardenScreenState extends State<GardenScreen> {
               left: 16,
               right: 16,
               bottom: MediaQuery.paddingOf(context).bottom + 16,
-              child: ActionButton(
-                label: 'Give gratitude',
-                icon: Icons.local_florist_rounded,
-                background: GardenColors.blue,
-                foreground: Colors.white,
-                onTap: _give,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ActionButton(
+                      label: 'Give gratitude',
+                      icon: Icons.local_florist_rounded,
+                      background: GardenColors.blue,
+                      foreground: Colors.white,
+                      onTap: _give,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // What is left of today's allowance, next to the button
+                  // that spends it.
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: MColors.line),
+                    ),
+                    child: Text(
+                      '${garden.leftToday} left today',
+                      style: const TextStyle(color: MColors.ink, fontSize: 12.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],

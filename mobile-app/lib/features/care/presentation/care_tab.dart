@@ -62,16 +62,29 @@ class _CareTabState extends State<CareTab> {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
-  /// Move, Breathe and Listen live on the web when Sowaka has put them
-  /// there, so a changed clip or line needs no release; the app's own screen
-  /// otherwise.
-  void _openActivity(String path, String title, Widget native) {
+  /// Move, Breathe, Listen and Sleep live on the web when Sowaka has put
+  /// them there, so a changed clip or line needs no release; the app's own
+  /// screen otherwise.
+  void _openActivity(
+    String path,
+    String title,
+    Widget native, {
+    bool fullScreen = false,
+  }) {
     final base = _catalog.webBase;
     if (base.isEmpty) {
       _open(native);
       return;
     }
-    _open(CareWebScreen(title: title, url: '$base$path'));
+    // `embed=1`: the page hides its own back row, since this screen's bar
+    // is the way back to the app.
+    _open(
+      CareWebScreen(
+        title: title,
+        url: '$base$path#embed=1',
+        fullScreen: fullScreen,
+      ),
+    );
   }
 
   @override
@@ -203,10 +216,12 @@ class _CareTabState extends State<CareTab> {
                           subtitle: 'Ease into rest',
                           icon: Icons.nightlight_outlined,
                           color: CareColors.night,
-                          // Sleep stays in the app: a web page falls silent
-                          // when the phone locks, and this one is for lying
-                          // in the dark.
-                          onTap: () => _open(SleepScreen(catalog: _catalog)),
+                          onTap: () => _openActivity(
+                            '/sleep',
+                            'Sleep',
+                            SleepScreen(catalog: _catalog),
+                            fullScreen: true,
+                          ),
                         ),
                       ),
                     ],

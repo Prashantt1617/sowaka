@@ -31,10 +31,26 @@ export interface TalkSession {
   endsAt: Date;
   status: TalkSessionStatus;
   zoom?: TalkZoomMeeting;
+  /** How the person said they felt just before joining, when they said. */
+  checkIn?: { feeling: SessionFeeling; note?: string; at: Date };
+  /** What they made of it afterwards, when they said. */
+  review?: { rating: number; note?: string; at: Date };
   createdAt: Date;
   updatedAt: Date;
   cancelledAt?: Date;
 }
+
+/** The five answers to "how are you feeling?" before a session. */
+export const SESSION_FEELINGS = ['low', 'anxious', 'okay', 'hopeful', 'good'] as const;
+export type SessionFeeling = (typeof SESSION_FEELINGS)[number];
+/** Longest check-in or review note, in characters. */
+export const SESSION_NOTE_MAX = 300;
+/**
+ * How long the card asking about a finished session stays on Help before it
+ * gives up, in days. Long enough to survive a weekend, short enough that the
+ * question is still about something remembered.
+ */
+export const SESSION_REVIEW_WINDOW_DAYS = 3;
 
 /** How far ahead a session may be booked, in days from today. */
 export const TALK_BOOKING_HORIZON_DAYS = 14;

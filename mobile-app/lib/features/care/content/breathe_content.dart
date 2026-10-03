@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../data/care_models.dart' show MoveClip;
+
 /// Breathe: six moods, as getsowaka.com/breathe has them. Four lead to a
 /// timed breath with the circle or the box; two to a short list of steps.
 class BreathPhase {
@@ -28,6 +30,15 @@ class Mood {
     this.pauseSteps = const [],
     this.poseAsset,
     this.poseUrl,
+    this.writeSteps = const {},
+    this.sitStep,
+    this.sitSeconds = 30,
+    this.readSeconds = 4,
+    this.paged = false,
+    this.clips = const [],
+    this.photos = const {},
+    this.breathHolds = const {},
+    this.breathSeconds = 5,
   });
 
   final String key;
@@ -56,6 +67,37 @@ class Mood {
   /// photo where there is one, the app's own otherwise.
   final String? poseAsset;
   final String? poseUrl;
+
+  /// Steps that ask for a few words, by index: how many boxes each has.
+  final Map<int, int> writeSteps;
+
+  /// The step that brings back what was written, with a breath to sit
+  /// with it.
+  final int? sitStep;
+
+  /// How long that step breathes.
+  final int sitSeconds;
+
+  /// How long a step with nothing to do or count stays before the next.
+  final int readSeconds;
+
+  /// Runs one step a page, the way a Move stretch does, instead of a list.
+  final bool paged;
+
+  /// For a paged exercise: the clips its steps play, steps counted from 1.
+  final List<MoveClip> clips;
+
+  /// For a paged exercise: a photo for a step, by index, a `/media` path,
+  /// https address or app asset. A step with neither clip nor photo is its
+  /// words alone.
+  final Map<int, String> photos;
+
+  /// For a paged exercise: holds breathed rather than counted, by index: how
+  /// many breaths each takes.
+  final Map<int, int> breathHolds;
+
+  /// How long one of those breaths takes, half in and half out.
+  final int breathSeconds;
 
   String get tag => 'Mood · $label → $want';
 
@@ -105,13 +147,15 @@ const moods = [
     sub: 'Comparison fades when your attention turns to what is already yours.',
     kind: RemedyKind.steps,
     steps: [
-      'Place one hand on your heart and close your eyes.',
-      'Take a slow breath and bring to mind one thing you are grateful for.',
-      'Name two more — small and ordinary still count.',
-      'Rest here and feel the warmth of each one. Hold 20 seconds.',
-      'Open your eyes and carry that fullness with you.',
+      'Place one hand on your heart and take a deep breath.',
+      'Type one thing you are grateful for.',
+      'Type two more. Small and ordinary still count.',
+      'Sit with these for 30 seconds.',
+      'Carry that fullness with you.',
     ],
-    pauseSteps: [3],
+    writeSteps: {1: 1, 2: 2},
+    sitStep: 3,
+    readSeconds: 6,
   ),
   Mood(
     key: 'scrolling',
@@ -135,18 +179,31 @@ const moods = [
     label: 'Nervous',
     want: 'Confident',
     color: Color(0xFF8A6AA0),
-    name: 'Mountain Pose + Power Breath',
-    sub:
-        'Stand like a mountain and breathe with power — your posture tells your brain you are ready.',
-    kind: RemedyKind.breath,
-    note:
-        'Stand tall, feet hip-width apart, shoulders back, crown of your head lifting.',
-    rounds: 5,
-    pattern: [
-      BreathPhase('Breathe in', 4),
-      BreathPhase('Hold', 2),
-      BreathPhase('Release', 4),
+    name: 'Steady Seat Breathing',
+    sub: 'Let your body settle first, then a slow, even breath steadies you.',
+    kind: RemedyKind.steps,
+    steps: [
+      'Rest your back on the chair and place your feet on the ground.',
+      'Gently roll your shoulders back once, then let them drop.',
+      'Unclench your jaw.',
+      'Breathe gently in through your nose for 4 counts, then out through '
+          'your mouth for 4. Repeat 5 times without holding or forcing your '
+          'breath.',
     ],
+    pauseSteps: [3],
+    readSeconds: 6,
+    paged: true,
+    clips: [
+      MoveClip(
+        url:
+            '/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4',
+        steps: [2],
+        until: 4,
+      ),
+    ],
+    photos: {0: 'assets/care/nervous_seated.jpg'},
+    breathHolds: {3: 5},
+    breathSeconds: 8,
   ),
   Mood(
     key: 'sleep',

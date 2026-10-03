@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { companies, gardenNotes, users } from '../config/db';
 import {
   GARDEN_DAILY_LIMIT,
-  GARDEN_KINDS,
   GARDEN_NOTE_MAX,
   GardenKind,
   GardenNote,
   KIND_MEANING,
+  FLOWER_KINDS,
+  FRUIT_KINDS,
 } from '../models/garden.model';
 import { User } from '../models/user.model';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -114,7 +115,7 @@ export async function gardenFor(viewerId: string): Promise<GardenView> {
   const [people, notes, givenToday] = await Promise.all([
     peopleOf(viewer.org, viewerId),
     gardenNotes().find({ org: viewer.org, season, removedAt: { $exists: false } }).sort({ createdAt: 1 }).toArray(),
-    gardenNotes().countDocuments({ fromUserId: viewerId, createdAt: { $gte: startOfTodayIst() } }),
+    gardenNotes().countDocuments({ fromUserId: viewerId, createdAt: { $gte: startOfTodayIst() }, grown: { $exists: false } }),
   ]);
   const trees: Record<string, GardenSprite[]> = {};
   for (const person of people) trees[person.userId] = [];
@@ -135,6 +136,8 @@ export interface NoteView {
   createdAt: string;
   /** The viewer may take it off: it is on their own tree. */
   removable: boolean;
+  /** On a fruit that grew from a flower the owner gave: who they gave it to, and what. */
+  grown?: { forUserId: string; forName: string; kind: GardenKind; kindName: string };
 }
 
 async function namesFor(ids: string[]): Promise<Map<string, { name: string; photoUrl?: string }>> {
@@ -146,7 +149,7 @@ async function namesFor(ids: string[]): Promise<Map<string, { name: string; phot
 }
 
 async function toNoteViews(notes: GardenNote[], viewerId: string): Promise<NoteView[]> {
-  const names = await namesFor(notes.flatMap((n) => [n.fromUserId, n.toUserId]));
+  const names = await namesFor(notes.flatMap((n) => [n.fromUserId, n.toUserId, ...(n.grown ? [n.grown.forUserId] : [])]));
   const who = (id: string) => ({ userId: id, name: names.get(id)?.name ?? 'Someone', photoUrl: names.get(id)?.photoUrl });
   return notes.map((n) => ({
     id: n.id,
@@ -158,6 +161,9 @@ async function toNoteViews(notes: GardenNote[], viewerId: string): Promise<NoteV
     to: who(n.toUserId),
     createdAt: n.createdAt.toISOString(),
     removable: n.toUserId === viewerId,
+    ...(n.grown
+      ? { grown: { forUserId: n.grown.forUserId, forName: who(n.grown.forUserId).name, kind: n.grown.kind, kindName: KIND_MEANING[n.grown.kind].name } }
+      : {}),
   }));
 }
 
@@ -182,24 +188,30 @@ export async function treeFor(viewerId: string, userId: string): Promise<{ perso
   };
 }
 
-/** The whole company's gratitude this season, newest first. */
+/** The whole company's gratitude this season, newest first. Grown fruit is not gratitude anyone gave, so it stays off. */
 export async function timelineFor(viewerId: string, limit = 200): Promise<NoteView[]> {
   const viewer = await requireGardener(viewerId);
   const notes = await gardenNotes()
-    .find({ org: viewer.org, season: currentSeason(), removedAt: { $exists: false } })
+    .find({ org: viewer.org, season: currentSeason(), removedAt: { $exists: false }, grown: { $exists: false } })
     .sort({ createdAt: -1 })
     .limit(limit)
     .toArray();
   return toNoteViews(notes, viewerId);
 }
 
+/**
+ * Gives a flower. Only flowers are given; when it lands on someone else's
+ * tree, a fruit grows on the giver's own tree, chosen at random, so the
+ * giver has something to show for it too. Both come back: the flower, and
+ * the fruit when one grew.
+ */
 export async function giveNote(
   viewerId: string,
   input: { toUserId: string; kind: string; note: string },
-): Promise<NoteView> {
+): Promise<{ note: NoteView; grown?: NoteView }> {
   const viewer = await requireGardener(viewerId);
   const kind = input.kind.trim() as GardenKind;
-  if (!GARDEN_KINDS.includes(kind)) throw new GardenError(400, 'Pick a flower or a fruit');
+  if (!(FLOWER_KINDS as readonly string[]).includes(kind)) throw new GardenError(400, 'Pick a flower');
   const note = input.note.trim();
   if (!note) throw new GardenError(400, 'Write a few words');
   if (note.length > GARDEN_NOTE_MAX) throw new GardenError(400, `Keep it under ${GARDEN_NOTE_MAX} characters`);
@@ -207,9 +219,10 @@ export async function giveNote(
   if (!receiver) throw new GardenError(404, 'Nobody by that name in your garden');
 
   const since = startOfTodayIst();
+  const given = { fromUserId: viewerId, createdAt: { $gte: since }, grown: { $exists: false } };
   const [today, toThemToday] = await Promise.all([
-    gardenNotes().countDocuments({ fromUserId: viewerId, createdAt: { $gte: since } }),
-    gardenNotes().countDocuments({ fromUserId: viewerId, toUserId: receiver.userId, createdAt: { $gte: since } }),
+    gardenNotes().countDocuments(given),
+    gardenNotes().countDocuments({ ...given, toUserId: receiver.userId }),
   ]);
   if (today >= GARDEN_DAILY_LIMIT) {
     throw new GardenError(429, `That is ${GARDEN_DAILY_LIMIT} for today. The garden opens again tomorrow.`);
@@ -228,7 +241,22 @@ export async function giveNote(
     createdAt: new Date(),
   };
   await gardenNotes().insertOne(record);
-  return (await toNoteViews([record], viewerId))[0];
+  const flower = (await toNoteViews([record], viewerId))[0];
+  // A note to yourself grows nothing: the fruit is for giving to someone.
+  if (receiver.userId === viewerId) return { note: flower };
+  const fruit: GardenNote = {
+    id: randomUUID(),
+    org: viewer.org,
+    fromUserId: viewerId,
+    toUserId: viewerId,
+    kind: FRUIT_KINDS[Math.floor(Math.random() * FRUIT_KINDS.length)],
+    note: '',
+    season: record.season,
+    createdAt: new Date(record.createdAt.getTime() + 1),
+    grown: { noteId: record.id, forUserId: receiver.userId, kind },
+  };
+  await gardenNotes().insertOne(fruit);
+  return { note: flower, grown: (await toNoteViews([fruit], viewerId))[0] };
 }
 
 /** The receiver takes a note off their tree; it leaves the timeline too. */

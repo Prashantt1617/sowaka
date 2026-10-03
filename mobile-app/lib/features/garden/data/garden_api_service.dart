@@ -67,9 +67,9 @@ class GardenApiService {
     ];
   }
 
-  Future<GardenNote> give({required String toUserId, required String kind, required String note}) async {
+  Future<GardenGift> give({required String toUserId, required String kind, required String note}) async {
     final json = await _request('POST', '/garden/notes', body: {'toUserId': toUserId, 'kind': kind, 'note': note});
-    return GardenNote.fromJson(json['note'] as Map<String, dynamic>);
+    return GardenGift.fromJson(json);
   }
 
   Future<void> remove(String noteId) async {

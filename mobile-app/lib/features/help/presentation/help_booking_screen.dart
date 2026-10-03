@@ -49,6 +49,10 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
       widget.counsellor != null ? HelpBookingMode.sameCounsellor : widget.mode!;
 
   List<Counsellor>? _counsellors;
+
+  /// The two filters on the counsellor list; null means everyone.
+  String? _languageFilter;
+  String? _focusFilter;
   String? _counsellorsError;
   final _slotsByDay = <String, List<TalkSlot>>{};
   final _loadingDays = <String>{};
@@ -280,14 +284,12 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
           switch (_stage) {
             _Stage.counsellors => _counsellorList(
               _counsellors,
-              eyebrow: 'A counsellor',
-              heading: 'Someone whose\napproach feels right.',
-              copy: 'Choose a person, then a time that suits you both.',
+              heading: 'Choose a counsellor',
+              filters: true,
             ),
             _Stage.slots => _dayAndSlots(),
             _Stage.whoIsFree => _counsellorList(
               _counsellorsForSlot,
-              eyebrow: 'A time',
               heading: 'Who is free then.',
               copy: _slot == null
                   ? ''
@@ -312,47 +314,115 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
 
   Widget _counsellorList(
     List<Counsellor>? rows, {
-    required String eyebrow,
     required String heading,
-    required String copy,
+    String copy = '',
+    bool filters = false,
   }) {
+    // The two filters offer only what the counsellors actually have.
+    final languages = <String>{
+      for (final c in rows ?? const <Counsellor>[]) ...c.languages,
+    }.toList()..sort();
+    final focuses = <String>{
+      for (final c in rows ?? const <Counsellor>[]) ...c.focusLabels,
+    }.toList()..sort();
+    final shown = rows == null || !filters
+        ? rows
+        : [
+            for (final c in rows)
+              if ((_languageFilter == null ||
+                      c.languages.contains(_languageFilter)) &&
+                  (_focusFilter == null ||
+                      c.focusLabels.contains(_focusFilter)))
+                c,
+          ];
     return CarePage(
       backLabel: _backLabel,
       onBack: _back,
       children: [
-        CareEyebrow(eyebrow),
-        const SizedBox(height: 10),
         CareHeading(heading, size: 28),
         if (copy.isNotEmpty) ...[const SizedBox(height: 10), CareCopy(copy)],
+        if (filters && rows != null && rows.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _filterRow(
+            'Language',
+            languages,
+            _languageFilter,
+            (v) => setState(() => _languageFilter = v),
+          ),
+          const SizedBox(height: 8),
+          _filterRow(
+            'Focus area',
+            focuses,
+            _focusFilter,
+            (v) => setState(() => _focusFilter = v),
+          ),
+        ],
         const SizedBox(height: 20),
         if (_counsellorsError case final message?)
           CareNotice(message, onRetry: _loadCounsellors)
-        else if (rows == null)
+        else if (shown == null)
           const CareSpinner()
-        else if (rows.isEmpty)
-          const CareNotice('No counsellor is free then. Try another time.')
+        else if (shown.isEmpty)
+          CareNotice(
+            filters
+                ? 'Nobody matches those filters yet.'
+                : 'No counsellor is free then. Try another time.',
+          )
         else
-          for (final c in rows)
+          for (final c in shown)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: CareCard(
-                key: ValueKey('counsellor-${c.userId}'),
+              child: CounsellorListCard(
+                counsellor: c,
                 onTap: () => _openProfile(c),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CounsellorPerson(counsellor: c),
-                    if (c.focusLabels.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      CareCopy(c.focusLabels.join(' · '), size: 12.5),
-                    ],
-                    const SizedBox(height: 6),
-                    CareLink('View profile', onTap: () => _openProfile(c)),
-                  ],
-                ),
               ),
             ),
+      ],
+    );
+  }
+
+  /// One filter: a label, then chips that scroll sideways. Tapping the chosen
+  /// chip again clears it.
+  Widget _filterRow(
+    String label,
+    List<String> options,
+    String? chosen,
+    ValueChanged<String?> onPick,
+  ) {
+    if (options.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Row(
+      children: [
+        SizedBox(
+          width: 84,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.muted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final option in options) ...[
+                  CareChoiceChip(
+                    option,
+                    selected: chosen == option,
+                    onTap: () => onPick(chosen == option ? null : option),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -446,10 +516,6 @@ class _HelpBookingScreenState extends State<HelpBookingScreen> {
                 'Continue',
                 icon: Icons.arrow_forward_rounded,
                 onTap: _slot == null ? null : _continue,
-              ),
-              const SizedBox(height: 8),
-              const CareMicro(
-                'Times are shown in your own time zone. Sessions are 50 minutes, on video.',
               ),
             ],
           ),

@@ -15,6 +15,14 @@ class Stretch {
     required this.chipBackground,
     required this.chipForeground,
     required this.zoneColor,
+    this.holdLabel = 'Hold',
+    this.holdPing = false,
+    this.breathCycles = false,
+    this.tagText,
+    this.photos = const {},
+    this.wordsOnly = false,
+    this.breathHolds = const {},
+    this.breathSeconds = 5,
   });
 
   final String key;
@@ -34,7 +42,35 @@ class Stretch {
   final Color chipForeground;
   final Color zoneColor;
 
-  String get tag => 'Body · $zone';
+  /// The word on a hold's countdown: 'Hold', or 'Breathe' where the hold is
+  /// a rest with the eyes closed.
+  final String holdLabel;
+
+  /// A ping when a hold ends, for a hold done with the eyes closed.
+  final bool holdPing;
+
+  /// A hold counted in breaths ('3 deep breaths') shows each breath in and
+  /// out, not seconds.
+  final bool breathCycles;
+
+  /// The chip over the name, when it is not the body zone.
+  final String? tagText;
+
+  /// A photo for a step without a clip, by index: a `/media` path, https
+  /// address or app asset.
+  final Map<int, String> photos;
+
+  /// A step with neither clip nor photo shows its words alone, with no box
+  /// above them.
+  final bool wordsOnly;
+
+  /// Holds breathed rather than counted, by index: how many breaths each.
+  final Map<int, int> breathHolds;
+
+  /// How long one of those breaths takes, half in and half out.
+  final int breathSeconds;
+
+  String get tag => tagText ?? 'Body · $zone';
 
   String photoUrl(int step) =>
       'https://www.getsowaka.com/breathe/image/$imageDir/${step + 1}.jpeg';
@@ -51,15 +87,16 @@ const stretches = [
     steps: [
       'Rub your palms together quickly until they feel warm.',
       'Close your eyes and cup your warm palms gently over them.',
-      'No pressure — just warmth and complete darkness.',
-      'Stay here for 30 seconds and breathe slowly.',
+      'Keep your eyes closed, slowly breathe for 30 sec. Open your eyes when you hear a ping.',
       'Open your eyes. Trace a slow figure-eight in the air with your gaze.',
     ],
-    pauseSteps: [2, 3],
+    pauseSteps: [2],
     imageDir: 'eyes',
     chipBackground: Color(0xFFF5ECDB),
     chipForeground: Color(0xFFB07B26),
     zoneColor: Color(0xFFC98A2E),
+    holdLabel: 'Breathe',
+    holdPing: true,
   ),
   Stretch(
     key: 'neck',
@@ -78,6 +115,7 @@ const stretches = [
     chipBackground: Color(0xFFEDE5F0),
     chipForeground: Color(0xFF7A5C90),
     zoneColor: Color(0xFF8A6AA0),
+    breathCycles: true,
   ),
   Stretch(
     key: 'shoulders',
@@ -116,6 +154,7 @@ const stretches = [
     chipBackground: Color(0xFFF6E2D6),
     chipForeground: Color(0xFFB0502E),
     zoneColor: Color(0xFFBE5A36),
+    breathCycles: true,
   ),
   Stretch(
     key: 'wrists',
@@ -166,9 +205,18 @@ int pauseSeconds(String text) {
   final t = text.toLowerCase();
   final seconds = RegExp(r'(\d+)\s*(?:s\b|sec|second)').firstMatch(t);
   if (seconds != null) return int.parse(seconds.group(1)!);
-  final breaths = RegExp(r'(\d+)\s*(?:deep\s*)?breath').firstMatch(t);
-  if (breaths != null) return int.parse(breaths.group(1)!) * 5;
+  final breaths = holdBreaths(text);
+  if (breaths != null) return breaths * 5;
   return 30;
+}
+
+/// Breaths a hold counts in its own words: '3 deep breaths' is 3. Null when
+/// it is timed some other way.
+int? holdBreaths(String text) {
+  final t = text.toLowerCase();
+  if (RegExp(r'(\d+)\s*(?:s\b|sec|second)').hasMatch(t)) return null;
+  final breaths = RegExp(r'(\d+)\s*(?:deep\s*)?breath').firstMatch(t);
+  return breaths == null ? null : int.parse(breaths.group(1)!);
 }
 
 /// One tappable zone on the silhouette, in the artwork's 860 by 1594 space.

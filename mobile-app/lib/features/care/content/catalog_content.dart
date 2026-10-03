@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/care_models.dart';
+import '../presentation/care_theme.dart';
 import 'breathe_content.dart';
 import 'move_content.dart';
 
@@ -34,6 +35,9 @@ List<Stretch> stretchesFrom(CareCatalog catalog) {
           chipBackground: base.chipBackground,
           chipForeground: base.chipForeground,
           zoneColor: base.zoneColor,
+          holdLabel: row['holdLabel'] as String? ?? base.holdLabel,
+          holdPing: row['holdPing'] as bool? ?? base.holdPing,
+          breathCycles: row['breathCycles'] as bool? ?? base.breathCycles,
         );
       }(),
   ];
@@ -85,18 +89,75 @@ List<Mood> moodsFrom(CareCatalog catalog) {
           ],
           poseAsset: base.poseAsset,
           poseUrl: row['poseUrl'] as String?,
+          // The catalogue counts steps from 1; the app from 0.
+          writeSteps: row['writeSteps'] is Map
+              ? {
+                  for (final e in (row['writeSteps'] as Map).entries)
+                    if (int.tryParse('${e.key}') case final n? when n > 0)
+                      n - 1: (e.value as num).toInt(),
+                }
+              : base.writeSteps,
+          sitStep: row['sitStep'] is num
+              ? (row['sitStep'] as num).toInt() - 1
+              : base.sitStep,
+          sitSeconds: (row['sitSeconds'] as num?)?.toInt() ?? base.sitSeconds,
+          readSeconds:
+              (row['readSeconds'] as num?)?.toInt() ?? base.readSeconds,
+          paged: row['paged'] as bool? ?? base.paged,
+          clips: row['clips'] is List
+              ? [
+                  for (final c in row['clips'] as List)
+                    if (c is Map<String, dynamic>) MoveClip.fromJson(c),
+                ]
+              : base.clips,
+          photos: row['photos'] is Map
+              ? {
+                  for (final e in (row['photos'] as Map).entries)
+                    if (int.tryParse('${e.key}') case final n? when n > 0)
+                      n - 1: '${e.value}',
+                }
+              : base.photos,
+          breathHolds: row['breathHolds'] is Map
+              ? {
+                  for (final e in (row['breathHolds'] as Map).entries)
+                    if (int.tryParse('${e.key}') case final n? when n > 0)
+                      n - 1: (e.value as num).toInt(),
+                }
+              : base.breathHolds,
+          breathSeconds:
+              (row['breathSeconds'] as num?)?.toInt() ?? base.breathSeconds,
         );
       }(),
   ];
 }
 
+/// A Breathe exercise that runs one step a page, as the stretch Move's
+/// screen plays: its photos and clips on top, a breathed hold as the disc.
+Stretch stretchFromMood(Mood mood) => Stretch(
+  key: mood.key,
+  zone: mood.label,
+  name: mood.name,
+  sub: mood.sub,
+  steps: mood.steps,
+  pauseSteps: mood.pauseSteps,
+  imageDir: '',
+  chipBackground: CareColors.blueTint,
+  chipForeground: CareColors.blue,
+  zoneColor: mood.color,
+  tagText: mood.tag,
+  photos: mood.photos,
+  wordsOnly: true,
+  breathHolds: mood.breathHolds,
+  breathSeconds: mood.breathSeconds,
+);
+
 /// Icons for the six life areas, by id; the words come from the catalogue.
 IconData lifeAreaIcon(String id) => switch (id) {
-  'work' => Icons.work_outline_rounded,
-  'movement' => Icons.fitness_center_rounded,
-  'hobbies' => Icons.palette_outlined,
-  'social' => Icons.groups_outlined,
-  'relationship' => Icons.favorite_border_rounded,
-  'family' => Icons.home_outlined,
+  'work' => Icons.work_rounded,
+  'movement' => Icons.directions_run_rounded,
+  'hobbies' => Icons.palette_rounded,
+  'social' => Icons.groups_rounded,
+  'relationship' => Icons.favorite_rounded,
+  'family' => Icons.family_restroom_rounded,
   _ => Icons.circle_outlined,
 };

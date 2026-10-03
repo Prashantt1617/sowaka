@@ -37,7 +37,7 @@ class HelpOnboarding extends StatefulWidget {
   State<HelpOnboarding> createState() => _HelpOnboardingState();
 }
 
-enum _Screen { questions, result, review }
+enum _Screen { questions, review }
 
 class _HelpOnboardingState extends State<HelpOnboarding> {
   late HelpIntake _intake = widget.initial ?? HelpIntake.empty;
@@ -48,7 +48,6 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
   bool _editing = false;
   String _message = '';
   bool _saving = false;
-  HelpMatchResult? _result;
 
   static const _labels = [
     'Your world',
@@ -158,12 +157,11 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final result = await widget.service.saveIntake(_intake);
+      await widget.service.saveIntake(_intake);
       if (!mounted) return;
-      setState(() {
-        _result = result;
-        _screen = _Screen.result;
-      });
+      // Straight back to Help, where the matched counsellor's card is: a
+      // landing screen in between only said the same thing twice.
+      widget.onDone();
     } catch (error) {
       if (!mounted) return;
       showAppToast(
@@ -171,25 +169,6 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         error is TalkApiException
             ? error.message
             : 'Could not save your answers. Try again.',
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _accept(String counsellorId) async {
-    setState(() => _saving = true);
-    try {
-      final match = await widget.service.acceptCounsellor(counsellorId);
-      if (!mounted) return;
-      setState(() => _result = HelpMatchResult(match: match));
-    } catch (error) {
-      if (!mounted) return;
-      showAppToast(
-        context,
-        error is TalkApiException
-            ? error.message
-            : 'Could not save that. Try again.',
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -212,7 +191,6 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         switch (_screen) {
           _Screen.questions => _questionScreen(),
           _Screen.review => _reviewScreen(),
-          _Screen.result => _resultScreen(),
         },
         if (_saving)
           const Positioned.fill(
@@ -445,7 +423,7 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
           _editing
               ? 'Done'
               : step == 3
-              ? 'See my starting point'
+              ? 'See my counsellor'
               : 'Continue',
           icon: Icons.arrow_forward_rounded,
           onTap: _canContinue ? _advance : null,
@@ -472,226 +450,6 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
         ),
       ],
     );
-  }
-
-  Widget _resultScreen() {
-    final result = _result;
-    final match = result?.match;
-    final noMatch = result?.noMatch;
-    final blank = _intake.isBlank;
-    final topics = _recommendations();
-    final goal = helpGoalById(_intake.goal);
-    return ListView(
-      key: const ValueKey('onboarding-result'),
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.check_rounded, size: 16, color: CareColors.blue),
-            const SizedBox(width: 6),
-            const Text(
-              'A place to begin',
-              style: TextStyle(
-                fontFamily: careFont,
-                color: CareColors.blue,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            CareLink(
-              'Edit answers',
-              icon: null,
-              onTap: () => setState(() => _screen = _Screen.review),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const CareEyebrow('Welcome to your space'),
-        const SizedBox(height: 10),
-        const CareHeading('A little support,\nat your own pace.', size: 30),
-        const SizedBox(height: 12),
-        CareCopy(
-          blank
-              ? 'Take your time exploring.\nYou can share more whenever you’re ready.'
-              : 'Here’s a starting point from what you shared.\nYou can always choose differently.',
-        ),
-        const SizedBox(height: 22),
-        if (match != null)
-          CareCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CareEyebrow(
-                  match.unmet.isEmpty
-                      ? 'Suggested counsellor'
-                      : 'Your counsellor, as chosen',
-                ),
-                const SizedBox(height: 16),
-                CounsellorPerson(counsellor: match.counsellor),
-                const SizedBox(height: 16),
-                ReasonList(match.reasons),
-                if (match.unmet.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  UnmetNote(match.unmet),
-                ],
-                const SizedBox(height: 18),
-                CarePrimaryButton(
-                  'Go to Help',
-                  icon: Icons.arrow_forward_rounded,
-                  onTap: widget.onDone,
-                ),
-              ],
-            ),
-          )
-        else if (noMatch != null)
-          CareCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const CareEyebrow('Let’s keep your preferences in view'),
-                const SizedBox(height: 12),
-                const CareSectionTitle('Nobody fits every preference you set.'),
-                const SizedBox(height: 8),
-                CareCopy(
-                  'The closest is ${noMatch.counsellor.name}. Your choices haven’t been changed.',
-                  size: 13.5,
-                ),
-                const SizedBox(height: 14),
-                CounsellorPerson(counsellor: noMatch.counsellor),
-                const SizedBox(height: 12),
-                UnmetNote(noMatch.unmet),
-                const SizedBox(height: 10),
-                ReasonList(noMatch.reasons),
-                const SizedBox(height: 18),
-                CarePrimaryButton(
-                  'Show me who is available anyway',
-                  onTap: () => _accept(noMatch.counsellor.userId),
-                ),
-                const SizedBox(height: 4),
-                Center(
-                  child: CareLink(
-                    'Review counsellor preferences',
-                    onTap: () => _edit(3),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          CareCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const CareSectionTitle('No counsellor is available yet.'),
-                const SizedBox(height: 8),
-                const CareCopy(
-                  'Your answers are saved. A counsellor will be suggested as soon as one is.',
-                ),
-                const SizedBox(height: 16),
-                CarePrimaryButton('Go to Help', onTap: widget.onDone),
-              ],
-            ),
-          ),
-        const SizedBox(height: 24),
-        CareSectionTitle(
-          _intake.topics.isNotEmpty || _intake.needs.isNotEmpty
-              ? 'Topics to start with'
-              : 'A few topics to explore',
-          size: 17,
-        ),
-        const SizedBox(height: 4),
-        const CareCopy('Your selected topics come first.'),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final topic in topics)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: CareColors.paper,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: CareColors.line),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(topic.icon, size: 16, color: CareColors.blue),
-                    const SizedBox(width: 7),
-                    Text(
-                      topic.label,
-                      style: const TextStyle(
-                        fontFamily: careFont,
-                        color: CareColors.ink,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-        if (goal != null) ...[
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: CareColors.lilac,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const CareEyebrow('What you’d like to work towards'),
-                const SizedBox(height: 8),
-                Text(
-                  goal.label,
-                  style: const TextStyle(
-                    fontFamily: careFont,
-                    color: CareColors.ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
-                    height: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        const SizedBox(height: 20),
-        const CareMicro(
-          'Your answers stay with you and your counsellor. Nobody at your company sees them.',
-          align: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  List<HelpOption> _recommendations() {
-    final ordered = [
-      for (final id in _intake.topics)
-        if (id != 'other' && id != 'unsure') id,
-    ];
-    final goalTopic = switch (_intake.goal) {
-      'relationship' => 'relationships',
-      '' => null,
-      _ => 'self',
-    };
-    if (goalTopic != null) ordered.add(goalTopic);
-    final ids = <String>{
-      ...ordered,
-      'self',
-      'work',
-      'relationships',
-      'change',
-    }.take(4);
-    return [for (final id in ids) helpTopicById(id)!];
   }
 
   Widget _reviewScreen() {
@@ -721,22 +479,13 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
             'Counsellor’s gender: ${_intake.gender.isEmpty ? 'No preference' : helpGenderLabel(_intake.gender)}',
       ),
     ];
-    final canReturn = _result != null || widget.onCancel != null;
+    final canReturn = widget.onCancel != null;
     return ListView(
       key: const ValueKey('onboarding-review'),
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
       children: [
         if (canReturn)
-          CareBackLink(
-            'Your space',
-            onTap: () {
-              if (_result != null) {
-                setState(() => _screen = _Screen.result);
-              } else {
-                widget.onCancel?.call();
-              }
-            },
-          ),
+          CareBackLink('Help', onTap: () => widget.onCancel?.call()),
         const SizedBox(height: 14),
         const CareEyebrow('A little about you'),
         const SizedBox(height: 10),
@@ -784,18 +533,11 @@ class _HelpOnboardingState extends State<HelpOnboarding> {
             ),
           ),
         const SizedBox(height: 22),
-        if (_result != null)
-          CarePrimaryButton(
-            'Back to my space',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () => setState(() => _screen = _Screen.result),
-          )
-        else
-          CarePrimaryButton(
-            'Save and see my starting point',
-            icon: Icons.arrow_forward_rounded,
-            onTap: _save,
-          ),
+        CarePrimaryButton(
+          'Save answers',
+          icon: Icons.arrow_forward_rounded,
+          onTap: _save,
+        ),
       ],
     );
   }

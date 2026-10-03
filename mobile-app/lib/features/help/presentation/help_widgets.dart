@@ -7,10 +7,19 @@ import '../../talk/presentation/talk_format.dart';
 
 /// A counsellor's face: their photo, or their initials on a soft tile.
 class CounsellorFace extends StatelessWidget {
-  const CounsellorFace({super.key, required this.counsellor, this.size = 64});
+  const CounsellorFace({
+    super.key,
+    required this.counsellor,
+    this.size = 64,
+    this.round = false,
+  });
 
   final Counsellor counsellor;
   final double size;
+
+  /// A plain circle, as the profile draws them, rather than the arch Help
+  /// uses elsewhere.
+  final bool round;
 
   @override
   Widget build(BuildContext context) {
@@ -21,19 +30,19 @@ class CounsellorFace extends StatelessWidget {
         .take(2)
         .map((w) => w.isEmpty ? '' : w[0].toUpperCase())
         .join();
+    final shape = round
+        ? BorderRadius.circular(size * 0.5)
+        : BorderRadius.only(
+            topLeft: Radius.circular(size * 0.5),
+            topRight: Radius.circular(size * 0.5),
+            bottomLeft: Radius.circular(size * 0.2),
+            bottomRight: Radius.circular(size * 0.2),
+          );
     final fallback = Container(
       width: size,
       height: size,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: CareColors.peach,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(size * 0.5),
-          topRight: Radius.circular(size * 0.5),
-          bottomLeft: Radius.circular(size * 0.2),
-          bottomRight: Radius.circular(size * 0.2),
-        ),
-      ),
+      decoration: BoxDecoration(color: CareColors.peach, borderRadius: shape),
       child: Text(
         initials,
         style: TextStyle(
@@ -46,12 +55,7 @@ class CounsellorFace extends StatelessWidget {
     );
     if (url == null || url.isEmpty) return fallback;
     return ClipRRect(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(size * 0.5),
-        topRight: Radius.circular(size * 0.5),
-        bottomLeft: Radius.circular(size * 0.2),
-        bottomRight: Radius.circular(size * 0.2),
-      ),
+      borderRadius: shape,
       child: Image(
         image: avatarImageProvider(url),
         width: size,
@@ -216,6 +220,58 @@ class FocusChips extends StatelessWidget {
 }
 
 /// 'Counsellor   Ananya Rao', one line of a summary.
+/// A counsellor as the list shows them: the person, two focus areas at
+/// most, and an arrow. The whole card opens their profile.
+class CounsellorListCard extends StatelessWidget {
+  const CounsellorListCard({
+    super.key,
+    required this.counsellor,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Counsellor counsellor;
+  final VoidCallback onTap;
+
+  /// Lines under the person and before the arrow row, when a page has more
+  /// to say on the same card.
+  final List<Widget>? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = counsellor;
+    return CareCard(
+      key: ValueKey('counsellor-${c.userId}'),
+      onTap: onTap,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CounsellorPerson(counsellor: c),
+          ...?trailing,
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: c.focusLabels.isEmpty
+                    ? const SizedBox.shrink()
+                    : CareCopy(c.focusLabels.take(2).join(' · '), size: 12.5),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: CareColors.blue,
+                size: 20,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SummaryLine extends StatelessWidget {
   const SummaryLine(this.label, this.value, {super.key});
 
@@ -354,6 +410,67 @@ class SessionRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One half of the pair a finished session carries: how they felt before it,
+/// and what they made of it after.
+class BeforeAfterBox extends StatelessWidget {
+  const BeforeAfterBox({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.note,
+    this.gold = false,
+  });
+
+  final String label;
+  final String value;
+  final String note;
+  final bool gold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: CareColors.bg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CareEyebrow(label),
+          const SizedBox(height: 4),
+          Text(
+            value.isEmpty ? 'Not answered' : value,
+            style: TextStyle(
+              fontFamily: careFont,
+              color: value.isEmpty
+                  ? CareColors.muted
+                  : gold
+                  ? const Color(0xFFE0A526)
+                  : CareColors.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: gold ? 1 : 0,
+            ),
+          ),
+          if (note.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              '“$note”',
+              style: const TextStyle(
+                fontFamily: careFont,
+                color: CareColors.muted,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -20,13 +20,7 @@ class ChooseSomeoneScreen extends StatelessWidget {
     return CarePage(
       backLabel: 'Help',
       children: [
-        const CareEyebrow('Choose someone else'),
-        const SizedBox(height: 10),
-        const CareHeading('What would you\nlike to choose first?', size: 30),
-        const SizedBox(height: 12),
-        const CareCopy(
-          'Find your next conversation in the way that works for you.',
-        ),
+        const CareHeading('How would you\nlike to choose?', size: 30),
         const SizedBox(height: 22),
         RouteCard(
           key: const ValueKey('route-counsellor'),
@@ -60,10 +54,6 @@ class ChooseSomeoneScreen extends StatelessWidget {
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        const CareMicro(
-          'Your current counsellor and session history stay in place while you explore.',
         ),
       ],
     );
