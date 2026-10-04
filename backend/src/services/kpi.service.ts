@@ -833,8 +833,21 @@ export async function assignedParametersFor(
   org: string,
   userId: string,
   period: string,
+  /**
+   * With nothing assigned for this cycle, fall back to the latest earlier
+   * assignment. Only for showing someone what they are reviewed on — a
+   * review itself still needs the cycle's own assignment.
+   */
+  options: { fallbackToLatest?: boolean } = {},
 ): Promise<Array<{ id: string; title: string; subtitle: string; description: string; weight: number }>> {
-  const doc = await kpiAssignments().findOne({ org, userId, period });
+  const doc =
+    (await kpiAssignments().findOne({ org, userId, period })) ??
+    (options.fallbackToLatest
+      ? await kpiAssignments().findOne(
+          { org, userId, period: { $lt: period } },
+          { sort: { period: -1 } },
+        )
+      : null);
   if (!doc) return [];
   const params = await kpiParameters()
     .find({ _id: { $in: doc.parameterIds.map((id) => new ObjectId(id)) } })

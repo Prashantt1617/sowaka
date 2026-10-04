@@ -2734,8 +2734,7 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     final selected = periods.contains(_selectedPeriod)
         ? _selectedPeriod!
         : period;
-    final selectedIndex = history.indexWhere((r) => r.period == selected);
-    final record = selectedIndex >= 0 ? history[selectedIndex] : null;
+    final record = history.where((r) => r.period == selected).firstOrNull;
     final isCurrent = selected == period;
     final ownPage = widget.memberId == null;
     // Only a report can be reviewed from here: not yourself, and not the
@@ -2787,63 +2786,100 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                // The score card always shows the latest reviewed month, even
-                // while an unreviewed one is picked below — a pending month has
-                // no score of its own to show.
+                // Before the first review (node 2406:74746): who reviews
+                // you and why, where someone is most likely to wonder.
+                if (history.isEmpty && ownPage) ...[
+                  _GrowIntroBanner(
+                    managerName: _nonEmpty(widget.data.approverName),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // The score card shows the month picked below when it was
+                // reviewed, else the latest review — a pending or missed
+                // month has no score of its own to show.
                 if (history.isEmpty)
                   _EmptyScoreCard(current: period)
                 else
                   _GrowthScoreSection(
                     history: history,
-                    selectedIndex: selectedIndex >= 0 ? selectedIndex : null,
-                    onSelect: (index) =>
-                        setState(() => _selectedPeriod = history[index].period),
+                    selectedPeriod: selected,
+                    currentPeriod: period,
+                    onSelect: (picked) =>
+                        setState(() => _selectedPeriod = picked),
                   ),
                 const SizedBox(height: 12),
                 _MonthStatusRow(
                   label: _shortPeriod(selected),
                   score: record?.overallScore,
                   pending: record == null && isCurrent,
+                  warmPending: canReview,
                   missed: record == null && !isCurrent,
                   onTap: periods.length > 1
                       ? () => _pickMonth(periods, selected)
                       : null,
                 ),
                 const SizedBox(height: 12),
-                // A reviewed month: the scores and the manager's notes.
+                // A reviewed month: each parameter's score and the manager's
+                // insight, one card each (node 2406:74944).
                 if (record != null) ...[
                   // A review sent this cycle can still be edited by the person
                   // who wrote it, until the cycle closes.
                   if (isCurrent && canReview) ...[
-                    _FeedbackSubmittedCard(period: period, onEdit: openForm),
+                    _FeedbackSubmittedCard(onEdit: openForm),
                     const SizedBox(height: 12),
                   ],
-                  _GrowthMonthCard(
-                    record: record,
-                    expanded: true,
-                    collapsible: false,
-                    onToggle: () {},
-                  ),
+                  for (final (index, param) in record.parameters.indexed)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == record.parameters.length - 1 ? 0 : 12,
+                      ),
+                      child: _GrowthParamCard(
+                        param: param,
+                        // Older records carried one note for the whole
+                        // review; show it rather than leave the insight blank.
+                        fallback: record.parameters
+                            .map((item) => item.note.trim())
+                            .firstWhere(
+                              (value) => value.isNotEmpty,
+                              orElse: () => '',
+                            ),
+                      ),
+                    ),
                 ]
                 // This month, not reviewed yet.
                 else if (isCurrent) ...[
                   if (canReview)
-                    _FeedbackDuePeriodCard(
-                      period: period,
-                      onGiveFeedback: openForm,
-                    )
-                  else if (ownPage && widget.data.myParameters.isNotEmpty)
-                    // What the month is reviewed on: one line each, nothing to open.
-                    _ParameterList(
-                      names: [
-                        for (final param in widget.data.myParameters)
-                          param.name,
-                      ],
+                    _FeedbackDuePeriodCard(onGiveFeedback: openForm)
+                  else if (ownPage && widget.data.myParameters.isNotEmpty) ...[
+                    // What the month is reviewed on (node 2412:80204): a line
+                    // saying so, then each KPI with HR's guidance behind it.
+                    const _GrowNote(
+                      'Your performance is evaluated by your manager across '
+                      'below parameters.',
                     ),
+                    const SizedBox(height: 12),
+                    for (final (index, param)
+                        in widget.data.myParameters.indexed)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom:
+                              index == widget.data.myParameters.length - 1
+                              ? 0
+                              : 12,
+                        ),
+                        child: _GuidanceCard(
+                          name: param.name,
+                          guidance:
+                              param.description ?? param.subtitle ?? '',
+                          initiallyOpen: index == 0,
+                        ),
+                      ),
+                  ],
                 ]
                 // A past month nobody reviewed.
                 else
                   const _FeedbackMissedCard(),
+
               ],
             ),
           ),
@@ -2926,54 +2962,84 @@ List<String> _monthsBetween(String first, String last) {
   return out.isEmpty ? [last] : out;
 }
 
-/// Who reviews you, and why (node 2406:74936). Shown until the first review
-/// arrives, which is when someone is most likely to wonder what Grow is for.
-/// The parameters a month is reviewed on, as a plain list.
-class _ParameterList extends StatelessWidget {
-  const _ParameterList({required this.names});
+/// Before the first review (node 2406:74746): who reviews you and why.
+class _GrowIntroBanner extends StatelessWidget {
+  const _GrowIntroBanner({required this.managerName});
 
-  final List<String> names;
+  final String? managerName;
 
   @override
   Widget build(BuildContext context) {
+    final who = managerName == null
+        ? 'Your manager'
+        : 'Your manager, $managerName,';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFFEEF0FF),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFEBEBEB)),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
-            padding: EdgeInsets.only(top: 8, bottom: 4),
+            padding: EdgeInsets.only(top: 4),
+            child: Text('🌱', style: TextStyle(fontSize: 30, height: 1)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Text(
-              'Reviewed on',
-              style: TextStyle(
+              '$who reviews your performance against your KPIs every '
+              "month, so you know what's going well and where you can grow.",
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Color(0xFF484848),
                 fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF717171),
-                letterSpacing: 0.4,
+                height: 16.2 / 12,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          for (final name in names)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF222222),
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
+}
+
+/// A quiet line in a card of its own (node 2412:80204).
+class _GrowNote extends StatelessWidget {
+  const _GrowNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFF0EEF8), width: 1.114),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D000000),
+          blurRadius: 10,
+          offset: Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF717171),
+        fontSize: 12.5,
+        height: 18.75 / 12.5,
+      ),
+    ),
+  );
 }
 
 /// The score card before there is any score (node 2406:74872): the months
@@ -3084,13 +3150,14 @@ class _EmptyChartPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // This month's axis label in brand blue, the rest muted.
+    // The last month on the axis in brand blue, the rest muted.
     for (var i = 0; i < labels.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
           text: labels[i],
           style: TextStyle(
-            color: i == 0 ? _brand : _muted,
+            fontFamily: 'Sora',
+            color: i == labels.length - 1 ? _brand : _muted,
             fontSize: 9,
             fontWeight: FontWeight.w700,
           ),
@@ -3162,11 +3229,16 @@ class _MonthStatusRow extends StatelessWidget {
     required this.pending,
     required this.missed,
     required this.onTap,
+    this.warmPending = false,
   });
 
   final String label;
   final double? score;
   final bool pending;
+
+  /// Orange on a report's page, where "pending" is the viewer's to act on;
+  /// yellow on one's own, where it is only news (nodes 2406:75231, 2412:80204).
+  final bool warmPending;
   final bool missed;
   final VoidCallback? onTap;
 
@@ -3186,6 +3258,13 @@ class _MonthStatusRow extends StatelessWidget {
               color: missed ? const Color(0xFFEBEBEB) : const Color(0xFFF0EEF8),
               width: 1.114,
             ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000),
+                blurRadius: 10,
+                offset: Offset(0, 2),
+              ),
+            ],
           ),
           child: Row(
             children: [
@@ -3210,16 +3289,20 @@ class _MonthStatusRow extends StatelessWidget {
                 ),
               const Spacer(),
               if (pending)
-                const _MonthChip(
+                _MonthChip(
                   text: 'Pending',
-                  background: Color(0xFFFEFDDA),
-                  foreground: Color(0xFFFFCC00),
+                  background: const Color(0xFFFEFDDA),
+                  foreground: warmPending
+                      ? const Color(0xFFFF8D28)
+                      : const Color(0xFFFFCC00),
                 )
               else if (score != null)
                 _MonthChip(
                   text: '${score!.toStringAsFixed(1)} / 5',
-                  background: const Color(0xFFE6F1F8),
-                  foreground: const Color(0xFF0571A6),
+                  background: const Color(0xFFEEF0FF),
+                  foreground: const Color(0xFF675AFF),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
             ],
           ),
@@ -3234,11 +3317,15 @@ class _MonthChip extends StatelessWidget {
     required this.text,
     required this.background,
     required this.foreground,
+    this.fontSize = 14,
+    this.fontWeight = FontWeight.w600,
   });
 
   final String text;
   final Color background;
   final Color foreground;
+  final double fontSize;
+  final FontWeight fontWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -3252,10 +3339,10 @@ class _MonthChip extends StatelessWidget {
         text,
         style: TextStyle(
           color: foreground,
-          fontSize: 14,
-          height: 16.2 / 14,
-          letterSpacing: -0.16,
-          fontWeight: FontWeight.w600,
+          fontSize: fontSize,
+          height: fontSize == 13 ? 19.5 / 13 : 16.2 / 14,
+          letterSpacing: fontSize == 13 ? 0 : -0.16,
+          fontWeight: fontWeight,
         ),
       ),
     );
@@ -3296,7 +3383,7 @@ class _GuidanceCardState extends State<_GuidanceCard> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
-            blurRadius: 7,
+            blurRadius: 14,
             offset: Offset(0, 2),
           ),
         ],
@@ -3562,14 +3649,19 @@ class _MonthPickerSheetState extends State<_MonthPickerSheet> {
 class _GrowthScoreSection extends StatelessWidget {
   const _GrowthScoreSection({
     required this.history,
-    required this.selectedIndex,
+    required this.selectedPeriod,
+    required this.currentPeriod,
     required this.onSelect,
     this.deltaMessageFor,
   });
 
   final List<GrowthRecord> history;
-  final int? selectedIndex;
-  final ValueChanged<int> onSelect;
+
+  /// The month picked below. A month with no review of its own shows the
+  /// latest review here, as the design does for a pending or missed month.
+  final String selectedPeriod;
+  final String currentPeriod;
+  final ValueChanged<String> onSelect;
 
   /// The sentence shown when the points chip is tapped, given the month's
   /// label and the change. Null leaves the chip inert.
@@ -3577,27 +3669,24 @@ class _GrowthScoreSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = history.map((record) => record.overallScore).toList();
-    final effectiveIndex = history.isEmpty
-        ? 0
-        : (selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
-    final selected = history.isEmpty ? null : history[effectiveIndex];
-    final previous = effectiveIndex > 0
-        ? history[effectiveIndex - 1].overallScore
+    final picked = history.indexWhere((r) => r.period == selectedPeriod);
+    final shownIndex = picked >= 0 ? picked : history.length - 1;
+    final shown = history[shownIndex];
+    final previous = shownIndex > 0
+        ? history[shownIndex - 1].overallScore
         : null;
 
-    // Score and chart share one card: tapping a point moves the score above it,
-    // so splitting them across two cards broke that relationship visually.
+    // Score and chart share one card (node 2406:74944): the month named
+    // above the score is the point the chart has filled in.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
-            blurRadius: 7,
+            blurRadius: 14,
             offset: Offset(0, 2),
           ),
         ],
@@ -3605,33 +3694,37 @@ class _GrowthScoreSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The month is named once on this page, by the row directly below
-          // this card — which is also what changes it. Printing it here too
-          // said the same month twice, one line apart.
-          _OverallScoreCard(
-            overall: selected?.overallScore ?? 0,
-            previousScore: previous,
-            showAveragesNote: true,
-            boxed: false,
-            onDeltaTap: (deltaMessageFor == null || selected == null)
-                ? null
-                : (delta) {
-                    showAppToast(
-                      context,
-                      deltaMessageFor!(_periodTitle(selected.period), delta),
-                    );
-                  },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: _OverallScoreCard(
+              eyebrow: _periodTitle(shown.period),
+              labelColor: const Color(0xFF484848),
+              overall: shown.overallScore,
+              previousScore: previous,
+              showAveragesNote: true,
+              boxed: false,
+              onDeltaTap: deltaMessageFor == null
+                  ? null
+                  : (delta) {
+                      showAppToast(
+                        context,
+                        deltaMessageFor!(_periodTitle(shown.period), delta),
+                      );
+                    },
+            ),
           ),
-          if (history.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _GrowthChart(
-              records: history,
-              values: values,
-              color: const Color(0xFF0571A6),
-              selectedIndex: effectiveIndex,
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: _GrowthChart(
+              periods: _GrowthChart.windowEndingAt(currentPeriod),
+              scores: {for (final r in history) r.period: r.overallScore},
+              highlightPeriod: shown.period,
+              currentPeriod: currentPeriod,
+              firstReviewed: history.first.period,
               onSelect: onSelect,
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3654,7 +3747,7 @@ class _GrowthPageTopBar extends StatelessWidget {
     // Per node 861:7716: this row sits flush against AppHomeHeader above
     // it — both white, no visible seam — unlike the grey fill this had.
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       decoration: const BoxDecoration(color: Colors.white),
       child: Row(
         children: [
@@ -3666,7 +3759,7 @@ class _GrowthPageTopBar extends StatelessWidget {
               height: 18,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3676,10 +3769,12 @@ class _GrowthPageTopBar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: 'Sora',
                     color: Color(0xFF222222),
                     fontSize: 16,
-                    height: 24 / 16,
-                    fontWeight: FontWeight.w700,
+                    height: 16.2 / 16,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
@@ -3687,8 +3782,11 @@ class _GrowthPageTopBar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: 'Sora',
                     color: Color(0xFF717171),
-                    fontSize: 12.5,
+                    fontSize: 12,
+                    height: 16.2 / 12,
+                    letterSpacing: -0.16,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -3701,99 +3799,92 @@ class _GrowthPageTopBar extends StatelessWidget {
   }
 }
 
-/// The counterpart for a period whose review has been sent. It stays editable
-/// until the cycle closes, and the status stays Submitted throughout — a later
-/// edit replaces the review rather than starting a new one.
 class _FeedbackSubmittedCard extends StatelessWidget {
-  const _FeedbackSubmittedCard({required this.period, required this.onEdit});
-
-  final String period;
+  const _FeedbackSubmittedCard({required this.onEdit});
 
   /// Reopens the review. Only the person who wrote it sees this card: the
   /// employee's own page shows the month's scores instead.
   final VoidCallback onEdit;
 
   @override
+  Widget build(BuildContext context) => _GrowActionCard(
+    background: const Color(0xFFF4FAF1),
+    border: const Color(0xFF34C759),
+    text: 'You can edit the feedback till the cycle ends.',
+    buttonColor: const Color(0xFF34C759),
+    onTap: onEdit,
+  );
+}
+
+/// A line and a button in a tinted card: "feedback is due" in amber, "you can
+/// still edit it" in green (nodes 2406:75231, 2412:81964).
+class _GrowActionCard extends StatelessWidget {
+  const _GrowActionCard({
+    required this.background,
+    required this.border,
+    required this.text,
+    required this.buttonColor,
+    required this.onTap,
+  });
+
+  final Color background;
+  final Color border;
+  final String text;
+  final Color buttonColor;
+  final VoidCallback onTap;
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3FAF5),
+        color: background,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBFE3CC)),
+        border: Border.all(color: border, width: 1.114),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _periodTitle(period),
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCF0E3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Submitted',
-                  style: TextStyle(
-                    color: Color(0xFF2F7A4F),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            text,
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF717171),
+              fontSize: 12.5,
+              height: 18.75 / 12.5,
+            ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'You can keep editing this review until the cycle ends.',
-            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
-          ),
-          ...[
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: onEdit,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBFE3CC)),
-                    ),
-                    child: const Text(
-                      'Edit feedback',
-                      style: TextStyle(
-                        color: Color(0xFF2F7A4F),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+          Material(
+            color: buttonColor,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onTap,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  'Give Feedback',
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: Colors.white,
+                    fontSize: 10,
+                    height: 16.2 / 10,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3801,72 +3892,18 @@ class _FeedbackSubmittedCard extends StatelessWidget {
 }
 
 class _FeedbackDuePeriodCard extends StatelessWidget {
-  const _FeedbackDuePeriodCard({
-    required this.period,
-    required this.onGiveFeedback,
-  });
+  const _FeedbackDuePeriodCard({required this.onGiveFeedback});
 
-  final String period;
   final VoidCallback onGiveFeedback;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF5C86B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _periodTitle(period),
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Feedback is due for this month',
-            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Material(
-              color: const Color(0xFFE8862B),
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: onGiveFeedback,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  child: Text(
-                    'Give Feedback',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _GrowActionCard(
+    background: const Color(0xFFFAF8F1),
+    border: const Color(0xFFFFCC00),
+    text: 'Feedback is due for this month',
+    buttonColor: const Color(0xFFFF8D28),
+    onTap: onGiveFeedback,
+  );
 }
 
 /// The feedback form as a pushed route. Grow and the team-member profile both

@@ -521,7 +521,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     // nobody has reviewed yet shows these, so someone knows what they will be
     // measured on before the review arrives — once it does, the manager's
     // notes take their place.
-    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period)).map(
+    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true })).map(
       (p) => ({
         parameterId: p.id,
         name: p.title,

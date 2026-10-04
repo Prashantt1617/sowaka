@@ -444,145 +444,6 @@ class _FeedbackGivenCardState extends State<_FeedbackGivenCard> {
   }
 }
 
-class _MyFeedbackCard extends StatelessWidget {
-  const _MyFeedbackCard({
-    required this.history,
-    required this.approverName,
-    required this.onOpen,
-  });
-
-  final List<GrowthRecord> history;
-  final String approverName;
-  final VoidCallback? onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final latest = history.isEmpty ? null : history.last;
-    if (latest == null) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: MColors.line),
-        ),
-        child: Row(
-          children: [
-            const IconBox(
-              icon: Icons.show_chart_rounded,
-              color: MColors.plum,
-              tint: MColors.plumTint,
-              size: 38,
-              iconSize: 19,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Your feedback',
-                    style: TextStyle(
-                      color: MColors.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    "Feedback hasn't been provided yet by $approverName.",
-                    style: const TextStyle(
-                      color: MColors.inkSoft,
-                      fontSize: 12.5,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    final previous = history.length >= 2
-        ? history[history.length - 2].overallScore
-        : null;
-    final delta = previous == null ? null : latest.overallScore - previous;
-    return PressableCard(
-      onTap: onOpen,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'YOUR FEEDBACK',
-                  style: TextStyle(
-                    color: Color(0xFF6A7282),
-                    fontSize: 11,
-                    letterSpacing: .6,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (delta != null)
-                Text(
-                  '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)} pts',
-                  style: TextStyle(
-                    color: delta >= 0
-                        ? const Color(0xFF16A34A)
-                        : const Color(0xFFDC2626),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                latest.overallScore.toStringAsFixed(1),
-                style: const TextStyle(
-                  color: Color(0xFF101828),
-                  fontSize: 32,
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '/ 5',
-                  style: TextStyle(
-                    color: Color(0xFF6A7282),
-                    fontSize: 15,
-                    height: 1,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                _periodTitle(latest.period),
-                style: const TextStyle(
-                  color: MColors.inkSoft,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Team row in the Grow tab; the badge shows whether this period's review is in.
 class _GrowthTeamRow extends StatelessWidget {
   const _GrowthTeamRow({
@@ -599,7 +460,7 @@ class _GrowthTeamRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return PressableCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(17),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           _TeamMemberPhoto(member: member, size: 56),
@@ -623,49 +484,28 @@ class _GrowthTeamRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Status badges per node 781:7023 / 781:7016: rounded
-                    // squares, green with the exported check tick once the
-                    // review is in, plain amber while it is still due.
-                    if (reviewed)
-                      Container(
-                        width: 14,
-                        height: 14,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00C950),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white, width: 1.114),
-                        ),
-                        child: SvgPicture.asset(
-                          'assets/icons/feedback_check_tick.svg',
-                          width: 10,
-                          height: 10,
-                        ),
-                      )
-                    else
-                      // The same "Pending" pill the month cards use — a bare
-                      // amber square said nothing about what was missing.
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEFDDA),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Pending',
-                          style: TextStyle(
-                            fontFamily: 'Sora',
-                            color: Color(0xFFFFCC00),
-                            fontSize: 12,
-                            height: 16.2 / 12,
-                            letterSpacing: -0.16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    // Status badge (node 2395:70619): a 16px rounded square,
+                    // green with the tick once the review is in, amber while
+                    // it is still due.
+                    Container(
+                      width: 16,
+                      height: 16,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: reviewed
+                            ? const Color(0xFF00C950)
+                            : const Color(0xFFFFAF40),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.white, width: 1.114),
                       ),
+                      child: reviewed
+                          ? SvgPicture.asset(
+                              'assets/icons/feedback_check_tick.svg',
+                              width: 10,
+                              height: 10,
+                            )
+                          : null,
+                    ),
                   ],
                 ),
                 if (member.designation.isNotEmpty)
@@ -696,366 +536,285 @@ class _GrowthTeamRow extends StatelessWidget {
   }
 }
 
+/// Six months of overall scores (node 2406:74944): the five before this one
+/// and this one, which has no point yet. A reviewed month is a hollow point
+/// on the line, a month nobody reviewed sits on the baseline in grey, and
+/// the month whose score is shown above is filled, with the score in a pill
+/// over it. A fixed 0–5 scale and no axis: the pill says the number.
 class _GrowthChart extends StatelessWidget {
   const _GrowthChart({
-    required this.records,
-    required this.values,
-    required this.color,
-    this.selectedIndex,
+    required this.periods,
+    required this.scores,
+    required this.highlightPeriod,
+    required this.currentPeriod,
+    required this.firstReviewed,
     this.onSelect,
   });
 
-  final List<GrowthRecord> records;
-  final List<double> values;
-  final Color color;
+  /// Oldest first, six of them.
+  final List<String> periods;
 
-  /// Which point is highlighted with the value pill; defaults to the last
-  /// (most recent) point when null.
-  final int? selectedIndex;
-  final ValueChanged<int>? onSelect;
+  /// Overall score by period, for the months that were reviewed.
+  final Map<String, double> scores;
 
-  int get _effectiveIndex => selectedIndex ?? values.length - 1;
+  /// The month whose score the card above shows.
+  final String highlightPeriod;
+  final String currentPeriod;
 
-  void _handleTap(Offset localPosition, Size size) {
-    if (onSelect == null || values.isEmpty) return;
-    const left = 28.0;
-    const right = 26.0;
-    final plotWidth = size.width - left - right;
-    final nearest = values.length == 1
-        ? 0
-        : (((localPosition.dx - left) / plotWidth) * (values.length - 1))
-              .round()
-              .clamp(0, values.length - 1);
-    onSelect!(nearest);
+  /// Months before the first review show nothing: there was nothing to miss.
+  final String firstReviewed;
+  final ValueChanged<String>? onSelect;
+
+  /// Where the first and last month sit, as a share of the width.
+  static const edge = 0.055;
+
+  /// The six months ending at [current], oldest first.
+  static List<String> windowEndingAt(String current) {
+    final parts = current.split('-');
+    var year = int.tryParse(parts[0]) ?? DateTime.now().year;
+    var month =
+        int.tryParse(parts.length > 1 ? parts[1] : '') ?? DateTime.now().month;
+    final out = <String>[];
+    for (var i = 0; i < 6; i++) {
+      out.insert(0, '$year-${month.toString().padLeft(2, '0')}');
+      month -= 1;
+      if (month < 1) {
+        month = 12;
+        year -= 1;
+      }
+    }
+    return out;
+  }
+
+  void _handleTap(Offset position, Size size) {
+    if (onSelect == null || periods.length < 2) return;
+    final left = size.width * edge;
+    final step = (size.width - 2 * left) / (periods.length - 1);
+    final index = ((position.dx - left) / step).round().clamp(
+      0,
+      periods.length - 1,
+    );
+    final period = periods[index];
+    // Nothing to open before the first review, or after this month.
+    if (period.compareTo(firstReviewed) < 0 ||
+        period.compareTo(currentPeriod) > 0) {
+      return;
+    }
+    onSelect!(period);
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      SizedBox(
-        height: 158,
-        width: double.infinity,
-        child: LayoutBuilder(
-          builder: (context, constraints) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (details) =>
-                _handleTap(details.localPosition, constraints.biggest),
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: _GrowthChartPainter(values, color, _effectiveIndex),
-            ),
+  Widget build(BuildContext context) => SizedBox(
+    height: 110,
+    width: double.infinity,
+    child: LayoutBuilder(
+      builder: (context, constraints) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (details) =>
+            _handleTap(details.localPosition, constraints.biggest),
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _GrowthChartPainter(
+            periods: periods,
+            scores: scores,
+            highlightPeriod: highlightPeriod,
+            currentPeriod: currentPeriod,
+            firstReviewed: firstReviewed,
           ),
         ),
       ),
-      const SizedBox(height: 6),
-      Padding(
-        padding: const EdgeInsets.only(left: 28, right: 26),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: records.indexed
-              .map(
-                (entry) => GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onSelect == null ? null : () => onSelect!(entry.$1),
-                  child: Text(
-                    _periodLabel(entry.$2.period),
-                    style: TextStyle(
-                      color: entry.$1 == _effectiveIndex
-                          ? color
-                          : MColors.inkFaint,
-                      fontSize: 11,
-                      fontWeight: entry.$1 == _effectiveIndex
-                          ? FontWeight.w800
-                          : FontWeight.w600,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      ),
-    ],
+    ),
   );
 }
 
 class _GrowthChartPainter extends CustomPainter {
-  const _GrowthChartPainter(this.values, this.color, this.selectedIndex);
+  const _GrowthChartPainter({
+    required this.periods,
+    required this.scores,
+    required this.highlightPeriod,
+    required this.currentPeriod,
+    required this.firstReviewed,
+  });
 
-  final List<double> values;
-  final Color color;
-  final int selectedIndex;
+  final List<String> periods;
+  final Map<String, double> scores;
+  final String highlightPeriod;
+  final String currentPeriod;
+  final String firstReviewed;
+
+  static const _blue = Color(0xFF0571A6);
+  static const _grey = Color(0xFF717171);
+  static const _lavender = Color(0xFF7B61FF);
+
+  /// Score 5 and score 0, from the top of the chart. Room above for the pill.
+  static const _top = 14.0;
+  static const _baseline = 76.0;
+  static const _labelTop = 97.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (values.isEmpty) return;
-    var minValue = values.reduce(math.min);
-    var maxValue = values.reduce(math.max);
-    var min = ((minValue - .5) * 2).floor() / 2;
-    var max = ((maxValue + .5) * 2).ceil() / 2;
-    if (max - min < 2) {
-      final middle = (min + max) / 2;
-      min = middle - 1;
-      max = middle + 1;
-    }
-    if (min < 0) {
-      max -= min;
-      min = 0;
-    }
-    if (max > 5) {
-      min -= max - 5;
-      max = 5;
-    }
-    min = math.max(0, min);
-    final range = max - min == 0 ? 1.0 : max - min;
-    const left = 28.0;
-    const right = 26.0;
-    const top = 18.0;
-    const bottom = 8.0;
-    final plotWidth = size.width - left - right;
-    final plotHeight = size.height - top - bottom;
-    double yFor(double value) => top + (1 - (value - min) / range) * plotHeight;
+    if (periods.isEmpty) return;
+    final left = size.width * _GrowthChart.edge;
+    final step = periods.length == 1
+        ? 0.0
+        : (size.width - 2 * left) / (periods.length - 1);
+    double yFor(double value) =>
+        _baseline - (value.clamp(0, 5) / 5) * (_baseline - _top);
 
-    for (var index = 0; index < 5; index++) {
-      final guide = min + range * index / 4;
-      final y = yFor(guide);
-      final grid = Paint()
-        ..color = MColors.line
-        ..strokeWidth = 1;
-      if (index == 0) {
-        canvas.drawLine(Offset(left, y), Offset(size.width - right, y), grid);
+    // One slot per month: where its point is, and what kind of month it was.
+    final points = <Offset?>[];
+    final missed = <bool>[];
+    for (final (index, period) in periods.indexed) {
+      final x = left + index * step;
+      final score = scores[period];
+      if (score != null) {
+        points.add(Offset(x, yFor(score)));
+        missed.add(false);
+      } else if (period.compareTo(firstReviewed) >= 0 &&
+          period.compareTo(currentPeriod) < 0) {
+        points.add(Offset(x, _baseline));
+        missed.add(true);
       } else {
-        const dash = 4.0;
-        for (var x = left; x < size.width - right; x += dash * 2) {
-          canvas.drawLine(
-            Offset(x, y),
-            Offset(math.min(x + dash, size.width - right), y),
-            grid,
-          );
-        }
+        points.add(null);
+        missed.add(false);
       }
+    }
+    final plotted = points.whereType<Offset>().toList();
+
+    if (plotted.length >= 2) {
+      final path = Path()..moveTo(plotted.first.dx, plotted.first.dy);
+      for (final point in plotted.skip(1)) {
+        path.lineTo(point.dx, point.dy);
+      }
+      final area = Path.from(path)
+        ..lineTo(plotted.last.dx, _baseline)
+        ..lineTo(plotted.first.dx, _baseline)
+        ..close();
+      canvas.drawPath(
+        area,
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x487B61FF), Color(0x007B61FF)],
+          ).createShader(Rect.fromLTWH(0, _top, size.width, _baseline - _top)),
+      );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = _blue
+          ..strokeWidth = 2.2
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    // The month on show: a dashed drop to the baseline, the point filled, and
+    // the score in a pill above it.
+    final highlightIndex = periods.indexOf(highlightPeriod);
+    final highlight = highlightIndex >= 0 ? points[highlightIndex] : null;
+    if (highlight != null) {
+      const pillWidth = 36.0;
+      const pillHeight = 18.0;
+      final pillTop = (highlight.dy - 27).clamp(0.0, _baseline);
+      final dash = Paint()
+        ..color = _lavender.withValues(alpha: .4)
+        ..strokeWidth = 1;
+      var y = pillTop + pillHeight;
+      while (y < _baseline) {
+        canvas.drawLine(
+          Offset(highlight.dx, y),
+          Offset(highlight.dx, (y + 3).clamp(0.0, _baseline)),
+          dash,
+        );
+        y += 6;
+      }
+      final pillLeft = (highlight.dx - pillWidth / 2).clamp(
+        0.0,
+        size.width - pillWidth,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(pillLeft, pillTop, pillWidth, pillHeight),
+          const Radius.circular(6),
+        ),
+        Paint()..color = _blue,
+      );
+      final score = scores[highlightPeriod];
       final label = TextPainter(
         text: TextSpan(
-          text: guide.toStringAsFixed(1),
+          text: score == null ? '-/5' : '${score.toStringAsFixed(1)}/5',
           style: const TextStyle(
-            color: MColors.inkFaint,
-            fontSize: 10.5,
+            fontFamily: 'Sora',
+            color: Colors.white,
+            fontSize: 9.5,
             fontWeight: FontWeight.w700,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      label.paint(canvas, Offset(0, y - label.height / 2));
-    }
-    final line = Paint()
-      ..color = color
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final fill = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [color.withValues(alpha: .18), Colors.transparent],
-      ).createShader(Offset.zero & size);
-    final points = values.indexed.map((entry) {
-      final x = values.length == 1
-          ? left + plotWidth / 2
-          : left + entry.$1 * plotWidth / (values.length - 1);
-      final y = yFor(entry.$2.clamp(0, 5));
-      return Offset(x, y);
-    }).toList();
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-    for (final point in points.skip(1)) {
-      path.lineTo(point.dx, point.dy);
-    }
-    final area = Path.from(path)
-      ..lineTo(points.last.dx, top + plotHeight)
-      ..lineTo(points.first.dx, top + plotHeight)
-      ..close();
-    canvas
-      ..drawPath(area, fill)
-      ..drawPath(path, line);
-    for (final entry in points.indexed) {
-      final isSelected = entry.$1 == selectedIndex;
-      canvas.drawCircle(
-        entry.$2,
-        isSelected ? 5.5 : 4,
-        Paint()..color = isSelected ? color : Colors.white,
-      );
-      canvas.drawCircle(
-        entry.$2,
-        isSelected ? 4.25 : 3,
-        Paint()
-          ..color = color
-          ..style = isSelected ? PaintingStyle.fill : PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-    }
-
-    final selected = selectedIndex.clamp(0, values.length - 1);
-    final valueLabel = TextPainter(
-      text: TextSpan(
-        text: values[selected].toStringAsFixed(1),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+      label.paint(
+        canvas,
+        Offset(
+          pillLeft + (pillWidth - label.width) / 2,
+          pillTop + (pillHeight - label.height) / 2,
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final selectedPoint = points[selected];
-    final pillWidth = valueLabel.width + 16;
-    const pillHeight = 23.0;
-    final pillLeft = (selectedPoint.dx - pillWidth / 2).clamp(
-      left,
-      size.width - right - pillWidth,
-    );
-    final pillTop = math.max(0.0, selectedPoint.dy - 31);
-    final pill = RRect.fromRectAndRadius(
-      Rect.fromLTWH(pillLeft, pillTop, pillWidth, pillHeight),
-      const Radius.circular(99),
-    );
-    canvas.drawRRect(pill, Paint()..color = color);
-    valueLabel.paint(
-      canvas,
-      Offset(
-        pillLeft + (pillWidth - valueLabel.width) / 2,
-        pillTop + (pillHeight - valueLabel.height) / 2,
-      ),
-    );
+      );
+    }
+
+    for (final (index, point) in points.indexed) {
+      if (point == null) continue;
+      if (index == highlightIndex) {
+        canvas.drawCircle(point, 6, Paint()..color = _blue);
+      } else if (missed[index]) {
+        canvas.drawCircle(point, 4, Paint()..color = _grey);
+      } else {
+        canvas.drawCircle(point, 4, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          point,
+          4,
+          Paint()
+            ..color = _blue
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
+    }
+
+    // Month labels; this month in blue, as the one still to come.
+    for (final (index, period) in periods.indexed) {
+      final label = TextPainter(
+        text: TextSpan(
+          text: _periodLabel(period),
+          style: TextStyle(
+            fontFamily: 'Sora',
+            color: period == currentPeriod ? _blue : _grey,
+            fontSize: 9,
+            height: 11.3 / 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(
+        canvas,
+        Offset(left + index * step - label.width / 2, _labelTop),
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(_GrowthChartPainter oldDelegate) =>
-      oldDelegate.values != values ||
-      oldDelegate.color != color ||
-      oldDelegate.selectedIndex != selectedIndex;
+  bool shouldRepaint(_GrowthChartPainter old) =>
+      old.periods != periods ||
+      old.scores != scores ||
+      old.highlightPeriod != highlightPeriod ||
+      old.currentPeriod != currentPeriod ||
+      old.firstReviewed != firstReviewed;
 }
 
-/// One review period on the growth timeline. Collapsed it shows the month and
-/// overall score; expanded it lists each parameter with its stars, matching the
-/// May 2026 card in the design. Expansion is controlled by the parent so it
-/// can stay in sync with the growth chart's selected point.
-class _GrowthMonthCard extends StatelessWidget {
-  const _GrowthMonthCard({
-    required this.record,
-    required this.expanded,
-    required this.onToggle,
-    this.collapsible = true,
-  });
-
-  final GrowthRecord record;
-  final bool expanded;
-  final VoidCallback onToggle;
-
-  /// False where the page shows one month at a time and the month is chosen
-  /// above — there is nothing to collapse into, so the chevron would lie.
-  final bool collapsible;
-
-  @override
-  Widget build(BuildContext context) {
-    final note = record.parameters
-        .map((item) => item.note.trim())
-        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Only where the card is the thing you open. Where the month is
-          // picked above, its own title and score said the same words twice
-          // in a row.
-          if (collapsible)
-            InkWell(
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      _periodTitle(record.period),
-                      style: const TextStyle(
-                        color: Color(0xFF101828),
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    ...[
-                      const SizedBox(width: 6),
-                      AnimatedRotation(
-                        turns: expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        child: const Icon(
-                          Icons.expand_more_rounded,
-                          size: 20,
-                          color: Color(0xFF6A7282),
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0x17675AFF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${record.overallScore.toStringAsFixed(1)} / 5',
-                        style: const TextStyle(
-                          color: Color(0xFF4F46E5),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (expanded) ...[
-            if (collapsible) const Divider(height: 1, color: Color(0xFFF3F4F6)),
-            ColoredBox(
-              color: const Color(0xFFF7F7F9),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final (index, param) in record.parameters.indexed)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          bottom: index == record.parameters.length - 1
-                              ? 0
-                              : 12,
-                        ),
-                        child: _GrowthParamCard(param: param, fallback: note),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// One parameter inside an expanded month card: name, stars with the score,
-/// then the written insight for that parameter.
+/// One reviewed parameter (node 2406:74944): name, stars with the score,
+/// then the manager's insight for it.
 class _GrowthParamCard extends StatelessWidget {
   const _GrowthParamCard({required this.param, required this.fallback});
 
@@ -1071,11 +830,18 @@ class _GrowthParamCard extends StatelessWidget {
     final filled = param.score.round();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 14,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1092,20 +858,20 @@ class _GrowthParamCard extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
+              // 15px stars, 24 apart (node 2406:74944); an unearned star is
+              // the same shape in grey rather than an outline.
               for (var star = 1; star <= 5; star++)
                 Padding(
-                  padding: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsets.only(right: 9),
                   child: Icon(
-                    star <= filled
-                        ? Icons.star_rounded
-                        : Icons.star_outline_rounded,
-                    size: 20,
+                    Icons.star_rounded,
+                    size: 15,
                     color: star <= filled
                         ? const Color(0xFF0571A6)
                         : const Color(0xFFD1D5DB),
                   ),
                 ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 21),
               Text(
                 param.score.toStringAsFixed(param.score % 1 == 0 ? 0 : 1),
                 style: const TextStyle(
