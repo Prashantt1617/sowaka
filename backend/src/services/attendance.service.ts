@@ -203,7 +203,25 @@ async function writePunch(
       { upsert: true },
     );
   } else {
-    if (!existing?.punchIn) throw new AttendanceError(409, 'Punch in before punching out');
+    if (!existing?.punchIn) {
+      // The day may be open only as an out-of-location request the manager
+      // has not settled. The punch-out then rides on the request, and lands
+      // on the day with the punch-in when the request is approved.
+      const pending = await attendanceRegularizations().findOne({
+        userId, workDate, status: 'pending', kind: 'out_of_location',
+      });
+      if (pending) {
+        if (pending.punchOut) throw new AttendanceError(409, 'Already punched out today');
+        await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: now } });
+        return {
+          workDate,
+          punchOut: now.toISOString(),
+          outsideLocation: outsideLocationView(pending.outsideLocation),
+          request: toRegularizationView({ ...pending, punchOut: now }),
+        };
+      }
+      throw new AttendanceError(409, 'Punch in before punching out');
+    }
     if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
     await attendanceRecords().updateOne(
       { employeeId: employee.employeeId, workDate },
@@ -782,7 +800,10 @@ async function applyRegularizationDecision(
     // calendar reflects what was approved, not just the request. Corrections
     // raised before day types still carry punch times, so both are applied.
     const punchUpdate: Record<string, Date | RegularizationDayType> = { updatedAt: decidedAt };
-    if (result.requestedDayType) {
+    // An out-of-location day is not invented from the shift's hours: the
+    // employee punched in for real, and the punch-out is theirs to take. Only
+    // a correction fills the day with the shift's window.
+    if (result.requestedDayType && result.kind !== 'out_of_location') {
       punchUpdate.dayType = result.requestedDayType;
       // An approved day is a worked day, so it gets the shift's own hours
       // rather than staying blank: the calendar showed "-" against a day the
@@ -800,7 +821,7 @@ async function applyRegularizationDecision(
     // An approved out-of-location day keeps where it was worked from, and the
     // punch the employee actually took, so HR's view of the day is the truth.
     const outside = result.kind === 'out_of_location' && result.outsideLocation
-      ? { outsideLocation: result.outsideLocation, punchIn: result.outsideLocation.at }
+      ? { outsideLocation: result.outsideLocation, punchIn: result.outsideLocation.at, dayType: result.requestedDayType ?? 'full_day' }
       : {};
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },

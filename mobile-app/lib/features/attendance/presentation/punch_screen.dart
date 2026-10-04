@@ -210,7 +210,9 @@ class _PunchScreenState extends State<PunchScreen> {
       final outside = error.details?['outsideLocation'] as Map<String, dynamic>?;
       setState(() {
         _busy = false;
-        _stage = office != null ? _PunchStage.outside : _PunchStage.blocked;
+        // Only a refusal that carries HR's outcome has somewhere to go; an
+        // imprecise reading also names the nearest office, but is a retry.
+        _stage = outside != null ? _PunchStage.outside : _PunchStage.blocked;
         _problem = error.message;
         _canOpenSettings = false;
         _reasons = (outside?['reasons'] as List<dynamic>? ?? const [])
@@ -673,7 +675,7 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   Widget _sending() {
-    return const Column(
+    return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         SizedBox(
@@ -683,7 +685,7 @@ class _PunchScreenState extends State<PunchScreen> {
         ),
         SizedBox(height: 20),
         Text(
-          'Sending your request...',
+          _marksPresent ? 'Punching you in...' : 'Sending your request...',
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -813,7 +815,12 @@ class _OutlineAction extends StatelessWidget {
           ),
         ),
         onPressed: onTap,
-        child: Text(label),
+        child: Text(
+          label,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

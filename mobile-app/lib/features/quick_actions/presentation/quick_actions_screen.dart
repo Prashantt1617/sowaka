@@ -1004,7 +1004,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// What the form may be filed under: the types with days left to spend. On
   /// unlimited leave every type is open, since nothing is being counted.
-  List<String> get _pickableLeaveLabels => !widget.dashboard.shift.leaveBalanceTracked
+  List<String> get _pickableLeaveLabels =>
+      !widget.dashboard.shift.leaveBalanceTracked
       ? _leaveLabels
       : [
           for (final label in _leaveLabels)
@@ -1018,6 +1019,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   LeaveBalanceItem? _balanceFor(String label) =>
       widget.dashboard.leaveBalance.forKey(_leaveKeyFor(label));
+
+  /// Days the form may spend on this type. Null when the shift does not track
+  /// a balance: the server skips the check then, so the form must too, or a
+  /// type with no accrual would read as "none left" on an unlimited policy.
+  double? _spendableDays(String label) =>
+      widget.dashboard.shift.leaveBalanceTracked
+      ? _balanceFor(label)?.remaining
+      : null;
 
   Widget _applyLeaveForm() {
     final balanceItem = _leaveType == null ? null : _balanceFor(_leaveType!);
@@ -1170,6 +1179,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Future<void> _pickLeaveType() async {
+    if (_pickableLeaveLabels.isEmpty) {
+      showAppToast(context, 'No leave balance left to apply for this year.');
+      return;
+    }
     String left(LeaveBalanceItem item) =>
         '${formatDays(item.remaining)}/${formatDays(item.total)}';
     final picked = await showModalBottomSheet<String>(
@@ -1192,7 +1205,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     to: _leaveTo ?? from,
                     today: DateTime.now(),
                     maxDays: _maxLeaveApplyDays,
-                    availableDays: _balanceFor(label)?.remaining,
+                    availableDays: _spendableDays(label),
                   )
                   case final reason?)
                 label: reason,
@@ -1317,7 +1330,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       today: DateTime.now(),
       maxDays: _maxLeaveApplyDays,
       halfDay: _leaveDuration == 'Half Day',
-      availableDays: _balanceFor(type)?.remaining,
+      availableDays: _spendableDays(type),
     );
   }
 
@@ -1350,7 +1363,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             to: _dateOnly(date),
             today: DateTime.now(),
             maxDays: _maxLeaveApplyDays,
-            availableDays: _balanceFor(label)?.remaining,
+            availableDays: _spendableDays(label),
           ) ==
           null)
         label,
@@ -1379,7 +1392,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         to: day,
         today: today,
         maxDays: _maxLeaveApplyDays,
-        availableDays: _balanceFor(label)?.remaining,
+        availableDays: _spendableDays(label),
       );
       if (reason == null) return null;
       final window = widget.dashboard.shift.windowForLeave(label);
@@ -3090,7 +3103,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           to: _to,
           today: DateTime.now(),
           maxDays: _maxLeaveApplyDays,
-          availableDays: _balanceFor(type)?.remaining,
+          availableDays: _spendableDays(type),
         ) ==
         null;
   }

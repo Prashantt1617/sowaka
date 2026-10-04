@@ -152,20 +152,24 @@ export async function saveOffice(
 ) {
   const now = new Date();
   // An edit names an office of this org, or it is not an edit.
-  if (input.id && !(await offices().findOne({ id: input.id, org }))) {
-    throw new Error('Office not found');
+  const current = input.id ? await offices().findOne({ id: input.id, org }) : null;
+  if (input.id && !current) throw new Error('Office not found');
+  const name = String(input.name ?? '').trim();
+  if (!name) throw new Error('Give the office a name');
+  const radius = input.radiusMeters === undefined ? undefined : Number(input.radiusMeters);
+  if (radius !== undefined && !(Number.isFinite(radius) && radius > 0)) {
+    throw new Error('Radius must be a number of metres above zero');
   }
-  const radius = Number(input.radiusMeters);
   const office: Office = {
     id: input.id ?? randomUUID(),
     org,
-    name: String(input.name ?? '').trim() || 'Office',
+    name,
     city: String(input.city ?? '').trim() || undefined,
     latitude: Number(input.latitude),
     longitude: Number(input.longitude),
-    radiusMeters:
-      Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_OFFICE_RADIUS_METERS,
-    active: input.active !== false,
+    radiusMeters: radius ?? current?.radiusMeters ?? DEFAULT_OFFICE_RADIUS_METERS,
+    // An edit that says nothing about `active` leaves it as it was.
+    active: input.active ?? current?.active ?? true,
     createdAt: now,
     updatedAt: now,
   };

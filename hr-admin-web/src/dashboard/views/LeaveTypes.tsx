@@ -57,8 +57,9 @@ export function AddLeaveType({ existing, onAdd }: { existing: LeaveTypeRule[]; o
   const trimmed = name.trim();
   const base = leaveKeyFrom(trimmed);
   const taken = new Set(existing.map((t) => t.key));
+  // A suffixed key must still fit the server's 32-character limit.
   let key = base;
-  for (let n = 2; taken.has(key); n += 1) key = `${base}_${n}`;
+  for (let n = 2; taken.has(key); n += 1) key = `${base.slice(0, 32 - `_${n}`.length)}_${n}`;
   const clash = existing.some((t) => t.name.trim().toLowerCase() === trimmed.toLowerCase());
   const full = existing.length >= 12;
   const canAdd = !!trimmed && !!base && !clash && !full;

@@ -256,6 +256,7 @@ class TeamMember {
   final int avatarIndex;
   final List<FeedbackParam> params;
   final String extra;
+
   /// How today reads on the team card, graded by the server against this
   /// member's own shift: present, late, half_day, wfh, leave or not_in.
   final String todayMark;
@@ -607,6 +608,8 @@ class LeaveRequest {
       photoUrl: employee['photoUrl'] as String?,
       type: typeName.isNotEmpty
           ? typeName
+          : typeValue.isEmpty
+          ? 'Leave'
           : '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
@@ -1442,6 +1445,7 @@ class ShiftPolicy {
   final double minHalfDayHours;
   final double minFullDayHours;
   final HalfDayRules halfDay;
+
   /// Whether anyone on this shift is marked late or early at all. Off keeps
   /// the minutes but marks nobody.
   final bool lateMarkingEnabled;

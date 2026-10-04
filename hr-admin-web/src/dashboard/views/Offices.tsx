@@ -66,6 +66,7 @@ export function Offices() {
     if (!window.confirm(`Remove ${office.name}? Punches already taken there keep their record.`)) return;
     try {
       await deleteOffice(office.id);
+      if (editing === office.id) cancel();
       await reload();
       flash(`${office.name} removed`);
     } catch (error) {

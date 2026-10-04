@@ -421,7 +421,10 @@ export async function getManagerWorkspace(managerUserId: string) {
     if (policy.lateMarkingEnabled !== false && minutesAfterShiftStart(record.punchIn, policy.startTime) > policy.lateGraceMinutes) {
       return 'late';
     }
-    return markForDay(policy, record.punchIn, record.punchOut ?? null) === 'Half Day' ? 'half_day' : 'present';
+    // Only a finished day can be short: with the punch-out still to come,
+    // the missing-punch-out mark would call everyone mid-shift a half day.
+    if (!record.punchOut) return 'present';
+    return markForDay(policy, record.punchIn, record.punchOut) === 'Half Day' ? 'half_day' : 'present';
   };
   const team: ManagerTeamMemberView[] = await Promise.all(reports.map(async (report) => {
     const current = currentByEmployee.get(report.userId);

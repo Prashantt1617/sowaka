@@ -104,7 +104,8 @@ export async function saveOfficeHandler(req: Request, res: Response, next: NextF
 export async function deleteOfficeHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const org = await requireOrg(adminUserId(req));
-    await deleteOffice(org, String(req.params.officeId ?? ''));
+    await deleteOffice(org, String(req.params.officeId ?? ''))
+      .catch((error: Error) => { throw new AttendanceError(404, error.message); });
     res.status(200).json({ success: true });
   } catch (error) {
     next(error);

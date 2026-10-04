@@ -155,7 +155,7 @@ function overtimeRules(value: unknown): ShiftOvertimeRules {
   };
 }
 
-function correctionRules(value: unknown): ShiftCorrectionRules {
+function correctionRules(value: unknown, fallback?: ShiftCorrectionRules): ShiftCorrectionRules {
   const source = (value ?? {}) as Record<string, unknown>;
   const triggers = strings(source.triggers, [...CORRECTION_TRIGGERS])
     .filter((trigger) => CORRECTION_TRIGGERS.includes(trigger));
@@ -175,7 +175,12 @@ function correctionRules(value: unknown): ShiftCorrectionRules {
     punchFormat: (format || 'Present by default (Auto Punch)') as PunchFormat,
     punchMode: (punchMode || 'Both punches') as PunchMode,
     absentOutcomes,
-    outsideLocation: outsideLocationRules(source.outsideLocation),
+    // A save that says nothing about out-of-location keeps what the policy
+    // had — a template that inherited the org's rule must not fall back to
+    // the default on an unrelated edit.
+    outsideLocation: source.outsideLocation === undefined && fallback?.outsideLocation
+      ? fallback.outsideLocation
+      : outsideLocationRules(source.outsideLocation),
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
     managerWithoutEmployee: flag(source.managerWithoutEmployee, true),
     hrOverride: flag(source.hrOverride, true),
@@ -351,7 +356,7 @@ function toPolicyRules(input: Record<string, unknown>, fallback: ShiftPolicyRule
     missingBoth: has('missingBoth') ? mark(input.missingBoth, 'Both punches missing', fallback.missingBoth) : fallback.missingBoth,
     weeklyOff: has('weeklyOff') ? weeklyOff(input.weeklyOff) : fallback.weeklyOff,
     overtime: has('overtime') ? overtimeRules(input.overtime) : fallback.overtime,
-    correction: has('correction') ? correctionRules(input.correction) : fallback.correction,
+    correction: has('correction') ? correctionRules(input.correction, fallback.correction) : fallback.correction,
     leave: has('leave') ? leaveRules(input.leave) : fallback.leave,
   };
 }
@@ -741,7 +746,7 @@ export async function saveOrgShiftPolicy(callerId: string, input: ShiftInput) {
     earlyMarkingEnabled: has('earlyMarkingEnabled') ? flag(input.earlyMarkingEnabled, current.earlyMarkingEnabled ?? true) : current.earlyMarkingEnabled ?? true,
     earlyOutGraceMinutes: has('earlyOutGraceMinutes') ? minutes(input.earlyOutGraceMinutes, 'Early-out grace', current.earlyOutGraceMinutes) : current.earlyOutGraceMinutes,
     overtime: has('overtime') ? overtimeRules(input.overtime) : current.overtime,
-    correction: has('correction') ? correctionRules(input.correction) : current.correction,
+    correction: has('correction') ? correctionRules(input.correction, current.correction) : current.correction,
     leave: has('leave') ? leaveRules(input.leave) : current.leave,
     updatedAt: new Date(),
     updatedByUserId: callerId,
