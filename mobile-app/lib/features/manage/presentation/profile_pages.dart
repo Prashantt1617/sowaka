@@ -236,6 +236,13 @@ class _TeamMemberProfilePage extends StatelessWidget {
                   member: member,
                   canManage: canManage,
                   openRequests: openRequests,
+                  // No "your manager" line here: the reader usually is the
+                  // manager, and the month row's due card says what to do.
+                  grow: _ProfileGrowTab(
+                    data: data,
+                    bloc: bloc,
+                    memberId: member.id,
+                  ),
                   attendance: _AttendanceCard(
                     date: today,
                     present: present,
@@ -256,33 +263,6 @@ class _TeamMemberProfilePage extends StatelessWidget {
                           ),
                   ),
                 ),
-                // Only a manager can review someone, and only their own
-                // direct reports — never themselves, a peer, or their manager.
-                if (canManage && member.reportsToViewer) ...[
-                  const SizedBox(height: 22),
-                  _GiveFeedbackButton(
-                    // A review already sent this cycle is still editable, so
-                    // the button says so rather than inviting a second one.
-                    label:
-                        member.history.any(
-                          (record) =>
-                              record.period ==
-                              _EmployeeGrowthPage._currentPeriod(),
-                        )
-                        ? 'Edit Feedback'
-                        : 'Give Feedback',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => _FeedbackFormPage(
-                            bloc: bloc,
-                            memberId: member.id,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ],
             ),
           ),
@@ -484,40 +464,6 @@ class _DocumentationCard extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _GiveFeedbackButton extends StatelessWidget {
-  const _GiveFeedbackButton({
-    required this.onTap,
-    this.label = 'Give Feedback',
-  });
-
-  final VoidCallback onTap;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF0571A6),
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -837,6 +783,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             'Attendance',
                             'Work detail',
                             'Org chart',
+                            'Grow',
                             if (helpHere) 'Counselor',
                           ],
                           selected: _tab,
@@ -905,6 +852,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 'Your reporting line will show here once it '
                                 'is set up.',
                               ),
+                          ],
+                          4 => [
+                            _ProfileGrowTab(
+                              data: dashboard,
+                              bloc: bloc,
+                              managerName: reportsTo,
+                            ),
                           ],
                           _ => [HelpProfileSection(session: session)],
                         },
@@ -2223,19 +2177,22 @@ class _ProfileAttendanceCalendarState
 }
 
 /// A report's profile as tabs (node 3070:44930): what is waiting on you,
-/// their day, their details, where they sit, and their documents.
+/// their day, their details, where they sit, their growth (where a manager
+/// also gives feedback), and their documents.
 class _MemberProfileTabs extends StatefulWidget {
   const _MemberProfileTabs({
     required this.member,
     required this.canManage,
     required this.openRequests,
     required this.attendance,
+    required this.grow,
   });
 
   final TeamMember member;
   final bool canManage;
   final List<(DateTime date, Widget card)> openRequests;
   final Widget attendance;
+  final Widget grow;
 
   @override
   State<_MemberProfileTabs> createState() => _MemberProfileTabsState();
@@ -2252,6 +2209,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
       'Attendance',
       'Work detail',
       'Org chart',
+      'Grow',
       if (member.documents.isNotEmpty) 'Documentation',
     ];
     final tab = labels[_tab.clamp(0, labels.length - 1)];
@@ -2325,6 +2283,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
             else
               const _ProfileTabNote('No reporting line to show yet.'),
           ],
+          'Grow' => [widget.grow],
           _ => [_DocumentationCard(documents: member.documents)],
         },
       ],
@@ -2734,8 +2693,6 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     final selected = periods.contains(_selectedPeriod)
         ? _selectedPeriod!
         : period;
-    final record = history.where((r) => r.period == selected).firstOrNull;
-    final isCurrent = selected == period;
     final ownPage = widget.memberId == null;
     // Only a report can be reviewed from here: not yourself, and not the
     // person you report to — feedback only flows downward.
@@ -2785,102 +2742,21 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: [
-                // Before the first review (node 2406:74746): who reviews
-                // you and why, where someone is most likely to wonder.
-                if (history.isEmpty && ownPage) ...[
-                  _GrowIntroBanner(
-                    managerName: _nonEmpty(widget.data.approverName),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                // The score card shows the month picked below when it was
-                // reviewed, else the latest review — a pending or missed
-                // month has no score of its own to show.
-                if (history.isEmpty)
-                  _EmptyScoreCard(current: period)
-                else
-                  _GrowthScoreSection(
-                    history: history,
-                    selectedPeriod: selected,
-                    currentPeriod: period,
-                    onSelect: (picked) =>
-                        setState(() => _selectedPeriod = picked),
-                  ),
-                const SizedBox(height: 12),
-                _MonthStatusRow(
-                  label: _shortPeriod(selected),
-                  score: record?.overallScore,
-                  pending: record == null && isCurrent,
-                  warmPending: canReview,
-                  missed: record == null && !isCurrent,
-                  onTap: periods.length > 1
-                      ? () => _pickMonth(periods, selected)
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                // A reviewed month: each parameter's score and the manager's
-                // insight, one card each (node 2406:74944).
-                if (record != null) ...[
-                  // A review sent this cycle can still be edited by the person
-                  // who wrote it, until the cycle closes.
-                  if (isCurrent && canReview) ...[
-                    _FeedbackSubmittedCard(onEdit: openForm),
-                    const SizedBox(height: 12),
-                  ],
-                  for (final (index, param) in record.parameters.indexed)
-                    Padding(
-                      padding: EdgeInsets.only(
-                        bottom: index == record.parameters.length - 1 ? 0 : 12,
-                      ),
-                      child: _GrowthParamCard(
-                        param: param,
-                        // Older records carried one note for the whole
-                        // review; show it rather than leave the insight blank.
-                        fallback: record.parameters
-                            .map((item) => item.note.trim())
-                            .firstWhere(
-                              (value) => value.isNotEmpty,
-                              orElse: () => '',
-                            ),
-                      ),
-                    ),
-                ]
-                // This month, not reviewed yet.
-                else if (isCurrent) ...[
-                  if (canReview)
-                    _FeedbackDuePeriodCard(onGiveFeedback: openForm)
-                  else if (ownPage && widget.data.myParameters.isNotEmpty) ...[
-                    // What the month is reviewed on (node 2412:80204): a line
-                    // saying so, then each KPI with HR's guidance behind it.
-                    const _GrowNote(
-                      'Your performance is evaluated by your manager across '
-                      'below parameters.',
-                    ),
-                    const SizedBox(height: 12),
-                    for (final (index, param)
-                        in widget.data.myParameters.indexed)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          bottom:
-                              index == widget.data.myParameters.length - 1
-                              ? 0
-                              : 12,
-                        ),
-                        child: _GuidanceCard(
-                          name: param.name,
-                          guidance:
-                              param.description ?? param.subtitle ?? '',
-                          initiallyOpen: index == 0,
-                        ),
-                      ),
-                  ],
-                ]
-                // A past month nobody reviewed.
-                else
-                  const _FeedbackMissedCard(),
-
-              ],
+              children: _growthContent(
+                context: context,
+                data: widget.data,
+                history: history,
+                selected: selected,
+                period: period,
+                ownPage: ownPage,
+                canReview: canReview,
+                onSelectPeriod: (picked) =>
+                    setState(() => _selectedPeriod = picked),
+                onPickMonth: periods.length > 1
+                    ? () => _pickMonth(periods, selected)
+                    : null,
+                openForm: openForm,
+              ),
             ),
           ),
           if (!widget.embedded)
@@ -2894,6 +2770,111 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       ),
     );
   }
+}
+
+/// What a growth page shows under its header: the score card and chart, the
+/// month on show, and that month's cards. The Grow page and the profile's
+/// Grow tab both read this, so they cannot drift apart.
+List<Widget> _growthContent({
+  required BuildContext context,
+  required ManagerDashboard data,
+  required List<GrowthRecord> history,
+  required String selected,
+  required String period,
+  required bool ownPage,
+  required bool canReview,
+  required ValueChanged<String> onSelectPeriod,
+  required VoidCallback? onPickMonth,
+  required VoidCallback openForm,
+
+  /// On the profile (node 3106:49749) the month row also says who reviews you.
+  String? managerLine,
+}) {
+  final record = history.where((r) => r.period == selected).firstOrNull;
+  final isCurrent = selected == period;
+  return [
+    // Before the first review (node 2406:74746): who reviews
+    // you and why, where someone is most likely to wonder.
+    if (history.isEmpty && ownPage) ...[
+      _GrowIntroBanner(managerName: _nonEmpty(data.approverName)),
+      const SizedBox(height: 12),
+    ],
+    // The score card shows the month picked below when it was
+    // reviewed, else the latest review — a pending or missed
+    // month has no score of its own to show.
+    if (history.isEmpty)
+      _EmptyScoreCard(current: period)
+    else
+      _GrowthScoreSection(
+        history: history,
+        selectedPeriod: selected,
+        currentPeriod: period,
+        onSelect: onSelectPeriod,
+      ),
+    const SizedBox(height: 12),
+    _MonthStatusRow(
+      label: _shortPeriod(selected),
+      managerName: managerLine,
+      score: record?.overallScore,
+      pending: record == null && isCurrent,
+      warmPending: canReview,
+      missed: record == null && !isCurrent,
+      onTap: onPickMonth,
+    ),
+    const SizedBox(height: 12),
+    // A reviewed month: each parameter's score and the manager's
+    // insight, one card each (node 2406:74944).
+    if (record != null) ...[
+      // A review sent this cycle can still be edited by the person
+      // who wrote it, until the cycle closes.
+      if (isCurrent && canReview) ...[
+        _FeedbackSubmittedCard(onEdit: openForm),
+        const SizedBox(height: 12),
+      ],
+      for (final (index, param) in record.parameters.indexed)
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: index == record.parameters.length - 1 ? 0 : 12,
+          ),
+          child: _GrowthParamCard(
+            param: param,
+            // Older records carried one note for the whole
+            // review; show it rather than leave the insight blank.
+            fallback: record.parameters
+                .map((item) => item.note.trim())
+                .firstWhere((value) => value.isNotEmpty, orElse: () => ''),
+          ),
+        ),
+    ]
+    // This month, not reviewed yet.
+    else if (isCurrent) ...[
+      if (canReview)
+        _FeedbackDuePeriodCard(onGiveFeedback: openForm)
+      else if (ownPage && data.myParameters.isNotEmpty) ...[
+        // What the month is reviewed on (node 2412:80204): a line
+        // saying so, then each KPI with HR's guidance behind it.
+        const _GrowNote(
+          'Your performance is evaluated by your manager across '
+          'below parameters.',
+        ),
+        const SizedBox(height: 12),
+        for (final (index, param) in data.myParameters.indexed)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == data.myParameters.length - 1 ? 0 : 12,
+            ),
+            child: _GuidanceCard(
+              name: param.name,
+              guidance: param.description ?? param.subtitle ?? '',
+              initiallyOpen: index == 0,
+            ),
+          ),
+      ],
+    ]
+    // A past month nobody reviewed.
+    else
+      const _FeedbackMissedCard(),
+  ];
 }
 
 const _growMonthsShort = [
@@ -2960,6 +2941,95 @@ List<String> _monthsBetween(String first, String last) {
     }
   }
   return out.isEmpty ? [last] : out;
+}
+
+/// The profile's Grow tab (node 3106:49749): growth in place, on one's own
+/// profile and on a report's. On a report's it is also where a manager gives
+/// feedback — the month row offers the form when a review is due.
+class _ProfileGrowTab extends StatefulWidget {
+  const _ProfileGrowTab({
+    required this.data,
+    required this.bloc,
+    this.managerName,
+    this.memberId,
+  });
+
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+
+  /// Who reviews the person on show; said under the month on their own tab.
+  final String? managerName;
+
+  /// Null on one's own profile. A report's id on theirs.
+  final int? memberId;
+
+  @override
+  State<_ProfileGrowTab> createState() => _ProfileGrowTabState();
+}
+
+class _ProfileGrowTabState extends State<_ProfileGrowTab> {
+  String? _selectedPeriod;
+
+  Future<void> _pickMonth(List<String> periods, String selected) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
+    );
+    if (picked != null && mounted) setState(() => _selectedPeriod = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ManagerState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.dashboard ?? widget.data;
+        final member = widget.memberId == null
+            ? null
+            : data.team
+                  .where((member) => member.id == widget.memberId)
+                  .firstOrNull;
+        final history = member?.history ?? data.growthHistory;
+        final period = _EmployeeGrowthPage._currentPeriod();
+        final periods = _monthsBetween(
+          history.isEmpty ? period : history.first.period,
+          period,
+        );
+        final selected = periods.contains(_selectedPeriod)
+            ? _selectedPeriod!
+            : period;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _growthContent(
+            context: context,
+            data: data,
+            history: history,
+            selected: selected,
+            period: period,
+            ownPage: member == null,
+            // Feedback only flows downward: a report, never yourself.
+            canReview: member?.reportsToViewer ?? false,
+            onSelectPeriod: (picked) =>
+                setState(() => _selectedPeriod = picked),
+            onPickMonth: periods.length > 1
+                ? () => _pickMonth(periods, selected)
+                : null,
+            openForm: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _FeedbackFormPage(
+                  bloc: widget.bloc,
+                  memberId: widget.memberId!,
+                ),
+              ),
+            ),
+            managerLine: widget.managerName,
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// Before the first review (node 2406:74746): who reviews you and why.
@@ -3230,11 +3300,16 @@ class _MonthStatusRow extends StatelessWidget {
     required this.missed,
     required this.onTap,
     this.warmPending = false,
+    this.managerName,
   });
 
   final String label;
   final double? score;
   final bool pending;
+
+  /// "Feedback is given by your manager Tanvi", under the month, on the
+  /// profile's Grow tab (node 3106:49749).
+  final String? managerName;
 
   /// Orange on a report's page, where "pending" is the viewer's to act on;
   /// yellow on one's own, where it is only news (nodes 2406:75231, 2412:80204).
@@ -3266,50 +3341,82 @@ class _MonthStatusRow extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF101828),
-                  fontSize: 13,
-                  height: 19.5 / 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 4),
-              if (onTap != null)
-                Transform.rotate(
-                  angle: -math.pi / 2,
-                  child: SvgPicture.asset(
-                    'assets/icons/chevron_left_small.svg',
-                    width: 18,
-                    height: 18,
+              Row(children: _rowChildren()),
+              if (managerName case final name?) ...[
+                const SizedBox(height: 10),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: Color(0xFF717171),
+                      fontSize: 12.5,
+                      height: 18.75 / 12.5,
+                    ),
+                    children: [
+                      const TextSpan(
+                        text: 'Feedback is given by your manager ',
+                      ),
+                      TextSpan(
+                        text: name,
+                        style: const TextStyle(
+                          color: Color(0xFF0571A6),
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Color(0xFF0571A6),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const Spacer(),
-              if (pending)
-                _MonthChip(
-                  text: 'Pending',
-                  background: const Color(0xFFFEFDDA),
-                  foreground: warmPending
-                      ? const Color(0xFFFF8D28)
-                      : const Color(0xFFFFCC00),
-                )
-              else if (score != null)
-                _MonthChip(
-                  text: '${score!.toStringAsFixed(1)} / 5',
-                  background: const Color(0xFFEEF0FF),
-                  foreground: const Color(0xFF675AFF),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+
+  List<Widget> _rowChildren() => [
+    Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF101828),
+        fontSize: 13,
+        height: 19.5 / 13,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    const SizedBox(width: 4),
+    if (onTap != null)
+      Transform.rotate(
+        angle: -math.pi / 2,
+        child: SvgPicture.asset(
+          'assets/icons/chevron_left_small.svg',
+          width: 18,
+          height: 18,
+        ),
+      ),
+    const Spacer(),
+    if (pending)
+      _MonthChip(
+        text: 'Pending',
+        background: const Color(0xFFFEFDDA),
+        foreground: warmPending
+            ? const Color(0xFFFF8D28)
+            : const Color(0xFFFFCC00),
+      )
+    else if (score != null)
+      _MonthChip(
+        text: '${score!.toStringAsFixed(1)} / 5',
+        background: const Color(0xFFEEF0FF),
+        foreground: const Color(0xFF675AFF),
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+  ];
 }
 
 class _MonthChip extends StatelessWidget {
