@@ -431,7 +431,15 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    final present = member.todayStatus == TeamPresenceStatus.present;
+    // The dot says where they are: green in, blue away or on leave, grey out.
+    final dot = switch (member.todayMark) {
+      'present' || 'late' || 'half_day' => const Color(0xFF00C950),
+      'wfh' || 'leave' => const Color(0xFF0571A6),
+      _ => const Color(0xFFDDDDDD),
+    };
+    final status = _TodayStatusPill.forMark(member.todayMark);
+    final punchIn = member.punchIn;
+    final recognition = member.recognitionLabel;
 
     return _TeamCardShell(
       onTap: () => Navigator.of(context).push(
@@ -467,9 +475,7 @@ class _TeamMemberRow extends StatelessWidget {
                         height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: present
-                              ? const Color(0xFF00C950)
-                              : const Color(0xFFDDDDDD),
+                          color: dot,
                           border: Border.all(color: Colors.white, width: 1.114),
                         ),
                       ),
@@ -520,40 +526,52 @@ class _TeamMemberRow extends StatelessWidget {
                         height: 20 / 14,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    // No presence pill: the dot on the avatar already conveys
-                    // present / not punched in.
-                    if (pendingCount > 0)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [_RequestCountPill(count: pendingCount)],
+                    // Today at a glance (node 3198:20671): when they punched
+                    // in, how the day reads, and what is waiting on you.
+                    if (punchIn != null || status != null || pendingCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (punchIn != null) _PunchTimePill(at: punchIn),
+                            if (status != null) status,
+                            if (pendingCount > 0)
+                              _RequestCountPill(count: pendingCount),
+                          ],
+                        ),
                       ),
-                    if (upcomingLeave != null || birthdaySoon) ...[
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (upcomingLeave != null)
-                            const _TagChip(
-                              icon: Image(
-                                image: AssetImage(
-                                  'assets/icons/team_pill_leave_calendar.png',
+                    if (upcomingLeave != null ||
+                        birthdaySoon ||
+                        (recognition != null && recognition.isNotEmpty))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (upcomingLeave != null)
+                              const _TagChip(
+                                icon: Image(
+                                  image: AssetImage(
+                                    'assets/icons/team_pill_leave_calendar.png',
+                                  ),
                                 ),
+                                label: 'Leave Upcoming',
                               ),
-                              label: 'Leave Upcoming',
-                            ),
-                          if (birthdaySoon)
-                            _TagChip(
-                              icon: SvgPicture.asset(
-                                'assets/icons/team_pill_birthday_cupcake.svg',
+                            if (birthdaySoon)
+                              _TagChip(
+                                icon: SvgPicture.asset(
+                                  'assets/icons/team_pill_birthday_cupcake.svg',
+                                ),
+                                label: 'Birthday Soon',
                               ),
-                              label: 'Birthday Soon',
-                            ),
-                        ],
+                            if (recognition != null && recognition.isNotEmpty)
+                              _RecognitionPill(label: recognition),
+                          ],
+                        ),
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -634,6 +652,139 @@ class _MyTeamCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "9:45 AM" with a clock, the green of a day that has started (node 3198:20671).
+class _PunchTimePill extends StatelessWidget {
+  const _PunchTimePill({required this.at});
+
+  final DateTime at;
+
+  @override
+  Widget build(BuildContext context) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final label =
+        '$hour:${at.minute.toString().padLeft(2, '0')} ${at.hour >= 12 ? 'PM' : 'AM'}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAFFE6),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF34C759)),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF34C759),
+              fontSize: 12,
+              height: 16 / 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How the day reads — Late, Half-day, WFH, Leave or Not-in — in the tint
+/// the design gives each (node 3198:20671). Nothing for a plain present day:
+/// the time pill already says they are in.
+class _TodayStatusPill extends StatelessWidget {
+  const _TodayStatusPill({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  static _TodayStatusPill? forMark(String mark) => switch (mark) {
+    'late' => const _TodayStatusPill(
+      label: 'Late',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'half_day' => const _TodayStatusPill(
+      label: 'Half-day',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'wfh' => const _TodayStatusPill(
+      label: 'WFH',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'leave' => const _TodayStatusPill(
+      label: 'Leave',
+      background: Color(0xFFE3F0F7),
+      foreground: Color(0xFF0571A6),
+    ),
+    'not_in' => const _TodayStatusPill(
+      label: 'Not-in',
+      background: Color(0xFFF3F4F6),
+      foreground: Color(0xFF9CA3AF),
+    ),
+    _ => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Sora',
+          color: foreground,
+          fontSize: 12,
+          height: 16.2 / 12,
+          letterSpacing: -0.16,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Employee of month" on a gold wash (node 2488:90748).
+class _RecognitionPill extends StatelessWidget {
+  const _RecognitionPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0x4DFFD700),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: 'Sora',
+          color: Color(0xFFFFCC00),
+          fontSize: 12,
+          height: 16.2 / 12,
+          letterSpacing: -0.16,
+          fontWeight: FontWeight.w400,
+        ),
       ),
     );
   }

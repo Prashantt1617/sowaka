@@ -211,6 +211,8 @@ class TeamMember {
     required this.avatarIndex,
     required this.params,
     required this.extra,
+    this.todayMark = 'not_in',
+    this.recognitionLabel,
     this.todayStatus = TeamPresenceStatus.notPunchedIn,
     this.birthday,
     this.designation = '',
@@ -254,6 +256,13 @@ class TeamMember {
   final int avatarIndex;
   final List<FeedbackParam> params;
   final String extra;
+  /// How today reads on the team card, graded by the server against this
+  /// member's own shift: present, late, half_day, wfh, leave or not_in.
+  final String todayMark;
+
+  /// The recognition HR gave them — "Employee of the month" — if any.
+  final String? recognitionLabel;
+
   final TeamPresenceStatus todayStatus;
   final DateTime? birthday;
   final String designation;
@@ -306,6 +315,10 @@ class TeamMember {
           .map((value) => FeedbackParam.fromJson(value as Map<String, dynamic>))
           .toList(),
       extra: json['extra'] as String? ?? '',
+      todayMark:
+          json['todayMark'] as String? ??
+          (json['todayStatus'] == 'present' ? 'present' : 'not_in'),
+      recognitionLabel: (json['recognitionLabel'] as String?)?.trim(),
       todayStatus: json['todayStatus'] == 'present'
           ? TeamPresenceStatus.present
           : TeamPresenceStatus.notPunchedIn,

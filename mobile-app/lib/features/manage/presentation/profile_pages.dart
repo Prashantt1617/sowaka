@@ -209,10 +209,10 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       Text(
                         member.name,
                         style: const TextStyle(
-                          color: MColors.ink,
+                          color: Color(0xFF222222),
                           fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -.3,
+                          height: 32 / 24,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -231,102 +231,31 @@ class _TeamMemberProfilePage extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Punch in/out sits above the requests here, matching the
-                // signed-in user's own profile.
                 const SizedBox(height: 16),
-                _AttendanceCard(
-                  date: today,
-                  present: present,
-                  punchIn: member.punchIn,
-                  punchOut: member.punchOut,
-                  onViewCalendar: !canManage
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => _TeamMemberAttendancePage(
-                              member: member,
-                              data: data,
-                              bloc: bloc,
-                              onNotifications: onNotifications,
-                              onOpenComposer: onOpenComposer,
+                _MemberProfileTabs(
+                  member: member,
+                  canManage: canManage,
+                  openRequests: openRequests,
+                  attendance: _AttendanceCard(
+                    date: today,
+                    present: present,
+                    punchIn: member.punchIn,
+                    punchOut: member.punchOut,
+                    onViewCalendar: !canManage
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => _TeamMemberAttendancePage(
+                                member: member,
+                                data: data,
+                                bloc: bloc,
+                                onNotifications: onNotifications,
+                                onOpenComposer: onOpenComposer,
+                              ),
                             ),
                           ),
-                        ),
-                ),
-                if (canManage && openRequests.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  _RequestsSection(
-                    title: 'Open Requests',
-                    entries: openRequests,
                   ),
-                ],
-                const SizedBox(height: 22),
-                const _SectionTitle(title: 'Profile'),
-                const SizedBox(height: 8),
-                _InfoCard(
-                  children: [
-                    if (member.email.isNotEmpty)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_email.svg',
-                        label: 'Email',
-                        value: member.email,
-                      ),
-                    if (member.employeeId case final id?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_employee_id.svg',
-                        label: 'Employee ID',
-                        value: id,
-                      ),
-                    if (member.joiningDate case final joined?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_joining_date.svg',
-                        label: 'Joining Date',
-                        value: _joiningDateLabel(joined),
-                      ),
-                    if (member.birthday case final born?)
-                      _ProfileRow(
-                        icon: Icons.cake_outlined,
-                        label: 'Date of birth',
-                        value: _joiningDateLabel(born),
-                      ),
-                  ],
                 ),
-                const SizedBox(height: 22),
-                const _SectionTitle(title: 'Work Role'),
-                const SizedBox(height: 8),
-                _InfoCard(
-                  children: [
-                    _ProfileRow(
-                      iconAsset: 'assets/icons/work_department.svg',
-                      label: 'Department',
-                      value: member.team,
-                    ),
-                    if (_nonEmpty(member.managerName) case final name?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/work_manager.svg',
-                        label: 'Manager',
-                        value: name,
-                      ),
-                    if (member.employmentType case final type?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/work_employment_type.svg',
-                        label: 'Employment Type',
-                        value: _employmentTypeLabel(type),
-                      ),
-                  ],
-                ),
-                if (member.orgChart.length > 1) ...[
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: 'Org Chart'),
-                  const SizedBox(height: 8),
-                  _OrgChartCard(nodes: member.orgChart),
-                ],
-                if (member.documents.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: 'Documentation'),
-                  const SizedBox(height: 8),
-                  _DocumentationCard(documents: member.documents),
-                ],
                 // Only a manager can review someone, and only their own
                 // direct reports — never themselves, a peer, or their manager.
                 if (canManage && member.reportsToViewer) ...[
@@ -633,6 +562,22 @@ class _ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<_ProfileScreen> {
+  /// Which profile tab is open. Request first, as the design opens it.
+  int _tab = 0;
+
+  /// The Request tab: every request of theirs, newest first, or a line
+  /// saying there are none.
+  List<Widget> _requestTab(ManagerDashboard dashboard) {
+    final entries = _MyRequestsSection.entriesFor(dashboard);
+    if (entries.isEmpty) {
+      return const [_ProfileTabNote('No requests yet.')];
+    }
+    return [
+      for (final entry in entries)
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: entry.$2),
+    ];
+  }
+
   bool _uploadingPhoto = false;
 
   Future<void> _changePhoto() async {
@@ -883,75 +828,87 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       const SizedBox(height: 22),
                       if (!worksHere && helpHere)
                         HelpProfileSection(session: session),
+                      // The profile reads as tabs (node 3074:45990): one
+                      // thing at a time, rather than every section stacked.
                       if (worksHere) ...[
-                        _AttendanceCard(
-                          date: today,
-                          present: todayRecord?.punchIn != null,
-                          punchIn: todayRecord?.punchIn,
-                          punchOut: todayRecord?.punchOut,
-                          onPunch: dashboard.shift.punchesFromApp
-                              ? (type) => _startProfilePunch(
-                                  context,
-                                  bloc,
-                                  dashboard,
-                                  type,
-                                )
-                              : null,
-                          autoPresent:
-                              dashboard.shift.markedPresentAutomatically,
-                          singlePunch: dashboard.shift.singlePunchDay,
+                        _ProfileTabs(
+                          labels: [
+                            'Request',
+                            'Attendance',
+                            'Work detail',
+                            'Org chart',
+                            if (helpHere) 'Counselor',
+                          ],
+                          selected: _tab,
+                          onChanged: (index) => setState(() => _tab = index),
                         ),
-                        _MyRequestsSection(data: dashboard),
-                      ],
-                      const SizedBox(height: 18),
-                      if (worksHere) ...[
-                        const _SectionTitle(title: 'Profile'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
-                          children: [
-                            _ProfileRow(
+                        const SizedBox(height: 16),
+                        ...switch (_tab) {
+                          0 => _requestTab(dashboard),
+                          1 => [
+                            _AttendanceCard(
+                              date: today,
+                              present: todayRecord?.punchIn != null,
+                              punchIn: todayRecord?.punchIn,
+                              punchOut: todayRecord?.punchOut,
+                              onPunch: dashboard.shift.punchesFromApp
+                                  ? (type) => _startProfilePunch(
+                                      context,
+                                      bloc,
+                                      dashboard,
+                                      type,
+                                    )
+                                  : null,
+                              autoPresent:
+                                  dashboard.shift.markedPresentAutomatically,
+                              singlePunch: dashboard.shift.singlePunchDay,
+                            ),
+                            const SizedBox(height: 24),
+                            _ProfileAttendanceCalendar(dashboard: dashboard),
+                          ],
+                          2 => [
+                            _WorkDetailRow(
                               iconAsset: 'assets/icons/profile_email.svg',
                               label: 'Email',
                               value: user.email,
                             ),
-                            _ProfileRow(
-                              iconAsset:
-                                  'assets/icons/profile_joining_date.svg',
-                              label: 'Joined',
-                              value: _formatDate(user.joiningDate),
-                            ),
-                            _ProfileRow(
-                              icon: Icons.cake_outlined,
-                              label: 'Date of birth',
-                              value: _formatDate(user.birthday),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Work Role'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
-                          children: [
-                            _ProfileRow(
+                            if (_nonEmpty(user.joiningDate) != null)
+                              _WorkDetailRow(
+                                iconAsset:
+                                    'assets/icons/profile_joining_date.svg',
+                                label: 'Joining Date',
+                                value: _formatDate(user.joiningDate),
+                              ),
+                            _WorkDetailRow(
                               iconAsset: 'assets/icons/work_department.svg',
-                              label: 'Department / team',
+                              label: 'Department',
                               value: department,
                             ),
                             if (reportsTo case final name?)
-                              _ProfileRow(
+                              _WorkDetailRow(
                                 iconAsset: 'assets/icons/work_manager.svg',
-                                label: 'Reports to',
+                                label: 'Manager',
                                 value: name,
                               ),
+                            if (_nonEmpty(user.birthday) != null)
+                              _WorkDetailRow(
+                                icon: Icons.cake_outlined,
+                                label: 'Date of birth',
+                                value: _formatDate(user.birthday),
+                              ),
                           ],
-                        ),
-                        if (dashboard.myOrgChart.length > 1) ...[
-                          const SizedBox(height: 22),
-                          const _SectionTitle(title: 'Org Chart'),
-                          const SizedBox(height: 8),
-                          _OrgChartCard(nodes: dashboard.myOrgChart),
-                        ],
-                        const SizedBox(height: 18),
+                          3 => [
+                            if (dashboard.myOrgChart.length > 1)
+                              _OrgChartCard(nodes: dashboard.myOrgChart)
+                            else
+                              const _ProfileTabNote(
+                                'Your reporting line will show here once it '
+                                'is set up.',
+                              ),
+                          ],
+                          _ => [HelpProfileSection(session: session)],
+                        },
+                        const SizedBox(height: 24),
                       ],
                       _LogoutButton(onPressed: onLogout),
                       // Below the logout button and deliberately small: it is
@@ -1437,8 +1394,8 @@ class _MyRequestsSection extends StatelessWidget {
 
   final ManagerDashboard data;
 
-  @override
-  Widget build(BuildContext context) {
+  /// Every request of theirs as a card, newest first.
+  static List<(DateTime date, Widget card)> entriesFor(ManagerDashboard data) {
     final myRequests = <(DateTime date, Widget card)>[
       for (final leave in data.myLeaves)
         (
@@ -1486,7 +1443,12 @@ class _MyRequestsSection extends StatelessWidget {
           ),
         ),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
+    return myRequests;
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final myRequests = entriesFor(data);
     if (myRequests.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 18),
@@ -1905,21 +1867,6 @@ class _PunchColumn extends StatelessWidget {
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
-      decoration: _cardDecoration,
-      child: Column(children: children),
-    );
-  }
-}
-
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({
     required this.initials,
@@ -1966,8 +1913,80 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-class _ProfileRow extends StatelessWidget {
-  const _ProfileRow({
+/// The profile's tabs (node 3074:45990): labels 24 apart, the open one bold
+/// with a line under it, the row scrolling when the labels run past the edge.
+class _ProfileTabs extends StatelessWidget {
+  const _ProfileTabs({
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Stack(
+        alignment: Alignment.bottomLeft,
+        children: [
+          Container(height: 1, color: const Color(0xFFEBEBEB)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            child: Row(
+              children: [
+                for (var index = 0; index < labels.length; index++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      right: index == labels.length - 1 ? 0 : 24,
+                    ),
+                    child: InkWell(
+                      onTap: () => onChanged(index),
+                      child: Container(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: index == selected
+                                  ? const Color(0xFF222222)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          labels[index],
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            color: index == selected
+                                ? const Color(0xFF222222)
+                                : const Color(0xFF717171),
+                            fontSize: 14,
+                            height: 20 / 14,
+                            fontWeight: index == selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One line of the Work detail tab (node 3074:45990): the glyph in a soft
+/// disc, then the label over its value.
+class _WorkDetailRow extends StatelessWidget {
+  const _WorkDetailRow({
     this.icon,
     this.iconAsset,
     required this.label,
@@ -1978,8 +1997,6 @@ class _ProfileRow extends StatelessWidget {
        );
 
   final IconData? icon;
-
-  /// Preferred over [icon]: the glyph exported from Figma.
   final String? iconAsset;
   final String label;
   final String value;
@@ -1987,32 +2004,54 @@ class _ProfileRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 40,
             height: 40,
+            alignment: Alignment.center,
             decoration: const BoxDecoration(
               color: Color(0xFFF7F7F7),
               shape: BoxShape.circle,
             ),
             child: iconAsset != null
-                ? Center(
-                    child: SvgPicture.asset(iconAsset!, width: 20, height: 20),
+                ? SvgPicture.asset(
+                    iconAsset!,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                      Color(0xFF222222),
+                      BlendMode.srcIn,
+                    ),
                   )
-                : Icon(icon, size: 20, color: _ProfileColors.ink),
+                : Icon(icon, size: 20, color: const Color(0xFF222222)),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label.toUpperCase(), style: _ProfileText.label),
-                const SizedBox(height: 2),
                 Text(
-                  value.isEmpty ? 'Not available' : value,
-                  style: _ProfileText.value,
+                  label,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF717171),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF222222),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -2023,13 +2062,274 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
-/// The footnotes under the logout button: the published privacy policy, and
-/// the page where someone asks for their account and data to be deleted.
-///
-/// Both link out to the hosted pages rather than carrying a copy of the text,
-/// so what people read here is the same thing the store listings point at.
-/// Deletion gets its own link rather than living inside the policy: someone
-/// looking for it should not have to read a policy to find it.
+/// A tab with nothing in it yet says so, quietly.
+class _ProfileTabNote extends StatelessWidget {
+  const _ProfileTabNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 28),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF9197A2),
+        fontSize: 13,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+  );
+}
+
+/// The Attendance tab's calendar (node 3198:20867): a month at a time, the
+/// headings with their counts, and the day that was tapped underneath.
+class _ProfileAttendanceCalendar extends StatefulWidget {
+  const _ProfileAttendanceCalendar({required this.dashboard});
+
+  final ManagerDashboard dashboard;
+
+  @override
+  State<_ProfileAttendanceCalendar> createState() =>
+      _ProfileAttendanceCalendarState();
+}
+
+class _ProfileAttendanceCalendarState
+    extends State<_ProfileAttendanceCalendar> {
+  late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  AttendanceFilter? _filter;
+  DateTime? _selected;
+
+  List<AttendanceDayView> get _days => buildAttendanceDays(
+    month: _month,
+    records: widget.dashboard.attendance,
+    regularizations: widget.dashboard.regularizations,
+    leaves: widget.dashboard.myLeaves,
+    holidays: widget.dashboard.holidays,
+    overtime: widget.dashboard.myOvertime,
+    shift: widget.dashboard.shift,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _days;
+    final now = DateTime.now();
+    final canGoForward =
+        _month.year < now.year ||
+        (_month.year == now.year && _month.month < now.month);
+    final selectedDay = _selected == null
+        ? days
+              .where(
+                (day) =>
+                    day.date.year == now.year &&
+                    day.date.month == now.month &&
+                    day.date.day == now.day,
+              )
+              .firstOrNull
+        : days
+              .where(
+                (day) =>
+                    day.date.year == _selected!.year &&
+                    day.date.month == _selected!.month &&
+                    day.date.day == _selected!.day,
+              )
+              .firstOrNull;
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            AttendanceCalendarArrow(
+              onPressed: () => setState(() {
+                _month = DateTime(_month.year, _month.month - 1);
+                _selected = null;
+              }),
+              asset: 'assets/icons/calendar_chevron_prev.svg',
+            ),
+            Expanded(
+              child: Text(
+                '${months[_month.month - 1]} ${_month.year}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            Opacity(
+              opacity: canGoForward ? 1 : .3,
+              child: AttendanceCalendarArrow(
+                onPressed: canGoForward
+                    ? () => setState(() {
+                        _month = DateTime(_month.year, _month.month + 1);
+                        _selected = null;
+                      })
+                    : null,
+                asset: 'assets/icons/calendar_chevron_next.svg',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        AttendanceFilterChips(
+          selected: _filter,
+          counts: {
+            for (final filter in AttendanceFilter.values)
+              filter: days
+                  .where((day) => matchesAttendanceFilter(day, filter))
+                  .length,
+          },
+          onChanged: (filter) => setState(() => _filter = filter),
+        ),
+        const SizedBox(height: 16),
+        AttendanceMonthGrid(
+          month: _month,
+          days: days,
+          filter: _filter,
+          selectedDate: _selected,
+          onTap: (day) => setState(() => _selected = day.date),
+        ),
+        if (selectedDay != null) ...[
+          const SizedBox(height: 16),
+          AttendanceDayDetail(
+            day: selectedDay,
+            singlePunch: widget.dashboard.shift.singlePunchDay,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A report's profile as tabs (node 3070:44930): what is waiting on you,
+/// their day, their details, where they sit, and their documents.
+class _MemberProfileTabs extends StatefulWidget {
+  const _MemberProfileTabs({
+    required this.member,
+    required this.canManage,
+    required this.openRequests,
+    required this.attendance,
+  });
+
+  final TeamMember member;
+  final bool canManage;
+  final List<(DateTime date, Widget card)> openRequests;
+  final Widget attendance;
+
+  @override
+  State<_MemberProfileTabs> createState() => _MemberProfileTabsState();
+}
+
+class _MemberProfileTabsState extends State<_MemberProfileTabs> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final member = widget.member;
+    final labels = [
+      if (widget.canManage) 'Request',
+      'Attendance',
+      'Work detail',
+      'Org chart',
+      if (member.documents.isNotEmpty) 'Documentation',
+    ];
+    final tab = labels[_tab.clamp(0, labels.length - 1)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ProfileTabs(
+          labels: labels,
+          selected: _tab.clamp(0, labels.length - 1),
+          onChanged: (index) => setState(() => _tab = index),
+        ),
+        const SizedBox(height: 16),
+        ...switch (tab) {
+          'Request' =>
+            widget.openRequests.isEmpty
+                ? const [_ProfileTabNote('No open requests.')]
+                : [
+                    for (final entry in widget.openRequests)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: entry.$2,
+                      ),
+                  ],
+          'Attendance' => [widget.attendance],
+          'Work detail' => [
+            if (member.email.isNotEmpty)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_email.svg',
+                label: 'Email',
+                value: member.email,
+              ),
+            if (member.employeeId case final id?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_employee_id.svg',
+                label: 'Employee ID',
+                value: id,
+              ),
+            if (member.joiningDate case final joined?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_joining_date.svg',
+                label: 'Joining Date',
+                value: _joiningDateLabel(joined),
+              ),
+            _WorkDetailRow(
+              iconAsset: 'assets/icons/work_department.svg',
+              label: 'Department',
+              value: member.team,
+            ),
+            if (_nonEmpty(member.managerName) case final name?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/work_manager.svg',
+                label: 'Manager',
+                value: name,
+              ),
+            if (member.employmentType case final type?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/work_employment_type.svg',
+                label: 'Employment Type',
+                value: _employmentTypeLabel(type),
+              ),
+            if (member.birthday case final born?)
+              _WorkDetailRow(
+                icon: Icons.cake_outlined,
+                label: 'Date of birth',
+                value: _joiningDateLabel(born),
+              ),
+          ],
+          'Org chart' => [
+            if (member.orgChart.length > 1)
+              _OrgChartCard(nodes: member.orgChart)
+            else
+              const _ProfileTabNote('No reporting line to show yet.'),
+          ],
+          _ => [_DocumentationCard(documents: member.documents)],
+        },
+      ],
+    );
+  }
+}
+
 class _PrivacyAndDataRow extends StatelessWidget {
   const _PrivacyAndDataRow({required this.session});
 

@@ -939,18 +939,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
         const SizedBox(height: 12),
         if (visible.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            child: Center(
-              child: Text(
-                _leaveHistoryView ? 'No past leave yet.' : 'No upcoming leave.',
-                style: const TextStyle(
-                  color: _Q.inkFaint,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          _HubEmptyState(
+            iconAsset: 'assets/icons/action_card_leave_calendar.png',
+            text: _leaveHistoryView
+                ? 'No past leave yet.'
+                : 'You have no upcoming leave.\nApply here to request',
+            buttonLabel: _leaveHistoryView ? null : 'Apply Leave',
+            onTap: _openBlankLeaveForm,
           )
         else
           ...visible.map(
@@ -1034,7 +1029,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
-      trailing: _LeaveHeaderButton(
+      // The button follows the form (node 691:19752): you read down to it.
+      footer: _FormSubmitBar(
+        label: 'Apply Leave',
         enabled: _leaveFormComplete && !_submitting,
         busy: _submitting,
         onTap: _submitLeaveApplication,
@@ -1562,7 +1559,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
         const SizedBox(height: 16),
         if (visible.isEmpty)
-          const _InfoCard('Nothing here yet.')
+          _HubEmptyState(
+            iconAsset: 'assets/icons/action_card_overtime_hourglass.png',
+            text: _overtimeHistoryView
+                ? 'No past overtime yet.'
+                : 'You have no requested overtime.\nApply here to request',
+            buttonLabel: _overtimeHistoryView ? null : 'Apply Overtime',
+            onTap: _openOvertimeForm,
+          )
         else
           ...visible.map(
             (request) => Padding(
@@ -1623,7 +1627,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
-      trailing: _LeaveHeaderButton(
+      footer: _FormSubmitBar(
         label: 'Apply Overtime',
         // Off until the date and duration are both valid for the policy.
         enabled: _overtimeFormComplete && !_submitting,
@@ -2146,7 +2150,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
         const SizedBox(height: 16),
         if (visible.isEmpty)
-          const _InfoCard('Nothing here yet.')
+          _HubEmptyState(
+            iconAsset: 'assets/icons/action_card_reimbursement_money.png',
+            text: _reimbursementHistoryView
+                ? 'No past claims yet.'
+                : 'You have no requested reimbursement.\nApply here to request',
+            buttonLabel: _reimbursementHistoryView
+                ? null
+                : 'Apply Reimbursement',
+            onTap: _openReimbursementForm,
+          )
         else
           ...visible.map(
             (claim) => Padding(
@@ -2211,8 +2224,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: _showQuickCreateComingSoon,
-      trailing: _LeaveHeaderButton(
-        label: 'Apply',
+      footer: _FormSubmitBar(
+        label: 'Apply Reimbursement',
         enabled: _reimbursementComplete && !_submitting,
         busy: _submitting,
         onTap: _submitReimbursementApplication,
@@ -2626,6 +2639,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
+          counts: {
+            for (final filter in AttendanceFilter.values)
+              filter: days
+                  .where((day) => matchesAttendanceFilter(day, filter))
+                  .length,
+          },
           // A new filter is a new question, so the day opened under the last
           // one closes with it rather than following the list around.
           onChanged: (filter) => setState(() {
@@ -2633,49 +2652,31 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             _selectedCalendarDay = null;
           }),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         if (_attendanceFilter != null) ...[
-          // A heading opens the days it covers, rather than greying out the
-          // rest of a month you then have to read around.
+          // A heading opens the days it covers (node 3214:40887): each with
+          // its punches, and a tap opens the day's details in a sheet.
           if (!days.any(
             (day) => matchesAttendanceFilter(day, _attendanceFilter),
           ))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 28),
-              child: Text(
-                'Nothing this month.',
-                textAlign: TextAlign.center,
-                style: _QText.subtitle,
-              ),
+            const _HubEmptyState(
+              iconAsset: 'assets/icons/action_card_leave_calendar.png',
+              text: 'Nothing under this heading this month.',
             ),
           ...days
               .where((day) => matchesAttendanceFilter(day, _attendanceFilter))
               .map(
                 (day) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: AttendanceListCard(
                     day: day,
                     today: _sameDay(day.date, DateTime.now()),
-                    dimmed: false,
-                    selected: _sameDay(day.date, _selectedCalendarDay?.date),
-                    onTap: () => _openAttendanceDay(day),
+                    pendingNotice: _pendingNoticeFor(day),
+                    singlePunch: widget.dashboard.shift.singlePunchDay,
+                    onTap: () => _showAttendanceDaySheet(day),
                   ),
                 ),
               ),
-          // A filtered list answers a question about the days in it, so it
-          // ends on the day that was tapped — today's punches at the foot of
-          // a list today may not even be in is an answer to nothing.
-          if (_calendarDetailDay(days, todayFallback: false)
-              case final detail?) ...[
-            const SizedBox(height: 16),
-            AttendanceDayDetail(
-              day: detail,
-              actions: _actionsForDay(detail),
-              pendingNotice: _pendingNoticeFor(detail),
-              blockedReason: _correctionBlockedReason(detail),
-              singlePunch: widget.dashboard.shift.singlePunchDay,
-            ),
-          ],
         ] else ...[
           AttendanceMonthGrid(
             month: _attendanceMonth,
@@ -2763,6 +2764,60 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Tapping a day selects it; the detail strip below the grid then shows its
   /// punches and, when a correction is possible, the link that opens the form.
+  /// A day from a heading's list, opened in a sheet (node 3214:40887) rather
+  /// than at the foot of the list, so the list stays where it was.
+  Future<void> _showAttendanceDaySheet(AttendanceDayView day) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFFF7F7F9),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              AttendanceDayDetail(
+                day: day,
+                // An action closes this sheet first: the correction form is
+                // a sheet of its own, and two stacked read as one jammed.
+                actions: [
+                  for (final action in _actionsForDay(day))
+                    AttendanceDayAction(
+                      label: action.label,
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        action.onTap();
+                      },
+                    ),
+                ],
+                pendingNotice: _pendingNoticeFor(day),
+                blockedReason: _correctionBlockedReason(day),
+                singlePunch: widget.dashboard.shift.singlePunchDay,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openAttendanceDay(AttendanceDayView day) {
     setState(() {
       if (day.kind == AttendanceKind.attention) {
@@ -3837,113 +3892,131 @@ class AttendanceFilterChips extends StatelessWidget {
   const AttendanceFilterChips({
     required this.selected,
     required this.onChanged,
+    this.counts = const {},
   });
 
   final AttendanceFilter? selected;
   final ValueChanged<AttendanceFilter?> onChanged;
+
+  /// How many days of the month each heading covers, shown in its badge.
+  final Map<AttendanceFilter, int> counts;
 
   @override
   Widget build(BuildContext context) {
     void toggle(AttendanceFilter filter) =>
         onChanged(selected == filter ? null : filter);
 
+    const order = [
+      (AttendanceFilter.missedPunch, 'Missed Punch'),
+      (AttendanceFilter.present, 'Present'),
+      (AttendanceFilter.late, 'Late'),
+      (AttendanceFilter.halfDay, 'Half-day'),
+      (AttendanceFilter.leave, 'Leave'),
+      (AttendanceFilter.holiday, 'Holiday'),
+    ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
       child: Row(
         children: [
-          _AttendanceFilterChip(
-            label: 'Missed Punch',
-            selected: selected == AttendanceFilter.missedPunch,
-            onTap: () => toggle(AttendanceFilter.missedPunch),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Present',
-            selected: selected == AttendanceFilter.present,
-            onTap: () => toggle(AttendanceFilter.present),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Late',
-            selected: selected == AttendanceFilter.late,
-            onTap: () => toggle(AttendanceFilter.late),
-            leading: SvgPicture.asset(
-              'assets/icons/filter_late_clock.svg',
-              width: 12,
-              height: 12,
+          for (final (filter, label) in order) ...[
+            _AttendanceFilterChip(
+              label: label,
+              count: counts[filter] ?? 0,
+              selected: selected == filter,
+              tone: _attendanceFilterTone(filter),
+              onTap: () => toggle(filter),
             ),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Half-day',
-            selected: selected == AttendanceFilter.halfDay,
-            onTap: () => toggle(AttendanceFilter.halfDay),
-            leading: const Text(
-              '½',
-              style: TextStyle(
-                color: Color(0xFF6B7280),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Leave',
-            selected: selected == AttendanceFilter.leave,
-            onTap: () => toggle(AttendanceFilter.leave),
-          ),
-
-          const SizedBox(width: 8),
-          _AttendanceFilterChip(
-            label: 'Holiday',
-            selected: selected == AttendanceFilter.holiday,
-            onTap: () => toggle(AttendanceFilter.holiday),
-          ),
+            if (filter != AttendanceFilter.holiday) const SizedBox(width: 8),
+          ],
         ],
       ),
     );
   }
 }
 
+/// The colour a heading takes when it is open: red for what needs fixing,
+/// green for days that went right, blue for the rest.
+(Color, Color) _attendanceFilterTone(AttendanceFilter filter) =>
+    switch (filter) {
+      AttendanceFilter.missedPunch => (
+        const Color(0xFFFFE6E7),
+        const Color(0xFFFF383C),
+      ),
+      AttendanceFilter.present || AttendanceFilter.halfDay => (
+        const Color(0xFFEAFFE6),
+        const Color(0xFF34C759),
+      ),
+      _ => (const Color(0xFFE3F0F7), const Color(0xFF0571A6)),
+    };
+
+/// One heading pill (node 2112:68119): the label and, in its own badge, how
+/// many days it covers. Open, it takes its own colour rather than inverting.
 class _AttendanceFilterChip extends StatelessWidget {
   const _AttendanceFilterChip({
     required this.label,
+    required this.count,
     required this.selected,
+    required this.tone,
     required this.onTap,
-    this.leading,
   });
 
   final String label;
+  final int count;
   final bool selected;
+  final (Color, Color) tone;
   final VoidCallback onTap;
-  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
+    final (background, foreground) = tone;
+    final ink = selected ? foreground : const Color(0xFF6B7280);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(99),
+      borderRadius: BorderRadius.circular(999),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: selected ? _Q.ink : Colors.white,
-          borderRadius: BorderRadius.circular(99),
+          color: selected ? background : Colors.white,
+          borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? _Q.ink : const Color(0xFFE5E7EB),
+            color: selected ? foreground : const Color(0xFFE5E7EB),
             width: .8,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 6)],
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : const Color(0xFF6B7280),
+                color: ink,
                 fontSize: 12,
+                height: 16 / 12,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              height: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? background : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected ? foreground : const Color(0xFFE5E7EB),
+                ),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 10,
+                  height: 12 / 10,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -4028,36 +4101,49 @@ bool _attendanceListShowsChevron(AttendanceKind kind) =>
     kind != AttendanceKind.holiday &&
     kind != AttendanceKind.future;
 
+/// One day under an open heading (node 3214:40887): the weekday and date,
+/// the check-in and check-out it recorded, and a chevron to its details. A
+/// day with a correction already with the manager says so under its times.
 class AttendanceListCard extends StatelessWidget {
   const AttendanceListCard({
     required this.day,
     required this.today,
     required this.onTap,
+    this.pendingNotice,
+    this.singlePunch = false,
     this.dimmed = false,
     this.selected = false,
   });
   final AttendanceDayView day;
   final bool today;
   final VoidCallback onTap;
+  final String? pendingNotice;
+  final bool singlePunch;
   final bool dimmed;
   final bool selected;
 
+  static String _clock(DateTime at) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    return '$hour:${at.minute.toString().padLeft(2, '0')} '
+        '${at.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final color = dimmed
-        ? _Q.inkFaint
-        // An unresolved day reads red here too, whatever it is marked as —
-        // the grid and the list must never disagree about which days still
-        // need someone to act.
-        : day.unresolved
-        ? _attendanceListRowColor(AttendanceKind.attention)
-        : _attendanceListRowColor(day.kind);
-    final showChevron = !dimmed && _attendanceListShowsChevron(day.kind);
-    final background = selected
-        ? const Color(0xFFDBEAFE)
-        : _attendanceListRowBackground(day.kind);
+    final punchIn = day.record?.punchIn;
+    final punchOut = day.record?.punchOut;
+    // Days that never had punches — leave, a holiday, a week-off — say what
+    // they were instead of two blank times.
+    final hasTimes = switch (day.kind) {
+      AttendanceKind.present ||
+      AttendanceKind.halfDay ||
+      AttendanceKind.attention ||
+      AttendanceKind.regularizationPending => true,
+      _ => false,
+    };
+    final ink = dimmed ? _Q.inkFaint : const Color(0xFF222222);
     return Material(
-      color: background,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -4073,49 +4159,94 @@ class AttendanceListCard extends StatelessWidget {
                 )
               : null,
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: 40,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _weekday(day.date.weekday).substring(0, 3).toUpperCase(),
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _weekday(day.date.weekday).substring(0, 3),
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 10,
+                            height: 15 / 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${day.date.day}',
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 18,
+                            height: 22.5 / 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '${day.date.day}',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 18,
-                        height: 1.15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  day.title,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 14,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: hasTimes
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _AttendanceListTime(
+                                    label: 'Check-in',
+                                    at: punchIn,
+                                  ),
+                                ),
+                                Container(
+                                  width: 1,
+                                  height: 43,
+                                  color: const Color(0xFFDDDDDD),
+                                ),
+                                const SizedBox(width: 28),
+                                Expanded(
+                                  child: _AttendanceListTime(
+                                    label: 'Check-out',
+                                    at: punchOut,
+                                    // A one-punch day has no second time to
+                                    // be missing.
+                                    missing: singlePunch ? '—' : 'NA',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Text(
+                            day.title,
+                            style: TextStyle(
+                              color: dimmed
+                                  ? _Q.inkFaint
+                                  : _attendanceListRowColor(day.kind),
+                              fontSize: 14,
+                              height: 1.25,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: Color(0xFF9197A2),
+                  ),
+                ],
               ),
-              if (showChevron) ...[
-                const SizedBox(width: 6),
-                Icon(Icons.chevron_right_rounded, size: 14, color: color),
+              if (pendingNotice case final notice?) ...[
+                const SizedBox(height: 12),
+                _AttendancePendingNotice(text: notice),
               ],
             ],
           ),
@@ -4123,6 +4254,47 @@ class AttendanceListCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AttendanceListTime extends StatelessWidget {
+  const _AttendanceListTime({
+    required this.label,
+    required this.at,
+    this.missing = 'NA',
+  });
+
+  final String label;
+  final DateTime? at;
+  final String missing;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF929292),
+          fontSize: 10,
+          height: 12.6 / 10,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        at == null ? missing : AttendanceListCard._clock(at!),
+        style: TextStyle(
+          color: at == null && missing == 'NA'
+              ? const Color(0xFFFF383C)
+              : const Color(0xFF2A2A2A),
+          fontSize: 16,
+          height: 20.2 / 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
 }
 
 class AttendanceMonthGrid extends StatelessWidget {
@@ -4162,15 +4334,18 @@ class AttendanceMonthGrid extends StatelessWidget {
             );
           }),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         GridView.builder(
           shrinkWrap: true,
+          // Nested in a scroll view, a grid would otherwise take the
+          // screen's own safe-area padding and open with a blank row.
+          padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 0,
-            childAspectRatio: 1.1,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            childAspectRatio: 1,
           ),
           itemCount: leading + days.length,
           itemBuilder: (context, index) {
@@ -4977,37 +5152,29 @@ class _AttendancePendingNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFDF1DC),
+        color: const Color(0x4DFFB000),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 22,
-            height: 22,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF6E2BE),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.hourglass_bottom_rounded,
-              size: 13,
-              color: Color(0xFF8A6A2F),
-            ),
+          SvgPicture.asset(
+            'assets/icons/alert_pending_clock.svg',
+            width: 30,
+            height: 30,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
-                color: Color(0xFF8A6A2F),
-                fontSize: 12.5,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
+                color: Color(0xFF484848),
+                fontSize: 10,
+                height: 16.2 / 10,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -5224,6 +5391,135 @@ class _HubScaffold extends StatelessWidget {
         ),
         ?footer,
       ],
+    );
+  }
+}
+
+/// Nothing here yet (node 2526:9364): the action's own picture, a line that
+/// says so, and the way to change it.
+class _HubEmptyState extends StatelessWidget {
+  const _HubEmptyState({
+    required this.iconAsset,
+    required this.text,
+    this.buttonLabel,
+    this.onTap,
+  });
+
+  final String iconAsset;
+  final String text;
+  final String? buttonLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
+      child: Column(
+        children: [
+          Image.asset(iconAsset, width: 46, height: 46, fit: BoxFit.contain),
+          const SizedBox(height: 12),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF484848),
+              fontSize: 12,
+              height: 16.2 / 12,
+              letterSpacing: -0.16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (buttonLabel case final label?) ...[
+            const SizedBox(height: 8),
+            Material(
+              color: const Color(0xFF0571A6),
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      height: 16.2 / 12,
+                      letterSpacing: -0.16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The full-width button under a form (node 691:19752): live once the form
+/// is complete, otherwise the muted blue of something not ready yet.
+class _FormSubmitBar extends StatelessWidget {
+  const _FormSubmitBar({
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+    this.busy = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final live = enabled || busy;
+    return ColoredBox(
+      color: const Color(0xFFF7F7F9),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Material(
+            color: live ? const Color(0xFF0571A6) : const Color(0xFF96B7C7),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: enabled && !busy ? onTap : null,
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                height: 49,
+                child: Center(
+                  child: busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            height: 16.2 / 16,
+                            letterSpacing: -0.16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
