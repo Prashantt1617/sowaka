@@ -999,36 +999,30 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// the balance strip and the day counts here.
   List<String> get _leaveLabels => widget.dashboard.shift.applicableLeaveLabels;
 
-  /// The same list without comp-off, which is earned from overtime rather than
-  /// accrued, so it does not belong in the balance strip.
+  /// Every type this employee has a balance for — including one that has run
+  /// down to zero, which stays on show, and comp-off once overtime has
+  /// credited any. A type with nothing to its name is left out.
   List<String> get _accruingLeaveLabels => [
     for (final label in _leaveLabels)
-      if (_balanceFor(label) != null && _leaveKeyFor(label) != 'comp_off')
-        label,
+      if ((_balanceFor(label)?.total ?? 0) > 0) label,
   ];
+
+  /// What the form may be filed under: the types with days left to spend. On
+  /// unlimited leave every type is open, since nothing is being counted.
+  List<String> get _pickableLeaveLabels => !widget.dashboard.shift.leaveBalanceTracked
+      ? _leaveLabels
+      : [
+          for (final label in _leaveLabels)
+            if ((_balanceFor(label)?.remaining ?? 0) > 0) label,
+        ];
 
   /// The policy key behind a display name, so a type HR renames still finds
   /// its balance and its window.
   String _leaveKeyFor(String label) =>
-      widget.dashboard.shift.windowForLeave(label)?.key ??
-      switch (label) {
-        'Casual Leave' => 'casual',
-        'Sick Leave' => 'sick',
-        'Earned Leave' => 'earned',
-        'Comp-off' => 'comp_off',
-        _ => '',
-      };
+      widget.dashboard.shift.leaveKeyFor(label);
 
-  LeaveBalanceItem? _balanceFor(String label) {
-    final balance = widget.dashboard.leaveBalance;
-    return switch (_leaveKeyFor(label)) {
-      'casual' => balance.casual,
-      'sick' => balance.sick,
-      'earned' => balance.earned,
-      'comp_off' => balance.compOff,
-      _ => null,
-    };
-  }
+  LeaveBalanceItem? _balanceFor(String label) =>
+      widget.dashboard.leaveBalance.forKey(_leaveKeyFor(label));
 
   Widget _applyLeaveForm() {
     final balanceItem = _leaveType == null ? null : _balanceFor(_leaveType!);
@@ -1076,12 +1070,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ),
             child: Text(
               'Available balance: ${formatDays(balanceForType)} '
-              '${switch (_leaveType) {
-                'Casual Leave' => 'casual',
-                'Sick Leave' => 'sick',
-                'Earned Leave' => 'earned',
-                _ => 'comp-off',
-              }} days'
+              '${_leaveKeyFor(_leaveType!) == 'comp_off' ? 'comp-off' : _shortLeaveLabel(_leaveType!).toLowerCase()} days'
               '${balanceItem?.monthly ?? false ? ' for ${balanceItem!.periodLabel}' : ''}',
               style: const TextStyle(
                 color: Color(0xFF2563EB),
@@ -1193,11 +1182,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _LeavePickerSheet(
-        options: _leaveLabels,
+        options: _pickableLeaveLabels,
         selected: _leaveType,
         unavailable: {
           if (_leaveFrom case final from?)
-            for (final label in _leaveLabels)
+            for (final label in _pickableLeaveLabels)
               if (leaveRangeProblem(
                     policy: widget.dashboard.shift,
                     holidayDates: _holidayKeys,
@@ -1212,7 +1201,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 label: reason,
         },
         trailingLabels: {
-          for (final label in _leaveLabels)
+          for (final label in _pickableLeaveLabels)
             if (_balanceFor(label) != null) label: left(_balanceFor(label)!),
         },
       ),
@@ -2520,9 +2509,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             '${shift.name.isEmpty ? '' : ' (${shift.name})'}.',
       'A day counts as a full day at ${formatDays(shift.minFullDayHours)} '
           'hours and as a half day at ${formatDays(shift.minHalfDayHours)}.',
-      'You are marked late after ${shift.lateGraceMinutes} minutes past the '
-          'start, and as an early-out if you leave more than '
-          '${shift.earlyOutGraceMinutes} minutes before the end.',
+      switch ((shift.lateMarkingEnabled, shift.earlyMarkingEnabled)) {
+        (true, true) =>
+          'You are marked late after ${shift.lateGraceMinutes} minutes past '
+              'the start, and as an early-out if you leave more than '
+              '${shift.earlyOutGraceMinutes} minutes before the end.',
+        (true, false) =>
+          'You are marked late after ${shift.lateGraceMinutes} minutes past '
+              'the start. Leaving early is not marked.',
+        (false, true) =>
+          'You are marked as an early-out if you leave more than '
+              '${shift.earlyOutGraceMinutes} minutes before the end. Arriving '
+              'late is not marked.',
+        (false, false) => 'Arriving late or leaving early is not marked.',
+      },
       if (days.isNotEmpty) 'Week-offs: ${days.join(', ')}.',
       if (correction.punchFormat.isNotEmpty)
         'Punches are captured by ${correction.punchFormat}.',
@@ -3702,7 +3702,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       'Sick Leave': 'Sick',
       'Earned Leave': 'Earned',
     };
-    return known[label] ?? label;
+    return known[label] ?? label.replaceAll(RegExp(r'\s+[Ll]eave$'), '');
   }
 
   static IconData _leaveIcon(String label) => switch (label) {
@@ -3710,6 +3710,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     'Casual Leave' => Icons.coffee_rounded,
     'Earned Leave' => Icons.flight_takeoff_rounded,
     'Comp-off' => Icons.swap_horiz_rounded,
+    _ when label.toLowerCase().contains('emergency') =>
+      Icons.emergency_outlined,
     _ => Icons.event_available_rounded,
   };
 
@@ -5577,7 +5579,7 @@ class _LeaveRequestCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${request.type} Leave',
+                  '${request.type} leave request',
                   style: const TextStyle(
                     color: Color(0xFF111827),
                     fontSize: 14,

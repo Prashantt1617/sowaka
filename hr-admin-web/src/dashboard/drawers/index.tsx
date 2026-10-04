@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { getReimbReceiptUrl } from '../../services/hrms';
-import { ETYPE, OTDUR, STAT, TYPE } from '../theme';
-import type { LeaveType } from '../theme';
+import { ETYPE, OTDUR, STAT, typeColor } from '../theme';
 import type { Reimb } from '../seed';
 import { Pill, Avatar } from '../ui';
 import { IconCheck, IconDownload, IconExternal, IconFile, IconStar, IconX } from '../icons';
@@ -94,7 +93,7 @@ function LeaveDrawer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} fontSize={13} padding="5px 13px" />
           <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 16, fontWeight: 600, color: '#484848' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: TYPE[d.type as LeaveType] }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: typeColor(d.type) }} />
             {d.type} leave
           </span>
         </div>

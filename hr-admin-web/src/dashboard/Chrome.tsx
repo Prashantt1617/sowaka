@@ -16,6 +16,7 @@ const REQUESTS: NavItem[] = [
   { key: 'leave', label: 'Leave requests' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
+  { key: 'oolcheckins', label: 'OOL check-ins' },
   { key: 'reimbursements', label: 'Reimbursements' },
 ];
 const PEOPLE: NavItem[] = [
@@ -36,6 +37,7 @@ const SHIFTS: NavItem[] = [
   { key: 'holidaybank', label: 'Holiday Bank' },
   { key: 'shifttypes', label: 'Templates' },
   { key: 'shiftbulk', label: 'Bulk Assign' },
+  { key: 'offices', label: 'Offices' },
 ];
 // Reports sits above Payroll: it is what HR reads before a pay cycle is run,
 // and the attendance behind it is what the cycle is built from.

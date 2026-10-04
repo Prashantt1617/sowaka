@@ -73,6 +73,8 @@ const TONE: Record<Facet, { bg: string; fg: string }> = {
 const LEAVE_LABEL: Record<string, string> = {
   sick: 'Sick', casual: 'Casual', earned: 'Earned', comp_off: 'Comp off',
 };
+/** 'emergency' -> 'Emergency': a type HR added reads as a word, not a key. */
+const leaveName = (key: string) => LEAVE_LABEL[key] ?? key.split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ');
 
 const PAGE = 20;
 
@@ -142,7 +144,7 @@ const gapLabel = (row: ReportRow) => {
   return gap ? GAPS.find((g) => g.key === gap)!.label : '';
 };
 const detail = (row: ReportRow) =>
-  row.leaveType ? `${LEAVE_LABEL[row.leaveType] ?? row.leaveType} leave`
+  row.leaveType ? `${leaveName(row.leaveType)} leave`
     : gapLabel(row)
       || (row.late ? `Late by ${row.lateByMinutes} min`
         : row.source === 'sql_import' ? 'Biometric device'
@@ -277,7 +279,7 @@ export function AttendanceReport() {
     'Punch in': clock(r.punchIn),
     'Punch out': clock(r.punchOut),
     'Hours': hours(r),
-    'Leave type': r.leaveType ? LEAVE_LABEL[r.leaveType] ?? r.leaveType : '',
+    'Leave type': r.leaveType ? leaveName(r.leaveType) : '',
     'Source': r.source ?? '',
   }));
   const suffix = `${from}-to-${to}${filter === 'all' ? '' : `-${filter}`}${gap === 'all' ? '' : `-${gap}`}`;

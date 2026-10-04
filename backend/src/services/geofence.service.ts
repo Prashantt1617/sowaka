@@ -151,6 +151,10 @@ export async function saveOffice(
   },
 ) {
   const now = new Date();
+  // An edit names an office of this org, or it is not an edit.
+  if (input.id && !(await offices().findOne({ id: input.id, org }))) {
+    throw new Error('Office not found');
+  }
   const radius = Number(input.radiusMeters);
   const office: Office = {
     id: input.id ?? randomUUID(),
@@ -175,9 +179,33 @@ export async function saveOffice(
   const mutable: Partial<Office> = { ...office };
   delete mutable.createdAt;
   await offices().updateOne(
-    { id: office.id },
+    { id: office.id, org },
     { $set: mutable, $setOnInsert: { createdAt: now } },
     { upsert: true },
   );
   return office;
+}
+
+/**
+ * Removes an office. Punches already taken there keep the office's name and
+ * distance on their own record, so nothing in history goes blank.
+ */
+export async function deleteOffice(org: string, id: string) {
+  const result = await offices().deleteOne({ id, org });
+  if (result.deletedCount === 0) throw new Error('Office not found');
+}
+
+/**
+ * Where a punch was taken, in words a manager can use: "1.2 km from Sowaka
+ * Office". No map lookup — the offices HR set up are the only places the
+ * product knows, and a distance from the nearest one says enough.
+ */
+export function placeLabel(distanceMeters?: number, officeName?: string): string {
+  if (distanceMeters == null || !Number.isFinite(distanceMeters)) {
+    return officeName ? `Away from ${officeName}` : 'Away from office';
+  }
+  const distance = distanceMeters < 1000
+    ? `${Math.round(distanceMeters)} m`
+    : `${(distanceMeters / 1000).toFixed(distanceMeters < 10_000 ? 1 : 0)} km`;
+  return `${distance} from ${officeName ?? 'office'}`;
 }

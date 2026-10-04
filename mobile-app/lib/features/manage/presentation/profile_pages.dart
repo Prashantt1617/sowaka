@@ -51,7 +51,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
           leave.requestedOn,
           _ProfileRequestCard(
             icon: Icons.calendar_month_rounded,
-            title: '${leave.type} Request',
+            title: '${leave.type} leave request',
             rows: [
               ('Date:', _leaveDateRange(leave)),
               ('Comment:', leave.reason),
@@ -126,13 +126,11 @@ class _TeamMemberProfilePage extends StatelessWidget {
         (
           request.createdAt,
           _ProfileRequestCard(
-            icon: Icons.edit_calendar_rounded,
-            title: 'Attendance Correction',
-            rows: [
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
-            ],
+            icon: request.isOutOfLocation
+                ? Icons.location_off_rounded
+                : Icons.edit_calendar_rounded,
+            title: request.heading,
+            rows: _attendanceRequestRows(request),
             decision: LeaveDecision.pending,
             approving: bloc.isBusy(
               DecideAttendanceRegularization(
@@ -1447,7 +1445,7 @@ class _MyRequestsSection extends StatelessWidget {
           leave.requestedOn,
           _ProfileRequestCard(
             icon: Icons.calendar_month_rounded,
-            title: '${leave.type} Request',
+            title: '${leave.type} leave request',
             rows: [
               ('Date:', _leaveDateRange(leave)),
               ('Comment:', leave.reason),
@@ -1478,13 +1476,11 @@ class _MyRequestsSection extends StatelessWidget {
         (
           request.createdAt,
           _ProfileRequestCard(
-            icon: Icons.edit_calendar_rounded,
-            title: 'Attendance Correction',
-            rows: [
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
-            ],
+            icon: request.isOutOfLocation
+                ? Icons.location_off_rounded
+                : Icons.edit_calendar_rounded,
+            title: request.heading,
+            rows: _attendanceRequestRows(request),
             decision: request.decision,
             readOnly: true,
           ),

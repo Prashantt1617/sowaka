@@ -12,11 +12,10 @@ import {
   managerMayDecide, weekOffGridFor,
 } from './shift.service';
 import { overtimeDurationOf } from '../models/overtime.model';
-import { COMP_OFF_CREDIT, LeaveTypeKey, LeaveTypeRule, processYearEnd } from '../models/shift.model';
+import { COMP_OFF_CREDIT, LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, leaveTypeLabel, processYearEnd } from '../models/shift.model';
 import { carriedFromRun as carriedFromYearEndRun } from './leave-year-end.service';
 
 const maxLeaveDays = 30;
-const leaveTypes = new Set<Leave['type']>(['sick', 'casual', 'earned', 'comp_off']);
 const decisionStatuses = new Set<LeaveStatus>(['approved', 'declined']);
 
 export interface LeaveView {
@@ -31,6 +30,8 @@ export interface LeaveView {
     photoUrl?: string;
   };
   type: Leave['type'];
+  /** The type as the employee's template names it — "Emergency Leave". */
+  typeName: string;
   startDate: string;
   endDate: string;
   days: number;
@@ -75,9 +76,11 @@ export async function applyForLeave(
     throw new LeaveError(409, 'The assigned manager is not active');
   }
 
-  const type = input.type.trim().toLowerCase() as Leave['type'];
-  if (!leaveTypes.has(type)) {
-    throw new LeaveError(400, `Leave type must be one of: ${[...leaveTypes].join(', ')}`);
+  // Which types exist is the employee's template's business: checked against
+  // its list below, so a type HR adds is applicable the moment it is saved.
+  const type = input.type.trim().toLowerCase();
+  if (!LEAVE_KEY_PATTERN.test(type)) {
+    throw new LeaveError(400, 'Choose a leave type');
   }
 
   const startDate = parseDateOnly(input.startDate, 'startDate');
@@ -154,7 +157,7 @@ export async function applyForLeave(
   const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
   for (const window of windows) {
     const balance = await getMyLeaveBalance(userId, window.start.getUTCFullYear(), window.start);
-    const forType = balance[type] as { total: number; used: number } | undefined;
+    const forType = balance.types.find((item) => item.key === type);
     if (!forType) continue;
     const daysInWindow = windows.length === 1
       ? days
@@ -175,8 +178,8 @@ export async function applyForLeave(
       throw new LeaveError(
         400,
         held > 0
-          ? `Only ${available} day(s) of ${type} leave left in ${window.label} — ${forType.total - forType.used} in balance, ${held} already requested`
-          : `Only ${available} day(s) of ${type} leave left in ${window.label}`,
+          ? `Only ${available} day(s) of ${rule.name} left in ${window.label} — ${forType.total - forType.used} in balance, ${held} already requested`
+          : `Only ${available} day(s) of ${rule.name} left in ${window.label}`,
       );
     }
   }
@@ -281,19 +284,19 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
       endDate: { $gte: yearStart },
     })
     .toArray();
-  const used: Record<Leave['type'], number> = { sick: 0, casual: 0, earned: 0, comp_off: 0 };
+  const used: Record<string, number> = {};
   for (const leave of approved) {
     const withinYear = leave.startDate >= yearStart && leave.endDate <= yearEnd;
     if (leave.days != null && withinYear) {
       // The count agreed at apply time — holidays already excluded.
-      used[leave.type] += leave.days;
+      used[leave.type] = (used[leave.type] ?? 0) + leave.days;
       continue;
     }
     // Legacy rows, and leaves straddling a year boundary, fall back to the
     // clamped calendar span.
     const start = leave.startDate < yearStart ? yearStart : leave.startDate;
     const end = leave.endDate > yearEnd ? yearEnd : leave.endDate;
-    used[leave.type] += inclusiveDays(start, end);
+    used[leave.type] = (used[leave.type] ?? 0) + inclusiveDays(start, end);
   }
   // Comp-off is not accrued: the balance is what approved overtime earned.
   const compOffEarned = await compOffCreditedIn(userId, yearStart, yearEnd);
@@ -309,14 +312,15 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
   for (const rule of monthlyRules) {
     monthly[rule.key as Leave['type']] = await monthlyBalance(employee, rule, year, month);
   }
-  const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key]);
+  const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key] ?? 0);
 
   return {
     year,
-    sick: item('sick'),
-    casual: item('casual'),
-    earned: item('earned'),
-    comp_off: item('comp_off'),
+    // Every type on their template, in the template's order — what the app
+    // shows. A type HR adds appears here without an app release.
+    types: allRules.map((rule) => ({ key: rule.key, name: rule.name, ...item(rule.key) })),
+    // The four original types by name, for app builds that predate `types`.
+    ...(Object.fromEntries(LEAVE_TYPE_KEYS.map((key) => [key, item(key)])) as Record<'sick' | 'casual' | 'earned' | 'comp_off', ReturnType<typeof item>>),
   };
 }
 
@@ -769,6 +773,17 @@ function balanceItem(total: number, used: number) {
   return { total, used, remaining: Math.max(0, total - used) };
 }
 
+/**
+ * The name a request's type is shown under. The four original types read the
+ * same everywhere; one HR added is looked up on the employee's template, so it
+ * shows as HR named it, and falls back to its key if the type was since removed.
+ */
+async function leaveTypeName(key: string, userId: string): Promise<string> {
+  if (LEAVE_TYPE_KEYS.includes(key)) return leaveTypeLabel(key);
+  const rule = (await leaveTypeRulesFor(userId).catch(() => [])).find((item) => item.key === key);
+  return rule?.name ?? leaveTypeLabel(key);
+}
+
 async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Promise<LeaveView> {
   const createdAt = leave.createdAt ? new Date(leave.createdAt) : (leave.updatedAt ?? new Date());
   return {
@@ -782,6 +797,7 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Pr
       photoUrl: await resolveProfilePhoto(employee),
     },
     type: leave.type,
+    typeName: await leaveTypeName(leave.type, employee.userId),
     startDate: leave.startDate.toISOString().slice(0, 10),
     endDate: leave.endDate.toISOString().slice(0, 10),
     // Rows written before `days` existed fall back to the raw calendar span.

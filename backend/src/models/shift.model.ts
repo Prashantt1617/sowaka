@@ -79,6 +79,39 @@ export const CORRECTION_OUTCOMES: CorrectionOutcome[] = ['Full day', 'Half day',
 /** The only thing a half day can be corrected to. */
 export const HALF_DAY_CORRECTION_OUTCOMES: CorrectionOutcome[] = ['Full day'];
 
+/**
+ * What happens when someone on a geotagged shift punches from outside every
+ * office. Not every company wants a hard fence: a field team is out of the
+ * building most days, and HR would rather know than refuse.
+ *
+ * 'request' sends an out-of-location request to the manager and the day
+ * stands as absent until they approve it. 'present' marks the day as worked
+ * straight away, with the reason and the pin kept on the record so HR can see
+ * who punched from where.
+ */
+export type OutsideLocationOutcome = 'request' | 'present';
+
+export const OUTSIDE_LOCATION_OUTCOMES: OutsideLocationOutcome[] = ['request', 'present'];
+
+export interface OutsideLocationRules {
+  outcome: OutsideLocationOutcome;
+  /**
+   * Why someone might be away, as HR words it — "Working from home", "Client
+   * visit". The employee picks one when the location check fails. Free text,
+   * so a company can name the cases it actually has.
+   */
+  reasons: string[];
+}
+
+export const DEFAULT_OUTSIDE_LOCATION: OutsideLocationRules = {
+  outcome: 'request',
+  reasons: ['Working from home', 'Client visit', 'Out of office'],
+};
+
+/** How many reasons HR may list, and how long each may be. */
+export const MAX_OUTSIDE_LOCATION_REASONS = 12;
+export const MAX_OUTSIDE_LOCATION_REASON_LENGTH = 40;
+
 export interface ShiftCorrectionRules {
   /**
    * Which missing-punch outcomes let an employee raise a correction. Only a
@@ -96,6 +129,8 @@ export interface ShiftCorrectionRules {
    * is also what turning its trigger off means.
    */
   absentOutcomes: CorrectionOutcome[];
+  /** Only read on a geotagged shift; kept on every policy so a switch to geotag has an answer. */
+  outsideLocation: OutsideLocationRules;
   approver: string;
   managerWithoutEmployee: boolean;
   hrOverride: boolean;
@@ -138,10 +173,17 @@ export const CORRECTION_TRIGGERS = [
 ];
 
 /**
- * The leave types an org runs. 'sick' is no longer offered — it stays in the
- * union so leave already taken against it still reads and validates.
+ * A leave type's key. The four built in are below; HR adds its own from the
+ * dashboard (an 'emergency' type, say), keyed by a slug of the name. 'sick' is
+ * no longer offered by default — leave already taken against it still reads.
  */
-export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
+export type LeaveTypeKey = string;
+
+/** Lower-case letters, digits and underscores, starting with a letter. */
+export const LEAVE_KEY_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** At most this many types per template. */
+export const MAX_LEAVE_TYPES = 12;
 
 /**
  * One leave type's accrual and what happens to an unused balance at year end.
@@ -197,6 +239,18 @@ export interface LeaveYearEnd {
   processedAt: Date;
 }
 
+/**
+ * How a type reads where only its key is at hand — an email, an old row:
+ * 'casual' is "Casual Leave", 'comp_off' "Comp-off", and a type HR added,
+ * 'emergency', "Emergency Leave".
+ */
+export function leaveTypeLabel(key: string): string {
+  if (key === 'comp_off') return 'Comp-off';
+  const words = key.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1));
+  return words.length ? `${words.join(' ')} Leave` : 'Leave';
+}
+
+/** The types every org started with; the balance API still names these individually for older apps. */
 export const LEAVE_TYPE_KEYS: LeaveTypeKey[] = ['sick', 'casual', 'earned', 'comp_off'];
 
 export const DEFAULT_LEAVE_TYPES: LeaveTypeRule[] = [
@@ -361,8 +415,12 @@ export interface OrgShiftPolicy {
   halfDay: ShiftHalfDayRules;
   minHalfDayHours: number;
   minFullDayHours: number;
-  // Policies › Late
+  // Policies › Late. Each mark is a question first — whether anyone is
+  // categorised late (or early) at all — and only then a number of minutes.
+  // Off means the minutes are kept but nobody is marked.
+  lateMarkingEnabled: boolean;
   lateGraceMinutes: number;
+  earlyMarkingEnabled: boolean;
   earlyOutGraceMinutes: number;
   // Policies › Overtime / Attendance correction / Leaves
   overtime: ShiftOvertimeRules;
@@ -392,7 +450,9 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
   },
   minHalfDayHours: 4,
   minFullDayHours: 8,
+  lateMarkingEnabled: true,
   lateGraceMinutes: 10,
+  earlyMarkingEnabled: true,
   earlyOutGraceMinutes: 10,
   overtime: { eligible: true, backdateDays: 7 },
   correction: {
@@ -402,6 +462,7 @@ export const DEFAULT_ORG_SHIFT_POLICY: Omit<OrgShiftPolicy, 'org' | 'updatedAt'>
     punchFormat: 'Present by default (Auto Punch)',
     punchMode: 'Both punches',
     absentOutcomes: [...CORRECTION_OUTCOMES],
+    outsideLocation: { ...DEFAULT_OUTSIDE_LOCATION, reasons: [...DEFAULT_OUTSIDE_LOCATION.reasons] },
     approver: 'Reporting manager',
     managerWithoutEmployee: true, hrOverride: true, skipLevel: false,
     backdateDays: 7,
@@ -435,6 +496,8 @@ export const DEFAULT_SHIFT_POLICY = {
   },
   minHalfDayHours: 4,
   minFullDayHours: 8,
+  lateMarkingEnabled: true,
   lateGraceMinutes: 10,
+  earlyMarkingEnabled: true,
   earlyOutGraceMinutes: 10,
 } as const;

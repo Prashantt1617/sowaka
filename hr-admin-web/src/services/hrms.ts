@@ -8,7 +8,10 @@ export type LeaveDTO = {
   id: string;
   userId: string;
   employee: { name: string; email?: string; department?: string; designation?: string };
-  type: 'sick' | 'casual' | 'earned';
+  /** A leave type key — one of the built-in four, or one HR added. */
+  type: string;
+  /** The type as the employee's template names it ("Emergency Leave"). Older servers omit it. */
+  typeName?: string;
   startDate: string;
   endDate: string;
   days: number;
@@ -46,6 +49,12 @@ export type RegularizationDTO = {
   manager?: string;
   employee: { name: string; department?: string };
   workDate: string;
+  /** A correction disputes the day's grade; out of location is a punch away from every office. */
+  kind?: 'correction' | 'out_of_location';
+  /** The heading everyone sees — "Out of location request (Client visit)" or "Attendance correction". */
+  title?: string;
+  /** Out of location only: why, where, and how far from the nearest office. */
+  outsideLocation?: OutsideLocationDTO;
   requestedDayType?: 'full_day' | 'half_day' | 'wfh' | 'client_visit' | 'office_visit' | 'leave';
   note?: string;
   status: 'pending' | 'approved' | 'declined';
@@ -309,7 +318,8 @@ export const getWorkspace = () => api<WorkspaceDTO>('/manager/workspace');
 // live records: what HR saves here is what the app reads.
 export type DayMark = 'Absent' | 'Half Day' | 'Present';
 
-export type LeaveTypeKey = 'sick' | 'casual' | 'earned' | 'comp_off';
+/** The built-in 'casual', 'earned', 'comp_off' and 'sick', or a slug HR made from a name ('emergency'). */
+export type LeaveTypeKey = string;
 
 /**
  * One leave type's accrual and what happens to an unused balance at year end.
@@ -445,6 +455,33 @@ export type ShiftHalfDayRulesDTO = {
   earlyLeaveMinutes: number;
 };
 
+/** A punch taken away from every office: the reason, the pin and a readable place. */
+export type OutsideLocationDTO = {
+  reason: string;
+  punchType: 'in' | 'out';
+  at: string;
+  latitude: number;
+  longitude: number;
+  officeName?: string;
+  distanceMeters?: number;
+  /** "1.2 km from Sowaka Office". */
+  place: string;
+};
+
+export type OutsideLocationOutcome = 'request' | 'present';
+
+/** What a geotagged shift does with a punch from outside every office. */
+export type OutsideLocationRules = {
+  outcome: OutsideLocationOutcome;
+  /** HR's own wording — "Working from home", "Client visit". */
+  reasons: string[];
+};
+
+export const DEFAULT_OUTSIDE_LOCATION: OutsideLocationRules = {
+  outcome: 'request',
+  reasons: ['Working from home', 'Client visit', 'Out of office'],
+};
+
 export type ShiftPolicyDTO = {
   /** "HH:MM". An end at or before the start means the shift runs overnight. */
   startTime: string;
@@ -458,7 +495,10 @@ export type ShiftPolicyDTO = {
   halfDay: ShiftHalfDayRulesDTO;
   minHalfDayHours: number;
   minFullDayHours: number;
+  /** Whether anyone is categorised late (or early) at all; off keeps the minutes but marks nobody. */
+  lateMarkingEnabled: boolean;
   lateGraceMinutes: number;
+  earlyMarkingEnabled: boolean;
   earlyOutGraceMinutes: number;
   overtime: {
     /** Whether the org offers overtime at all — the per-employee and per-team
@@ -476,6 +516,8 @@ export type ShiftPolicyDTO = {
     punchMode: PunchMode;
     /** What an absent day may be corrected to. A half day is fixed to a full day. */
     absentOutcomes: CorrectionOutcome[];
+    /** Read on a geotagged shift: what an out-of-location punch leads to. */
+    outsideLocation?: OutsideLocationRules;
     approver: string;
     managerWithoutEmployee: boolean; hrOverride: boolean; skipLevel: boolean;
     /** How far back a correction may reach, in days. */
@@ -495,6 +537,45 @@ export type ShiftPolicyDTO = {
   updatedAt?: string;
 };
 
+// ---- Offices: where a geotagged punch may be taken from ----
+export type OfficeDTO = {
+  id: string;
+  name: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+};
+export type OfficeInput = Omit<OfficeDTO, 'id'>;
+
+export const getOffices = () => api<{ offices: OfficeDTO[] }>('/admin/offices').then((r) => r.offices);
+export const createOffice = (input: OfficeInput) =>
+  api<{ office: OfficeDTO }>('/admin/offices', { method: 'POST', body: input }).then((r) => r.office);
+export const updateOffice = (id: string, input: OfficeInput) =>
+  api<{ office: OfficeDTO }>(`/admin/offices/${id}`, { method: 'PATCH', body: input }).then((r) => r.office);
+export const deleteOffice = (id: string) =>
+  api<{ success: boolean }>(`/admin/offices/${id}`, { method: 'DELETE' });
+
+// ---- Out-of-location check-ins ----
+/** One punch taken away from every office, whichever way HR's policy handled it. */
+export type OutOfLocationDTO = OutsideLocationDTO & {
+  id: string;
+  userId: string;
+  name: string;
+  employeeCode: string;
+  department: string;
+  manager: string;
+  workDate: string;
+  /** 'present' marked the day straight away; 'request' went to the manager. */
+  outcome: 'present' | 'request';
+  status: 'pending' | 'approved' | 'declined';
+  decidedByRole?: DecidedByRole;
+  managerNote: string;
+};
+
+export const getOutOfLocation = (from: string, to: string) =>
+  api<{ checkIns: OutOfLocationDTO[] }>(`/admin/out-of-location?from=${from}&to=${to}`).then((r) => r.checkIns);
+
 export const setDefaultShift = (id: string) =>
   api<{ shift: ShiftDTO }>(`/admin/shifts/${id}/default`, { method: 'POST', body: {} }).then((r) => r.shift);
 
@@ -513,7 +594,9 @@ export const DEFAULT_SHIFT_POLICY: ShiftPolicyDTO = {
   halfDay: { minHalfDayEnabled: false, minFullDayEnabled: true, lateArrivalEnabled: false, lateArrivalMinutes: 120, earlyLeaveEnabled: false, earlyLeaveMinutes: 60 },
   minHalfDayHours: 4,
   minFullDayHours: 8,
+  lateMarkingEnabled: true,
   lateGraceMinutes: 10,
+  earlyMarkingEnabled: true,
   earlyOutGraceMinutes: 10,
   overtime: { eligible: true, backdateDays: 7 },
   correction: {
@@ -521,6 +604,7 @@ export const DEFAULT_SHIFT_POLICY: ShiftPolicyDTO = {
     punchFormat: 'Present by default (Auto Punch)',
     punchMode: 'Both punches',
     absentOutcomes: ['Full day', 'Half day', 'Leave'],
+    outsideLocation: { ...DEFAULT_OUTSIDE_LOCATION, reasons: [...DEFAULT_OUTSIDE_LOCATION.reasons] },
     approver: 'Reporting manager',
     managerWithoutEmployee: true, hrOverride: true, skipLevel: false,
     backdateDays: 7,

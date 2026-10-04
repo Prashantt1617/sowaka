@@ -13,7 +13,8 @@ import { users } from '../config/db';
 import { User } from '../models/user.model';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
-import { notifyUsers } from './notification.service';
+import { notifyUsers } from './notification.service';import { leaveTypeLabel } from '../models/shift.model';
+
 
 /** "10 September 2026". */
 function longDate(value: Date | string): string {
@@ -43,13 +44,7 @@ export function hoursWorked(minutes: number): string {
   return `${Math.floor(minutes / 60)}h ${String(Math.round(minutes % 60)).padStart(2, '0')}m`;
 }
 
-const LEAVE_LABEL: Record<string, string> = {
-  sick: 'Sick Leave',
-  casual: 'Casual Leave',
-  earned: 'Earned Leave',
-  comp_off: 'Comp-off',
-};
-export const leaveLabel = (type: string) => LEAVE_LABEL[type] ?? type;
+export const leaveLabel = (type: string) => leaveTypeLabel(type);
 
 const link = (label: string) => `${label}:\n${env.appWebUrl}`;
 const firstName = (name?: string) => (name ?? '').trim().split(/\s+/)[0] || 'there';
@@ -367,6 +362,79 @@ export async function notifyCorrectionDecided(input: {
     email: input.approved
       ? presentApprovedEmail(employee, date)
       : presentDeclinedEmail(employee, date, input.comment),
+  });
+}
+
+// ---------------------------------------------------- out of location
+
+/** "Out of location request (Client visit)" — the one heading everyone sees. */
+const outOfLocationTitle = (reason: string) =>
+  `Out of location request${reason ? ` (${reason})` : ''}`;
+
+export async function notifyOutOfLocationSubmitted(input: {
+  employeeUserId: string; workDate: string; reason: string; place: string;
+}) {
+  const { employee, approver } = await partiesFor(input.employeeUserId);
+  if (!employee) return;
+  const date = longDate(input.workDate);
+  const title = outOfLocationTitle(input.reason);
+
+  await deliver([employee.userId], {
+    scenario: 'correction_submitted',
+    title: `${title} sent`,
+    body: `Your punch for ${date} is with your manager. The day is marked present once they approve it.`,
+    data: { type: 'attendance', view: 'mine' },
+    email: {
+      subject: `${title} sent for ${date}`,
+      body:
+        `Hi ${firstName(employee.name)},\n\n`
+        + `You punched in from outside the office on ${date} (${input.reason}, ${input.place}). `
+        + `Your manager has the request, and the day is marked present once they approve it.\n\n`
+        + `Status: Pending`,
+    },
+  });
+
+  if (approver) {
+    await deliver([approver.userId], {
+      scenario: 'correction_requested',
+      title: `${title} from ${employee.name}`,
+      body: `${employee.name} punched in ${input.place} on ${date}. Tap to review.`,
+      data: { type: 'attendance', view: 'inbox' },
+      email: {
+        subject: `${title} from ${employee.name} — ${date}`,
+        body:
+          `Hi ${firstName(approver.name)},\n\n`
+          + `${employee.name} punched in from outside the office on ${date}.\n\n`
+          + `Reason: ${input.reason}\nLocation: ${input.place}\n\n`
+          + `Approve to mark the day present, or reject to leave it absent.\n\n`
+          + link('Review Request'),
+      },
+    });
+  }
+}
+
+export async function notifyOutOfLocationDecided(input: {
+  employeeUserId: string; workDate: string; reason: string; approved: boolean; comment: string;
+}) {
+  const employee = await users().findOne({ userId: input.employeeUserId });
+  if (!employee) return;
+  const date = longDate(input.workDate);
+  const title = outOfLocationTitle(input.reason);
+  await deliver([employee.userId], {
+    scenario: 'correction_decided',
+    title: input.approved ? `${title} approved` : `${title} rejected`,
+    body: input.approved
+      ? `Your attendance for ${date} has been marked Present.`
+      : `${date} is marked absent. You can raise an attendance correction for it.`,
+    data: { type: 'attendance', view: 'mine' },
+    email: {
+      subject: input.approved ? `${title} approved for ${date}` : `${title} rejected for ${date}`,
+      body: input.approved
+        ? `Hi ${firstName(employee.name)},\n\nYour out of location request for ${date} was approved. The day is marked Present.`
+        : `Hi ${firstName(employee.name)},\n\nYour out of location request for ${date} was not approved, so the day is marked absent.\n\n`
+          + `Reason: ${input.comment || '—'}\n\nYou can raise an attendance correction for it in the app.\n\n`
+          + link('View Attendance'),
+    },
   });
 }
 

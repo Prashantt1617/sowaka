@@ -442,7 +442,23 @@ class LeaveBalance {
     required this.casual,
     required this.earned,
     this.compOff = const LeaveBalanceItem(remaining: 0, total: 0),
+    this.byKey = const {},
   });
+
+  /// Every type on the employee's template, by key — including any HR added
+  /// in the dashboard, such as an emergency leave. Empty from an older server.
+  final Map<String, LeaveBalanceItem> byKey;
+
+  /// The balance of one type by its key, or null if there is none.
+  LeaveBalanceItem? forKey(String key) =>
+      byKey[key] ??
+      switch (key) {
+        'casual' => casual,
+        'sick' => sick,
+        'earned' => earned,
+        'comp_off' => compOff,
+        _ => null,
+      };
 
   final int year;
   final LeaveBalanceItem sick;
@@ -467,6 +483,11 @@ class LeaveBalance {
       compOff: LeaveBalanceItem.fromJson(
         json['comp_off'] as Map<String, dynamic>? ?? const {},
       ),
+      byKey: {
+        for (final item in json['types'] as List<dynamic>? ?? const [])
+          if (item is Map<String, dynamic> && item['key'] is String)
+            item['key'] as String: LeaveBalanceItem.fromJson(item),
+      },
     );
   }
 }
@@ -553,6 +574,11 @@ class LeaveRequest {
     final employee = json['employee'] as Map<String, dynamic>? ?? const {};
     final name = employee['name'] as String? ?? 'Employee';
     final typeValue = json['type'] as String? ?? 'casual';
+    // Named as the template names it, "Emergency Leave" reading as "Emergency"
+    // like "Casual" does. Older servers send only the key.
+    final typeName = (json['typeName'] as String? ?? '')
+        .replaceAll(RegExp(r'\s+[Ll]eave$'), '')
+        .trim();
     final start = DateTime.parse(json['startDate'] as String);
     final end = DateTime.parse(json['endDate'] as String);
     return LeaveRequest(
@@ -566,7 +592,9 @@ class LeaveRequest {
           employee['designation'] as String? ??
           'Team',
       photoUrl: employee['photoUrl'] as String?,
-      type: '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
+      type: typeName.isNotEmpty
+          ? typeName
+          : '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
       start: start,
       end: end,
       days:
@@ -1110,9 +1138,14 @@ class CorrectionRules {
     this.punchMode = 'Both punches',
     this.absentOutcomes = const ['Full day', 'Half day', 'Leave'],
     this.halfDayOutcomes = const ['Full day'],
+    this.outsideLocation = const OutsideLocationRules(),
   });
 
   final List<String> triggers;
+
+  /// On a geotagged shift: what a punch from outside every office leads to,
+  /// and the reasons HR lets the employee choose from.
+  final OutsideLocationRules outsideLocation;
   final int backdateDays;
   final String punchFormat;
 
@@ -1182,6 +1215,9 @@ class CorrectionRules {
                     const ['Full day', 'Half day', 'Leave'])
                 .map((value) => value.toString())
                 .toList(),
+        outsideLocation: OutsideLocationRules.fromJson(
+          json['outsideLocation'] as Map<String, dynamic>? ?? const {},
+        ),
         halfDayOutcomes:
             (json['halfDayOutcomes'] as List<dynamic>? ?? const ['Full day'])
                 .map((value) => value.toString())
@@ -1365,6 +1401,8 @@ class ShiftPolicy {
     this.minHalfDayHours = 4,
     this.minFullDayHours = 8,
     this.halfDay = const HalfDayRules(),
+    this.lateMarkingEnabled = true,
+    this.earlyMarkingEnabled = true,
     this.lateGraceMinutes = 10,
     this.earlyOutGraceMinutes = 10,
     this.weeklyOff = const {
@@ -1391,6 +1429,10 @@ class ShiftPolicy {
   final double minHalfDayHours;
   final double minFullDayHours;
   final HalfDayRules halfDay;
+  /// Whether anyone on this shift is marked late or early at all. Off keeps
+  /// the minutes but marks nobody.
+  final bool lateMarkingEnabled;
+  final bool earlyMarkingEnabled;
   final int lateGraceMinutes;
   final int earlyOutGraceMinutes;
 
@@ -1461,8 +1503,32 @@ class ShiftPolicy {
   bool allowsLeave(String label) =>
       leaveTypes.isEmpty || windowForLeave(label) != null;
 
+  /// The key to send for a leave type picked by name — "Emergency" or
+  /// "Emergency Leave" is whatever key the template gave it, so a type HR
+  /// added or renamed still reaches the server as itself.
+  String leaveKeyFor(String label) {
+    final known = windowForLeave(label)?.key;
+    if (known != null) return known;
+    final lower = label.trim().toLowerCase();
+    if (lower.startsWith('comp')) return 'comp_off';
+    for (final token in const ['sick', 'casual', 'earned']) {
+      if (lower.startsWith(token)) return token;
+    }
+    return lower
+        .replaceAll(RegExp(r'\bleaves?\b'), ' ')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+  }
+
   /// The window for one leave type by its display name, or null if unknown.
   LeaveTypeWindow? windowForLeave(String label) {
+    // By name first, with or without the word "leave": "Emergency" and
+    // "Emergency Leave" are the same type, whatever its key.
+    String bare(String value) =>
+        value.trim().toLowerCase().replaceAll(RegExp(r'\s+leave$'), '');
+    for (final type in leaveTypes) {
+      if (type.key == label || bare(type.name) == bare(label)) return type;
+    }
     for (final type in leaveTypes) {
       if (type.name == label ||
           type.key == label.toLowerCase().replaceAll(' ', '_')) {
@@ -1567,8 +1633,10 @@ class ShiftPolicy {
     );
   }
 
-  /// Whether [punchIn] landed after the shift start plus its grace.
+  /// Whether [punchIn] landed after the shift start plus its grace. Never,
+  /// when HR chose not to categorise anyone as late.
   bool isLate(DateTime punchIn) {
+    if (!lateMarkingEnabled) return false;
     final start = startMinutes;
     if (start == null) return false;
     return punchIn.hour * 60 + punchIn.minute > start + lateGraceMinutes;
@@ -1578,6 +1646,7 @@ class ShiftPolicy {
   /// shifts end on the next calendar day, so they are left out rather than
   /// flagged wrongly against a same-day clock.
   bool isEarlyOut(DateTime punchOut) {
+    if (!earlyMarkingEnabled) return false;
     final start = startMinutes;
     final end = endMinutes;
     if (start == null || end == null || end <= start) return false;
@@ -1642,7 +1711,9 @@ class ShiftPolicy {
       halfDay: HalfDayRules.fromJson(
         json['halfDay'] as Map<String, dynamic>? ?? const {},
       ),
+      lateMarkingEnabled: json['lateMarkingEnabled'] as bool? ?? true,
       lateGraceMinutes: minutes('lateGraceMinutes', 10),
+      earlyMarkingEnabled: json['earlyMarkingEnabled'] as bool? ?? true,
       earlyOutGraceMinutes: minutes('earlyOutGraceMinutes', 10),
       missingPunchIn: json['missingPunchIn'] as String? ?? 'Absent',
       missingPunchOut: json['missingPunchOut'] as String? ?? 'Absent',
@@ -1678,10 +1749,20 @@ class AttendanceRecord {
     this.punchOut,
     this.dayType = '',
     this.officeName,
+    this.outsideLocation,
+    this.request,
   });
   final DateTime workDate;
   final DateTime? punchIn;
   final DateTime? punchOut;
+
+  /// Set when the day was punched from outside every office: the reason the
+  /// employee gave and where they were.
+  final OutsideLocationNote? outsideLocation;
+
+  /// Sent back by a punch that became an out of location request instead of
+  /// a recorded punch. The day is not present until the manager approves it.
+  final AttendanceRegularization? request;
 
   /// The office a geofenced punch matched, sent back by the punch itself so
   /// the confirmation can name where you were. Null on every other read — the
@@ -1713,7 +1794,71 @@ class AttendanceRecord {
           json['punchOut'] as String? ?? '',
         )?.toLocal(),
         dayType: json['dayType'] as String? ?? '',
+        outsideLocation: OutsideLocationNote.fromJson(
+          json['outsideLocation'] as Map<String, dynamic>?,
+        ),
+        request: json['request'] is Map<String, dynamic>
+            ? AttendanceRegularization.fromJson(
+                json['request'] as Map<String, dynamic>,
+              )
+            : null,
       );
+}
+
+/// What HR decided happens when someone punches away from every office:
+/// 'request' sends it to the manager, 'present' marks the day with a remark.
+/// The reasons are HR's own wording, shown exactly as written.
+class OutsideLocationRules {
+  const OutsideLocationRules({
+    this.outcome = 'request',
+    this.reasons = const [],
+  });
+
+  final String outcome;
+  final List<String> reasons;
+
+  bool get marksPresent => outcome == 'present';
+
+  factory OutsideLocationRules.fromJson(Map<String, dynamic> json) =>
+      OutsideLocationRules(
+        outcome: json['outcome'] as String? ?? 'request',
+        reasons: (json['reasons'] as List<dynamic>? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty)
+            .toList(),
+      );
+}
+
+/// A punch taken away from every office: why, and where, in the words the
+/// server already chose — "1.2 km from Gurgaon office" rather than a pin.
+class OutsideLocationNote {
+  const OutsideLocationNote({
+    required this.reason,
+    required this.place,
+    this.punchType = 'in',
+    this.at,
+    this.latitude,
+    this.longitude,
+  });
+
+  final String reason;
+  final String place;
+  final String punchType;
+  final DateTime? at;
+  final double? latitude;
+  final double? longitude;
+
+  static OutsideLocationNote? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    return OutsideLocationNote(
+      reason: json['reason'] as String? ?? '',
+      place: json['place'] as String? ?? 'Away from office',
+      punchType: json['punchType'] as String? ?? 'in',
+      at: DateTime.tryParse(json['at'] as String? ?? '')?.toLocal(),
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+    );
+  }
 }
 
 class AttendanceRegularization {
@@ -1733,9 +1878,26 @@ class AttendanceRegularization {
     this.requestedPunchOut,
     this.requestedDayType = '',
     this.managerNote = '',
+    this.kind = 'correction',
+    this.title,
+    this.outsideLocation,
   });
   final String id;
   final String userId;
+
+  /// 'correction' disputes how a day was graded; 'out_of_location' is a punch
+  /// taken away from every office that the manager settles.
+  final String kind;
+
+  /// The heading the server chose, the same for the employee, the manager
+  /// and HR — "Out of location request (Client visit)".
+  final String? title;
+  final OutsideLocationNote? outsideLocation;
+
+  bool get isOutOfLocation => kind == 'out_of_location';
+
+  /// What this request is called wherever it is listed.
+  String get heading => title ?? 'Attendance Correction';
 
   /// The requester's own photo, when they have set one.
   final String? photoUrl;
@@ -1803,6 +1965,11 @@ class AttendanceRegularization {
     )?.toLocal(),
     requestedDayType: json['requestedDayType'] as String? ?? '',
     managerNote: json['managerNote'] as String? ?? '',
+    kind: json['kind'] as String? ?? 'correction',
+    title: json['title'] as String?,
+    outsideLocation: OutsideLocationNote.fromJson(
+      json['outsideLocation'] as Map<String, dynamic>?,
+    ),
   );
 }
 

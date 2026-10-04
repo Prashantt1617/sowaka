@@ -14,6 +14,8 @@ export type View =
   | 'kpibulk'
   | 'shifttypes'
   | 'holidaybank'
+  | 'offices'
+  | 'oolcheckins'
   | 'roster'
   | 'shiftswaps'
   | 'reimbursements'
@@ -40,7 +42,8 @@ export type View =
   | 'engagementposts'
   | 'contentreports';
 
-export type LeaveType = 'Sick' | 'Casual' | 'Earned' | 'WFH' | 'Unpaid';
+/** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
+export type LeaveType = string;
 export type ReqStatus = 'Pending' | 'Approved' | 'Declined' | 'Paid';
 export type FeedbackStatus = 'Submitted' | 'Acknowledged' | 'Pending' | 'Draft';
 export type EmpType = 'Full-time' | 'Contract' | 'Intern';
@@ -59,6 +62,9 @@ const AV = [
   '#C98A3C',
   '#7C7A52',
 ];
+
+/** The dot colour for a type; a type HR added uses the neutral one. */
+export const typeColor = (type: string): string => TYPE[type] ?? '#717171';
 
 export const TYPE: Record<LeaveType, string> = {
   Sick: '#C2607A',
@@ -117,6 +123,8 @@ export const TITLES: Record<View, [string, string]> = {
   kpibulk: ['Bulk Assign', 'Performance · put a template on everyone its rules select'],
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
+  offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
+  oolcheckins: ['OOL check-ins', 'Requests · punches taken away from every office'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
   shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
   reimbursements: ['Reimbursements', 'People'],

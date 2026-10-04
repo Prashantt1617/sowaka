@@ -28,6 +28,8 @@ import { ReviewCycle } from './views/ReviewCycle';
 import { ShiftBulkAssign } from './views/ShiftBulkAssign';
 import { ShiftTemplates } from './views/ShiftTemplates';
 import { HolidayBank } from './views/HolidayBank';
+import { Offices } from './views/Offices';
+import { OutOfLocation } from './views/OutOfLocation';
 import { Organisation } from './views/Organisation';
 import { Departments } from './views/Departments';
 import { Designations } from './views/Designations';
@@ -103,6 +105,10 @@ function CurrentView() {
       return <ShiftTemplates />;
     case 'holidaybank':
       return <HolidayBank />;
+    case 'offices':
+      return <Offices />;
+    case 'oolcheckins':
+      return <OutOfLocation />;
     default:
       return <Placeholder />;
   }

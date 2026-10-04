@@ -27,10 +27,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     _type = _leaveTypeLabels.isEmpty ? 'Casual' : _leaveTypeLabels.first;
   }
 
-  /// The short labels for the types this employee may apply for.
+  /// The short labels for the types this employee may apply for: on a
+  /// tracked balance, only those with days left to spend.
   List<String> get _leaveTypeLabels => [
     for (final label in _shift.applicableLeaveLabels)
-      if (_shift.windowForLeave(label)?.key != 'comp_off')
+      if (!_shift.leaveBalanceTracked || (_remainingFor(label) ?? 0) > 0)
         label.replaceAll(' Leave', ''),
   ];
 
@@ -106,13 +107,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   double? _remainingFor(String label) {
     final balance = widget.state.dashboard?.leaveBalance;
     if (balance == null) return null;
-    return switch (_shift.windowForLeave(label)?.key ?? label.toLowerCase()) {
-      'casual' => balance.casual.remaining,
-      'sick' => balance.sick.remaining,
-      'earned' => balance.earned.remaining,
-      'comp_off' => balance.compOff.remaining,
-      _ => null,
-    };
+    return balance.forKey(_shift.leaveKeyFor(label))?.remaining;
   }
 
   bool get _datesApplicable => _datesBlockedReason == null;

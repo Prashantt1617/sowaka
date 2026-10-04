@@ -894,9 +894,13 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 name: request.who,
                 role: request.team,
                 rows: [
-                  ('Type:', 'Correction'),
+                  ('Type:', request.isOutOfLocation ? 'Out of location' : 'Correction'),
                   ('Date:', _shortAttendanceDate(request.workDate)),
-                  ('Correction:', _attendancePeriod(request)),
+                  if (request.isOutOfLocation) ...[
+                    ('Reason:', request.outsideLocation?.reason ?? '—'),
+                    ('Location:', request.outsideLocation?.place ?? '—'),
+                  ] else
+                    ('Correction:', _attendancePeriod(request)),
                   // The reason belongs on the detail page, not on the card: the
                   // list is for deciding at a glance what each request is for.
                 ],

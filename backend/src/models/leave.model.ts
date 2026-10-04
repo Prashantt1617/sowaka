@@ -2,8 +2,9 @@ export type LeaveStatus = 'pending' | 'approved' | 'declined';
 
 export interface Leave {
   userId: string; // -> User.userId
-  // comp_off is earned by approved overtime rather than accrued monthly.
-  type: 'sick' | 'casual' | 'earned' | 'comp_off';
+  // A leave type key from the employee's template: one of the built-in four
+  // (comp_off is earned by approved overtime) or one HR added, like 'emergency'.
+  type: string;
   startDate: Date;
   endDate: Date;
   /**

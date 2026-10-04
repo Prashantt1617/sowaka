@@ -1,9 +1,13 @@
 import { NextFunction, Request, Response } from 'express';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
 import {
+  AttendanceError,
   adminDecideRegularization,
   listAllRegularizationsForAdmin,
+  listOutOfLocationForAdmin,
 } from '../services/attendance.service';
+import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
+import { requireOrg } from '../services/shift.service';
 import { adminDecideLeave, listAllLeavesForAdmin } from '../services/leave.service';
 import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
 import {
@@ -50,6 +54,58 @@ export async function listReimbursements(req: Request, res: Response, next: Next
     res
       .status(200)
       .json({ success: true, claims: await listAllReimbursementsForAdmin(adminUserId(req)) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Punches taken away from every office, for the "OOL check-ins" view. */
+export async function listOutOfLocation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
+    const to = String(req.query.to ?? today);
+    res.status(200).json({ success: true, checkIns: await listOutOfLocationForAdmin(adminUserId(req), from, to) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ---- Offices: where a geotagged punch may be taken from ----
+export async function listOfficesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const org = await requireOrg(adminUserId(req));
+    res.status(200).json({ success: true, offices: (await listOffices(org)).map(officeView) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function saveOfficeHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const org = await requireOrg(adminUserId(req));
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const id = typeof req.params.officeId === 'string' ? req.params.officeId : undefined;
+    const office = await saveOffice(org, {
+      id,
+      name: String(body.name ?? ''),
+      city: typeof body.city === 'string' ? body.city : undefined,
+      latitude: Number(body.latitude),
+      longitude: Number(body.longitude),
+      radiusMeters: body.radiusMeters === undefined ? undefined : Number(body.radiusMeters),
+      active: body.active === undefined ? undefined : body.active === true,
+    }).catch((error: Error) => { throw new AttendanceError(400, error.message); });
+    res.status(id ? 200 : 201).json({ success: true, office: officeView(office) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteOfficeHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const org = await requireOrg(adminUserId(req));
+    await deleteOffice(org, String(req.params.officeId ?? ''));
+    res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }
