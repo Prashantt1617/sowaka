@@ -908,8 +908,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                           ],
                           _ => [HelpProfileSection(session: session)],
                         },
-                        const SizedBox(height: 24),
                       ],
+                      // Room between whatever came last and the log-out,
+                      // whichever kind of profile this is.
+                      const SizedBox(height: 24),
                       _LogoutButton(onPressed: onLogout),
                       // Below the logout button and deliberately small: it is
                       // a footnote about this person's own account, not a
