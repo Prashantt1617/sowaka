@@ -31,6 +31,7 @@ import '../../requests/presentation/request_summary.dart';
 import '../../../services/notification_service.dart';
 import '../bloc/manager_bloc.dart';
 import '../../shared/startup_prefs.dart';
+import '../data/dashboard_cache.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
@@ -441,6 +442,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
       ),
     );
     if (confirmed != true) return;
+    // Their remembered dashboard goes with them: the next person to sign in
+    // on this phone must not open on it.
+    unawaited(DashboardCache.clear(_session.user.id));
     // The server forgets the device, then the session, before the phone
     // does, so pushes for this account stop landing here and the token dies
     // now. The device first: unregistering needs the token that logout
@@ -508,7 +512,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
         // the first thing they came here to do, and a day that never got one
         // is a day they have to correct later.
         final dashboard = state.dashboard!;
-        if (!_punchPrompted && !_punchPromptUsed && _shouldOfferPunch(dashboard)) {
+        // Never on the device's copy: whether today has a punch is the
+        // server's to say.
+        if (!state.fromCache && !_punchPrompted && !_punchPromptUsed && _shouldOfferPunch(dashboard)) {
           _punchPrompted = true;
           unawaited(const StartupPrefs().markPunchPromptShown());
           WidgetsBinding.instance.addPostFrameCallback(

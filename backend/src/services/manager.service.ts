@@ -235,8 +235,12 @@ export async function getFeedbackSnapshot(managerUserId: string) {
   };
 }
 
-export async function getManagerWorkspace(managerUserId: string) {
-  const manager = await users().findOne({ userId: managerUserId });
+export async function getManagerWorkspace(
+  managerUserId: string,
+  /** The viewer as the auth check already read them, photo aside. */
+  preloaded?: Omit<User, 'profilePhotoUrl'>,
+) {
+  const manager: User | null = preloaded ? { ...preloaded } : await users().findOne({ userId: managerUserId });
   if (!manager) throw new ManagerError(404, 'Manager not found');
   // Everything that depends only on who is asking goes out together: the
   // reads below used to run one after another, and each is a round trip.
@@ -253,7 +257,7 @@ export async function getManagerWorkspace(managerUserId: string) {
 
   // The whole org, so each report's own reporting line can be walked rather
   // than assumed to run through whoever is looking at it.
-  const [approver, orgRoster, directReports, cycle, companyConfig, orgHolidays] =
+  const [approver, orgRoster, directReports, cycle, companyConfig, orgHolidays, ownPhoto] =
     await Promise.all([
       approverFuture,
       users().find(orgFilter).toArray(),
@@ -273,7 +277,15 @@ export async function getManagerWorkspace(managerUserId: string) {
       // plus the all-locations days. Another office's holiday is not a day
       // off here.
       holidaysForUser(manager),
+      // The one field the auth check left behind, for the viewer's own row.
+      preloaded
+        ? users().findOne({ userId: managerUserId }, { projection: { _id: 0, profilePhotoUrl: 1, profilePhotoKey: 1 } })
+        : Promise.resolve(null),
     ]);
+  if (ownPhoto) {
+    manager.profilePhotoUrl = ownPhoto.profilePhotoUrl;
+    manager.profilePhotoKey = ownPhoto.profilePhotoKey;
+  }
   const orgUsersById = new Map(orgRoster.map((user) => [user.userId, user]));
 
   // Your team is the people you actually work alongside: whoever reports to
@@ -322,6 +334,10 @@ export async function getManagerWorkspace(managerUserId: string) {
     ownFeedbackHistory,
     reportHistory,
     todaysAttendance,
+    assignedByUser,
+    policyByUser,
+    onLeaveRows,
+    myAssigned,
   ] = await Promise.all([
       feedbackRecords().find({ managerUserId, employeeUserId: { $in: reportIds }, period }).toArray(),
       feedbackRecords()
@@ -372,26 +388,22 @@ export async function getManagerWorkspace(managerUserId: string) {
             })
             .toArray()
         : Promise.resolve([]),
+
+      assignedParametersForMany(manager.org ?? '', reportIds, period),
+      // The viewer's own shift rides along: it is what their day is graded by.
+      policiesForUsers([manager.userId, ...reportIds]),
+      leaves()
+        .find({ userId: { $in: reportIds }, status: 'approved', startDate: { $lte: todayStartUtc() }, endDate: { $gte: todayStartUtc() } })
+        .project<{ userId: string }>({ userId: 1 })
+        .toArray(),
+      // The viewer's own KPIs for this cycle, worded as HR wrote them.
+      assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true }),
     ]);
   // A report's punch record may be keyed by userId (self-service app punches)
   // or employeeId (SQL-imported punches) — check both, preferring employeeId
   // since every record has one but not every record has userId.
   // Each report is scored on their own assigned parameters, so the blank form
   // the app renders differs per person. Resolved once here rather than per row.
-  // Each report's own KPI set and own shift, for the whole team in a few
-  // queries rather than several per person: this is what made the team tab
-  // take half a minute for a manager with a dozen reports.
-  const [assignedByUser, policyByUser, onLeaveRows, myAssigned] = await Promise.all([
-    assignedParametersForMany(manager.org ?? '', reportIds, period),
-    // The viewer's own shift rides along: it is what their day is graded by.
-    policiesForUsers([manager.userId, ...reportIds]),
-    leaves()
-      .find({ userId: { $in: reportIds }, status: 'approved', startDate: { $lte: todayStartUtc() }, endDate: { $gte: todayStartUtc() } })
-      .project<{ userId: string }>({ userId: 1 })
-      .toArray(),
-    // The viewer's own KPIs for this cycle, worded as HR wrote them.
-    assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true }),
-  ]);
 
   const attendanceByEmployeeId = new Map(
     todaysAttendance.filter((record) => record.employeeId).map((record) => [record.employeeId, record]),
@@ -417,10 +429,16 @@ export async function getManagerWorkspace(managerUserId: string) {
   // Resolve nominee names for the current + historical nominations (a past
   // nominee may no longer be a direct report).
   const nomineeIds = [...new Set(nominationHistory.map((n) => n.employeeUserId))];
-  const nomineeUsers = nomineeIds.length
-    ? await users().find({ userId: { $in: nomineeIds } }).toArray()
+  // The roster is already here; only someone who has since left the org
+  // needs a read of their own.
+  const missingNomineeIds = nomineeIds.filter((id) => !orgUsersById.has(id));
+  const nomineeUsers = missingNomineeIds.length
+    ? await users().find({ userId: { $in: missingNomineeIds } }).project<{ userId: string; name: string }>({ userId: 1, name: 1 }).toArray()
     : [];
-  const nomineeName = new Map(nomineeUsers.map((u) => [u.userId, u.name]));
+  const nomineeName = new Map<string, string>([
+    ...nomineeIds.flatMap((id) => (orgUsersById.has(id) ? [[id, orgUsersById.get(id)!.name] as const] : [])),
+    ...nomineeUsers.map((u) => [u.userId, u.name] as const),
+  ]);
   const ownFeedback = ownFeedbackHistory.at(-1);
 
   const currentByEmployee = new Map(
