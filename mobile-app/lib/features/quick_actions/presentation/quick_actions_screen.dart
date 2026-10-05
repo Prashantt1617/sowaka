@@ -2944,14 +2944,23 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       return 'This day is marked present by your shift — there is nothing '
           'to correct.';
     }
-    final trigger = CorrectionRules.triggerFor(
-      punchIn: day.record?.punchIn,
-      punchOut: day.record?.punchOut,
-    );
+    // One punch makes the day on a single-punch shift: with it taken there
+    // is no punch-out to be missing, and the day is as complete as it gets.
+    final singlePunchDone =
+        widget.dashboard.shift.singlePunchDay && day.record?.punchIn != null;
+    final trigger = singlePunchDone
+        ? 'Both punches present'
+        : CorrectionRules.triggerFor(
+            punchIn: day.record?.punchIn,
+            punchOut: day.record?.punchOut,
+          );
     if (!rules.allows(trigger)) {
       return trigger == 'Both punches present'
-          ? 'Both punches are recorded — your company does not allow a '
-                'correction for a complete day.'
+          ? singlePunchDone
+                ? 'Your punch is recorded — your company does not allow a '
+                      'correction for a complete day.'
+                : 'Both punches are recorded — your company does not allow a '
+                      'correction for a complete day.'
           : '$trigger cannot be corrected under your company policy.';
     }
     return null;
