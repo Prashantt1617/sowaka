@@ -455,7 +455,7 @@ function FeedbackParametersStep({
                 <input type="checkbox" checked={on} onChange={() => onToggle(p.id)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{p.title}</div>
-                  {p.subtitle && <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{p.subtitle}</div>}
+                  {p.description && <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{p.description}</div>}
                 </div>
                 {on && (
                   <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff', width: 108 }}>

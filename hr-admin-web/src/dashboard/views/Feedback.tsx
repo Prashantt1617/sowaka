@@ -599,9 +599,6 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                     <tr key={`${p.name}-${i}`}>
                       <Td top>
                         <div style={{ fontWeight: 700 }}>{p.name}</div>
-                        {p.subtitle && (
-                          <div style={{ fontSize: 13.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.subtitle}</div>
-                        )}
                         {p.note && (
                           <div style={{ fontSize: 14, color: '#484848', marginTop: 7, lineHeight: 1.55, borderLeft: '2px solid #EBEBEB', paddingLeft: 10 }}>
                             {p.note}

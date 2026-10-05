@@ -71,7 +71,6 @@ function parameterView(doc: KpiParameter & { _id?: ObjectId }, authorName?: stri
   return {
     id: doc._id!.toHexString(),
     title: doc.title,
-    subtitle: doc.subtitle,
     description: doc.description,
     archived: doc.archived,
     createdByName: authorName,
@@ -79,7 +78,6 @@ function parameterView(doc: KpiParameter & { _id?: ObjectId }, authorName?: stri
     // Present only while an edit is waiting for its cycle to open.
     pendingEdit: doc.pendingEdit
       ? {
-          subtitle: doc.pendingEdit.subtitle,
           description: doc.pendingEdit.description,
           effectiveFrom: doc.pendingEdit.effectiveFrom,
           editedAt: doc.pendingEdit.editedAt?.toISOString(),
@@ -107,7 +105,6 @@ async function promoteDueEdits(org: string, period: string): Promise<void> {
         { _id: row._id },
         {
           $set: {
-            subtitle: row.pendingEdit!.subtitle,
             description: row.pendingEdit!.description,
             updatedAt: new Date(),
           },
@@ -122,9 +119,9 @@ async function promoteDueEdits(org: string, period: string): Promise<void> {
 function wordingFor(doc: KpiParameter, period: string) {
   const pending = doc.pendingEdit;
   if (pending && period >= pending.effectiveFrom) {
-    return { subtitle: pending.subtitle, description: pending.description };
+    return { description: pending.description };
   }
-  return { subtitle: doc.subtitle, description: doc.description };
+  return { description: doc.description };
 }
 
 export async function listKpiParameters(adminUserId: string, includeArchived = false) {
@@ -143,14 +140,13 @@ export async function listKpiParameters(adminUserId: string, includeArchived = f
 
 export async function createKpiParameter(
   adminUserId: string,
-  input: { title?: unknown; subtitle?: unknown; description?: unknown },
+  input: { title?: unknown; description?: unknown },
 ) {
   const org = await requireOrg(adminUserId);
   const now = new Date();
   const doc: KpiParameter = {
     org,
     title: text(input.title, 'Title', MAX_TITLE),
-    subtitle: text(input.subtitle, 'Subtitle', MAX_SUBTITLE, false),
     description: text(input.description, 'Description', MAX_DESCRIPTION, false),
     archived: false,
     createdByUserId: adminUserId,
@@ -165,7 +161,7 @@ export async function createKpiParameter(
 /**
  * Stages a wording change for the next cycle.
  *
- * Only the subtitle and guidance can change, and never for the cycle in
+ * Only the guidance can change, and never for the cycle in
  * progress: managers are scoring against the current text right now, so
  * rewriting it mid-cycle would leave two managers judging the same parameter
  * against different words. The title is fixed for good, since it is what a sent
@@ -174,7 +170,7 @@ export async function createKpiParameter(
 export async function updateKpiParameter(
   adminUserId: string,
   id: string,
-  input: { subtitle?: unknown; description?: unknown },
+  input: { description?: unknown },
 ) {
   const org = await requireOrg(adminUserId);
   const period = await currentPeriodFor(org);
@@ -184,22 +180,18 @@ export async function updateKpiParameter(
   const existing = await kpiParameters().findOne({ _id, org });
   if (!existing) throw new KpiError(404, 'Parameter not found');
 
-  // Staged on top of what is live now, so leaving a field out keeps it.
-  const subtitle = input.subtitle !== undefined
-    ? text(input.subtitle, 'Subtitle', MAX_SUBTITLE, false)
-    : existing.subtitle;
+  // Staged on top of what is live now, so leaving the field out keeps it.
   const description = input.description !== undefined
     ? text(input.description, 'Description', MAX_DESCRIPTION, false)
     : existing.description;
 
-  if (subtitle === existing.subtitle && description === existing.description) {
+  if (description === existing.description) {
     // Nothing to schedule; drop any earlier staged edit that this reverts.
     await kpiParameters().updateOne({ _id, org }, { $unset: { pendingEdit: '' } });
     return parameterView({ ...existing, pendingEdit: undefined });
   }
 
   const pendingEdit = {
-    subtitle,
     description,
     effectiveFrom: nextPeriod(period),
     editedByUserId: adminUserId,
@@ -839,7 +831,7 @@ export async function assignedParametersFor(
    * review itself still needs the cycle's own assignment.
    */
   options: { fallbackToLatest?: boolean } = {},
-): Promise<Array<{ id: string; title: string; subtitle: string; description: string; weight: number }>> {
+): Promise<Array<{ id: string; title: string; description: string; weight: number }>> {
   const doc =
     (await kpiAssignments().findOne({ org, userId, period })) ??
     (options.fallbackToLatest

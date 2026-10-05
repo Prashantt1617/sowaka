@@ -82,8 +82,8 @@ export function WeightPicker({
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{p?.title ?? 'Removed parameter'}</div>
-                  {p?.subtitle && (
-                    <div style={{ fontSize: 13, color: '#717171', marginTop: 1, lineHeight: 1.4 }}>{p.subtitle}</div>
+                  {p?.description && (
+                    <div style={{ fontSize: 13, color: '#717171', marginTop: 1, lineHeight: 1.4 }}>{p.description}</div>
                   )}
                   {/* The share of the whole, so the split reads at a glance
                       rather than having to be added up from the boxes. */}

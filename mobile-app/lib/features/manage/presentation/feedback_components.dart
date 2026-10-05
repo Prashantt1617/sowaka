@@ -133,19 +133,6 @@ class _ParamCardState extends State<_ParamCard> {
                         ],
                       ],
                     ),
-                    if ((widget.param.subtitle ?? paramDescription(widget.param.name))
-                        case final description when description.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        description,
-                        style: const TextStyle(
-                          color: Color(0xFF717171),
-                          fontSize: 11.5,
-                          height: 14.95 / 11.5,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -336,19 +323,24 @@ class _ParamCardState extends State<_ParamCard> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.only(left: 2),
-            child: Text(
-              '💡 ${widget.param.description?.isNotEmpty == true ? widget.param.description : paramHelp(widget.param.name)}',
-              style: const TextStyle(
-                color: Color(0xFFA0A4B0),
-                fontSize: 11,
-                height: 15.95 / 11,
-                fontWeight: FontWeight.w400,
+          // HR's guidance for this parameter, and only that: a parameter
+          // without any shows no hint rather than a stock line.
+          if (widget.param.description?.trim() case final guidance?
+              when guidance.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: Text(
+                '💡 $guidance',
+                style: const TextStyle(
+                  color: Color(0xFFA0A4B0),
+                  fontSize: 11,
+                  height: 15.95 / 11,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

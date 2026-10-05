@@ -538,7 +538,6 @@ export async function getManagerWorkspace(managerUserId: string) {
       (p) => ({
         parameterId: p.id,
         name: p.title,
-        subtitle: p.subtitle,
         description: p.description,
         weight: p.weight,
         score: 0,
@@ -665,7 +664,6 @@ export async function upsertFeedback(
     return {
       parameterId: expected.id,
       name: expected.title,
-      subtitle: expected.subtitle,
       // Snapshotted with the copy: re-weighting the template later must not
       // restate what this review meant.
       weight: expected.weight,
@@ -853,7 +851,6 @@ function reconcileParameters(
   assigned: Array<{
     id: string;
     title: string;
-    subtitle: string;
     description?: string;
     weight: number;
   }>,
@@ -875,7 +872,6 @@ function blankParameters(
   assigned: Array<{
     id: string;
     title: string;
-    subtitle: string;
     description?: string;
     weight: number;
   }>,
@@ -883,7 +879,6 @@ function blankParameters(
   return assigned.map((p) => ({
     parameterId: p.id,
     name: p.title,
-    subtitle: p.subtitle,
     // HR's guidance for this parameter. The app's hint line reads it; without
     // it every hint fell back to copy hard-coded in the app.
     description: p.description,

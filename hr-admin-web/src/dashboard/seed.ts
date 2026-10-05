@@ -101,7 +101,7 @@ export type FbEmp = {
   history: FbCycle[];
 };
 
-export type FbCycleParam = { name: string; subtitle: string; score: number; note: string };
+export type FbCycleParam = { name: string; score: number; note: string };
 
 /** One completed review, as shown when a past cycle is opened. */
 export type FbCycle = {

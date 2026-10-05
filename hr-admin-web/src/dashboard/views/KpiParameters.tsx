@@ -1,10 +1,10 @@
 // Performance › KPI Parameters — the org's catalogue of what employees are
 // scored on, laid out like the Salary Components catalogue.
 //
-// A parameter is a title ("Performance"), a one-line subtitle shown under it on
-// the manager's feedback form, and longer guidance behind the form's info
-// toggle. Managers never author these; HR does, and templates and assignments
-// are built from them.
+// A parameter is a title ("Performance") and the guidance shown with it: on the
+// manager's feedback form while scoring, and on the employee's own Grow page.
+// Managers never author these; HR does, and templates and assignments are
+// built from them.
 //
 // A parameter is fixed once created: templates, assignments and sent reviews
 // all reference it, and a sent review has to keep reading the way it did when
@@ -32,8 +32,8 @@ import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, warnTag } from
 /** Every parameter is scored on the same scale — the form has no other mode. */
 const MAX_SCORE = 5;
 
-type PForm = { title: string; subtitle: string; description: string };
-const blank = (): PForm => ({ title: '', subtitle: '', description: '' });
+type PForm = { title: string; description: string };
+const blank = (): PForm => ({ title: '', description: '' });
 
 /** How many people and templates currently reference each parameter. */
 type Usage = { employees: number; templates: number };
@@ -90,7 +90,7 @@ export function KpiParameters() {
 
   const q = search.trim().toLowerCase();
   const visible = useMemo(
-    () => rows.filter((r) => !q || r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q)),
+    () => rows.filter((r) => !q || r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q)),
     [rows, q],
   );
 
@@ -99,7 +99,7 @@ export function KpiParameters() {
     if (!form.title.trim()) { setError('Please enter a parameter name'); return; }
     try {
       await createKpiParameter({
-        title: form.title, subtitle: form.subtitle, description: form.description,
+        title: form.title, description: form.description,
       });
       setForm(null);
       setError('');
@@ -164,7 +164,7 @@ export function KpiParameters() {
           <thead>
             <tr>
               <Th width="28%">Parameter</Th>
-              <Th>Subtitle</Th>
+              <Th>Guidance</Th>
               <Th width={150}>In use by</Th>
               <Th width={120}>Templates</Th>
             </tr>
@@ -177,7 +177,7 @@ export function KpiParameters() {
                   <Td>
                     <NameCell name={r.title} tag={r.pendingEdit ? 'Edit pending' : undefined} tagTone={r.pendingEdit ? 'amber' : undefined} />
                   </Td>
-                  <Td muted>{r.subtitle || '—'}</Td>
+                  <Td muted>{r.description || '—'}</Td>
                   <Td>
                     <span style={{ fontWeight: 700, color: u.employees ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
                       {u.employees}
@@ -231,20 +231,16 @@ function ParameterDetail({
   const [showTemplates, setShowTemplates] = useState(false);
   // Seeded from a staged edit when one exists, so re-opening shows what is
   // already scheduled rather than the wording it will replace.
-  const [subtitle, setSubtitle] = useState(param.pendingEdit?.subtitle ?? param.subtitle);
   const [description, setDescription] = useState(param.pendingEdit?.description ?? param.description);
   const [saving, setSaving] = useState(false);
 
-  // Tracked per field so the warning sits under whichever one was touched,
-  // rather than once at the bottom where it reads as being about the guidance.
-  const subtitleDirty = subtitle !== param.subtitle;
   const descriptionDirty = description !== param.description;
-  const dirty = subtitleDirty || descriptionDirty;
+  const dirty = descriptionDirty;
 
   async function saveEdit() {
     setSaving(true);
     try {
-      await updateKpiParameter(param.id, { subtitle, description });
+      await updateKpiParameter(param.id, { description });
       onChanged();
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not save';
@@ -318,9 +314,7 @@ function ParameterDetail({
             <strong>Change scheduled for {periodLabel(param.pendingEdit.effectiveFrom)}.</strong> The
             wording below is what managers see until then.
             <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #ECD9B4' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>New subtitle</div>
-              <div style={{ fontSize: 14 }}>{param.pendingEdit.subtitle || '—'}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, margin: '8px 0 2px' }}>New guidance</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>New guidance</div>
               <div style={{ fontSize: 14, lineHeight: 1.55 }}>{param.pendingEdit.description || '—'}</div>
             </div>
             <button onClick={dropEdit} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 14, marginTop: 11 }}>
@@ -331,15 +325,6 @@ function ParameterDetail({
 
         <ReadRow label="Parameter name" value={param.title} />
 
-        <Field label="Subtitle">
-          <input
-            value={subtitle}
-            onChange={(e) => setSubtitle(e.target.value)}
-            maxLength={160}
-            style={inputStyle}
-          />
-          {subtitleDirty && <NextCycleNote cycle={cycle} cycleLoaded={cycleLoaded} />}
-        </Field>
         <Field label="Guidance">
           <textarea
             value={description}
@@ -525,19 +510,11 @@ function AddParameterPage({
             style={inputStyle}
           />
         </Field>
-        <Field label="Subtitle">
-          <input
-            value={form.subtitle}
-            onChange={(e) => set('subtitle', e.target.value)}
-            placeholder="e.g. Delivers quality work consistently and on time"
-            maxLength={160}
-            style={inputStyle}
-          />
-        </Field>
         <Field label="Guidance">
           <textarea
             value={form.description}
             onChange={(e) => set('description', e.target.value)}
+            placeholder="e.g. Delivers quality work consistently and on time"
             maxLength={600}
             style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.5 }}
           />
@@ -548,7 +525,7 @@ function AddParameterPage({
 
         <div style={warnTag}>
           <strong>Note:</strong> The name is permanent — a sent review is labelled with it. The
-          subtitle and guidance can be reworded later, but any change applies from the next cycle,
+          guidance can be reworded later, but any change applies from the next cycle,
           never the one managers are already scoring in.
         </div>
       </div>

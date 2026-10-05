@@ -44,18 +44,16 @@ enum TeamPresenceStatus { present, notPunchedIn }
 
 /// One line on the feedback form.
 ///
-/// [parameterId], [subtitle] and [description] come from the KPI parameter HR
-/// assigned. The copy used to live in the app keyed on [name]; it is data now,
-/// so an HR-authored parameter reads correctly instead of falling back to a
-/// blank line. Both stay nullable for reviews written before KPIs were
-/// configurable.
+/// [parameterId] and [description] come from the KPI parameter HR assigned.
+/// The guidance used to live in the app keyed on [name]; it is data now, so an
+/// HR-authored parameter reads correctly. Both stay nullable for reviews
+/// written before KPIs were configurable.
 class FeedbackParam {
   const FeedbackParam({
     required this.name,
     required this.score,
     required this.note,
     this.parameterId,
-    this.subtitle,
     this.description,
     this.weight,
   });
@@ -64,7 +62,6 @@ class FeedbackParam {
   final double score;
   final String note;
   final String? parameterId;
-  final String? subtitle;
   final String? description;
 
   /// Percentage this parameter contributes to the overall score. HR sets it per
@@ -78,7 +75,6 @@ class FeedbackParam {
       score: score ?? this.score,
       note: note ?? this.note,
       parameterId: parameterId,
-      subtitle: subtitle,
       description: description,
       weight: weight,
     );
@@ -90,7 +86,6 @@ class FeedbackParam {
       score: (json['score'] as num?)?.toDouble() ?? 0,
       note: json['note'] as String? ?? '',
       parameterId: json['parameterId'] as String?,
-      subtitle: json['subtitle'] as String?,
       description: json['description'] as String?,
       weight: (json['weight'] as num?)?.round(),
     );
@@ -1002,8 +997,7 @@ class ManagerDashboard {
   /// people, 3 leads leaders and sees the teams beneath them.
   final int teamLevel;
 
-  /// The viewer's own KPIs this cycle, with HR's subtitle and guidance for
-  /// each. Shown for a month that has not been reviewed yet, so the page says
+  /// The viewer's own KPIs this cycle, with HR's guidance for each. Shown for a month that has not been reviewed yet, so the page says
   /// what the review will cover instead of standing empty.
   final List<FeedbackParam> myParameters;
 
