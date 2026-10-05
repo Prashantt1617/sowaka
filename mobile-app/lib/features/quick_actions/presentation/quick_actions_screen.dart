@@ -2931,6 +2931,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       return 'Corrections can only be raised up to '
           '${rules.backdateDays} days back.';
     }
+    // Nobody punches on auto punch, so there is no missing punch to put
+    // right: the day is present by the shift's own rule.
+    if (widget.dashboard.shift.markedPresentAutomatically) {
+      return 'This day is marked present by your shift — there is nothing '
+          'to correct.';
+    }
     final trigger = CorrectionRules.triggerFor(
       punchIn: day.record?.punchIn,
       punchOut: day.record?.punchOut,
