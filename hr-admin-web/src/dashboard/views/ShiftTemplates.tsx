@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
 import {
-  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
+  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, shiftHeadcount, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
   type EmployeeDTO, type OutsideLocationOutcome, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
@@ -139,7 +139,10 @@ export function ShiftTemplates() {
 
   const exportTemplate = (shift: ShiftDTO) => {
     const p = shift.policy;
-    const rows = roster.filter((person) => shift.assignedUserIds.includes(person.userId));
+    // The default template also covers everyone assigned to no template.
+    const elsewhere = new Set(shifts.filter((s) => s.id !== shift.id).flatMap((s) => s.assignedUserIds));
+    const rows = roster.filter((person) =>
+      shift.assignedUserIds.includes(person.userId) || (shift.isDefault && !elsewhere.has(person.userId)));
     downloadCsv(`${shift.name.replace(/\s+/g, '-').toLowerCase()}-employees`, [
       { header: 'Employee ID', value: (e: EmployeeDTO) => e.employeeId ?? '' },
       { header: 'Name', value: (e: EmployeeDTO) => e.name },
@@ -218,19 +221,24 @@ export function ShiftTemplates() {
                     </Td>
                     <Td muted>{t.policy.startTime} – {t.policy.endTime} · {formatDuration(d)}</Td>
                     <Td>
-                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: t.assignedCount ? '#222222' : '#9197A2' }}>
-                        {t.assignedCount}
+                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: shiftHeadcount(t) ? '#222222' : '#9197A2' }}>
+                        {shiftHeadcount(t)}
                       </span>
                       <span style={{ fontSize: 14, color: '#9197A2' }}>
-                        {t.assignedCount === 1 ? ' employee' : ' employees'}
+                        {shiftHeadcount(t) === 1 ? ' employee' : ' employees'}
                       </span>
+                      {t.defaultedCount > 0 && (
+                        <div style={{ fontSize: 12.5, color: '#9197A2' }} title="On no template, so they follow the default">
+                          {t.defaultedCount} by default
+                        </div>
+                      )}
                     </Td>
                     <Td right>
                       <button
                         onClick={(e) => { e.stopPropagation(); exportTemplate(t); }}
-                        disabled={t.assignedCount === 0}
-                        title={t.assignedCount === 0 ? 'Nobody is on this shift yet' : 'Export the people on it'}
-                        style={{ ...smallBtn, opacity: t.assignedCount === 0 ? 0.45 : 1 }}
+                        disabled={shiftHeadcount(t) === 0}
+                        title={shiftHeadcount(t) === 0 ? 'Nobody is on this shift yet' : 'Export the people on it'}
+                        style={{ ...smallBtn, opacity: shiftHeadcount(t) === 0 ? 0.45 : 1 }}
                       >
                         Export
                       </button>
