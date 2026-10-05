@@ -238,17 +238,13 @@ class _TeamMemberProfilePage extends StatelessWidget {
                         punchIn: member.punchIn,
                         punchOut: member.punchOut,
                       ),
-                      // The month below today, as on one's own profile — for
-                      // someone in the viewer's reporting line, the only
-                      // people whose months the server hands over.
-                      if (canManage && member.inViewerChain) ...[
-                        const SizedBox(height: 20),
-                        _MemberAttendanceCalendar(
-                          member: member,
-                          data: data,
-                          bloc: bloc,
-                        ),
-                      ],
+                      // The month below today, as on one's own profile.
+                      const SizedBox(height: 20),
+                      _MemberAttendanceCalendar(
+                        member: member,
+                        data: data,
+                        bloc: bloc,
+                      ),
                     ],
                   ),
                 ),
@@ -768,7 +764,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                           labels: [
                             'Request',
                             'Attendance',
-                            'Work detail',
+                            'Details',
                             'Org chart',
                             'Grow',
                             if (helpHere) 'Counselor',
@@ -2281,7 +2277,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
     final labels = [
       if (managed && widget.canManage) 'Request',
       'Attendance',
-      'Work detail',
+      'Details',
       'Org chart',
       if (managed) 'Grow',
       if (managed && member.documents.isNotEmpty) 'Documentation',
@@ -2308,7 +2304,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
                       ),
                   ],
           'Attendance' => [widget.attendance],
-          'Work detail' => [
+          'Details' => [
             if (member.email.isNotEmpty)
               _WorkDetailRow(
                 iconAsset: 'assets/icons/profile_email.svg',

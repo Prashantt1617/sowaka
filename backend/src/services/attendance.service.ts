@@ -654,7 +654,11 @@ export async function getTeamMemberAttendance(
 ) {
   const employee = await users().findOne({ userId: employeeUserId });
   if (!employee) throw new AttendanceError(404, 'Employee not found');
-  if (!(await managesUpTheChain(managerUserId, employee))) {
+  // A colleague's month is open to the whole company — the profile shows
+  // everyone's attendance — but never across orgs.
+  const viewer = await users().findOne({ userId: managerUserId }, { projection: { org: 1 } });
+  const sameOrg = Boolean(viewer && employee.org && viewer.org === employee.org);
+  if (!sameOrg && !(await managesUpTheChain(managerUserId, employee))) {
     throw new AttendanceError(403, "Not authorized to view this employee's attendance");
   }
   const attendance = await getAttendanceForEmployee(

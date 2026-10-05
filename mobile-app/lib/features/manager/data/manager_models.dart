@@ -1298,8 +1298,8 @@ String? leaveRangeProblem({
     final latest = dayOf(window.latestFrom(now));
     if (start.isBefore(earliest) || end.isAfter(latest)) {
       return window.allowBackdated && window.backdatedDays > 0
-          ? '$typeLabel can be applied for '
-                '${key(earliest)} to ${key(latest)}.'
+          ? '$typeLabel can only be applied up to ${window.backdatedDays} '
+                'days back and ${window.advanceDays} days ahead.'
           : '$typeLabel cannot be applied for a day already past, and only up '
                 'to ${window.advanceDays} days ahead.';
     }
