@@ -171,6 +171,20 @@ class ConnectComment {
   /// The commenter's own photo, when they have set one.
   final String? photoUrl;
 
+  ConnectComment copyWith({int? likeCount, bool? liked}) {
+    return ConnectComment(
+      id: id,
+      userId: userId,
+      name: name,
+      text: text,
+      createdAt: createdAt,
+      parentId: parentId,
+      likeCount: likeCount ?? this.likeCount,
+      liked: liked ?? this.liked,
+      photoUrl: photoUrl,
+    );
+  }
+
   factory ConnectComment.fromJson(Map<String, dynamic> json) {
     return ConnectComment(
       id: json['id'] as String? ?? '',
@@ -294,6 +308,32 @@ class ConnectPost {
   final DateTime? publishedAt;
   final String? selectedPollOptionId;
   final String? actionValue;
+
+  ConnectPost copyWith({
+    bool? liked,
+    int? likeCount,
+    int? commentCount,
+    List<ConnectComment>? comments,
+  }) {
+    return ConnectPost(
+      id: id,
+      type: type,
+      tag: tag,
+      tagIcon: tagIcon,
+      tagColor: tagColor,
+      tagTint: tagTint,
+      author: author,
+      audience: audience,
+      body: body,
+      liked: liked ?? this.liked,
+      likeCount: likeCount ?? this.likeCount,
+      commentCount: commentCount ?? this.commentCount,
+      comments: comments ?? this.comments,
+      publishedAt: publishedAt,
+      selectedPollOptionId: selectedPollOptionId,
+      actionValue: actionValue,
+    );
+  }
 
   List<ConnectPollOption> get pollOptions {
     final values = body['options'] as List<dynamic>? ?? const [];
