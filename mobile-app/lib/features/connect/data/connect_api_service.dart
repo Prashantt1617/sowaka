@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -5,6 +6,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
+import '../../manager/data/dashboard_cache.dart';
 import 'connect_models.dart';
 
 class ConnectApiService {
@@ -31,6 +33,28 @@ class ConnectApiService {
       if (cursor != null) 'cursor=${Uri.encodeQueryComponent(cursor)}',
     ].join('&');
     final json = await _request('GET', '/connect/feed?$query');
+    // The top of the feed is kept on the device, so the next launch opens on
+    // it while the live page is fetched.
+    if (cursor == null) unawaited(DashboardCache.write(_feedCacheKey, {'feed': json}));
+    return _feedPage(json);
+  }
+
+  String get _feedCacheKey => 'feed-${session.user.id}';
+
+  /// The top of the feed as this person last saw it, from the device. Null
+  /// when there is none. Never touches the network.
+  Future<({List<ConnectPost> posts, String? nextCursor})?> fetchFeedFromCache() async {
+    final kept = await DashboardCache.read(_feedCacheKey);
+    final json = kept?['feed'];
+    if (json == null) return null;
+    try {
+      return _feedPage(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static ({List<ConnectPost> posts, String? nextCursor}) _feedPage(Map<String, dynamic> json) {
     final values = json['posts'] as List<dynamic>? ?? const [];
     return (
       posts: values

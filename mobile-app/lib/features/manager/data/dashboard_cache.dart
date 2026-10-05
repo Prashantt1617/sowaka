@@ -15,8 +15,11 @@ class DashboardCache {
   const DashboardCache._();
 
   static Future<File?> _file(String userId) async {
+    // Under the test runner the file-location plugin never answers, and a
+    // feed waiting on it would wait forever.
+    if (Platform.environment['FLUTTER_TEST'] == 'true') return null;
     try {
-      final dir = await getApplicationSupportDirectory();
+      final dir = await getApplicationSupportDirectory().timeout(const Duration(seconds: 3));
       return File('${dir.path}/dashboard-${userId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.json');
     } catch (_) {
       // No file system to speak of (a test, a sandbox): no cache, no harm.

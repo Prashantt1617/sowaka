@@ -85,7 +85,15 @@ class ConnectBloc {
   String? _cursor;
 
   Future<void> load() async {
-    _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
+    // The top of the feed as it was last time comes up at once; the live
+    // page replaces it as it lands. Older pages are not asked for on the
+    // copy — its cursor may no longer hold.
+    final remembered = _state.posts.isEmpty ? await _api.fetchFeedFromCache() : null;
+    if (remembered != null && remembered.posts.isNotEmpty) {
+      _emit(ConnectState(status: ConnectLoadStatus.ready, posts: remembered.posts, hasMore: false));
+    } else {
+      _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
+    }
     try {
       final page = await _api.fetchFeed(limit: pageSize);
       _cursor = page.nextCursor;
@@ -99,6 +107,11 @@ class ConnectBloc {
       // the first scroll never waits on a spinner.
       unawaited(loadMore());
     } catch (error) {
+      // The copy stays on show if there was one; only an empty feed fails.
+      if (_state.posts.isNotEmpty) {
+        _emit(_state.copyWith(message: error.toString()));
+        return;
+      }
       _emit(
         _state.copyWith(
           status: ConnectLoadStatus.failure,
