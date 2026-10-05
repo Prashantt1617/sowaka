@@ -37,6 +37,7 @@ class PunchScreen extends StatefulWidget {
     required this.api,
     required this.type,
     this.onRequestWfh,
+    this.onViewAttendance,
     this.onRecorded,
     this.alreadyRequestedToday = false,
     this.geofenced = true,
@@ -60,6 +61,10 @@ class PunchScreen extends StatefulWidget {
   /// Opens the work-from-home request, for the case where someone is not
   /// coming in at all. Null where the host cannot navigate there.
   final VoidCallback? onRequestWfh;
+
+  /// Opens the attendance calendar from the confirmation. Null where the host
+  /// is the calendar already, and the link is not shown.
+  final VoidCallback? onViewAttendance;
 
   /// A correction for today is already with the manager. They may still come
   /// in and punch, but the screen stops offering a second request for a day
@@ -93,8 +98,10 @@ class _PunchScreenState extends State<PunchScreen> {
   bool _canOpenSettings = false;
   DateTime _punchedAt = DateTime.now();
 
-  /// Which request was sent, for the confirmation that follows it.
-  String? _requestLabel;
+  DateTime _requestedAt = DateTime.now();
+
+  /// The reason picked on the outside screen, sent with the punch.
+  String? _selectedReason;
 
   /// What the server said when the punch landed outside every office: the
   /// reasons HR lets this employee choose, and whether choosing one marks the
@@ -102,6 +109,10 @@ class _PunchScreenState extends State<PunchScreen> {
   /// still wants the WFH / client-visit request instead.
   List<String> _reasons = const [];
   bool _marksPresent = false;
+
+  /// The reason may be left out: the day is marked present either way, so
+  /// closing this screen punches without one.
+  bool _reasonOptional = false;
 
   /// The reading the refusal was about, sent again with the reason.
   PunchReading? _reading;
@@ -124,48 +135,6 @@ class _PunchScreenState extends State<PunchScreen> {
     super.initState();
     if (widget.startImmediately) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _punch());
-    }
-  }
-
-  /// Reads the device, sends it, and lets the server rule.
-  ///
-  /// [offsite] carries an office visit through: the same reading, recorded
-  /// where the person actually is rather than refused.
-  /// Asks the manager to vouch for a day worked away from the office.
-  ///
-  /// Nobody marks their own day present from outside the fence: working from
-  /// home or at a client site is a claim about the day, and the day only
-  /// becomes a worked one when the manager approves it.
-  Future<void> _request(String label) async {
-    // Its own state, not the location check: nothing is being located here, and
-    // showing "Checking your location…" while a request is in flight describes
-    // work the app is not doing.
-    setState(() => _stage = _PunchStage.sending);
-    try {
-      await widget.api.submitAttendanceRegularization(
-        workDate: DateTime.now(),
-        // A day worked elsewhere is still a day worked, so it is asked for as
-        // a full day. Where it was worked is the reason, which is what the
-        // manager is actually being asked to vouch for.
-        dayType: 'full_day',
-        note: _officeLabel == null
-            ? '$label — outside the approved attendance area'
-            : '$label — ${_distanceMeters == null ? 'outside' : _formatDistance(_distanceMeters!)} '
-                  'from $_officeLabel',
-      );
-      if (!mounted) return;
-      setState(() {
-        _stage = _PunchStage.requested;
-        _requestLabel = label;
-      });
-      _raisedRequest = true;
-    } on ManagerApiException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _stage = _PunchStage.blocked;
-        _problem = error.message;
-        _canOpenSettings = false;
-      });
     }
   }
 
@@ -220,6 +189,9 @@ class _PunchScreenState extends State<PunchScreen> {
             .where((value) => value.isNotEmpty)
             .toList();
         _marksPresent = outside?['outcome'] == 'present';
+        _reasonOptional = outside?['reasonOptional'] == true;
+        // A choice from an earlier list is only kept if it is still offered.
+        if (!_reasons.contains(_selectedReason)) _selectedReason = null;
         _officeLabel = office == null
             ? null
             : [
@@ -242,7 +214,7 @@ class _PunchScreenState extends State<PunchScreen> {
       setState(() {
         _busy = false;
         _stage = _PunchStage.requested;
-        _requestLabel = request.heading;
+        _requestedAt = DateTime.now();
       });
       return;
     }
@@ -252,14 +224,19 @@ class _PunchScreenState extends State<PunchScreen> {
       _busy = false;
       _stage = _PunchStage.done;
       _officeName = record.officeName;
-      _outsideNote = record.outsideLocation;
+      // The day's note belongs to the punch that wrote it. A punch-out
+      // after an outside punch-in carries the morning's note on the record,
+      // and must not describe this punch as taken from there.
+      final note = record.outsideLocation;
+      _outsideNote = note != null && note.punchType == widget.type ? note : null;
       _punchedAt =
           (_punchingIn ? record.punchIn : record.punchOut) ?? DateTime.now();
     });
   }
 
-  /// The same punch again, with the reason the employee chose for being away.
-  Future<void> _sendWithReason(String reason) async {
+  /// The same punch again, with the reason the employee chose for being away
+  /// — or, where none is needed, without one.
+  Future<void> _sendWithReason(String? reason) async {
     setState(() {
       _busy = true;
       _stage = _PunchStage.sending;
@@ -269,6 +246,7 @@ class _PunchScreenState extends State<PunchScreen> {
         widget.type,
         reading: _reading,
         reason: reason,
+        skipReason: reason == null,
       );
       _recorded(record);
     } on ManagerApiException catch (error) {
@@ -286,6 +264,32 @@ class _PunchScreenState extends State<PunchScreen> {
     Navigator.of(
       context,
     ).pop(outcome ?? PunchOutcome(punched: false, requested: _raisedRequest));
+  }
+
+  /// Whether this punch is the manager's to decide: a punch-in under the
+  /// request outcome. A punch-out is recorded whatever the outcome, so the
+  /// approval copy never belongs on it.
+  bool get _needsApproval => _punchingIn && !_marksPresent;
+
+  /// The close control. On the outside screen of someone whose day is marked
+  /// present regardless, leaving is the punch: it goes through with the
+  /// reason chosen, or none, and the screen closes on it. Never when today's
+  /// request is already with the manager — then it only closes.
+  /// Today's request already stands between this punch and the manager.
+  /// Only a punch-in that would become a request is held back by it: a
+  /// present-outcome punch needs nobody's decision, and a punch-out rides
+  /// on a pending request rather than raising another.
+  bool get _alreadyIn => _needsApproval && (widget.alreadyRequestedToday || _raisedRequest);
+
+  Future<void> _dismiss() async {
+    final alreadyIn = _alreadyIn;
+    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy) {
+      await _sendWithReason(_selectedReason);
+      if (!mounted || _stage != _PunchStage.done) return;
+      _close(PunchOutcome(punched: true, officeName: _officeName));
+      return;
+    }
+    _close();
   }
 
   @override
@@ -311,7 +315,7 @@ class _PunchScreenState extends State<PunchScreen> {
                         label: 'Close',
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
-                          onTap: () => _close(),
+                          onTap: _dismiss,
                           child: SvgPicture.asset(
                             'assets/icons/punch/close.svg',
                             width: 24,
@@ -456,220 +460,149 @@ class _PunchScreenState extends State<PunchScreen> {
     );
   }
 
+  /// Punched (node 3345:29117): the time, the day, and — from outside — the
+  /// reason and where from, in one card.
   Widget _done() {
+    final note = _outsideNote;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(
-            color: Color(0xFFE6F4EA),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.check, color: Color(0xFF15803D), size: 28),
-        ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 40),
+        Image.asset('assets/icons/punch/punched_in.png', width: 80, height: 80),
+        const SizedBox(height: 24),
         Text(
           _punchingIn ? "You're punched in!" : "You're punched out!",
-          style: const TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w700,
-            color: _ink,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _outsideNote == null
-              ? 'Your attendance has been recorded.'
-              : 'Marked present — out of location (${_outsideNote!.reason}).',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 13, color: _inkTertiary),
+          style: _sora(24, FontWeight.w700, _ink, height: 32 / 24),
         ),
-        const SizedBox(height: 22),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _border),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _punchingIn ? 'Punched in at' : 'Punched out at',
-                      style: const TextStyle(fontSize: 11, color: _inkTertiary),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.place,
-                          size: 14,
-                          color: Color(0xFF15803D),
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            _outsideNote?.place ?? _officeName ?? 'Recorded',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: _ink,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                TimeOfDay.fromDateTime(_punchedAt).format(context),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: _ink,
-                ),
-              ),
-            ],
-          ),
+        const SizedBox(height: 8),
+        Text(
+          'Your attendance has been recorded.',
+          textAlign: TextAlign.center,
+          style: _sora(14, FontWeight.w400, const Color(0xFF484848), height: 21 / 14),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 28),
+        _PunchSummaryCard(
+          heading: _punchingIn ? 'Punched in' : 'Punched out',
+          at: _punchedAt,
+          reason: note?.reason,
+          place: note?.place ?? _officeName,
+          placeCaption: note == null ? 'Location at punch' : 'Location at request',
+        ),
+        const SizedBox(height: 40),
         _PunchPrimaryAction(
           label: 'Continue to Connect',
           onTap: () =>
               _close(PunchOutcome(punched: true, officeName: _officeName)),
         ),
+        if (widget.onViewAttendance case final open?) ...[
+          const SizedBox(height: 16),
+          _LinkText(
+            label: 'View attendance',
+            underline: true,
+            onTap: () {
+              _close(PunchOutcome(punched: true, officeName: _officeName));
+              open();
+            },
+          ),
+        ],
       ],
     );
   }
 
+  /// Outside every office (nodes 3345:28301 and 3345:28881). The reasons are
+  /// HR's own list from the template; which of the two screens this is comes
+  /// from the template too: a manager's decision, or marked present outright,
+  /// in which case no reason is needed and the button is live from the start.
   Widget _outside() {
-    final alreadyIn = widget.alreadyRequestedToday || _raisedRequest;
+    final alreadyIn = _alreadyIn;
+    final canSend = !alreadyIn && !_busy && (_selectedReason != null || _reasonOptional);
+    final sendLabel = _needsApproval ? 'Send punch-in request' : (_punchingIn ? 'Punch in' : 'Punch out');
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 62),
-        // A 37px no-entry mark on a 9% red wash (2433:87809).
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: const BoxDecoration(
-            color: Color(0x17A31616),
-            shape: BoxShape.circle,
+        const SizedBox(height: 44),
+        if (_needsApproval) ...[
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: _AmberPill(icon: Icons.hourglass_top_rounded, label: 'Manager approval required'),
           ),
-          child: SvgPicture.asset(
-            'assets/icons/punch/no_entry.svg',
-            width: 37,
-            height: 37,
-          ),
+          const SizedBox(height: 20),
+        ],
+        Text(
+          'You\u2019re outside the office area',
+          style: _sora(27, FontWeight.w700, _navy, height: 32.5 / 27),
         ),
         const SizedBox(height: 24),
-        Text(
-          'You are outside the approved attendance area.',
-          textAlign: TextAlign.center,
-          style: _sora(22, FontWeight.w700, _ink, height: 30 / 22),
-        ),
-        const SizedBox(height: 20),
-        // Where the office is and when this was tried (2313:59170).
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0x0AA31616),
-            border: Border.all(color: const Color(0x21A31616), width: 1.129),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  SvgPicture.asset('assets/icons/punch/pin.svg', width: 16, height: 16),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      _officeLabel ?? 'Your office',
-                      style: _sora(13, FontWeight.w600, _ink, height: 19.5 / 13),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  SvgPicture.asset('assets/icons/punch/clock.svg', width: 16, height: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    _distanceMeters == null
-                        ? TimeOfDay.now().format(context)
-                        : '${_formatDistance(_distanceMeters!)} away',
-                    style: _sora(13, FontWeight.w400, const Color(0xFF484848), height: 19.5 / 13),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        _OfficeCard(
+          name: _officeLabel?.split(' · ').first ?? 'Office',
+          distance: _distanceMeters == null
+              ? 'Outside the approved area'
+              : '${_formatDistance(_distanceMeters!)} from the office',
         ),
         const SizedBox(height: 24),
         if (alreadyIn)
-          // One day, one request: what is already with the manager is said
-          // plainly instead of offering a duplicate.
           Text(
-            'Regularisation has been sent to your manager.',
-            textAlign: TextAlign.center,
-            style: _sora(14, FontWeight.w600, const Color(0xFF9197A2), height: 21 / 14),
+            'Your request for today is already with your manager.',
+            style: _sora(13.5, FontWeight.w600, _navy, height: 21 / 13.5),
           )
-        else if (_reasons.isNotEmpty) ...[
-          // HR's own reasons, in HR's own words. What choosing one leads to
-          // is HR's call too, so the screen says which it will be.
+        else ...[
           Text(
-            _marksPresent
-                ? 'Tell us why, and you will be marked present with a note '
-                    'that you were out of location.'
-                : 'Tell us why, and your manager will be asked to mark the '
-                    'day present.',
-            textAlign: TextAlign.center,
-            style: _sora(14, FontWeight.w600, const Color(0xFF9197A2), height: 21 / 14),
+            'Where are you working from today?',
+            style: _sora(13.5, FontWeight.w600, _navy, height: 21 / 13.5),
           ),
           const SizedBox(height: 12),
-          for (final reason in _reasons) ...[
-            _OutlineAction(label: reason, onTap: () => _sendWithReason(reason)),
-            const SizedBox(height: 8),
-          ],
-          const SizedBox(height: 20),
-          _QuietButton(
-            label: 'Apply for a leave',
-            onTap: () {
-              _close();
-              widget.onRequestWfh?.call();
-            },
-          ),
-        ] else ...[
-          Text(
-            'You will be marked absent until you choose an option below.',
-            textAlign: TextAlign.center,
-            style: _sora(14, FontWeight.w600, const Color(0xFF9197A2), height: 21 / 14),
-          ),
-          const SizedBox(height: 12),
-          _OutlineAction(label: 'Request WFH', onTap: () => _request('Work from home')),
-          const SizedBox(height: 8),
-          _OutlineAction(label: 'Client visit', onTap: () => _request('Client visit')),
-          const SizedBox(height: 28),
-          _QuietButton(
-            label: 'Apply for a leave',
-            onTap: () {
-              _close();
-              widget.onRequestWfh?.call();
+          // Three tiles to a row (node 3357:29529), HR's reasons in HR's
+          // order, each wearing one of the three illustrations in turn.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.maxWidth - 24) / 3;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final (index, reason) in _reasons.indexed)
+                    SizedBox(
+                      width: width,
+                      child: _ReasonTile(
+                        label: reason,
+                        image: 'assets/icons/punch/reason_${index % 3 + 1}.png',
+                        selected: _selectedReason == reason,
+                        onTap: () => setState(
+                          () => _selectedReason = _selectedReason == reason ? null : reason,
+                        ),
+                      ),
+                    ),
+                ],
+              );
             },
           ),
         ],
+        const SizedBox(height: 24),
+        _ArrowButton(
+          label: sendLabel,
+          enabled: canSend,
+          onTap: () => _sendWithReason(_selectedReason),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _LinkText(
+              asset: 'assets/icons/punch/ool_recheck.svg',
+              label: 'Recheck location',
+              onTap: _busy ? null : _punch,
+            ),
+            _LinkText(
+              asset: 'assets/icons/punch/ool_leave.svg',
+              label: 'Apply for leave',
+              onTap: () {
+                _close();
+                widget.onRequestWfh?.call();
+              },
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -685,7 +618,7 @@ class _PunchScreenState extends State<PunchScreen> {
         ),
         SizedBox(height: 20),
         Text(
-          _marksPresent ? 'Punching you in...' : 'Sending your request...',
+          _needsApproval ? 'Sending your request...' : (_punchingIn ? 'Punching you in...' : 'Punching you out...'),
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -698,38 +631,49 @@ class _PunchScreenState extends State<PunchScreen> {
 
   /// The request is with the manager. Says plainly that the day is not
   /// present yet, so nobody leaves thinking their attendance is settled.
+  /// The request is with the manager (node 3345:28592). The day is not
+  /// present yet; the card says what was asked and from where.
   Widget _requested() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          width: 74,
-          height: 74,
-          decoration: const BoxDecoration(
-            color: Color(0xFFEAF4FB),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.send_rounded, size: 32, color: _brand),
-        ),
         const SizedBox(height: 20),
+        Image.asset('assets/icons/punch/request_sent.png', width: 76, height: 76),
+        const SizedBox(height: 24),
         Text(
-          '${_requestLabel ?? 'Request'} sent',
+          'Request sent',
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w700,
-            color: _ink,
+          style: _sora(27, FontWeight.w700, _navy, height: 33 / 27),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Your ${_punchingIn ? 'punch-in' : 'punch-out'} request is with your manager for approval.',
+          textAlign: TextAlign.center,
+          style: _sora(13, FontWeight.w400, _muted, height: 21 / 13),
+        ),
+        const SizedBox(height: 24),
+        _PunchSummaryCard(
+          heading: 'Requested at',
+          at: _requestedAt,
+          reason: _selectedReason,
+          place: _distanceMeters == null || _officeLabel == null
+              ? _officeLabel
+              : '${_formatDistance(_distanceMeters!)} from ${_officeLabel!.split(' · ').first}',
+          placeCaption: 'Location at request',
+        ),
+        const SizedBox(height: 28),
+        _PunchPrimaryAction(label: 'Continue to Connect', onTap: () => _close()),
+        if (widget.onViewAttendance case final open?) ...[
+          const SizedBox(height: 16),
+          _LinkText(
+            label: 'View attendance',
+            underline: true,
+            onTap: () {
+              _close();
+              open();
+            },
           ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Your manager has it now. The day is marked present once they '
-          'approve it, and you can follow it under your requests.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, height: 1.45, color: _inkTertiary),
-        ),
-        const SizedBox(height: 26),
-        _PunchPrimaryAction(label: 'Done', onTap: () => _close()),
+        ],
       ],
     );
   }
@@ -776,13 +720,13 @@ class _PunchPrimaryAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: double.infinity,
-    height: 58,
+    height: 60,
     child: FilledButton(
       style: FilledButton.styleFrom(
         backgroundColor: _brand,
         foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: _sora(14, FontWeight.w600, Colors.white, height: 21 / 14),
       ),
       onPressed: onTap,
       child: Text(label),
@@ -888,4 +832,290 @@ class _ReadyFact extends StatelessWidget {
       ],
     );
   }
+}
+
+const _navy = Color(0xFF142A43);
+const _muted = Color(0xFF586B7D);
+const _hairline = Color(0xFFDCE3EA);
+const _link = Color(0xFF0668D8);
+
+/// "Monday, 5 October 2026".
+String _longDate(DateTime value) {
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  return '${days[value.weekday - 1]}, ${value.day} ${months[value.month - 1]} ${value.year}';
+}
+
+/// "Manager approval required" — amber wash, 999 radius (node 3345:28301).
+class _AmberPill extends StatelessWidget {
+  const _AmberPill({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF5DC),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: const Color(0xFF996300)),
+        const SizedBox(width: 8),
+        Text(label, style: _sora(12, FontWeight.w600, const Color(0xFF996300), height: 18 / 12)),
+      ],
+    ),
+  );
+}
+
+/// The office this was measured against, and how far away it was.
+class _OfficeCard extends StatelessWidget {
+  const _OfficeCard({required this.name, required this.distance});
+  final String name;
+  final String distance;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFBF4F4),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _hairline),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 43,
+          height: 43,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE4E9EF)),
+          ),
+          child: Center(child: SvgPicture.asset('assets/icons/punch/ool_office.svg', width: 23, height: 20)),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: _sora(14, FontWeight.w600, _navy, height: 21 / 14)),
+              const SizedBox(height: 2),
+              Text(distance, style: _sora(11.5, FontWeight.w400, _muted, height: 18 / 11.5)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// One of HR's reasons as a tile (node 3357:29571): an illustration over the
+/// label, 14 radius, tinted with blue text once chosen.
+class _ReasonTile extends StatelessWidget {
+  const _ReasonTile({required this.label, required this.image, required this.selected, required this.onTap});
+  final String label;
+  final String image;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? const Color(0xFFF4F7FB) : Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        height: 130,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _hairline, width: 1.1),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(image, width: 60, height: 60, fit: BoxFit.contain),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 39,
+              child: Center(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: _sora(12, FontWeight.w400, selected ? _brand : _navy, height: 19.5 / 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// "Send punch-in request →": 52 high, 14 radius, greyed until it can go.
+class _ArrowButton extends StatelessWidget {
+  const _ArrowButton({required this.label, required this.enabled, required this.onTap});
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 52,
+    child: FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: _brand,
+        disabledBackgroundColor: const Color(0xFF9DB9CB),
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      onPressed: enabled ? onTap : null,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label, style: _sora(14, FontWeight.w600, Colors.white, height: 21 / 14)),
+          const SizedBox(width: 12),
+          SvgPicture.asset('assets/icons/punch/ool_arrow.svg', width: 12, height: 9),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A blue text link, with an icon before it or underlined on its own.
+class _LinkText extends StatelessWidget {
+  const _LinkText({required this.label, required this.onTap, this.asset, this.underline = false});
+  final String label;
+  final VoidCallback? onTap;
+  final String? asset;
+  final bool underline;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (asset case final path?) ...[
+            SvgPicture.asset(path, width: 17, height: 17),
+            const SizedBox(width: 8),
+          ],
+          Text(
+            label,
+            style: _sora(underline ? 12 : 11.5, FontWeight.w600, _link, height: 18 / 11.5).copyWith(
+              decoration: underline ? TextDecoration.underline : null,
+              decorationColor: _link,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The confirmation card (nodes 3345:28592 and 3345:29117): the moment on a
+/// tinted band, then the reason and the place as two rows.
+class _PunchSummaryCard extends StatelessWidget {
+  const _PunchSummaryCard({
+    required this.heading,
+    required this.at,
+    required this.reason,
+    required this.place,
+    required this.placeCaption,
+  });
+  final String heading;
+  final DateTime at;
+  final String? reason;
+  final String? place;
+  final String placeCaption;
+
+  @override
+  Widget build(BuildContext context) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final time = '$hour:${at.minute.toString().padLeft(2, '0')}';
+    final meridiem = at.hour >= 12 ? 'PM' : 'AM';
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: const Color(0xFFF4F7FB),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(heading, style: _sora(11.5, FontWeight.w400, _muted, height: 18 / 11.5)),
+                const SizedBox(height: 10),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: time, style: _sora(35, FontWeight.w700, _navy, height: 1.1)),
+                      TextSpan(text: ' $meridiem', style: _sora(20, FontWeight.w600, _navy, height: 1.1)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(_longDate(at), style: _sora(11.5, FontWeight.w400, _muted, height: 18 / 11.5)),
+              ],
+            ),
+          ),
+          if (reason case final why? when why.isNotEmpty)
+            _SummaryRow(asset: 'assets/icons/punch/ool_row_briefcase.svg', title: why, caption: 'Reason for working outside'),
+          if (place case final where? when where.isNotEmpty)
+            _SummaryRow(asset: 'assets/icons/punch/ool_row_pin.svg', title: where, caption: placeCaption),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.asset, required this.title, required this.caption});
+  final String asset;
+  final String title;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+    decoration: const BoxDecoration(border: Border(top: BorderSide(color: _hairline))),
+    child: Row(
+      children: [
+        SizedBox(width: 20, height: 20, child: Center(child: SvgPicture.asset(asset, width: 18, height: 18))),
+        const SizedBox(width: 20),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: _sora(12, FontWeight.w600, _navy, height: 18 / 12)),
+              const SizedBox(height: 2),
+              Text(caption, style: _sora(10.5, FontWeight.w400, _muted, height: 16 / 10.5)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }

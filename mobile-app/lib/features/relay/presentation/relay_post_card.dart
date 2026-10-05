@@ -286,7 +286,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
                 style: RelayStyle.sora(40, weight: FontWeight.w600, color: _cream, spacing: -1),
               ),
               const SizedBox(height: 5),
-              Text(_subtitle, style: RelayStyle.sora(16, color: _mist)),
+              // Two lines is what the header has room for; a longer line from
+              // the dashboard is cut rather than pushed into the date row.
+              Text(
+                _subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: RelayStyle.sora(16, color: _mist),
+              ),
             ],
           ),
         ],
@@ -336,13 +343,12 @@ class _RelayPostCardState extends State<RelayPostCard> {
     );
   }
 
-  /// "Game start in", counting down to the second.
+  /// "Game start in", as days, hours and minutes while it is far off, down to
+  /// the second once it is close.
   Widget _clockBox() {
     final at = _startsAt;
     final left = at == null ? Duration.zero : at.difference(DateTime.now());
-    final seconds = left.isNegative ? 0 : left.inSeconds;
-    String two(int n) => n.toString().padLeft(2, '0');
-    final value = '${two(seconds ~/ 3600)}:${two(seconds % 3600 ~/ 60)}:${two(seconds % 60)}';
+    final value = relayCountdown(left.isNegative ? 0 : left.inSeconds);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),

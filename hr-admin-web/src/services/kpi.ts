@@ -9,7 +9,6 @@ import { api } from './http';
 export type KpiParameterDTO = {
   id: string;
   title: string;
-  subtitle: string;
   description: string;
   archived: boolean;
   /** Absent on parameters created before authorship was recorded. */
@@ -18,7 +17,6 @@ export type KpiParameterDTO = {
   createdAt?: string;
   /** A wording change waiting for its cycle to open. */
   pendingEdit?: {
-    subtitle: string;
     description: string;
     /** Cycle key the new wording becomes live in. */
     effectiveFrom: string;
@@ -144,18 +142,18 @@ export const listKpiParameters = (includeArchived = false) =>
     `/admin/kpi/parameters${includeArchived ? '?includeArchived=true' : ''}`,
   ).then((r) => r.parameters);
 
-export const createKpiParameter = (input: { title: string; subtitle?: string; description?: string }) =>
+export const createKpiParameter = (input: { title: string; description?: string }) =>
   api<{ parameter: KpiParameterDTO }>('/admin/kpi/parameters', { method: 'POST', body: input })
     .then((r) => r.parameter);
 
 /**
- * Stages a wording change. Only the subtitle and guidance can change, and the
+ * Stages a wording change. Only the guidance can change, and the
  * change lands in the next cycle — never the one in progress, where managers
  * are already scoring against the current text.
  */
 export const updateKpiParameter = (
   id: string,
-  input: { subtitle?: string; description?: string },
+  input: { description?: string },
 ) =>
   api<{ parameter: KpiParameterDTO }>(`/admin/kpi/parameters/${id}`, { method: 'PUT', body: input })
     .then((r) => r.parameter);

@@ -80,8 +80,8 @@ export function TemplateDetailModal({
                   <tr key={id}>
                     <Td top>
                       <div style={{ fontWeight: 700 }}>{p?.title ?? 'Removed parameter'}</div>
-                      {p?.subtitle && (
-                        <div style={{ fontSize: 13.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.subtitle}</div>
+                      {p?.description && (
+                        <div style={{ fontSize: 13.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.description}</div>
                       )}
                     </Td>
                     <Td top right>

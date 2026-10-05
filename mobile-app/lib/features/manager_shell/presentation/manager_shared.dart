@@ -414,33 +414,6 @@ IconData awardIcon(String icon) {
   };
 }
 
-/// One-line copy under each parameter name on the feedback form. Held here
-/// rather than on the API: it is static presentation copy, not record data.
-/// Falls back to an empty string so an unknown parameter simply shows no line.
-String paramDescription(String name) {
-  return switch (name) {
-    'Performance' => 'Delivers quality work consistently and on time',
-    'Collaboration' => 'Works well with teammates and cross-team',
-    'Ownership' => 'Takes responsibility and follows through',
-    'Communication' => 'Clarity and impact in interactions',
-    _ => '',
-  };
-}
-
-/// Longer guidance revealed by the info toggle on a parameter card.
-String paramHelp(String name) {
-  return switch (name) {
-    'Ownership' =>
-      'Takes responsibility end-to-end, unblocks themselves, and follows through without being chased.',
-    'Communication' => 'Shares context clearly and on time so others can act.',
-    'Performance' =>
-      'Output is accurate, thorough and reliable, with few rework loops.',
-    'Collaboration' =>
-      'Works well across functions, gives and receives feedback, and lifts the team.',
-    _ => 'How this person performed on this parameter this month.',
-  };
-}
-
 const List<Color> avatarColors = [
   Color(0xFFBE5A36),
   Color(0xFF4F8C89),

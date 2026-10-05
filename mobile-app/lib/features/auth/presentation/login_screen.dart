@@ -13,6 +13,7 @@ import '../data/auth_session_store.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../onboarding/presentation/onboarding_flow.dart';
 import '../../shared/startup_prefs.dart';
+import '../../shared/offline_banner.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -137,7 +138,8 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
+      body: OfflineAware(
+        child: SafeArea(
         child: StreamBuilder<AuthState>(
           stream: _bloc.stream,
           initialData: _bloc.state,
@@ -247,6 +249,7 @@ class _LoginScreenState extends State<LoginScreen>
             );
           },
         ),
+      ),
       ),
     );
   }

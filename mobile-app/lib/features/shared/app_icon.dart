@@ -9,9 +9,10 @@ import 'package:flutter/widgets.dart';
 /// iOS swaps between icons that ship inside the build, so a Convrse
 /// employee's phone shows the Convrse mark. Android has no such API: there
 /// the app enables a launcher alias carrying the company's icon and retires
-/// the default one. The launcher refreshes on its own schedule — usually
-/// seconds, sometimes after a reboot — and an existing home-screen shortcut
-/// may need re-adding once.
+/// the default one — once the app is in the background, since swapping the
+/// component a running task came from closes that task. The launcher then
+/// refreshes on its own schedule — usually seconds, sometimes after a reboot
+/// — and an existing home-screen shortcut may need re-adding once.
 class AppIcon {
   const AppIcon._();
 

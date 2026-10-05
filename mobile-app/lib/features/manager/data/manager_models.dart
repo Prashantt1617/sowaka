@@ -44,18 +44,16 @@ enum TeamPresenceStatus { present, notPunchedIn }
 
 /// One line on the feedback form.
 ///
-/// [parameterId], [subtitle] and [description] come from the KPI parameter HR
-/// assigned. The copy used to live in the app keyed on [name]; it is data now,
-/// so an HR-authored parameter reads correctly instead of falling back to a
-/// blank line. Both stay nullable for reviews written before KPIs were
-/// configurable.
+/// [parameterId] and [description] come from the KPI parameter HR assigned.
+/// The guidance used to live in the app keyed on [name]; it is data now, so an
+/// HR-authored parameter reads correctly. Both stay nullable for reviews
+/// written before KPIs were configurable.
 class FeedbackParam {
   const FeedbackParam({
     required this.name,
     required this.score,
     required this.note,
     this.parameterId,
-    this.subtitle,
     this.description,
     this.weight,
   });
@@ -64,7 +62,6 @@ class FeedbackParam {
   final double score;
   final String note;
   final String? parameterId;
-  final String? subtitle;
   final String? description;
 
   /// Percentage this parameter contributes to the overall score. HR sets it per
@@ -78,7 +75,6 @@ class FeedbackParam {
       score: score ?? this.score,
       note: note ?? this.note,
       parameterId: parameterId,
-      subtitle: subtitle,
       description: description,
       weight: weight,
     );
@@ -90,7 +86,6 @@ class FeedbackParam {
       score: (json['score'] as num?)?.toDouble() ?? 0,
       note: json['note'] as String? ?? '',
       parameterId: json['parameterId'] as String?,
-      subtitle: json['subtitle'] as String?,
       description: json['description'] as String?,
       weight: (json['weight'] as num?)?.round(),
     );
@@ -213,6 +208,7 @@ class TeamMember {
     required this.params,
     required this.extra,
     this.todayMark = 'not_in',
+    this.todayAway,
     this.recognitionLabel,
     this.todayStatus = TeamPresenceStatus.notPunchedIn,
     this.birthday,
@@ -265,6 +261,10 @@ class TeamMember {
   /// How today reads on the team card, graded by the server against this
   /// member's own shift: present, late, half_day, wfh, leave or not_in.
   final String todayMark;
+
+  /// Where they are working from today when not at the office — the reason
+  /// on an outside punch, or the approved away day. Null in the office.
+  final String? todayAway;
 
   /// The recognition HR gave them — "Employee of the month" — if any.
   final String? recognitionLabel;
@@ -327,6 +327,9 @@ class TeamMember {
       todayMark:
           json['todayMark'] as String? ??
           (json['todayStatus'] == 'present' ? 'present' : 'not_in'),
+      todayAway: (json['todayAway'] as String?)?.trim().isNotEmpty == true
+          ? (json['todayAway'] as String).trim()
+          : null,
       recognitionLabel: (json['recognitionLabel'] as String?)?.trim(),
       todayStatus: json['todayStatus'] == 'present'
           ? TeamPresenceStatus.present
@@ -381,6 +384,11 @@ class TeamMember {
       avatarIndex: avatarIndex,
       params: params ?? this.params,
       extra: extra ?? this.extra,
+      // Today's reading travels with the copy: a copy made to carry a new
+      // review must not reset the card to "not in" until the next refresh.
+      todayMark: todayMark,
+      todayAway: todayAway,
+      recognitionLabel: recognitionLabel,
       todayStatus: todayStatus,
       birthday: birthday,
       designation: designation,
@@ -1002,8 +1010,7 @@ class ManagerDashboard {
   /// people, 3 leads leaders and sees the teams beneath them.
   final int teamLevel;
 
-  /// The viewer's own KPIs this cycle, with HR's subtitle and guidance for
-  /// each. Shown for a month that has not been reviewed yet, so the page says
+  /// The viewer's own KPIs this cycle, with HR's guidance for each. Shown for a month that has not been reviewed yet, so the page says
   /// what the review will cover instead of standing empty.
   final List<FeedbackParam> myParameters;
 

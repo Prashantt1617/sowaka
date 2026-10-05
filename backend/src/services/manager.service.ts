@@ -16,7 +16,7 @@ import { notifyUsers } from './notification.service';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
 import { policyForUser, shiftPolicyFor } from './shift.service';
-import { markForDay, minutesAfterShiftStart } from './attendance.service';
+import { markForDay, minutesAfterShiftStart, DEFAULT_AWAY_REASON } from './attendance.service';
 import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
 import {
@@ -95,6 +95,13 @@ export interface ManagerTeamMemberView {
    * across two shifts sees each person by their own rules.
    */
   todayMark: 'present' | 'late' | 'half_day' | 'wfh' | 'leave' | 'not_in';
+  /**
+   * Where they are working from today when it is not the office: the reason
+   * they gave on an outside punch, or the kind of away day that was approved.
+   * An outside punch with no reason reads as working from home. Null in the
+   * office or not in.
+   */
+  todayAway: string | null;
   /** The recognition HR gave them — "Employee of the month" — when there is one. */
   recognitionLabel: string | null;
   birthday: string | null;
@@ -376,6 +383,18 @@ export async function getManagerWorkspace(managerUserId: string) {
   const todaysRecordFor = (report: (typeof reports)[number]) =>
     (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
     attendanceByUserId.get(report.userId);
+  const awayLabelFor = (record: ReturnType<typeof todaysRecordFor>): string | null => {
+    if (!record) return null;
+    // Only the punch-in's note says where the day was worked. A punch-out
+    // taken from outside closes a day that was worked wherever the punch-in
+    // said, and must not relabel it.
+    if (record.outsideLocation?.punchType === 'in') {
+      return record.outsideLocation.reason || DEFAULT_AWAY_REASON;
+    }
+    return (
+      { wfh: DEFAULT_AWAY_REASON, client_visit: 'Client visit', office_visit: 'Office visit' } as Record<string, string>
+    )[record.dayType ?? ''] ?? null;
+  };
   // Resolve nominee names for the current + historical nominations (a past
   // nominee may no longer be a direct report).
   const nomineeIds = [...new Set(nominationHistory.map((n) => n.employeeUserId))];
@@ -439,6 +458,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     const todaysRecord = todaysRecordFor(report);
     return {
       todayMark: await todayMarkFor(report, todaysRecord),
+      todayAway: awayLabelFor(todaysRecord),
       recognitionLabel: report.recognition?.label?.trim() || null,
       userId: report.userId,
       name: report.name,
@@ -538,7 +558,6 @@ export async function getManagerWorkspace(managerUserId: string) {
       (p) => ({
         parameterId: p.id,
         name: p.title,
-        subtitle: p.subtitle,
         description: p.description,
         weight: p.weight,
         score: 0,
@@ -665,7 +684,6 @@ export async function upsertFeedback(
     return {
       parameterId: expected.id,
       name: expected.title,
-      subtitle: expected.subtitle,
       // Snapshotted with the copy: re-weighting the template later must not
       // restate what this review meant.
       weight: expected.weight,
@@ -853,7 +871,6 @@ function reconcileParameters(
   assigned: Array<{
     id: string;
     title: string;
-    subtitle: string;
     description?: string;
     weight: number;
   }>,
@@ -875,7 +892,6 @@ function blankParameters(
   assigned: Array<{
     id: string;
     title: string;
-    subtitle: string;
     description?: string;
     weight: number;
   }>,
@@ -883,7 +899,6 @@ function blankParameters(
   return assigned.map((p) => ({
     parameterId: p.id,
     name: p.title,
-    subtitle: p.subtitle,
     // HR's guidance for this parameter. The app's hint line reads it; without
     // it every hint fell back to copy hard-coded in the app.
     description: p.description,

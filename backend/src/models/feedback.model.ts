@@ -12,7 +12,8 @@ export interface FeedbackParameter {
   /** Absent on reviews written before parameters became HR-configurable. */
   parameterId?: string;
   name: string;
-  /** Copy shown under the name at the time of scoring. Absent on legacy rows. */
+  /** A one-liner older parameters carried; snapshotted on reviews sent while
+   *  it existed, never written since. */
   subtitle?: string;
   /**
    * HR's guidance for scoring this parameter, carried on the blank form only

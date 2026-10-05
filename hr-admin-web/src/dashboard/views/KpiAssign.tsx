@@ -159,8 +159,8 @@ function CycleBlock({
             <div key={p.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 700 }}>{p.title}</div>
-                {p.subtitle && (
-                  <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.45, marginTop: 1 }}>{p.subtitle}</div>
+                {p.description && (
+                  <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.45, marginTop: 1 }}>{p.description}</div>
                 )}
               </div>
               <span style={{ flexShrink: 0, fontSize: 13.5, fontWeight: 800, color: '#484848', fontVariantNumeric: 'tabular-nums' }}>

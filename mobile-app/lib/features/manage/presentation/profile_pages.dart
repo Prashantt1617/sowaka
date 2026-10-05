@@ -2986,7 +2986,7 @@ List<Widget> _growthContent({
             ),
             child: _GuidanceCard(
               name: param.name,
-              guidance: param.description ?? param.subtitle ?? '',
+              guidance: param.description ?? '',
               initiallyOpen: index == 0,
             ),
           ),
@@ -3485,8 +3485,6 @@ class _MonthStatusRow extends StatelessWidget {
                         style: const TextStyle(
                           color: Color(0xFF0571A6),
                           fontWeight: FontWeight.w700,
-                          decoration: TextDecoration.underline,
-                          decorationColor: Color(0xFF0571A6),
                         ),
                       ),
                     ],

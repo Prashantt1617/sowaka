@@ -87,6 +87,12 @@ export async function recordPunch(
   reading?: PunchReading,
   /** Why the employee is away, when the location check has already failed once. */
   reasonInput?: string,
+  /**
+   * The employee chose not to say why. Allowed only where HR marks an outside
+   * punch present without a manager's say-so: nobody is deciding anything on
+   * the reason, so nobody is made to give one.
+   */
+  skipReason = false,
 ) {
   if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
   const found = await users().findOne({ userId });
@@ -127,15 +133,22 @@ export async function recordPunch(
       const rules = policy.correction.outsideLocation;
       const office = verdict.office ? officeView(verdict.office) : undefined;
       const reason = (reasonInput ?? '').replace(/\s+/g, ' ').trim();
-      if (!reason) {
+      // A reason is optional where nobody decides on it: the day is marked
+      // present outright, or this is a punch-out, which is recorded whatever
+      // the outcome. A punch-in that becomes a request needs one — it is what
+      // the manager decides on.
+      const reasonOptional = rules.outcome === 'present' || type === 'out';
+      if (!reason && !(reasonOptional && skipReason)) {
         throw new AttendanceError(
           409,
           'You are outside the approved attendance area.',
-          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons } },
+          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons, reasonOptional } },
         );
       }
-      const chosen = rules.reasons.find((item) => item.toLowerCase() === reason.toLowerCase());
-      if (!chosen) {
+      const chosen = reason
+        ? rules.reasons.find((item) => item.toLowerCase() === reason.toLowerCase())
+        : '';
+      if (chosen === undefined) {
         throw new AttendanceError(
           400,
           'Choose one of the reasons your company allows',
@@ -312,10 +325,13 @@ async function requestOutOfLocation(
 }
 
 /** The remark as the app and the dashboard show it, with the pin and a readable place. */
+/** What an outside punch with no reason given reads as, everywhere it shows. */
+export const DEFAULT_AWAY_REASON = 'Work from home';
+
 export function outsideLocationView(note?: OutsideLocationNote) {
   if (!note) return undefined;
   return {
-    reason: note.reason,
+    reason: note.reason || DEFAULT_AWAY_REASON,
     punchType: note.punchType,
     at: note.at.toISOString(),
     latitude: note.latitude,

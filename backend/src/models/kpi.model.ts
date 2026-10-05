@@ -7,10 +7,9 @@ import { ObjectId } from 'mongodb';
  * Parameters were previously a hardcoded list of four shared by everyone. They
  * are now org data, which changes two things that matter elsewhere:
  *
- * - The copy shown under each parameter on the feedback form (its subtitle and
- *   the longer guidance behind the info toggle) used to live in the app as
- *   static presentation text keyed on the parameter's name. It is record data
- *   now and travels with the parameter.
+ * - The guidance shown with each parameter on the feedback form used to live
+ *   in the app as static presentation text keyed on the parameter's name. It
+ *   is record data now and travels with the parameter.
  * - A sent review must keep reading the way it read when it was sent, so
  *   `FeedbackRecord` snapshots the copy rather than referencing it. Parameters
  *   are archived instead of deleted for the same reason.
@@ -21,10 +20,15 @@ export interface KpiParameter {
   org: string;
   /** Shown as the parameter's heading, e.g. "Performance". */
   title: string;
-  /** One line under the heading, e.g. "Delivers quality work consistently". */
-  subtitle: string;
-  /** Longer guidance revealed by the info toggle on the parameter card. */
+  /**
+   * Guidance shown with the parameter: on the manager's form while scoring,
+   * and on the employee's own Grow page so they know what the month is
+   * reviewed on. The only copy a parameter carries besides its title.
+   */
   description: string;
+  /** A one-liner older parameters carried under the title. No longer written
+   *  or shown; migrated into `description` where that was blank. */
+  subtitle?: string;
   /**
    * Archived parameters disappear from pickers but stay resolvable, because
    * templates, assignments and sent reviews still reference them.
@@ -42,7 +46,6 @@ export interface KpiParameter {
    * above once `effectiveFrom` opens.
    */
   pendingEdit?: {
-    subtitle: string;
     description: string;
     /** Cycle key this wording becomes live in. */
     effectiveFrom: string;

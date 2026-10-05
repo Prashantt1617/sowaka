@@ -285,7 +285,6 @@ export function adaptFeedbackList(
       date: fmtDay(r.sentAt || r.updatedAt || ''),
       params: (r.parameters ?? []).map((p) => ({
         name: p.name,
-        subtitle: p.subtitle ?? '',
         score: p.score,
         note: p.note || '',
       })),
@@ -309,7 +308,6 @@ export function adaptFeedbackList(
       date: record ? fmtDay(record.sentAt || record.updatedAt || '') : '',
       params: (record?.parameters ?? []).map((p) => ({
         name: p.name,
-        subtitle: p.subtitle ?? '',
         score: p.score,
         note: p.note || '',
       })),
