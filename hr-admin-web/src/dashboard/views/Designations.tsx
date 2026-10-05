@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, SelectBox } from '../ui';
+import { Card, EmptyRow, SearchInput, SelectBox } from '../ui';
 import { downloadCsv } from '../export';
 import { IconDownload } from './peopleTable';
 
@@ -22,6 +22,7 @@ export function Designations() {
   // One department, or all of them. With one chosen the list is the titles
   // held there and the counts are the people there who hold them.
   const [department, setDepartment] = useState('all');
+  const [search, setSearch] = useState('');
 
   const departments = useMemo(
     () => [...new Set(emps.map((e) => (e.team ?? '').trim()).filter((t) => t && t !== '—'))].sort(),
@@ -40,8 +41,11 @@ export function Designations() {
       if (team && !row.departments.includes(team)) row.departments.push(team);
       byName.set(name, row);
     }
-    return [...byName.values()].sort((a, b) => b.employees - a.employees);
-  }, [emps, department]);
+    const q = search.trim().toLowerCase();
+    return [...byName.values()]
+      .filter((d) => !q || d.name.toLowerCase().includes(q))
+      .sort((a, b) => b.employees - a.employees);
+  }, [emps, department, search]);
 
   const totalEmp = designations.reduce((s, d) => s + d.employees, 0);
 
@@ -55,6 +59,7 @@ export function Designations() {
     <div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search designation…" width={280} />
         <SelectBox value={department} onChange={setDepartment}>
           <option value="all">All departments</option>
           {departments.map((t) => (
@@ -94,7 +99,7 @@ export function Designations() {
               </tr>
             ))}
             {loaded && designations.length === 0 && (
-              <tr><td colSpan={3}><EmptyRow text={department === 'all' ? 'No designations yet — nobody on the roster has a job title set.' : `Nobody in ${department} has a job title set.`} /></td></tr>
+              <tr><td colSpan={3}><EmptyRow text={search.trim() ? 'No designation matches that search.' : department === 'all' ? 'No designations yet — nobody on the roster has a job title set.' : `Nobody in ${department} has a job title set.`} /></td></tr>
             )}
             <tr>
               <Td><strong>Total</strong></Td>
