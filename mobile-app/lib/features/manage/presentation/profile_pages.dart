@@ -1498,19 +1498,23 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
   }
 
   Future<void> _load() async {
+    // The month asked for; a reply for a month no longer on show is dropped,
+    // so two quick taps on the arrows cannot leave one month's days under
+    // another month's heading.
+    final month = _month;
     setState(() {
       _loading = true;
       _failed = false;
     });
     try {
-      final from = DateTime(_month.year, _month.month, 1);
-      final to = DateTime(_month.year, _month.month + 1, 0);
+      final from = DateTime(month.year, month.month, 1);
+      final to = DateTime(month.year, month.month + 1, 0);
       final result = await widget.bloc.service.fetchTeamMemberAttendance(
         widget.member.userId,
         from,
         to,
       );
-      if (!mounted) return;
+      if (!mounted || month != _month) return;
       setState(() {
         _records = result.$1;
         _regularizations = result.$2;
@@ -1518,7 +1522,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || month != _month) return;
       setState(() {
         _failed = true;
         _loading = false;

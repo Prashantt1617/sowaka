@@ -1780,7 +1780,9 @@ class ShiftPolicy {
 /// out at 8:51 am". Somebody whose only punch is in the morning arrived, so
 /// it reads as the punch-in. Only a lone punch inside the hours someone could
 /// have arrived in: an afternoon one is a forgotten punch-in, and the small
-/// hours are a late shift leaving.
+/// hours are a late shift leaving. The hours are the phone's local time and
+/// the rule is not shift-aware, the same bargain the importer makes: a night
+/// shift's lone 07:00 exit would read as an arrival, and no org runs one.
 ({DateTime? punchIn, DateTime? punchOut}) _punchPair(
   Map<String, dynamic> json,
 ) {
