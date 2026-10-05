@@ -762,11 +762,11 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       if (worksHere) ...[
                         _ProfileTabs(
                           labels: [
-                            'Request',
-                            'Attendance',
                             'Details',
-                            'Org chart',
+                            'Attendance',
+                            'Requests',
                             'Grow',
+                            'Org chart',
                             if (helpHere) 'Counselor',
                           ],
                           selected: _tab,
@@ -774,7 +774,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         ),
                         const SizedBox(height: 16),
                         ...switch (_tab) {
-                          0 => _requestTab(dashboard),
+                          2 => _requestTab(dashboard),
                           1 => [
                             _AttendanceCard(
                               date: today,
@@ -796,7 +796,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             const SizedBox(height: 24),
                             _ProfileAttendanceCalendar(dashboard: dashboard),
                           ],
-                          2 => [
+                          0 => [
                             _WorkDetailRow(
                               iconAsset: 'assets/icons/profile_email.svg',
                               label: 'Email',
@@ -827,7 +827,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 value: _formatDate(user.birthday),
                               ),
                           ],
-                          3 => [
+                          4 => [
                             if (dashboard.myOrgChart.length > 1)
                               _OrgChartCard(nodes: dashboard.myOrgChart)
                             else
@@ -836,7 +836,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 'is set up.',
                               ),
                           ],
-                          4 => [
+                          3 => [
                             _ProfileGrowTab(
                               data: dashboard,
                               bloc: bloc,
@@ -2290,11 +2290,11 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
     // only for someone in the viewer's own reporting line.
     final managed = member.inViewerChain;
     final labels = [
-      if (managed && widget.canManage) 'Request',
-      'Attendance',
       'Details',
-      'Org chart',
+      'Attendance',
+      if (managed && widget.canManage) 'Requests',
       if (managed) 'Grow',
+      'Org chart',
       if (managed && member.documents.isNotEmpty) 'Documentation',
     ];
     final tab = labels[_tab.clamp(0, labels.length - 1)];
@@ -2308,7 +2308,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
         ),
         const SizedBox(height: 16),
         ...switch (tab) {
-          'Request' =>
+          'Requests' =>
             widget.openRequests.isEmpty
                 ? const [_ProfileTabNote('No open requests.')]
                 : [
