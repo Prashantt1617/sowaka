@@ -334,8 +334,8 @@ class TeamMember {
       birthday: DateTime.tryParse(json['birthday'] as String? ?? ''),
       designation: json['designation'] as String? ?? '',
       photoUrl: json['photoUrl'] as String?,
-      punchIn: _punchPair(json).punchIn,
-      punchOut: _punchPair(json).punchOut,
+      punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
+      punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')?.toLocal(),
       email: json['email'] as String? ?? '',
       employeeId: json['employeeId'] as String?,
       joiningDate: DateTime.tryParse(json['joiningDate'] as String? ?? ''),
@@ -1773,30 +1773,6 @@ class ShiftPolicy {
   }
 }
 
-/// A day's punches as they should be read.
-///
-/// The biometric device files some arrivals as exits, and the import that
-/// runs on the host still writes those as a lone punch-out — "not punched in,
-/// out at 8:51 am". Somebody whose only punch is in the morning arrived, so
-/// it reads as the punch-in. Only a lone punch inside the hours someone could
-/// have arrived in: an afternoon one is a forgotten punch-in, and the small
-/// hours are a late shift leaving. The hours are the phone's local time and
-/// the rule is not shift-aware, the same bargain the importer makes: a night
-/// shift's lone 07:00 exit would read as an arrival, and no org runs one.
-({DateTime? punchIn, DateTime? punchOut}) _punchPair(
-  Map<String, dynamic> json,
-) {
-  final punchIn = DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal();
-  final punchOut = DateTime.tryParse(
-    json['punchOut'] as String? ?? '',
-  )?.toLocal();
-  if (punchIn == null && punchOut != null) {
-    final hour = punchOut.hour;
-    if (hour >= 5 && hour < 12) return (punchIn: punchOut, punchOut: null);
-  }
-  return (punchIn: punchIn, punchOut: punchOut);
-}
-
 class AttendanceRecord {
   const AttendanceRecord({
     required this.workDate,
@@ -1844,8 +1820,10 @@ class AttendanceRecord {
       AttendanceRecord(
         workDate: DateTime.parse(json['workDate'] as String),
         officeName: json['office'] as String?,
-        punchIn: _punchPair(json).punchIn,
-        punchOut: _punchPair(json).punchOut,
+        punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
+        punchOut: DateTime.tryParse(
+          json['punchOut'] as String? ?? '',
+        )?.toLocal(),
         dayType: json['dayType'] as String? ?? '',
         outsideLocation: OutsideLocationNote.fromJson(
           json['outsideLocation'] as Map<String, dynamic>?,
