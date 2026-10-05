@@ -311,6 +311,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 ),
               ),
           ] else ...[
@@ -328,6 +329,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -342,6 +344,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 )
               else
                 _TeamFacesCard(
@@ -370,6 +373,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                 bloc: widget.bloc,
                 onNotifications: widget.onNotifications,
                 onOpenComposer: widget.onOpenComposer,
+                onOpenProfile: widget.onOpenProfile,
               )
             else
               // One department: a plain "Direct Reports" list — your own
@@ -387,6 +391,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                       bloc: widget.bloc,
                       onNotifications: widget.onNotifications,
                       onOpenComposer: widget.onOpenComposer,
+                      onOpenProfile: widget.onOpenProfile,
                     ),
                   _DirectReportsTree(
                     members: group.members,
@@ -395,6 +400,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                     bloc: widget.bloc,
                     onNotifications: widget.onNotifications,
                     onOpenComposer: widget.onOpenComposer,
+                    onOpenProfile: widget.onOpenProfile,
                   ),
                 ],
               ),
@@ -413,6 +419,7 @@ class _TeamMemberRow extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final TeamMember member;
@@ -423,6 +430,10 @@ class _TeamMemberRow extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -441,19 +452,23 @@ class _TeamMemberRow extends StatelessWidget {
     final punchIn = member.punchIn;
     final recognition = member.recognitionLabel;
 
+    // Your own row is your own profile — the same screen as the photo in
+    // the header, not a read-only view of yourself as a team member.
+    final openSelf = member.isSelf ? onOpenProfile : null;
     return _TeamCardShell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => _TeamMemberProfilePage(
-            member: member,
-            data: data,
-            bloc: bloc,
-            onNotifications: onNotifications,
-            onOpenComposer: onOpenComposer,
-            canManage: canManage,
+      onTap: openSelf ??
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => _TeamMemberProfilePage(
+                member: member,
+                data: data,
+                bloc: bloc,
+                onNotifications: onNotifications,
+                onOpenComposer: onOpenComposer,
+                canManage: canManage,
+              ),
+            ),
           ),
-        ),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1751,6 +1766,7 @@ class _DirectReportsTree extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final List<TeamMember> members;
@@ -1759,6 +1775,10 @@ class _DirectReportsTree extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   static const _indent = 28.0;
   static const _gap = 16.0;
@@ -1796,6 +1816,7 @@ class _DirectReportsTree extends StatelessWidget {
                         bloc: bloc,
                         onNotifications: onNotifications,
                         onOpenComposer: onOpenComposer,
+                        onOpenProfile: onOpenProfile,
                       ),
                     ),
                   ),
@@ -2062,6 +2083,7 @@ class _TeamStack extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final List<_TeamDepartmentGroup> teams;
@@ -2072,6 +2094,10 @@ class _TeamStack extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   /// The gutter the trunk lives in: 13px to the line, 15px more to its stub,
   /// landing the cards' left edge at 28px (node 2488:91198 — pl-[28px],
@@ -2097,6 +2123,7 @@ class _TeamStack extends StatelessWidget {
                 bloc: bloc,
                 onNotifications: onNotifications,
                 onOpenComposer: onOpenComposer,
+                onOpenProfile: onOpenProfile,
               )
             : _TeamFacesCard(
                 title: team.title!,
@@ -2148,6 +2175,7 @@ class _OpenTeamBox extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final String title;
@@ -2158,6 +2186,10 @@ class _OpenTeamBox extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -2208,6 +2240,7 @@ class _OpenTeamBox extends StatelessWidget {
                   bloc: bloc,
                   onNotifications: onNotifications,
                   onOpenComposer: onOpenComposer,
+                  onOpenProfile: onOpenProfile,
                 ),
                 if (index != members.length - 1) const SizedBox(height: 12),
               ],

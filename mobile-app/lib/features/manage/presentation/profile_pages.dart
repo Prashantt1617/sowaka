@@ -179,6 +179,8 @@ class _TeamMemberProfilePage extends StatelessWidget {
           // top-bar icon and the card's "view calendar" action are hidden
           // for everyone else (each takes a nullable callback).
           _ProfilePageTopBar(
+            // "Profile-Ananya" (node 3106:49189): whose page this is.
+            title: 'Profile-${member.name.trim().split(' ').first}',
             onCalendarTap: !canManage
                 ? null
                 : () => Navigator.of(context).push(
@@ -620,11 +622,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
           ),
-          _ProfilePageTopBar(
-            onBack: onBack,
-            // The Help profile is titled as the design draws it.
-            title: !worksHere && helpHere ? 'My Profile' : 'Profile',
-          ),
+          // Titled as the design draws it (node 3106:49749); a teammate's
+          // page is "Profile-Ananya", so the two are never mistaken.
+          _ProfilePageTopBar(onBack: onBack, title: 'My Profile'),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
