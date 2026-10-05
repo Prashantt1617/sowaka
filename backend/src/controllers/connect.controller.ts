@@ -28,10 +28,15 @@ import {
 
 export async function connectFeed(req: Request, res: Response, next: NextFunction) {
   try {
-    const posts = await getConnectFeed(requireUserId(req), {
+    // A page at a time, from the cursor the last page handed back. An app
+    // that asks for neither gets the first fifty, as it always did.
+    const limit = Number(req.query.limit);
+    const { posts, nextCursor } = await getConnectFeed(requireUserId(req), {
       types: parsePostTypeList(req.query.types),
+      ...(Number.isFinite(limit) ? { limit } : {}),
+      cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
     });
-    res.status(200).json({ success: true, posts });
+    res.status(200).json({ success: true, posts, nextCursor });
   } catch (error) {
     handleConnectError(error, next);
   }

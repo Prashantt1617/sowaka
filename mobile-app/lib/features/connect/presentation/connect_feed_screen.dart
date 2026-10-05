@@ -244,9 +244,27 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         child: ListView.separated(
           controller: _feedScroll,
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-          itemCount: posts.length + 1,
+          // The composer, the posts, and — while older ones exist — a last
+          // row that asks for the next page as it comes into view.
+          itemCount: posts.length + 1 + (state.hasMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
+            if (index == posts.length + 1) {
+              _bloc.loadMore();
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _ConnectColors.terra,
+                    ),
+                  ),
+                ),
+              );
+            }
             // The composer entry point, now that the nav has no Post tab
             // (node 2002:39114).
             if (index == 0) {

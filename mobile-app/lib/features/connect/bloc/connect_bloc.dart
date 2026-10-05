@@ -14,6 +14,8 @@ class ConnectState {
     this.error,
     this.message,
     this.busyPostId,
+    this.hasMore = false,
+    this.loadingMore = false,
   });
 
   final ConnectLoadStatus status;
@@ -21,6 +23,11 @@ class ConnectState {
   final String? error;
   final String? message;
   final String? busyPostId;
+
+  /// Older posts exist beyond what is loaded; the list asks for them as it
+  /// nears its end.
+  final bool hasMore;
+  final bool loadingMore;
 
   factory ConnectState.initial() {
     return const ConnectState(status: ConnectLoadStatus.initial, posts: []);
@@ -32,6 +39,8 @@ class ConnectState {
     String? error,
     String? message,
     String? busyPostId,
+    bool? hasMore,
+    bool? loadingMore,
     bool clearError = false,
     bool clearMessage = false,
     bool clearBusy = false,
@@ -42,6 +51,8 @@ class ConnectState {
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
       busyPostId: clearBusy ? null : busyPostId ?? this.busyPostId,
+      hasMore: hasMore ?? this.hasMore,
+      loadingMore: loadingMore ?? this.loadingMore,
     );
   }
 }
@@ -66,11 +77,23 @@ class ConnectBloc {
   Stream<ConnectState> get stream => _controller.stream;
   ConnectState get state => _state;
 
+  /// Five posts a page: the first page is on screen before the rest is
+  /// asked for, and the rest comes as the reader scrolls.
+  static const pageSize = 5;
+
+  /// Where the next page starts; null at the end of the feed.
+  String? _cursor;
+
   Future<void> load() async {
     _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
     try {
-      final posts = await _api.fetchFeed();
-      _emit(ConnectState(status: ConnectLoadStatus.ready, posts: posts));
+      final page = await _api.fetchFeed(limit: pageSize);
+      _cursor = page.nextCursor;
+      _emit(ConnectState(
+        status: ConnectLoadStatus.ready,
+        posts: page.posts,
+        hasMore: page.nextCursor != null,
+      ));
       _listenForChanges();
     } catch (error) {
       _emit(
@@ -121,12 +144,47 @@ class ConnectBloc {
     }
   }
 
+  /// Back to the top of the feed: the first page again, older pages dropped
+  /// until the reader scrolls for them.
   Future<void> refresh() async {
     try {
-      final posts = await _api.fetchFeed();
-      _emit(_state.copyWith(status: ConnectLoadStatus.ready, posts: posts));
+      final page = await _api.fetchFeed(limit: pageSize);
+      _cursor = page.nextCursor;
+      _emit(_state.copyWith(
+        status: ConnectLoadStatus.ready,
+        posts: page.posts,
+        hasMore: page.nextCursor != null,
+        loadingMore: false,
+      ));
     } catch (error) {
       _emit(_state.copyWith(message: error.toString()));
+    }
+  }
+
+  /// The next page, appended. A no-op while one is already on its way or
+  /// there is nothing older.
+  Future<void> loadMore() async {
+    final cursor = _cursor;
+    if (cursor == null || _state.loadingMore || !_state.hasMore) return;
+    _emit(_state.copyWith(loadingMore: true));
+    try {
+      final page = await _api.fetchFeed(limit: pageSize, cursor: cursor);
+      if (_controller.isClosed) return;
+      // A refresh in the meantime moved the cursor on; this page is stale.
+      if (_cursor != cursor) return;
+      _cursor = page.nextCursor;
+      final known = _state.posts.map((post) => post.id).toSet();
+      _emit(_state.copyWith(
+        posts: [
+          ..._state.posts,
+          ...page.posts.where((post) => !known.contains(post.id)),
+        ],
+        hasMore: page.nextCursor != null,
+        loadingMore: false,
+      ));
+    } catch (error) {
+      if (_controller.isClosed) return;
+      _emit(_state.copyWith(loadingMore: false, message: error.toString()));
     }
   }
 

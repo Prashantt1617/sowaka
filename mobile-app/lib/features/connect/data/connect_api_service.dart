@@ -19,12 +19,25 @@ class ConnectApiService {
   final String _baseUrl;
   final http.Client _client;
 
-  Future<List<ConnectPost>> fetchFeed() async {
-    final json = await _request('GET', '/connect/feed');
+  /// One page of the feed, newest first. [cursor] is what the previous page
+  /// handed back; without it this is the top of the feed. The cursor that
+  /// comes back is null once there is nothing older.
+  Future<({List<ConnectPost> posts, String? nextCursor})> fetchFeed({
+    int limit = 5,
+    String? cursor,
+  }) async {
+    final query = [
+      'limit=$limit',
+      if (cursor != null) 'cursor=${Uri.encodeQueryComponent(cursor)}',
+    ].join('&');
+    final json = await _request('GET', '/connect/feed?$query');
     final values = json['posts'] as List<dynamic>? ?? const [];
-    return values
-        .map((value) => ConnectPost.fromJson(value as Map<String, dynamic>))
-        .toList();
+    return (
+      posts: values
+          .map((value) => ConnectPost.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      nextCursor: json['nextCursor'] as String?,
+    );
   }
 
   /// One post as this viewer sees it — used to patch in a single post after a
