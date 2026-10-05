@@ -2154,26 +2154,104 @@ class _ProfileAttendanceCalendarState
                   .where((day) => matchesAttendanceFilter(day, filter))
                   .length,
           },
-          onChanged: (filter) => setState(() => _filter = filter),
+          // A new heading is a new question: the day opened under the last
+          // one closes with it.
+          onChanged: (filter) => setState(() {
+            _filter = filter;
+            _selected = null;
+          }),
         ),
         const SizedBox(height: 16),
-        AttendanceMonthGrid(
-          month: _month,
-          days: days,
-          filter: _filter,
-          selectedDate: _selected,
-          onTap: (day) => setState(() => _selected = day.date),
-        ),
-        if (selectedDay != null) ...[
-          const SizedBox(height: 16),
-          AttendanceDayDetail(
-            day: selectedDay,
-            singlePunch: widget.dashboard.shift.singlePunchDay,
+        // A heading opens the days it covers, the same list Quick Actions
+        // shows (node 3214:40887); without one the month is the calendar.
+        if (_filter case final filter?) ...[
+          if (!days.any((day) => matchesAttendanceFilter(day, filter)))
+            const _ProfileTabNote('Nothing under this heading this month.'),
+          ...days
+              .where((day) => matchesAttendanceFilter(day, filter))
+              .map(
+                (day) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: AttendanceListCard(
+                    day: day,
+                    today: _isSameCalendarDay(day.date, now),
+                    pendingNotice: _pendingNoticeFor(day),
+                    singlePunch: widget.dashboard.shift.singlePunchDay,
+                    onTap: () => _showDaySheet(day),
+                  ),
+                ),
+              ),
+        ] else ...[
+          AttendanceMonthGrid(
+            month: _month,
+            days: days,
+            filter: _filter,
+            selectedDate: _selected,
+            onTap: (day) => setState(() => _selected = day.date),
           ),
+          if (selectedDay != null) ...[
+            const SizedBox(height: 16),
+            AttendanceDayDetail(
+              day: selectedDay,
+              pendingNotice: _pendingNoticeFor(selectedDay),
+              singlePunch: widget.dashboard.shift.singlePunchDay,
+            ),
+          ],
         ],
       ],
     );
   }
+
+  String? _pendingNoticeFor(AttendanceDayView day) {
+    if (day.correctionPending) {
+      return 'Your missed punched request is currently under review by your '
+          'manager for this day.';
+    }
+    if (day.kind == AttendanceKind.leavePending) {
+      return 'Your leave request is currently under review by your manager '
+          'for this day.';
+    }
+    return null;
+  }
+
+  /// A listed day opens in a sheet, as on Quick Actions. Read-only here:
+  /// corrections and leave are raised from Quick Actions.
+  Future<void> _showDaySheet(AttendanceDayView day) => showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: const Color(0xFFF7F7F9),
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            AttendanceDayDetail(
+              day: day,
+              pendingNotice: _pendingNoticeFor(day),
+              singlePunch: widget.dashboard.shift.singlePunchDay,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// A report's profile as tabs (node 3070:44930): what is waiting on you,
