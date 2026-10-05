@@ -286,7 +286,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
                 style: RelayStyle.sora(40, weight: FontWeight.w600, color: _cream, spacing: -1),
               ),
               const SizedBox(height: 5),
-              Text(_subtitle, style: RelayStyle.sora(16, color: _mist)),
+              // Two lines is what the header has room for; a longer line from
+              // the dashboard is cut rather than pushed into the date row.
+              Text(
+                _subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: RelayStyle.sora(16, color: _mist),
+              ),
             ],
           ),
         ],
