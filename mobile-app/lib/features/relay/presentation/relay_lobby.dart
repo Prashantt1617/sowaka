@@ -80,16 +80,20 @@ class RelayLobby extends StatelessWidget {
                     spacing: 0.5,
                   ),
                 ),
-                Text(
-                  _clock,
-                  textAlign: TextAlign.center,
-                  style: RelayStyle.sora(
-                    48,
-                    weight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 72,
-                    spacing: -1,
-                  ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _clock,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: RelayStyle.sora(
+                      48,
+                      weight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 72,
+                      spacing: -1,
+                    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                  ),
                 ),
               ],
             ),

@@ -147,16 +147,17 @@ class RelayInitial extends StatelessWidget {
   }
 }
 
-/// A countdown to the game, read the way people say it: days and hours while
-/// it is days away, hours and minutes within the day, minutes and seconds in
-/// the last hour. The same shape on the post and in the lobby.
+/// A countdown to the game: days, hours, minutes and seconds, ticking, with
+/// the larger units dropped once they reach zero. The same shape on the post
+/// and in the lobby.
 String relayCountdown(int secondsLeft) {
   final seconds = secondsLeft < 0 ? 0 : secondsLeft;
   String two(int n) => n.toString().padLeft(2, '0');
   final days = seconds ~/ 86400;
   final hours = seconds % 86400 ~/ 3600;
   final minutes = seconds % 3600 ~/ 60;
-  if (days > 0) return '${days}d ${two(hours)}h ${two(minutes)}m';
-  if (hours > 0) return '${two(hours)}h ${two(minutes)}m ${two(seconds % 60)}s';
-  return '${two(minutes)}m ${two(seconds % 60)}s';
+  final rest = seconds % 60;
+  if (days > 0) return '${days}d ${two(hours)}h ${two(minutes)}m ${two(rest)}s';
+  if (hours > 0) return '${two(hours)}h ${two(minutes)}m ${two(rest)}s';
+  return '${two(minutes)}m ${two(rest)}s';
 }

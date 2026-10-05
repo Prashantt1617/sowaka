@@ -359,10 +359,14 @@ class _RelayPostCardState extends State<RelayPostCard> {
             style: RelayStyle.sora(12, weight: FontWeight.w600, color: RelayStyle.tertiary, height: 16.2, spacing: -0.16),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: RelayStyle.sora(32, weight: FontWeight.w600, color: RelayStyle.brand, spacing: -0.16)
-                .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: RelayStyle.sora(32, weight: FontWeight.w600, color: RelayStyle.brand, spacing: -0.16)
+                  .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            ),
           ),
         ],
       ),
