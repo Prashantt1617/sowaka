@@ -96,6 +96,19 @@ class _PunchScreenState extends State<PunchScreen> {
   /// Which request was sent, for the confirmation that follows it.
   String? _requestLabel;
 
+  /// What the server said when the punch landed outside every office: the
+  /// reasons HR lets this employee choose, and whether choosing one marks the
+  /// day present or sends it to the manager. Empty from an older server, which
+  /// still wants the WFH / client-visit request instead.
+  List<String> _reasons = const [];
+  bool _marksPresent = false;
+
+  /// The reading the refusal was about, sent again with the reason.
+  PunchReading? _reading;
+
+  /// The remark a punch from outside was recorded with, for the confirmation.
+  OutsideLocationNote? _outsideNote;
+
   /// Whether this visit raised one, so the host can refresh on the way out.
   bool _raisedRequest = false;
 
@@ -183,29 +196,30 @@ class _PunchScreenState extends State<PunchScreen> {
 
   /// Sends the punch and shows however it landed.
   Future<void> _send(PunchReading? reading) async {
+    _reading = reading;
     setState(() => _busy = true);
     try {
       final record = await widget.api.recordPunch(widget.type, reading: reading);
-      widget.onRecorded?.call(record);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _stage = _PunchStage.done;
-        _officeName = record.officeName;
-        _punchedAt =
-            (_punchingIn ? record.punchIn : record.punchOut) ?? DateTime.now();
-      });
+      _recorded(record);
     } on ManagerApiException catch (error) {
       if (!mounted) return;
       // 409 outside the fence is the one refusal with somewhere to go next:
-      // the screen offers WFH or an office visit rather than a dead end.
+      // the employee says why, and HR's policy decides what that leads to.
       final office = error.details?['office'] as Map<String, dynamic>?;
       final location = error.details?['location'] as Map<String, dynamic>?;
+      final outside = error.details?['outsideLocation'] as Map<String, dynamic>?;
       setState(() {
         _busy = false;
-        _stage = office != null ? _PunchStage.outside : _PunchStage.blocked;
+        // Only a refusal that carries HR's outcome has somewhere to go; an
+        // imprecise reading also names the nearest office, but is a retry.
+        _stage = outside != null ? _PunchStage.outside : _PunchStage.blocked;
         _problem = error.message;
         _canOpenSettings = false;
+        _reasons = (outside?['reasons'] as List<dynamic>? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty)
+            .toList();
+        _marksPresent = outside?['outcome'] == 'present';
         _officeLabel = office == null
             ? null
             : [
@@ -214,6 +228,56 @@ class _PunchScreenState extends State<PunchScreen> {
                   office['city'] as String,
               ].join(' · ');
         _distanceMeters = (location?['distanceMeters'] as num?)?.round();
+      });
+    }
+  }
+
+  /// The punch went through — as a recorded punch, or as an out of location
+  /// request the manager now holds.
+  void _recorded(AttendanceRecord record) {
+    final request = record.request;
+    if (request != null) {
+      _raisedRequest = true;
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _stage = _PunchStage.requested;
+        _requestLabel = request.heading;
+      });
+      return;
+    }
+    widget.onRecorded?.call(record);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _stage = _PunchStage.done;
+      _officeName = record.officeName;
+      _outsideNote = record.outsideLocation;
+      _punchedAt =
+          (_punchingIn ? record.punchIn : record.punchOut) ?? DateTime.now();
+    });
+  }
+
+  /// The same punch again, with the reason the employee chose for being away.
+  Future<void> _sendWithReason(String reason) async {
+    setState(() {
+      _busy = true;
+      _stage = _PunchStage.sending;
+    });
+    try {
+      final record = await widget.api.recordPunch(
+        widget.type,
+        reading: _reading,
+        reason: reason,
+      );
+      _recorded(record);
+    } on ManagerApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _stage = _PunchStage.blocked;
+        _problem = error.message;
+        _canOpenSettings = false;
       });
     }
   }
@@ -416,9 +480,12 @@ class _PunchScreenState extends State<PunchScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Your attendance has been recorded.',
-          style: TextStyle(fontSize: 13, color: _inkTertiary),
+        Text(
+          _outsideNote == null
+              ? 'Your attendance has been recorded.'
+              : 'Marked present — out of location (${_outsideNote!.reason}).',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 13, color: _inkTertiary),
         ),
         const SizedBox(height: 22),
         Container(
@@ -447,12 +514,15 @@ class _PunchScreenState extends State<PunchScreen> {
                           color: Color(0xFF15803D),
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          _officeName ?? 'Recorded',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: _ink,
+                        Flexible(
+                          child: Text(
+                            _outsideNote?.place ?? _officeName ?? 'Recorded',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: _ink,
+                            ),
                           ),
                         ),
                       ],
@@ -556,7 +626,32 @@ class _PunchScreenState extends State<PunchScreen> {
             textAlign: TextAlign.center,
             style: _sora(14, FontWeight.w600, const Color(0xFF9197A2), height: 21 / 14),
           )
-        else ...[
+        else if (_reasons.isNotEmpty) ...[
+          // HR's own reasons, in HR's own words. What choosing one leads to
+          // is HR's call too, so the screen says which it will be.
+          Text(
+            _marksPresent
+                ? 'Tell us why, and you will be marked present with a note '
+                    'that you were out of location.'
+                : 'Tell us why, and your manager will be asked to mark the '
+                    'day present.',
+            textAlign: TextAlign.center,
+            style: _sora(14, FontWeight.w600, const Color(0xFF9197A2), height: 21 / 14),
+          ),
+          const SizedBox(height: 12),
+          for (final reason in _reasons) ...[
+            _OutlineAction(label: reason, onTap: () => _sendWithReason(reason)),
+            const SizedBox(height: 8),
+          ],
+          const SizedBox(height: 20),
+          _QuietButton(
+            label: 'Apply for a leave',
+            onTap: () {
+              _close();
+              widget.onRequestWfh?.call();
+            },
+          ),
+        ] else ...[
           Text(
             'You will be marked absent until you choose an option below.',
             textAlign: TextAlign.center,
@@ -580,7 +675,7 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   Widget _sending() {
-    return const Column(
+    return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         SizedBox(
@@ -590,7 +685,7 @@ class _PunchScreenState extends State<PunchScreen> {
         ),
         SizedBox(height: 20),
         Text(
-          'Sending your request...',
+          _marksPresent ? 'Punching you in...' : 'Sending your request...',
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -720,7 +815,12 @@ class _OutlineAction extends StatelessWidget {
           ),
         ),
         onPressed: onTap,
-        child: Text(label),
+        child: Text(
+          label,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

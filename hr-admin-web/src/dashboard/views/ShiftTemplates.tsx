@@ -8,11 +8,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
 import {
-  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, updateShift, DEFAULT_SHIFT_POLICY,
-  type EmployeeDTO, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
+  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
+  type EmployeeDTO, type OutsideLocationOutcome, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
-import { LeaveTypeCard } from './LeaveTypes';
+import { AddLeaveType, LeaveTypeCard } from './LeaveTypes';
 import { DayOutcomeGrid, OUTCOMES, TRIGGERS } from '../components/DayOutcomeGrid';
 
 const PUNCH_FORMATS: PunchFormat[] = [
@@ -151,8 +151,8 @@ export function ShiftTemplates() {
       { header: 'Window', value: () => `${p.startTime}-${p.endTime}` },
       { header: 'Half day (hrs)', value: () => p.minHalfDayHours },
       { header: 'Full day (hrs)', value: () => p.minFullDayHours },
-      { header: 'Late grace (min)', value: () => p.lateGraceMinutes },
-      { header: 'Early-out grace (min)', value: () => p.earlyOutGraceMinutes },
+      { header: 'Late after (min)', value: () => (p.lateMarkingEnabled === false ? 'Not marked' : p.lateGraceMinutes) },
+      { header: 'Early before (min)', value: () => (p.earlyMarkingEnabled === false ? 'Not marked' : p.earlyOutGraceMinutes) },
       { header: 'Punch format', value: () => shift.punchFormat || p.correction.punchFormat },
       { header: 'Leave approver', value: () => p.leave.approver },
       { header: 'Overtime eligible', value: () => ((shift.overtimeEligible ?? p.overtime.eligible) === false ? 'No' : 'Yes') },
@@ -212,7 +212,8 @@ export function ShiftTemplates() {
                       {!t.active && <span style={inactivePill}>Inactive</span>}
                       <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>
                         half day {t.policy.minHalfDayHours}h · full day {t.policy.minFullDayHours}h ·
-                        grace {t.policy.lateGraceMinutes}/{t.policy.earlyOutGraceMinutes} min
+                        late {t.policy.lateMarkingEnabled === false ? 'off' : `${t.policy.lateGraceMinutes} min`} ·
+                        early {t.policy.earlyMarkingEnabled === false ? 'off' : `${t.policy.earlyOutGraceMinutes} min`}
                       </div>
                     </Td>
                     <Td muted>{t.policy.startTime} – {t.policy.endTime} · {formatDuration(d)}</Td>
@@ -316,15 +317,21 @@ export function ShiftTemplates() {
         </RuleRow>
       </Section>
 
-      <Section title="Late & early grace">
-        <Grid2>
-          <Field label="Mark as late if late by">
-            <Num value={policy.lateGraceMinutes} onChange={(v) => patch({ lateGraceMinutes: v })} suffix="min" />
-          </Field>
-          <Field label="Mark early-out if leaves early by">
-            <Num value={policy.earlyOutGraceMinutes} onChange={(v) => patch({ earlyOutGraceMinutes: v })} suffix="min" />
-          </Field>
-        </Grid2>
+      {/* Each mark is a question first. "No" keeps the minutes but marks nobody,
+          so a team that is never graded on time is never shown as late. */}
+      <Section title="Late & early">
+        <YesNoRow label="Do you want to categorise someone as late?" value={policy.lateMarkingEnabled !== false} onChange={(v) => patch({ lateMarkingEnabled: v })} />
+        {policy.lateMarkingEnabled !== false && (
+          <FollowUp label="Late by how many minutes?">
+            <Num value={policy.lateGraceMinutes} onChange={(v) => patch({ lateGraceMinutes: v })} suffix="min" width={200} />
+          </FollowUp>
+        )}
+        <YesNoRow label="Do you want to categorise someone as early?" value={policy.earlyMarkingEnabled !== false} onChange={(v) => patch({ earlyMarkingEnabled: v })} />
+        {policy.earlyMarkingEnabled !== false && (
+          <FollowUp label="Early by how many minutes?">
+            <Num value={policy.earlyOutGraceMinutes} onChange={(v) => patch({ earlyOutGraceMinutes: v })} suffix="min" width={200} />
+          </FollowUp>
+        )}
       </Section>
 
       <Section title="Weekly-off">
@@ -369,6 +376,13 @@ export function ShiftTemplates() {
         <Field label="Punch in / punch out data comes from">
           <Select value={punchFormat} onChange={setPunchFormat} options={PUNCH_FORMATS} />
         </Field>
+        {punchFormat === 'Geotag (powered by Sowaka)' && (
+          <OutsideLocationEditor
+            rules={policy.correction.outsideLocation ?? DEFAULT_OUTSIDE_LOCATION}
+            onChange={(outsideLocation) => patch({ correction: { ...policy.correction, outsideLocation } })}
+            onOffices={() => setView('offices')}
+          />
+        )}
       </Section>
 
       {/* What a day is marked as and what may be raised against it. A template
@@ -474,22 +488,32 @@ export function ShiftTemplates() {
           </div>
         </div>
         {policy.leave.balanceTracked !== false && (
-          policy.leave.types.map((row, index) => (
-            <LeaveTypeCard
-              key={row.key}
-              row={row}
-              onChange={(change) =>
-                patch({
-                  leave: {
-                    ...policy.leave,
-                    types: policy.leave.types.map((item, i) =>
-                      i === index ? { ...item, ...change } : item,
-                    ),
-                  },
-                })
-              }
+          <>
+            {policy.leave.types.map((row, index) => (
+              <LeaveTypeCard
+                key={row.key}
+                row={row}
+                onChange={(change) =>
+                  patch({
+                    leave: {
+                      ...policy.leave,
+                      types: policy.leave.types.map((item, i) =>
+                        i === index ? { ...item, ...change } : item,
+                      ),
+                    },
+                  })
+                }
+                // One type has to stay, or there is nothing to apply for.
+                onRemove={policy.leave.types.length > 1
+                  ? () => patch({ leave: { ...policy.leave, types: policy.leave.types.filter((_, i) => i !== index) } })
+                  : undefined}
+              />
+            ))}
+            <AddLeaveType
+              existing={policy.leave.types}
+              onAdd={(row) => patch({ leave: { ...policy.leave, types: [...policy.leave.types, row] } })}
             />
-          ))
+          </>
         )}
       </Section>
 
@@ -541,6 +565,101 @@ function YesNoRow({ label, value, onChange }: { label: string; value: boolean; o
         {[true, false].map((v) => (
           <button key={String(v)} type="button" onClick={() => onChange(v)} style={{ padding: '7px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none', borderLeft: v ? 'none' : '1px solid #EBEBEB', background: value === v ? '#0571A6' : '#fff', color: value === v ? '#fff' : '#484848', fontFamily: 'inherit' }}>{v ? 'Yes' : 'No'}</button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** The minutes question that follows a "Yes", indented under it. */
+function FollowUp({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '4px 0 14px 24px' }}>
+      <div style={{ flex: 1, fontSize: 14, color: '#484848', fontWeight: 600 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * What a geotagged shift does with a punch from outside every office, and the
+ * reasons the employee may give for it. HR's own wording, so the list says
+ * "Client visit" or "Site survey" as the company actually calls it.
+ */
+function OutsideLocationEditor({ rules, onChange, onOffices }: { rules: { outcome: OutsideLocationOutcome; reasons: string[] }; onChange: (rules: { outcome: OutsideLocationOutcome; reasons: string[] }) => void; onOffices: () => void }) {
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    const reason = draft.replace(/\s+/g, ' ').trim();
+    if (!reason) return;
+    if (rules.reasons.some((r) => r.toLowerCase() === reason.toLowerCase())) { setDraft(''); return; }
+    if (rules.reasons.length >= 12) return;
+    onChange({ ...rules, reasons: [...rules.reasons, reason] });
+    setDraft('');
+  };
+  const options: { value: OutsideLocationOutcome; title: string; body: string }[] = [
+    { value: 'request', title: 'Send a request to the manager', body: 'The day stays absent until the manager approves the out of location request. Rejected, it stays absent and the employee can raise a correction.' },
+    { value: 'present', title: 'Mark present anyway', body: 'The day is marked present straight away, with a remark that they were out of location and the pin saved for HR to see.' },
+  ];
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#222222', marginBottom: 8 }}>If an employee punches outside the location</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {options.map((o) => {
+          const on = rules.outcome === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange({ ...rules, outcome: o.value })}
+              aria-pressed={on}
+              style={{ textAlign: 'left', padding: '12px 14px', borderRadius: 12, border: `1.5px solid ${on ? '#0571A6' : '#EBEBEB'}`, background: on ? '#F1F8FC' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: '#222222' }}>
+                <span style={{ width: 16, height: 16, borderRadius: '50%', border: `1.5px solid ${on ? '#0571A6' : '#C7CBD3'}`, display: 'inline-grid', placeItems: 'center', flexShrink: 0 }}>
+                  {on && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0571A6' }} />}
+                </span>
+                {o.title}
+              </div>
+              <div style={{ fontSize: 13, color: '#717171', marginTop: 5, lineHeight: 1.5 }}>{o.body}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#222222', margin: '18px 0 4px' }}>Reasons the employee can choose</div>
+      <div style={{ fontSize: 13, color: '#717171', marginBottom: 10 }}>Asked in both cases. Shown in the app exactly as written here.</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+        {rules.reasons.map((reason) => (
+          <span key={reason} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px 6px 12px', borderRadius: 20, background: '#EEF3FA', border: '1px solid #DEE8F4', color: '#2F4F7A', fontSize: 14, fontWeight: 600 }}>
+            {reason}
+            <button
+              type="button"
+              onClick={() => onChange({ ...rules, reasons: rules.reasons.filter((r) => r !== reason) })}
+              disabled={rules.reasons.length === 1}
+              aria-label={`Remove ${reason}`}
+              title={rules.reasons.length === 1 ? 'Keep at least one reason' : `Remove ${reason}`}
+              style={{ border: 'none', background: 'none', color: '#4A6FA5', fontSize: 16, lineHeight: 1, cursor: rules.reasons.length === 1 ? 'default' : 'pointer', padding: 0, opacity: rules.reasons.length === 1 ? 0.4 : 1 }}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Add a reason, e.g. Site survey"
+          maxLength={40}
+          style={{ ...input, width: 300 }}
+        />
+        <button type="button" onClick={add} disabled={!draft.trim() || rules.reasons.length >= 12} style={{ padding: '9px 16px', fontSize: 14, fontWeight: 700, border: '1px solid #0571A6', borderRadius: 9, background: '#fff', color: '#0571A6', fontFamily: 'inherit', cursor: draft.trim() ? 'pointer' : 'default', opacity: draft.trim() ? 1 : 0.5 }}>
+          + Add
+        </button>
+        {rules.reasons.length >= 12 && <span style={{ fontSize: 13, color: '#717171' }}>At most 12 reasons.</span>}
+      </div>
+      <div style={{ fontSize: 13, color: '#717171', marginTop: 12 }}>
+        Punches are checked against the offices under <button type="button" onClick={onOffices} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: '#0571A6', cursor: 'pointer' }}>Shifts › Offices</button>.
       </div>
     </div>
   );

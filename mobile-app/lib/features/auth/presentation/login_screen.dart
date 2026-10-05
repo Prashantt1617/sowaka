@@ -12,6 +12,7 @@ import '../data/auth_models.dart';
 import '../data/auth_session_store.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../onboarding/presentation/onboarding_flow.dart';
+import '../../shared/startup_prefs.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -100,6 +101,16 @@ class _LoginScreenState extends State<LoginScreen>
       controller.clear();
     }
     _bloc.add(const EditAuthEmail());
+  }
+
+  /// The wrong address signed in: that session ends on the server, without
+  /// holding them up, and they are back at the email screen.
+  void _changeEmail(AuthSession session) {
+    AuthApiService()
+        .logout(session.token)
+        .timeout(const Duration(seconds: 4))
+        .catchError((_) {});
+    _editEmail();
   }
 
   /// Keeps what first-run gathered on the session the rest of the app reads,
@@ -208,6 +219,7 @@ class _LoginScreenState extends State<LoginScreen>
                     api: ManagerApiService(session: signedIn),
                     onDone: (photoUrl, interests) =>
                         _finishOnboarding(signedIn, photoUrl, interests),
+                    onChangeEmail: () => _changeEmail(signedIn),
                   ),
                 AuthStep.success => _SuccessStep(
                   key: const ValueKey('success'),
@@ -220,6 +232,9 @@ class _LoginScreenState extends State<LoginScreen>
                     final session = signedIn;
                     if (session == null) return;
                     await AuthSessionStore().save(session);
+                    // Signing in is not checking in: the punch screen keeps
+                    // to its own moment rather than following the login.
+                    await const StartupPrefs().markPunchPromptShown();
                     if (!context.mounted) return;
                     Navigator.of(context).pushNamedAndRemoveUntil(
                       AppRoutes.home,

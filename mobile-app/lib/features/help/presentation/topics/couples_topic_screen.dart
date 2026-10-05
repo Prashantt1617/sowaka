@@ -121,8 +121,24 @@ class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
       children: [
         // The app's bar already names the page on the web.
         if (!careWebPages) ...[CareEyebrow(t.name), const SizedBox(height: 10)],
-        CareHeading(t.text('title', 'Time for two of you'), size: 30),
+        CareHeading(t.text('title', 'Understand each other better'), size: 30),
         const SizedBox(height: 22),
+        // The quizzes for two come first, each hidden until the server can keep it.
+        PairQuizCard(
+          care: widget.care,
+          spec: LoveSpec(
+            LoveQuiz(t.content['loveQuiz'] as Map<String, dynamic>?),
+          ),
+          webBase: widget.catalog.webBase,
+        ),
+        PairQuizCard(
+          care: widget.care,
+          spec: AttachmentSpec(
+            t.content['attachmentQuiz'] as Map<String, dynamic>?,
+          ),
+          webBase: widget.catalog.webBase,
+        ),
+        const SizedBox(height: 6),
         CareSectionTitle(
           t.text('wordsTitle', 'Find the first words'),
           size: 18,
@@ -173,23 +189,6 @@ class _CouplesTopicScreenState extends State<CouplesTopicScreen> {
             ...t.strings('letterPrompts'),
             if (t.strings('letterPrompts').isEmpty) ...t.strings('letterCues'),
           ],
-        ),
-        // The two quizzes for two, each hidden until the server can keep it.
-        const SizedBox(height: 30),
-        PairQuizCard(
-          care: widget.care,
-          spec: LoveSpec(
-            LoveQuiz(t.content['loveQuiz'] as Map<String, dynamic>?),
-          ),
-          webBase: widget.catalog.webBase,
-        ),
-        const SizedBox(height: 20),
-        PairQuizCard(
-          care: widget.care,
-          spec: AttachmentSpec(
-            t.content['attachmentQuiz'] as Map<String, dynamic>?,
-          ),
-          webBase: widget.catalog.webBase,
         ),
       ],
     );

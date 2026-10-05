@@ -311,6 +311,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 ),
               ),
           ] else ...[
@@ -328,6 +329,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -342,6 +344,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   bloc: widget.bloc,
                   onNotifications: widget.onNotifications,
                   onOpenComposer: widget.onOpenComposer,
+                  onOpenProfile: widget.onOpenProfile,
                 )
               else
                 _TeamFacesCard(
@@ -370,6 +373,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                 bloc: widget.bloc,
                 onNotifications: widget.onNotifications,
                 onOpenComposer: widget.onOpenComposer,
+                onOpenProfile: widget.onOpenProfile,
               )
             else
               // One department: a plain "Direct Reports" list — your own
@@ -387,6 +391,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                       bloc: widget.bloc,
                       onNotifications: widget.onNotifications,
                       onOpenComposer: widget.onOpenComposer,
+                      onOpenProfile: widget.onOpenProfile,
                     ),
                   _DirectReportsTree(
                     members: group.members,
@@ -395,6 +400,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
                     bloc: widget.bloc,
                     onNotifications: widget.onNotifications,
                     onOpenComposer: widget.onOpenComposer,
+                    onOpenProfile: widget.onOpenProfile,
                   ),
                 ],
               ),
@@ -413,6 +419,7 @@ class _TeamMemberRow extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final TeamMember member;
@@ -424,6 +431,10 @@ class _TeamMemberRow extends StatelessWidget {
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
 
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
+
   @override
   Widget build(BuildContext context) {
     final pendingCount = canManage
@@ -431,21 +442,33 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    final present = member.todayStatus == TeamPresenceStatus.present;
+    // The dot says where they are: green in, blue away or on leave, grey out.
+    final dot = switch (member.todayMark) {
+      'present' || 'late' || 'half_day' => const Color(0xFF00C950),
+      'wfh' || 'leave' => const Color(0xFF0571A6),
+      _ => const Color(0xFFDDDDDD),
+    };
+    final status = _TodayStatusPill.forMark(member.todayMark);
+    final punchIn = member.punchIn;
+    final recognition = member.recognitionLabel;
 
+    // Your own row is your own profile — the same screen as the photo in
+    // the header, not a read-only view of yourself as a team member.
+    final openSelf = member.isSelf ? onOpenProfile : null;
     return _TeamCardShell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => _TeamMemberProfilePage(
-            member: member,
-            data: data,
-            bloc: bloc,
-            onNotifications: onNotifications,
-            onOpenComposer: onOpenComposer,
-            canManage: canManage,
+      onTap: openSelf ??
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => _TeamMemberProfilePage(
+                member: member,
+                data: data,
+                bloc: bloc,
+                onNotifications: onNotifications,
+                onOpenComposer: onOpenComposer,
+                canManage: canManage,
+              ),
+            ),
           ),
-        ),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -467,9 +490,7 @@ class _TeamMemberRow extends StatelessWidget {
                         height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: present
-                              ? const Color(0xFF00C950)
-                              : const Color(0xFFDDDDDD),
+                          color: dot,
                           border: Border.all(color: Colors.white, width: 1.114),
                         ),
                       ),
@@ -520,40 +541,52 @@ class _TeamMemberRow extends StatelessWidget {
                         height: 20 / 14,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    // No presence pill: the dot on the avatar already conveys
-                    // present / not punched in.
-                    if (pendingCount > 0)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [_RequestCountPill(count: pendingCount)],
+                    // Today at a glance (node 3198:20671): when they punched
+                    // in, how the day reads, and what is waiting on you.
+                    if (punchIn != null || status != null || pendingCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (punchIn != null) _PunchTimePill(at: punchIn),
+                            if (status != null) status,
+                            if (pendingCount > 0)
+                              _RequestCountPill(count: pendingCount),
+                          ],
+                        ),
                       ),
-                    if (upcomingLeave != null || birthdaySoon) ...[
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (upcomingLeave != null)
-                            const _TagChip(
-                              icon: Image(
-                                image: AssetImage(
-                                  'assets/icons/team_pill_leave_calendar.png',
+                    if (upcomingLeave != null ||
+                        birthdaySoon ||
+                        (recognition != null && recognition.isNotEmpty))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (upcomingLeave != null)
+                              const _TagChip(
+                                icon: Image(
+                                  image: AssetImage(
+                                    'assets/icons/team_pill_leave_calendar.png',
+                                  ),
                                 ),
+                                label: 'Leave Upcoming',
                               ),
-                              label: 'Leave Upcoming',
-                            ),
-                          if (birthdaySoon)
-                            _TagChip(
-                              icon: SvgPicture.asset(
-                                'assets/icons/team_pill_birthday_cupcake.svg',
+                            if (birthdaySoon)
+                              _TagChip(
+                                icon: SvgPicture.asset(
+                                  'assets/icons/team_pill_birthday_cupcake.svg',
+                                ),
+                                label: 'Birthday Soon',
                               ),
-                              label: 'Birthday Soon',
-                            ),
-                        ],
+                            if (recognition != null && recognition.isNotEmpty)
+                              _RecognitionPill(label: recognition),
+                          ],
+                        ),
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -634,6 +667,139 @@ class _MyTeamCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "9:45 AM" with a clock, the green of a day that has started (node 3198:20671).
+class _PunchTimePill extends StatelessWidget {
+  const _PunchTimePill({required this.at});
+
+  final DateTime at;
+
+  @override
+  Widget build(BuildContext context) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final label =
+        '$hour:${at.minute.toString().padLeft(2, '0')} ${at.hour >= 12 ? 'PM' : 'AM'}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAFFE6),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF34C759)),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF34C759),
+              fontSize: 12,
+              height: 16 / 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How the day reads — Late, Half-day, WFH, Leave or Not-in — in the tint
+/// the design gives each (node 3198:20671). Nothing for a plain present day:
+/// the time pill already says they are in.
+class _TodayStatusPill extends StatelessWidget {
+  const _TodayStatusPill({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  static _TodayStatusPill? forMark(String mark) => switch (mark) {
+    'late' => const _TodayStatusPill(
+      label: 'Late',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'half_day' => const _TodayStatusPill(
+      label: 'Half-day',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'wfh' => const _TodayStatusPill(
+      label: 'WFH',
+      background: Color(0xFFEAFFE6),
+      foreground: Color(0xFF34C759),
+    ),
+    'leave' => const _TodayStatusPill(
+      label: 'Leave',
+      background: Color(0xFFE3F0F7),
+      foreground: Color(0xFF0571A6),
+    ),
+    'not_in' => const _TodayStatusPill(
+      label: 'Not-in',
+      background: Color(0xFFF3F4F6),
+      foreground: Color(0xFF9CA3AF),
+    ),
+    _ => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Sora',
+          color: foreground,
+          fontSize: 12,
+          height: 16.2 / 12,
+          letterSpacing: -0.16,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Employee of month" on a gold wash (node 2488:90748).
+class _RecognitionPill extends StatelessWidget {
+  const _RecognitionPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0x4DFFD700),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: 'Sora',
+          color: Color(0xFFFFCC00),
+          fontSize: 12,
+          height: 16.2 / 12,
+          letterSpacing: -0.16,
+          fontWeight: FontWeight.w400,
+        ),
       ),
     );
   }
@@ -894,9 +1060,13 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 name: request.who,
                 role: request.team,
                 rows: [
-                  ('Type:', 'Correction'),
+                  ('Type:', request.isOutOfLocation ? 'Out of location' : 'Correction'),
                   ('Date:', _shortAttendanceDate(request.workDate)),
-                  ('Correction:', _attendancePeriod(request)),
+                  if (request.isOutOfLocation) ...[
+                    ('Reason:', request.outsideLocation?.reason ?? '—'),
+                    ('Location:', request.outsideLocation?.place ?? '—'),
+                  ] else
+                    ('Correction:', _attendancePeriod(request)),
                   // The reason belongs on the detail page, not on the card: the
                   // list is for deciding at a glance what each request is for.
                 ],
@@ -1596,6 +1766,7 @@ class _DirectReportsTree extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final List<TeamMember> members;
@@ -1604,6 +1775,10 @@ class _DirectReportsTree extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   static const _indent = 28.0;
   static const _gap = 16.0;
@@ -1641,6 +1816,7 @@ class _DirectReportsTree extends StatelessWidget {
                         bloc: bloc,
                         onNotifications: onNotifications,
                         onOpenComposer: onOpenComposer,
+                        onOpenProfile: onOpenProfile,
                       ),
                     ),
                   ),
@@ -1907,6 +2083,7 @@ class _TeamStack extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final List<_TeamDepartmentGroup> teams;
@@ -1917,6 +2094,10 @@ class _TeamStack extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   /// The gutter the trunk lives in: 13px to the line, 15px more to its stub,
   /// landing the cards' left edge at 28px (node 2488:91198 — pl-[28px],
@@ -1942,6 +2123,7 @@ class _TeamStack extends StatelessWidget {
                 bloc: bloc,
                 onNotifications: onNotifications,
                 onOpenComposer: onOpenComposer,
+                onOpenProfile: onOpenProfile,
               )
             : _TeamFacesCard(
                 title: team.title!,
@@ -1993,6 +2175,7 @@ class _OpenTeamBox extends StatelessWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.onOpenProfile,
   });
 
   final String title;
@@ -2003,6 +2186,10 @@ class _OpenTeamBox extends StatelessWidget {
   final ManagerBloc bloc;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Opens the signed-in user's own profile — the one the top-right photo
+  /// opens — for the row that is them.
+  final VoidCallback? onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -2053,6 +2240,7 @@ class _OpenTeamBox extends StatelessWidget {
                   bloc: bloc,
                   onNotifications: onNotifications,
                   onOpenComposer: onOpenComposer,
+                  onOpenProfile: onOpenProfile,
                 ),
                 if (index != members.length - 1) const SizedBox(height: 12),
               ],

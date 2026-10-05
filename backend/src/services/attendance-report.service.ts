@@ -370,9 +370,10 @@ export async function attendanceReport(
       // in the record, which is a different conversation and a different fix.
       const nothing = !punchIn && !punchOut;
       const mark = markForDay(onDay, punchIn, punchOut);
-      const over = punchIn ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
+      // Late and early are each a switch first: off, nobody on the shift is marked.
+      const over = punchIn && onDay.lateMarkingEnabled !== false ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
       // A single-punch shift has no punch-out to leave early on.
-      const short = punchOut && !singlePunch ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+      const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
       const status: DayStatus = nothing
         ? 'absent'
         : missing
@@ -523,8 +524,8 @@ export async function employeeCalendar(
     const missing = singlePunch ? !punchIn : !punchIn || !punchOut;
     const nothing = !punchIn && !punchOut;
     const mark = markForDay(onDay, punchIn, punchOut);
-    const late = punchIn ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
-    const short = punchOut && !singlePunch ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const late = punchIn && onDay.lateMarkingEnabled !== false ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
     const status: DayStatus = nothing
       ? 'absent'
       : missing

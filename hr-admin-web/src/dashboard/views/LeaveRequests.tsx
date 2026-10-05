@@ -1,6 +1,6 @@
 import { useStore } from '../store';
-import { STAT, TYPE } from '../theme';
-import type { LeaveType, ReqStatus } from '../theme';
+import { STAT, typeColor } from '../theme';
+import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
@@ -72,11 +72,10 @@ export function LeaveRequests() {
         />
         <SelectBox value={s.leaveType} onChange={s.setLeaveType}>
           <option value="all">All types</option>
-          <option value="Sick">Sick</option>
-          <option value="Casual">Casual</option>
-          <option value="Earned">Earned</option>
-          <option value="WFH">WFH</option>
-          <option value="Unpaid">Unpaid</option>
+          {/* The types that actually appear, so one HR adds shows up here too. */}
+          {[...new Set(s.leaves.map((r) => r.type))].sort().map((type) => (
+            <option key={type} value={type}>{type}</option>
+          ))}
         </SelectBox>
         <SelectBox value={s.leaveSort} onChange={s.setLeaveSort}>
           <option value="recent">Most recent</option>
@@ -120,7 +119,7 @@ export function LeaveRequests() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: TYPE[r.type as LeaveType] }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: typeColor(r.type) }} />
               <span style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.type}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.from === r.to ? r.from : `${r.from} – ${r.to}`}</div>

@@ -59,7 +59,8 @@ export function adaptLeave(dto: LeaveDTO, managerName: string): Leave {
     id: dto.id,
     name: dto.employee.name,
     team: dto.employee.department || 'Team',
-    type: cap(dto.type) as LeaveType,
+    // "Emergency Leave" lists as "Emergency", like "Casual" — the column says leave.
+    type: (dto.typeName ? dto.typeName.replace(/\s+leave$/i, '') : cap(dto.type)) as LeaveType,
     from: fmtDay(dto.startDate),
     to: fmtDay(dto.endDate),
     days: `${dto.days} day${dto.days === 1 ? '' : 's'}`,
@@ -121,11 +122,14 @@ export function adaptCorrection(dto: RegularizationDTO, managerName: string): Co
     appliedOn: fmtDay(dto.createdAt),
     workDate: fmtDay(dto.workDate),
     day: weekday(dto.workDate),
-    dayType: DAY_TYPE[dto.requestedDayType ?? ''] ?? 'Correction',
+    // An out-of-location request reads under its own heading, reason included.
+    dayType: dto.kind === 'out_of_location'
+      ? (dto.title ?? 'Out of location request')
+      : DAY_TYPE[dto.requestedDayType ?? ''] ?? 'Correction',
     status: cap(dto.status) as ReqStatus,
     // The server resolves the approver; the roster name is only a fallback.
     manager: dto.manager || managerName,
-    eRemark: dto.note || '',
+    eRemark: dto.note || (dto.outsideLocation ? `${dto.outsideLocation.reason} · ${dto.outsideLocation.place}` : ''),
     mRemark: dto.managerNote || '',
     recorded: punchIn || punchOut ? `${punchIn || '—'} → ${punchOut || '—'}` : 'No punch',
     ord: ts(dto.createdAt),

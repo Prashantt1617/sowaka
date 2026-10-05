@@ -151,6 +151,18 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M4 17h16" />
     </svg>
   ),
+  offices: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z" />
+      <circle cx="12" cy="11" r="2.2" />
+    </svg>
+  ),
+  oolcheckins: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z" />
+      <path d="M9.5 11l1.8 1.8L15 9" />
+    </svg>
+  ),
   holidaybank: (
     <svg {...base(18, 'currentColor')}>
       <rect x="3" y="4.5" width="18" height="16" rx="2.5" />

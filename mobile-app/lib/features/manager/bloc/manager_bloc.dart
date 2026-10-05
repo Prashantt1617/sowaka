@@ -685,7 +685,9 @@ class ManagerBloc {
           :final documentBytes,
         ):
           final leave = await _service.submitLeaveApplication(
-            type: type,
+            // The template's key for the type picked, so one HR added in the
+            // dashboard is sent as itself.
+            type: _state.dashboard?.shift.leaveKeyFor(type) ?? type,
             startDate: startDate,
             endDate: endDate,
             reason: reason,

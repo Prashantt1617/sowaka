@@ -6,8 +6,14 @@ import {
   ShiftHalfDayRules,
   DEFAULT_LEAVE_TYPES,
   DEFAULT_ORG_SHIFT_POLICY,
-  LEAVE_TYPE_KEYS,
-  LeaveTypeKey,
+  LEAVE_KEY_PATTERN,
+  MAX_LEAVE_TYPES,
+  DEFAULT_OUTSIDE_LOCATION,
+  MAX_OUTSIDE_LOCATION_REASONS,
+  MAX_OUTSIDE_LOCATION_REASON_LENGTH,
+  OUTSIDE_LOCATION_OUTCOMES,
+  OutsideLocationOutcome,
+  OutsideLocationRules,
   LeaveTypeRule,
   DEFAULT_SHIFT_POLICY,
   OrgShiftPolicy,
@@ -42,7 +48,7 @@ const RETIRED_MARKS: Record<string, DayMark> = { 'Pending Regularisation': 'Abse
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The caller's org. Every read and write below is scoped to it. */
-async function requireOrg(callerId: string): Promise<string> {
+export async function requireOrg(callerId: string): Promise<string> {
   const caller = await users().findOne({ userId: callerId });
   if (!caller) throw new ShiftError(404, 'User not found');
   if (!caller.org) throw new ShiftError(409, 'User is not attached to a company');
@@ -149,7 +155,7 @@ function overtimeRules(value: unknown): ShiftOvertimeRules {
   };
 }
 
-function correctionRules(value: unknown): ShiftCorrectionRules {
+function correctionRules(value: unknown, fallback?: ShiftCorrectionRules): ShiftCorrectionRules {
   const source = (value ?? {}) as Record<string, unknown>;
   const triggers = strings(source.triggers, [...CORRECTION_TRIGGERS])
     .filter((trigger) => CORRECTION_TRIGGERS.includes(trigger));
@@ -169,6 +175,12 @@ function correctionRules(value: unknown): ShiftCorrectionRules {
     punchFormat: (format || 'Present by default (Auto Punch)') as PunchFormat,
     punchMode: (punchMode || 'Both punches') as PunchMode,
     absentOutcomes,
+    // A save that says nothing about out-of-location keeps what the policy
+    // had — a template that inherited the org's rule must not fall back to
+    // the default on an unrelated edit.
+    outsideLocation: source.outsideLocation === undefined && fallback?.outsideLocation
+      ? fallback.outsideLocation
+      : outsideLocationRules(source.outsideLocation),
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
     managerWithoutEmployee: flag(source.managerWithoutEmployee, true),
     hrOverride: flag(source.hrOverride, true),
@@ -177,12 +189,15 @@ function correctionRules(value: unknown): ShiftCorrectionRules {
   };
 }
 
-/** One leave type, validated. Unknown keys are refused rather than stored. */
+/**
+ * One leave type, validated. A type HR added arrives with a key the dashboard
+ * made from its name; one without a key gets it here, the same way.
+ */
 function leaveType(value: unknown): LeaveTypeRule {
   const source = (value ?? {}) as Record<string, unknown>;
-  const key = String(source.key ?? '').trim() as LeaveTypeKey;
-  if (!LEAVE_TYPE_KEYS.includes(key)) {
-    throw new ShiftError(400, `Leave type must be one of: ${LEAVE_TYPE_KEYS.join(', ')}`);
+  const key = String(source.key ?? '').trim() || leaveKeyFrom(String(source.name ?? ''));
+  if (!LEAVE_KEY_PATTERN.test(key)) {
+    throw new ShiftError(400, 'A leave type key is lower-case letters, digits and underscores');
   }
   const encashment = String(source.encashment ?? 'none').trim();
   if (!['none', 'all', 'limit'].includes(encashment)) {
@@ -207,6 +222,17 @@ function leaveType(value: unknown): LeaveTypeRule {
   };
 }
 
+/** 'Emergency Leave' -> 'emergency'; the word "leave" adds nothing to a key. */
+export function leaveKeyFrom(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\bleaves?\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/^(\d)/, 'l_$1')
+    .slice(0, 32);
+}
+
 function leaveRules(value: unknown): ShiftLeaveRules {
   const source = (value ?? {}) as Record<string, unknown>;
   const types = Array.isArray(source.types)
@@ -214,6 +240,9 @@ function leaveRules(value: unknown): ShiftLeaveRules {
     : DEFAULT_LEAVE_TYPES.map((type) => ({ ...type }));
   const seen = new Set(types.map((type) => type.key));
   if (seen.size !== types.length) throw new ShiftError(400, 'Each leave type may appear once');
+  if (types.length > MAX_LEAVE_TYPES) {
+    throw new ShiftError(400, `A shift can have at most ${MAX_LEAVE_TYPES} leave types`);
+  }
   return {
     types,
     approver: String(source.approver ?? 'Reporting manager').trim() || 'Reporting manager',
@@ -232,6 +261,40 @@ function days(value: unknown, field: string, fallback: number): number {
 }
 
 type ShiftInput = Record<string, unknown>;
+
+/**
+ * What a geotagged shift does with a punch from outside every office: the
+ * outcome HR chose, and the reasons an employee may give. Reasons are HR's
+ * own words, trimmed, de-duplicated, and bounded so the punch screen stays a
+ * short list rather than a form.
+ */
+function outsideLocationRules(value: unknown): OutsideLocationRules {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const outcome = String(source.outcome ?? DEFAULT_OUTSIDE_LOCATION.outcome).trim();
+  if (!OUTSIDE_LOCATION_OUTCOMES.includes(outcome as OutsideLocationOutcome)) {
+    throw new ShiftError(400, 'Out of location must either send a request or mark the employee present');
+  }
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  for (const raw of Array.isArray(source.reasons) ? source.reasons : DEFAULT_OUTSIDE_LOCATION.reasons) {
+    const reason = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    if (!reason) continue;
+    if (reason.length > MAX_OUTSIDE_LOCATION_REASON_LENGTH) {
+      throw new ShiftError(400, `An out-of-location reason can be at most ${MAX_OUTSIDE_LOCATION_REASON_LENGTH} characters`);
+    }
+    const key = reason.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    reasons.push(reason);
+  }
+  if (reasons.length === 0) {
+    throw new ShiftError(400, 'Give at least one reason an employee can choose when out of location');
+  }
+  if (reasons.length > MAX_OUTSIDE_LOCATION_REASONS) {
+    throw new ShiftError(400, `List at most ${MAX_OUTSIDE_LOCATION_REASONS} out-of-location reasons`);
+  }
+  return { outcome: outcome as OutsideLocationOutcome, reasons };
+}
 
 /**
  * The capture settings a template may carry, or undefined to inherit the org's.
@@ -284,14 +347,16 @@ function toPolicyRules(input: Record<string, unknown>, fallback: ShiftPolicyRule
     halfDay: has('halfDay') ? halfDayRules(input.halfDay, fallback.halfDay) : fallback.halfDay,
     minHalfDayHours,
     minFullDayHours,
+    lateMarkingEnabled: has('lateMarkingEnabled') ? flag(input.lateMarkingEnabled, fallback.lateMarkingEnabled ?? true) : fallback.lateMarkingEnabled ?? true,
     lateGraceMinutes: has('lateGraceMinutes') ? minutes(input.lateGraceMinutes, 'Late grace', fallback.lateGraceMinutes) : fallback.lateGraceMinutes,
+    earlyMarkingEnabled: has('earlyMarkingEnabled') ? flag(input.earlyMarkingEnabled, fallback.earlyMarkingEnabled ?? true) : fallback.earlyMarkingEnabled ?? true,
     earlyOutGraceMinutes: has('earlyOutGraceMinutes') ? minutes(input.earlyOutGraceMinutes, 'Early-out grace', fallback.earlyOutGraceMinutes) : fallback.earlyOutGraceMinutes,
     missingPunchIn: has('missingPunchIn') ? mark(input.missingPunchIn, 'Punch-in missing', fallback.missingPunchIn) : fallback.missingPunchIn,
     missingPunchOut: has('missingPunchOut') ? mark(input.missingPunchOut, 'Punch-out missing', fallback.missingPunchOut) : fallback.missingPunchOut,
     missingBoth: has('missingBoth') ? mark(input.missingBoth, 'Both punches missing', fallback.missingBoth) : fallback.missingBoth,
     weeklyOff: has('weeklyOff') ? weeklyOff(input.weeklyOff) : fallback.weeklyOff,
     overtime: has('overtime') ? overtimeRules(input.overtime) : fallback.overtime,
-    correction: has('correction') ? correctionRules(input.correction) : fallback.correction,
+    correction: has('correction') ? correctionRules(input.correction, fallback.correction) : fallback.correction,
     leave: has('leave') ? leaveRules(input.leave) : fallback.leave,
   };
 }
@@ -626,7 +691,11 @@ export async function getOrgShiftPolicy(org: string): Promise<Omit<OrgShiftPolic
     missingPunchOut: asMark(doc.missingPunchOut, DEFAULT_ORG_SHIFT_POLICY.missingPunchOut),
     missingBoth: asMark(doc.missingBoth, DEFAULT_ORG_SHIFT_POLICY.missingBoth),
     overtime: { ...DEFAULT_ORG_SHIFT_POLICY.overtime, ...(doc.overtime ?? {}) },
-    correction: { ...DEFAULT_ORG_SHIFT_POLICY.correction, ...(doc.correction ?? {}) },
+    correction: {
+      ...DEFAULT_ORG_SHIFT_POLICY.correction,
+      ...(doc.correction ?? {}),
+      outsideLocation: doc.correction?.outsideLocation ?? DEFAULT_ORG_SHIFT_POLICY.correction.outsideLocation,
+    },
     halfDay: { ...DEFAULT_ORG_SHIFT_POLICY.halfDay, ...(doc.halfDay ?? {}) },
     leave: {
       ...DEFAULT_ORG_SHIFT_POLICY.leave,
@@ -672,10 +741,12 @@ export async function saveOrgShiftPolicy(callerId: string, input: ShiftInput) {
     halfDay: has('halfDay') ? halfDayRules(input.halfDay, current.halfDay) : current.halfDay,
     minHalfDayHours,
     minFullDayHours,
+    lateMarkingEnabled: has('lateMarkingEnabled') ? flag(input.lateMarkingEnabled, current.lateMarkingEnabled ?? true) : current.lateMarkingEnabled ?? true,
     lateGraceMinutes: has('lateGraceMinutes') ? minutes(input.lateGraceMinutes, 'Late grace', current.lateGraceMinutes) : current.lateGraceMinutes,
+    earlyMarkingEnabled: has('earlyMarkingEnabled') ? flag(input.earlyMarkingEnabled, current.earlyMarkingEnabled ?? true) : current.earlyMarkingEnabled ?? true,
     earlyOutGraceMinutes: has('earlyOutGraceMinutes') ? minutes(input.earlyOutGraceMinutes, 'Early-out grace', current.earlyOutGraceMinutes) : current.earlyOutGraceMinutes,
     overtime: has('overtime') ? overtimeRules(input.overtime) : current.overtime,
-    correction: has('correction') ? correctionRules(input.correction) : current.correction,
+    correction: has('correction') ? correctionRules(input.correction, current.correction) : current.correction,
     leave: has('leave') ? leaveRules(input.leave) : current.leave,
     updatedAt: new Date(),
     updatedByUserId: callerId,
@@ -697,7 +768,10 @@ export type ShiftPolicyView = {
   halfDay: ShiftHalfDayRules;
   minHalfDayHours: number;
   minFullDayHours: number;
+  /** Whether anyone on this shift is marked late or early at all. */
+  lateMarkingEnabled: boolean;
   lateGraceMinutes: number;
+  earlyMarkingEnabled: boolean;
   earlyOutGraceMinutes: number;
   /**
    * What a day with a punch missing is recorded as. HR sets these under
@@ -744,6 +818,12 @@ export type ShiftPolicyView = {
     absentOutcomes: string[];
     /** Fixed: a half day can only be disputed as a full day. */
     halfDayOutcomes: string[];
+    /**
+     * On a geotagged shift: what a punch from outside every office leads to,
+     * and the reasons the employee is offered. The app shows these as HR
+     * wrote them, so a change here needs no release.
+     */
+    outsideLocation: OutsideLocationRules;
   };
 };
 
@@ -760,7 +840,9 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
     halfDay: policy.halfDay,
     minHalfDayHours: policy.minHalfDayHours,
     minFullDayHours: policy.minFullDayHours,
+    lateMarkingEnabled: policy.lateMarkingEnabled ?? true,
     lateGraceMinutes: policy.lateGraceMinutes,
+    earlyMarkingEnabled: policy.earlyMarkingEnabled ?? true,
     earlyOutGraceMinutes: policy.earlyOutGraceMinutes,
     weeklyOff: policy.weeklyOff,
     missingPunchIn: policy.missingPunchIn,
@@ -789,6 +871,7 @@ export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
       // here rather than deriving it.
       absentOutcomes: policy.correction.absentOutcomes ?? [...CORRECTION_OUTCOMES],
       halfDayOutcomes: [...HALF_DAY_CORRECTION_OUTCOMES],
+      outsideLocation: policy.correction.outsideLocation ?? DEFAULT_OUTSIDE_LOCATION,
     },
   };
 }
@@ -952,6 +1035,10 @@ export async function policyForUser(
         template.punchMode ??
         template.policy.correction?.punchMode ??
         orgPolicy.correction.punchMode,
+      // A template saved before this existed has no opinion; the org's answer
+      // stands until HR opens the template and chooses.
+      outsideLocation:
+        template.policy.correction?.outsideLocation ?? orgPolicy.correction.outsideLocation,
     },
     shiftName: template.name,
   };

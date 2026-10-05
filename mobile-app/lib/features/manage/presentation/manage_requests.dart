@@ -23,7 +23,9 @@ Future<String?> _showAttendanceDecisionSheet(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            approved ? 'Approve correction' : 'Decline correction',
+            request.isOutOfLocation
+                ? (approved ? 'Approve request' : 'Reject request')
+                : (approved ? 'Approve correction' : 'Decline correction'),
             style: const TextStyle(
               color: MColors.ink,
               fontSize: 20,
@@ -63,7 +65,11 @@ Future<String?> _showAttendanceDecisionSheet(
               Expanded(
                 flex: 2,
                 child: ActionButton(
-                  label: approved ? 'Confirm approve' : 'Confirm decline',
+                  label: approved
+                      ? 'Confirm approve'
+                      : request.isOutOfLocation
+                      ? 'Confirm reject'
+                      : 'Confirm decline',
                   icon: approved ? Icons.check_rounded : Icons.close_rounded,
                   // Same colours as the Approve and Reject buttons on the card
                   // this sheet was opened from.
@@ -97,15 +103,29 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _RequestDetailScaffold(
-    title: 'Attendance Correction',
+    title: request.heading,
     subtitle: '${request.who} · ${request.team}',
     decision: request.decision,
     managerNote: request.managerNote,
     summary: RequestSummary(
-      screenTitle: 'Attendance Correction',
+      screenTitle: request.heading,
       successTitle: '',
       successBody: '',
-      rows: [
+      // An out of location request is about a punch: when, why, and where
+      // from — the rough place, never raw coordinates.
+      rows: request.isOutOfLocation
+          ? [
+              SummaryRow('Employee', '${request.who} · ${request.team}'),
+              SummaryRow('Date', _summaryDate(request.workDate)),
+              SummaryRow(
+                'Time',
+                _attendanceClock(request.outsideLocation?.at ?? request.createdAt),
+              ),
+              SummaryRow('Reason', request.outsideLocation?.reason ?? '—'),
+              SummaryRow('Location', request.outsideLocation?.place ?? '—'),
+              SummaryRow('Status', _decisionText(request.decision)),
+            ]
+          : [
         SummaryRow('Employee', '${request.who} · ${request.team}'),
         SummaryRow('Work Date', _summaryDate(request.workDate)),
         // What the day holds now, then what approving would make it. A
@@ -117,8 +137,9 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
         SummaryRow('Raised On', _summaryDate(request.createdAt)),
         SummaryRow('Status', _decisionText(request.decision)),
       ],
-      reason: request.note,
+      reason: request.isOutOfLocation ? '' : request.note,
     ),
+    declineLabel: request.isOutOfLocation ? 'Reject' : 'Decline',
     onDecline: () => _decide(context, LeaveDecision.declined),
     onApprove: () => _decide(context, LeaveDecision.approved),
   );
@@ -133,9 +154,27 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
   }
 }
 
+/// The rows a request card shows. An out of location request says why and
+/// where from; a correction says what the day should become.
+List<(String, String)> _attendanceRequestRows(AttendanceRegularization request) {
+  if (request.isOutOfLocation) {
+    return [
+      ('Date:', _shortAttendanceDate(request.workDate)),
+      ('Reason:', request.outsideLocation?.reason ?? '—'),
+      ('Location:', request.outsideLocation?.place ?? '—'),
+    ];
+  }
+  return [
+    ('Date:', _shortAttendanceDate(request.workDate)),
+    ('Correction:', _attendancePeriod(request)),
+    ('Comment:', request.note),
+  ];
+}
+
 /// What the employee is asking for: the day type on current corrections, and
 /// the punch times on ones raised before day types existed.
 String _attendancePeriod(AttendanceRegularization request) {
+  if (request.isOutOfLocation) return request.outsideLocation?.reason ?? 'Out of location';
   if (request.dayTypeLabel.isNotEmpty) return request.dayTypeLabel;
   final inAt = request.requestedPunchIn;
   final outAt = request.requestedPunchOut;
@@ -321,6 +360,7 @@ class _RequestDetailScaffold extends StatelessWidget {
     required this.summary,
     required this.onApprove,
     required this.onDecline,
+    this.declineLabel = 'Decline',
   });
 
   final String title;
@@ -330,6 +370,10 @@ class _RequestDetailScaffold extends StatelessWidget {
   final RequestSummary summary;
   final VoidCallback onApprove;
   final VoidCallback onDecline;
+
+  /// An out of location request is rejected, not declined — the word the
+  /// card and the manager both use.
+  final String declineLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -382,7 +426,7 @@ class _RequestDetailScaffold extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ActionButton(
-                        label: 'Decline',
+                        label: declineLabel,
                         icon: Icons.close_rounded,
                         background: MColors.rejectTint,
                         foreground: MColors.rejectInk,

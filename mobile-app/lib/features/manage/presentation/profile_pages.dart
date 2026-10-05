@@ -51,7 +51,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
           leave.requestedOn,
           _ProfileRequestCard(
             icon: Icons.calendar_month_rounded,
-            title: '${leave.type} Request',
+            title: '${leave.type} leave request',
             rows: [
               ('Date:', _leaveDateRange(leave)),
               ('Comment:', leave.reason),
@@ -126,13 +126,11 @@ class _TeamMemberProfilePage extends StatelessWidget {
         (
           request.createdAt,
           _ProfileRequestCard(
-            icon: Icons.edit_calendar_rounded,
-            title: 'Attendance Correction',
-            rows: [
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
-            ],
+            icon: request.isOutOfLocation
+                ? Icons.location_off_rounded
+                : Icons.edit_calendar_rounded,
+            title: request.heading,
+            rows: _attendanceRequestRows(request),
             decision: LeaveDecision.pending,
             approving: bloc.isBusy(
               DecideAttendanceRegularization(
@@ -181,6 +179,8 @@ class _TeamMemberProfilePage extends StatelessWidget {
           // top-bar icon and the card's "view calendar" action are hidden
           // for everyone else (each takes a nullable callback).
           _ProfilePageTopBar(
+            // "Profile-Ananya" (node 3106:49189): whose page this is.
+            title: 'Profile-${member.name.trim().split(' ').first}',
             onCalendarTap: !canManage
                 ? null
                 : () => Navigator.of(context).push(
@@ -211,10 +211,10 @@ class _TeamMemberProfilePage extends StatelessWidget {
                       Text(
                         member.name,
                         style: const TextStyle(
-                          color: MColors.ink,
+                          color: Color(0xFF222222),
                           fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -.3,
+                          height: 32 / 24,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -233,129 +233,38 @@ class _TeamMemberProfilePage extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Punch in/out sits above the requests here, matching the
-                // signed-in user's own profile.
                 const SizedBox(height: 16),
-                _AttendanceCard(
-                  date: today,
-                  present: present,
-                  punchIn: member.punchIn,
-                  punchOut: member.punchOut,
-                  onViewCalendar: !canManage
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => _TeamMemberAttendancePage(
-                              member: member,
-                              data: data,
-                              bloc: bloc,
-                              onNotifications: onNotifications,
-                              onOpenComposer: onOpenComposer,
+                _MemberProfileTabs(
+                  member: member,
+                  canManage: canManage,
+                  openRequests: openRequests,
+                  // No "your manager" line here: the reader usually is the
+                  // manager, and the month row's due card says what to do.
+                  grow: _ProfileGrowTab(
+                    data: data,
+                    bloc: bloc,
+                    memberId: member.id,
+                  ),
+                  attendance: _AttendanceCard(
+                    date: today,
+                    present: present,
+                    punchIn: member.punchIn,
+                    punchOut: member.punchOut,
+                    onViewCalendar: !canManage
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => _TeamMemberAttendancePage(
+                                member: member,
+                                data: data,
+                                bloc: bloc,
+                                onNotifications: onNotifications,
+                                onOpenComposer: onOpenComposer,
+                              ),
                             ),
                           ),
-                        ),
-                ),
-                if (canManage && openRequests.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  _RequestsSection(
-                    title: 'Open Requests',
-                    entries: openRequests,
                   ),
-                ],
-                const SizedBox(height: 22),
-                const _SectionTitle(title: 'Profile'),
-                const SizedBox(height: 8),
-                _InfoCard(
-                  children: [
-                    if (member.email.isNotEmpty)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_email.svg',
-                        label: 'Email',
-                        value: member.email,
-                      ),
-                    if (member.employeeId case final id?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_employee_id.svg',
-                        label: 'Employee ID',
-                        value: id,
-                      ),
-                    if (member.joiningDate case final joined?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/profile_joining_date.svg',
-                        label: 'Joining Date',
-                        value: _joiningDateLabel(joined),
-                      ),
-                    if (member.birthday case final born?)
-                      _ProfileRow(
-                        icon: Icons.cake_outlined,
-                        label: 'Date of birth',
-                        value: _joiningDateLabel(born),
-                      ),
-                  ],
                 ),
-                const SizedBox(height: 22),
-                const _SectionTitle(title: 'Work Role'),
-                const SizedBox(height: 8),
-                _InfoCard(
-                  children: [
-                    _ProfileRow(
-                      iconAsset: 'assets/icons/work_department.svg',
-                      label: 'Department',
-                      value: member.team,
-                    ),
-                    if (_nonEmpty(member.managerName) case final name?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/work_manager.svg',
-                        label: 'Manager',
-                        value: name,
-                      ),
-                    if (member.employmentType case final type?)
-                      _ProfileRow(
-                        iconAsset: 'assets/icons/work_employment_type.svg',
-                        label: 'Employment Type',
-                        value: _employmentTypeLabel(type),
-                      ),
-                  ],
-                ),
-                if (member.orgChart.length > 1) ...[
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: 'Org Chart'),
-                  const SizedBox(height: 8),
-                  _OrgChartCard(nodes: member.orgChart),
-                ],
-                if (member.documents.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: 'Documentation'),
-                  const SizedBox(height: 8),
-                  _DocumentationCard(documents: member.documents),
-                ],
-                // Only a manager can review someone, and only their own
-                // direct reports — never themselves, a peer, or their manager.
-                if (canManage && member.reportsToViewer) ...[
-                  const SizedBox(height: 22),
-                  _GiveFeedbackButton(
-                    // A review already sent this cycle is still editable, so
-                    // the button says so rather than inviting a second one.
-                    label:
-                        member.history.any(
-                          (record) =>
-                              record.period ==
-                              _EmployeeGrowthPage._currentPeriod(),
-                        )
-                        ? 'Edit Feedback'
-                        : 'Give Feedback',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => _FeedbackFormPage(
-                            bloc: bloc,
-                            memberId: member.id,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ],
             ),
           ),
@@ -562,40 +471,6 @@ class _DocumentationCard extends StatelessWidget {
   }
 }
 
-class _GiveFeedbackButton extends StatelessWidget {
-  const _GiveFeedbackButton({
-    required this.onTap,
-    this.label = 'Give Feedback',
-  });
-
-  final VoidCallback onTap;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF0571A6),
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Whether the profile carries the working day: attendance, requests, the
 /// reporting line. True for every company that has any of the work tabs, and
 /// for one that was never given a list at all, so nobody loses what they had.
@@ -635,6 +510,22 @@ class _ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<_ProfileScreen> {
+  /// Which profile tab is open. Request first, as the design opens it.
+  int _tab = 0;
+
+  /// The Request tab: every request of theirs, newest first, or a line
+  /// saying there are none.
+  List<Widget> _requestTab(ManagerDashboard dashboard) {
+    final entries = _MyRequestsSection.entriesFor(dashboard);
+    if (entries.isEmpty) {
+      return const [_ProfileTabNote('No requests yet.')];
+    }
+    return [
+      for (final entry in entries)
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: entry.$2),
+    ];
+  }
+
   bool _uploadingPhoto = false;
 
   Future<void> _changePhoto() async {
@@ -731,11 +622,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
           ),
-          _ProfilePageTopBar(
-            onBack: onBack,
-            // The Help profile is titled as the design draws it.
-            title: !worksHere && helpHere ? 'My Profile' : 'Profile',
-          ),
+          // Titled as the design draws it (node 3106:49749); a teammate's
+          // page is "Profile-Ananya", so the two are never mistaken.
+          _ProfilePageTopBar(onBack: onBack, title: 'My Profile'),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
@@ -885,76 +774,98 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       const SizedBox(height: 22),
                       if (!worksHere && helpHere)
                         HelpProfileSection(session: session),
+                      // The profile reads as tabs (node 3074:45990): one
+                      // thing at a time, rather than every section stacked.
                       if (worksHere) ...[
-                        _AttendanceCard(
-                          date: today,
-                          present: todayRecord?.punchIn != null,
-                          punchIn: todayRecord?.punchIn,
-                          punchOut: todayRecord?.punchOut,
-                          onPunch: dashboard.shift.punchesFromApp
-                              ? (type) => _startProfilePunch(
-                                  context,
-                                  bloc,
-                                  dashboard,
-                                  type,
-                                )
-                              : null,
-                          autoPresent:
-                              dashboard.shift.markedPresentAutomatically,
-                          singlePunch: dashboard.shift.singlePunchDay,
+                        _ProfileTabs(
+                          labels: [
+                            'Request',
+                            'Attendance',
+                            'Work detail',
+                            'Org chart',
+                            'Grow',
+                            if (helpHere) 'Counselor',
+                          ],
+                          selected: _tab,
+                          onChanged: (index) => setState(() => _tab = index),
                         ),
-                        _MyRequestsSection(data: dashboard),
-                      ],
-                      const SizedBox(height: 18),
-                      if (worksHere) ...[
-                        const _SectionTitle(title: 'Profile'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
-                          children: [
-                            _ProfileRow(
+                        const SizedBox(height: 16),
+                        ...switch (_tab) {
+                          0 => _requestTab(dashboard),
+                          1 => [
+                            _AttendanceCard(
+                              date: today,
+                              present: todayRecord?.punchIn != null,
+                              punchIn: todayRecord?.punchIn,
+                              punchOut: todayRecord?.punchOut,
+                              onPunch: dashboard.shift.punchesFromApp
+                                  ? (type) => _startProfilePunch(
+                                      context,
+                                      bloc,
+                                      dashboard,
+                                      type,
+                                    )
+                                  : null,
+                              autoPresent:
+                                  dashboard.shift.markedPresentAutomatically,
+                              singlePunch: dashboard.shift.singlePunchDay,
+                            ),
+                            const SizedBox(height: 24),
+                            _ProfileAttendanceCalendar(dashboard: dashboard),
+                          ],
+                          2 => [
+                            _WorkDetailRow(
                               iconAsset: 'assets/icons/profile_email.svg',
                               label: 'Email',
                               value: user.email,
                             ),
-                            _ProfileRow(
-                              iconAsset:
-                                  'assets/icons/profile_joining_date.svg',
-                              label: 'Joined',
-                              value: _formatDate(user.joiningDate),
-                            ),
-                            _ProfileRow(
-                              icon: Icons.cake_outlined,
-                              label: 'Date of birth',
-                              value: _formatDate(user.birthday),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        const _SectionTitle(title: 'Work Role'),
-                        const SizedBox(height: 8),
-                        _InfoCard(
-                          children: [
-                            _ProfileRow(
+                            if (_nonEmpty(user.joiningDate) != null)
+                              _WorkDetailRow(
+                                iconAsset:
+                                    'assets/icons/profile_joining_date.svg',
+                                label: 'Joining Date',
+                                value: _formatDate(user.joiningDate),
+                              ),
+                            _WorkDetailRow(
                               iconAsset: 'assets/icons/work_department.svg',
-                              label: 'Department / team',
+                              label: 'Department',
                               value: department,
                             ),
                             if (reportsTo case final name?)
-                              _ProfileRow(
+                              _WorkDetailRow(
                                 iconAsset: 'assets/icons/work_manager.svg',
-                                label: 'Reports to',
+                                label: 'Manager',
                                 value: name,
                               ),
+                            if (_nonEmpty(user.birthday) != null)
+                              _WorkDetailRow(
+                                icon: Icons.cake_outlined,
+                                label: 'Date of birth',
+                                value: _formatDate(user.birthday),
+                              ),
                           ],
-                        ),
-                        if (dashboard.myOrgChart.length > 1) ...[
-                          const SizedBox(height: 22),
-                          const _SectionTitle(title: 'Org Chart'),
-                          const SizedBox(height: 8),
-                          _OrgChartCard(nodes: dashboard.myOrgChart),
-                        ],
-                        const SizedBox(height: 18),
+                          3 => [
+                            if (dashboard.myOrgChart.length > 1)
+                              _OrgChartCard(nodes: dashboard.myOrgChart)
+                            else
+                              const _ProfileTabNote(
+                                'Your reporting line will show here once it '
+                                'is set up.',
+                              ),
+                          ],
+                          4 => [
+                            _ProfileGrowTab(
+                              data: dashboard,
+                              bloc: bloc,
+                              managerName: reportsTo,
+                            ),
+                          ],
+                          _ => [HelpProfileSection(session: session)],
+                        },
                       ],
+                      // Room between whatever came last and the log-out,
+                      // whichever kind of profile this is.
+                      const SizedBox(height: 24),
                       _LogoutButton(onPressed: onLogout),
                       // Below the logout button and deliberately small: it is
                       // a footnote about this person's own account, not a
@@ -1439,15 +1350,15 @@ class _MyRequestsSection extends StatelessWidget {
 
   final ManagerDashboard data;
 
-  @override
-  Widget build(BuildContext context) {
+  /// Every request of theirs as a card, newest first.
+  static List<(DateTime date, Widget card)> entriesFor(ManagerDashboard data) {
     final myRequests = <(DateTime date, Widget card)>[
       for (final leave in data.myLeaves)
         (
           leave.requestedOn,
           _ProfileRequestCard(
             icon: Icons.calendar_month_rounded,
-            title: '${leave.type} Request',
+            title: '${leave.type} leave request',
             rows: [
               ('Date:', _leaveDateRange(leave)),
               ('Comment:', leave.reason),
@@ -1478,19 +1389,22 @@ class _MyRequestsSection extends StatelessWidget {
         (
           request.createdAt,
           _ProfileRequestCard(
-            icon: Icons.edit_calendar_rounded,
-            title: 'Attendance Correction',
-            rows: [
-              ('Date:', _shortAttendanceDate(request.workDate)),
-              ('Correction:', _attendancePeriod(request)),
-              ('Comment:', request.note),
-            ],
+            icon: request.isOutOfLocation
+                ? Icons.location_off_rounded
+                : Icons.edit_calendar_rounded,
+            title: request.heading,
+            rows: _attendanceRequestRows(request),
             decision: request.decision,
             readOnly: true,
           ),
         ),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
+    return myRequests;
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final myRequests = entriesFor(data);
     if (myRequests.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 18),
@@ -1909,21 +1823,6 @@ class _PunchColumn extends StatelessWidget {
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
-      decoration: _cardDecoration,
-      child: Column(children: children),
-    );
-  }
-}
-
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({
     required this.initials,
@@ -1970,8 +1869,80 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-class _ProfileRow extends StatelessWidget {
-  const _ProfileRow({
+/// The profile's tabs (node 3074:45990): labels 24 apart, the open one bold
+/// with a line under it, the row scrolling when the labels run past the edge.
+class _ProfileTabs extends StatelessWidget {
+  const _ProfileTabs({
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Stack(
+        alignment: Alignment.bottomLeft,
+        children: [
+          Container(height: 1, color: const Color(0xFFEBEBEB)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            child: Row(
+              children: [
+                for (var index = 0; index < labels.length; index++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      right: index == labels.length - 1 ? 0 : 24,
+                    ),
+                    child: InkWell(
+                      onTap: () => onChanged(index),
+                      child: Container(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: index == selected
+                                  ? const Color(0xFF222222)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          labels[index],
+                          style: TextStyle(
+                            fontFamily: 'Sora',
+                            color: index == selected
+                                ? const Color(0xFF222222)
+                                : const Color(0xFF717171),
+                            fontSize: 14,
+                            height: 20 / 14,
+                            fontWeight: index == selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One line of the Work detail tab (node 3074:45990): the glyph in a soft
+/// disc, then the label over its value.
+class _WorkDetailRow extends StatelessWidget {
+  const _WorkDetailRow({
     this.icon,
     this.iconAsset,
     required this.label,
@@ -1982,8 +1953,6 @@ class _ProfileRow extends StatelessWidget {
        );
 
   final IconData? icon;
-
-  /// Preferred over [icon]: the glyph exported from Figma.
   final String? iconAsset;
   final String label;
   final String value;
@@ -1991,32 +1960,54 @@ class _ProfileRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 40,
             height: 40,
+            alignment: Alignment.center,
             decoration: const BoxDecoration(
               color: Color(0xFFF7F7F7),
               shape: BoxShape.circle,
             ),
             child: iconAsset != null
-                ? Center(
-                    child: SvgPicture.asset(iconAsset!, width: 20, height: 20),
+                ? SvgPicture.asset(
+                    iconAsset!,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                      Color(0xFF222222),
+                      BlendMode.srcIn,
+                    ),
                   )
-                : Icon(icon, size: 20, color: _ProfileColors.ink),
+                : Icon(icon, size: 20, color: const Color(0xFF222222)),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label.toUpperCase(), style: _ProfileText.label),
-                const SizedBox(height: 2),
                 Text(
-                  value.isEmpty ? 'Not available' : value,
-                  style: _ProfileText.value,
+                  label,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF717171),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF222222),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -2027,13 +2018,279 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
-/// The footnotes under the logout button: the published privacy policy, and
-/// the page where someone asks for their account and data to be deleted.
-///
-/// Both link out to the hosted pages rather than carrying a copy of the text,
-/// so what people read here is the same thing the store listings point at.
-/// Deletion gets its own link rather than living inside the policy: someone
-/// looking for it should not have to read a policy to find it.
+/// A tab with nothing in it yet says so, quietly.
+class _ProfileTabNote extends StatelessWidget {
+  const _ProfileTabNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 28),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF9197A2),
+        fontSize: 13,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+  );
+}
+
+/// The Attendance tab's calendar (node 3198:20867): a month at a time, the
+/// headings with their counts, and the day that was tapped underneath.
+class _ProfileAttendanceCalendar extends StatefulWidget {
+  const _ProfileAttendanceCalendar({required this.dashboard});
+
+  final ManagerDashboard dashboard;
+
+  @override
+  State<_ProfileAttendanceCalendar> createState() =>
+      _ProfileAttendanceCalendarState();
+}
+
+class _ProfileAttendanceCalendarState
+    extends State<_ProfileAttendanceCalendar> {
+  late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  AttendanceFilter? _filter;
+  DateTime? _selected;
+
+  List<AttendanceDayView> get _days => buildAttendanceDays(
+    month: _month,
+    records: widget.dashboard.attendance,
+    regularizations: widget.dashboard.regularizations,
+    leaves: widget.dashboard.myLeaves,
+    holidays: widget.dashboard.holidays,
+    overtime: widget.dashboard.myOvertime,
+    shift: widget.dashboard.shift,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _days;
+    final now = DateTime.now();
+    final canGoForward =
+        _month.year < now.year ||
+        (_month.year == now.year && _month.month < now.month);
+    final selectedDay = _selected == null
+        ? days
+              .where(
+                (day) =>
+                    day.date.year == now.year &&
+                    day.date.month == now.month &&
+                    day.date.day == now.day,
+              )
+              .firstOrNull
+        : days
+              .where(
+                (day) =>
+                    day.date.year == _selected!.year &&
+                    day.date.month == _selected!.month &&
+                    day.date.day == _selected!.day,
+              )
+              .firstOrNull;
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            AttendanceCalendarArrow(
+              onPressed: () => setState(() {
+                _month = DateTime(_month.year, _month.month - 1);
+                _selected = null;
+              }),
+              asset: 'assets/icons/calendar_chevron_prev.svg',
+            ),
+            Expanded(
+              child: Text(
+                '${months[_month.month - 1]} ${_month.year}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            Opacity(
+              opacity: canGoForward ? 1 : .3,
+              child: AttendanceCalendarArrow(
+                onPressed: canGoForward
+                    ? () => setState(() {
+                        _month = DateTime(_month.year, _month.month + 1);
+                        _selected = null;
+                      })
+                    : null,
+                asset: 'assets/icons/calendar_chevron_next.svg',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        AttendanceFilterChips(
+          selected: _filter,
+          counts: {
+            for (final filter in AttendanceFilter.values)
+              filter: days
+                  .where((day) => matchesAttendanceFilter(day, filter))
+                  .length,
+          },
+          onChanged: (filter) => setState(() => _filter = filter),
+        ),
+        const SizedBox(height: 16),
+        AttendanceMonthGrid(
+          month: _month,
+          days: days,
+          filter: _filter,
+          selectedDate: _selected,
+          onTap: (day) => setState(() => _selected = day.date),
+        ),
+        if (selectedDay != null) ...[
+          const SizedBox(height: 16),
+          AttendanceDayDetail(
+            day: selectedDay,
+            singlePunch: widget.dashboard.shift.singlePunchDay,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A report's profile as tabs (node 3070:44930): what is waiting on you,
+/// their day, their details, where they sit, their growth (where a manager
+/// also gives feedback), and their documents.
+class _MemberProfileTabs extends StatefulWidget {
+  const _MemberProfileTabs({
+    required this.member,
+    required this.canManage,
+    required this.openRequests,
+    required this.attendance,
+    required this.grow,
+  });
+
+  final TeamMember member;
+  final bool canManage;
+  final List<(DateTime date, Widget card)> openRequests;
+  final Widget attendance;
+  final Widget grow;
+
+  @override
+  State<_MemberProfileTabs> createState() => _MemberProfileTabsState();
+}
+
+class _MemberProfileTabsState extends State<_MemberProfileTabs> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final member = widget.member;
+    final labels = [
+      if (widget.canManage) 'Request',
+      'Attendance',
+      'Work detail',
+      'Org chart',
+      'Grow',
+      if (member.documents.isNotEmpty) 'Documentation',
+    ];
+    final tab = labels[_tab.clamp(0, labels.length - 1)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ProfileTabs(
+          labels: labels,
+          selected: _tab.clamp(0, labels.length - 1),
+          onChanged: (index) => setState(() => _tab = index),
+        ),
+        const SizedBox(height: 16),
+        ...switch (tab) {
+          'Request' =>
+            widget.openRequests.isEmpty
+                ? const [_ProfileTabNote('No open requests.')]
+                : [
+                    for (final entry in widget.openRequests)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: entry.$2,
+                      ),
+                  ],
+          'Attendance' => [widget.attendance],
+          'Work detail' => [
+            if (member.email.isNotEmpty)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_email.svg',
+                label: 'Email',
+                value: member.email,
+              ),
+            if (member.employeeId case final id?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_employee_id.svg',
+                label: 'Employee ID',
+                value: id,
+              ),
+            if (member.joiningDate case final joined?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/profile_joining_date.svg',
+                label: 'Joining Date',
+                value: _joiningDateLabel(joined),
+              ),
+            _WorkDetailRow(
+              iconAsset: 'assets/icons/work_department.svg',
+              label: 'Department',
+              value: member.team,
+            ),
+            if (_nonEmpty(member.managerName) case final name?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/work_manager.svg',
+                label: 'Manager',
+                value: name,
+              ),
+            if (member.employmentType case final type?)
+              _WorkDetailRow(
+                iconAsset: 'assets/icons/work_employment_type.svg',
+                label: 'Employment Type',
+                value: _employmentTypeLabel(type),
+              ),
+            if (member.birthday case final born?)
+              _WorkDetailRow(
+                icon: Icons.cake_outlined,
+                label: 'Date of birth',
+                value: _joiningDateLabel(born),
+              ),
+          ],
+          'Org chart' => [
+            if (member.orgChart.length > 1)
+              _OrgChartCard(nodes: member.orgChart)
+            else
+              const _ProfileTabNote('No reporting line to show yet.'),
+          ],
+          'Grow' => [widget.grow],
+          _ => [_DocumentationCard(documents: member.documents)],
+        },
+      ],
+    );
+  }
+}
+
 class _PrivacyAndDataRow extends StatelessWidget {
   const _PrivacyAndDataRow({required this.session});
 
@@ -2436,9 +2693,6 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     final selected = periods.contains(_selectedPeriod)
         ? _selectedPeriod!
         : period;
-    final selectedIndex = history.indexWhere((r) => r.period == selected);
-    final record = selectedIndex >= 0 ? history[selectedIndex] : null;
-    final isCurrent = selected == period;
     final ownPage = widget.memberId == null;
     // Only a report can be reviewed from here: not yourself, and not the
     // person you report to — feedback only flows downward.
@@ -2488,65 +2742,21 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: [
-                // The score card always shows the latest reviewed month, even
-                // while an unreviewed one is picked below — a pending month has
-                // no score of its own to show.
-                if (history.isEmpty)
-                  _EmptyScoreCard(current: period)
-                else
-                  _GrowthScoreSection(
-                    history: history,
-                    selectedIndex: selectedIndex >= 0 ? selectedIndex : null,
-                    onSelect: (index) =>
-                        setState(() => _selectedPeriod = history[index].period),
-                  ),
-                const SizedBox(height: 12),
-                _MonthStatusRow(
-                  label: _shortPeriod(selected),
-                  score: record?.overallScore,
-                  pending: record == null && isCurrent,
-                  missed: record == null && !isCurrent,
-                  onTap: periods.length > 1
-                      ? () => _pickMonth(periods, selected)
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                // A reviewed month: the scores and the manager's notes.
-                if (record != null) ...[
-                  // A review sent this cycle can still be edited by the person
-                  // who wrote it, until the cycle closes.
-                  if (isCurrent && canReview) ...[
-                    _FeedbackSubmittedCard(period: period, onEdit: openForm),
-                    const SizedBox(height: 12),
-                  ],
-                  _GrowthMonthCard(
-                    record: record,
-                    expanded: true,
-                    collapsible: false,
-                    onToggle: () {},
-                  ),
-                ]
-                // This month, not reviewed yet.
-                else if (isCurrent) ...[
-                  if (canReview)
-                    _FeedbackDuePeriodCard(
-                      period: period,
-                      onGiveFeedback: openForm,
-                    )
-                  else if (ownPage && widget.data.myParameters.isNotEmpty)
-                    // What the month is reviewed on: one line each, nothing to open.
-                    _ParameterList(
-                      names: [
-                        for (final param in widget.data.myParameters)
-                          param.name,
-                      ],
-                    ),
-                ]
-                // A past month nobody reviewed.
-                else
-                  const _FeedbackMissedCard(),
-              ],
+              children: _growthContent(
+                context: context,
+                data: widget.data,
+                history: history,
+                selected: selected,
+                period: period,
+                ownPage: ownPage,
+                canReview: canReview,
+                onSelectPeriod: (picked) =>
+                    setState(() => _selectedPeriod = picked),
+                onPickMonth: periods.length > 1
+                    ? () => _pickMonth(periods, selected)
+                    : null,
+                openForm: openForm,
+              ),
             ),
           ),
           if (!widget.embedded)
@@ -2560,6 +2770,111 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       ),
     );
   }
+}
+
+/// What a growth page shows under its header: the score card and chart, the
+/// month on show, and that month's cards. The Grow page and the profile's
+/// Grow tab both read this, so they cannot drift apart.
+List<Widget> _growthContent({
+  required BuildContext context,
+  required ManagerDashboard data,
+  required List<GrowthRecord> history,
+  required String selected,
+  required String period,
+  required bool ownPage,
+  required bool canReview,
+  required ValueChanged<String> onSelectPeriod,
+  required VoidCallback? onPickMonth,
+  required VoidCallback openForm,
+
+  /// On the profile (node 3106:49749) the month row also says who reviews you.
+  String? managerLine,
+}) {
+  final record = history.where((r) => r.period == selected).firstOrNull;
+  final isCurrent = selected == period;
+  return [
+    // Before the first review (node 2406:74746): who reviews
+    // you and why, where someone is most likely to wonder.
+    if (history.isEmpty && ownPage) ...[
+      _GrowIntroBanner(managerName: _nonEmpty(data.approverName)),
+      const SizedBox(height: 12),
+    ],
+    // The score card shows the month picked below when it was
+    // reviewed, else the latest review — a pending or missed
+    // month has no score of its own to show.
+    if (history.isEmpty)
+      _EmptyScoreCard(current: period)
+    else
+      _GrowthScoreSection(
+        history: history,
+        selectedPeriod: selected,
+        currentPeriod: period,
+        onSelect: onSelectPeriod,
+      ),
+    const SizedBox(height: 12),
+    _MonthStatusRow(
+      label: _shortPeriod(selected),
+      managerName: managerLine,
+      score: record?.overallScore,
+      pending: record == null && isCurrent,
+      warmPending: canReview,
+      missed: record == null && !isCurrent,
+      onTap: onPickMonth,
+    ),
+    const SizedBox(height: 12),
+    // A reviewed month: each parameter's score and the manager's
+    // insight, one card each (node 2406:74944).
+    if (record != null) ...[
+      // A review sent this cycle can still be edited by the person
+      // who wrote it, until the cycle closes.
+      if (isCurrent && canReview) ...[
+        _FeedbackSubmittedCard(onEdit: openForm),
+        const SizedBox(height: 12),
+      ],
+      for (final (index, param) in record.parameters.indexed)
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: index == record.parameters.length - 1 ? 0 : 12,
+          ),
+          child: _GrowthParamCard(
+            param: param,
+            // Older records carried one note for the whole
+            // review; show it rather than leave the insight blank.
+            fallback: record.parameters
+                .map((item) => item.note.trim())
+                .firstWhere((value) => value.isNotEmpty, orElse: () => ''),
+          ),
+        ),
+    ]
+    // This month, not reviewed yet.
+    else if (isCurrent) ...[
+      if (canReview)
+        _FeedbackDuePeriodCard(onGiveFeedback: openForm)
+      else if (ownPage && data.myParameters.isNotEmpty) ...[
+        // What the month is reviewed on (node 2412:80204): a line
+        // saying so, then each KPI with HR's guidance behind it.
+        const _GrowNote(
+          'Your performance is evaluated by your manager across '
+          'below parameters.',
+        ),
+        const SizedBox(height: 12),
+        for (final (index, param) in data.myParameters.indexed)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == data.myParameters.length - 1 ? 0 : 12,
+            ),
+            child: _GuidanceCard(
+              name: param.name,
+              guidance: param.description ?? param.subtitle ?? '',
+              initiallyOpen: index == 0,
+            ),
+          ),
+      ],
+    ]
+    // A past month nobody reviewed.
+    else
+      const _FeedbackMissedCard(),
+  ];
 }
 
 const _growMonthsShort = [
@@ -2628,54 +2943,173 @@ List<String> _monthsBetween(String first, String last) {
   return out.isEmpty ? [last] : out;
 }
 
-/// Who reviews you, and why (node 2406:74936). Shown until the first review
-/// arrives, which is when someone is most likely to wonder what Grow is for.
-/// The parameters a month is reviewed on, as a plain list.
-class _ParameterList extends StatelessWidget {
-  const _ParameterList({required this.names});
+/// The profile's Grow tab (node 3106:49749): growth in place, on one's own
+/// profile and on a report's. On a report's it is also where a manager gives
+/// feedback — the month row offers the form when a review is due.
+class _ProfileGrowTab extends StatefulWidget {
+  const _ProfileGrowTab({
+    required this.data,
+    required this.bloc,
+    this.managerName,
+    this.memberId,
+  });
 
-  final List<String> names;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+
+  /// Who reviews the person on show; said under the month on their own tab.
+  final String? managerName;
+
+  /// Null on one's own profile. A report's id on theirs.
+  final int? memberId;
+
+  @override
+  State<_ProfileGrowTab> createState() => _ProfileGrowTabState();
+}
+
+class _ProfileGrowTabState extends State<_ProfileGrowTab> {
+  String? _selectedPeriod;
+
+  Future<void> _pickMonth(List<String> periods, String selected) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
+    );
+    if (picked != null && mounted) setState(() => _selectedPeriod = picked);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 8, bottom: 4),
-            child: Text(
-              'Reviewed on',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF717171),
-                letterSpacing: 0.4,
-              ),
-            ),
-          ),
-          for (final name in names)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF222222),
+    return StreamBuilder<ManagerState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.dashboard ?? widget.data;
+        final member = widget.memberId == null
+            ? null
+            : data.team
+                  .where((member) => member.id == widget.memberId)
+                  .firstOrNull;
+        final history = member?.history ?? data.growthHistory;
+        final period = _EmployeeGrowthPage._currentPeriod();
+        final periods = _monthsBetween(
+          history.isEmpty ? period : history.first.period,
+          period,
+        );
+        final selected = periods.contains(_selectedPeriod)
+            ? _selectedPeriod!
+            : period;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _growthContent(
+            context: context,
+            data: data,
+            history: history,
+            selected: selected,
+            period: period,
+            ownPage: member == null,
+            // Feedback only flows downward: a report, never yourself.
+            canReview: member?.reportsToViewer ?? false,
+            onSelectPeriod: (picked) =>
+                setState(() => _selectedPeriod = picked),
+            onPickMonth: periods.length > 1
+                ? () => _pickMonth(periods, selected)
+                : null,
+            openForm: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _FeedbackFormPage(
+                  bloc: widget.bloc,
+                  memberId: widget.memberId!,
                 ),
               ),
             ),
+            managerLine: widget.managerName,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Before the first review (node 2406:74746): who reviews you and why.
+class _GrowIntroBanner extends StatelessWidget {
+  const _GrowIntroBanner({required this.managerName});
+
+  final String? managerName;
+
+  @override
+  Widget build(BuildContext context) {
+    final who = managerName == null
+        ? 'Your manager'
+        : 'Your manager, $managerName,';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF0FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEBEBEB)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text('🌱', style: TextStyle(fontSize: 30, height: 1)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '$who reviews your performance against your KPIs every '
+              "month, so you know what's going well and where you can grow.",
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Color(0xFF484848),
+                fontSize: 12,
+                height: 16.2 / 12,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+/// A quiet line in a card of its own (node 2412:80204).
+class _GrowNote extends StatelessWidget {
+  const _GrowNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFF0EEF8), width: 1.114),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D000000),
+          blurRadius: 10,
+          offset: Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Color(0xFF717171),
+        fontSize: 12.5,
+        height: 18.75 / 12.5,
+      ),
+    ),
+  );
 }
 
 /// The score card before there is any score (node 2406:74872): the months
@@ -2786,13 +3220,14 @@ class _EmptyChartPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // This month's axis label in brand blue, the rest muted.
+    // The last month on the axis in brand blue, the rest muted.
     for (var i = 0; i < labels.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
           text: labels[i],
           style: TextStyle(
-            color: i == 0 ? _brand : _muted,
+            fontFamily: 'Sora',
+            color: i == labels.length - 1 ? _brand : _muted,
             fontSize: 9,
             fontWeight: FontWeight.w700,
           ),
@@ -2864,11 +3299,21 @@ class _MonthStatusRow extends StatelessWidget {
     required this.pending,
     required this.missed,
     required this.onTap,
+    this.warmPending = false,
+    this.managerName,
   });
 
   final String label;
   final double? score;
   final bool pending;
+
+  /// "Feedback is given by your manager Tanvi", under the month, on the
+  /// profile's Grow tab (node 3106:49749).
+  final String? managerName;
+
+  /// Orange on a report's page, where "pending" is the viewer's to act on;
+  /// yellow on one's own, where it is only news (nodes 2406:75231, 2412:80204).
+  final bool warmPending;
   final bool missed;
   final VoidCallback? onTap;
 
@@ -2888,47 +3333,90 @@ class _MonthStatusRow extends StatelessWidget {
               color: missed ? const Color(0xFFEBEBEB) : const Color(0xFFF0EEF8),
               width: 1.114,
             ),
-          ),
-          child: Row(
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF101828),
-                  fontSize: 13,
-                  height: 19.5 / 13,
-                  fontWeight: FontWeight.w600,
-                ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000),
+                blurRadius: 10,
+                offset: Offset(0, 2),
               ),
-              const SizedBox(width: 4),
-              if (onTap != null)
-                Transform.rotate(
-                  angle: -math.pi / 2,
-                  child: SvgPicture.asset(
-                    'assets/icons/chevron_left_small.svg',
-                    width: 18,
-                    height: 18,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: _rowChildren()),
+              if (managerName case final name?) ...[
+                const SizedBox(height: 10),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: Color(0xFF717171),
+                      fontSize: 12.5,
+                      height: 18.75 / 12.5,
+                    ),
+                    children: [
+                      const TextSpan(
+                        text: 'Feedback is given by your manager ',
+                      ),
+                      TextSpan(
+                        text: name,
+                        style: const TextStyle(
+                          color: Color(0xFF0571A6),
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Color(0xFF0571A6),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const Spacer(),
-              if (pending)
-                const _MonthChip(
-                  text: 'Pending',
-                  background: Color(0xFFFEFDDA),
-                  foreground: Color(0xFFFFCC00),
-                )
-              else if (score != null)
-                _MonthChip(
-                  text: '${score!.toStringAsFixed(1)} / 5',
-                  background: const Color(0xFFE6F1F8),
-                  foreground: const Color(0xFF0571A6),
-                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+
+  List<Widget> _rowChildren() => [
+    Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF101828),
+        fontSize: 13,
+        height: 19.5 / 13,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    const SizedBox(width: 4),
+    if (onTap != null)
+      Transform.rotate(
+        angle: -math.pi / 2,
+        child: SvgPicture.asset(
+          'assets/icons/chevron_left_small.svg',
+          width: 18,
+          height: 18,
+        ),
+      ),
+    const Spacer(),
+    if (pending)
+      _MonthChip(
+        text: 'Pending',
+        background: const Color(0xFFFEFDDA),
+        foreground: warmPending
+            ? const Color(0xFFFF8D28)
+            : const Color(0xFFFFCC00),
+      )
+    else if (score != null)
+      _MonthChip(
+        text: '${score!.toStringAsFixed(1)} / 5',
+        background: const Color(0xFFEEF0FF),
+        foreground: const Color(0xFF675AFF),
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+  ];
 }
 
 class _MonthChip extends StatelessWidget {
@@ -2936,11 +3424,15 @@ class _MonthChip extends StatelessWidget {
     required this.text,
     required this.background,
     required this.foreground,
+    this.fontSize = 14,
+    this.fontWeight = FontWeight.w600,
   });
 
   final String text;
   final Color background;
   final Color foreground;
+  final double fontSize;
+  final FontWeight fontWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -2954,10 +3446,10 @@ class _MonthChip extends StatelessWidget {
         text,
         style: TextStyle(
           color: foreground,
-          fontSize: 14,
-          height: 16.2 / 14,
-          letterSpacing: -0.16,
-          fontWeight: FontWeight.w600,
+          fontSize: fontSize,
+          height: fontSize == 13 ? 19.5 / 13 : 16.2 / 14,
+          letterSpacing: fontSize == 13 ? 0 : -0.16,
+          fontWeight: fontWeight,
         ),
       ),
     );
@@ -2998,7 +3490,7 @@ class _GuidanceCardState extends State<_GuidanceCard> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
-            blurRadius: 7,
+            blurRadius: 14,
             offset: Offset(0, 2),
           ),
         ],
@@ -3264,14 +3756,19 @@ class _MonthPickerSheetState extends State<_MonthPickerSheet> {
 class _GrowthScoreSection extends StatelessWidget {
   const _GrowthScoreSection({
     required this.history,
-    required this.selectedIndex,
+    required this.selectedPeriod,
+    required this.currentPeriod,
     required this.onSelect,
     this.deltaMessageFor,
   });
 
   final List<GrowthRecord> history;
-  final int? selectedIndex;
-  final ValueChanged<int> onSelect;
+
+  /// The month picked below. A month with no review of its own shows the
+  /// latest review here, as the design does for a pending or missed month.
+  final String selectedPeriod;
+  final String currentPeriod;
+  final ValueChanged<String> onSelect;
 
   /// The sentence shown when the points chip is tapped, given the month's
   /// label and the change. Null leaves the chip inert.
@@ -3279,27 +3776,24 @@ class _GrowthScoreSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = history.map((record) => record.overallScore).toList();
-    final effectiveIndex = history.isEmpty
-        ? 0
-        : (selectedIndex ?? history.length - 1).clamp(0, history.length - 1);
-    final selected = history.isEmpty ? null : history[effectiveIndex];
-    final previous = effectiveIndex > 0
-        ? history[effectiveIndex - 1].overallScore
+    final picked = history.indexWhere((r) => r.period == selectedPeriod);
+    final shownIndex = picked >= 0 ? picked : history.length - 1;
+    final shown = history[shownIndex];
+    final previous = shownIndex > 0
+        ? history[shownIndex - 1].overallScore
         : null;
 
-    // Score and chart share one card: tapping a point moves the score above it,
-    // so splitting them across two cards broke that relationship visually.
+    // Score and chart share one card (node 2406:74944): the month named
+    // above the score is the point the chart has filled in.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
-            blurRadius: 7,
+            blurRadius: 14,
             offset: Offset(0, 2),
           ),
         ],
@@ -3307,33 +3801,37 @@ class _GrowthScoreSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The month is named once on this page, by the row directly below
-          // this card — which is also what changes it. Printing it here too
-          // said the same month twice, one line apart.
-          _OverallScoreCard(
-            overall: selected?.overallScore ?? 0,
-            previousScore: previous,
-            showAveragesNote: true,
-            boxed: false,
-            onDeltaTap: (deltaMessageFor == null || selected == null)
-                ? null
-                : (delta) {
-                    showAppToast(
-                      context,
-                      deltaMessageFor!(_periodTitle(selected.period), delta),
-                    );
-                  },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: _OverallScoreCard(
+              eyebrow: _periodTitle(shown.period),
+              labelColor: const Color(0xFF484848),
+              overall: shown.overallScore,
+              previousScore: previous,
+              showAveragesNote: true,
+              boxed: false,
+              onDeltaTap: deltaMessageFor == null
+                  ? null
+                  : (delta) {
+                      showAppToast(
+                        context,
+                        deltaMessageFor!(_periodTitle(shown.period), delta),
+                      );
+                    },
+            ),
           ),
-          if (history.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _GrowthChart(
-              records: history,
-              values: values,
-              color: const Color(0xFF0571A6),
-              selectedIndex: effectiveIndex,
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: _GrowthChart(
+              periods: _GrowthChart.windowEndingAt(currentPeriod),
+              scores: {for (final r in history) r.period: r.overallScore},
+              highlightPeriod: shown.period,
+              currentPeriod: currentPeriod,
+              firstReviewed: history.first.period,
               onSelect: onSelect,
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3356,7 +3854,7 @@ class _GrowthPageTopBar extends StatelessWidget {
     // Per node 861:7716: this row sits flush against AppHomeHeader above
     // it — both white, no visible seam — unlike the grey fill this had.
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       decoration: const BoxDecoration(color: Colors.white),
       child: Row(
         children: [
@@ -3368,7 +3866,7 @@ class _GrowthPageTopBar extends StatelessWidget {
               height: 18,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3378,10 +3876,12 @@ class _GrowthPageTopBar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: 'Sora',
                     color: Color(0xFF222222),
                     fontSize: 16,
-                    height: 24 / 16,
-                    fontWeight: FontWeight.w700,
+                    height: 16.2 / 16,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
@@ -3389,8 +3889,11 @@ class _GrowthPageTopBar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
+                    fontFamily: 'Sora',
                     color: Color(0xFF717171),
-                    fontSize: 12.5,
+                    fontSize: 12,
+                    height: 16.2 / 12,
+                    letterSpacing: -0.16,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -3403,99 +3906,92 @@ class _GrowthPageTopBar extends StatelessWidget {
   }
 }
 
-/// The counterpart for a period whose review has been sent. It stays editable
-/// until the cycle closes, and the status stays Submitted throughout — a later
-/// edit replaces the review rather than starting a new one.
 class _FeedbackSubmittedCard extends StatelessWidget {
-  const _FeedbackSubmittedCard({required this.period, required this.onEdit});
-
-  final String period;
+  const _FeedbackSubmittedCard({required this.onEdit});
 
   /// Reopens the review. Only the person who wrote it sees this card: the
   /// employee's own page shows the month's scores instead.
   final VoidCallback onEdit;
 
   @override
+  Widget build(BuildContext context) => _GrowActionCard(
+    background: const Color(0xFFF4FAF1),
+    border: const Color(0xFF34C759),
+    text: 'You can edit the feedback till the cycle ends.',
+    buttonColor: const Color(0xFF34C759),
+    onTap: onEdit,
+  );
+}
+
+/// A line and a button in a tinted card: "feedback is due" in amber, "you can
+/// still edit it" in green (nodes 2406:75231, 2412:81964).
+class _GrowActionCard extends StatelessWidget {
+  const _GrowActionCard({
+    required this.background,
+    required this.border,
+    required this.text,
+    required this.buttonColor,
+    required this.onTap,
+  });
+
+  final Color background;
+  final Color border;
+  final String text;
+  final Color buttonColor;
+  final VoidCallback onTap;
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3FAF5),
+        color: background,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBFE3CC)),
+        border: Border.all(color: border, width: 1.114),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _periodTitle(period),
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCF0E3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Submitted',
-                  style: TextStyle(
-                    color: Color(0xFF2F7A4F),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            text,
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF717171),
+              fontSize: 12.5,
+              height: 18.75 / 12.5,
+            ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'You can keep editing this review until the cycle ends.',
-            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
-          ),
-          ...[
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: onEdit,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBFE3CC)),
-                    ),
-                    child: const Text(
-                      'Edit feedback',
-                      style: TextStyle(
-                        color: Color(0xFF2F7A4F),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+          Material(
+            color: buttonColor,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onTap,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  'Give Feedback',
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: Colors.white,
+                    fontSize: 10,
+                    height: 16.2 / 10,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3503,72 +3999,18 @@ class _FeedbackSubmittedCard extends StatelessWidget {
 }
 
 class _FeedbackDuePeriodCard extends StatelessWidget {
-  const _FeedbackDuePeriodCard({
-    required this.period,
-    required this.onGiveFeedback,
-  });
+  const _FeedbackDuePeriodCard({required this.onGiveFeedback});
 
-  final String period;
   final VoidCallback onGiveFeedback;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF5C86B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _periodTitle(period),
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Feedback is due for this month',
-            style: TextStyle(color: MColors.inkSoft, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Material(
-              color: const Color(0xFFE8862B),
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: onGiveFeedback,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  child: Text(
-                    'Give Feedback',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _GrowActionCard(
+    background: const Color(0xFFFAF8F1),
+    border: const Color(0xFFFFCC00),
+    text: 'Feedback is due for this month',
+    buttonColor: const Color(0xFFFF8D28),
+    onTap: onGiveFeedback,
+  );
 }
 
 /// The feedback form as a pushed route. Grow and the team-member profile both

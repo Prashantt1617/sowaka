@@ -511,92 +511,76 @@ class RouteCard extends StatelessWidget {
   );
 }
 
-/// The matched counsellor, the same card on Help and on My Profile: who
-/// they are, their profile and sessions, Talk now, and Choose someone else.
+/// The matched counsellor, the same on Help and on My Profile: who they
+/// are, the whole card opening their profile (where booking is), and under
+/// it a way to talk to someone else.
 class YourCounsellorCard extends StatelessWidget {
   const YourCounsellorCard({
     super.key,
     required this.counsellor,
     required this.onProfile,
-    required this.onTalk,
     required this.onChoose,
   });
 
   final Counsellor counsellor;
   final VoidCallback onProfile;
-  final VoidCallback onTalk;
   final VoidCallback onChoose;
 
   @override
   Widget build(BuildContext context) {
-    final c = counsellor;
-    return CareCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const CareEyebrow('Your counsellor'),
-          const SizedBox(height: 18),
-          CounsellorPerson(counsellor: c),
-          const SizedBox(height: 14),
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CareCard(
+          onTap: onProfile,
+          child: Stack(
             children: [
-              Expanded(
-                child: CareLink(
-                  'View profile & sessions',
-                  onTap: onProfile,
-                  size: 14,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CareEyebrow('Your counsellor'),
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 38),
+                    child: CounsellorPerson(counsellor: counsellor),
+                  ),
+                ],
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    margin: const EdgeInsets.only(top: 26),
+                    decoration: const BoxDecoration(
+                      color: CareColors.blueTint,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: CareColors.blue,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              _TalkNowButton(onTap: onTalk),
             ],
           ),
-          const SizedBox(height: 12),
-          const Divider(color: CareColors.line, height: 1),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: CareLink(
-              'Choose someone else',
-              icon: Icons.arrow_outward_rounded,
-              onTap: onChoose,
-              size: 12.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The blue call to action beside the profile link: straight to booking.
-class _TalkNowButton extends StatelessWidget {
-  const _TalkNowButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: CareColors.blue,
-      borderRadius: BorderRadius.circular(100),
-      child: InkWell(
-        key: const ValueKey('talk-now'),
-        borderRadius: BorderRadius.circular(100),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-          child: Text(
-            'Talk now',
-            style: TextStyle(
-              fontFamily: careFont,
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
+        ),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerRight,
+          child: CareLink(
+            'Talk to someone else',
+            icon: Icons.arrow_outward_rounded,
+            onTap: onChoose,
+            size: 13.5,
           ),
         ),
-      ),
+      ],
     );
   }
 }

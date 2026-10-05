@@ -328,10 +328,13 @@ class HelpHome {
 
 /// What the intake save returns: the match, or the closest when none.
 class HelpMatchResult {
-  const HelpMatchResult({this.match, this.noMatch});
+  const HelpMatchResult({this.match, this.noMatch, this.suggestion});
 
   final HelpMatch? match;
   final HelpMatch? noMatch;
+
+  /// Someone the new answers fit better than the counsellor they kept.
+  final HelpMatch? suggestion;
 
   factory HelpMatchResult.fromJson(Map<String, dynamic> json) =>
       HelpMatchResult(
@@ -343,6 +346,9 @@ class HelpMatchResult {
                 ...json['noMatch'] as Map<String, dynamic>,
                 'source': 'fallback',
               })
+            : null,
+        suggestion: json['suggestion'] is Map<String, dynamic>
+            ? HelpMatch.fromJson(json['suggestion'] as Map<String, dynamic>)
             : null,
       );
 }

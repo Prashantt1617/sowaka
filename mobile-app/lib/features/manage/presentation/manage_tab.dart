@@ -1532,10 +1532,18 @@ class _OverallScoreCard extends StatelessWidget {
     this.showAveragesNote = false,
     this.boxed = true,
     this.onDeltaTap,
+    this.eyebrow,
+    this.labelColor = const Color(0xFF9CA3AF),
   });
 
   final double overall;
   final double? previousScore;
+
+  /// The month this score belongs to, over the label (node 2406:74944).
+  final String? eyebrow;
+
+  /// "Overall Score" reads darker on the growth page than on the form.
+  final Color labelColor;
 
   /// Called with the change in points when the "+3.4 pts" chip is tapped, so
   /// the page can say in words what the number means (node 2412:81964).
@@ -1561,10 +1569,23 @@ class _OverallScoreCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              if (eyebrow case final month?) ...[
+                Text(
+                  month.toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xFF0571A6),
+                    fontSize: 11.5,
+                    height: 17.25 / 11.5,
+                    letterSpacing: .6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text(
                 'OVERALL SCORE',
                 style: TextStyle(
-                  color: Color(0xFF9CA3AF),
+                  color: labelColor,
                   fontSize: 11.5,
                   height: 17.25 / 11.5,
                   letterSpacing: .6,
@@ -1604,9 +1625,9 @@ class _OverallScoreCard extends StatelessWidget {
                 const Text(
                   'This score averages all the parameters below.',
                   style: TextStyle(
-                    color: Color(0xFF6A7282),
-                    fontSize: 13,
-                    height: 1.4,
+                    color: Color(0xFF717171),
+                    fontSize: 12.5,
+                    height: 18.75 / 12.5,
                   ),
                 ),
               ],
@@ -1652,7 +1673,7 @@ class _OverallScoreCard extends StatelessWidget {
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
-            blurRadius: 7,
+            blurRadius: 14,
             offset: Offset(0, 2),
           ),
         ],

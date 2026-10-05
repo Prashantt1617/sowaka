@@ -27,6 +27,7 @@ class OnboardingFlow extends StatefulWidget {
     required this.session,
     required this.api,
     required this.onDone,
+    this.onChangeEmail,
   });
 
   final AuthSession session;
@@ -34,6 +35,9 @@ class OnboardingFlow extends StatefulWidget {
 
   /// Called with the photo's URL (empty if unchanged) once everything is done.
   final void Function(String photoUrl, List<String> interests) onDone;
+
+  /// Signed in with the wrong address: back to the email screen, signed out.
+  final VoidCallback? onChangeEmail;
 
   /// The list the design ships, in its order.
   static const interests = <_Interest>[
@@ -86,6 +90,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   String? _photoPath;
   String _photoUrl = '';
+
+  /// The file behind `_photoUrl`, so coming back to the photo and going on
+  /// again does not upload the same picture twice.
+  String? _uploadedPath;
   final _picked = <String>{};
   bool _busy = false;
   String? _problem;
@@ -111,6 +119,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Future<void> _continueFromPhoto() async {
     final path = _photoPath;
     if (path == null || _busy) return;
+    if (path == _uploadedPath) {
+      setState(_next);
+      return;
+    }
     setState(() {
       _busy = true;
       _problem = null;
@@ -120,11 +132,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         path: path,
         filename: 'profile.png',
       );
+      _uploadedPath = path;
       if (mounted) setState(_next);
     } catch (error) {
       final reason = error is ManagerApiException ? error.message : null;
       if (mounted) {
-        setState(() => _problem = reason ?? 'Could not upload that photo. Try again.');
+        setState(
+          () => _problem = reason ?? 'Could not upload that photo. Try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -138,6 +153,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } else {
       _finish();
     }
+  }
+
+  bool get _canGoBack => _at > 0;
+
+  void _back() {
+    if (!_canGoBack || _busy) return;
+    setState(() {
+      _at -= 1;
+      _problem = null;
+    });
+  }
+
+  /// Back a step, or out to the email screen from the first one.
+  Widget? _topAction() {
+    if (_canGoBack) {
+      return _TopLink(label: 'Back', onTap: _back);
+    }
+    final change = widget.onChangeEmail;
+    if (change == null) return null;
+    return _TopLink(label: 'Change email', onTap: _busy ? null : change);
   }
 
   void _finish() {
@@ -164,53 +199,71 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _brandDeep,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: MediaQuery.paddingOf(context).top + 79),
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 34, 16, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Progress(step: _step == _Step.photo ? 0 : 1),
-                  const SizedBox(height: 48),
-                  Expanded(
-                    child: _step == _Step.photo ? _photoStep() : _interestsStep(),
-                  ),
-                  if (_problem != null) ...[
-                    Text(
-                      _problem!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: 'Sora',
-                        fontSize: 13,
-                        color: Color(0xFFC0392B),
-                      ),
+    final action = _topAction();
+    return PopScope(
+      canPop: !_canGoBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: Scaffold(
+        backgroundColor: _brandDeep,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: MediaQuery.paddingOf(context).top + 79),
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  action == null ? 34 : 20,
+                  16,
+                  32,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (action != null) ...[
+                      Align(alignment: Alignment.centerLeft, child: action),
+                      const SizedBox(height: 14),
+                    ],
+                    _Progress(step: _step == _Step.photo ? 0 : 1),
+                    const SizedBox(height: 48),
+                    Expanded(
+                      child: _step == _Step.photo
+                          ? _photoStep()
+                          : _interestsStep(),
                     ),
-                    const SizedBox(height: 12),
+                    if (_problem != null) ...[
+                      Text(
+                        _problem!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          fontSize: 13,
+                          color: Color(0xFFC0392B),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _Continue(
+                      enabled: _step == _Step.photo
+                          ? _photoPath != null
+                          : _picked.isNotEmpty,
+                      busy: _busy,
+                      onTap: _step == _Step.photo
+                          ? _continueFromPhoto
+                          : _continueFromInterests,
+                    ),
                   ],
-                  _Continue(
-                    enabled: _step == _Step.photo
-                        ? _photoPath != null
-                        : _picked.isNotEmpty,
-                    busy: _busy,
-                    onTap: _step == _Step.photo
-                        ? _continueFromPhoto
-                        : _continueFromInterests,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -236,12 +289,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 border: Border.all(color: _line, width: 2),
                 image: path == null
                     ? null
-                    : DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover),
+                    : DecorationImage(
+                        image: FileImage(File(path)),
+                        fit: BoxFit.cover,
+                      ),
               ),
               child: path != null
                   ? null
                   : Center(
-                      child: SvgPicture.asset('$_asset/user.svg', width: 56, height: 56),
+                      child: SvgPicture.asset(
+                        '$_asset/user.svg',
+                        width: 56,
+                        height: 56,
+                      ),
                     ),
             ),
           ),
@@ -259,20 +319,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SvgPicture.asset('$_asset/camera.svg', width: 20, height: 20),
+                    SvgPicture.asset(
+                      '$_asset/camera.svg',
+                      width: 20,
+                      height: 20,
+                    ),
                     const SizedBox(width: 10),
                     // A longer word, or a larger type setting, shortens rather
                     // than spilling out of the button.
                     Flexible(
                       child: Text(
-                      path == null ? 'Add or take a photo' : 'Change photo',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Sora',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _brandDeep,
-                      ),
+                        path == null ? 'Add or take a photo' : 'Change photo',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: _brandDeep,
+                        ),
                       ),
                     ),
                   ],
@@ -350,6 +414,44 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _picked.add(label);
       }
     });
+  }
+}
+
+/// The code screen's "Change email", so the two read as one way back.
+class _TopLink extends StatelessWidget {
+  const _TopLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.arrow_back_rounded,
+              size: 18,
+              color: Color(0xFF717171),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF717171),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -462,7 +564,11 @@ class _InterestChip extends StatelessWidget {
             ),
             if (selected) ...[
               const SizedBox(width: 10),
-              SvgPicture.asset('$_asset/check_circle.svg', width: 16, height: 16),
+              SvgPicture.asset(
+                '$_asset/check_circle.svg',
+                width: 16,
+                height: 16,
+              ),
             ],
           ],
         ),
@@ -472,7 +578,11 @@ class _InterestChip extends StatelessWidget {
 }
 
 class _Continue extends StatelessWidget {
-  const _Continue({required this.enabled, required this.busy, required this.onTap});
+  const _Continue({
+    required this.enabled,
+    required this.busy,
+    required this.onTap,
+  });
 
   final bool enabled;
   final bool busy;
@@ -495,7 +605,10 @@ class _Continue extends StatelessWidget {
               ? const SizedBox(
                   width: 22,
                   height: 22,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
                 )
               : const Text(
                   'Continue',

@@ -133,23 +133,46 @@ export async function getIntake(viewerUserId: string): Promise<HelpIntakeView | 
 }
 
 /**
- * Saves the answers and sets the match from them. When nobody fits, the match
- * is cleared rather than bent: the response carries the closest counsellor
- * and what they do not meet, and the person decides.
+ * Saves the answers. The first time, they set the match. After that, the
+ * person keeps their counsellor: a change of answers never switches them on
+ * its own. When the new answers fit someone else better, the response says
+ * who, as a suggestion, and the person decides (accepting it goes through
+ * acceptCounsellor). When nobody fits, the match is cleared rather than bent:
+ * the response carries the closest counsellor and what they do not meet.
  */
 export async function saveIntake(
   viewerUserId: string,
   raw: Partial<Record<keyof HelpIntakeInput, unknown>>,
-): Promise<Pick<HelpHomeView, 'match' | 'noMatch'> & { intake: HelpIntakeView }> {
-  await requireHelpUser(viewerUserId);
+): Promise<
+  Pick<HelpHomeView, 'match' | 'noMatch'> & {
+    intake: HelpIntakeView;
+    suggestion: { counsellor: CounsellorView; reasons: string[]; unmet: string[] } | null;
+  }
+> {
+  const existing = await requireHelpUser(viewerUserId);
   const input = normaliseIntake(raw);
   const now = new Date();
   const intake: HelpIntake = { ...input, answeredAt: now };
   const rows = await pool();
   const best = rankMatches(input, rows)[0] ?? null;
-  const match: HelpMatch | undefined = best
-    ? { counsellorUserId: best.userId, reasons: matchReasons(input, best), unmet: [], source: 'intake', setAt: now }
-    : undefined;
+  // Their counsellor, if they have one still on the list.
+  const current = existing.helpMatch
+    ? rows.find((r) => r.userId === existing.helpMatch!.counsellorUserId) ?? null
+    : null;
+  let match: HelpMatch | undefined;
+  let suggestion: MatchableCounsellor | null = null;
+  if (current) {
+    const unmet = unmetPreferences(input, current);
+    match = {
+      ...existing.helpMatch!,
+      reasons: matchReasons(input, current),
+      unmet,
+      source: existing.helpMatch!.source === 'dashboard' ? 'dashboard' : unmet.length ? 'fallback' : 'intake',
+    };
+    if (best && best.userId !== current.userId) suggestion = best;
+  } else if (best) {
+    match = { counsellorUserId: best.userId, reasons: matchReasons(input, best), unmet: [], source: 'intake', setAt: now };
+  }
   await users().updateOne(
     { userId: viewerUserId },
     match
@@ -161,6 +184,13 @@ export async function saveIntake(
     intake: toIntakeView(intake),
     match: await matchView(user, rows),
     noMatch: await noMatchView(user, rows),
+    suggestion: suggestion
+      ? {
+          counsellor: await toCounsellorView(suggestion as Parameters<typeof toCounsellorView>[0]),
+          reasons: matchReasons(input, suggestion),
+          unmet: unmetPreferences(input, suggestion),
+        }
+      : null,
   };
 }
 

@@ -8,6 +8,10 @@ import {
   decideOvertime,
   decideRegularization,
   decideReimbursement,
+  deleteOfficeHandler,
+  listOfficesHandler,
+  listOutOfLocation,
+  saveOfficeHandler,
   employeeCalendarHandler,
   getCompanySettingsHandler,
   listEmployees,
@@ -56,6 +60,13 @@ adminRouter.get('/reimbursements', listReimbursements);
 // Attendance corrections across the org — the manager inbox only shows a
 // manager their own; HR reviews every one of them.
 adminRouter.get('/regularizations', listRegularizations);
+// Punches taken away from every office — what HR reads as "OOL check-ins".
+adminRouter.get('/out-of-location', listOutOfLocation);
+// The offices a geotagged punch is checked against.
+adminRouter.get('/offices', listOfficesHandler);
+adminRouter.post('/offices', saveOfficeHandler);
+adminRouter.patch('/offices/:officeId', saveOfficeHandler);
+adminRouter.delete('/offices/:officeId', deleteOfficeHandler);
 adminRouter.get('/feedback', listFeedback);
 adminRouter.get('/employees', listEmployees);
 adminRouter.post('/employees', createEmployee);

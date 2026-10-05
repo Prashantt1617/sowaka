@@ -3,6 +3,7 @@ import {
   feedbackRecords,
   recognitionNominations,
   users,
+  leaves,
 } from '../config/db';
 import { getCompanyConfig } from './company-settings.service';
 import {
@@ -11,11 +12,11 @@ import {
 } from '../models/feedback.model';
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
-import { notifyUsers, queueBatchedNotification } from './notification.service';
-import { env } from '../config/env';
+import { notifyUsers } from './notification.service';
 import { assignedParametersFor } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
-import { shiftPolicyFor } from './shift.service';
+import { policyForUser, shiftPolicyFor } from './shift.service';
+import { markForDay, minutesAfterShiftStart } from './attendance.service';
 import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
 import {
@@ -81,6 +82,15 @@ export interface ManagerTeamMemberView {
   parameters: FeedbackParameter[];
   extra: string;
   todayStatus: 'present' | 'not_punched_in';
+  /**
+   * How today reads on the team card: punched in on time, late, a half day,
+   * working away (an approved WFH / client-visit day), on approved leave, or
+   * not in yet. Graded against the member's own shift, so a manager looking
+   * across two shifts sees each person by their own rules.
+   */
+  todayMark: 'present' | 'late' | 'half_day' | 'wfh' | 'leave' | 'not_in';
+  /** The recognition HR gave them — "Employee of the month" — when there is one. */
+  recognitionLabel: string | null;
   birthday: string | null;
   photoUrl: string | null;
   punchIn: string | null;
@@ -391,11 +401,38 @@ export async function getManagerWorkspace(managerUserId: string) {
     }),
   );
   const nextDate = endOfCurrentMonth().toISOString().slice(0, 10);
+  // Who is on approved leave today, in one query for the whole team.
+  const todayStart = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const onLeaveToday = new Set(
+    (await leaves()
+      .find({ userId: { $in: reports.map((r) => r.userId) }, status: 'approved', startDate: { $lte: todayStart }, endDate: { $gte: todayStart } })
+      .project<{ userId: string }>({ userId: 1 })
+      .toArray()).map((row) => row.userId),
+  );
+  const todayMarkFor = async (
+    report: (typeof reports)[number],
+    record: ReturnType<typeof todaysRecordFor>,
+  ): Promise<ManagerTeamMemberView['todayMark']> => {
+    if (onLeaveToday.has(report.userId)) return 'leave';
+    const away = record?.dayType === 'wfh' || record?.dayType === 'client_visit' || record?.dayType === 'office_visit';
+    if (away) return 'wfh';
+    if (!record?.punchIn) return 'not_in';
+    const policy = await policyForUser(report.userId);
+    if (policy.lateMarkingEnabled !== false && minutesAfterShiftStart(record.punchIn, policy.startTime) > policy.lateGraceMinutes) {
+      return 'late';
+    }
+    // Only a finished day can be short: with the punch-out still to come,
+    // the missing-punch-out mark would call everyone mid-shift a half day.
+    if (!record.punchOut) return 'present';
+    return markForDay(policy, record.punchIn, record.punchOut) === 'Half Day' ? 'half_day' : 'present';
+  };
   const team: ManagerTeamMemberView[] = await Promise.all(reports.map(async (report) => {
     const current = currentByEmployee.get(report.userId);
     const latest = latestByEmployee.get(report.userId);
     const todaysRecord = todaysRecordFor(report);
     return {
+      todayMark: await todayMarkFor(report, todaysRecord),
+      recognitionLabel: report.recognition?.label?.trim() || null,
       userId: report.userId,
       name: report.name,
       department: report.department ?? report.designation ?? 'Team',
@@ -487,7 +524,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     // nobody has reviewed yet shows these, so someone knows what they will be
     // measured on before the review arrives — once it does, the manager's
     // notes take their place.
-    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period)).map(
+    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true })).map(
       (p) => ({
         parameterId: p.id,
         name: p.title,

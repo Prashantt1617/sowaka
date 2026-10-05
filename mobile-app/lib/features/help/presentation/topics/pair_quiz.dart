@@ -468,69 +468,6 @@ class _Wide extends StatelessWidget {
   );
 }
 
-class _Fold extends StatelessWidget {
-  const _Fold({
-    required this.open,
-    required this.label,
-    required this.onTap,
-    required this.child,
-  });
-
-  final bool open;
-  final String label;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: _Rose.line),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      fontFamily: careFont,
-                      color: _Rose.ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                AnimatedRotation(
-                  turns: open ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  child: const Icon(
-                    Icons.expand_more_rounded,
-                    color: _Rose.ink,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (open)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: child,
-          ),
-      ],
-    ),
-  );
-}
-
 class _Waiting extends StatelessWidget {
   const _Waiting(this.lead, this.rest);
 
@@ -935,107 +872,28 @@ class AttachmentSpec extends PairQuizSpec {
   String summary(Map raw) => names[_style(raw)] ?? '';
 
   @override
-  Widget question(
-    int i,
-    String? current,
-    ValueChanged<String> onAnswer,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const CareCopy(
-        'Think about how you generally feel in close relationships: a partner, or close friends and family.',
-        size: 13,
-      ),
-      const SizedBox(height: 14),
-      AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        child: Text(
-          statements[i],
-          key: ValueKey(i),
-          style: const TextStyle(
-            fontFamily: careFont,
-            color: CareColors.ink,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            height: 1.35,
-          ),
-        ),
-      ),
-      const SizedBox(height: 18),
-      const CareCopy('How much do you agree?', size: 13),
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          for (var v = 1; v <= 5; v++) ...[
-            if (v > 1) const SizedBox(width: 8),
-            Expanded(
-              child: Semantics(
-                button: true,
-                label:
-                    '$v${v == 1
-                        ? ', strongly disagree'
-                        : v == 5
-                        ? ', strongly agree'
-                        : ''}',
-                child: Material(
-                  color: current == '$v' ? _Rose.ink : Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: current == '$v' ? _Rose.ink : CareColors.line,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => onAnswer('$v'),
-                    child: SizedBox(
-                      height: 52,
-                      child: Center(
-                        child: Text(
-                          '$v',
-                          style: TextStyle(
-                            fontFamily: careFont,
-                            color: current == '$v'
-                                ? Colors.white
-                                : CareColors.ink,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-      const SizedBox(height: 8),
-      const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget question(int i, String? current, ValueChanged<String> onAnswer) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Strongly disagree',
-            style: TextStyle(
+            statements[i],
+            style: const TextStyle(
               fontFamily: careFont,
-              color: CareColors.muted,
-              fontSize: 11.5,
+              color: CareColors.ink,
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
             ),
           ),
-          Text(
-            'Strongly agree',
-            style: TextStyle(
-              fontFamily: careFont,
-              color: CareColors.muted,
-              fontSize: 11.5,
-            ),
+          const SizedBox(height: 22),
+          _AgreeSlider(
+            initial: int.tryParse(current ?? ''),
+            last: i == count - 1,
+            onDone: (v) => onAnswer('$v'),
           ),
         ],
-      ),
-    ],
-  );
+      );
 
   @override
   Widget result(Map raw) {
@@ -1313,7 +1171,6 @@ class _PairQuizCardState extends State<PairQuizCard> {
 
   /// Hidden where the server cannot keep a quiz yet.
   bool _available = true;
-  bool _open = false;
   bool _busy = false;
 
   @override
@@ -1390,95 +1247,104 @@ class _PairQuizCardState extends State<PairQuizCard> {
     final named = '${theirs?['name'] ?? ''}'.trim();
     final partner = named.isNotEmpty ? named : 'Your partner';
     final invited = _pair.code != null;
-    return _NoteCard(
-      children: [
-        _Eyebrow(spec.title),
-        const SizedBox(height: 8),
-        Text(
-          spec.heading,
-          style: const TextStyle(
-            fontFamily: careFont,
-            color: CareColors.ink,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            height: 1.25,
-            letterSpacing: -0.3,
+    // Its own space below, so a hidden card leaves no gap.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: _NoteCard(
+        children: [
+          _Eyebrow(spec.title),
+          const SizedBox(height: 8),
+          Text(
+            spec.heading,
+            style: const TextStyle(
+              fontFamily: careFont,
+              color: CareColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
+              letterSpacing: -0.3,
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        CareCopy(spec.line, size: 13),
-        const SizedBox(height: 14),
-        _PersonRow(
-          face: const _Face('P', partner: false),
-          title: 'You',
-          status: mine == null ? spec.length : spec.summary(mine),
-          done: mine != null,
-          action: mine == null
-              ? _Pill('Take the test', kind: _PillKind.rose, onTap: _take)
-              : _Pill('Retake', kind: _PillKind.ghost, onTap: _take),
-        ),
-        const SizedBox(height: 10),
-        _PersonRow(
-          face: const _Face('♡', partner: true),
-          title: partner,
-          status: theirs != null
-              ? spec.summary(theirs)
-              : invited
-              ? 'Waiting for them'
-              : 'No app needed',
-          done: theirs != null,
-          action: theirs != null
-              ? null
-              : _Pill(
-                  invited ? 'Send again' : 'Share test link',
-                  kind: invited ? _PillKind.ghost : _PillKind.whatsapp,
-                  onTap: _share,
-                ),
-        ),
-        if (mine != null || theirs != null) ...[
-          const SizedBox(height: 12),
-          _Fold(
-            open: _open,
-            label: spec.title,
-            onTap: () => setState(() => _open = !_open),
-            child: mine != null && theirs != null
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      spec.together(
-                        mine,
-                        theirs,
-                        viewerIsEmployee: true,
-                        partnerName: partner,
-                        employeeName: 'You',
-                      ),
-                      const SizedBox(height: 16),
-                      spec.result(mine),
-                    ],
-                  )
-                : mine != null
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      spec.result(mine),
-                      const SizedBox(height: 10),
-                      const CareCopy(
-                        'Your partner’s shows here, beside yours, once they take it.',
-                        size: 13,
-                      ),
-                    ],
-                  )
-                : CareCopy(
-                    '$partner has taken it. Take yours to see both side by side.',
-                    size: 13,
+          const SizedBox(height: 6),
+          CareCopy(spec.line, size: 13),
+          const SizedBox(height: 14),
+          _PersonRow(
+            face: const _Face('P', partner: false),
+            title: 'You',
+            status: mine == null ? spec.length : spec.summary(mine),
+            done: mine != null,
+            action: mine == null
+                ? _Pill('Take the test', kind: _PillKind.rose, onTap: _take)
+                : _Pill('Retake', kind: _PillKind.ghost, onTap: _take),
+          ),
+          const SizedBox(height: 10),
+          _PersonRow(
+            face: const _Face('♡', partner: true),
+            title: partner,
+            status: theirs != null
+                ? spec.summary(theirs)
+                : invited
+                ? 'Waiting for them'
+                : 'No app needed',
+            done: theirs != null,
+            action: theirs != null
+                ? null
+                : _Pill(
+                    invited ? 'Send again' : 'Share test link',
+                    kind: invited ? _PillKind.ghost : _PillKind.whatsapp,
+                    onTap: _share,
                   ),
           ),
+          if (mine != null || theirs != null) ...[
+            const SizedBox(height: 12),
+            _OpenRow(
+              label: spec.title,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => _ResultsScreen(
+                    title: spec.title,
+                    child: mine != null && theirs != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              spec.together(
+                                mine,
+                                theirs,
+                                viewerIsEmployee: true,
+                                partnerName: partner,
+                                employeeName: 'You',
+                              ),
+                              const SizedBox(height: 16),
+                              spec.result(mine),
+                            ],
+                          )
+                        : mine != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              spec.result(mine),
+                              const SizedBox(height: 10),
+                              const CareCopy(
+                                'Your partner’s shows here, beside yours, once they take it.',
+                                size: 13,
+                              ),
+                            ],
+                          )
+                        : CareCopy(
+                            '$partner has taken it. Take yours to see both side by side.',
+                            size: 13,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          const CareMicro(
+            'Only you and your partner see these results. Never your company.',
+          ),
         ],
-        const SizedBox(height: 10),
-        const CareMicro(
-          'Only you and your partner see these results. Never your company.',
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1968,5 +1834,177 @@ class _Bar extends StatelessWidget {
         ),
       ],
     ),
+  );
+}
+
+/// How much someone agrees, on a slider from strongly disagree to strongly
+/// agree: five stops, named in words rather than numbers. Next shows once
+/// they have moved it, so nobody lands on the middle by not answering.
+class _AgreeSlider extends StatefulWidget {
+  const _AgreeSlider({
+    required this.initial,
+    required this.last,
+    required this.onDone,
+  });
+
+  /// The answer given before, when they came back to this one.
+  final int? initial;
+  final bool last;
+  final ValueChanged<int> onDone;
+
+  @override
+  State<_AgreeSlider> createState() => _AgreeSliderState();
+}
+
+class _AgreeSliderState extends State<_AgreeSlider> {
+  static const _words = [
+    'Strongly disagree',
+    'Disagree',
+    'Not sure',
+    'Agree',
+    'Strongly agree',
+  ];
+
+  late int? _value = widget.initial;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = _value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Text(
+            value == null ? 'Move the slider' : _words[value - 1],
+            style: TextStyle(
+              fontFamily: careFont,
+              color: value == null ? CareColors.muted : _Rose.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 6,
+            activeTrackColor: value == null ? _Rose.line : _Rose.ink,
+            inactiveTrackColor: _Rose.line,
+            thumbColor: value == null ? Colors.white : _Rose.ink,
+            overlayColor: _Rose.ink.withValues(alpha: 0.12),
+            activeTickMarkColor: Colors.white,
+            inactiveTickMarkColor: _Rose.soft,
+            thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 13,
+              elevation: 3,
+            ),
+            showValueIndicator: ShowValueIndicator.never,
+          ),
+          child: Slider(
+            min: 1,
+            max: 5,
+            divisions: 4,
+            value: (value ?? 3).toDouble(),
+            semanticFormatterCallback: (v) => _words[v.round() - 1],
+            onChanged: (v) => setState(() => _value = v.round()),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Strongly disagree',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 11.5,
+                ),
+              ),
+              Text(
+                'Strongly agree',
+                style: TextStyle(
+                  fontFamily: careFont,
+                  color: CareColors.muted,
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        AnimatedOpacity(
+          opacity: value == null ? 0.35 : 1,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: value == null,
+            child: _Wide(
+              widget.last ? 'See my result' : 'Next',
+              onTap: () => widget.onDone(value!),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The row under the two of you that opens both results on a page of
+/// their own.
+class _OpenRow extends StatelessWidget {
+  const _OpenRow({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+      side: const BorderSide(color: _Rose.line),
+    ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: careFont,
+                  color: _Rose.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: _Rose.ink),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Both results, on a page of their own.
+class _ResultsScreen extends StatelessWidget {
+  const _ResultsScreen({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => CarePage(
+    backLabel: 'Back',
+    children: [
+      _Eyebrow(title),
+      const SizedBox(height: 14),
+      _NoteCard(children: [child]),
+    ],
   );
 }

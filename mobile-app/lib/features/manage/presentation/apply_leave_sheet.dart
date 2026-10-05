@@ -24,13 +24,22 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = _startDate;
     // Only the types HR has switched on, named as the policy names them.
-    _type = _leaveTypeLabels.isEmpty ? 'Casual' : _leaveTypeLabels.first;
+    _type = _leaveTypeLabels.firstOrNull ?? '';
   }
 
-  /// The short labels for the types this employee may apply for.
+  @override
+  void didUpdateWidget(covariant _ApplyLeaveSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A refresh can change what is pickable; never keep a type that left.
+    final labels = _leaveTypeLabels;
+    if (!labels.contains(_type)) _type = labels.firstOrNull ?? '';
+  }
+
+  /// The short labels for the types this employee may apply for: on a
+  /// tracked balance, only those with days left to spend.
   List<String> get _leaveTypeLabels => [
     for (final label in _shift.applicableLeaveLabels)
-      if (_shift.windowForLeave(label)?.key != 'comp_off')
+      if (!_shift.leaveBalanceTracked || (_remainingFor(label) ?? 0) > 0)
         label.replaceAll(' Leave', ''),
   ];
 
@@ -91,7 +100,9 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   /// The same rule the quick-actions form and the server use.
-  String? get _datesBlockedReason => leaveRangeProblem(
+  String? get _datesBlockedReason => _type.isEmpty
+      ? 'No leave balance left to apply for this year.'
+      : leaveRangeProblem(
     policy: _shift,
     holidayDates: _holidayKeys,
     typeLabel: _type,
@@ -99,20 +110,14 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     to: _endDate,
     today: DateTime.now(),
     maxDays: _maxLeaveApplyDays,
-    availableDays: _remainingFor(_type),
+    availableDays: _shift.leaveBalanceTracked ? _remainingFor(_type) : null,
   );
 
   /// What is left of this type, by key, so a renamed type still matches.
   double? _remainingFor(String label) {
     final balance = widget.state.dashboard?.leaveBalance;
     if (balance == null) return null;
-    return switch (_shift.windowForLeave(label)?.key ?? label.toLowerCase()) {
-      'casual' => balance.casual.remaining,
-      'sick' => balance.sick.remaining,
-      'earned' => balance.earned.remaining,
-      'comp_off' => balance.compOff.remaining,
-      _ => null,
-    };
+    return balance.forKey(_shift.leaveKeyFor(label))?.remaining;
   }
 
   bool get _datesApplicable => _datesBlockedReason == null;

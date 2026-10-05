@@ -7,7 +7,6 @@ import '../data/help_api_service.dart';
 import '../data/help_models.dart';
 import 'choose_someone_screen.dart';
 import 'counsellor_profile_screen.dart';
-import 'help_booking_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
 import 'session_details_screen.dart';
@@ -70,12 +69,24 @@ class _HelpProfileSectionState extends State<HelpProfileSection> {
     }
   }
 
+  /// A page is opening, or open: a second tap does nothing.
+  bool _opening = false;
+
   Future<void> _push(Widget screen) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (_opening) return;
+    _opening = true;
+    try {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => screen));
+    } finally {
+      _opening = false;
+    }
     if (mounted) await _load();
   }
 
   Future<void> _editAnswers() async {
+    if (_opening) return;
     HelpIntake? intake;
     try {
       intake = await _service.intake();
@@ -171,13 +182,6 @@ class _HelpProfileSectionState extends State<HelpProfileSection> {
                 service: _service,
                 counsellorId: match.counsellor.userId,
                 backLabel: 'Profile',
-              ),
-            ),
-            // Straight to a time with them; the profile is a tap away.
-            onTalk: () => _push(
-              HelpBookingScreen(
-                service: _service,
-                counsellor: match.counsellor,
               ),
             ),
             onChoose: () => _push(

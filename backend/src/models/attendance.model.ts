@@ -5,6 +5,31 @@ export type AttendanceSource = 'sql_import' | 'manual';
 export type RegularizationStatus = 'pending' | 'approved' | 'declined';
 
 /**
+ * What a request is about. A correction disputes how a day was graded; an
+ * out-of-location request is a punch taken away from every office, which the
+ * manager settles because HR chose that over marking the day present outright.
+ */
+export type RegularizationKind = 'correction' | 'out_of_location';
+
+/**
+ * A punch taken outside every office, kept with the day so it reads as the
+ * exception it is: why the employee said they were away, where they were, and
+ * how far from the nearest office.
+ */
+export interface OutsideLocationNote {
+  /** The reason label the employee chose, as HR worded it. */
+  reason: string;
+  punchType: 'in' | 'out';
+  at: Date;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  officeId?: string;
+  officeName?: string;
+  distanceMeters?: number;
+}
+
+/**
  * What the employee says the day should have been.
  *
  * A correction used to submit the punch times someone believed they worked,
@@ -56,6 +81,12 @@ export interface AttendanceRecord {
    */
   punchInLocation?: PunchLocation;
   punchOutLocation?: PunchLocation;
+  /**
+   * Set when a punch was taken out of location and the policy marks the day
+   * present anyway, or when a manager approved the out-of-location request.
+   * The remark HR reads under "OOL check-ins".
+   */
+  outsideLocation?: OutsideLocationNote;
   source: AttendanceSource;
   sourceKey: string;
   importedAt: Date;
@@ -68,6 +99,10 @@ export interface AttendanceRegularization {
   employeeId: string;
   managerUserId: string;
   workDate: string;
+  /** Absent on rows written before out-of-location requests existed: a correction. */
+  kind?: RegularizationKind;
+  /** Out of location only: why, and where the punch was taken. */
+  outsideLocation?: OutsideLocationNote;
   /** What the day should be recorded as. */
   requestedDayType?: RegularizationDayType;
   /** @deprecated Punch times from corrections raised before day types. */

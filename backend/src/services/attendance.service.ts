@@ -1,9 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, offices, users } from '../config/db';
 import { PunchLocation } from '../models/office.model';
-import { locateForPunch, officeView, punchLocationFrom } from './geofence.service';
+import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
 import {
   AttendanceRegularization,
+  OutsideLocationNote,
   REGULARIZATION_DAY_TYPES,
   RegularizationDayType,
   RegularizationStatus,
@@ -14,7 +15,8 @@ import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../mode
 import { holidayDatesForUser } from './holiday.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
-  notifyCorrectionDecided, notifyCorrectionSubmitted, notifyPunchedIn, notifyPunchedOut,
+  notifyCorrectionDecided, notifyCorrectionSubmitted, notifyOutOfLocationDecided,
+  notifyOutOfLocationSubmitted, notifyPunchedIn, notifyPunchedOut,
 } from './request-notifications.service';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -55,6 +57,7 @@ async function getAttendanceForEmployee(
       id: item._id?.toHexString(), workDate: item.workDate,
       punchIn: item.punchIn?.toISOString(), punchOut: item.punchOut?.toISOString(),
       dayType: item.dayType,
+      outsideLocation: outsideLocationView(item.outsideLocation),
     })),
     regularizations: regularizations.map(toRegularizationView),
   };
@@ -82,10 +85,13 @@ export async function recordPunch(
   userId: string,
   type: string,
   reading?: PunchReading,
+  /** Why the employee is away, when the location check has already failed once. */
+  reasonInput?: string,
 ) {
   if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
-  const employee = await users().findOne({ userId });
-  if (!employee?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
+  const found = await users().findOne({ userId });
+  if (!found?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
+  const employee = { ...found, employeeId: found.employeeId };
 
   let location: PunchLocation | undefined;
   const org = employee.org ?? '';
@@ -105,20 +111,75 @@ export async function recordPunch(
     }
     const verdict = await locateForPunch(org, reading);
     location = punchLocationFrom(reading, verdict);
-    // Nobody marks their own day present from outside the fence. Working
-    // elsewhere — from home, at a client site — is a claim about the day that
-    // the manager settles, raised as a request from the punch screen, so it is
-    // refused here whatever the reason.
-    if (!verdict.inside) {
+    if (!verdict.inside && verdict.reason === 'inaccurate') {
       throw new AttendanceError(
         409,
-        verdict.reason === 'inaccurate'
-          ? 'Your location is not precise enough yet. Move near a window and try again.'
-          : 'You are outside the approved attendance area.',
+        'Your location is not precise enough yet. Move near a window and try again.',
         { location, office: verdict.office ? officeView(verdict.office) : undefined },
       );
     }
+    if (!verdict.inside) {
+      // Outside every office. What happens next is HR's call, per shift: the
+      // punch either becomes a request the manager settles, or the day is
+      // marked present with the reason and the pin kept beside it. Either way
+      // the employee says why first — so a punch without a reason is sent
+      // back with the list to choose from, and comes again with one.
+      const rules = policy.correction.outsideLocation;
+      const office = verdict.office ? officeView(verdict.office) : undefined;
+      const reason = (reasonInput ?? '').replace(/\s+/g, ' ').trim();
+      if (!reason) {
+        throw new AttendanceError(
+          409,
+          'You are outside the approved attendance area.',
+          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons } },
+        );
+      }
+      const chosen = rules.reasons.find((item) => item.toLowerCase() === reason.toLowerCase());
+      if (!chosen) {
+        throw new AttendanceError(
+          400,
+          'Choose one of the reasons your company allows',
+          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons } },
+        );
+      }
+      const at = new Date();
+      const note: OutsideLocationNote = {
+        reason: chosen,
+        punchType: type,
+        at,
+        latitude: reading.latitude,
+        longitude: reading.longitude,
+        accuracy: reading.accuracy,
+        officeId: verdict.office?.id,
+        officeName: verdict.office?.name,
+        distanceMeters: verdict.distanceMeters,
+      };
+      location = { ...location, offsite: true };
+      // The request flow is about being marked present, so it applies to the
+      // punch that marks the day: the punch-in. A punch-out from outside only
+      // closes a day the punch-in already opened, so it is recorded with the
+      // remark whichever outcome HR chose.
+      if (rules.outcome === 'request' && type === 'in') {
+        return requestOutOfLocation(employee, note, location);
+      }
+      return writePunch(employee, type, location, policy, note);
+    }
   }
+  return writePunch(employee, type, location, policy);
+}
+
+/**
+ * Writes the punch and tells the employee. Split from the location check so an
+ * out-of-location punch HR marks present goes through exactly the same door.
+ */
+async function writePunch(
+  employee: { userId: string; employeeId: string },
+  type: 'in' | 'out',
+  location: PunchLocation | undefined,
+  policy: { minFullDayHours: number; minHalfDayHours: number },
+  outside?: OutsideLocationNote,
+) {
+  const { userId } = employee;
   const now = new Date();
   const workDate = now.toISOString().slice(0, 10);
   const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
@@ -135,13 +196,32 @@ export async function recordPunch(
           punchIn: now,
           updatedAt: now,
           ...(location ? { punchInLocation: location } : {}),
+          ...(outside ? { outsideLocation: outside } : {}),
         },
         $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
       },
       { upsert: true },
     );
   } else {
-    if (!existing?.punchIn) throw new AttendanceError(409, 'Punch in before punching out');
+    if (!existing?.punchIn) {
+      // The day may be open only as an out-of-location request the manager
+      // has not settled. The punch-out then rides on the request, and lands
+      // on the day with the punch-in when the request is approved.
+      const pending = await attendanceRegularizations().findOne({
+        userId, workDate, status: 'pending', kind: 'out_of_location',
+      });
+      if (pending) {
+        if (pending.punchOut) throw new AttendanceError(409, 'Already punched out today');
+        await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: now } });
+        return {
+          workDate,
+          punchOut: now.toISOString(),
+          outsideLocation: outsideLocationView(pending.outsideLocation),
+          request: toRegularizationView({ ...pending, punchOut: now }),
+        };
+      }
+      throw new AttendanceError(409, 'Punch in before punching out');
+    }
     if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
     await attendanceRecords().updateOne(
       { employeeId: employee.employeeId, workDate },
@@ -150,6 +230,9 @@ export async function recordPunch(
           punchOut: now,
           updatedAt: now,
           ...(location ? { punchOutLocation: location } : {}),
+          // A punch-out from outside is noted too, unless the day already
+          // carries the punch-in's note: the first remark is the one HR reads.
+          ...(outside && !existing?.outsideLocation ? { outsideLocation: outside } : {}),
         },
       },
     );
@@ -178,6 +261,68 @@ export async function recordPunch(
     punchOut: updated?.punchOut?.toISOString(),
     dayType: updated?.dayType,
     office: location?.officeName,
+    outsideLocation: outsideLocationView(updated?.outsideLocation),
+  };
+}
+
+/**
+ * An out-of-location punch-in on a shift where HR wants the manager to decide.
+ *
+ * Nothing is written to the day: it stands as absent until the manager
+ * approves, and declined leaves it absent for the employee to raise a
+ * correction against. The request carries the pin so the manager sees where
+ * the punch came from, as a distance from the nearest office.
+ */
+async function requestOutOfLocation(
+  employee: { userId: string; employeeId: string; managerUserId?: string },
+  note: OutsideLocationNote,
+  location: PunchLocation,
+) {
+  const { userId } = employee;
+  const workDate = note.at.toISOString().slice(0, 10);
+  if (!employee.managerUserId) {
+    throw new AttendanceError(409, 'A manager must be assigned before an out-of-location punch can be sent to them');
+  }
+  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
+  const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
+  if (pending) {
+    throw new AttendanceError(
+      409,
+      pending.kind === 'out_of_location'
+        ? 'Your out of location request for today is already with your manager'
+        : 'A correction request is already pending for today',
+    );
+  }
+  const row: AttendanceRegularization = {
+    userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
+    workDate, kind: 'out_of_location', requestedDayType: 'full_day', outsideLocation: note,
+    note: '', status: 'pending', createdAt: note.at,
+  };
+  const result = await attendanceRegularizations().insertOne(row);
+  void location;
+  await notifyOutOfLocationSubmitted({
+    employeeUserId: userId, workDate, reason: note.reason, place: placeLabel(note.distanceMeters, note.officeName),
+  });
+  return {
+    workDate,
+    outsideLocation: outsideLocationView(note),
+    request: toRegularizationView({ ...row, _id: result.insertedId }),
+  };
+}
+
+/** The remark as the app and the dashboard show it, with the pin and a readable place. */
+export function outsideLocationView(note?: OutsideLocationNote) {
+  if (!note) return undefined;
+  return {
+    reason: note.reason,
+    punchType: note.punchType,
+    at: note.at.toISOString(),
+    latitude: note.latitude,
+    longitude: note.longitude,
+    officeName: note.officeName,
+    distanceMeters: note.distanceMeters,
+    place: placeLabel(note.distanceMeters, note.officeName),
   };
 }
 
@@ -655,7 +800,10 @@ async function applyRegularizationDecision(
     // calendar reflects what was approved, not just the request. Corrections
     // raised before day types still carry punch times, so both are applied.
     const punchUpdate: Record<string, Date | RegularizationDayType> = { updatedAt: decidedAt };
-    if (result.requestedDayType) {
+    // An out-of-location day is not invented from the shift's hours: the
+    // employee punched in for real, and the punch-out is theirs to take. Only
+    // a correction fills the day with the shift's window.
+    if (result.requestedDayType && result.kind !== 'out_of_location') {
       punchUpdate.dayType = result.requestedDayType;
       // An approved day is a worked day, so it gets the shift's own hours
       // rather than staying blank: the calendar showed "-" against a day the
@@ -670,10 +818,15 @@ async function applyRegularizationDecision(
     }
     if (result.punchIn) punchUpdate.punchIn = result.punchIn;
     if (result.punchOut) punchUpdate.punchOut = result.punchOut;
+    // An approved out-of-location day keeps where it was worked from, and the
+    // punch the employee actually took, so HR's view of the day is the truth.
+    const outside = result.kind === 'out_of_location' && result.outsideLocation
+      ? { outsideLocation: result.outsideLocation, punchIn: result.outsideLocation.at, dayType: result.requestedDayType ?? 'full_day' }
+      : {};
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },
       {
-        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate },
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside },
         $setOnInsert: {
           source: 'manual',
           sourceKey: `regularization|${result.employeeId}|${result.workDate}`,
@@ -684,6 +837,16 @@ async function applyRegularizationDecision(
     );
   }
 
+  if (result.kind === 'out_of_location') {
+    await notifyOutOfLocationDecided({
+      employeeUserId: result.userId,
+      workDate: result.workDate,
+      reason: result.outsideLocation?.reason ?? '',
+      approved: decision === 'approved',
+      comment: managerNote,
+    });
+    return;
+  }
   await notifyCorrectionDecided({
     employeeUserId: result.userId,
     workDate: result.workDate,
@@ -760,13 +923,83 @@ function parseDate(value: string, field: string): Date {
 
 function daysBetween(a: Date, b: Date) { return Math.floor((b.getTime() - a.getTime()) / 86_400_000); }
 function toRegularizationView(value: AttendanceRegularization) {
-  const { _id, punchIn, punchOut, ...rest } = value;
+  const { _id, punchIn, punchOut, outsideLocation, ...rest } = value;
+  const kind = value.kind ?? 'correction';
   return {
     ...rest,
     id: _id?.toHexString(),
+    kind,
+    // Named here, once, so the employee, the manager and HR all read the same
+    // heading — and a change of wording never waits for an app release.
+    title: kind === 'out_of_location'
+      ? `Out of location request${outsideLocation?.reason ? ` (${outsideLocation.reason})` : ''}`
+      : 'Attendance correction',
+    outsideLocation: outsideLocationView(outsideLocation),
     requestedPunchIn: punchIn?.toISOString(),
     requestedPunchOut: punchOut?.toISOString(),
   };
+}
+
+/**
+ * Every punch taken away from an office in the admin's org, in a date range:
+ * the days HR's policy marked present with a remark, and the requests that
+ * went to a manager, whatever became of them. Newest first.
+ */
+export async function listOutOfLocationForAdmin(adminUserId: string, fromInput: string, toInput: string) {
+  const from = parseDate(fromInput, 'from');
+  const to = parseDate(toInput, 'to');
+  if (to < from) throw new AttendanceError(400, 'to cannot be before from');
+  if (daysBetween(from, to) > 366) throw new AttendanceError(400, 'Date range cannot exceed a year');
+  const employees = await orgUsers(adminUserId);
+  if (employees.length === 0) return [];
+  const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
+  const userIds = employees.map((employee) => employee.userId);
+  const [records, requests] = await Promise.all([
+    attendanceRecords()
+      .find({ userId: { $in: userIds }, workDate: { $gte: fromInput, $lte: toInput }, outsideLocation: { $exists: true } })
+      .toArray(),
+    attendanceRegularizations()
+      .find({ userId: { $in: userIds }, workDate: { $gte: fromInput, $lte: toInput }, kind: 'out_of_location' })
+      .toArray(),
+  ]);
+  const who = (userId: string) => {
+    const employee = byUserId.get(userId);
+    return {
+      userId,
+      name: employee?.name ?? 'Employee',
+      employeeCode: employee?.employeeId ?? '',
+      department: employee?.department ?? '',
+      manager: byUserId.get(employee?.managerUserId ?? '')?.name ?? '',
+    };
+  };
+  // A request that was approved also wrote the record, so the record is the
+  // one row for that day; the request rows cover what is pending or declined.
+  const approvedDays = new Set(requests.filter((r) => r.status === 'approved').map((r) => `${r.userId}|${r.workDate}`));
+  const rows = [
+    ...records.map((record) => ({
+      id: `record:${record._id?.toHexString()}`,
+      ...who(record.userId ?? ''),
+      workDate: record.workDate,
+      outcome: approvedDays.has(`${record.userId}|${record.workDate}`) ? 'request' : 'present',
+      status: 'approved',
+      ...outsideLocationView(record.outsideLocation)!,
+      decidedByRole: undefined as 'manager' | 'admin' | undefined,
+      managerNote: '',
+    })),
+    ...requests
+      .filter((r) => r.status !== 'approved')
+      .map((request) => ({
+        id: `request:${request._id?.toHexString()}`,
+        ...who(request.userId),
+        workDate: request.workDate,
+        outcome: 'request',
+        status: request.status,
+        ...outsideLocationView(request.outsideLocation)!,
+        decidedByRole: request.decidedByRole,
+        managerNote: request.managerNote ?? '',
+      })),
+  ];
+  return rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
 
 /**

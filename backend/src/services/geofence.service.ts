@@ -151,17 +151,25 @@ export async function saveOffice(
   },
 ) {
   const now = new Date();
-  const radius = Number(input.radiusMeters);
+  // An edit names an office of this org, or it is not an edit.
+  const current = input.id ? await offices().findOne({ id: input.id, org }) : null;
+  if (input.id && !current) throw new Error('Office not found');
+  const name = String(input.name ?? '').trim();
+  if (!name) throw new Error('Give the office a name');
+  const radius = input.radiusMeters === undefined ? undefined : Number(input.radiusMeters);
+  if (radius !== undefined && !(Number.isFinite(radius) && radius > 0)) {
+    throw new Error('Radius must be a number of metres above zero');
+  }
   const office: Office = {
     id: input.id ?? randomUUID(),
     org,
-    name: String(input.name ?? '').trim() || 'Office',
+    name,
     city: String(input.city ?? '').trim() || undefined,
     latitude: Number(input.latitude),
     longitude: Number(input.longitude),
-    radiusMeters:
-      Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_OFFICE_RADIUS_METERS,
-    active: input.active !== false,
+    radiusMeters: radius ?? current?.radiusMeters ?? DEFAULT_OFFICE_RADIUS_METERS,
+    // An edit that says nothing about `active` leaves it as it was.
+    active: input.active ?? current?.active ?? true,
     createdAt: now,
     updatedAt: now,
   };
@@ -175,9 +183,33 @@ export async function saveOffice(
   const mutable: Partial<Office> = { ...office };
   delete mutable.createdAt;
   await offices().updateOne(
-    { id: office.id },
+    { id: office.id, org },
     { $set: mutable, $setOnInsert: { createdAt: now } },
     { upsert: true },
   );
   return office;
+}
+
+/**
+ * Removes an office. Punches already taken there keep the office's name and
+ * distance on their own record, so nothing in history goes blank.
+ */
+export async function deleteOffice(org: string, id: string) {
+  const result = await offices().deleteOne({ id, org });
+  if (result.deletedCount === 0) throw new Error('Office not found');
+}
+
+/**
+ * Where a punch was taken, in words a manager can use: "1.2 km from Sowaka
+ * Office". No map lookup — the offices HR set up are the only places the
+ * product knows, and a distance from the nearest one says enough.
+ */
+export function placeLabel(distanceMeters?: number, officeName?: string): string {
+  if (distanceMeters == null || !Number.isFinite(distanceMeters)) {
+    return officeName ? `Away from ${officeName}` : 'Away from office';
+  }
+  const distance = distanceMeters < 1000
+    ? `${Math.round(distanceMeters)} m`
+    : `${(distanceMeters / 1000).toFixed(distanceMeters < 10_000 ? 1 : 0)} km`;
+  return `${distance} from ${officeName ?? 'office'}`;
 }

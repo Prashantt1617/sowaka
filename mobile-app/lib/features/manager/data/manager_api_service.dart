@@ -193,11 +193,17 @@ class ManagerApiService {
   Future<AttendanceRecord> recordPunch(
     String type, {
     PunchReading? reading,
+    /// Why the employee is away, once the server has said they are outside.
+    String? reason,
   }) async {
     final json = await _request(
       'POST',
       '/attendance/punch',
-      body: {'type': type, ...?reading?.toJson()},
+      body: {
+        'type': type,
+        ...?reading?.toJson(),
+        if (reason != null) 'reason': reason,
+      },
     );
     return AttendanceRecord.fromJson(json);
   }
@@ -652,9 +658,11 @@ List<OvertimeRequest> _parseOvertime(Map<String, dynamic> json) {
       .toList();
 }
 
-/// The UI labels leave types "Casual Leave" / "Sick Leave" / "Earned Leave",
-/// but the API only accepts the bare tokens `casual` / `sick` / `earned`.
+/// The key the API takes. Callers pass the template's key already
+/// (`ShiftPolicy.leaveKeyFor`); a display name from an older caller is mapped
+/// to one of the original tokens.
 String _leaveTypeToken(String label) {
+  if (RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(label)) return label;
   final lower = label.trim().toLowerCase();
   // Comp-off first: it is the one label that is not a single leading word.
   if (lower.startsWith('comp')) return 'comp_off';

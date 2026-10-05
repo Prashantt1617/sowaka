@@ -8,7 +8,7 @@ import { Card } from '../ui';
 // two, so it is shown rather than set — asking for it again as a choice is what
 // made the earlier draft confusing.
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import type { LeaveTypeKey, LeaveTypeRule } from '../../services/hrms';
+import type { LeaveTypeRule } from '../../services/hrms';
 
 const RESET_OPTIONS: { value: LeaveTypeRule['resetOn']; label: string }[] = [
   { value: 'monthly', label: 'End of every month' },
@@ -20,15 +20,75 @@ const ENCASH_OPTIONS: { value: LeaveTypeRule['encashment']; label: string }[] = 
   { value: 'limit', label: 'Encash up to a limit' },
   { value: 'none', label: 'Nothing — it lapses' },
 ];
-const SWATCH: Record<LeaveTypeKey, string> = {
+const SWATCH: Record<string, string> = {
   sick: '#C4382E',
   casual: '#4A6FA5',
   earned: '#4F7A52',
   comp_off: '#8A6D1F',
 };
+/** Types HR adds share one colour; the four built in keep theirs. */
+const swatchFor = (key: string) => SWATCH[key] ?? '#7E5FB0';
+
+/** 'Emergency Leave' -> 'emergency', the same slug the server would make. */
+function leaveKeyFrom(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\bleaves?\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/^(\d)/, 'l_$1')
+    .slice(0, 32);
+}
+
+/** A new type opens with nothing accrued and a plain window; HR fills in the rest. */
+function newLeaveType(name: string, key: string): LeaveTypeRule {
+  return {
+    key, name, perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none',
+    encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3, active: true,
+  };
+}
+
+/**
+ * Adds a leave type by name. Its key is made from the name and kept for good,
+ * so renaming it later never orphans leave already taken.
+ */
+export function AddLeaveType({ existing, onAdd }: { existing: LeaveTypeRule[]; onAdd: (row: LeaveTypeRule) => void }) {
+  const [name, setName] = useState('');
+  const trimmed = name.trim();
+  const base = leaveKeyFrom(trimmed);
+  const taken = new Set(existing.map((t) => t.key));
+  // A suffixed key must still fit the server's 32-character limit.
+  let key = base;
+  for (let n = 2; taken.has(key); n += 1) key = `${base.slice(0, 32 - `_${n}`.length)}_${n}`;
+  const clash = existing.some((t) => t.name.trim().toLowerCase() === trimmed.toLowerCase());
+  const full = existing.length >= 12;
+  const canAdd = !!trimmed && !!base && !clash && !full;
+  const add = () => {
+    if (!canAdd) return;
+    onAdd(newLeaveType(trimmed, key));
+    setName('');
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+        placeholder="New leave type, e.g. Emergency Leave"
+        maxLength={40}
+        style={{ ...input, width: 300 }}
+      />
+      <button type="button" onClick={add} disabled={!canAdd} style={{ ...addButton, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? 'pointer' : 'default' }}>
+        + Add leave type
+      </button>
+      {clash && <span style={{ fontSize: 13, color: '#A8475F' }}>There is already a type with that name.</span>}
+      {full && <span style={{ fontSize: 13, color: '#717171' }}>A shift can have at most 12 leave types.</span>}
+    </div>
+  );
+}
 
 /** Closed by default: the header is the summary, the chevron opens it for editing. */
-export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void }) {
+export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void; onRemove?: () => void }) {
   const isCompOff = row.key === 'comp_off';
   const monthly = row.resetOn === 'monthly';
   const annual = +(row.perMonth * 12).toFixed(1);
@@ -42,7 +102,7 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
         aria-expanded={open}
         style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '14px 20px', borderBottom: open ? '1px solid #EBEBEB' : 'none', background: '#FBFBFC', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
       >
-        <span style={{ width: 11, height: 11, borderRadius: 3, background: SWATCH[row.key], flexShrink: 0 }} />
+        <span style={{ width: 11, height: 11, borderRadius: 3, background: swatchFor(row.key), flexShrink: 0 }} />
         <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.2px', color: '#222222' }}>{row.name}</div>
         <span style={annualPill}>
           {isCompOff ? 'earned from overtime' : monthly ? `${row.perMonth} ${row.perMonth === 1 ? 'day' : 'days'} / month` : `${annual} days / year`}
@@ -53,6 +113,15 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
       </button>
 
       {open && <div style={{ padding: '18px 20px' }}>
+        <MiniLabel>Name</MiniLabel>
+        <input
+          value={row.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          maxLength={40}
+          style={{ ...input, width: 300 }}
+        />
+        <div style={{ fontSize: 13, color: '#9197A2', marginTop: 6 }}>What employees see in the app.</div>
+
         <MiniLabel>Accrual</MiniLabel>
         {isCompOff ? (
           <div style={note}>
@@ -107,6 +176,20 @@ export function LeaveTypeCard({ row, onChange }: { row: LeaveTypeRule; onChange:
           <span style={lapseTag}>automatic</span>
           <span>Any balance still left after that will <strong>lapse</strong>.</span>
         </div>
+
+        {onRemove && (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Remove ${row.name || 'this leave type'}? People on this shift will no longer be able to apply for it. Leave already taken stays on record.`)) onRemove();
+              }}
+              style={removeButton}
+            >
+              Remove this leave type
+            </button>
+          </div>
+        )}
       </div>}
     </Card>
   );
@@ -145,6 +228,8 @@ function Suffixed({ value, onChange, suffix, width, step }: { value: string; onC
   );
 }
 
+const addButton: CSSProperties = { padding: '9px 16px', fontSize: 14, fontWeight: 700, border: '1px solid #0571A6', borderRadius: 9, background: '#fff', color: '#0571A6', fontFamily: 'inherit' };
+const removeButton: CSSProperties = { padding: 0, fontSize: 14, fontWeight: 700, border: 'none', background: 'none', color: '#A8475F', cursor: 'pointer', fontFamily: 'inherit' };
 const input: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const fieldLabel: CSSProperties = { fontSize: 14, fontWeight: 700, color: '#484848' };
 const annualPill: CSSProperties = { marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#4A6FA5', background: '#EEF3FA', border: '1px solid #DEE8F4', borderRadius: 20, padding: '3px 11px' };

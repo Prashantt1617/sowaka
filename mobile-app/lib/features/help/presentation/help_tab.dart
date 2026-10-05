@@ -18,7 +18,6 @@ import '../data/help_topics.dart';
 import 'choose_someone_screen.dart';
 import 'after_session_screen.dart';
 import '../../shared/session_prompts.dart';
-import 'help_booking_screen.dart';
 import 'counsellor_profile_screen.dart';
 import 'help_onboarding.dart';
 import 'help_widgets.dart';
@@ -341,13 +340,6 @@ class _HelpTabState extends State<HelpTab> {
                   backLabel: 'Help',
                 ),
               ),
-              // Straight to a time with them; the profile is a tap away.
-              onTalk: () => _push(
-                HelpBookingScreen(
-                  service: _service,
-                  counsellor: match.counsellor,
-                ),
-              ),
               onChoose: () => _push(
                 ChooseSomeoneScreen(
                   service: _service,
@@ -480,25 +472,6 @@ class _HelpTabState extends State<HelpTab> {
               );
             },
           ),
-          if (home.history.isNotEmpty) ...[
-            const SizedBox(height: 26),
-            const CareSectionTitle('Your sessions', size: 17),
-            const SizedBox(height: 10),
-            for (final session in home.history)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: SessionRow(
-                  session: session,
-                  onTap: () => _push(
-                    SessionDetailsScreen(
-                      session: session,
-                      service: _service,
-                      backLabel: 'Help',
-                    ),
-                  ),
-                ),
-              ),
-          ],
         ],
       ),
     );

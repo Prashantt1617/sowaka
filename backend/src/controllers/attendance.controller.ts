@@ -45,7 +45,10 @@ export async function punch(req: Request, res: Response, next: NextFunction) {
             mocked: body.mocked === true,
           }
         : undefined;
-    const result = await recordPunch(userId(req), String(body.type ?? ''), reading);
+    const result = await recordPunch(
+      userId(req), String(body.type ?? ''), reading,
+      typeof body.reason === 'string' ? body.reason : undefined,
+    );
     res.json({ success: true, ...result });
   } catch (error) { next(error); }
 }

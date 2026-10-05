@@ -78,7 +78,7 @@ class _ParamCardState extends State<_ParamCard> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x0D000000),
-            blurRadius: 6,
+            blurRadius: 12,
             offset: Offset(0, 2),
           ),
         ],
@@ -217,8 +217,10 @@ class _ParamCardState extends State<_ParamCard> {
                                         ? 'assets/icons/grow_star_active.svg'
                                         : 'assets/icons/grow_star_filled.svg')
                                   : 'assets/icons/grow_star_empty.svg',
-                              width: star == filled ? 40.1 : 34,
-                              height: star == filled ? 40.1 : 34,
+                              // 28px stars in 34px buttons (node 729:12580);
+                              // the one at the rating a touch larger.
+                              width: star == filled ? 32 : 28,
+                              height: star == filled ? 32 : 28,
                             ),
                           ),
                         ),

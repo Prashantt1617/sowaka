@@ -569,7 +569,7 @@ function EmployeeCalendar({ userId, initial }: { userId: string; initial: Employ
           {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: '#FAFAFB' }} />)}
           {(cal?.days ?? []).map((day) => {
             const tone = CAL_TONE[day.status];
-            const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? day.label)
+            const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave')
               : day.status === 'holiday' || day.status === 'week_off' ? day.label
                 : day.status === 'upcoming' ? ''
                   : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');
