@@ -541,17 +541,23 @@ class _ManagerScreenState extends State<ManagerScreen> {
                       Column(
                         children: [
                           Expanded(
-                            child: MediaQuery.removePadding(
-                              context: context,
-                              removeBottom: true,
-                              child: _TabContent(
-                                session: _session,
-                                state: state,
-                                bloc: _bloc,
-                                quickActionsController: _quickActionsController,
-                                connectComposerController:
-                                    _connectComposerController,
-                                onOpenProfile: _openProfile,
+                            // Read from a context below the offline banner,
+                            // which has already taken the status-bar inset
+                            // while it shows; the screen's own context would
+                            // put that inset back under the banner.
+                            child: Builder(
+                              builder: (context) => MediaQuery.removePadding(
+                                context: context,
+                                removeBottom: true,
+                                child: _TabContent(
+                                  session: _session,
+                                  state: state,
+                                  bloc: _bloc,
+                                  quickActionsController: _quickActionsController,
+                                  connectComposerController:
+                                      _connectComposerController,
+                                  onOpenProfile: _openProfile,
+                                ),
                               ),
                             ),
                           ),
