@@ -100,7 +100,12 @@ export async function getConnectFeed(
   viewerUserId: string,
   options: { types?: ConnectPostType[]; limit?: number; cursor?: string } = {},
 ) {
-  const viewer = await users().findOne({ userId: viewerUserId });
+  // The viewer and their block list are independent reads: one round trip,
+  // not two in a row.
+  const [viewer, blockedUserIds] = await Promise.all([
+    users().findOne({ userId: viewerUserId }),
+    blockedUserIdsFor(viewerUserId),
+  ]);
   if (!viewer) throw new ConnectError(404, 'User not found');
   const org = orgForUser(viewer);
   const typeFilter =
@@ -122,7 +127,6 @@ export async function getConnectFeed(
   // this viewer's feed. Official announcements are exempt — an employee who
   // has muted a colleague who happens to work in HR must still see what the
   // company tells everyone.
-  const blockedUserIds = await blockedUserIdsFor(viewerUserId);
   const blockFilter =
     blockedUserIds.length > 0
       ? {
@@ -179,14 +183,18 @@ export async function getConnectFeed(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const authors = await users()
-    .find({ userId: { $in: authorIds } })
-    .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
-      userId: 1,
-      profilePhotoKey: 1,
-      profilePhotoUrl: 1,
-    })
-    .toArray();
+  // Authors' photos and the games' states are independent too.
+  const [authors, relayStatuses] = await Promise.all([
+    users()
+      .find({ userId: { $in: authorIds } })
+      .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+        userId: 1,
+        profilePhotoKey: 1,
+        profilePhotoUrl: 1,
+      })
+      .toArray(),
+    relayStatusesFor(posts),
+  ]);
   const authorPhotoUrls = new Map(
     await Promise.all(
       authors.map(
@@ -196,7 +204,6 @@ export async function getConnectFeed(
     ),
   );
 
-  const relayStatuses = await relayStatusesFor(posts);
   const views = await Promise.all(
     posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses)),
   );

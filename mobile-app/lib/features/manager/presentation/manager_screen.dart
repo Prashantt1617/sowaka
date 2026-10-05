@@ -43,6 +43,7 @@ import '../../help/presentation/help_tab.dart';
 import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';

@@ -95,6 +95,9 @@ class ConnectBloc {
         hasMore: page.nextCursor != null,
       ));
       _listenForChanges();
+      // The second page is asked for as soon as the first is on screen, so
+      // the first scroll never waits on a spinner.
+      unawaited(loadMore());
     } catch (error) {
       _emit(
         _state.copyWith(

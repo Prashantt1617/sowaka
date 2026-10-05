@@ -829,9 +829,12 @@ class ManagerBloc {
     );
   }
 
+  /// Once a minute. Every five seconds was four hundred calls in a sitting,
+  /// each competing with whatever the person was actually waiting for; a
+  /// decision on a leave can show up a minute late.
   void _startLeavePolling() {
     _leavePollingTimer?.cancel();
-    _leavePollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _leavePollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       unawaited(_refreshLeavesSilently());
     });
   }

@@ -22,6 +22,7 @@ import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
 import '../../shared/app_toast.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
 /// Connect tab itself — the composer's `showModalBottomSheet`/`Navigator.push`
@@ -10498,7 +10499,9 @@ ImageProvider _remoteImage(String url) {
       }
     }
   }
-  return NetworkImage(resolveMediaUrl(url));
+  // Cached on disk by URL: a photo seen once is not fetched again, on this
+  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
+  return CachedNetworkImageProvider(resolveMediaUrl(url));
 }
 
 Color _hexColor(String value, Color fallback) {

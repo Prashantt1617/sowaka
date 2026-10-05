@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ApiConfig {
   const ApiConfig._();
@@ -69,5 +70,7 @@ ImageProvider avatarImageProvider(String url) {
       }
     }
   }
-  return NetworkImage(resolveMediaUrl(url));
+  // Cached on disk by URL: a photo seen once is not fetched again, on this
+  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
+  return CachedNetworkImageProvider(resolveMediaUrl(url));
 }
