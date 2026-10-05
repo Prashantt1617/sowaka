@@ -189,7 +189,9 @@ class _PunchScreenState extends State<PunchScreen> {
             .where((value) => value.isNotEmpty)
             .toList();
         _marksPresent = outside?['outcome'] == 'present';
-        _reasonOptional = _marksPresent && outside?['reasonOptional'] == true;
+        _reasonOptional = outside?['reasonOptional'] == true;
+        // A choice from an earlier list is only kept if it is still offered.
+        if (!_reasons.contains(_selectedReason)) _selectedReason = null;
         _officeLabel = office == null
             ? null
             : [
@@ -260,12 +262,19 @@ class _PunchScreenState extends State<PunchScreen> {
     ).pop(outcome ?? PunchOutcome(punched: false, requested: _raisedRequest));
   }
 
+  /// Whether this punch is the manager's to decide: a punch-in under the
+  /// request outcome. A punch-out is recorded whatever the outcome, so the
+  /// approval copy never belongs on it.
+  bool get _needsApproval => _punchingIn && !_marksPresent;
+
   /// The close control. On the outside screen of someone whose day is marked
-  /// present regardless, leaving is the punch: it goes through without a
-  /// reason and the screen closes on it.
+  /// present regardless, leaving is the punch: it goes through with the
+  /// reason chosen, or none, and the screen closes on it. Never when today's
+  /// request is already with the manager — then it only closes.
   Future<void> _dismiss() async {
-    if (_stage == _PunchStage.outside && _reasonOptional && !_busy) {
-      await _sendWithReason(null);
+    final alreadyIn = widget.alreadyRequestedToday || _raisedRequest;
+    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy) {
+      await _sendWithReason(_selectedReason);
       if (!mounted || _stage != _PunchStage.done) return;
       _close(PunchOutcome(punched: true, officeName: _officeName));
       return;
@@ -498,12 +507,12 @@ class _PunchScreenState extends State<PunchScreen> {
   Widget _outside() {
     final alreadyIn = widget.alreadyRequestedToday || _raisedRequest;
     final canSend = !alreadyIn && !_busy && (_selectedReason != null || _reasonOptional);
-    final what = _punchingIn ? 'punch-in' : 'punch-out';
+    final sendLabel = _needsApproval ? 'Send punch-in request' : (_punchingIn ? 'Punch in' : 'Punch out');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 44),
-        if (!_marksPresent) ...[
+        if (_needsApproval) ...[
           const Align(
             alignment: Alignment.centerLeft,
             child: _AmberPill(icon: Icons.hourglass_top_rounded, label: 'Manager approval required'),
@@ -511,7 +520,7 @@ class _PunchScreenState extends State<PunchScreen> {
           const SizedBox(height: 20),
         ],
         Text(
-          "You're outside the office area",
+          'You\u2019re outside the office area',
           style: _sora(27, FontWeight.w700, _navy, height: 32.5 / 27),
         ),
         const SizedBox(height: 24),
@@ -533,34 +542,35 @@ class _PunchScreenState extends State<PunchScreen> {
             style: _sora(13.5, FontWeight.w600, _navy, height: 21 / 13.5),
           ),
           const SizedBox(height: 12),
-          for (final reason in _reasons) ...[
-            _ReasonOption(
-              label: reason,
-              selected: _selectedReason == reason,
-              onTap: () => setState(
-                () => _selectedReason = _selectedReason == reason ? null : reason,
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ],
-        const SizedBox(height: 22),
-        if (!_marksPresent && !alreadyIn) ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.schedule_rounded, size: 15, color: _navy),
-              const SizedBox(width: 8),
-              Text(
-                'Your manager will review the request.',
-                style: _sora(12.5, FontWeight.w400, _muted, height: 18 / 12.5),
-              ),
-            ],
+          // Three tiles to a row (node 3357:29529), HR's reasons in HR's
+          // order, each wearing one of the three illustrations in turn.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.maxWidth - 24) / 3;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final (index, reason) in _reasons.indexed)
+                    SizedBox(
+                      width: width,
+                      child: _ReasonTile(
+                        label: reason,
+                        image: 'assets/icons/punch/reason_${index % 3 + 1}.png',
+                        selected: _selectedReason == reason,
+                        onTap: () => setState(
+                          () => _selectedReason = _selectedReason == reason ? null : reason,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-          const SizedBox(height: 14),
         ],
+        const SizedBox(height: 24),
         _ArrowButton(
-          label: 'Send $what request',
+          label: sendLabel,
           enabled: canSend,
           onTap: () => _sendWithReason(_selectedReason),
         ),
@@ -569,12 +579,12 @@ class _PunchScreenState extends State<PunchScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _LinkText(
-              icon: Icons.sync_rounded,
+              asset: 'assets/icons/punch/ool_recheck.svg',
               label: 'Recheck location',
               onTap: _busy ? null : _punch,
             ),
             _LinkText(
-              icon: Icons.calendar_today_outlined,
+              asset: 'assets/icons/punch/ool_leave.svg',
               label: 'Apply for leave',
               onTap: () {
                 _close();
@@ -598,7 +608,7 @@ class _PunchScreenState extends State<PunchScreen> {
         ),
         SizedBox(height: 20),
         Text(
-          _marksPresent ? 'Punching you in...' : 'Sending your request...',
+          _needsApproval ? 'Sending your request...' : (_punchingIn ? 'Punching you in...' : 'Punching you out...'),
           style: TextStyle(
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -818,7 +828,6 @@ const _navy = Color(0xFF142A43);
 const _muted = Color(0xFF586B7D);
 const _hairline = Color(0xFFDCE3EA);
 const _link = Color(0xFF0668D8);
-const _iconMuted = Color(0xFF62788C);
 
 /// "Monday, 5 October 2026".
 String _longDate(DateTime value) {
@@ -828,17 +837,6 @@ String _longDate(DateTime value) {
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
   return '${days[value.weekday - 1]}, ${value.day} ${months[value.month - 1]} ${value.year}';
-}
-
-/// The icon beside one of HR's reasons, read from its wording.
-IconData _reasonIcon(String reason) {
-  final lower = reason.toLowerCase();
-  if (lower.contains('home')) return Icons.home_outlined;
-  if (lower.contains('client') || lower.contains('visit') || lower.contains('site')) {
-    return Icons.work_outline_rounded;
-  }
-  if (lower.contains('meeting') || lower.contains('vendor')) return Icons.check_rounded;
-  return Icons.place_outlined;
 }
 
 /// "Manager approval required" — amber wash, 999 radius (node 3345:28301).
@@ -889,7 +887,7 @@ class _OfficeCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFE4E9EF)),
           ),
-          child: const Icon(Icons.apartment_rounded, size: 22, color: Color(0xFFFF8C8F)),
+          child: Center(child: SvgPicture.asset('assets/icons/punch/ool_office.svg', width: 23, height: 20)),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -908,46 +906,46 @@ class _OfficeCard extends StatelessWidget {
   );
 }
 
-/// One of HR's reasons: a 52-high row with a ring that fills when chosen.
-class _ReasonOption extends StatelessWidget {
-  const _ReasonOption({required this.label, required this.selected, required this.onTap});
+/// One of HR's reasons as a tile (node 3357:29571): an illustration over the
+/// label, 14 radius, tinted with blue text once chosen.
+class _ReasonTile extends StatelessWidget {
+  const _ReasonTile({required this.label, required this.image, required this.selected, required this.onTap});
   final String label;
+  final String image;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFEDF4FF) : Colors.white,
+    color: selected ? const Color(0xFFF4F7FB) : Colors.white,
     borderRadius: BorderRadius.circular(14),
     child: InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        height: 130,
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? const Color(0xFFBEEDFF) : _hairline),
+          border: Border.all(color: _hairline, width: 1.1),
         ),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(_reasonIcon(label), size: 20, color: selected ? _brand : _iconMuted),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: _sora(13, FontWeight.w600, _navy, height: 20 / 13)),
-            ),
-            if (selected)
-              const Icon(Icons.check_circle_outline_rounded, size: 20, color: Color(0xFF1A7FA6))
-            else
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF8AA0B2), width: 1.3),
+            Image.asset(image, width: 60, height: 60, fit: BoxFit.contain),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 39,
+              child: Center(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: _sora(12, FontWeight.w400, selected ? _brand : _navy, height: 19.5 / 12),
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -978,8 +976,8 @@ class _ArrowButton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(label, style: _sora(14, FontWeight.w600, Colors.white, height: 21 / 14)),
-          const SizedBox(width: 10),
-          const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+          const SizedBox(width: 12),
+          SvgPicture.asset('assets/icons/punch/ool_arrow.svg', width: 12, height: 9),
         ],
       ),
     ),
@@ -988,10 +986,10 @@ class _ArrowButton extends StatelessWidget {
 
 /// A blue text link, with an icon before it or underlined on its own.
 class _LinkText extends StatelessWidget {
-  const _LinkText({required this.label, required this.onTap, this.icon, this.underline = false});
+  const _LinkText({required this.label, required this.onTap, this.asset, this.underline = false});
   final String label;
   final VoidCallback? onTap;
-  final IconData? icon;
+  final String? asset;
   final bool underline;
 
   @override
@@ -1003,8 +1001,8 @@ class _LinkText extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: _link),
+          if (asset case final path?) ...[
+            SvgPicture.asset(path, width: 17, height: 17),
             const SizedBox(width: 8),
           ],
           Text(
@@ -1073,9 +1071,9 @@ class _PunchSummaryCard extends StatelessWidget {
             ),
           ),
           if (reason case final why? when why.isNotEmpty)
-            _SummaryRow(icon: _reasonIcon(why), title: why, caption: 'Reason for working outside'),
+            _SummaryRow(asset: 'assets/icons/punch/ool_row_briefcase.svg', title: why, caption: 'Reason for working outside'),
           if (place case final where? when where.isNotEmpty)
-            _SummaryRow(icon: Icons.place_outlined, title: where, caption: placeCaption),
+            _SummaryRow(asset: 'assets/icons/punch/ool_row_pin.svg', title: where, caption: placeCaption),
         ],
       ),
     );
@@ -1083,8 +1081,8 @@ class _PunchSummaryCard extends StatelessWidget {
 }
 
 class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.icon, required this.title, required this.caption});
-  final IconData icon;
+  const _SummaryRow({required this.asset, required this.title, required this.caption});
+  final String asset;
   final String title;
   final String caption;
 
@@ -1094,7 +1092,7 @@ class _SummaryRow extends StatelessWidget {
     decoration: const BoxDecoration(border: Border(top: BorderSide(color: _hairline))),
     child: Row(
       children: [
-        SizedBox(width: 20, child: Icon(icon, size: 20, color: _iconMuted)),
+        SizedBox(width: 20, height: 20, child: Center(child: SvgPicture.asset(asset, width: 18, height: 18))),
         const SizedBox(width: 20),
         Expanded(
           child: Column(

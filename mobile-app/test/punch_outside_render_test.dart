@@ -17,9 +17,12 @@ final _session = AuthSession(
   user: const AuthUser(id: 'u', email: 'u@convrse.ai', name: 'Prashant', role: 'employee', company: 'Convrse', org: 'convrse'),
 );
 
+Map<String, dynamic>? _lastPunchBody;
+
 http.Client _server({required String outcome}) => MockClient((request) async {
   if (!request.url.path.endsWith('/attendance/punch')) return http.Response('{"success":true}', 200);
   final body = jsonDecode(request.body) as Map<String, dynamic>;
+  _lastPunchBody = body;
   final reason = body['reason'] as String?;
   final skip = body['skipReason'] == true;
   if (reason == null && !skip) {
@@ -91,7 +94,8 @@ void main() {
   testWidgets('manager approval: pick a reason, send, request sent', (tester) async {
     await _pumpScreen(tester, 'request');
     expect(find.text('Manager approval required'), findsOneWidget);
-    expect(find.text("You're outside the office area"), findsOneWidget);
+    expect(find.text('You\u2019re outside the office area'), findsOneWidget);
+    expect(find.text('Send punch-in request'), findsOneWidget);
     await tester.tap(find.text('Client visit'));
     await tester.pump();
     await tester.tap(find.text('Send punch-in request'));
@@ -101,11 +105,23 @@ void main() {
     expect(find.textContaining('marked present once your manager'), findsNothing);
   });
 
+  testWidgets('marked present: the X keeps a chosen reason', (tester) async {
+    await _pumpScreen(tester, 'present');
+    await tester.tap(find.text('Client visit'));
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PunchScreen), findsNothing);
+    expect(_lastPunchBody?['reason'], 'Client visit');
+  });
+
   testWidgets('marked present: a reason, when given, is kept on the punch', (tester) async {
     await _pumpScreen(tester, 'present');
     await tester.tap(find.text('Client visit'));
     await tester.pump();
-    await tester.tap(find.text('Send punch-in request'));
+    await tester.tap(find.text('Punch in'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text("You're punched in!"), findsOneWidget);
@@ -127,7 +143,7 @@ void main() {
     await _pumpScreen(tester, 'present');
     expect(find.text('Manager approval required'), findsNothing);
     expect(find.text('Your manager will review the request.'), findsNothing);
-    await tester.tap(find.text('Send punch-in request'));
+    await tester.tap(find.text('Punch in'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text("You're punched in!"), findsOneWidget);

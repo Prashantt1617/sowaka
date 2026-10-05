@@ -16,8 +16,10 @@ import io.flutter.plugin.common.MethodChannel
  * The swap waits until the app leaves the screen. Disabling the component a
  * running task was launched from makes Android drop that task on the spot,
  * even with DONT_KILL_APP — which looked like the app closing itself the
- * moment it signed in. Done in onStop the task is dropped while nobody is
- * looking at it, and the next tap on the new icon starts the app afresh.
+ * moment it signed in. Done once the user has gone Home the task is dropped
+ * while nobody is looking at it, and the next tap on the new icon starts
+ * the app afresh. Leaving for the camera or Settings does not count: the
+ * user is coming straight back, and must find the app where they left it.
  */
 class MainActivity : FlutterActivity() {
     private val aliases = mapOf(
@@ -28,6 +30,13 @@ class MainActivity : FlutterActivity() {
     /** The icon asked for, held until the app is in the background. */
     private var pendingIcon: String? = null
     private var hasPendingIcon = false
+
+    /**
+     * Set when the user themselves left — Home, recents — as opposed to the
+     * app opening the camera, a picker or Settings, which also stops this
+     * activity but has the user coming straight back to where they were.
+     */
+    private var userLeft = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -49,9 +58,16 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        userLeft = true
+    }
+
     override fun onStop() {
         super.onStop()
-        if (!hasPendingIcon) return
+        val left = userLeft
+        userLeft = false
+        if (!hasPendingIcon || !left) return
         hasPendingIcon = false
         try {
             useIcon(pendingIcon)

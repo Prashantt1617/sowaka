@@ -385,7 +385,12 @@ export async function getManagerWorkspace(managerUserId: string) {
     attendanceByUserId.get(report.userId);
   const awayLabelFor = (record: ReturnType<typeof todaysRecordFor>): string | null => {
     if (!record) return null;
-    if (record.outsideLocation) return record.outsideLocation.reason || DEFAULT_AWAY_REASON;
+    // Only the punch-in's note says where the day was worked. A punch-out
+    // taken from outside closes a day that was worked wherever the punch-in
+    // said, and must not relabel it.
+    if (record.outsideLocation?.punchType === 'in') {
+      return record.outsideLocation.reason || DEFAULT_AWAY_REASON;
+    }
     return (
       { wfh: DEFAULT_AWAY_REASON, client_visit: 'Client visit', office_visit: 'Office visit' } as Record<string, string>
     )[record.dayType ?? ''] ?? null;

@@ -133,9 +133,11 @@ export async function recordPunch(
       const rules = policy.correction.outsideLocation;
       const office = verdict.office ? officeView(verdict.office) : undefined;
       const reason = (reasonInput ?? '').replace(/\s+/g, ' ').trim();
-      // A reason is optional only where the day is marked present outright. A
-      // request needs one: it is what the manager decides on.
-      const reasonOptional = rules.outcome === 'present';
+      // A reason is optional where nobody decides on it: the day is marked
+      // present outright, or this is a punch-out, which is recorded whatever
+      // the outcome. A punch-in that becomes a request needs one — it is what
+      // the manager decides on.
+      const reasonOptional = rules.outcome === 'present' || type === 'out';
       if (!reason && !(reasonOptional && skipReason)) {
         throw new AttendanceError(
           409,
