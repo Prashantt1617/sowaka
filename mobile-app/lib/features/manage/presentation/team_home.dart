@@ -550,7 +550,10 @@ class _TeamMemberRow extends StatelessWidget {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            if (punchIn != null) _PunchTimePill(at: punchIn),
+                            // The time they came in — or, when only the
+                            // punch-out was recorded, the one punch there is.
+                            if ((punchIn ?? member.punchOut) case final at?)
+                              _PunchTimePill(at: at),
                             if (status != null) status,
                             if (pendingCount > 0)
                               _RequestCountPill(count: pendingCount),

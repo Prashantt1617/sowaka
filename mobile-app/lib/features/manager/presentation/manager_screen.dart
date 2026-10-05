@@ -111,7 +111,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // follows one holds it — and only that launch: the day's showing is not
     // spent, so the next launch opens on it.
     if (widget.justOnboarded) {
-      unawaited(const StartupPrefs().holdPunchPromptOnce());
+      // The sign-in before onboarding set a hold; this launch is the one it
+      // covers, so it is taken here rather than set again — otherwise the
+      // next launch would still be held.
+      unawaited(const StartupPrefs().takePunchPromptHold());
     } else {
       unawaited(
         const StartupPrefs().takePunchPromptHold().then((held) async {

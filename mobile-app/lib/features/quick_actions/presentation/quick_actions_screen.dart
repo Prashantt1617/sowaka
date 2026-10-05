@@ -2948,12 +2948,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // is no punch-out to be missing, and the day is as complete as it gets.
     final singlePunchDone =
         widget.dashboard.shift.singlePunchDay && day.record?.punchIn != null;
-    final trigger = singlePunchDone
-        ? 'Both punches present'
-        : CorrectionRules.triggerFor(
-            punchIn: day.record?.punchIn,
-            punchOut: day.record?.punchOut,
-          );
+    final trigger = widget.dashboard.shift.triggerFor(
+      punchIn: day.record?.punchIn,
+      punchOut: day.record?.punchOut,
+    );
     if (!rules.allows(trigger)) {
       return trigger == 'Both punches present'
           ? singlePunchDone

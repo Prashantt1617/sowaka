@@ -46,9 +46,9 @@
             </intent-filter>
         </activity>
         <!-- The Convrse icon: a launcher alias the app switches on after a
-             Convrse employee signs in, and off again when they sign out. Only
-             one of the main activity and these aliases is enabled at a time,
-             so the home screen shows one icon. -->
+             Convrse employee signs in. It stays until someone else signs in,
+             as on iOS. Only one of the main activity and these aliases is
+             enabled at a time, so the home screen shows one icon. -->
         <activity-alias
             android:name=".LauncherConvrse"
             android:targetActivity=".MainActivity"
@@ -60,10 +60,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity-alias>
-        <!-- The Acmt icon: a launcher alias the app switches on after a
-             Acmt employee signs in, and off again when they sign out. Only
-             one of the main activity and these aliases is enabled at a time,
-             so the home screen shows one icon. -->
+        <!-- The ACMT icon: the same, for an ACMT employee. -->
         <activity-alias
             android:name=".LauncherAcmt"
             android:targetActivity=".MainActivity"
