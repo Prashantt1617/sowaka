@@ -63,9 +63,26 @@ Future<void> _pumpScreen(WidgetTester tester, String outcome) async {
   final loader = FontLoader('Sora')..addFont(rootBundle.load('assets/fonts/sora/Sora-Variable.ttf'));
   await loader.load();
   final api = ManagerApiService(session: _session, baseUrl: 'https://example.test', client: _server(outcome: outcome));
+  // Pushed as a route, as the app does, so closing it can pop it.
   await tester.pumpWidget(MaterialApp(
-    home: PunchScreen(api: api, type: 'in', geofenced: false, startImmediately: true, onRequestWfh: () {}, onViewAttendance: () {}),
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<PunchOutcome>(
+              builder: (_) => PunchScreen(
+                api: api, type: 'in', geofenced: false, startImmediately: true,
+                onRequestWfh: () {}, onViewAttendance: () {},
+              ),
+            )),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ),
   ));
+  await tester.tap(find.text('open'));
+  await tester.pump(const Duration(milliseconds: 300));
   await tester.pump(const Duration(milliseconds: 300));
   await tester.pump(const Duration(milliseconds: 300));
 }
@@ -82,6 +99,28 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Request sent'), findsOneWidget);
     expect(find.textContaining('marked present once your manager'), findsNothing);
+  });
+
+  testWidgets('marked present: a reason, when given, is kept on the punch', (tester) async {
+    await _pumpScreen(tester, 'present');
+    await tester.tap(find.text('Client visit'));
+    await tester.pump();
+    await tester.tap(find.text('Send punch-in request'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text("You're punched in!"), findsOneWidget);
+    expect(find.text('Client visit'), findsOneWidget);
+    expect(find.text('Work from home'), findsNothing);
+  });
+
+  testWidgets('marked present: closing the screen is the punch', (tester) async {
+    await _pumpScreen(tester, 'present');
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 400));
+    // The screen popped itself with the punch recorded — nothing of it is left.
+    expect(find.byType(PunchScreen), findsNothing);
   });
 
   testWidgets('marked present: no reason needed, punched in', (tester) async {
