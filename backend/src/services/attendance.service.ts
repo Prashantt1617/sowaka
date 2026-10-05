@@ -654,7 +654,7 @@ export async function getTeamMemberAttendance(
 ) {
   const employee = await users().findOne({ userId: employeeUserId });
   if (!employee) throw new AttendanceError(404, 'Employee not found');
-  if (employee.managerUserId !== managerUserId) {
+  if (!(await managesUpTheChain(managerUserId, employee))) {
     throw new AttendanceError(403, "Not authorized to view this employee's attendance");
   }
   const attendance = await getAttendanceForEmployee(
@@ -1069,4 +1069,21 @@ export class AttendanceError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * Whether the viewer sits anywhere above this employee's reporting line — a
+ * direct report, or a report of a report. A peer or one's own manager is not
+ * the viewer's to see, so the Team tab offers no calendar for them.
+ */
+async function managesUpTheChain(viewerId: string, employee: { managerUserId?: string }): Promise<boolean> {
+  const seen = new Set<string>();
+  let managerId = employee.managerUserId;
+  while (managerId && !seen.has(managerId)) {
+    if (managerId === viewerId) return true;
+    seen.add(managerId);
+    const manager = await users().findOne({ userId: managerId }, { projection: { managerUserId: 1 } });
+    managerId = manager?.managerUserId;
+  }
+  return false;
 }

@@ -181,7 +181,9 @@ class _TeamMemberProfilePage extends StatelessWidget {
           _ProfilePageTopBar(
             // "Profile-Ananya" (node 3106:49189): whose page this is.
             title: 'Profile-${member.name.trim().split(' ').first}',
-            onCalendarTap: !canManage
+            // Only someone in the viewer's reporting line has a calendar
+            // here; the server refuses a peer's or the manager's own.
+            onCalendarTap: !canManage || !member.inViewerChain
                 ? null
                 : () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -250,7 +252,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
                     present: present,
                     punchIn: member.punchIn,
                     punchOut: member.punchOut,
-                    onViewCalendar: !canManage
+                    onViewCalendar: !canManage || !member.inViewerChain
                         ? null
                         : () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -2282,14 +2284,18 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
-    final labels = [
-      if (widget.canManage) 'Request',
-      'Attendance',
-      'Work detail',
-      'Org chart',
-      'Grow',
-      if (member.documents.isNotEmpty) 'Documentation',
-    ];
+    // One's own manager is looked up, not managed: their details and where
+    // they sit, nothing of their day, requests or growth.
+    final labels = member.isManager
+        ? ['Work detail', 'Org chart']
+        : [
+            if (widget.canManage) 'Request',
+            'Attendance',
+            'Work detail',
+            'Org chart',
+            'Grow',
+            if (member.documents.isNotEmpty) 'Documentation',
+          ];
     final tab = labels[_tab.clamp(0, labels.length - 1)];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

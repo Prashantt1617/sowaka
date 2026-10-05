@@ -201,6 +201,7 @@ class TeamMember {
     this.isManager = false,
     this.isSelf = false,
     this.reportsToViewer = false,
+    this.inViewerChain = false,
     this.reportCount = 0,
     required this.initial,
     required this.team,
@@ -241,6 +242,10 @@ class TeamMember {
   /// Someone who reports to the viewer. It separates the team they lead from
   /// the team they belong to.
   final bool reportsToViewer;
+
+  /// True when the viewer is anywhere above them: a report, or a report's
+  /// report. Only their attendance is the viewer's to open.
+  final bool inViewerChain;
 
   /// How many people report to them — a member who leads a team of their own
   /// is offered an expander rather than read as an individual.
@@ -294,6 +299,9 @@ class TeamMember {
       isManager: json['isManager'] == true,
       isSelf: json['isSelf'] == true,
       reportsToViewer: json['reportsToViewer'] == true,
+      // An older server says only who reports directly.
+      inViewerChain:
+          json['inViewerChain'] == true || json['reportsToViewer'] == true,
       reportCount: (json['reportCount'] as num?)?.toInt() ?? 0,
       initial: name.isEmpty ? '?' : name[0].toUpperCase(),
       team: json['department'] as String? ?? 'Team',
@@ -362,6 +370,7 @@ class TeamMember {
       // and the feedback list five seconds after they loaded.
       isSelf: isSelf,
       reportsToViewer: reportsToViewer,
+      inViewerChain: inViewerChain,
       reportCount: reportCount,
       initial: initial,
       team: team,
