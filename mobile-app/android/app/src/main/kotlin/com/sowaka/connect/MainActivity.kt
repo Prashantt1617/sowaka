@@ -11,15 +11,23 @@ import io.flutter.plugin.common.MethodChannel
  *
  * Android has no alternate-icon API; the icon belongs to whichever launcher
  * component is enabled. The manifest declares one alias per company, all
- * disabled, and this enables the one asked for and disables the rest — with
- * DONT_KILL_APP, so the running app carries on. The launcher picks the change
- * up on its own schedule, which on most phones is within a few seconds.
+ * disabled, and this enables the one asked for and disables the rest.
+ *
+ * The swap waits until the app leaves the screen. Disabling the component a
+ * running task was launched from makes Android drop that task on the spot,
+ * even with DONT_KILL_APP — which looked like the app closing itself the
+ * moment it signed in. Done in onStop the task is dropped while nobody is
+ * looking at it, and the next tap on the new icon starts the app afresh.
  */
 class MainActivity : FlutterActivity() {
     private val aliases = mapOf(
         "AppIconConvrse" to ".LauncherConvrse",
         "AppIconAcmt" to ".LauncherAcmt",
     )
+
+    /** The icon asked for, held until the app is in the background. */
+    private var pendingIcon: String? = null
+    private var hasPendingIcon = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -29,13 +37,45 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                     return@setMethodCallHandler
                 }
-                try {
-                    useIcon(call.argument<String>("name"))
-                    result.success(null)
-                } catch (error: Exception) {
-                    result.error("icon", error.message, null)
+                val name = call.argument<String>("name")
+                if (isCurrent(name)) {
+                    // Already wearing it: nothing to schedule.
+                    hasPendingIcon = false
+                } else {
+                    pendingIcon = name
+                    hasPendingIcon = true
                 }
+                result.success(null)
             }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!hasPendingIcon) return
+        hasPendingIcon = false
+        try {
+            useIcon(pendingIcon)
+        } catch (_: Exception) {
+            // An icon is decoration; the app must never fail over it.
+        }
+    }
+
+    /** Whether the launcher entry already is the one [name] asks for. */
+    private fun isCurrent(name: String?): Boolean {
+        val wanted = aliases[name] ?: ".MainActivity"
+        val pm = packageManager
+        val all = aliases.values + ".MainActivity"
+        return all.all { component -> isEnabled(pm, component) == (component == wanted) }
+    }
+
+    private fun isEnabled(pm: PackageManager, suffix: String): Boolean {
+        val state = pm.getComponentEnabledSetting(ComponentName(this, "$packageName$suffix"))
+        return when (state) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+            // The main activity's manifest default is enabled; the aliases' is disabled.
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> suffix == ".MainActivity"
+            else -> false
+        }
     }
 
     private fun useIcon(name: String?) {
