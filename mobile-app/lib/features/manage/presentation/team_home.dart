@@ -2220,12 +2220,9 @@ class _OpenTeamBox extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Open, the plus stands as a cross — the same turn Grow's
-                  // expanded cards make — so the header reads as "close".
-                  Transform.rotate(
-                    angle: math.pi / 4,
-                    child: const _TeamPlusIcon(),
-                  ),
+                  // Open, the plus becomes a minus: the header reads as
+                  // "collapse".
+                  const _TeamPlusIcon(open: true),
                 ],
               ),
               const SizedBox(height: 12),
@@ -2249,13 +2246,15 @@ class _OpenTeamBox extends StatelessWidget {
   }
 }
 
-/// The team box's plus; turned 45° it is the cross of an open box.
+/// The team box's plus — a minus once the box is open.
 class _TeamPlusIcon extends StatelessWidget {
-  const _TeamPlusIcon();
+  const _TeamPlusIcon({this.open = false});
+
+  final bool open;
 
   @override
   Widget build(BuildContext context) => SvgPicture.asset(
-    'assets/icons/team/plus.svg',
+    open ? 'assets/icons/team/minus.svg' : 'assets/icons/team/plus.svg',
     width: 20,
     height: 20,
   );
