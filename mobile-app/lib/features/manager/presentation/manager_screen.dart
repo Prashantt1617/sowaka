@@ -216,6 +216,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
             _bloc.add(const ChangeManagerTab(ManagerTab.quick));
             _quickActionsController.openLeave();
           },
+          // The confirmation's "View attendance" lands on the calendar.
+          onViewAttendance: () =>
+              _bloc.add(const ChangeManagerTab(ManagerTab.quick)),
         ),
         fullscreenDialog: true,
       ),

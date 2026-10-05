@@ -210,10 +210,10 @@ function assignTeamNames(leaders: { teamKey: string; user: User }[]) {
       const initial = parts[1]?.[0];
       label = initial ? `${first} ${initial.toUpperCase()}` : user.name;
     }
-    let name = `${label} TEAM`;
+    let name = `Team ${label}`;
     let suffix = 2;
     while (usedNames.has(name)) {
-      name = `${label} TEAM ${suffix}`;
+      name = `Team ${label} ${suffix}`;
       suffix += 1;
     }
     usedNames.add(name);
