@@ -581,6 +581,16 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final tabs = user.enabledTabs;
     final worksHere = profileShowsWork(tabs);
     final helpHere = profileShowsHelp(tabs);
+    // Growth is reviewed by one's manager; without one there is nothing to
+    // show there, so the tab is not offered.
+    final profileTabs = [
+      'Details',
+      'Attendance',
+      'Requests',
+      if (dashboard.hasManager) 'Grow',
+      'Org chart',
+      if (helpHere) 'Counselor',
+    ];
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -761,12 +771,15 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       // thing at a time, rather than every section stacked.
                       if (worksHere) ...[
                         _ProfileTabs(
-                          labels: tabs,
-                          selected: _tab.clamp(0, tabs.length - 1),
+                          labels: profileTabs,
+                          selected: _tab.clamp(0, profileTabs.length - 1),
                           onChanged: (index) => setState(() => _tab = index),
                         ),
                         const SizedBox(height: 16),
-                        ...switch (tabs[_tab.clamp(0, tabs.length - 1)]) {
+                        ...switch (profileTabs[_tab.clamp(
+                          0,
+                          profileTabs.length - 1,
+                        )]) {
                           'Requests' => _requestTab(dashboard),
                           'Attendance' => [
                             _AttendanceCard(
@@ -2783,16 +2796,6 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       ),
     );
 
-    // Growth is reviewed by one's manager; without one there is nothing to
-    // show there, so the tab is not offered.
-    final tabs = [
-      'Details',
-      'Attendance',
-      'Requests',
-      if (dashboard.hasManager) 'Grow',
-      'Org chart',
-      if (helpHere) 'Counselor',
-    ];
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
       body: Column(
