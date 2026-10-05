@@ -62,42 +62,82 @@ export async function sendOtpEmail(email: string, otp: string): Promise<void> {
     throw new Error('Zoho SMTP credentials are not configured');
   }
 
-  try {
-    await transporter.sendMail({
-      from: env.zohoSmtp.from,
-      to: email,
-      subject: 'Your Sowaka Connect sign-in code',
-      text: `Your Sowaka Connect sign-in code is ${otp}. It expires in ${env.otpTtlMinutes} minutes.`,
-      html: `
-        <div style="font-family:Arial,sans-serif;color:#2A2420;line-height:1.5">
-          <h2 style="margin:0 0 12px">Sowaka Connect sign-in</h2>
-          <p>Your 6-digit sign-in code is:</p>
-          <div style="font-size:30px;font-weight:700;letter-spacing:6px;margin:16px 0">${otp}</div>
-          <p>This code expires in ${env.otpTtlMinutes} minutes.</p>
-        </div>
-      `,
-    });
-  } catch (error) {
-    logger.error(
-      'SMTP delivery failed',
-      {
-        host: env.zohoSmtp.host,
-        port: env.zohoSmtp.port,
-        secure: env.zohoSmtp.secure,
-        recipient: maskEmail(email),
-      },
-      error,
-    );
+  const message = {
+    from: env.zohoSmtp.from,
+    to: email,
+    subject: 'Your Sowaka Connect sign-in code',
+    text: `Your Sowaka Connect sign-in code is ${otp}. It expires in ${env.otpTtlMinutes} minutes.`,
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#2A2420;line-height:1.5">
+        <h2 style="margin:0 0 12px">Sowaka Connect sign-in</h2>
+        <p>Your 6-digit sign-in code is:</p>
+        <div style="font-size:30px;font-weight:700;letter-spacing:6px;margin:16px 0">${otp}</div>
+        <p>This code expires in ${env.otpTtlMinutes} minutes.</p>
+      </div>
+    `,
+  };
+  const smtpContext = {
+    host: env.zohoSmtp.host,
+    port: env.zohoSmtp.port,
+    secure: env.zohoSmtp.secure,
+    recipient: maskEmail(email),
+  };
 
-    if (env.isLocal && env.otpDevBypass) {
-      logger.warn('Using local OTP bypass after SMTP failure', {
-        recipient: maskEmail(email),
-        otp,
-      });
+  for (let attempt = 1; attempt <= OTP_SEND_ATTEMPTS; attempt += 1) {
+    try {
+      // Each sendMail opens its own connection, so a retry starts fresh.
+      await withDeadline(transporter.sendMail(message), OTP_ATTEMPT_DEADLINE_MS);
+      if (attempt > 1) logger.info('SMTP delivery succeeded on retry', { ...smtpContext, attempt });
       return;
+    } catch (error) {
+      const retrying = attempt < OTP_SEND_ATTEMPTS && isTransientSmtpError(error);
+      logger.error(retrying ? 'SMTP delivery failed, retrying' : 'SMTP delivery failed', { ...smtpContext, attempt }, error);
+      if (retrying) {
+        await new Promise((resolve) => setTimeout(resolve, OTP_RETRY_PAUSE_MS));
+        continue;
+      }
+      if (env.isLocal && env.otpDevBypass) {
+        logger.warn('Using local OTP bypass after SMTP failure', {
+          recipient: maskEmail(email),
+          otp,
+        });
+        return;
+      }
+      throw new OtpDeliveryError(error);
     }
-    throw error;
   }
+}
+
+// Two attempts of at most ten seconds each stay inside CloudFront's 30 s origin
+// timeout; a healthy send takes well under two.
+const OTP_SEND_ATTEMPTS = 2;
+const OTP_ATTEMPT_DEADLINE_MS = 10_000;
+const OTP_RETRY_PAUSE_MS = 500;
+
+/** The sign-in code could not be handed to SMTP; the caller turns this into a 503. */
+export class OtpDeliveryError extends Error {
+  constructor(public readonly cause: unknown) {
+    super('Sign-in code email could not be delivered');
+  }
+}
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error('Timeout'), { code: 'ETIMEDOUT' })), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+
+/** Worth one more try: the server stalled or dropped us, or said "try later". Bad credentials are not. */
+function isTransientSmtpError(error: unknown): boolean {
+  const { code, responseCode, message } = (error ?? {}) as { code?: string; responseCode?: number; message?: string };
+  if (code === 'EAUTH' || code === 'EENVELOPE') return false;
+  if (typeof responseCode === 'number') return responseCode >= 400 && responseCode < 500;
+  return (
+    ['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'EDNS', 'ECONNRESET', 'ECONNREFUSED'].includes(code ?? '') ||
+    /timeout|greeting/i.test(message ?? '')
+  );
 }
 
 /**

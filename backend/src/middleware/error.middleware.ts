@@ -70,9 +70,11 @@ export const errorHandler = (
     error.details
       ? (error.details as Record<string, unknown>)
       : undefined;
+  // A 503 from sign-in is written for the person waiting on their code.
+  const userFacing = expected || (error instanceof AuthError && statusCode === 503);
   response.status(statusCode).json({
     success: false,
-    message: expected && error instanceof Error ? error.message : 'Internal server error',
+    message: userFacing && error instanceof Error ? error.message : 'Internal server error',
     requestId: request.requestId,
     ...(details ? { details } : {}),
     ...(env.nodeEnv === 'production' || expected ? {} : { error: internalMessage }),
