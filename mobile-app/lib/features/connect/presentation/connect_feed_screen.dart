@@ -251,7 +251,20 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           separatorBuilder: (_, _) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
             if (index == posts.length + 1) {
-              _bloc.loadMore();
+              if (state.loadMoreFailed) {
+                return Center(
+                  child: TextButton(
+                    onPressed: _bloc.retryLoadMore,
+                    child: const Text(
+                      'Could not load more. Tap to retry.',
+                      style: TextStyle(color: _ConnectColors.terra, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                );
+              }
+              // Asked for after the frame, not during it: a build is not the
+              // place to start a request, and the bloc ignores repeats.
+              WidgetsBinding.instance.addPostFrameCallback((_) => _bloc.loadMore());
               return const Padding(
                 padding: EdgeInsets.symmetric(vertical: 18),
                 child: Center(
@@ -447,9 +460,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// this walks down a screen at a time until the card exists, then settles
   /// it near the top. A post not in the loaded feed is fetched first.
   Future<void> _revealPost(String postId, {bool comments = false}) async {
-    if (!_bloc.state.posts.any((post) => post.id == postId)) {
-      await _bloc.refresh();
-    }
+    // The post itself, wherever it sits in the feed — a notification is
+    // often about one beyond the pages loaded.
+    if (!await _bloc.ensurePost(postId)) return;
     if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
       return;
     }

@@ -43,7 +43,12 @@ class DashboardCache {
     }
   }
 
-  static Future<void> write(String userId, Map<String, Map<String, dynamic>> replies) async {
+  static Future<void> write(
+    String userId,
+    Map<String, Map<String, dynamic>> replies, {
+    DateTime? startedAt,
+  }) async {
+    if (startedAt != null && !writeAllowed(startedAt)) return;
     try {
       final file = await _file(userId);
       if (file == null) return;
@@ -57,10 +62,35 @@ class DashboardCache {
     }
   }
 
+  /// When the device's copies were last cleared. A write that began before
+  /// then is dropped, so a load still in flight at sign-out cannot put a copy
+  /// back after it was wiped.
+  static DateTime _clearedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static bool writeAllowed(DateTime startedAt) => startedAt.isAfter(_clearedAt);
+
   static Future<void> clear(String userId) async {
     try {
       final file = await _file(userId);
       if (file != null && await file.exists()) await file.delete();
     } catch (_) {}
+  }
+
+  /// Every copy on this device — the dashboard and the feed, for anyone who
+  /// signed in here. For sign-out: nothing of theirs stays behind.
+  static Future<void> clearAll() async {
+    _clearedAt = DateTime.now();
+    try {
+      if (Platform.environment['FLUTTER_TEST'] == 'true') return;
+      final dir = await getApplicationSupportDirectory().timeout(const Duration(seconds: 3));
+      await for (final entry in dir.list()) {
+        final name = entry.uri.pathSegments.last;
+        if (entry is File && name.startsWith('dashboard-') && name.endsWith('.json')) {
+          await entry.delete();
+        }
+      }
+    } catch (error) {
+      debugPrint('Device copies not cleared: $error');
+    }
   }
 }

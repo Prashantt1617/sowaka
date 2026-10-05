@@ -458,23 +458,29 @@ class ManagerBloc {
           } else if (_state.dashboard == null) {
             _emit(_state.copyWith(status: ManagerLoadStatus.loading));
           }
-          final dashboard = await _service.fetchDashboard(
-            onCore: (core) => _emit(_state.copyWith(
-              status: ManagerLoadStatus.ready,
-              dashboard: core,
-              fromCache: false,
-              error: null,
-            )),
-          );
-          _startLeavePolling();
-          _emit(
-            _state.copyWith(
-              status: ManagerLoadStatus.ready,
-              dashboard: dashboard,
-              fromCache: false,
-              error: null,
-            ),
-          );
+          try {
+            final dashboard = await _service.fetchDashboard(
+              previous: _state.dashboard,
+              onCore: (core) => _emit(_state.copyWith(
+                status: ManagerLoadStatus.ready,
+                dashboard: core,
+                fromCache: false,
+                error: null,
+              )),
+            );
+            _emit(
+              _state.copyWith(
+                status: ManagerLoadStatus.ready,
+                dashboard: dashboard,
+                fromCache: false,
+                error: null,
+              ),
+            );
+          } finally {
+            // Whatever the live load did, the minute's refresh runs: it is
+            // what brings a copy up to date once the network is back.
+            if (_state.dashboard != null) _startLeavePolling();
+          }
         case ChangeManagerTab(:final tab):
           // Team is open to everyone now — individual contributors get the
           // same list read-only (no requests segment, no decisions), so this

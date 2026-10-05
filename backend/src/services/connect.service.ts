@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
@@ -81,19 +82,24 @@ export const FEED_MAX_LIMIT = 50;
  * moment, which together are the feed's sort order. Opaque to the app, which
  * hands it straight back.
  */
-export function encodeFeedCursor(post: Pick<ConnectPost, 'publishedAt' | 'createdAt'>): string {
-  return `${post.publishedAt.toISOString()}|${post.createdAt.toISOString()}`;
+export function encodeFeedCursor(
+  post: Pick<ConnectPost, 'publishedAt' | 'createdAt'> & { _id?: ObjectId },
+): string {
+  // The id breaks ties: posts made in one batch can share a millisecond.
+  return `${post.publishedAt.toISOString()}|${post.createdAt.toISOString()}|${post._id?.toHexString() ?? ''}`;
 }
 
-function decodeFeedCursor(value: string | undefined): { publishedAt: Date; createdAt: Date } | null {
+function decodeFeedCursor(
+  value: string | undefined,
+): { publishedAt: Date; createdAt: Date; id: ObjectId | null } | null {
   if (!value) return null;
-  const [published, created] = value.split('|');
+  const [published, created, id] = value.split('|');
   const publishedAt = new Date(published ?? '');
   const createdAt = new Date(created ?? published ?? '');
   if (Number.isNaN(publishedAt.getTime()) || Number.isNaN(createdAt.getTime())) {
     throw new ConnectError(400, 'The feed cursor is not valid');
   }
-  return { publishedAt, createdAt };
+  return { publishedAt, createdAt, id: id && ObjectId.isValid(id) ? new ObjectId(id) : null };
 }
 
 export async function getConnectFeed(
@@ -119,6 +125,9 @@ export async function getConnectFeed(
         $or: [
           { publishedAt: { $lt: after.publishedAt } },
           { publishedAt: after.publishedAt, createdAt: { $lt: after.createdAt } },
+          ...(after.id
+            ? [{ publishedAt: after.publishedAt, createdAt: after.createdAt, _id: { $lt: after.id } }]
+            : []),
         ],
       }
     : {};
@@ -162,7 +171,7 @@ export async function getConnectFeed(
         ...(after ? [cursorFilter] : []),
       ],
     })
-    .sort({ publishedAt: -1, createdAt: -1 })
+    .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
     .limit(limit + 1)
     .toArray();
   const hasMore = page.length > limit;

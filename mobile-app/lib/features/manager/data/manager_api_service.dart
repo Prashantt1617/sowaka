@@ -61,21 +61,33 @@ class ManagerApiService {
   /// to come, so the loader lasts one round of calls, not the slowest of
   /// ten. The returned future is the complete dashboard.
   Future<ManagerDashboard> fetchDashboard({
+    /// What is on screen already, whose inboxes and claims the core keeps
+    /// until the live ones land — so nothing flashes empty in between.
+    ManagerDashboard? previous,
     void Function(ManagerDashboard core)? onCore,
     bool keep = true,
   }) async {
-    final recording = keep && _replay == null ? <String, Map<String, dynamic>>{} : null;
-    _recording = recording;
+    // One recording at a time: a second load while one is in flight would
+    // split the replies between two maps and leave both copies incomplete.
+    final recording =
+        keep && _replay == null && _recording == null ? <String, Map<String, dynamic>>{} : null;
+    final startedAt = DateTime.now();
+    if (recording != null) _recording = recording;
     try {
-      final dashboard = await _fetchDashboard(onCore: onCore);
-      if (recording != null) unawaited(DashboardCache.write(session.user.id, recording));
+      final dashboard = await _fetchDashboard(previous: previous, onCore: onCore);
+      if (recording != null) {
+        unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
+      }
       return dashboard;
     } finally {
-      if (identical(_recording, recording)) _recording = null;
+      if (recording != null && identical(_recording, recording)) _recording = null;
     }
   }
 
-  Future<ManagerDashboard> _fetchDashboard({void Function(ManagerDashboard core)? onCore}) async {
+  Future<ManagerDashboard> _fetchDashboard({
+    ManagerDashboard? previous,
+    void Function(ManagerDashboard core)? onCore,
+  }) async {
     final workspaceFuture = _request('GET', '/manager/workspace');
     final myLeavesFuture = fetchMyLeaves();
     final managerLeavesFuture = fetchManagerLeaves();
@@ -204,15 +216,16 @@ class ManagerApiService {
       regularizations: attendanceData.$2,
       managerRegularizations: managerRegularizations,
     );
-    // The first screen has what it needs; the rest fills in behind it.
+    // The first screen has what it needs; the rest fills in behind it,
+    // and until it does the lists stay as they were.
     onCore?.call(build(
-      leaves: const [],
-      overtime: const [],
-      myOvertime: const [],
-      myReimbursements: const [],
-      reimbursementTypes: const [],
-      reimbursements: const [],
-      managerRegularizations: const [],
+      leaves: previous?.leaves ?? const [],
+      overtime: previous?.overtime ?? const [],
+      myOvertime: previous?.myOvertime ?? const [],
+      myReimbursements: previous?.myReimbursements ?? const [],
+      reimbursementTypes: previous?.reimbursementTypes ?? const [],
+      reimbursements: previous?.reimbursements ?? const [],
+      managerRegularizations: previous?.managerRegularizations ?? const [],
     ));
     return build(
       leaves: await managerLeavesFuture,

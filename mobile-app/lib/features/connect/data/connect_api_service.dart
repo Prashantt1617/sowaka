@@ -32,10 +32,13 @@ class ConnectApiService {
       'limit=$limit',
       if (cursor != null) 'cursor=${Uri.encodeQueryComponent(cursor)}',
     ].join('&');
+    final startedAt = DateTime.now();
     final json = await _request('GET', '/connect/feed?$query');
     // The top of the feed is kept on the device, so the next launch opens on
     // it while the live page is fetched.
-    if (cursor == null) unawaited(DashboardCache.write(_feedCacheKey, {'feed': json}));
+    if (cursor == null) {
+      unawaited(DashboardCache.write(_feedCacheKey, {'feed': json}, startedAt: startedAt));
+    }
     return _feedPage(json);
   }
 

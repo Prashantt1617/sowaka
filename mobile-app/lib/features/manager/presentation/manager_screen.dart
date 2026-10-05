@@ -157,7 +157,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   void _onNetworkChanged() {
     if (!mounted || NetworkStatus.offline.value) return;
-    if (_bloc.state.dashboard == null) _bloc.add(const LoadManagerDashboard());
+    // Nothing loaded, or only the device's copy: the live one now.
+    if (_bloc.state.dashboard == null || _bloc.state.fromCache) {
+      _bloc.add(const LoadManagerDashboard());
+    }
   }
 
   void _refreshBackState() {
@@ -442,9 +445,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
       ),
     );
     if (confirmed != true) return;
-    // Their remembered dashboard goes with them: the next person to sign in
-    // on this phone must not open on it.
-    unawaited(DashboardCache.clear(_session.user.id));
+    // Every copy on this phone goes with them — dashboard and feed — and a
+    // load still in flight cannot put one back.
+    await DashboardCache.clearAll();
     // The server forgets the device, then the session, before the phone
     // does, so pushes for this account stop landing here and the token dies
     // now. The device first: unregistering needs the token that logout
