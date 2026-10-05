@@ -204,22 +204,16 @@ export function ShiftTemplates() {
             </thead>
             <tbody>
               {shifts.filter((t) => t.policy).map((t) => {
-                const sm = toMinutes(t.policy.startTime); const em = toMinutes(t.policy.endTime);
-                let d = sm != null && em != null ? em - sm : 0;
-                if (d <= 0) d += 24 * 60;
+                // The row names the template and its hours; the rules live
+                // on the template itself, a click away.
                 return (
                   <tr key={t.id} className="phm-row" onClick={() => open(t)} style={{ cursor: 'pointer' }}>
                     <Td>
                       <span style={{ fontWeight: 800, color: '#0571A6' }}>{t.name}</span>
                       {t.isDefault && <span style={defaultPill}>Default</span>}
                       {!t.active && <span style={inactivePill}>Inactive</span>}
-                      <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>
-                        half day {t.policy.minHalfDayHours}h · full day {t.policy.minFullDayHours}h ·
-                        late {t.policy.lateMarkingEnabled === false ? 'off' : `${t.policy.lateGraceMinutes} min`} ·
-                        early {t.policy.earlyMarkingEnabled === false ? 'off' : `${t.policy.earlyOutGraceMinutes} min`}
-                      </div>
                     </Td>
-                    <Td muted>{t.policy.startTime} – {t.policy.endTime} · {formatDuration(d)}</Td>
+                    <Td muted>{t.policy.startTime} – {t.policy.endTime}</Td>
                     <Td>
                       <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: shiftHeadcount(t) ? '#222222' : '#9197A2' }}>
                         {shiftHeadcount(t)}
