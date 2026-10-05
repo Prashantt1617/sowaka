@@ -13,9 +13,9 @@ import {
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers } from './notification.service';
-import { assignedParametersFor } from './kpi.service';
+import { assignedParametersFor, assignedParametersForMany } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
-import { policyForUser, shiftPolicyFor } from './shift.service';
+import { policiesForUsers, policyForUser, shiftPolicyViewOf } from './shift.service';
 import { markForDay, minutesAfterShiftStart, DEFAULT_AWAY_REASON } from './attendance.service';
 import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
@@ -238,9 +238,11 @@ export async function getFeedbackSnapshot(managerUserId: string) {
 export async function getManagerWorkspace(managerUserId: string) {
   const manager = await users().findOne({ userId: managerUserId });
   if (!manager) throw new ManagerError(404, 'Manager not found');
-  const approver = manager.managerUserId
-    ? await users().findOne({ userId: manager.managerUserId })
-    : null;
+  // Everything that depends only on who is asking goes out together: the
+  // reads below used to run one after another, and each is a round trip.
+  const approverFuture = manager.managerUserId
+    ? users().findOne({ userId: manager.managerUserId })
+    : Promise.resolve(null);
 
   // Scoped to the manager's own company: `managerUserId` alone is not unique
   // across orgs, and without this another company's employees can appear in
@@ -251,17 +253,28 @@ export async function getManagerWorkspace(managerUserId: string) {
 
   // The whole org, so each report's own reporting line can be walked rather
   // than assumed to run through whoever is looking at it.
-  const orgRoster = await users().find(orgFilter).toArray();
+  const [approver, orgRoster, directReports, cycle, companyConfig, orgHolidays] =
+    await Promise.all([
+      approverFuture,
+      users().find(orgFilter).toArray(),
+      users()
+        .find({
+          managerUserId,
+          ...orgFilter,
+          lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+        })
+        .sort({ name: 1, userId: 1 })
+        .toArray(),
+      cycleInfoFor(manager.org ?? ''),
+      // Company config for the overtime apply flow: which weekdays are
+      // week-offs, whether overtime is enabled for this user's department.
+      getCompanyConfig(manager.org),
+      // Only the holidays this employee observes: their own work location's,
+      // plus the all-locations days. Another office's holiday is not a day
+      // off here.
+      holidaysForUser(manager),
+    ]);
   const orgUsersById = new Map(orgRoster.map((user) => [user.userId, user]));
-
-  const directReports = await users()
-    .find({
-      managerUserId,
-      ...orgFilter,
-      lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-    })
-    .sort({ name: 1, userId: 1 })
-    .toArray();
 
   // Your team is the people you actually work alongside: whoever reports to
   // your manager *and* works in your department, plus your manager heading it,
@@ -294,7 +307,6 @@ export async function getManagerWorkspace(managerUserId: string) {
   // Recognition is limited to the manager's own direct reports — never the
   // peer/manager fallback above.
   const recognitionCandidates = directReports;
-  const cycle = await cycleInfoFor(manager.org ?? '');
   const period = cycle.period;
   const reportIds = reports.map((report) => report.userId);
   const reportEmployeeIds = reports
@@ -366,13 +378,20 @@ export async function getManagerWorkspace(managerUserId: string) {
   // since every record has one but not every record has userId.
   // Each report is scored on their own assigned parameters, so the blank form
   // the app renders differs per person. Resolved once here rather than per row.
-  const assignedByUser = new Map<string, Awaited<ReturnType<typeof assignedParametersFor>>>(
-    await Promise.all(
-      reportIds.map(async (id) =>
-        [id, await assignedParametersFor(manager.org ?? '', id, period)] as const,
-      ),
-    ),
-  );
+  // Each report's own KPI set and own shift, for the whole team in a few
+  // queries rather than several per person: this is what made the team tab
+  // take half a minute for a manager with a dozen reports.
+  const [assignedByUser, policyByUser, onLeaveRows, myAssigned] = await Promise.all([
+    assignedParametersForMany(manager.org ?? '', reportIds, period),
+    // The viewer's own shift rides along: it is what their day is graded by.
+    policiesForUsers([manager.userId, ...reportIds]),
+    leaves()
+      .find({ userId: { $in: reportIds }, status: 'approved', startDate: { $lte: todayStartUtc() }, endDate: { $gte: todayStartUtc() } })
+      .project<{ userId: string }>({ userId: 1 })
+      .toArray(),
+    // The viewer's own KPIs for this cycle, worded as HR wrote them.
+    assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true }),
+  ]);
 
   const attendanceByEmployeeId = new Map(
     todaysAttendance.filter((record) => record.employeeId).map((record) => [record.employeeId, record]),
@@ -426,14 +445,8 @@ export async function getManagerWorkspace(managerUserId: string) {
     }),
   );
   const nextDate = endOfCurrentMonth().toISOString().slice(0, 10);
-  // Who is on approved leave today, in one query for the whole team.
-  const todayStart = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-  const onLeaveToday = new Set(
-    (await leaves()
-      .find({ userId: { $in: reports.map((r) => r.userId) }, status: 'approved', startDate: { $lte: todayStart }, endDate: { $gte: todayStart } })
-      .project<{ userId: string }>({ userId: 1 })
-      .toArray()).map((row) => row.userId),
-  );
+  // Who is on approved leave today, read above with the rest of the team.
+  const onLeaveToday = new Set(onLeaveRows.map((row) => row.userId));
   const todayMarkFor = async (
     report: (typeof reports)[number],
     record: ReturnType<typeof todaysRecordFor>,
@@ -442,7 +455,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     const away = record?.dayType === 'wfh' || record?.dayType === 'client_visit' || record?.dayType === 'office_visit';
     if (away) return 'wfh';
     if (!record?.punchIn) return 'not_in';
-    const policy = await policyForUser(report.userId);
+    const policy = policyByUser.get(report.userId) ?? (await policyForUser(report.userId));
     if (policy.lateMarkingEnabled !== false && minutesAfterShiftStart(record.punchIn, policy.startTime) > policy.lateGraceMinutes) {
       return 'late';
     }
@@ -524,11 +537,10 @@ export async function getManagerWorkspace(managerUserId: string) {
   // The shift the app grades a day against: half-day and full-day hour
   // thresholds, plus the grace either side of the shift window. HR sets these
   // per shift in the dashboard; the app must not carry its own copy.
-  const shift = await shiftPolicyFor(manager.userId);
+  const shift = shiftPolicyViewOf(
+    policyByUser.get(manager.userId) ?? (await policyForUser(manager.userId)),
+  );
 
-  // Company config for the overtime apply flow: which weekdays are week-offs,
-  // whether overtime is enabled for this user's department, and the org holidays.
-  const companyConfig = await getCompanyConfig(manager.org);
   // Every gate applies, and the app hides the action rather than letting
   // someone fill a form the server will refuse: HR can switch off one person,
   // a whole team, or the shift they are on (its template's answer, or the
@@ -537,9 +549,6 @@ export async function getManagerWorkspace(managerUserId: string) {
     manager.overtimeEligible !== false &&
     !companyConfig.overtimeDisabledDepartments.includes((manager.department ?? '').trim()) &&
     shift.overtimeEligible;
-  // Only the holidays this employee observes: their own work location's, plus
-  // the all-locations days. Another office's holiday is not a day off here.
-  const orgHolidays = await holidaysForUser(manager);
   return {
     period,
     // The day the cycle closes, so the app can say how long a review it has
@@ -554,7 +563,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     // nobody has reviewed yet shows these, so someone knows what they will be
     // measured on before the review arrives — once it does, the manager's
     // notes take their place.
-    myParameters: (await assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true })).map(
+    myParameters: myAssigned.map(
       (p) => ({
         parameterId: p.id,
         name: p.title,
@@ -842,6 +851,11 @@ function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[
  * honours the org's configured cycle start day; this remains only for callers
  * that have no org to hand.
  */
+/** Midnight UTC today, the day leave ranges are compared against. */
+function todayStartUtc(): Date {
+  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+}
+
 function currentPeriod(date = new Date()): string {
   return date.toISOString().slice(0, 7);
 }
