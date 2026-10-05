@@ -448,7 +448,16 @@ class _TeamMemberRow extends StatelessWidget {
       'wfh' || 'leave' => const Color(0xFF0571A6),
       _ => const Color(0xFFDDDDDD),
     };
-    final status = _TodayStatusPill.forMark(member.todayMark);
+    // Working away says where from — "Work from home", "Client visit", in
+    // HR's words — in the same green as the time beside it.
+    final away = member.todayAway;
+    final status = away != null
+        ? _TodayStatusPill(
+            label: away,
+            background: const Color(0xFFEAFFE6),
+            foreground: const Color(0xFF34C759),
+          )
+        : _TodayStatusPill.forMark(member.todayMark);
     final punchIn = member.punchIn;
     final recognition = member.recognitionLabel;
 

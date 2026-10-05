@@ -202,6 +202,9 @@ class ManagerApiService {
     PunchReading? reading,
     /// Why the employee is away, once the server has said they are outside.
     String? reason,
+    /// Punch without saying why — allowed where the day is marked present
+    /// without a manager's decision.
+    bool skipReason = false,
   }) async {
     final json = await _request(
       'POST',
@@ -210,6 +213,7 @@ class ManagerApiService {
         'type': type,
         ...?reading?.toJson(),
         if (reason != null) 'reason': reason,
+        if (skipReason) 'skipReason': true,
       },
     );
     return AttendanceRecord.fromJson(json);

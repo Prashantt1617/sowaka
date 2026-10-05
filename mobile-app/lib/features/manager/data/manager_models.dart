@@ -208,6 +208,7 @@ class TeamMember {
     required this.params,
     required this.extra,
     this.todayMark = 'not_in',
+    this.todayAway,
     this.recognitionLabel,
     this.todayStatus = TeamPresenceStatus.notPunchedIn,
     this.birthday,
@@ -260,6 +261,10 @@ class TeamMember {
   /// How today reads on the team card, graded by the server against this
   /// member's own shift: present, late, half_day, wfh, leave or not_in.
   final String todayMark;
+
+  /// Where they are working from today when not at the office — the reason
+  /// on an outside punch, or the approved away day. Null in the office.
+  final String? todayAway;
 
   /// The recognition HR gave them — "Employee of the month" — if any.
   final String? recognitionLabel;
@@ -322,6 +327,9 @@ class TeamMember {
       todayMark:
           json['todayMark'] as String? ??
           (json['todayStatus'] == 'present' ? 'present' : 'not_in'),
+      todayAway: (json['todayAway'] as String?)?.trim().isNotEmpty == true
+          ? (json['todayAway'] as String).trim()
+          : null,
       recognitionLabel: (json['recognitionLabel'] as String?)?.trim(),
       todayStatus: json['todayStatus'] == 'present'
           ? TeamPresenceStatus.present
@@ -376,6 +384,11 @@ class TeamMember {
       avatarIndex: avatarIndex,
       params: params ?? this.params,
       extra: extra ?? this.extra,
+      // Today's reading travels with the copy: a copy made to carry a new
+      // review must not reset the card to "not in" until the next refresh.
+      todayMark: todayMark,
+      todayAway: todayAway,
+      recognitionLabel: recognitionLabel,
       todayStatus: todayStatus,
       birthday: birthday,
       designation: designation,

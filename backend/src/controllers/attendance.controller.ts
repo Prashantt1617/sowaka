@@ -48,6 +48,7 @@ export async function punch(req: Request, res: Response, next: NextFunction) {
     const result = await recordPunch(
       userId(req), String(body.type ?? ''), reading,
       typeof body.reason === 'string' ? body.reason : undefined,
+      body.skipReason === true,
     );
     res.json({ success: true, ...result });
   } catch (error) { next(error); }

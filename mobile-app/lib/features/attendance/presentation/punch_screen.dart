@@ -103,6 +103,10 @@ class _PunchScreenState extends State<PunchScreen> {
   List<String> _reasons = const [];
   bool _marksPresent = false;
 
+  /// The reason may be left out: the day is marked present either way, so
+  /// closing this screen punches without one.
+  bool _reasonOptional = false;
+
   /// The reading the refusal was about, sent again with the reason.
   PunchReading? _reading;
 
@@ -220,6 +224,7 @@ class _PunchScreenState extends State<PunchScreen> {
             .where((value) => value.isNotEmpty)
             .toList();
         _marksPresent = outside?['outcome'] == 'present';
+        _reasonOptional = _marksPresent && outside?['reasonOptional'] == true;
         _officeLabel = office == null
             ? null
             : [
@@ -258,8 +263,9 @@ class _PunchScreenState extends State<PunchScreen> {
     });
   }
 
-  /// The same punch again, with the reason the employee chose for being away.
-  Future<void> _sendWithReason(String reason) async {
+  /// The same punch again, with the reason the employee chose for being away
+  /// — or, where none is needed, without one.
+  Future<void> _sendWithReason(String? reason) async {
     setState(() {
       _busy = true;
       _stage = _PunchStage.sending;
@@ -269,6 +275,7 @@ class _PunchScreenState extends State<PunchScreen> {
         widget.type,
         reading: _reading,
         reason: reason,
+        skipReason: reason == null,
       );
       _recorded(record);
     } on ManagerApiException catch (error) {
@@ -286,6 +293,19 @@ class _PunchScreenState extends State<PunchScreen> {
     Navigator.of(
       context,
     ).pop(outcome ?? PunchOutcome(punched: false, requested: _raisedRequest));
+  }
+
+  /// The close control. On the outside screen of someone whose day is marked
+  /// present regardless, leaving is the punch: it goes through without a
+  /// reason and the screen closes on it.
+  Future<void> _dismiss() async {
+    if (_stage == _PunchStage.outside && _reasonOptional && !_busy) {
+      await _sendWithReason(null);
+      if (!mounted || _stage != _PunchStage.done) return;
+      _close(PunchOutcome(punched: true, officeName: _officeName));
+      return;
+    }
+    _close();
   }
 
   @override
@@ -311,7 +331,7 @@ class _PunchScreenState extends State<PunchScreen> {
                         label: 'Close',
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
-                          onTap: () => _close(),
+                          onTap: _dismiss,
                           child: SvgPicture.asset(
                             'assets/icons/punch/close.svg',
                             width: 24,
@@ -630,7 +650,10 @@ class _PunchScreenState extends State<PunchScreen> {
           // HR's own reasons, in HR's own words. What choosing one leads to
           // is HR's call too, so the screen says which it will be.
           Text(
-            _marksPresent
+            _reasonOptional
+                ? 'You will be marked present. Say where you are working '
+                    'from if you like, or just close this screen.'
+                : _marksPresent
                 ? 'Tell us why, and you will be marked present with a note '
                     'that you were out of location.'
                 : 'Tell us why, and your manager will be asked to mark the '
@@ -641,6 +664,13 @@ class _PunchScreenState extends State<PunchScreen> {
           const SizedBox(height: 12),
           for (final reason in _reasons) ...[
             _OutlineAction(label: reason, onTap: () => _sendWithReason(reason)),
+            const SizedBox(height: 8),
+          ],
+          if (_reasonOptional) ...[
+            _OutlineAction(
+              label: _punchingIn ? 'Punch in without a reason' : 'Punch out without a reason',
+              onTap: () => _sendWithReason(null),
+            ),
             const SizedBox(height: 8),
           ],
           const SizedBox(height: 20),
