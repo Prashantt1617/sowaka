@@ -229,23 +229,21 @@ class _TeamMemberProfilePage extends StatelessWidget {
                     bloc: bloc,
                     memberId: member.id,
                   ),
-                  attendance: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _AttendanceCard(
-                        date: today,
-                        present: present,
-                        punchIn: member.punchIn,
-                        punchOut: member.punchOut,
-                      ),
-                      // The month below today, as on one's own profile.
-                      const SizedBox(height: 20),
-                      _MemberAttendanceCalendar(
-                        member: member,
-                        data: data,
-                        bloc: bloc,
-                      ),
-                    ],
+                  // Today's card and the month below it, as on one's own
+                  // profile — both read by this member's shift, which the
+                  // calendar fetches with the month.
+                  attendance: _MemberAttendanceCalendar(
+                    member: member,
+                    data: data,
+                    bloc: bloc,
+                    todayCard: (shift) => _AttendanceCard(
+                      date: today,
+                      present: present,
+                      punchIn: member.punchIn,
+                      punchOut: member.punchOut,
+                      autoPresent: shift.markedPresentAutomatically,
+                      singlePunch: shift.singlePunchDay,
+                    ),
                   ),
                 ),
               ],
@@ -1468,11 +1466,16 @@ class _MemberAttendanceCalendar extends StatefulWidget {
     required this.member,
     required this.data,
     required this.bloc,
+    required this.todayCard,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
+
+  /// Today's card, built once the member's shift is known so it reads the
+  /// day the way their own profile does.
+  final Widget Function(ShiftPolicy shift) todayCard;
 
   @override
   State<_MemberAttendanceCalendar> createState() =>
@@ -1487,9 +1490,16 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
   DateTime? _selected;
   List<AttendanceRecord> _records = const [];
 
-  /// This member's own shift takes one punch, so their days show one.
+  /// This member's own shift, which grades their days: a server that predates
+  /// sending it leaves this null and the viewer's shift stands in, with the
+  /// single-punch flag it did send.
+  ShiftPolicy? _shift;
   bool _singlePunch = false;
   List<AttendanceRegularization> _regularizations = const [];
+
+  ShiftPolicy get _policy => _shift ?? widget.data.shift;
+  bool get _single => _shift?.singlePunchDay ?? _singlePunch;
+  bool get _autoPresent => _policy.markedPresentAutomatically;
 
   @override
   void initState() {
@@ -1519,6 +1529,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
         _records = result.$1;
         _regularizations = result.$2;
         _singlePunch = result.$3;
+        _shift = result.$4;
         _loading = false;
       });
     } catch (_) {
@@ -1549,7 +1560,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
     overtime: widget.data.overtime
         .where((item) => item.userId == widget.member.userId)
         .toList(),
-    shift: widget.data.shift,
+    shift: _policy,
   );
 
   String? _pendingNoticeFor(AttendanceDayView day) {
@@ -1592,7 +1603,8 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
                 AttendanceDayDetail(
                   day: day,
                   pendingNotice: _pendingNoticeFor(day),
-                  singlePunch: _singlePunch,
+                  singlePunch: _single,
+                  autoPresent: _autoPresent,
                 ),
               ],
             ),
@@ -1619,6 +1631,8 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        widget.todayCard(_policy),
+        const SizedBox(height: 20),
         Row(
           children: [
             AttendanceCalendarArrow(
@@ -1683,7 +1697,8 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
                       day: day,
                       today: _isSameCalendarDay(day.date, now),
                       pendingNotice: _pendingNoticeFor(day),
-                      singlePunch: _singlePunch,
+                      singlePunch: _single,
+                      autoPresent: _autoPresent,
                       onTap: () => _showDaySheet(day),
                     ),
                   ),
@@ -1701,7 +1716,8 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
               AttendanceDayDetail(
                 day: selectedDay,
                 pendingNotice: _pendingNoticeFor(selectedDay),
-                singlePunch: _singlePunch,
+                singlePunch: _single,
+                autoPresent: _autoPresent,
               ),
             ],
           ],

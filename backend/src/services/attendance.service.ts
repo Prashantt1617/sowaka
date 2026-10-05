@@ -9,7 +9,7 @@ import {
   RegularizationDayType,
   RegularizationStatus,
 } from '../models/attendance.model';
-import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser, shiftPolicyFor } from './shift.service';
 import { orgUsers } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
@@ -668,12 +668,15 @@ export async function getTeamMemberAttendance(
     toInput,
   );
   // The employee's own shift decides how their days read, and they may be on a
-  // different template from the manager looking at them — someone on a
-  // single-punch shift has no punch-out for this view to leave blank.
-  const policy = await policyForUser(employeeUserId);
+  // different template from the manager looking at them: their week-offs,
+  // grace and hour bands, whether one punch makes the day, whether they are
+  // marked present without punching at all. The whole policy goes with the
+  // month so the reader's calendar is a copy of the employee's own.
+  const shift = await shiftPolicyFor(employeeUserId);
   return {
     ...attendance,
-    singlePunch: policy.correction.punchMode === 'Single punch',
+    singlePunch: shift.correction.punchMode === 'Single punch',
+    shift,
   };
 }
 

@@ -165,9 +165,13 @@ class ManagerApiService {
     );
   }
 
-  /// This member's month, plus whether their own shift takes a single punch —
-  /// they may be on a different template from the manager reading it.
-  Future<(List<AttendanceRecord>, List<AttendanceRegularization>, bool)>
+  /// This member's month, plus their own shift — they may be on a different
+  /// template from the manager reading it, and their days are graded by
+  /// theirs. The shift is null from a server that predates it; the
+  /// single-punch flag is kept for that case.
+  Future<
+    (List<AttendanceRecord>, List<AttendanceRegularization>, bool, ShiftPolicy?)
+  >
   fetchTeamMemberAttendance(
     String employeeUserId,
     DateTime from,
@@ -187,6 +191,9 @@ class ManagerApiService {
           )
           .toList(),
       json['singlePunch'] as bool? ?? false,
+      json['shift'] is Map<String, dynamic>
+          ? ShiftPolicy.fromJson(json['shift'] as Map<String, dynamic>)
+          : null,
     );
   }
 
