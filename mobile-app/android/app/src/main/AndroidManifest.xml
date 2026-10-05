@@ -45,6 +45,36 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- The Convrse icon: a launcher alias the app switches on after a
+             Convrse employee signs in, and off again when they sign out. Only
+             one of the main activity and these aliases is enabled at a time,
+             so the home screen shows one icon. -->
+        <activity-alias
+            android:name=".LauncherConvrse"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_convrse">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <!-- The Acmt icon: a launcher alias the app switches on after a
+             Acmt employee signs in, and off again when they sign out. Only
+             one of the main activity and these aliases is enabled at a time,
+             so the home screen shows one icon. -->
+        <activity-alias
+            android:name=".LauncherAcmt"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_acmt">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

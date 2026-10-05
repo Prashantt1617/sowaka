@@ -2,4 +2,6 @@
 <resources>
     <!-- Sowaka brand terracotta, sampled from the app icon artwork. -->
     <color name="ic_launcher_background">#B23500</color>
+    <color name="ic_launcher_convrse_background">#FFFFFF</color>
+    <color name="ic_launcher_acmt_background">#FFFFFF</color>
 </resources>
