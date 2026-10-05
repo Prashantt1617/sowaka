@@ -139,10 +139,12 @@ export function ShiftTemplates() {
 
   const exportTemplate = (shift: ShiftDTO) => {
     const p = shift.policy;
-    // The default template also covers everyone assigned to no template.
-    const elsewhere = new Set(shifts.filter((s) => s.id !== shift.id).flatMap((s) => s.assignedUserIds));
+    // The default template also covers everyone working who is assigned to no
+    // active template — the same people its headcount counts.
+    const elsewhere = new Set(shifts.filter((s) => s.id !== shift.id && s.active).flatMap((s) => s.assignedUserIds));
+    const working = (person: EmployeeDTO) => !['offboarded', 'terminated'].includes(person.lifecycleStatus ?? '');
     const rows = roster.filter((person) =>
-      shift.assignedUserIds.includes(person.userId) || (shift.isDefault && !elsewhere.has(person.userId)));
+      shift.assignedUserIds.includes(person.userId) || (shift.isDefault && working(person) && !elsewhere.has(person.userId)));
     downloadCsv(`${shift.name.replace(/\s+/g, '-').toLowerCase()}-employees`, [
       { header: 'Employee ID', value: (e: EmployeeDTO) => e.employeeId ?? '' },
       { header: 'Name', value: (e: EmployeeDTO) => e.name },

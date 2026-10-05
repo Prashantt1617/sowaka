@@ -412,7 +412,9 @@ export async function listShifts(callerId: string) {
  * they are not on any shift any more.
  */
 async function unassignedCount(org: string, docs: ShiftTemplate[]): Promise<number> {
-  const assigned = new Set(docs.flatMap((doc) => doc.assignedUserIds ?? []));
+  // An inactive template holds nobody: its people follow the default, as
+  // policyForUser resolves them.
+  const assigned = new Set(docs.filter((doc) => doc.active).flatMap((doc) => doc.assignedUserIds ?? []));
   const people = await users()
     .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
     .toArray();
