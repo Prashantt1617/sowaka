@@ -761,21 +761,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       // thing at a time, rather than every section stacked.
                       if (worksHere) ...[
                         _ProfileTabs(
-                          labels: [
-                            'Details',
-                            'Attendance',
-                            'Requests',
-                            'Grow',
-                            'Org chart',
-                            if (helpHere) 'Counselor',
-                          ],
-                          selected: _tab,
+                          labels: tabs,
+                          selected: _tab.clamp(0, tabs.length - 1),
                           onChanged: (index) => setState(() => _tab = index),
                         ),
                         const SizedBox(height: 16),
-                        ...switch (_tab) {
-                          2 => _requestTab(dashboard),
-                          1 => [
+                        ...switch (tabs[_tab.clamp(0, tabs.length - 1)]) {
+                          'Requests' => _requestTab(dashboard),
+                          'Attendance' => [
                             _AttendanceCard(
                               date: today,
                               present: todayRecord?.punchIn != null,
@@ -796,7 +789,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             const SizedBox(height: 24),
                             _ProfileAttendanceCalendar(dashboard: dashboard),
                           ],
-                          0 => [
+                          'Details' => [
                             _WorkDetailRow(
                               iconAsset: 'assets/icons/profile_email.svg',
                               label: 'Email',
@@ -827,7 +820,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 value: _formatDate(user.birthday),
                               ),
                           ],
-                          4 => [
+                          'Org chart' => [
                             if (dashboard.myOrgChart.length > 1)
                               _OrgChartCard(nodes: dashboard.myOrgChart)
                             else
@@ -836,7 +829,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 'is set up.',
                               ),
                           ],
-                          3 => [
+                          'Grow' => [
                             _ProfileGrowTab(
                               data: dashboard,
                               bloc: bloc,
@@ -2790,6 +2783,16 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
       ),
     );
 
+    // Growth is reviewed by one's manager; without one there is nothing to
+    // show there, so the tab is not offered.
+    final tabs = [
+      'Details',
+      'Attendance',
+      'Requests',
+      if (dashboard.hasManager) 'Grow',
+      'Org chart',
+      if (helpHere) 'Counselor',
+    ];
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
       body: Column(
