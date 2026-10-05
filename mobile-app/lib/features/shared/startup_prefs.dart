@@ -12,6 +12,11 @@ class StartupPrefs {
 
   static const _punchPromptDateKey = 'startup.punchPromptDate';
 
+  /// Set by a sign-in or onboarding: the launch that follows it has just
+  /// taken the person through enough screens, so the punch screen holds for
+  /// that one launch only. The next launch of the day opens on it as usual.
+  static const _punchPromptHoldKey = 'startup.punchPromptHold';
+
   static String _key(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
@@ -24,6 +29,28 @@ class StartupPrefs {
     } catch (_) {
       // Unreadable storage shows the prompt again rather than never: missing a
       // punch costs someone a correction request.
+      return false;
+    }
+  }
+
+  /// Holds the punch screen for the next launch only.
+  Future<void> holdPunchPromptOnce() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_punchPromptHoldKey, true);
+    } catch (_) {
+      // Then it shows on that launch, which is the harmless direction.
+    }
+  }
+
+  /// Whether a hold is in place — and clears it, so it covers one launch.
+  Future<bool> takePunchPromptHold() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final held = preferences.getBool(_punchPromptHoldKey) ?? false;
+      if (held) await preferences.remove(_punchPromptHoldKey);
+      return held;
+    } catch (_) {
       return false;
     }
   }

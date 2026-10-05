@@ -105,14 +105,17 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _bloc = supplied ?? ManagerBloc(session: widget.session);
     if (_ownsBloc) _bloc.add(const LoadManagerDashboard());
     AppNotificationService.instance.attachSession(widget.session);
-    // Onboarding has just taken two screens of their time; the punch screen
-    // holds until the next launch. It opens by itself once a working day, on
-    // the first launch of the day, for people on a geotagged shift.
+    // The punch screen opens by itself once a working day, on the first
+    // launch of the day, for people on a geotagged shift. A sign-in or
+    // onboarding has just taken screens of their time, so the launch that
+    // follows one holds it — and only that launch: the day's showing is not
+    // spent, so the next launch opens on it.
     if (widget.justOnboarded) {
-      unawaited(const StartupPrefs().markPunchPromptShown());
+      unawaited(const StartupPrefs().holdPunchPromptOnce());
     } else {
       unawaited(
-        const StartupPrefs().punchPromptShown().then((shown) {
+        const StartupPrefs().takePunchPromptHold().then((held) async {
+          final shown = held || await const StartupPrefs().punchPromptShown();
           if (mounted) setState(() => _punchPromptUsed = shown);
         }),
       );
