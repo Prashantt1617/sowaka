@@ -1,7 +1,9 @@
 package com.sowaka.connect
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -38,6 +40,13 @@ class MainActivity : FlutterActivity() {
      */
     private var userLeft = false
 
+    /**
+     * This activity started another one — the camera, a picker, Settings.
+     * Android reports that as the user leaving too, so it is noted here and
+     * the leave hint that follows is ignored.
+     */
+    private var selfLaunched = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sowaka/app_icon")
@@ -58,9 +67,28 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    override fun startActivity(intent: Intent?, options: Bundle?) {
+        selfLaunched = true
+        super.startActivity(intent, options)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun startActivityForResult(intent: Intent?, requestCode: Int, options: Bundle?) {
+        selfLaunched = true
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        userLeft = true
+        // Home or recents, unless this activity itself just opened something.
+        if (!selfLaunched) userLeft = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back on screen: whatever was noted about leaving no longer holds.
+        selfLaunched = false
+        userLeft = false
     }
 
     override fun onStop() {
