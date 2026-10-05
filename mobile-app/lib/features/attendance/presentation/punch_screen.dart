@@ -224,7 +224,11 @@ class _PunchScreenState extends State<PunchScreen> {
       _busy = false;
       _stage = _PunchStage.done;
       _officeName = record.officeName;
-      _outsideNote = record.outsideLocation;
+      // The day's note belongs to the punch that wrote it. A punch-out
+      // after an outside punch-in carries the morning's note on the record,
+      // and must not describe this punch as taken from there.
+      final note = record.outsideLocation;
+      _outsideNote = note != null && note.punchType == widget.type ? note : null;
       _punchedAt =
           (_punchingIn ? record.punchIn : record.punchOut) ?? DateTime.now();
     });
@@ -271,8 +275,14 @@ class _PunchScreenState extends State<PunchScreen> {
   /// present regardless, leaving is the punch: it goes through with the
   /// reason chosen, or none, and the screen closes on it. Never when today's
   /// request is already with the manager — then it only closes.
+  /// Today's request already stands between this punch and the manager.
+  /// Only a punch-in that would become a request is held back by it: a
+  /// present-outcome punch needs nobody's decision, and a punch-out rides
+  /// on a pending request rather than raising another.
+  bool get _alreadyIn => _needsApproval && (widget.alreadyRequestedToday || _raisedRequest);
+
   Future<void> _dismiss() async {
-    final alreadyIn = widget.alreadyRequestedToday || _raisedRequest;
+    final alreadyIn = _alreadyIn;
     if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy) {
       await _sendWithReason(_selectedReason);
       if (!mounted || _stage != _PunchStage.done) return;
@@ -505,7 +515,7 @@ class _PunchScreenState extends State<PunchScreen> {
   /// from the template too: a manager's decision, or marked present outright,
   /// in which case no reason is needed and the button is live from the start.
   Widget _outside() {
-    final alreadyIn = widget.alreadyRequestedToday || _raisedRequest;
+    final alreadyIn = _alreadyIn;
     final canSend = !alreadyIn && !_busy && (_selectedReason != null || _reasonOptional);
     final sendLabel = _needsApproval ? 'Send punch-in request' : (_punchingIn ? 'Punch in' : 'Punch out');
     return Column(
