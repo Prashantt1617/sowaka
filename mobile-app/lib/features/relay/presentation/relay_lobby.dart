@@ -26,11 +26,9 @@ class RelayLobby extends StatelessWidget {
   final VoidCallback? onClose;
   final VoidCallback? onHowToPlay;
 
-  String get _clock {
-    final minutes = (secondsLeft ~/ 60).toString().padLeft(2, '0');
-    final seconds = (secondsLeft % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
+  /// Days, hours and minutes while kick-off is far off; minutes and seconds
+  /// once it is near — the same reading as the post's countdown.
+  String get _clock => relayCountdown(secondsLeft);
 
   @override
   Widget build(BuildContext context) {
