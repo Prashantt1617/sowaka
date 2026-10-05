@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../shared/network_status.dart';
+
 import '../../../services/api_config.dart';
 import 'auth_models.dart';
 
@@ -18,7 +20,12 @@ class AuthApiException implements Exception {
 class AuthApiService {
   AuthApiService({String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-      _client = client ?? http.Client();
+      // Every sign-in request reports how it fared, so the banner shows on
+      // this screen too when the phone cannot reach the server.
+      _client = ReportingClient(
+        client ?? http.Client(),
+        probe: Uri.parse('${baseUrl ?? ApiConfig.baseUrl}/health'),
+      );
 
   final String _baseUrl;
   final http.Client _client;

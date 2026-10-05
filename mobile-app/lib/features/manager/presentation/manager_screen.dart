@@ -34,6 +34,8 @@ import '../../shared/startup_prefs.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
+import '../../shared/network_status.dart';
+import '../../shared/offline_banner.dart';
 import '../../manager_shell/presentation/tab_specs.dart';
 import '../../help/data/help_api_service.dart';
 import '../../help/presentation/help_profile_section.dart';
@@ -104,6 +106,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _ownsBloc = supplied == null;
     _bloc = supplied ?? ManagerBloc(session: widget.session);
     if (_ownsBloc) _bloc.add(const LoadManagerDashboard());
+    // A launch with no connection has nothing to show; the moment the
+    // connection is back the dashboard loads itself.
+    NetworkStatus.offline.addListener(_onNetworkChanged);
     AppNotificationService.instance.attachSession(widget.session);
     // The punch screen opens by itself once a working day, on the first
     // launch of the day, for people on a geotagged shift. A sign-in or
@@ -138,6 +143,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   @override
   void dispose() {
+    NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
       ..removeListener(_refreshBackState)
@@ -145,6 +151,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     super.dispose();
+  }
+
+  void _onNetworkChanged() {
+    if (!mounted || NetworkStatus.offline.value) return;
+    if (_bloc.state.dashboard == null) _bloc.add(const LoadManagerDashboard());
   }
 
   void _refreshBackState() {
@@ -465,6 +476,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
           _bloc.add(const ClearManagerMessage());
         });
 
+        // No connection and nothing loaded: the banner over a skeleton of
+        // the home, as the feed apps do it.
+        if (state.dashboard == null && NetworkStatus.offline.value) {
+          return const OfflineSkeletonScreen();
+        }
+
         if (state.status == ManagerLoadStatus.loading ||
             state.status == ManagerLoadStatus.initial) {
           return const Scaffold(
@@ -507,7 +524,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
           },
           child: Scaffold(
             backgroundColor: const Color(0xFFF7F7F9),
-            body: _profileOpen
+            body: OfflineAware(
+              child: _profileOpen
                 ? _ProfileScreen(
                     session: _session,
                     dashboard: state.dashboard!,
@@ -554,6 +572,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                         ),
                     ],
                   ),
+            ),
           ),
         );
       },

@@ -5,6 +5,8 @@ import '../../attendance/data/punch_location_service.dart';
 
 import 'package:http/http.dart' as http;
 
+import '../../shared/network_status.dart';
+
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
@@ -638,8 +640,20 @@ class ManagerApiService {
     http.BaseRequest request, {
     String? label,
   }) async {
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final http.Response response;
+    try {
+      final streamed = await _client.send(request);
+      response = await http.Response.fromStream(streamed);
+    } catch (error) {
+      // A request that never reached a server: the phone is offline, as far
+      // as this app can tell, until one gets through.
+      NetworkStatus.reportFailure(error, probe: Uri.parse('$_baseUrl/health'));
+      if (NetworkStatus.isNetworkError(error)) {
+        throw const ManagerApiException('No internet connection', offline: true);
+      }
+      rethrow;
+    }
+    NetworkStatus.reportSuccess();
     final json = response.body.isEmpty
         ? <String, dynamic>{}
         : jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
@@ -689,8 +703,12 @@ String _dateOnly(DateTime value) {
 }
 
 class ManagerApiException implements Exception {
-  const ManagerApiException(this.message, {this.statusCode, this.details});
+  const ManagerApiException(this.message, {this.statusCode, this.details, this.offline = false});
   final String message;
+
+  /// The request never reached a server. The banner says so; screens need
+  /// not repeat it.
+  final bool offline;
 
   /// The HTTP status, where the caller needs to tell one refusal from another
   /// — a punch outside the office reads differently from one with no fix.
