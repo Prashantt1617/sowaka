@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card } from '../ui';
 import {
-  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
+  createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, shiftHeadcount, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
   type EmployeeDTO, type OutsideLocationOutcome, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
 } from '../../services/hrms';
 import { downloadCsv } from '../export';
@@ -139,7 +139,12 @@ export function ShiftTemplates() {
 
   const exportTemplate = (shift: ShiftDTO) => {
     const p = shift.policy;
-    const rows = roster.filter((person) => shift.assignedUserIds.includes(person.userId));
+    // The default template also covers everyone working who is assigned to no
+    // active template — the same people its headcount counts.
+    const elsewhere = new Set(shifts.filter((s) => s.id !== shift.id && s.active).flatMap((s) => s.assignedUserIds));
+    const working = (person: EmployeeDTO) => !['offboarded', 'terminated'].includes(person.lifecycleStatus ?? '');
+    const rows = roster.filter((person) =>
+      shift.assignedUserIds.includes(person.userId) || (shift.isDefault && working(person) && !elsewhere.has(person.userId)));
     downloadCsv(`${shift.name.replace(/\s+/g, '-').toLowerCase()}-employees`, [
       { header: 'Employee ID', value: (e: EmployeeDTO) => e.employeeId ?? '' },
       { header: 'Name', value: (e: EmployeeDTO) => e.name },
@@ -201,36 +206,35 @@ export function ShiftTemplates() {
             </thead>
             <tbody>
               {shifts.filter((t) => t.policy).map((t) => {
-                const sm = toMinutes(t.policy.startTime); const em = toMinutes(t.policy.endTime);
-                let d = sm != null && em != null ? em - sm : 0;
-                if (d <= 0) d += 24 * 60;
+                // The row names the template and its hours; the rules live
+                // on the template itself, a click away.
                 return (
                   <tr key={t.id} className="phm-row" onClick={() => open(t)} style={{ cursor: 'pointer' }}>
                     <Td>
                       <span style={{ fontWeight: 800, color: '#0571A6' }}>{t.name}</span>
                       {t.isDefault && <span style={defaultPill}>Default</span>}
                       {!t.active && <span style={inactivePill}>Inactive</span>}
-                      <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>
-                        half day {t.policy.minHalfDayHours}h · full day {t.policy.minFullDayHours}h ·
-                        late {t.policy.lateMarkingEnabled === false ? 'off' : `${t.policy.lateGraceMinutes} min`} ·
-                        early {t.policy.earlyMarkingEnabled === false ? 'off' : `${t.policy.earlyOutGraceMinutes} min`}
-                      </div>
                     </Td>
-                    <Td muted>{t.policy.startTime} – {t.policy.endTime} · {formatDuration(d)}</Td>
+                    <Td muted>{t.policy.startTime} – {t.policy.endTime}</Td>
                     <Td>
-                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: t.assignedCount ? '#222222' : '#9197A2' }}>
-                        {t.assignedCount}
+                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: shiftHeadcount(t) ? '#222222' : '#9197A2' }}>
+                        {shiftHeadcount(t)}
                       </span>
                       <span style={{ fontSize: 14, color: '#9197A2' }}>
-                        {t.assignedCount === 1 ? ' employee' : ' employees'}
+                        {shiftHeadcount(t) === 1 ? ' employee' : ' employees'}
                       </span>
+                      {t.defaultedCount > 0 && (
+                        <div style={{ fontSize: 12.5, color: '#9197A2' }} title="On no template, so they follow the default">
+                          {t.defaultedCount} by default
+                        </div>
+                      )}
                     </Td>
                     <Td right>
                       <button
                         onClick={(e) => { e.stopPropagation(); exportTemplate(t); }}
-                        disabled={t.assignedCount === 0}
-                        title={t.assignedCount === 0 ? 'Nobody is on this shift yet' : 'Export the people on it'}
-                        style={{ ...smallBtn, opacity: t.assignedCount === 0 ? 0.45 : 1 }}
+                        disabled={shiftHeadcount(t) === 0}
+                        title={shiftHeadcount(t) === 0 ? 'Nobody is on this shift yet' : 'Export the people on it'}
+                        style={{ ...smallBtn, opacity: shiftHeadcount(t) === 0 ? 0.45 : 1 }}
                       >
                         Export
                       </button>

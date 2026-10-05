@@ -2686,6 +2686,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     today: _sameDay(day.date, DateTime.now()),
                     pendingNotice: _pendingNoticeFor(day),
                     singlePunch: widget.dashboard.shift.singlePunchDay,
+                    autoPresent:
+                        widget.dashboard.shift.markedPresentAutomatically,
                     onTap: () => _showAttendanceDaySheet(day),
                   ),
                 ),
@@ -2706,6 +2708,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               pendingNotice: _pendingNoticeFor(detail),
               blockedReason: _correctionBlockedReason(detail),
               singlePunch: widget.dashboard.shift.singlePunchDay,
+              autoPresent: widget.dashboard.shift.markedPresentAutomatically,
             ),
           ],
         ],
@@ -2823,6 +2826,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 pendingNotice: _pendingNoticeFor(day),
                 blockedReason: _correctionBlockedReason(day),
                 singlePunch: widget.dashboard.shift.singlePunchDay,
+                autoPresent: widget.dashboard.shift.markedPresentAutomatically,
               ),
             ],
           ),
@@ -2876,6 +2880,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Whether this day is one a leave request can still be made for.
   bool _leaveApplicable(AttendanceDayView day) {
     switch (day.kind) {
+      // A day already worked is not one to take leave on.
+      case AttendanceKind.present:
+      case AttendanceKind.halfDay:
       case AttendanceKind.leaveApproved:
       case AttendanceKind.leavePending:
       case AttendanceKind.holiday:
@@ -2931,14 +2938,27 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       return 'Corrections can only be raised up to '
           '${rules.backdateDays} days back.';
     }
-    final trigger = CorrectionRules.triggerFor(
+    // Nobody punches on auto punch, so there is no missing punch to put
+    // right: the day is present by the shift's own rule.
+    if (widget.dashboard.shift.markedPresentAutomatically) {
+      return 'This day is marked present by your shift — there is nothing '
+          'to correct.';
+    }
+    // One punch makes the day on a single-punch shift: with it taken there
+    // is no punch-out to be missing, and the day is as complete as it gets.
+    final singlePunchDone =
+        widget.dashboard.shift.singlePunchDay && day.record?.punchIn != null;
+    final trigger = widget.dashboard.shift.triggerFor(
       punchIn: day.record?.punchIn,
       punchOut: day.record?.punchOut,
     );
     if (!rules.allows(trigger)) {
       return trigger == 'Both punches present'
-          ? 'Both punches are recorded — your company does not allow a '
-                'correction for a complete day.'
+          ? singlePunchDone
+                ? 'Your punch is recorded — your company does not allow a '
+                      'correction for a complete day.'
+                : 'Both punches are recorded — your company does not allow a '
+                      'correction for a complete day.'
           : '$trigger cannot be corrected under your company policy.';
     }
     return null;
@@ -4124,6 +4144,7 @@ class AttendanceListCard extends StatelessWidget {
     required this.onTap,
     this.pendingNotice,
     this.singlePunch = false,
+    this.autoPresent = false,
     this.dimmed = false,
     this.selected = false,
   });
@@ -4131,6 +4152,10 @@ class AttendanceListCard extends StatelessWidget {
   final bool today;
   final VoidCallback onTap;
   final String? pendingNotice;
+
+  /// Present without punching: there are no times to show.
+  final bool autoPresent;
+
   final bool singlePunch;
   final bool dimmed;
   final bool selected;
@@ -4147,13 +4172,15 @@ class AttendanceListCard extends StatelessWidget {
     final punchOut = day.record?.punchOut;
     // Days that never had punches — leave, a holiday, a week-off — say what
     // they were instead of two blank times.
-    final hasTimes = switch (day.kind) {
-      AttendanceKind.present ||
-      AttendanceKind.halfDay ||
-      AttendanceKind.attention ||
-      AttendanceKind.regularizationPending => true,
-      _ => false,
-    };
+    final hasTimes =
+        !autoPresent &&
+        switch (day.kind) {
+          AttendanceKind.present ||
+          AttendanceKind.halfDay ||
+          AttendanceKind.attention ||
+          AttendanceKind.regularizationPending => true,
+          _ => false,
+        };
     final ink = dimmed ? _Q.inkFaint : const Color(0xFF222222);
     return Material(
       color: Colors.white,
@@ -4966,6 +4993,7 @@ class AttendanceDayDetail extends StatelessWidget {
     this.pendingNotice,
     this.blockedReason,
     this.singlePunch = false,
+    this.autoPresent = false,
   });
 
   final AttendanceDayView day;
@@ -4973,6 +5001,9 @@ class AttendanceDayDetail extends StatelessWidget {
   /// This employee's day is one punch, so there is no punch-out to show — an
   /// empty second cell reads as a day that went wrong rather than one that
   /// never had a second punch.
+  /// Present without punching: the punch box would show a day gone wrong.
+  final bool autoPresent;
+
   final bool singlePunch;
 
   /// What can be done with this day, in the order they should be offered.
@@ -5058,38 +5089,40 @@ class AttendanceDayDetail extends StatelessWidget {
           const SizedBox(height: 16),
           _AttendancePendingNotice(text: pending),
         ] else ...[
-          const SizedBox(height: 16),
-          Container(
-            height: 71,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _AttendancePunchCell(
-                    label: 'Punch-in',
-                    value: attendancePunchClock(day.record?.punchIn),
-                    alignEnd: false,
+          if (!autoPresent) ...[
+            const SizedBox(height: 16),
+            Container(
+              height: 71,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _AttendancePunchCell(
+                      label: 'Punch-in',
+                      value: attendancePunchClock(day.record?.punchIn),
+                      alignEnd: false,
+                    ),
                   ),
-                ),
-                Container(width: 1, color: const Color(0xFFDDDDDD)),
-                Expanded(
-                  child: _AttendancePunchCell(
-                    label: 'Punch-out',
-                    // Not required where HR's shift asks for one punch.
-                    value: singlePunch
-                        ? 'NR'
-                        : attendancePunchClock(day.record?.punchOut),
-                    alignEnd: true,
+                  Container(width: 1, color: const Color(0xFFDDDDDD)),
+                  Expanded(
+                    child: _AttendancePunchCell(
+                      label: 'Punch-out',
+                      // Not required where HR's shift asks for one punch.
+                      value: singlePunch
+                          ? 'NR'
+                          : attendancePunchClock(day.record?.punchOut),
+                      alignEnd: true,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
           for (final action in actions) ...[
             const SizedBox(height: 16),
             _AttendanceDayActionButton(action: action),

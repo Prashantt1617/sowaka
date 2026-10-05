@@ -3,10 +3,10 @@
 // Like departments, there is no separate master: a designation exists because
 // someone holds it, and it is a field on their own record. Counting the roster
 // means this cannot drift from who actually holds what.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, SearchInput, SelectBox } from '../ui';
 import { downloadCsv } from '../export';
 import { IconDownload } from './peopleTable';
 
@@ -19,20 +19,33 @@ type Designation = {
 
 export function Designations() {
   const { emps, loaded } = useStore();
+  // One department, or all of them. With one chosen the list is the titles
+  // held there and the counts are the people there who hold them.
+  const [department, setDepartment] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const departments = useMemo(
+    () => [...new Set(emps.map((e) => (e.team ?? '').trim()).filter((t) => t && t !== '—'))].sort(),
+    [emps],
+  );
 
   const designations = useMemo<Designation[]>(() => {
     const byName = new Map<string, Designation>();
     for (const person of emps) {
       const name = (person.role ?? '').trim();
       if (!name) continue;
+      if (department !== 'all' && (person.team ?? '').trim() !== department) continue;
       const row = byName.get(name) ?? { name, employees: 0, departments: [] };
       row.employees += 1;
       const team = (person.team ?? '').trim();
       if (team && !row.departments.includes(team)) row.departments.push(team);
       byName.set(name, row);
     }
-    return [...byName.values()].sort((a, b) => b.employees - a.employees);
-  }, [emps]);
+    const q = search.trim().toLowerCase();
+    return [...byName.values()]
+      .filter((d) => !q || d.name.toLowerCase().includes(q))
+      .sort((a, b) => b.employees - a.employees);
+  }, [emps, department, search]);
 
   const totalEmp = designations.reduce((s, d) => s + d.employees, 0);
 
@@ -45,7 +58,14 @@ export function Designations() {
   return (
     <div>
 
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search designation…" width={280} />
+        <SelectBox value={department} onChange={setDepartment}>
+          <option value="all">All departments</option>
+          {departments.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </SelectBox>
         <div style={{ fontSize: 14, color: '#717171' }}>
           {loaded ? `${designations.length} designations · ${totalEmp} people` : 'Loading…'}
         </div>
@@ -79,7 +99,7 @@ export function Designations() {
               </tr>
             ))}
             {loaded && designations.length === 0 && (
-              <tr><td colSpan={3}><EmptyRow text="No designations yet — nobody on the roster has a job title set." /></td></tr>
+              <tr><td colSpan={3}><EmptyRow text={search.trim() ? 'No designation matches that search.' : department === 'all' ? 'No designations yet — nobody on the roster has a job title set.' : `Nobody in ${department} has a job title set.`} /></td></tr>
             )}
             <tr>
               <Td><strong>Total</strong></Td>

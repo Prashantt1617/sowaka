@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The convrse mark on white, for the launcher alias the app enables once a
+     convrse employee signs in. Same layering as ic_launcher.xml. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_convrse_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_convrse_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_convrse_foreground" />
+</adaptive-icon>

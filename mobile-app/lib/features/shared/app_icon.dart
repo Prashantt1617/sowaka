@@ -6,11 +6,12 @@ import 'package:flutter/widgets.dart';
 
 /// The icon on the home screen.
 ///
-/// iOS lets an app swap between icons that ship inside the build, so a
-/// Convrse employee's phone shows the Convrse mark. Android has no supported
-/// way to do this — the usual activity-alias trick drops the app out of
-/// recents and can break home-screen shortcuts — so there the company's brand
-/// stops at the app's own screens.
+/// iOS swaps between icons that ship inside the build, so a Convrse
+/// employee's phone shows the Convrse mark. Android has no such API: there
+/// the app enables a launcher alias carrying the company's icon and retires
+/// the default one. The launcher refreshes on its own schedule — usually
+/// seconds, sometimes after a reboot — and an existing home-screen shortcut
+/// may need re-adding once.
 class AppIcon {
   const AppIcon._();
 
@@ -21,6 +22,15 @@ class AppIcon {
   /// Never throws: an icon is decoration, and an older build that has no such
   /// icon bundled should carry on rather than fail at launch.
   static Future<void> use(String? name) async {
+    if (Platform.isAndroid) {
+      await WidgetsBinding.instance.endOfFrame;
+      try {
+        await _channel.invokeMethod<void>('use', {'name': name});
+      } catch (error) {
+        debugPrint('App icon not changed: $error');
+      }
+      return;
+    }
     if (!Platform.isIOS) return;
     // Asked during launch, before the app is active, iOS cancels the change
     // ("The operation was cancelled" in the device log) and the old icon

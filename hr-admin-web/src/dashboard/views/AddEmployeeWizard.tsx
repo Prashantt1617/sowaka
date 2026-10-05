@@ -13,7 +13,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconPlus } from '../icons';
 import {
-  addEmployeeDocument, assignShift, createEmployee, getShifts, removeEmployeeDocument,
+  addEmployeeDocument, assignShift, createEmployee, getShifts, removeEmployeeDocument, shiftHeadcount,
   EMPLOYEE_DOCUMENT_TYPES, type EmployeeDocumentDTO, type ShiftDTO,
 } from '../../services/hrms';
 import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
@@ -396,7 +396,7 @@ function ShiftTemplateStep({ shifts, chosen, onChoose, name }: {
             <span style={pickTitle}>{s.name}</span>
             <span style={pickSub}>
               {s.policy.startTime}–{s.policy.endTime} · half day {s.policy.minHalfDayHours}h ·
-              full day {s.policy.minFullDayHours}h · {s.assignedCount} already on it
+              full day {s.policy.minFullDayHours}h · {shiftHeadcount(s)} already on it
             </span>
           </span>
         </button>

@@ -371,7 +371,7 @@ function withHalfDayRules(policy: ShiftPolicyRules): ShiftPolicyRules {
   return { ...policy, halfDay: { ...DEFAULT_ORG_SHIFT_POLICY.halfDay, ...(policy.halfDay ?? {}) } };
 }
 
-function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPolicyRules) {
+function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPolicyRules, defaultedCount = 0) {
   return {
     id: doc._id!.toHexString(),
     name: doc.name,
@@ -385,6 +385,10 @@ function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPoli
     isDefault: doc.isDefault === true,
     assignedUserIds: doc.assignedUserIds ?? [],
     assignedCount: (doc.assignedUserIds ?? []).length,
+    // People who follow this template without being assigned to it: everyone
+    // in the org who is on no template at all follows the default. Zero on
+    // every other template, so the dashboard can add it to the count.
+    defaultedCount: doc.isDefault === true ? defaultedCount : 0,
     createdAt: doc.createdAt?.toISOString(),
     updatedAt: doc.updatedAt?.toISOString(),
   };
@@ -398,7 +402,23 @@ export async function listShifts(callerId: string) {
     shiftTemplates().find({ org, deletedAt: { $exists: false } }).sort({ name: 1 }).toArray(),
     getOrgShiftPolicy(org),
   ]);
-  return docs.map((doc) => shiftView(doc, orgPolicy));
+  const unassigned = await unassignedCount(org, docs);
+  return docs.map((doc) => shiftView(doc, orgPolicy, unassigned));
+}
+
+/**
+ * How many working people in the org are on no template — the ones the
+ * default template covers. Offboarded and terminated staff are not counted:
+ * they are not on any shift any more.
+ */
+async function unassignedCount(org: string, docs: ShiftTemplate[]): Promise<number> {
+  // An inactive template holds nobody: its people follow the default, as
+  // policyForUser resolves them.
+  const assigned = new Set(docs.filter((doc) => doc.active).flatMap((doc) => doc.assignedUserIds ?? []));
+  const people = await users()
+    .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
+    .toArray();
+  return people.filter((person) => !assigned.has(person.userId)).length;
 }
 
 /**
@@ -665,7 +685,8 @@ export async function setDefaultShift(callerId: string, shiftId: string) {
   await shiftTemplates().updateMany({ org, _id: { $ne: _id }, isDefault: true }, { $set: { isDefault: false, updatedAt: new Date() } });
   const updated = await shiftTemplates().findOneAndUpdate({ _id, org }, { $set: { isDefault: true, updatedAt: new Date() } }, { returnDocument: 'after' });
   shiftSetupChanged(org);
-  return shiftView(updated!);
+  const docs = await shiftTemplates().find({ org, deletedAt: { $exists: false } }).toArray();
+  return shiftView(updated!, undefined, await unassignedCount(org, docs));
 }
 
 // -------------------------------------------------- the org-wide shift policy

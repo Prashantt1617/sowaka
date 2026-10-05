@@ -175,25 +175,9 @@ class _TeamMemberProfilePage extends StatelessWidget {
             onNotifications: onNotifications,
             onQuickCreate: onOpenComposer,
           ),
-          // A teammate's attendance calendar is a manager view; both the
-          // top-bar icon and the card's "view calendar" action are hidden
-          // for everyone else (each takes a nullable callback).
           _ProfilePageTopBar(
             // "Profile-Ananya" (node 3106:49189): whose page this is.
             title: 'Profile-${member.name.trim().split(' ').first}',
-            onCalendarTap: !canManage
-                ? null
-                : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => _TeamMemberAttendancePage(
-                        member: member,
-                        data: data,
-                        bloc: bloc,
-                        onNotifications: onNotifications,
-                        onOpenComposer: onOpenComposer,
-                      ),
-                    ),
-                  ),
           ),
           Expanded(
             child: ListView(
@@ -245,24 +229,21 @@ class _TeamMemberProfilePage extends StatelessWidget {
                     bloc: bloc,
                     memberId: member.id,
                   ),
-                  attendance: _AttendanceCard(
-                    date: today,
-                    present: present,
-                    punchIn: member.punchIn,
-                    punchOut: member.punchOut,
-                    onViewCalendar: !canManage
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _TeamMemberAttendancePage(
-                                member: member,
-                                data: data,
-                                bloc: bloc,
-                                onNotifications: onNotifications,
-                                onOpenComposer: onOpenComposer,
-                              ),
-                            ),
-                          ),
+                  // Today's card and the month below it, as on one's own
+                  // profile — both read by this member's shift, which the
+                  // calendar fetches with the month.
+                  attendance: _MemberAttendanceCalendar(
+                    member: member,
+                    data: data,
+                    bloc: bloc,
+                    todayCard: (shift) => _AttendanceCard(
+                      date: today,
+                      present: present,
+                      punchIn: member.punchIn,
+                      punchOut: member.punchOut,
+                      autoPresent: shift.markedPresentAutomatically,
+                      singlePunch: shift.singlePunchDay,
+                    ),
                   ),
                 ),
               ],
@@ -598,6 +579,16 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final tabs = user.enabledTabs;
     final worksHere = profileShowsWork(tabs);
     final helpHere = profileShowsHelp(tabs);
+    // Growth is reviewed by one's manager; without one there is nothing to
+    // show there, so the tab is not offered.
+    final profileTabs = [
+      'Details',
+      'Attendance',
+      'Requests',
+      if (dashboard.hasManager) 'Grow',
+      'Org chart',
+      if (helpHere) 'Counselor',
+    ];
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -778,21 +769,17 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                       // thing at a time, rather than every section stacked.
                       if (worksHere) ...[
                         _ProfileTabs(
-                          labels: [
-                            'Request',
-                            'Attendance',
-                            'Work detail',
-                            'Org chart',
-                            'Grow',
-                            if (helpHere) 'Counselor',
-                          ],
-                          selected: _tab,
+                          labels: profileTabs,
+                          selected: _tab.clamp(0, profileTabs.length - 1),
                           onChanged: (index) => setState(() => _tab = index),
                         ),
                         const SizedBox(height: 16),
-                        ...switch (_tab) {
-                          0 => _requestTab(dashboard),
-                          1 => [
+                        ...switch (profileTabs[_tab.clamp(
+                          0,
+                          profileTabs.length - 1,
+                        )]) {
+                          'Requests' => _requestTab(dashboard),
+                          'Attendance' => [
                             _AttendanceCard(
                               date: today,
                               present: todayRecord?.punchIn != null,
@@ -813,7 +800,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             const SizedBox(height: 24),
                             _ProfileAttendanceCalendar(dashboard: dashboard),
                           ],
-                          2 => [
+                          'Details' => [
                             _WorkDetailRow(
                               iconAsset: 'assets/icons/profile_email.svg',
                               label: 'Email',
@@ -844,7 +831,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 value: _formatDate(user.birthday),
                               ),
                           ],
-                          3 => [
+                          'Org chart' => [
                             if (dashboard.myOrgChart.length > 1)
                               _OrgChartCard(nodes: dashboard.myOrgChart)
                             else
@@ -853,7 +840,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                                 'is set up.',
                               ),
                           ],
-                          4 => [
+                          'Grow' => [
                             _ProfileGrowTab(
                               data: dashboard,
                               bloc: bloc,
@@ -1188,7 +1175,7 @@ class _AttendanceCard extends StatelessWidget {
           const SizedBox(height: 16),
           if (autoPresent)
             const Text(
-              'Present by deafult',
+              'Present by default',
               style: TextStyle(
                 color: MColors.inkSoft,
                 fontSize: 13,
@@ -1470,38 +1457,49 @@ class _ProfilePageTopBar extends StatelessWidget {
 bool _isSameCalendarDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-class _TeamMemberAttendancePage extends StatefulWidget {
-  const _TeamMemberAttendancePage({
+/// A report's month, under today's card on their Attendance tab: the same
+/// month row, headings, list and calendar as one's own profile, read from the
+/// server a month at a time since only the viewer's own days come with the
+/// dashboard.
+class _MemberAttendanceCalendar extends StatefulWidget {
+  const _MemberAttendanceCalendar({
     required this.member,
     required this.data,
     required this.bloc,
-    required this.onNotifications,
-    required this.onOpenComposer,
+    required this.todayCard,
   });
 
   final TeamMember member;
   final ManagerDashboard data;
   final ManagerBloc bloc;
-  final VoidCallback onNotifications;
-  final VoidCallback onOpenComposer;
+
+  /// Today's card, built once the member's shift is known so it reads the
+  /// day the way their own profile does.
+  final Widget Function(ShiftPolicy shift) todayCard;
 
   @override
-  State<_TeamMemberAttendancePage> createState() =>
-      _TeamMemberAttendancePageState();
+  State<_MemberAttendanceCalendar> createState() =>
+      _MemberAttendanceCalendarState();
 }
 
-class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
+class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
-  bool _listView = false;
   AttendanceFilter? _filter;
   bool _loading = true;
   bool _failed = false;
-  AttendanceDayView? _selectedDay;
+  DateTime? _selected;
   List<AttendanceRecord> _records = const [];
 
-  /// This member's own shift takes one punch, so their days show one.
+  /// This member's own shift, which grades their days: a server that predates
+  /// sending it leaves this null and the viewer's shift stands in, with the
+  /// single-punch flag it did send.
+  ShiftPolicy? _shift;
   bool _singlePunch = false;
   List<AttendanceRegularization> _regularizations = const [];
+
+  ShiftPolicy get _policy => _shift ?? widget.data.shift;
+  bool get _single => _shift?.singlePunchDay ?? _singlePunch;
+  bool get _autoPresent => _policy.markedPresentAutomatically;
 
   @override
   void initState() {
@@ -1510,27 +1508,32 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   }
 
   Future<void> _load() async {
+    // The month asked for; a reply for a month no longer on show is dropped,
+    // so two quick taps on the arrows cannot leave one month's days under
+    // another month's heading.
+    final month = _month;
     setState(() {
       _loading = true;
       _failed = false;
     });
     try {
-      final from = DateTime(_month.year, _month.month, 1);
-      final to = DateTime(_month.year, _month.month + 1, 0);
+      final from = DateTime(month.year, month.month, 1);
+      final to = DateTime(month.year, month.month + 1, 0);
       final result = await widget.bloc.service.fetchTeamMemberAttendance(
         widget.member.userId,
         from,
         to,
       );
-      if (!mounted) return;
+      if (!mounted || month != _month) return;
       setState(() {
         _records = result.$1;
         _regularizations = result.$2;
         _singlePunch = result.$3;
+        _shift = result.$4;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || month != _month) return;
       setState(() {
         _failed = true;
         _loading = false;
@@ -1541,170 +1544,185 @@ class _TeamMemberAttendancePageState extends State<_TeamMemberAttendancePage> {
   Future<void> _changeMonth(int delta) async {
     setState(() {
       _month = DateTime(_month.year, _month.month + delta);
-      _selectedDay = null;
+      _selected = null;
     });
     await _load();
   }
 
-  void _openDay(AttendanceDayView day) {
-    setState(() {
-      _selectedDay = _isSameCalendarDay(_selectedDay?.date ?? _month, day.date)
-          ? null
-          : day;
-    });
+  List<AttendanceDayView> get _days => buildAttendanceDays(
+    month: _month,
+    records: _records,
+    regularizations: _regularizations,
+    leaves: widget.data.leaves
+        .where((item) => item.userId == widget.member.userId)
+        .toList(),
+    holidays: widget.data.holidays,
+    overtime: widget.data.overtime
+        .where((item) => item.userId == widget.member.userId)
+        .toList(),
+    shift: _policy,
+  );
+
+  String? _pendingNoticeFor(AttendanceDayView day) {
+    if (day.correctionPending) {
+      return 'Their missed punch request is under review for this day.';
+    }
+    if (day.kind == AttendanceKind.leavePending) {
+      return 'Their leave request is under review for this day.';
+    }
+    return null;
   }
 
-  /// Day shown in the detail strip: the tapped day, else today when the shown
-  /// month contains it.
-  AttendanceDayView? _detailDay(List<AttendanceDayView> days) {
-    if (_selectedDay case final selected?) {
-      return days
-              .where((day) => _isSameCalendarDay(day.date, selected.date))
-              .firstOrNull ??
-          selected;
-    }
-    final now = DateTime.now();
-    if (_month.year != now.year || _month.month != now.month) return null;
-    return days.where((day) => _isSameCalendarDay(day.date, now)).firstOrNull;
-  }
+  Future<void> _showDaySheet(AttendanceDayView day) =>
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFFF7F7F9),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        builder: (_) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AttendanceDayDetail(
+                  day: day,
+                  pendingNotice: _pendingNoticeFor(day),
+                  singlePunch: _single,
+                  autoPresent: _autoPresent,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final memberLeaves = widget.data.leaves
-        .where((item) => item.userId == widget.member.userId)
-        .toList();
-    final memberOvertime = widget.data.overtime
-        .where((item) => item.userId == widget.member.userId)
-        .toList();
-    final days = buildAttendanceDays(
-      month: _month,
-      records: _records,
-      regularizations: _regularizations,
-      leaves: memberLeaves,
-      holidays: widget.data.holidays,
-      overtime: memberOvertime,
-      shift: widget.data.shift,
-    );
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F9),
-      body: Column(
-        children: [
-          AppHomeHeader(
-            profileAction: widget.data.managerPhotoUrl == null
-                ? AvatarBadge(
-                    initial: widget.data.managerInitial,
-                    index: 1,
-                    size: 30,
-                  )
-                : ClipOval(
-                    child: Image(
-                      image: _profileImage(widget.data.managerPhotoUrl!),
-                      width: 30,
-                      height: 30,
-                      fit: BoxFit.cover,
+    final now = DateTime.now();
+    final canGoForward =
+        _month.year < now.year ||
+        (_month.year == now.year && _month.month < now.month);
+    final days = _loading || _failed ? const <AttendanceDayView>[] : _days;
+    final selectedDay = _selected == null
+        ? (_month.year == now.year && _month.month == now.month
+              ? days
+                    .where((day) => _isSameCalendarDay(day.date, now))
+                    .firstOrNull
+              : null)
+        : days
+              .where((day) => _isSameCalendarDay(day.date, _selected!))
+              .firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        widget.todayCard(_policy),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            AttendanceCalendarArrow(
+              onPressed: () => _changeMonth(-1),
+              asset: 'assets/icons/calendar_chevron_prev.svg',
+            ),
+            Expanded(
+              child: Text(
+                '${_monthName(_month.month)} ${_month.year}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF2A2A2A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            Opacity(
+              opacity: canGoForward ? 1 : .3,
+              child: AttendanceCalendarArrow(
+                onPressed: canGoForward ? () => _changeMonth(1) : null,
+                asset: 'assets/icons/calendar_chevron_next.svg',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: CircularProgressIndicator(color: MColors.terra),
+            ),
+          )
+        else if (_failed)
+          const _ProfileTabNote('Could not load attendance for this month.')
+        else ...[
+          AttendanceFilterChips(
+            selected: _filter,
+            counts: {
+              for (final filter in AttendanceFilter.values)
+                filter: days
+                    .where((day) => matchesAttendanceFilter(day, filter))
+                    .length,
+            },
+            onChanged: (filter) => setState(() {
+              _filter = filter;
+              _selected = null;
+            }),
+          ),
+          const SizedBox(height: 16),
+          if (_filter case final filter?) ...[
+            if (!days.any((day) => matchesAttendanceFilter(day, filter)))
+              const _ProfileTabNote('Nothing under this heading this month.'),
+            ...days
+                .where((day) => matchesAttendanceFilter(day, filter))
+                .map(
+                  (day) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: AttendanceListCard(
+                      day: day,
+                      today: _isSameCalendarDay(day.date, now),
+                      pendingNotice: _pendingNoticeFor(day),
+                      singlePunch: _single,
+                      autoPresent: _autoPresent,
+                      onTap: () => _showDaySheet(day),
                     ),
                   ),
-            onNotifications: widget.onNotifications,
-            onQuickCreate: widget.onOpenComposer,
-          ),
-          _ProfilePageTopBar(title: "${widget.member.name}'s Attendance"),
-          Expanded(
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: MColors.terra),
-                  )
-                : _failed
-                ? Center(
-                    child: Text(
-                      'Could not load attendance for this month.',
-                      style: const TextStyle(color: MColors.inkSoft),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-                    children: [
-                      Row(
-                        children: [
-                          AttendanceCalendarArrow(
-                            onPressed: () => _changeMonth(-1),
-                            asset: 'assets/icons/calendar_chevron_prev.svg',
-                          ),
-                          Expanded(
-                            child: Text(
-                              '${_monthName(_month.month)} ${_month.year}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF2A2A2A),
-                                fontSize: 16,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                          AttendanceCalendarArrow(
-                            onPressed: () => _changeMonth(1),
-                            asset: 'assets/icons/calendar_chevron_next.svg',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      LeaveViewSwitch(
-                        history: _listView,
-                        onChanged: (list) => setState(() => _listView = list),
-                        firstLabel: 'Grid',
-                        secondLabel: 'List',
-                      ),
-                      const SizedBox(height: 16),
-                      AttendanceFilterChips(
-                        selected: _filter,
-                        onChanged: (filter) => setState(() => _filter = filter),
-                      ),
-                      const SizedBox(height: 20),
-                      if (_listView)
-                        ...days.map(
-                          (day) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: AttendanceListCard(
-                              day: day,
-                              today: _isSameCalendarDay(
-                                day.date,
-                                DateTime.now(),
-                              ),
-                              dimmed: !matchesAttendanceFilter(day, _filter),
-                              selected: _isSameCalendarDay(
-                                day.date,
-                                _selectedDay?.date ?? _month,
-                              ),
-                              onTap: () => _openDay(day),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        AttendanceMonthGrid(
-                          month: _month,
-                          days: days,
-                          filter: _filter,
-                          selectedDate: _selectedDay?.date,
-                          onTap: _openDay,
-                        ),
-                        if (_detailDay(days) case final detail?) ...[
-                          const SizedBox(height: 16),
-                          AttendanceDayDetail(
-                            day: detail,
-                            singlePunch: _singlePunch,
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
-          ),
-          _BottomTabs(
-            state: widget.bloc.state,
-            bloc: widget.bloc,
-            onBeforeChange: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
-          ),
+                ),
+          ] else ...[
+            AttendanceMonthGrid(
+              month: _month,
+              days: days,
+              filter: _filter,
+              selectedDate: _selected,
+              onTap: (day) => setState(() => _selected = day.date),
+            ),
+            if (selectedDay != null) ...[
+              const SizedBox(height: 16),
+              AttendanceDayDetail(
+                day: selectedDay,
+                pendingNotice: _pendingNoticeFor(selectedDay),
+                singlePunch: _single,
+                autoPresent: _autoPresent,
+              ),
+            ],
+          ],
         ],
-      ),
+      ],
     );
   }
 }
@@ -1882,57 +1900,72 @@ class _ProfileTabs extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onChanged;
 
+  /// Up to this many tabs share the bar equally; more scroll.
+  static const _fitsAcross = 3;
+
+  Widget _tab(int index, {required bool stretched}) => InkWell(
+    onTap: () => onChanged(index),
+    child: Container(
+      padding: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: index == selected
+                ? const Color(0xFF222222)
+                : Colors.transparent,
+          ),
+        ),
+      ),
+      child: Text(
+        labels[index],
+        textAlign: stretched ? TextAlign.center : TextAlign.start,
+        style: TextStyle(
+          fontFamily: 'Sora',
+          color: index == selected
+              ? const Color(0xFF222222)
+              : const Color(0xFF717171),
+          fontSize: 14,
+          height: 20 / 14,
+          fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    // A short list — a colleague's Attendance · Details · Org chart — fills
+    // the bar in equal parts; a long one scrolls at its natural widths.
+    final stretched = labels.length <= _fitsAcross;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Stack(
         alignment: Alignment.bottomLeft,
         children: [
           Container(height: 1, color: const Color(0xFFEBEBEB)),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            clipBehavior: Clip.none,
-            child: Row(
+          if (stretched)
+            Row(
               children: [
                 for (var index = 0; index < labels.length; index++)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      right: index == labels.length - 1 ? 0 : 24,
-                    ),
-                    child: InkWell(
-                      onTap: () => onChanged(index),
-                      child: Container(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              color: index == selected
-                                  ? const Color(0xFF222222)
-                                  : Colors.transparent,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          labels[index],
-                          style: TextStyle(
-                            fontFamily: 'Sora',
-                            color: index == selected
-                                ? const Color(0xFF222222)
-                                : const Color(0xFF717171),
-                            fontSize: 14,
-                            height: 20 / 14,
-                            fontWeight: index == selected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _tab(index, stretched: true)),
               ],
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              child: Row(
+                children: [
+                  for (var index = 0; index < labels.length; index++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: index == labels.length - 1 ? 0 : 24,
+                      ),
+                      child: _tab(index, stretched: false),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -2154,26 +2187,110 @@ class _ProfileAttendanceCalendarState
                   .where((day) => matchesAttendanceFilter(day, filter))
                   .length,
           },
-          onChanged: (filter) => setState(() => _filter = filter),
+          // A new heading is a new question: the day opened under the last
+          // one closes with it.
+          onChanged: (filter) => setState(() {
+            _filter = filter;
+            _selected = null;
+          }),
         ),
         const SizedBox(height: 16),
-        AttendanceMonthGrid(
-          month: _month,
-          days: days,
-          filter: _filter,
-          selectedDate: _selected,
-          onTap: (day) => setState(() => _selected = day.date),
-        ),
-        if (selectedDay != null) ...[
-          const SizedBox(height: 16),
-          AttendanceDayDetail(
-            day: selectedDay,
-            singlePunch: widget.dashboard.shift.singlePunchDay,
+        // A heading opens the days it covers, the same list Quick Actions
+        // shows (node 3214:40887); without one the month is the calendar.
+        if (_filter case final filter?) ...[
+          if (!days.any((day) => matchesAttendanceFilter(day, filter)))
+            const _ProfileTabNote('Nothing under this heading this month.'),
+          ...days
+              .where((day) => matchesAttendanceFilter(day, filter))
+              .map(
+                (day) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: AttendanceListCard(
+                    day: day,
+                    today: _isSameCalendarDay(day.date, now),
+                    pendingNotice: _pendingNoticeFor(day),
+                    singlePunch: widget.dashboard.shift.singlePunchDay,
+                    autoPresent:
+                        widget.dashboard.shift.markedPresentAutomatically,
+                    onTap: () => _showDaySheet(day),
+                  ),
+                ),
+              ),
+        ] else ...[
+          AttendanceMonthGrid(
+            month: _month,
+            days: days,
+            filter: _filter,
+            selectedDate: _selected,
+            onTap: (day) => setState(() => _selected = day.date),
           ),
+          if (selectedDay != null) ...[
+            const SizedBox(height: 16),
+            AttendanceDayDetail(
+              day: selectedDay,
+              pendingNotice: _pendingNoticeFor(selectedDay),
+              singlePunch: widget.dashboard.shift.singlePunchDay,
+              autoPresent: widget.dashboard.shift.markedPresentAutomatically,
+            ),
+          ],
         ],
       ],
     );
   }
+
+  String? _pendingNoticeFor(AttendanceDayView day) {
+    if (day.correctionPending) {
+      return 'Your missed punched request is currently under review by your '
+          'manager for this day.';
+    }
+    if (day.kind == AttendanceKind.leavePending) {
+      return 'Your leave request is currently under review by your manager '
+          'for this day.';
+    }
+    return null;
+  }
+
+  /// A listed day opens in a sheet, as on Quick Actions. Read-only here:
+  /// corrections and leave are raised from Quick Actions.
+  Future<void> _showDaySheet(AttendanceDayView day) =>
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFFF7F7F9),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        builder: (_) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AttendanceDayDetail(
+                  day: day,
+                  pendingNotice: _pendingNoticeFor(day),
+                  singlePunch: widget.dashboard.shift.singlePunchDay,
+                  autoPresent:
+                      widget.dashboard.shift.markedPresentAutomatically,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 /// A report's profile as tabs (node 3070:44930): what is waiting on you,
@@ -2204,13 +2321,17 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
+    // Anyone can be looked up: their day, their details and where they sit.
+    // Requests, growth and documents are a manager's business, so they show
+    // only for someone in the viewer's own reporting line.
+    final managed = member.inViewerChain;
     final labels = [
-      if (widget.canManage) 'Request',
+      'Details',
       'Attendance',
-      'Work detail',
+      if (managed && widget.canManage) 'Requests',
+      if (managed) 'Grow',
       'Org chart',
-      'Grow',
-      if (member.documents.isNotEmpty) 'Documentation',
+      if (managed && member.documents.isNotEmpty) 'Documentation',
     ];
     final tab = labels[_tab.clamp(0, labels.length - 1)];
     return Column(
@@ -2223,7 +2344,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
         ),
         const SizedBox(height: 16),
         ...switch (tab) {
-          'Request' =>
+          'Requests' =>
             widget.openRequests.isEmpty
                 ? const [_ProfileTabNote('No open requests.')]
                 : [
@@ -2234,7 +2355,7 @@ class _MemberProfileTabsState extends State<_MemberProfileTabs> {
                       ),
                   ],
           'Attendance' => [widget.attendance],
-          'Work detail' => [
+          'Details' => [
             if (member.email.isNotEmpty)
               _WorkDetailRow(
                 iconAsset: 'assets/icons/profile_email.svg',

@@ -232,9 +232,9 @@ class _LoginScreenState extends State<LoginScreen>
                     final session = signedIn;
                     if (session == null) return;
                     await AuthSessionStore().save(session);
-                    // Signing in is not checking in: the punch screen keeps
-                    // to its own moment rather than following the login.
-                    await const StartupPrefs().markPunchPromptShown();
+                    // Signing in is not checking in: the punch screen holds
+                    // for this launch, and opens on the next one today.
+                    await const StartupPrefs().holdPunchPromptOnce();
                     if (!context.mounted) return;
                     Navigator.of(context).pushNamedAndRemoveUntil(
                       AppRoutes.home,

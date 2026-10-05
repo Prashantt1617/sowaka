@@ -9,7 +9,7 @@ import {
   RegularizationDayType,
   RegularizationStatus,
 } from '../models/attendance.model';
-import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser } from './shift.service';
+import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser, shiftPolicyFor } from './shift.service';
 import { orgUsers } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
@@ -654,7 +654,11 @@ export async function getTeamMemberAttendance(
 ) {
   const employee = await users().findOne({ userId: employeeUserId });
   if (!employee) throw new AttendanceError(404, 'Employee not found');
-  if (employee.managerUserId !== managerUserId) {
+  // A colleague's month is open to the whole company — the profile shows
+  // everyone's attendance — but never across orgs.
+  const viewer = await users().findOne({ userId: managerUserId }, { projection: { org: 1 } });
+  const sameOrg = Boolean(viewer && employee.org && viewer.org === employee.org);
+  if (!sameOrg && !(await managesUpTheChain(managerUserId, employee))) {
     throw new AttendanceError(403, "Not authorized to view this employee's attendance");
   }
   const attendance = await getAttendanceForEmployee(
@@ -664,12 +668,15 @@ export async function getTeamMemberAttendance(
     toInput,
   );
   // The employee's own shift decides how their days read, and they may be on a
-  // different template from the manager looking at them — someone on a
-  // single-punch shift has no punch-out for this view to leave blank.
-  const policy = await policyForUser(employeeUserId);
+  // different template from the manager looking at them: their week-offs,
+  // grace and hour bands, whether one punch makes the day, whether they are
+  // marked present without punching at all. The whole policy goes with the
+  // month so the reader's calendar is a copy of the employee's own.
+  const shift = await shiftPolicyFor(employeeUserId);
   return {
     ...attendance,
-    singlePunch: policy.correction.punchMode === 'Single punch',
+    singlePunch: shift.correction.punchMode === 'Single punch',
+    shift,
   };
 }
 
@@ -1069,4 +1076,21 @@ export class AttendanceError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * Whether the viewer sits anywhere above this employee's reporting line — a
+ * direct report, or a report of a report. A peer or one's own manager is not
+ * the viewer's to see, so the Team tab offers no calendar for them.
+ */
+async function managesUpTheChain(viewerId: string, employee: { managerUserId?: string }): Promise<boolean> {
+  const seen = new Set<string>();
+  let managerId = employee.managerUserId;
+  while (managerId && !seen.has(managerId)) {
+    if (managerId === viewerId) return true;
+    seen.add(managerId);
+    const manager = await users().findOne({ userId: managerId }, { projection: { managerUserId: 1 } });
+    managerId = manager?.managerUserId;
+  }
+  return false;
 }

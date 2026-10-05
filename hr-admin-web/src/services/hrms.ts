@@ -393,7 +393,13 @@ export type ShiftDTO = {
   createdAt?: string;
   assignedUserIds: string[];
   assignedCount: number;
+  /** On the default template: people on it only because they are on no other. Zero elsewhere. */
+  defaultedCount: number;
 };
+
+/** Everyone a template covers: assigned to it, plus — on the default — everyone assigned nowhere. */
+export const shiftHeadcount = (shift: Pick<ShiftDTO, 'assignedCount' | 'defaultedCount'>) =>
+  shift.assignedCount + (shift.defaultedCount ?? 0);
 
 export type ShiftInput = {
   name: string;

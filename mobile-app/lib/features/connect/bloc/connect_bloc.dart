@@ -130,23 +130,68 @@ class ConnectBloc {
     }
   }
 
+  /// A like shows at once: the heart fills and the count moves before the
+  /// request leaves the device. The server's copy of the post replaces the
+  /// guess when it arrives; if the request fails, the guess is undone.
   Future<void> toggleReaction(String postId) async {
-    await _mutatePost(postId, () => _api.toggleReaction(postId));
+    await _mutateOptimistically(
+      postId,
+      (post) => post.copyWith(
+        liked: !post.liked,
+        likeCount: post.liked
+            ? (post.likeCount - 1).clamp(0, 1 << 30)
+            : post.likeCount + 1,
+      ),
+      () => _api.toggleReaction(postId),
+    );
   }
 
+  /// The comment appears in the thread the moment it is sent, under the
+  /// viewer's own name, and is swapped for the server's copy when that lands.
   Future<void> addComment(
     String postId,
     String text, {
     String? parentId,
   }) async {
-    await _mutatePost(
+    final user = _session.user;
+    final pending = ConnectComment(
+      id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
+      userId: user.id,
+      name: user.name,
+      text: text,
+      createdAt: DateTime.now(),
+      parentId: parentId,
+      photoUrl: user.profilePhotoUrl,
+    );
+    await _mutateOptimistically(
       postId,
+      (post) => post.copyWith(
+        commentCount: post.commentCount + 1,
+        comments: [...post.comments, pending],
+      ),
       () => _api.addComment(postId, text, parentId: parentId),
     );
   }
 
   Future<void> reactToComment(String postId, String commentId) async {
-    await _mutatePost(postId, () => _api.reactToComment(postId, commentId));
+    await _mutateOptimistically(
+      postId,
+      (post) => post.copyWith(
+        comments: [
+          for (final comment in post.comments)
+            if (comment.id == commentId)
+              comment.copyWith(
+                liked: !comment.liked,
+                likeCount: comment.liked
+                    ? (comment.likeCount - 1).clamp(0, 1 << 30)
+                    : comment.likeCount + 1,
+              )
+            else
+              comment,
+        ],
+      ),
+      () => _api.reactToComment(postId, commentId),
+    );
   }
 
   Future<void> performAction(String postId, {String? optionId}) async {
@@ -304,6 +349,36 @@ class ConnectBloc {
 
   void clearMessage() {
     _emit(_state.copyWith(clearMessage: true));
+  }
+
+  /// Applies `guess` to the post straight away, without marking it busy, then
+  /// sends the request. The post is swapped for the server's version on
+  /// success and put back as it was on failure, so the feed never waits on
+  /// the network for a like or a comment.
+  Future<void> _mutateOptimistically(
+    String postId,
+    ConnectPost Function(ConnectPost post) guess,
+    Future<ConnectPost> Function() request,
+  ) async {
+    final index = _state.posts.indexWhere((post) => post.id == postId);
+    if (index < 0) return;
+    final before = _state.posts[index];
+    final posts = [..._state.posts]..[index] = guess(before);
+    _emit(_state.copyWith(posts: posts, clearMessage: true));
+    try {
+      final post = await request();
+      if (_controller.isClosed) return;
+      _emit(_state.copyWith(posts: _replacePost(post)));
+    } catch (error) {
+      if (_controller.isClosed) return;
+      // Undo only if nothing else has replaced the post in the meantime.
+      final current = _state.posts.indexWhere((post) => post.id == postId);
+      final rolledBack = [..._state.posts];
+      if (current >= 0 && rolledBack[current].id == posts[index].id) {
+        rolledBack[current] = before;
+      }
+      _emit(_state.copyWith(posts: rolledBack, message: error.toString()));
+    }
   }
 
   Future<void> _mutatePost(

@@ -67,6 +67,12 @@ export interface ManagerTeamMemberView {
    */
   reportsToViewer?: boolean;
   /**
+   * True for anyone whose reporting line passes through the viewer — a
+   * direct report, or a report of a report. Their attendance is the viewer's
+   * to see; a peer's or the manager's own is not.
+   */
+  inViewerChain?: boolean;
+  /**
    * How many people report to them. A member who leads a team of their own is
    * offered an expander rather than read as an individual.
    */
@@ -426,6 +432,7 @@ export async function getManagerWorkspace(managerUserId: string) {
     if (!record.punchOut) return 'present';
     return markForDay(policy, record.punchIn, record.punchOut) === 'Half Day' ? 'half_day' : 'present';
   };
+  const rosterById = new Map(orgRoster.map((user) => [user.userId, user]));
   const team: ManagerTeamMemberView[] = await Promise.all(reports.map(async (report) => {
     const current = currentByEmployee.get(report.userId);
     const latest = latestByEmployee.get(report.userId);
@@ -439,6 +446,7 @@ export async function getManagerWorkspace(managerUserId: string) {
       isManager: report.userId === manager.managerUserId,
       isSelf: report.userId === manager.userId,
       reportsToViewer: report.managerUserId === manager.userId,
+      inViewerChain: reportsUpTo(report, manager.userId, rosterById),
       reportCount: orgRoster.filter(
         (user) =>
           user.managerUserId === report.userId &&
@@ -469,7 +477,9 @@ export async function getManagerWorkspace(managerUserId: string) {
       employeeId: report.employeeId ?? null,
       joiningDate: report.joiningDate ? report.joiningDate.toISOString().slice(0, 10) : null,
       employmentType: report.employeeType ?? null,
-      managerName: manager.name,
+      // Their own manager — not the viewer, who may be a peer, a report, or
+      // two levels up.
+      managerName: (report.managerUserId && orgUsersById.get(report.managerUserId)?.name) || null,
       // Reporting line from the top of the chain down to this report. The chain
       // is walked from `managerUserId` links already loaded above.
       orgChart: buildOrgChart(report, orgUsersById),
@@ -889,4 +899,16 @@ export class ManagerError extends Error {
   constructor(public readonly statusCode: number, message: string) {
     super(message);
   }
+}
+
+/** Whether the viewer sits anywhere above this person's reporting line. */
+function reportsUpTo(person: User, viewerId: string, byId: Map<string, User>): boolean {
+  const seen = new Set<string>();
+  let current: User | undefined = person;
+  while (current?.managerUserId && !seen.has(current.managerUserId)) {
+    if (current.managerUserId === viewerId) return true;
+    seen.add(current.managerUserId);
+    current = byId.get(current.managerUserId);
+  }
+  return false;
 }

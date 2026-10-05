@@ -255,3 +255,15 @@ input {
   opacity: 1;
   transform: none;
 }
+
+/* Number fields are typed into, not nudged: the browser's up/down arrows are
+   hidden everywhere (templates, leave rules, offices, payroll). */
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

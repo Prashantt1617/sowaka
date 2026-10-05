@@ -5205,7 +5205,7 @@ class _PostFooter extends StatelessWidget {
               children: [
                 InkWell(
                   borderRadius: BorderRadius.circular(99),
-                  onTap: busy ? null : onLike,
+                  onTap: onLike,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       vertical: 4,
@@ -5367,7 +5367,7 @@ class _PostFooter extends StatelessWidget {
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.send_rounded, size: 18),
                         color: _ConnectColors.blue,
-                        onPressed: busy ? null : onComment,
+                        onPressed: onComment,
                       ),
                       filled: true,
                       fillColor: const Color(0xFFF7F7F9),
@@ -7801,7 +7801,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                           size: 18,
                                         ),
                                         color: _ConnectColors.blue,
-                                        onPressed: busy ? null : _submit,
+                                        onPressed: _submit,
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(99),

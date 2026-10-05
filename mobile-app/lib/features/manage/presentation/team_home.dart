@@ -550,7 +550,10 @@ class _TeamMemberRow extends StatelessWidget {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            if (punchIn != null) _PunchTimePill(at: punchIn),
+                            // The time they came in — or, when only the
+                            // punch-out was recorded, the one punch there is.
+                            if ((punchIn ?? member.punchOut) case final at?)
+                              _PunchTimePill(at: at),
                             if (status != null) status,
                             if (pendingCount > 0)
                               _RequestCountPill(count: pendingCount),
@@ -1861,11 +1864,7 @@ class _TeamFacesCard extends StatelessWidget {
                   ),
                 ),
               ),
-              SvgPicture.asset(
-                'assets/icons/team/plus.svg',
-                width: 20,
-                height: 20,
-              ),
+              const _TeamPlusIcon(),
             ],
           ),
           const SizedBox(height: 12),
@@ -2224,11 +2223,9 @@ class _OpenTeamBox extends StatelessWidget {
                       ),
                     ),
                   ),
-                  SvgPicture.asset(
-                    'assets/icons/team/plus.svg',
-                    width: 20,
-                    height: 20,
-                  ),
+                  // Open, the plus becomes a minus: the header reads as
+                  // "collapse".
+                  const _TeamPlusIcon(open: true),
                 ],
               ),
               const SizedBox(height: 12),
@@ -2250,4 +2247,18 @@ class _OpenTeamBox extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The team box's plus — a minus once the box is open.
+class _TeamPlusIcon extends StatelessWidget {
+  const _TeamPlusIcon({this.open = false});
+
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) => SvgPicture.asset(
+    open ? 'assets/icons/team/minus.svg' : 'assets/icons/team/plus.svg',
+    width: 20,
+    height: 20,
+  );
 }
