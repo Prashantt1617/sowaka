@@ -1296,12 +1296,17 @@ String? leaveRangeProblem({
   if (window != null) {
     final earliest = dayOf(window.earliestFrom(now));
     final latest = dayOf(window.latestFrom(now));
-    if (start.isBefore(earliest) || end.isAfter(latest)) {
+    // Only the limit that was crossed: a day in the past is about how far
+    // back, a day ahead about how far ahead.
+    if (start.isBefore(earliest)) {
       return window.allowBackdated && window.backdatedDays > 0
-          ? '$typeLabel can only be applied up to ${window.backdatedDays} '
-                'days back and ${window.advanceDays} days ahead.'
-          : '$typeLabel cannot be applied for a day already past, and only up '
-                'to ${window.advanceDays} days ahead.';
+          ? 'Leave can only be applied up to ${window.backdatedDays} days '
+                'back.'
+          : 'Leave cannot be applied for a day already past.';
+    }
+    if (end.isAfter(latest)) {
+      return 'Leave can only be applied up to ${window.advanceDays} days '
+          'ahead.';
     }
   }
 
