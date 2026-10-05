@@ -1177,7 +1177,7 @@ class _AttendanceCard extends StatelessWidget {
           const SizedBox(height: 16),
           if (autoPresent)
             const Text(
-              'Present by deafult',
+              'Present by default',
               style: TextStyle(
                 color: MColors.inkSoft,
                 fontSize: 13,
@@ -1609,9 +1609,13 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
     final days = _loading || _failed ? const <AttendanceDayView>[] : _days;
     final selectedDay = _selected == null
         ? (_month.year == now.year && _month.month == now.month
-              ? days.where((day) => _isSameCalendarDay(day.date, now)).firstOrNull
+              ? days
+                    .where((day) => _isSameCalendarDay(day.date, now))
+                    .firstOrNull
               : null)
-        : days.where((day) => _isSameCalendarDay(day.date, _selected!)).firstOrNull;
+        : days
+              .where((day) => _isSameCalendarDay(day.date, _selected!))
+              .firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2190,6 +2194,8 @@ class _ProfileAttendanceCalendarState
                     today: _isSameCalendarDay(day.date, now),
                     pendingNotice: _pendingNoticeFor(day),
                     singlePunch: widget.dashboard.shift.singlePunchDay,
+                    autoPresent:
+                        widget.dashboard.shift.markedPresentAutomatically,
                     onTap: () => _showDaySheet(day),
                   ),
                 ),
@@ -2208,6 +2214,7 @@ class _ProfileAttendanceCalendarState
               day: selectedDay,
               pendingNotice: _pendingNoticeFor(selectedDay),
               singlePunch: widget.dashboard.shift.singlePunchDay,
+              autoPresent: widget.dashboard.shift.markedPresentAutomatically,
             ),
           ],
         ],
@@ -2229,42 +2236,45 @@ class _ProfileAttendanceCalendarState
 
   /// A listed day opens in a sheet, as on Quick Actions. Read-only here:
   /// corrections and leave are raised from Quick Actions.
-  Future<void> _showDaySheet(AttendanceDayView day) => showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: const Color(0xFFF7F7F9),
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-    ),
-    builder: (_) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE5E7EB),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            AttendanceDayDetail(
-              day: day,
-              pendingNotice: _pendingNoticeFor(day),
-              singlePunch: widget.dashboard.shift.singlePunchDay,
-            ),
-          ],
+  Future<void> _showDaySheet(AttendanceDayView day) =>
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: const Color(0xFFF7F7F9),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-      ),
-    ),
-  );
+        builder: (_) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AttendanceDayDetail(
+                  day: day,
+                  pendingNotice: _pendingNoticeFor(day),
+                  singlePunch: widget.dashboard.shift.singlePunchDay,
+                  autoPresent:
+                      widget.dashboard.shift.markedPresentAutomatically,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 /// A report's profile as tabs (node 3070:44930): what is waiting on you,
