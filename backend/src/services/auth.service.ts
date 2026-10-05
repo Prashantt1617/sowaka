@@ -5,7 +5,7 @@ import { authSessions, companies, otpChallenges, users } from '../config/db';
 import { AuthUser } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
-import { sendOtpEmail } from './email.service';
+import { OtpDeliveryError, sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { DEFAULT_APP_TABS } from '../models/company.model';
@@ -37,7 +37,14 @@ export async function requestLoginOtp(emailInput: string): Promise<void> {
     { upsert: true },
   );
 
-  await sendOtpEmail(email, otp);
+  try {
+    await sendOtpEmail(email, otp);
+  } catch (error) {
+    if (error instanceof OtpDeliveryError) {
+      throw new AuthError(503, "We couldn't send your sign-in code just now. Please try again in a minute.");
+    }
+    throw error;
+  }
 }
 
 export async function verifyLoginOtp(
