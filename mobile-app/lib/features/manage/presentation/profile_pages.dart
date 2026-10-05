@@ -1870,57 +1870,72 @@ class _ProfileTabs extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onChanged;
 
+  /// Up to this many tabs share the bar equally; more scroll.
+  static const _fitsAcross = 3;
+
+  Widget _tab(int index, {required bool stretched}) => InkWell(
+    onTap: () => onChanged(index),
+    child: Container(
+      padding: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: index == selected
+                ? const Color(0xFF222222)
+                : Colors.transparent,
+          ),
+        ),
+      ),
+      child: Text(
+        labels[index],
+        textAlign: stretched ? TextAlign.center : TextAlign.start,
+        style: TextStyle(
+          fontFamily: 'Sora',
+          color: index == selected
+              ? const Color(0xFF222222)
+              : const Color(0xFF717171),
+          fontSize: 14,
+          height: 20 / 14,
+          fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    // A short list — a colleague's Attendance · Details · Org chart — fills
+    // the bar in equal parts; a long one scrolls at its natural widths.
+    final stretched = labels.length <= _fitsAcross;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Stack(
         alignment: Alignment.bottomLeft,
         children: [
           Container(height: 1, color: const Color(0xFFEBEBEB)),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            clipBehavior: Clip.none,
-            child: Row(
+          if (stretched)
+            Row(
               children: [
                 for (var index = 0; index < labels.length; index++)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      right: index == labels.length - 1 ? 0 : 24,
-                    ),
-                    child: InkWell(
-                      onTap: () => onChanged(index),
-                      child: Container(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              color: index == selected
-                                  ? const Color(0xFF222222)
-                                  : Colors.transparent,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          labels[index],
-                          style: TextStyle(
-                            fontFamily: 'Sora',
-                            color: index == selected
-                                ? const Color(0xFF222222)
-                                : const Color(0xFF717171),
-                            fontSize: 14,
-                            height: 20 / 14,
-                            fontWeight: index == selected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _tab(index, stretched: true)),
               ],
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              child: Row(
+                children: [
+                  for (var index = 0; index < labels.length; index++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: index == labels.length - 1 ? 0 : 24,
+                      ),
+                      child: _tab(index, stretched: false),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
