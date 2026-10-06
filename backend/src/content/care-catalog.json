@@ -886,7 +886,9 @@
       "pauseSteps": [
         7
       ],
-      "breathCycles": true
+      "breathCycles": true,
+      "holdLabel": "Rest",
+      "holdPing": true
     },
     {
       "key": "wrists",
@@ -1147,7 +1149,7 @@
     ],
     "spine": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Ffc806272-da90-4a06-b413-224f36b9bfb8-spin_1_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F7bdd95ae-8bb7-468a-aa3c-53e577b5cb40-Spine_01_flexion.mp4",
         "steps": [
           1
         ]
@@ -1171,16 +1173,23 @@
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F3b491034-0c49-4d74-8ced-c921c6457f94-spin_5_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F0112c581-9267-40cb-8c21-c547ce1cc727-Spine_05_rotation_left.mp4",
         "steps": [
           5
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F5dd6a497-d801-47b8-a92f-c5041f797ae2-spin_6_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fc9489d23-6e2d-4c93-aa2a-2daf50bafe59-Spine_06_rotation_right.mp4",
         "steps": [
           6
         ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F5d529cc7-c88f-431d-b27c-823971e84e36-Spine_07_return_to_centre_rest.mp4",
+        "steps": [
+          7
+        ],
+        "once": true
       }
     ],
     "wrists": [
