@@ -922,7 +922,9 @@
       "pauseSteps": [
         4,
         8
-      ]
+      ],
+      "holdLabel": "Hold",
+      "holdPing": true
     }
   ],
   "moods": [
@@ -1204,15 +1206,50 @@
     ],
     "legs": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fd1dd4e2b-395e-4074-bfa9-c2f9c2552e16-leg.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F9d8a12c8-a018-4c00-937c-b633076f15a1-Legs_01_sit_at_edge_of_chair.mp4",
         "steps": [
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
+          1
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F93166da0-bfe0-4455-bab1-a4530ea312ad-Legs_02_straighten_right_leg.mp4",
+        "steps": [
+          2
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fde74415b-66b6-4b0d-bb5a-04b4ed7a61c1-Legs_03_hinge_forward_from_hips.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F4d27cbeb-e1a4-4396-8c1b-568bb6603657-Legs_04_reach_toward_foot.mp4",
+        "steps": [
+          4
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fb4850d5f-9a22-48c3-bf41-24129756fe66-Legs_05_switch_legs.mp4",
+        "steps": [
+          5
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F62146580-b61a-436c-b8a8-9193b698fdc9-Legs_06_stand_in_front_of_chair.mp4",
+        "steps": [
+          6
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fbb36fe6b-03c6-41d3-a9b0-b2286f0ac449-Legs_07_chair_squat.mp4",
+        "steps": [
+          7
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fe1e5e550-a7f8-49e1-8dee-7a1a503122f3-Legs_08_stand_rest_hands_on_hips.mp4",
+        "steps": [
           8
         ]
       }
