@@ -1035,7 +1035,7 @@
       "paged": true,
       "clips": [
         {
-          "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+          "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F6b9889cf-4f33-4079-b030-2819cf9a41dc-Shoulders_01_roll_up_back_down.mp4",
           "steps": [
             2
           ],
@@ -1113,19 +1113,31 @@
     ],
     "shoulders": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa8c06e7f-1abd-40f3-878e-c9c3fe1fa565-shoulder_1_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F6b9889cf-4f33-4079-b030-2819cf9a41dc-Shoulders_01_roll_up_back_down.mp4",
         "steps": [
           1
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F4dc9c6de-e2aa-4595-afda-7933bc973592-Shoulders_02_roll_forward_down.mp4",
         "steps": [
           2
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F333d9764-2c46-48fb-a75e-182ddb34bc0a-shoulder_3.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Ff92df8f4-dc38-418d-9298-cad62f5abc09-Shoulders_03_right_arm_across_chest.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fd2d38b47-2352-41df-9814-c5c00c2363ab-Shoulders_04_left_arm_across_chest.mp4",
+        "steps": [
+          4
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fd208fce7-488a-4d0c-b106-b7b84a7c4e73-Shoulders_05_arms_overhead_palms_up.mp4",
         "steps": [
           5
         ]
