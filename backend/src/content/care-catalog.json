@@ -911,7 +911,7 @@
       "sub": "Your legs carry you everywhere — give them this.",
       "steps": [
         "Sit at the very edge of your chair.",
-        "Straighten your right leg, heel resting on the floor.",
+        "Straighten your left leg, heel resting on the floor.",
         "Sit tall and hinge slowly forward from your hips — not your back.",
         "Reach toward your foot. Hold 20 seconds, breathing deeply.",
         "Switch legs. Repeat twice on each side.",
@@ -1227,13 +1227,15 @@
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F4d27cbeb-e1a4-4396-8c1b-568bb6603657-Legs_04_reach_toward_foot.mp4",
         "steps": [
           4
-        ]
+        ],
+        "once": true
       },
       {
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fb4850d5f-9a22-48c3-bf41-24129756fe66-Legs_05_switch_legs.mp4",
         "steps": [
           5
-        ]
+        ],
+        "plays": 2
       },
       {
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F62146580-b61a-436c-b8a8-9193b698fdc9-Legs_06_stand_in_front_of_chair.mp4",
@@ -1245,13 +1247,15 @@
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fbb36fe6b-03c6-41d3-a9b0-b2286f0ac449-Legs_07_chair_squat.mp4",
         "steps": [
           7
-        ]
+        ],
+        "caption": "10 reps"
       },
       {
         "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fe1e5e550-a7f8-49e1-8dee-7a1a503122f3-Legs_08_stand_rest_hands_on_hips.mp4",
         "steps": [
           8
-        ]
+        ],
+        "once": true
       }
     ]
   },
