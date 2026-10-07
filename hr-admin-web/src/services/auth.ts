@@ -12,6 +12,10 @@ export type AuthUser = {
   /** The company's id, e.g. 'convrse' — what per-company styling keys off. */
   org?: string;
   dashboardAccess?: boolean;
+  /** Manages People › Accesses; sees every tab. */
+  dashboardAdmin?: boolean;
+  /** The dashboard tabs this person may open; null or absent means every tab. */
+  dashboardTabs?: string[] | null;
   isLeadership?: boolean;
 };
 
@@ -32,6 +36,13 @@ function storeUser(user: AuthUser | null) {
 
 export async function requestOtp(email: string): Promise<void> {
   await api('/auth/request-otp', { method: 'POST', body: { email } });
+}
+
+/** The signed-in person as the server has them now, so access changes apply on the next load. */
+export async function refreshMe(): Promise<AuthUser> {
+  const res = await api<{ success: boolean; user: AuthUser }>('/auth/me');
+  storeUser(res.user);
+  return res.user;
 }
 
 export async function verifyOtp(email: string, otp: string): Promise<AuthUser> {

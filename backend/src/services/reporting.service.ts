@@ -1,5 +1,6 @@
-import { users } from '../config/db';
+import { attendanceRegularizations, overtimeRequests, reimbursementClaims, users } from '../config/db';
 import { User } from '../models/user.model';
+import { invalidateAttendanceReport } from './attendance-report.service';
 
 const inactiveStatuses = new Set(['offboarded', 'terminated']);
 
@@ -21,10 +22,41 @@ export interface ReportingLine {
   manager: EmployeeSummary | null;
 }
 
+/**
+ * The org HR is acting in. Every reporting change and lookup stays inside it:
+ * a dashboard user can only see and move people in their own company.
+ */
+async function actorOrg(actorUserId: string): Promise<string | undefined> {
+  const actor = await users().findOne({ userId: actorUserId }, { projection: { org: 1 } });
+  if (!actor) throw new ReportingError(401, 'Sign in again');
+  return actor.org;
+}
+
+function assertInOrg(user: User, org: string | undefined, what: string): void {
+  if ((user.org ?? undefined) !== org) throw new ReportingError(404, `${what} not found`);
+}
+
+/**
+ * Requests waiting on the old manager go to the new one, so nothing sits in
+ * the inbox of someone who no longer manages this person. Decided requests
+ * keep the manager who decided them.
+ */
+async function movePendingRequests(employeeUserId: string, managerUserId: string): Promise<number> {
+  const filter = { userId: employeeUserId, status: 'pending' as const, managerUserId: { $ne: managerUserId } };
+  const update = { $set: { managerUserId, updatedAt: new Date() } };
+  const moved = await Promise.all([
+    reimbursementClaims().updateMany(filter, update),
+    overtimeRequests().updateMany(filter, update),
+    attendanceRegularizations().updateMany(filter, update),
+  ]);
+  return moved.reduce((total, r) => total + r.modifiedCount, 0);
+}
+
 export async function assignManager(
+  actorUserId: string,
   employeeUserIdInput: string,
   managerUserIdInput: string,
-): Promise<ReportingLine> {
+): Promise<ReportingLine & { movedRequests: number }> {
   const employeeUserId = normalizeUserId(employeeUserIdInput);
   const managerUserId = normalizeUserId(managerUserIdInput);
 
@@ -47,6 +79,9 @@ export async function assignManager(
   if (!manager) {
     throw new ReportingError(404, 'Manager not found');
   }
+  const org = await actorOrg(actorUserId);
+  assertInOrg(employee, org, 'Employee');
+  assertInOrg(manager, org, 'Manager');
   if (inactiveStatuses.has(employee.lifecycleStatus)) {
     throw new ReportingError(409, 'Cannot update an inactive employee');
   }
@@ -75,18 +110,23 @@ export async function assignManager(
   if (!updatedEmployee) {
     throw new ReportingError(404, 'Employee not found');
   }
+  const movedRequests = await movePendingRequests(employeeUserId, managerUserId);
+  // The attendance report names each person's manager.
+  if (org) invalidateAttendanceReport(org);
 
   return {
     employee: toEmployeeSummary(updatedEmployee),
     manager: toEmployeeSummary({ ...manager, role: 'manager', updatedAt }),
+    movedRequests,
   };
 }
 
-export async function removeManager(employeeUserIdInput: string): Promise<EmployeeSummary> {
+export async function removeManager(actorUserId: string, employeeUserIdInput: string): Promise<EmployeeSummary> {
   const employeeUserId = requireUserId(employeeUserIdInput, 'employeeUserId');
+  const org = await actorOrg(actorUserId);
   const collection = users();
   const employee = await collection.findOneAndUpdate(
-    { userId: employeeUserId },
+    { userId: employeeUserId, org },
     { $unset: { managerUserId: '' }, $set: { updatedAt: new Date() } },
   );
 
@@ -97,15 +137,16 @@ export async function removeManager(employeeUserIdInput: string): Promise<Employ
   if (employee.managerUserId) {
     await syncManagerRole(employee.managerUserId);
   }
+  if (org) invalidateAttendanceReport(org);
 
   const updatedEmployee = { ...employee };
   delete updatedEmployee.managerUserId;
   return toEmployeeSummary(updatedEmployee);
 }
 
-export async function getReportingLine(employeeUserIdInput: string): Promise<ReportingLine> {
+export async function getReportingLine(actorUserId: string, employeeUserIdInput: string): Promise<ReportingLine> {
   const employeeUserId = requireUserId(employeeUserIdInput, 'employeeUserId');
-  const employee = await users().findOne({ userId: employeeUserId });
+  const employee = await users().findOne({ userId: employeeUserId, org: await actorOrg(actorUserId) });
 
   if (!employee) {
     throw new ReportingError(404, 'Employee not found');
@@ -125,19 +166,20 @@ export async function getReportingLine(employeeUserIdInput: string): Promise<Rep
   };
 }
 
-export async function getDirectReports(managerUserIdInput: string): Promise<{
+export async function getDirectReports(actorUserId: string, managerUserIdInput: string): Promise<{
   manager: EmployeeSummary;
   employees: EmployeeSummary[];
 }> {
   const managerUserId = requireUserId(managerUserIdInput, 'managerUserId');
+  const org = await actorOrg(actorUserId);
   const collection = users();
-  const manager = await collection.findOne({ userId: managerUserId });
+  const manager = await collection.findOne({ userId: managerUserId, org });
 
   if (!manager) {
     throw new ReportingError(404, 'Manager not found');
   }
 
-  const employees = await collection.find({ managerUserId }).sort({ name: 1, userId: 1 }).toArray();
+  const employees = await collection.find({ managerUserId, org }).sort({ name: 1, userId: 1 }).toArray();
 
   return {
     manager: toEmployeeSummary(manager),

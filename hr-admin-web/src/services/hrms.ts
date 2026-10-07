@@ -872,3 +872,29 @@ export const getAttendanceReport = (input: { from: string; to: string }) =>
   api<{ report: AttendanceReportDTO }>(
     `/admin/reports/attendance?${new URLSearchParams({ from: input.from, to: input.to })}`,
   ).then((r) => r.report);
+
+// —— People › Accesses ————————————————————————————————————————————————
+/** One person with dashboard access. `tabs: null` means every tab. */
+export type DashboardAccessDTO = {
+  userId: string;
+  name: string;
+  email: string;
+  employeeId?: string;
+  designation?: string;
+  department?: string;
+  admin: boolean;
+  tabs: string[] | null;
+  active: boolean;
+};
+export const listDashboardAccesses = () =>
+  api<{ users: DashboardAccessDTO[]; tabs: string[] }>('/admin/accesses');
+/** Give or change access (`access` true) or take it away (`access` false). */
+export const setDashboardAccess = (userId: string, input: { access: boolean; admin?: boolean; tabs?: string[] | null }) =>
+  api<{ user: DashboardAccessDTO | null }>(`/admin/accesses/${userId}`, { method: 'PUT', body: input });
+
+// —— Reporting manager ————————————————————————————————————————————————
+/** Moves someone to a new manager; their pending requests move with them. */
+export const setReportingManager = (employeeUserId: string, managerUserId: string) =>
+  api<{ movedRequests: number }>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'PUT', body: { managerUserId } });
+export const clearReportingManager = (employeeUserId: string) =>
+  api<unknown>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'DELETE' });

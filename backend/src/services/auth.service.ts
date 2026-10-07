@@ -271,6 +271,9 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     // been given a list gets the four the app has always had.
     enabledTabs: company?.enabledTabs?.length ? company.enabledTabs : DEFAULT_APP_TABS,
     dashboardAccess: user.dashboardAccess === true,
+    dashboardAdmin: user.dashboardAdmin === true,
+    // The dashboard tabs this person may open; null means every tab.
+    dashboardTabs: user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs) ? null : user.dashboardTabs,
     isLeadership: user.isLeadership === true,
   };
 }

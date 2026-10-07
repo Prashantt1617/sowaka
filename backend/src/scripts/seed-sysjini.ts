@@ -80,7 +80,8 @@ async function seed(): Promise<void> {
     );
   }
 
-  await assignManager(employee.userId, manager.userId);
+  // The manager acts as the one making the change: same company, so it is allowed.
+  await assignManager(manager.userId, employee.userId, manager.userId);
 
   logger.info('Sysjini seed completed', {
     companyId,

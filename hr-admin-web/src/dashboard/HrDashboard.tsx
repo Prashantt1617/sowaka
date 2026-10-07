@@ -3,7 +3,8 @@ import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
-import { Sidebar, Topbar, Toast } from './Chrome';
+import { OVERVIEW_ITEM, SECTIONS, Sidebar, Topbar, Toast } from './Chrome';
+import { canOpen } from './access';
 import { Overview } from './views/Overview';
 import { LeaveRequests } from './views/LeaveRequests';
 import { Overtime } from './views/Overtime';
@@ -124,8 +125,14 @@ function LoadingBar() {
 }
 
 function Shell() {
-  const { loading, loaded } = useStore();
+  const { loading, loaded, view, setView } = useStore();
   const { user } = useAuth();
+  // Land on a tab this person may open, and leave one taken away from them.
+  useEffect(() => {
+    if (canOpen(user, view)) return;
+    const first = [OVERVIEW_ITEM, ...SECTIONS.flatMap((s) => s.items)].find((item) => canOpen(user, item.key));
+    if (first) setView(first.key);
+  }, [user, view, setView]);
   // So the next sign-in screen on this device already wears their company.
   useEffect(() => { rememberBrandOrg(user?.org ?? user?.company); }, [user]);
   return (

@@ -125,8 +125,13 @@ const REPORT_TTL_MS = 2 * 60_000;
 // refresh; a finished report for that org is just as stale as its setup.
 onShiftSetupChanged((org) => {
   setupCache.delete(org);
-  for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
+  invalidateAttendanceReport(org);
 });
+
+/** Drop an org's finished reports, so the next read reflects a change at once. */
+export function invalidateAttendanceReport(org: string): void {
+  for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
+}
 
 async function orgSetup(org: string): Promise<OrgSetup> {
   const hit = setupCache.get(org);

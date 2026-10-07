@@ -8,16 +8,16 @@ import { TITLES } from './theme';
 import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
 import { useStore } from './store';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
+import { canOpen } from './access';
 
-type NavItem = { key: View; label: string };
+export type NavItem = { key: View; label: string };
 
-const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
+export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
 const REQUESTS: NavItem[] = [
   { key: 'leave', label: 'Leave requests' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
   { key: 'oolcheckins', label: 'OOL check-ins' },
-  { key: 'reimbursements', label: 'Reimbursements' },
 ];
 const PEOPLE: NavItem[] = [
   { key: 'departments', label: 'Departments' },
@@ -53,9 +53,10 @@ const PAYROLL: NavItem[] = [
   { key: 'payruns', label: 'Payroll Runs' },
 ];
 
-// Claims sits below Payroll: what can be claimed and what it is capped at is a
-// policy decision, made once, not part of running a pay cycle.
+// Claims sits below Payroll: the claims people raise and what can be claimed,
+// together, so money questions are one section to give someone.
 const CLAIMS: NavItem[] = [
+  { key: 'reimbursements', label: 'Reimbursement requests' },
   { key: 'reimbursementtypes', label: 'Reimbursement Types' },
 ];
 // Connect's own section: moderation is not an HR request queue like leave, and
@@ -65,7 +66,7 @@ const CONNECT: NavItem[] = [
   { key: 'relaygame', label: 'Relay game' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
-const SECTIONS: { title: string; items: NavItem[] }[] = [
+export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
@@ -215,6 +216,9 @@ export function Sidebar() {
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
   const { leaves, ots, rbs, corrs, fbMgrs, view, setView } = useStore();
   const orgActive = view === 'organisation';
+  // Only the tabs People › Accesses gives this person.
+  const orgOpen = canOpen(user, 'organisation');
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   const leavesPending = leaves.filter((l) => l.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
   const claims = rbs.filter((r) => r.status === 'Pending').length;
@@ -252,8 +256,8 @@ export function Sidebar() {
     >
       {/* Company display name + logo — top-left. Clicking opens Organisation details. */}
       <button
-        onClick={() => setView('organisation')}
-        title="Organisation details"
+        onClick={() => { if (orgOpen) setView('organisation'); }}
+        title={orgOpen ? 'Organisation details' : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -263,7 +267,7 @@ export function Sidebar() {
           marginBottom: 10,
           border: '1px solid #EBEBEB',
           borderRadius: 12,
-          cursor: 'pointer',
+          cursor: orgOpen ? 'pointer' : 'default',
           textAlign: 'left',
           background: orgActive ? '#E7F4FB' : '#fff',
           transition: 'background .15s, border-color .15s',
@@ -301,12 +305,12 @@ export function Sidebar() {
             {brand.wordmark?.text ?? companyName}
           </div>
         </div>
-        <span style={{ color: orgActive ? '#0571A6' : '#9197A2', fontSize: 20, fontWeight: 700 }}>›</span>
+        {orgOpen && <span style={{ color: orgActive ? '#0571A6' : '#9197A2', fontSize: 20, fontWeight: 700 }}>›</span>}
       </button>
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 4 }}>
-        <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />
-        {SECTIONS.map((section, i) => (
+        {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
+        {sections.map((section, i) => (
           <NavSection
             key={section.title}
             title={section.title}
