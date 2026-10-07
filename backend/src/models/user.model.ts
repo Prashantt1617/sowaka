@@ -97,6 +97,13 @@ export interface User {
   // Grants access to the HR dashboard (org-wide view + request overrides).
   // Independent of the reporting role — a manager/employee may or may not have it.
   dashboardAccess?: boolean;
+  /** Manages who sees which dashboard tabs (People › Accesses); sees every tab. */
+  dashboardAdmin?: boolean;
+  /**
+   * The dashboard tabs this person may open, by view key. Absent means every
+   * tab, which is what everyone with access had before tabs were assignable.
+   */
+  dashboardTabs?: string[];
   /**
    * Per-employee overtime eligibility, set by HR from the dashboard. Absent
    * means eligible, so existing employees keep the behaviour they had before

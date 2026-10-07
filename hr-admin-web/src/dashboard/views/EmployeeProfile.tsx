@@ -17,7 +17,10 @@ import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { getEmployeeCalendar } from '../../services/hrms';
+import { clearReportingManager, getEmployeeCalendar, setReportingManager } from '../../services/hrms';
+import { ApiError } from '../../services/http';
+import { useAuth } from '../auth/AuthContext';
+import { canOpen, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getSalaryStructure, inr as inrPaise, type PayrollRunDTO, type PayslipDTO, type SalaryStructureDTO } from '../../services/payroll';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
@@ -103,6 +106,9 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   const d = derive(emp);
   const bal = leaveBalance(d.seed);
   const [tab, setTab] = useState<ProfileTab>('profile');
+  // What someone earns is its own access, apart from Employees.
+  const { user } = useAuth();
+  const seesSalary = canOpen(user, SALARY_DETAILS);
   // This month, fetched once: it names the shift in the header and seeds the
   // Calendar tab, so opening that tab does not ask for the same month again.
   const [currentMonth, setCurrentMonth] = useState<EmployeeCalendarDTO | null>(null);
@@ -157,7 +163,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {/* One page, five views of the same person. */}
       <div style={{ marginBottom: 18 }}>
         <StatusTabs<ProfileTab>
-          options={['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart']}
+          options={seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart'] : ['profile', 'performance', 'calendar', 'requests', 'orgchart']}
           active={tab}
           onSelect={setTab}
           labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart' }}
@@ -178,7 +184,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <Row label="Designation" value={emp.role} />
               <Row label="Department" value={emp.team} />
               <Row label="Work location" value={d.workLocation} />
-              <Row label="Reporting manager" value={emp.manager} />
+              <ManagerRow emp={emp} />
               <Row label="Director / substantial interest" value={d.isDirector ? 'Yes' : 'No'} />
             </Grid>
           </Section>
@@ -304,7 +310,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       )}
 
       {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} />}
-      {tab === 'salary' && <SalarySlips userId={emp.id} />}
+      {tab === 'salary' && seesSalary && <SalarySlips userId={emp.id} />}
 
       {tab === 'requests' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 18, alignItems: 'start' }}>
@@ -682,6 +688,76 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Grid({ children }: { children: ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 26px' }}>{children}</div>;
+}
+
+// Reporting manager, changeable here. The server checks the new manager is in
+// the same company and isn't someone who reports to this person.
+function ManagerRow({ emp }: { emp: Emp }) {
+  const { emps, flash, reload } = useStore();
+  const [current, setCurrent] = useState({ id: emp.managerId, name: emp.manager });
+  const [editing, setEditing] = useState(false);
+  const [q, setQ] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setCurrent({ id: emp.managerId, name: emp.manager }); }, [emp.managerId, emp.manager]);
+  const needle = q.trim().toLowerCase();
+  const options = emps
+    .filter((e) => e.id !== emp.id && e.id !== current.id)
+    .filter((e) => !needle || e.name.toLowerCase().includes(needle) || (e.employeeId ?? '').toLowerCase().includes(needle))
+    .slice(0, 8);
+  const save = async (next: Emp | null) => {
+    setSaving(true);
+    try {
+      if (next) {
+        const r = await setReportingManager(emp.id, next.id);
+        setCurrent({ id: next.id, name: next.name });
+        flash(`${emp.name} now reports to ${next.name}${r.movedRequests ? ` · ${r.movedRequests} pending request${r.movedRequests === 1 ? '' : 's'} moved to them` : ''}`);
+      } else {
+        await clearReportingManager(emp.id);
+        setCurrent({ id: '', name: '' });
+        flash(`${emp.name} no longer has a reporting manager`);
+      }
+      setEditing(false); setQ('');
+      void reload();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not change the manager');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const label = { fontSize: 12.5, fontWeight: 700, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' as const };
+  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
+  return (
+    <div style={{ minWidth: 0, gridColumn: editing ? '1 / -1' : undefined }}>
+      <div style={label}>Reporting manager</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: '#222222' }}>{current.name || '—'}</span>
+        {!editing && <button type="button" onClick={() => setEditing(true)} style={link}>Change</button>}
+      </div>
+      {editing && (
+        <div style={{ marginTop: 8, border: '1px solid #EBEBEB', borderRadius: 12, padding: 10, maxWidth: 440, background: '#fff' }}>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the new manager"
+            style={{ width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15, fontFamily: 'inherit' }} />
+          <div style={{ marginTop: 6, display: 'grid' }}>
+            {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 14, color: '#9197A2' }}>Nobody matches.</div>}
+            {options.map((o) => (
+              <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 8, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                <Avatar name={o.name} size={28} font={11} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: '#222222' }}>{o.name}</span>
+                  <span style={{ display: 'block', fontSize: 12.5, color: '#717171' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid #F0F0F2', paddingTop: 8 }}>
+            <button type="button" onClick={() => { setEditing(false); setQ(''); }} style={{ ...link, color: '#717171' }}>Cancel</button>
+            {current.id && <button type="button" disabled={saving} onClick={() => save(null)} style={{ ...link, color: '#A8475F', marginLeft: 'auto' }}>Remove manager</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Row({ label, value, wide, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {

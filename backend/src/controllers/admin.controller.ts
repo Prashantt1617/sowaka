@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
+import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
 import {
   AttendanceError,
   adminDecideRegularization,
@@ -193,6 +194,21 @@ export async function employeeCalendarHandler(req: Request, res: Response, next:
       String(req.query.month ?? ''),
     );
     res.status(200).json({ success: true, calendar });
+  } catch (error) { next(error); }
+}
+
+/** People › Accesses: everyone with dashboard access and their tabs. */
+export async function listAccessesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await listDashboardAccesses(adminUserId(req))) });
+  } catch (error) { next(error); }
+}
+
+/** Give, change or remove one person's dashboard access and tabs. */
+export async function setAccessHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = (req.body ?? {}) as { access?: unknown; admin?: unknown; tabs?: unknown };
+    res.status(200).json({ success: true, ...(await setDashboardAccess(adminUserId(req), String(req.params.userId ?? ''), body)) });
   } catch (error) { next(error); }
 }
 

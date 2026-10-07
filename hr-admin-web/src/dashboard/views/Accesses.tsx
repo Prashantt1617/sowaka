@@ -1,17 +1,55 @@
-// People › Accesses — who can use the dashboard (Users) and what each role can do
-// (Roles). Two horizontal subtabs, matching the Zoho Users / Roles screens but in
-// the app palette.
-// NOTE: frontend-capture phase — renders from local mock data, no API calls.
-import { useState } from 'react';
+// People › Accesses — who can use the dashboard and which tabs each person
+// sees. Only a dashboard admin opens this page. An admin sees every tab;
+// everyone else sees the tabs ticked for them, and the server refuses the
+// APIs behind the rest. Roles are starting points for the tick list.
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import { useAuth } from '../auth/AuthContext';
+import { refreshMe } from '../../services/auth';
+import { ApiError } from '../../services/http';
+import { getAllEmployees, listDashboardAccesses, setDashboardAccess } from '../../services/hrms';
+import type { DashboardAccessDTO, EmployeeDTO } from '../../services/hrms';
 import { Avatar, Card } from '../ui';
 import { IconPlus } from '../icons';
+import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
+import { SALARY_DETAILS } from '../access';
+import type { AccessKey } from '../access';
 
 type SubTab = 'users' | 'roles';
 const TABS: { key: SubTab; label: string }[] = [
   { key: 'users', label: 'Users' },
   { key: 'roles', label: 'Roles' },
+];
+
+// What can be given: a whole sidebar section at a time, not its sub-tabs.
+// Overview, organisation settings and an employee's salary details are each
+// their own. Accesses itself is not in the list: it comes with being an admin.
+type Unit = { key: string; title: string; tabs: AccessKey[]; hint: string };
+const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
+const SECTION_UNITS: Unit[] = SECTIONS.map((s) => {
+  const items = s.items.filter((i) => i.key !== 'usersroles');
+  return { key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') };
+});
+const UNITS: Unit[] = [
+  { key: 'overview', title: OVERVIEW_ITEM.label, tabs: ['overview'], hint: 'Pending requests at a glance' },
+  { key: 'organisation', title: 'Organisation settings', tabs: ['organisation'], hint: 'Company details, branding and app tabs' },
+  ...SECTION_UNITS.flatMap((u) => u.key === 'PEOPLE'
+    ? [u, { key: SALARY_DETAILS, title: 'Salary details', tabs: [SALARY_DETAILS] as AccessKey[], hint: "Salary details tab and payslips on an employee's profile" }]
+    : [u]),
+];
+const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
+const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
+const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
+const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));
+
+// —— Roles: presets for the tick list ————————————————————————————————————
+type Role = { name: string; admin?: boolean; tabs: AccessKey[]; desc: string };
+const ROLES: Role[] = [
+  { name: 'Admin', admin: true, tabs: ALL_TABS, desc: 'Everything, and People › Accesses: decides who sees what.' },
+  { name: 'Operations Manager', tabs: ALL_TABS.filter((t) => t !== 'organisation'), desc: 'Everything except organisation settings and accesses.' },
+  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Requests', 'Reports'), desc: 'Leave, overtime, attendance corrections, OOL check-ins and the attendance report. No pay.' },
+  { name: 'Money Reviewer', tabs: tabsOf('Overview', 'Payroll', 'Claims', 'Salary details'), desc: 'Payroll, claims and what each employee earns. No leave or attendance.' },
 ];
 
 export function Accesses() {
@@ -22,11 +60,8 @@ export function Accesses() {
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              style={{ ...tabBtn, color: active ? '#0571A6' : '#717171', borderBottomColor: active ? '#0571A6' : 'transparent', fontWeight: active ? 800 : 600 }}
-            >
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{ ...tabBtn, color: active ? '#0571A6' : '#717171', borderBottomColor: active ? '#0571A6' : 'transparent', fontWeight: active ? 800 : 600 }}>
               {t.label}
             </button>
           );
@@ -38,122 +73,227 @@ export function Accesses() {
 }
 
 // —— Users ————————————————————————————————————————————————————————————
-type UserRow = { name: string; email: string; role: string; status: 'Active' | 'Inactive' };
-const USERS: UserRow[] = [
-  { name: 'Anshul', email: 'anshul@convrse.ai', role: 'Operations Manager', status: 'Active' },
-  { name: 'Convrse AI', email: 'hi@convrse.ai', role: 'Admin', status: 'Inactive' },
-  { name: 'Diksha', email: 'diksha@convrse.ai', role: 'Admin', status: 'Active' },
-  { name: 'Tanvi', email: 'tanvi@sowaka.co.in', role: 'Admin', status: 'Active' },
-  { name: 'Rahul Sharma', email: 'rahul@convrse.ai', role: 'Time Reviewer', status: 'Active' },
-  { name: 'Anjali Gupta', email: 'anjali@convrse.ai', role: 'Money Reviewer', status: 'Active' },
-];
-const USER_COLS = '2.4fr 1.4fr 1fr 44px';
+const USER_COLS = '2.2fr 2.4fr 0.8fr 44px';
+
+function accessSummary(u: DashboardAccessDTO): string {
+  if (u.admin) return 'Admin · everything';
+  if (u.tabs === null) return 'Everything';
+  const names = UNITS.filter((unit) => hasUnit(u.tabs as AccessKey[], unit)).map((unit) => unit.title);
+  return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
+}
+
+type Editing = { person: { userId: string; name: string; email: string }; admin: boolean; tabs: Set<AccessKey>; isNew: boolean };
 
 function UsersTab() {
   const { flash } = useStore();
+  const { user: me, setUser } = useAuth();
+  const [rows, setRows] = useState<DashboardAccessDTO[] | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => listDashboardAccesses().then((r) => setRows(r.users)).catch((e) => flash(e instanceof ApiError ? e.message : 'Could not load accesses'));
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const open = (u: DashboardAccessDTO) =>
+    setEditing({ person: u, admin: u.admin, tabs: new Set<AccessKey>(u.tabs === null ? ALL_TABS : (u.tabs as AccessKey[])), isNew: false });
+
+  const save = async (access: boolean) => {
+    if (!editing) return;
+    // Only whole sections are given: a half-ticked one left from before is dropped.
+    const given = UNITS.filter((u) => hasUnit(editing.tabs, u)).flatMap((u) => u.tabs);
+    if (access && !editing.admin && given.length === 0) { flash('Tick at least one, or remove their access'); return; }
+    setSaving(true);
+    try {
+      const everything = ALL_TABS.every((t) => given.includes(t));
+      await setDashboardAccess(editing.person.userId, access
+        ? { access: true, admin: editing.admin, tabs: editing.admin || everything ? null : given }
+        : { access: false });
+      flash(access ? `${editing.person.name}'s access saved` : `${editing.person.name} no longer has dashboard access`);
+      setEditing(null);
+      await load();
+      // Changing your own access shows at once.
+      if (editing.person.userId === me?.id) setUser(await refreshMe());
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: '#717171' }}>{USERS.length} users have access to this dashboard</div>
-        <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => flash('Invite user — coming soon')}><IconPlus size={15} /> Invite user</button>
+        <div style={{ fontSize: 14, color: '#717171' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : 'Loading…'}</div>
+        <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => setPicking(true)}><IconPlus size={15} /> Give access</button>
       </div>
 
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
           <div>User details</div>
-          <div>Role</div>
+          <div>Tabs</div>
           <div>Status</div>
           <div />
         </div>
-        {USERS.map((u) => (
-          <div key={u.email} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}>
+        {(rows ?? []).map((u) => (
+          <div key={u.userId} onClick={() => open(u)} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               <Avatar name={u.name} size={38} font={14} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#0571A6' }}>{u.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0571A6' }}>{u.name}{u.userId === me?.id && <span style={{ color: '#9197A2', fontWeight: 600 }}> · you</span>}</div>
                 <div style={{ fontSize: 14, color: '#717171' }}>{u.email}</div>
               </div>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#484848' }}>{u.role}</div>
-            <div>
-              <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: u.status === 'Active' ? '#4F7A52' : '#9197A2' }}>
-                {u.status.toUpperCase()}
-              </span>
-            </div>
-            <button title="More" style={rowMenuBtn} onClick={() => flash(`Manage ${u.name}`)}>⋯</button>
+            <div style={{ fontSize: 14, fontWeight: 600, color: u.admin ? '#0571A6' : '#484848' }}>{accessSummary(u)}</div>
+            <div><span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: u.active ? '#4F7A52' : '#9197A2' }}>{u.active ? 'ACTIVE' : 'INACTIVE'}</span></div>
+            <span style={{ ...rowMenuBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>›</span>
           </div>
         ))}
       </Card>
+
+      {picking && (
+        <PickPerson
+          exclude={new Set((rows ?? []).map((r) => r.userId))}
+          onClose={() => setPicking(false)}
+          onPick={(p) => { setPicking(false); setEditing({ person: { userId: p.userId, name: p.name, email: p.email ?? '' }, admin: false, tabs: new Set<AccessKey>(), isNew: true }); }}
+        />
+      )}
+      {editing && <EditAccess editing={editing} setEditing={setEditing} saving={saving} onSave={save} self={editing.person.userId === me?.id} />}
+    </div>
+  );
+}
+
+function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Editing; setEditing: (e: Editing | null) => void; saving: boolean; onSave: (access: boolean) => void; self: boolean }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const toggle = (u: Unit) => {
+    const tabs = new Set(editing.tabs);
+    const on = !hasUnit(tabs, u);
+    for (const k of u.tabs) { if (on) tabs.add(k); else tabs.delete(k); }
+    setEditing({ ...editing, tabs });
+  };
+  const applyRole = (r: Role) => setEditing({ ...editing, admin: r.admin === true, tabs: new Set(r.tabs) });
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={() => setEditing(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)' }} />
+      <div className="scry" style={{ position: 'relative', width: 'min(560px, 100%)', height: '100%', background: '#fff', overflowY: 'auto', padding: '22px 24px 28px', boxShadow: '-12px 0 40px rgba(34,34,34,.18)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Avatar name={editing.person.name} size={42} font={15} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 19, fontWeight: 800 }}>{editing.person.name}</div>
+            <div style={{ fontSize: 14, color: '#717171' }}>{editing.person.email}</div>
+          </div>
+          <button onClick={() => setEditing(null)} style={{ ...ghostBtn, padding: '7px 12px' }}>Close</button>
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', color: '#717171', margin: '22px 0 8px' }}>START FROM A ROLE</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {ROLES.map((r) => <button key={r.name} type="button" onClick={() => applyRole(r)} style={chip}>{r.name}</button>)}
+        </div>
+
+        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', margin: '20px 0 6px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={editing.admin} onChange={(e) => setEditing({ ...editing, admin: e.target.checked })} style={{ marginTop: 3 }} />
+          <span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>Admin</span>
+            <span style={{ display: 'block', fontSize: 13, color: '#717171' }}>Everything, and can change who sees what on this page.</span>
+          </span>
+        </label>
+
+        {!editing.admin && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', color: '#717171', margin: '18px 0 4px' }}>WHAT THEY CAN OPEN · {UNITS.filter((u) => hasUnit(editing.tabs, u)).length} of {UNITS.length}</div>
+            {UNITS.map((u) => (
+              <label key={u.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: '1px solid #F0F0F2', cursor: 'pointer' }}>
+                <input type="checkbox" checked={hasUnit(editing.tabs, u)} onChange={() => toggle(u)} style={{ marginTop: 3 }} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: '#222222' }}>{u.title}</span>
+                  <span style={{ display: 'block', fontSize: 13, color: '#717171' }}>{u.hint}</span>
+                </span>
+              </label>
+            ))}
+          </>
+        )}
+
+        {self && !editing.admin && <div style={{ fontSize: 13, color: '#A8475F', marginTop: 12 }}>This is your own access. Without Admin you won't be able to come back to this page.</div>}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 22, alignItems: 'center' }}>
+          {!editing.isNew && (
+            confirmRemove
+              ? <button type="button" disabled={saving} onClick={() => onSave(false)} style={{ ...ghostBtn, color: '#A8475F', borderColor: '#A8475F' }}>Click again to remove</button>
+              : <button type="button" onClick={() => setConfirmRemove(true)} style={{ ...ghostBtn, color: '#A8475F', borderColor: '#EBD9DE' }}>Remove access</button>
+          )}
+          <button type="button" disabled={saving} onClick={() => onSave(true)} style={{ ...primaryBtn, marginLeft: 'auto' }}>{saving ? 'Saving…' : editing.isNew ? 'Give access' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PickPerson({ exclude, onClose, onPick }: { exclude: Set<string>; onClose: () => void; onPick: (p: EmployeeDTO) => void }) {
+  const [people, setPeople] = useState<EmployeeDTO[] | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => { getAllEmployees().then(setPeople).catch(() => setPeople([])); }, []);
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return (people ?? [])
+      .filter((p) => !exclude.has(p.userId))
+      .filter((p) => !needle || p.name.toLowerCase().includes(needle) || (p.email ?? '').toLowerCase().includes(needle) || (p.employeeId ?? '').toLowerCase().includes(needle))
+      .slice(0, 40);
+  }, [people, q, exclude]);
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)' }} />
+      <div style={{ position: 'relative', width: 'min(520px, 92vw)', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(34,34,34,.25)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid #F0F0F2' }}>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 10 }}>Give dashboard access</div>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or employee ID" style={{ width: '100%', padding: '10px 12px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 15, fontFamily: 'inherit' }} />
+        </div>
+        <div className="scry" style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+          {people === null && <div style={{ padding: 18, color: '#717171' }}>Loading…</div>}
+          {people !== null && shown.length === 0 && <div style={{ padding: 18, color: '#717171' }}>Nobody matches.</div>}
+          {shown.map((p) => (
+            <button key={p.userId} type="button" onClick={() => onPick(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 18px', border: 'none', borderBottom: '1px solid #F7F7F9', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+              <Avatar name={p.name} size={32} font={12} />
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: '#222222' }}>{p.name}</span>
+                <span style={{ display: 'block', fontSize: 13, color: '#717171' }}>{[p.employeeId, p.designation, p.email].filter(Boolean).join(' · ')}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 // —— Roles ————————————————————————————————————————————————————————————
-type RoleRow = { name: string; system?: boolean; desc: string };
-const ROLES: RoleRow[] = [
-  {
-    name: 'Admin',
-    system: true,
-    desc: 'Unrestricted access to every module and to organisation settings — can run payroll, edit statutory setup, and manage users, roles and accesses.',
-  },
-  {
-    name: 'Operations Manager',
-    system: true,
-    desc: 'Access to all people and payroll modules except organisation settings and access management. Can add employees, run pay runs, and approve requests, but cannot change org identity or manage other users.',
-  },
-  {
-    name: 'Time Reviewer',
-    desc: 'Reviews and approves time-related requests only — leave, overtime and attendance. Cannot view salary, payroll or reimbursement data.',
-  },
-  {
-    name: 'Money Reviewer',
-    desc: 'Reviews and approves money-related items only — reimbursements and proof-of-investment declarations, plus payroll inputs. Cannot approve leave or time-off.',
-  },
-];
-const ROLE_COLS = '1.2fr 2.4fr';
+const ROLE_COLS = '1.1fr 2.6fr';
 
 function RolesTab() {
-  const { flash } = useStore();
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: '#717171' }}>{ROLES.length} roles define what users can see and do</div>
-        <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => flash('New role — coming soon')}><IconPlus size={15} /> New role</button>
-      </div>
-
+      <div style={{ fontSize: 14, color: '#717171', marginBottom: 16 }}>Starting points for a person's tabs. Pick one in the access editor, then add or remove tabs for that person.</div>
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
           <div>Role name</div>
-          <div>Description</div>
+          <div>Tabs</div>
         </div>
         {ROLES.map((r) => (
           <div key={r.name} style={{ display: 'grid', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '15px 20px', borderBottom: '1px solid #F0F0F2', alignItems: 'start' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#0571A6' }}>{r.name}</span>
-              {r.system && <IconLock />}
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0571A6' }}>{r.name}</div>
+            <div>
+              <div style={{ fontSize: 14, color: '#484848', lineHeight: 1.5 }}>{r.desc}</div>
+              {!r.admin && <div style={{ fontSize: 13, color: '#9197A2', marginTop: 4 }}>{UNITS.filter((u) => hasUnit(r.tabs, u)).map((u) => u.title).join(' · ')}</div>}
             </div>
-            <div style={{ fontSize: 14, color: '#484848', lineHeight: 1.5 }}>{r.desc}</div>
           </div>
         ))}
       </Card>
-      <div style={{ fontSize: 12, color: '#717171', marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <IconLock /> System roles can&rsquo;t be deleted, but you can create your own roles with custom permissions.
-      </div>
     </div>
   );
 }
 
-function IconLock() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
-      <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
-    </svg>
-  );
-}
-
-// —— styles ————————————————————————————————————————————————————————————
-const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid #EBEBEB', marginBottom: 22 };
-const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 20, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const rowMenuBtn: CSSProperties = { width: 32, height: 32, borderRadius: 8, border: '1px solid #EBEBEB', background: '#fff', color: '#717171', fontSize: 20, cursor: 'pointer', lineHeight: 1 };
+const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid #EBEBEB', marginBottom: 20 };
+const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const chip: CSSProperties = { background: '#F3F8FB', color: '#0571A6', border: '1px solid #D7E9F3', borderRadius: 999, padding: '6px 12px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const rowMenuBtn: CSSProperties = { width: 32, height: 32, borderRadius: 9, color: '#9197A2', fontSize: 18, fontWeight: 700 };

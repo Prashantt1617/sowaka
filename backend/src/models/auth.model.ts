@@ -20,6 +20,10 @@ export interface AuthUser {
   name: string;
   role: 'manager' | 'employee';
   dashboardAccess?: boolean;
+  /** Manages dashboard accesses; sees every tab. */
+  dashboardAdmin?: boolean;
+  /** Dashboard tabs this person may open; null means every tab. */
+  dashboardTabs?: string[] | null;
   isLeadership?: boolean;
   company: string;
   /** The company's id, which is what branding is chosen by. */
