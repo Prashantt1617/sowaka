@@ -22,6 +22,7 @@ import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
 import '../../shared/app_toast.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
 /// Connect tab itself — the composer's `showModalBottomSheet`/`Navigator.push`
@@ -244,9 +245,40 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         child: ListView.separated(
           controller: _feedScroll,
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-          itemCount: posts.length + 1,
+          // The composer, the posts, and — while older ones exist — a last
+          // row that asks for the next page as it comes into view.
+          itemCount: posts.length + 1 + (state.hasMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
+            if (index == posts.length + 1) {
+              if (state.loadMoreFailed) {
+                return Center(
+                  child: TextButton(
+                    onPressed: _bloc.retryLoadMore,
+                    child: const Text(
+                      'Could not load more. Tap to retry.',
+                      style: TextStyle(color: _ConnectColors.terra, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                );
+              }
+              // Asked for after the frame, not during it: a build is not the
+              // place to start a request, and the bloc ignores repeats.
+              WidgetsBinding.instance.addPostFrameCallback((_) => _bloc.loadMore());
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _ConnectColors.terra,
+                    ),
+                  ),
+                ),
+              );
+            }
             // The composer entry point, now that the nav has no Post tab
             // (node 2002:39114).
             if (index == 0) {
@@ -428,9 +460,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// this walks down a screen at a time until the card exists, then settles
   /// it near the top. A post not in the loaded feed is fetched first.
   Future<void> _revealPost(String postId, {bool comments = false}) async {
-    if (!_bloc.state.posts.any((post) => post.id == postId)) {
-      await _bloc.refresh();
-    }
+    // The post itself, wherever it sits in the feed — a notification is
+    // often about one beyond the pages loaded.
+    if (!await _bloc.ensurePost(postId)) return;
     if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
       return;
     }
@@ -10480,7 +10512,9 @@ ImageProvider _remoteImage(String url) {
       }
     }
   }
-  return NetworkImage(resolveMediaUrl(url));
+  // Cached on disk by URL: a photo seen once is not fetched again, on this
+  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
+  return CachedNetworkImageProvider(resolveMediaUrl(url));
 }
 
 Color _hexColor(String value, Color fallback) {

@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
@@ -72,21 +73,69 @@ function announceChange(
  * challenges fell off the end as ordinary posts pushed past them — and that
  * every photo on those posts was signed just to be thrown away.
  */
+/** How many posts a page holds when the app does not say, and the most it may ask for. */
+export const FEED_DEFAULT_LIMIT = 50;
+export const FEED_MAX_LIMIT = 50;
+
+/**
+ * Where the next page starts: the last post's publish moment and creation
+ * moment, which together are the feed's sort order. Opaque to the app, which
+ * hands it straight back.
+ */
+export function encodeFeedCursor(
+  post: Pick<ConnectPost, 'publishedAt' | 'createdAt'> & { _id?: ObjectId },
+): string {
+  // The id breaks ties: posts made in one batch can share a millisecond.
+  return `${post.publishedAt.toISOString()}|${post.createdAt.toISOString()}|${post._id?.toHexString() ?? ''}`;
+}
+
+function decodeFeedCursor(
+  value: string | undefined,
+): { publishedAt: Date; createdAt: Date; id: ObjectId | null } | null {
+  if (!value) return null;
+  const [published, created, id] = value.split('|');
+  const publishedAt = new Date(published ?? '');
+  const createdAt = new Date(created ?? published ?? '');
+  if (Number.isNaN(publishedAt.getTime()) || Number.isNaN(createdAt.getTime())) {
+    throw new ConnectError(400, 'The feed cursor is not valid');
+  }
+  return { publishedAt, createdAt, id: id && ObjectId.isValid(id) ? new ObjectId(id) : null };
+}
+
 export async function getConnectFeed(
   viewerUserId: string,
-  options: { types?: ConnectPostType[] } = {},
+  options: { types?: ConnectPostType[]; limit?: number; cursor?: string } = {},
 ) {
-  const viewer = await users().findOne({ userId: viewerUserId });
+  // The viewer and their block list are independent reads: one round trip,
+  // not two in a row.
+  const [viewer, blockedUserIds] = await Promise.all([
+    users().findOne({ userId: viewerUserId }),
+    blockedUserIdsFor(viewerUserId),
+  ]);
   if (!viewer) throw new ConnectError(404, 'User not found');
   const org = orgForUser(viewer);
   const typeFilter =
     options.types && options.types.length > 0 ? { type: { $in: options.types } } : {};
+  const limit = Math.min(FEED_MAX_LIMIT, Math.max(1, Math.floor(options.limit ?? FEED_DEFAULT_LIMIT)));
+  const after = decodeFeedCursor(options.cursor);
+  // Everything older than the cursor, in the feed's own order, so a post
+  // published in between two pages shifts nothing already shown.
+  const cursorFilter = after
+    ? {
+        $or: [
+          { publishedAt: { $lt: after.publishedAt } },
+          { publishedAt: after.publishedAt, createdAt: { $lt: after.createdAt } },
+          ...(after.id
+            ? [{ publishedAt: after.publishedAt, createdAt: after.createdAt, _id: { $lt: after.id } }]
+            : []),
+        ],
+      }
+    : {};
 
   // Blocking is a personal mute: a blocked colleague's own posts drop out of
   // this viewer's feed. Official announcements are exempt — an employee who
   // has muted a colleague who happens to work in HR must still see what the
   // company tells everyone.
-  const blockedUserIds = await blockedUserIdsFor(viewerUserId);
   const blockFilter =
     blockedUserIds.length > 0
       ? {
@@ -99,25 +148,34 @@ export async function getConnectFeed(
         }
       : {};
 
-  const posts = await connectPosts()
+  // One more than the page, to know whether another page follows without a
+  // second count query.
+  const page = await connectPosts()
     .find({
       org,
       ...typeFilter,
       ...blockFilter,
-      $or: [
-        // MongoDB's driver stores `undefined` as BSON null rather than
-        // dropping the key, so company-wide posts persist with an explicit
-        // null — querying for `null` matches both that and a genuinely
-        // missing field, unlike `$exists: false`.
-        { 'audience.teamId': null, 'audience.department': null },
-        { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
-        // Posts written while Team meant "same department".
-        { 'audience.department': viewer.department },
+      $and: [
+        {
+          $or: [
+            // MongoDB's driver stores `undefined` as BSON null rather than
+            // dropping the key, so company-wide posts persist with an explicit
+            // null — querying for `null` matches both that and a genuinely
+            // missing field, unlike `$exists: false`.
+            { 'audience.teamId': null, 'audience.department': null },
+            { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
+            // Posts written while Team meant "same department".
+            { 'audience.department': viewer.department },
+          ],
+        },
+        ...(after ? [cursorFilter] : []),
       ],
     })
-    .sort({ publishedAt: -1, createdAt: -1 })
-    .limit(50)
+    .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+    .limit(limit + 1)
     .toArray();
+  const hasMore = page.length > limit;
+  const posts = hasMore ? page.slice(0, limit) : page;
 
   // `post.author.photoUrl` is a snapshot frozen at creation time (see
   // `createConnectPost`), so a post predates whatever profile photo its
@@ -134,14 +192,18 @@ export async function getConnectFeed(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const authors = await users()
-    .find({ userId: { $in: authorIds } })
-    .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
-      userId: 1,
-      profilePhotoKey: 1,
-      profilePhotoUrl: 1,
-    })
-    .toArray();
+  // Authors' photos and the games' states are independent too.
+  const [authors, relayStatuses] = await Promise.all([
+    users()
+      .find({ userId: { $in: authorIds } })
+      .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+        userId: 1,
+        profilePhotoKey: 1,
+        profilePhotoUrl: 1,
+      })
+      .toArray(),
+    relayStatusesFor(posts),
+  ]);
   const authorPhotoUrls = new Map(
     await Promise.all(
       authors.map(
@@ -151,10 +213,13 @@ export async function getConnectFeed(
     ),
   );
 
-  const relayStatuses = await relayStatusesFor(posts);
-  return Promise.all(
+  const views = await Promise.all(
     posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses)),
   );
+  return {
+    posts: views,
+    nextCursor: hasMore && posts.length > 0 ? encodeFeedCursor(posts[posts.length - 1]) : null,
+  };
 }
 
 /**

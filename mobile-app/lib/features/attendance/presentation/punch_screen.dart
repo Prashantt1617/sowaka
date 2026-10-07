@@ -510,10 +510,11 @@ class _PunchScreenState extends State<PunchScreen> {
     );
   }
 
-  /// Outside every office (nodes 3345:28301 and 3345:28881). The reasons are
+  /// Outside every office (nodes 3345:28301 and 3345:28989). The reasons are
   /// HR's own list from the template; which of the two screens this is comes
-  /// from the template too: a manager's decision, or marked present outright,
-  /// in which case no reason is needed and the button is live from the start.
+  /// from the template too. Under a manager's decision a reason is picked and
+  /// sent with the button. Marked present outright there is no button: a tap
+  /// on a reason is the punch, and the cross punches as working from home.
   Widget _outside() {
     final alreadyIn = _alreadyIn;
     final canSend = !alreadyIn && !_busy && (_selectedReason != null || _reasonOptional);
@@ -568,9 +569,15 @@ class _PunchScreenState extends State<PunchScreen> {
                         label: reason,
                         image: 'assets/icons/punch/reason_${index % 3 + 1}.png',
                         selected: _selectedReason == reason,
-                        onTap: () => setState(
-                          () => _selectedReason = _selectedReason == reason ? null : reason,
-                        ),
+                        onTap: _busy
+                            ? () {}
+                            : _reasonOptional
+                            // Nobody decides on it, so the choice is the punch.
+                            ? () => _sendWithReason(reason)
+                            : () => setState(
+                                () => _selectedReason =
+                                    _selectedReason == reason ? null : reason,
+                              ),
                       ),
                     ),
                 ],
@@ -579,12 +586,14 @@ class _PunchScreenState extends State<PunchScreen> {
           ),
         ],
         const SizedBox(height: 24),
-        _ArrowButton(
-          label: sendLabel,
-          enabled: canSend,
-          onTap: () => _sendWithReason(_selectedReason),
-        ),
-        const SizedBox(height: 20),
+        if (!_reasonOptional) ...[
+          _ArrowButton(
+            label: sendLabel,
+            enabled: canSend,
+            onTap: () => _sendWithReason(_selectedReason),
+          ),
+          const SizedBox(height: 20),
+        ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [

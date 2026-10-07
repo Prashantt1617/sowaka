@@ -853,7 +853,11 @@ export type ShiftPolicyView = {
  * they are on one, otherwise the org policy.
  */
 export async function shiftPolicyFor(userId: string): Promise<ShiftPolicyView> {
-  const policy = await policyForUser(userId);
+  return shiftPolicyViewOf(await policyForUser(userId));
+}
+
+/** The app's view of a policy already resolved — by `policyForUser` or in a batch. */
+export function shiftPolicyViewOf(policy: ResolvedShiftPolicy): ShiftPolicyView {
   return {
     name: policy.shiftName ?? DEFAULT_SHIFT_POLICY.name,
     startTime: policy.startTime,
@@ -1008,6 +1012,22 @@ export async function policyForUser(
   // org's default template. The org policy document answers only for an org
   // that has no default yet, so nothing changes for one until it does.
   if (!template?.policy) template = await defaultTemplateFor(user.org);
+  return mergeTemplatePolicy(orgPolicy, template);
+}
+
+/** What `policyForUser` and `policiesForUsers` both answer with. */
+export type ResolvedShiftPolicy = ShiftPolicyRules & { shiftName: string | null };
+
+type OrgPolicy = Awaited<ReturnType<typeof getOrgShiftPolicy>>;
+
+/**
+ * The org's policy with one template laid over it — the one merge both the
+ * single and the batched lookup use, so they can never grade a day two ways.
+ */
+export function mergeTemplatePolicy(
+  orgPolicy: OrgPolicy,
+  template: ShiftTemplate | null | undefined,
+): ResolvedShiftPolicy {
   if (!template?.policy) return { ...orgPolicy, shiftName: null };
   // A template overrides everything it carries. It is a full policy for the
   // people on it — the working day, what an incomplete day is marked as, what
@@ -1063,6 +1083,69 @@ export async function policyForUser(
     },
     shiftName: template.name,
   };
+}
+
+/**
+ * The policy of many people at once — the team tab's whole roster in five
+ * queries rather than five per person. Same answer as `policyForUser`, the
+ * org's policy, every template and every assignment loaded once and resolved
+ * in memory.
+ */
+export async function policiesForUsers(
+  userIds: string[],
+  asOf: string = todayIso(),
+): Promise<Map<string, ResolvedShiftPolicy>> {
+  const out = new Map<string, ResolvedShiftPolicy>();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return out;
+  const people = await users()
+    .find({ userId: { $in: ids } })
+    .project<{ userId: string; org?: string }>({ _id: 0, userId: 1, org: 1 })
+    .toArray();
+  const orgs = [...new Set(people.map((p) => p.org).filter((o): o is string => Boolean(o)))];
+  const [orgPolicies, templates, assignments] = await Promise.all([
+    Promise.all(orgs.map(async (org) => [org, await getOrgShiftPolicy(org)] as const)),
+    orgs.length ? shiftTemplates().find({ org: { $in: orgs } }).toArray() : Promise.resolve([]),
+    shiftAssignments()
+      .find({ userId: { $in: ids }, effectiveFrom: { $lte: asOf } })
+      .sort({ effectiveFrom: -1, createdAt: -1 })
+      .toArray(),
+  ]);
+  const policyByOrg = new Map(orgPolicies);
+  const templateById = new Map(templates.map((t) => [t._id!.toHexString(), t]));
+  const defaultByOrg = new Map<string, ShiftTemplate>();
+  for (const t of templates) {
+    if (t.active && t.isDefault && !t.deletedAt && !defaultByOrg.has(t.org)) defaultByOrg.set(t.org, t);
+  }
+  // Sorted newest first, so the first row seen per person is the one in force.
+  const latestAssignment = new Map<string, (typeof assignments)[number]>();
+  for (const row of assignments) {
+    if (!latestAssignment.has(row.userId)) latestAssignment.set(row.userId, row);
+  }
+  for (const person of people) {
+    const org = person.org;
+    const orgPolicy = org ? policyByOrg.get(org) : undefined;
+    if (!org || !orgPolicy) {
+      out.set(person.userId, { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null });
+      continue;
+    }
+    const assigned = latestAssignment.get(person.userId);
+    let template: ShiftTemplate | null | undefined;
+    if (!assigned) {
+      // No history: the template that lists them, as `policyForUser` reads it.
+      template = templates.find(
+        (t) => t.org === org && t.active && !t.deletedAt && (t.assignedUserIds ?? []).includes(person.userId),
+      );
+    } else if (assigned.templateId) {
+      const found = templateById.get(assigned.templateId.toHexString());
+      template = found && found.org === org ? found : null;
+    } else {
+      template = null;
+    }
+    if (!template?.policy) template = defaultByOrg.get(org);
+    out.set(person.userId, mergeTemplatePolicy(orgPolicy, template));
+  }
+  return out;
 }
 
 /**

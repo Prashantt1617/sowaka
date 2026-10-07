@@ -117,16 +117,16 @@ void main() {
     expect(_lastPunchBody?['reason'], 'Client visit');
   });
 
-  testWidgets('marked present: a reason, when given, is kept on the punch', (tester) async {
+  testWidgets('marked present: tapping a reason is the punch, no button', (tester) async {
     await _pumpScreen(tester, 'present');
+    expect(find.byType(FilledButton), findsNothing);
     await tester.tap(find.text('Client visit'));
-    await tester.pump();
-    await tester.tap(find.text('Punch in'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text("You're punched in!"), findsOneWidget);
     expect(find.text('Client visit'), findsOneWidget);
     expect(find.text('Work from home'), findsNothing);
+    expect(_lastPunchBody?['reason'], 'Client visit');
   });
 
   testWidgets('marked present: closing the screen is the punch', (tester) async {
@@ -139,14 +139,16 @@ void main() {
     expect(find.byType(PunchScreen), findsNothing);
   });
 
-  testWidgets('marked present: no reason needed, punched in', (tester) async {
+  testWidgets('marked present: the cross punches as working from home', (tester) async {
     await _pumpScreen(tester, 'present');
     expect(find.text('Manager approval required'), findsNothing);
     expect(find.text('Your manager will review the request.'), findsNothing);
-    await tester.tap(find.text('Punch in'));
+    await tester.tap(find.bySemanticsLabel('Close'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text("You're punched in!"), findsOneWidget);
-    expect(find.text('Work from home'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PunchScreen), findsNothing);
+    expect(_lastPunchBody?['skipReason'], true);
+    expect(_lastPunchBody?['reason'], isNull);
   });
 }

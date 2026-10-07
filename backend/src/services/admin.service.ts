@@ -107,7 +107,9 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
   }
   const employee: User = {
     userId: randomUUID(), name, email, org: admin.org,
-    employeeId,
+    // Left out rather than set to undefined: the driver would store null,
+    // and the unique index then refuses the second employee without an id.
+    ...(employeeId ? { employeeId } : {}),
     gender: input.gender?.trim() || undefined,
     phone: input.mobile?.trim() || undefined,
     branch: input.branch?.trim() || undefined,

@@ -44,6 +44,9 @@ class _Segment {
     this.holdSeconds,
     this.breaths,
     this.until,
+    this.plays = 1,
+    this.once = false,
+    this.caption,
   });
 
   /// Zero-based indexes of the steps this page shows.
@@ -52,6 +55,15 @@ class _Segment {
 
   /// Seconds in where the clip stops and holds its frame; null plays it all.
   final double? until;
+
+  /// Times the clip plays through before the step is done.
+  final int plays;
+
+  /// A timed hold whose clip plays once and rests on its last frame.
+  final bool once;
+
+  /// Words over the clip.
+  final String? caption;
 
   /// Set when the page is a hold: how long.
   final int? holdSeconds;
@@ -104,6 +116,9 @@ class _StretchScreenState extends State<StretchScreen> {
             holdSeconds: hold,
             breaths: breaths,
             until: clip.until,
+            plays: clip.plays,
+            once: clip.once,
+            caption: clip.caption,
           ),
         );
       } else if (covered.contains(i)) {
@@ -341,6 +356,9 @@ class _SegmentPageState extends State<_SegmentPage> {
   bool _clipDone = false;
   bool _breathsDone = false;
 
+  /// Plays still to come after the current one.
+  late int _playsLeft = widget.segment.plays - 1;
+
   /// Which of the page's steps is current, as the clip plays.
   int _current = 0;
 
@@ -378,7 +396,9 @@ class _SegmentPageState extends State<_SegmentPage> {
           .initialize()
           .then((_) {
             if (!mounted) return;
-            controller.setLooping(widget.segment.holdSeconds != null);
+            // A hold loops its clip under the countdown — unless it is to
+            // play once and rest on its last frame till the time is up.
+            controller.setLooping(widget.segment.holdSeconds != null && !widget.segment.once);
             setState(() {});
             if (widget.active) controller.play();
           })
@@ -400,6 +420,7 @@ class _SegmentPageState extends State<_SegmentPage> {
     final video = _video;
     if (widget.active) {
       _ended = false;
+      _playsLeft = widget.segment.plays - 1;
       if (video != null) {
         if (video.value.isInitialized) {
           video.seekTo(Duration.zero);
@@ -489,13 +510,20 @@ class _SegmentPageState extends State<_SegmentPage> {
     } else if (mounted) {
       setState(() {});
     }
-    // A looping hold ends on its countdown, not on the clip.
+    // A hold ends on its countdown, not on the clip.
     if (widget.segment.holdSeconds == null &&
         widget.active &&
         duration > 0 &&
         position >= duration - 200 &&
         !video.value.isPlaying &&
         !_ended) {
+      // Through again, for a step that is the same move repeated.
+      if (_playsLeft > 0) {
+        _playsLeft -= 1;
+        video.seekTo(Duration.zero);
+        video.play();
+        return;
+      }
       // It stays on its last frame while any breaths are still to come.
       _clipDone = true;
       _finishClip();
@@ -600,6 +628,27 @@ class _SegmentPageState extends State<_SegmentPage> {
                   playedColor: CareColors.blue,
                   bufferedColor: Colors.white70,
                   backgroundColor: Colors.white38,
+                ),
+              ),
+            ),
+          if (seg.caption case final caption?)
+            Positioned(
+              left: 12,
+              bottom: seg.until == null ? 22 : 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Text(
+                  caption,
+                  style: const TextStyle(
+                    fontFamily: careFont,
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),

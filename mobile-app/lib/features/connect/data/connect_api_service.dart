@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -5,6 +6,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
+import '../../manager/data/dashboard_cache.dart';
 import 'connect_models.dart';
 
 class ConnectApiService {
@@ -19,12 +21,50 @@ class ConnectApiService {
   final String _baseUrl;
   final http.Client _client;
 
-  Future<List<ConnectPost>> fetchFeed() async {
-    final json = await _request('GET', '/connect/feed');
+  /// One page of the feed, newest first. [cursor] is what the previous page
+  /// handed back; without it this is the top of the feed. The cursor that
+  /// comes back is null once there is nothing older.
+  Future<({List<ConnectPost> posts, String? nextCursor})> fetchFeed({
+    int limit = 5,
+    String? cursor,
+  }) async {
+    final query = [
+      'limit=$limit',
+      if (cursor != null) 'cursor=${Uri.encodeQueryComponent(cursor)}',
+    ].join('&');
+    final startedAt = DateTime.now();
+    final json = await _request('GET', '/connect/feed?$query');
+    // The top of the feed is kept on the device, so the next launch opens on
+    // it while the live page is fetched.
+    if (cursor == null) {
+      unawaited(DashboardCache.write(_feedCacheKey, {'feed': json}, startedAt: startedAt));
+    }
+    return _feedPage(json);
+  }
+
+  String get _feedCacheKey => 'feed-${session.user.id}';
+
+  /// The top of the feed as this person last saw it, from the device. Null
+  /// when there is none. Never touches the network.
+  Future<({List<ConnectPost> posts, String? nextCursor})?> fetchFeedFromCache() async {
+    final kept = await DashboardCache.read(_feedCacheKey);
+    final json = kept?['feed'];
+    if (json == null) return null;
+    try {
+      return _feedPage(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static ({List<ConnectPost> posts, String? nextCursor}) _feedPage(Map<String, dynamic> json) {
     final values = json['posts'] as List<dynamic>? ?? const [];
-    return values
-        .map((value) => ConnectPost.fromJson(value as Map<String, dynamic>))
-        .toList();
+    return (
+      posts: values
+          .map((value) => ConnectPost.fromJson(value as Map<String, dynamic>))
+          .toList(),
+      nextCursor: json['nextCursor'] as String?,
+    );
   }
 
   /// One post as this viewer sees it — used to patch in a single post after a

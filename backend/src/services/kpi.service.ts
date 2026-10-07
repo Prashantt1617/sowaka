@@ -821,6 +821,44 @@ export async function removeKpiAssignment(
  * when nothing is assigned — there is no default set, so feedback cannot be
  * given until HR assigns one.
  */
+/**
+ * `assignedParametersFor` for a whole team: one read of the cycle's
+ * assignments, one of the parameters they share, resolved per person in
+ * memory. No fallback to an earlier cycle here — the team tab shows what is
+ * assigned now, as the manager's form does.
+ */
+export async function assignedParametersForMany(
+  org: string,
+  userIds: string[],
+  period: string,
+): Promise<Map<string, Array<{ id: string; title: string; description: string; weight: number }>>> {
+  const out = new Map<string, Array<{ id: string; title: string; description: string; weight: number }>>();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return out;
+  const docs = await kpiAssignments().find({ org, userId: { $in: ids }, period }).toArray();
+  const parameterIds = [...new Set(docs.flatMap((doc) => doc.parameterIds))];
+  const params = parameterIds.length
+    ? await kpiParameters().find({ _id: { $in: parameterIds.map((id) => new ObjectId(id)) } }).toArray()
+    : [];
+  const byId = new Map(params.map((p) => [p._id!.toHexString(), p]));
+  for (const doc of docs) {
+    const weights = weightsOrEven(doc.parameterIds, doc.weights);
+    out.set(
+      doc.userId,
+      doc.parameterIds
+        .map((id) => byId.get(id))
+        .filter((p): p is NonNullable<typeof p> => Boolean(p))
+        .map((p) => ({
+          id: p._id!.toHexString(),
+          title: p.title,
+          weight: weights[p._id!.toHexString()] ?? 0,
+          ...wordingFor(p, period),
+        })),
+    );
+  }
+  return out;
+}
+
 export async function assignedParametersFor(
   org: string,
   userId: string,

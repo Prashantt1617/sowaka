@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../attendance/data/punch_location_service.dart';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../shared/network_status.dart';
+import 'dashboard_cache.dart';
 
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
@@ -23,12 +26,68 @@ class ManagerApiService {
   final String _baseUrl;
   final http.Client _client;
 
+  /// While the dashboard loads, every reply it is built from is noted here
+  /// by path, and the lot is kept on the device once it is complete.
+  Map<String, Map<String, dynamic>>? _recording;
+
+  /// Set while a dashboard is being rebuilt from the device's copy: a GET
+  /// is answered from here instead of the network.
+  Map<String, Map<String, dynamic>>? _replay;
+
+  /// The dashboard as this person last saw it, from the device, or null
+  /// when there is none or it no longer parses. Never touches the network.
+  Future<ManagerDashboard?> fetchDashboardFromCache() async {
+    final replies = await DashboardCache.read(session.user.id);
+    if (replies == null || replies.isEmpty) return null;
+    _replay = replies;
+    try {
+      return await fetchDashboard(keep: false);
+    } catch (error) {
+      debugPrint('Cached dashboard not usable: $error');
+      return null;
+    } finally {
+      _replay = null;
+    }
+  }
+
   Future<LeaveBalance> fetchLeaveBalance() async {
     final json = await _request('GET', '/leaves/balance');
     return LeaveBalance.fromJson(json['balance'] as Map<String, dynamic>);
   }
 
-  Future<ManagerDashboard> fetchDashboard() async {
+  /// The whole dashboard. [onCore] fires as soon as the part the first
+  /// screen needs is in — the workspace, today's attendance, the person's
+  /// own leaves and balance — with the manager's inboxes and claims still
+  /// to come, so the loader lasts one round of calls, not the slowest of
+  /// ten. The returned future is the complete dashboard.
+  Future<ManagerDashboard> fetchDashboard({
+    /// What is on screen already, whose inboxes and claims the core keeps
+    /// until the live ones land — so nothing flashes empty in between.
+    ManagerDashboard? previous,
+    void Function(ManagerDashboard core)? onCore,
+    bool keep = true,
+  }) async {
+    // One recording at a time: a second load while one is in flight would
+    // split the replies between two maps and leave both copies incomplete.
+    final recording =
+        keep && _replay == null && _recording == null ? <String, Map<String, dynamic>>{} : null;
+    final startedAt = DateTime.now();
+    if (recording != null) _recording = recording;
+    try {
+      final dashboard = await _fetchDashboard(previous: previous, onCore: onCore);
+      if (recording != null) {
+        unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
+      }
+      return dashboard;
+    } finally {
+      if (recording != null && identical(_recording, recording)) _recording = null;
+    }
+  }
+
+  Future<ManagerDashboard> _fetchDashboard({
+    ManagerDashboard? previous,
+    void Function(ManagerDashboard core)? onCore,
+  }) async {
     final workspaceFuture = _request('GET', '/manager/workspace');
     final myLeavesFuture = fetchMyLeaves();
     final managerLeavesFuture = fetchManagerLeaves();
@@ -87,7 +146,19 @@ class ManagerApiService {
             .toList();
 
     final attendanceData = await attendanceFuture;
-    return ManagerDashboard(
+    final myLeaves = await myLeavesFuture;
+    final leaveBalance = LeaveBalance.fromJson(
+      (await balanceFuture)['balance'] as Map<String, dynamic>,
+    );
+    ManagerDashboard build({
+      required List<LeaveRequest> leaves,
+      required List<OvertimeRequest> overtime,
+      required List<OvertimeRequest> myOvertime,
+      required List<ReimbursementClaim> myReimbursements,
+      required List<ReimbursementType> reimbursementTypes,
+      required List<ReimbursementClaim> reimbursements,
+      required List<AttendanceRegularization> managerRegularizations,
+    }) => ManagerDashboard(
       managerName: session.user.name,
       managerInitial: session.user.name.isEmpty ? '?' : session.user.name[0],
       managerPhotoUrl: session.user.profilePhotoUrl,
@@ -109,8 +180,8 @@ class ManagerApiService {
       today: DateTime.now(),
       team: team,
       recognitionCandidates: recognitionCandidates,
-      leaves: await managerLeavesFuture,
-      myLeaves: await myLeavesFuture,
+      leaves: leaves,
+      myLeaves: myLeaves,
       awards: _awardDefinitions
           .map(
             (award) => award.copyWith(
@@ -120,19 +191,17 @@ class ManagerApiService {
           )
           .toList(),
       recognitionHistory: recognitionHistory,
-      leaveBalance: LeaveBalance.fromJson(
-        (await balanceFuture)['balance'] as Map<String, dynamic>,
-      ),
+      leaveBalance: leaveBalance,
       holidays: (workspace['holidays'] as List<dynamic>? ?? const [])
           .map(
             (value) => CompanyHoliday.fromJson(value as Map<String, dynamic>),
           )
           .toList(),
-      overtime: await overtimeFuture,
-      myOvertime: await myOvertimeFuture,
-      myReimbursements: await reimbursementsFuture,
-      reimbursementTypes: await reimbursementTypesFuture,
-      reimbursements: await managerReimbursementsFuture,
+      overtime: overtime,
+      myOvertime: myOvertime,
+      myReimbursements: myReimbursements,
+      reimbursementTypes: reimbursementTypes,
+      reimbursements: reimbursements,
       weekoffDays: (workspace['weekoffDays'] as List<dynamic>? ?? const [0])
           .map((value) => (value as num).toInt())
           .toList(),
@@ -145,6 +214,26 @@ class ManagerApiService {
       overtimeEnabled: workspace['overtimeEnabled'] as bool? ?? true,
       attendance: attendanceData.$1,
       regularizations: attendanceData.$2,
+      managerRegularizations: managerRegularizations,
+    );
+    // The first screen has what it needs; the rest fills in behind it,
+    // and until it does the lists stay as they were.
+    onCore?.call(build(
+      leaves: previous?.leaves ?? const [],
+      overtime: previous?.overtime ?? const [],
+      myOvertime: previous?.myOvertime ?? const [],
+      myReimbursements: previous?.myReimbursements ?? const [],
+      reimbursementTypes: previous?.reimbursementTypes ?? const [],
+      reimbursements: previous?.reimbursements ?? const [],
+      managerRegularizations: previous?.managerRegularizations ?? const [],
+    ));
+    return build(
+      leaves: await managerLeavesFuture,
+      overtime: await overtimeFuture,
+      myOvertime: await myOvertimeFuture,
+      myReimbursements: await reimbursementsFuture,
+      reimbursementTypes: await reimbursementTypesFuture,
+      reimbursements: await managerReimbursementsFuture,
       managerRegularizations: await regularizationInboxFuture,
     );
   }
@@ -626,6 +715,12 @@ class ManagerApiService {
     String path, {
     Map<String, dynamic>? body,
   }) async {
+    final replies = _replay;
+    if (method == 'GET' && replies != null) {
+      final hit = replies[path];
+      if (hit != null) return hit;
+      throw ManagerApiException('Not in the device copy: $path');
+    }
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
       ..headers.addAll({
         'Authorization': 'Bearer ${session.token}',
@@ -633,7 +728,9 @@ class ManagerApiService {
       });
     if (body != null) request.body = jsonEncode(body);
 
-    return _send(request, label: '$method $path');
+    final json = await _send(request, label: '$method $path');
+    if (method == 'GET') _recording?[path] = json;
+    return json;
   }
 
   Future<Map<String, dynamic>> _send(

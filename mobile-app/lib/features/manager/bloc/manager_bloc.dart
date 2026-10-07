@@ -12,6 +12,7 @@ enum FeedbackFilter { all, pending, done }
 class ManagerState {
   const ManagerState({
     required this.status,
+    this.fromCache = false,
     required this.tab,
     required this.view,
     required this.canManage,
@@ -44,6 +45,10 @@ class ManagerState {
     );
   }
 
+  /// The dashboard on show is the device's copy from last time, not yet
+  /// confirmed by the server. Nothing time-sensitive is decided on it.
+  final bool fromCache;
+
   final ManagerLoadStatus status;
   final ManagerTab tab;
   final ManagerView view;
@@ -74,6 +79,7 @@ class ManagerState {
 
   ManagerState copyWith({
     ManagerLoadStatus? status,
+    bool? fromCache,
     ManagerTab? tab,
     ManagerView? view,
     bool? canManage,
@@ -96,6 +102,7 @@ class ManagerState {
   }) {
     return ManagerState(
       status: status ?? this.status,
+      fromCache: fromCache ?? this.fromCache,
       tab: tab ?? this.tab,
       view: view ?? this.view,
       canManage: canManage ?? this.canManage,
@@ -436,16 +443,44 @@ class ManagerBloc {
     try {
       switch (event) {
         case LoadManagerDashboard():
-          _emit(_state.copyWith(status: ManagerLoadStatus.loading));
-          final dashboard = await _service.fetchDashboard();
-          _startLeavePolling();
-          _emit(
-            _state.copyWith(
+          // What the device remembers comes up at once, marked as such;
+          // then the live core; then the inboxes and claims behind it.
+          final remembered = _state.dashboard == null
+              ? await _service.fetchDashboardFromCache()
+              : null;
+          if (remembered != null) {
+            _emit(_state.copyWith(
               status: ManagerLoadStatus.ready,
-              dashboard: dashboard,
+              dashboard: remembered,
+              fromCache: true,
               error: null,
-            ),
-          );
+            ));
+          } else if (_state.dashboard == null) {
+            _emit(_state.copyWith(status: ManagerLoadStatus.loading));
+          }
+          try {
+            final dashboard = await _service.fetchDashboard(
+              previous: _state.dashboard,
+              onCore: (core) => _emit(_state.copyWith(
+                status: ManagerLoadStatus.ready,
+                dashboard: core,
+                fromCache: false,
+                error: null,
+              )),
+            );
+            _emit(
+              _state.copyWith(
+                status: ManagerLoadStatus.ready,
+                dashboard: dashboard,
+                fromCache: false,
+                error: null,
+              ),
+            );
+          } finally {
+            // Whatever the live load did, the minute's refresh runs: it is
+            // what brings a copy up to date once the network is back.
+            if (_state.dashboard != null) _startLeavePolling();
+          }
         case ChangeManagerTab(:final tab):
           // Team is open to everyone now — individual contributors get the
           // same list read-only (no requests segment, no decisions), so this
@@ -829,9 +864,12 @@ class ManagerBloc {
     );
   }
 
+  /// Once a minute. Every five seconds was four hundred calls in a sitting,
+  /// each competing with whatever the person was actually waiting for; a
+  /// decision on a leave can show up a minute late.
   void _startLeavePolling() {
     _leavePollingTimer?.cancel();
-    _leavePollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _leavePollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       unawaited(_refreshLeavesSilently());
     });
   }

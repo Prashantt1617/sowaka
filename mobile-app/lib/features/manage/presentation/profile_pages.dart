@@ -1735,7 +1735,9 @@ ImageProvider _profileImage(String url) {
     final base64Part = url.split(',').last;
     return MemoryImage(base64Decode(base64Part));
   }
-  return NetworkImage(resolveMediaUrl(url));
+  // Cached on disk by URL: a photo seen once is not fetched again, on this
+  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
+  return CachedNetworkImageProvider(resolveMediaUrl(url));
 }
 
 class _TeamMemberPhoto extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../auth/data/auth_models.dart';
+import '../../shared/network_status.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
 import '../data/connect_socket_service.dart';
@@ -14,6 +15,10 @@ class ConnectState {
     this.error,
     this.message,
     this.busyPostId,
+    this.hasMore = false,
+    this.loadingMore = false,
+    this.loadMoreFailed = false,
+    this.fromCache = false,
   });
 
   final ConnectLoadStatus status;
@@ -21,6 +26,19 @@ class ConnectState {
   final String? error;
   final String? message;
   final String? busyPostId;
+
+  /// Older posts exist beyond what is loaded; the list asks for them as it
+  /// nears its end.
+  final bool hasMore;
+  final bool loadingMore;
+
+  /// The last page request failed; the list offers a retry rather than
+  /// asking again on every rebuild.
+  final bool loadMoreFailed;
+
+  /// What is on show is the device's copy of the top of the feed, not yet
+  /// confirmed by the server.
+  final bool fromCache;
 
   factory ConnectState.initial() {
     return const ConnectState(status: ConnectLoadStatus.initial, posts: []);
@@ -32,6 +50,10 @@ class ConnectState {
     String? error,
     String? message,
     String? busyPostId,
+    bool? hasMore,
+    bool? loadingMore,
+    bool? loadMoreFailed,
+    bool? fromCache,
     bool clearError = false,
     bool clearMessage = false,
     bool clearBusy = false,
@@ -42,6 +64,10 @@ class ConnectState {
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
       busyPostId: clearBusy ? null : busyPostId ?? this.busyPostId,
+      hasMore: hasMore ?? this.hasMore,
+      loadingMore: loadingMore ?? this.loadingMore,
+      loadMoreFailed: loadMoreFailed ?? this.loadMoreFailed,
+      fromCache: fromCache ?? this.fromCache,
     );
   }
 }
@@ -66,13 +92,49 @@ class ConnectBloc {
   Stream<ConnectState> get stream => _controller.stream;
   ConnectState get state => _state;
 
+  /// Five posts a page: the first page is on screen before the rest is
+  /// asked for, and the rest comes as the reader scrolls.
+  static const pageSize = 5;
+
+  /// Where the next page starts; null at the end of the feed.
+  String? _cursor;
+
   Future<void> load() async {
-    _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
+    // The top of the feed as it was last time comes up at once; the live
+    // page replaces it as it lands. Older pages are not asked for on the
+    // copy — its cursor may no longer hold.
+    final remembered = _state.posts.isEmpty ? await _api.fetchFeedFromCache() : null;
+    if (remembered != null && remembered.posts.isNotEmpty) {
+      _emit(ConnectState(
+        status: ConnectLoadStatus.ready,
+        posts: remembered.posts,
+        hasMore: false,
+        fromCache: true,
+      ));
+    } else if (_state.posts.isEmpty) {
+      _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
+    }
+    // Whatever the live page does, changes are listened for and a lost
+    // connection is retried once it is back.
+    _listenForChanges();
     try {
-      final posts = await _api.fetchFeed();
-      _emit(ConnectState(status: ConnectLoadStatus.ready, posts: posts));
-      _listenForChanges();
+      final page = await _api.fetchFeed(limit: pageSize);
+      _cursor = page.nextCursor;
+      _emit(ConnectState(
+        status: ConnectLoadStatus.ready,
+        posts: page.posts,
+        hasMore: page.nextCursor != null,
+      ));
+      // The second page is asked for as soon as the first is on screen, so
+      // the first scroll never waits on a spinner.
+      unawaited(loadMore());
     } catch (error) {
+      // The copy stays on show if there was one, still marked as the copy;
+      // only an empty feed fails.
+      if (_state.posts.isNotEmpty) {
+        _emit(_state.copyWith(message: error.toString()));
+        return;
+      }
       _emit(
         _state.copyWith(
           status: ConnectLoadStatus.failure,
@@ -82,12 +144,23 @@ class ConnectBloc {
     }
   }
 
+  /// The network is back: a feed still on the device's copy, or one that
+  /// failed to load, asks for the live page now.
+  void _onNetworkChanged() {
+    if (NetworkStatus.offline.value || _controller.isClosed) return;
+    if (_state.fromCache || _state.status == ConnectLoadStatus.failure) {
+      unawaited(load());
+    }
+  }
+
   void _listenForChanges() {
     if (_changeSub != null) return;
     _changeSub = _socket.changes.listen(_applyChange);
-    // A dropped socket means missed events, so resync the whole feed once the
-    // connection comes back rather than trusting incremental updates alone.
-    _reconnectSub = _socket.reconnects.listen((_) => unawaited(refresh()));
+    // A dropped socket means missed events, so the top of the feed is read
+    // again once the connection comes back — merged into what is loaded, so
+    // nobody's place in the list is lost.
+    _reconnectSub = _socket.reconnects.listen((_) => unawaited(resyncTop()));
+    NetworkStatus.offline.addListener(_onNetworkChanged);
     _socket.connect();
   }
 
@@ -111,8 +184,12 @@ class ConnectBloc {
       final posts = [..._state.posts];
       if (index >= 0) {
         posts[index] = post;
-      } else {
+      } else if (change.action == ConnectChangeAction.created) {
         posts.insert(0, post);
+      } else {
+        // A like on a post from weeks ago, beyond the pages loaded: it is
+        // not the feed's business to pull it to the top.
+        return;
       }
       _emit(_state.copyWith(posts: posts));
     } catch (_) {
@@ -121,13 +198,95 @@ class ConnectBloc {
     }
   }
 
+  /// Back to the top of the feed: the first page again, older pages dropped
+  /// until the reader scrolls for them.
   Future<void> refresh() async {
     try {
-      final posts = await _api.fetchFeed();
-      _emit(_state.copyWith(status: ConnectLoadStatus.ready, posts: posts));
+      final page = await _api.fetchFeed(limit: pageSize);
+      _cursor = page.nextCursor;
+      _emit(_state.copyWith(
+        status: ConnectLoadStatus.ready,
+        posts: page.posts,
+        hasMore: page.nextCursor != null,
+        loadingMore: false,
+      ));
     } catch (error) {
       _emit(_state.copyWith(message: error.toString()));
     }
+  }
+
+  /// The top page read again and merged into what is loaded: new posts go
+  /// to the top, known ones are updated in place, the rest stays. For a
+  /// reconnect, where the reader must not lose their place.
+  Future<void> resyncTop() async {
+    try {
+      final page = await _api.fetchFeed(limit: pageSize);
+      if (_controller.isClosed) return;
+      final current = _state.posts;
+      final byId = {for (final post in page.posts) post.id: post};
+      final fresh = page.posts.where((post) => !current.any((p) => p.id == post.id)).toList();
+      final updated = current.map((post) => byId[post.id] ?? post).toList();
+      if (current.isEmpty) _cursor = page.nextCursor;
+      _emit(_state.copyWith(
+        status: ConnectLoadStatus.ready,
+        posts: [...fresh, ...updated],
+        hasMore: current.isEmpty ? page.nextCursor != null : _state.hasMore,
+        fromCache: false,
+      ));
+    } catch (error) {
+      _emit(_state.copyWith(message: error.toString()));
+    }
+  }
+
+  /// One post made sure of, for a notification about it: fetched and put
+  /// at the top if it is not among the pages loaded. False if it cannot be
+  /// had — deleted, or not visible to this viewer.
+  Future<bool> ensurePost(String postId) async {
+    if (_state.posts.any((post) => post.id == postId)) return true;
+    try {
+      final post = await _api.fetchPost(postId);
+      if (_controller.isClosed) return false;
+      if (!_state.posts.any((p) => p.id == postId)) {
+        _emit(_state.copyWith(posts: [post, ..._state.posts]));
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The next page, appended. A no-op while one is already on its way,
+  /// there is nothing older, or the last attempt failed — then the list
+  /// offers a retry instead of asking on every rebuild.
+  Future<void> loadMore() async {
+    final cursor = _cursor;
+    if (cursor == null || _state.loadingMore || !_state.hasMore || _state.loadMoreFailed) return;
+    _emit(_state.copyWith(loadingMore: true));
+    try {
+      final page = await _api.fetchFeed(limit: pageSize, cursor: cursor);
+      if (_controller.isClosed) return;
+      // A refresh in the meantime moved the cursor on; this page is stale.
+      if (_cursor != cursor) return;
+      _cursor = page.nextCursor;
+      final known = _state.posts.map((post) => post.id).toSet();
+      _emit(_state.copyWith(
+        posts: [
+          ..._state.posts,
+          ...page.posts.where((post) => !known.contains(post.id)),
+        ],
+        hasMore: page.nextCursor != null,
+        loadingMore: false,
+      ));
+    } catch (error) {
+      if (_controller.isClosed) return;
+      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: error.toString()));
+    }
+  }
+
+  /// Another go at the page that failed.
+  Future<void> retryLoadMore() async {
+    _emit(_state.copyWith(loadMoreFailed: false));
+    await loadMore();
   }
 
   /// A like shows at once: the heart fills and the count moves before the
@@ -418,6 +577,7 @@ class ConnectBloc {
   }
 
   void dispose() {
+    NetworkStatus.offline.removeListener(_onNetworkChanged);
     _changeSub?.cancel();
     _reconnectSub?.cancel();
     _socket.dispose();

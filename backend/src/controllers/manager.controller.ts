@@ -12,7 +12,7 @@ import { shiftPolicyFor } from '../services/shift.service';
 
 export async function managerWorkspace(req: Request, res: Response, next: NextFunction) {
   try {
-    const workspace = await getManagerWorkspace(requireUserId(req));
+    const workspace = await getManagerWorkspace(requireUserId(req), req.auth?.user);
     res.status(200).json({ success: true, ...workspace });
   } catch (error) {
     next(error);

@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { authSessions, users } from '../config/db';
 import { hashSessionToken } from '../services/auth.service';
 import { logger } from '../utils/logger';
+import type { User } from '../models/user.model';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -31,12 +32,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Only these three fields gate the request. Profile photos are stored
-    // inline as base64 data URIs (hundreds of KB each), so fetching the whole
-    // document here dragged that payload across the wire on *every* API call.
+    // The whole record, bar the profile photo: older accounts hold it inline
+    // as a base64 data URI of hundreds of KB, which is the one field worth
+    // leaving behind on every call. The rest is a few hundred bytes, and a
+    // handler that needs the user then has it without a second read.
     const user = await users().findOne(
       { userId: session.userId },
-      { projection: { _id: 0, userId: 1, lifecycleStatus: 1, dashboardAccess: 1 } },
+      { projection: { _id: 0, profilePhotoUrl: 0 } },
     );
     if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
       logAuthRejection(req, 'Session user is missing or inactive', session.userId);
@@ -48,7 +50,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    req.auth = { userId: session.userId, token, dashboardAccess: user.dashboardAccess === true };
+    req.auth = {
+      userId: session.userId,
+      token,
+      dashboardAccess: user.dashboardAccess === true,
+      user: user as Omit<User, 'profilePhotoUrl'>,
+    };
     next();
   } catch (error) {
     next(error);

@@ -886,7 +886,9 @@
       "pauseSteps": [
         7
       ],
-      "breathCycles": true
+      "breathCycles": true,
+      "holdLabel": "Rest",
+      "holdPing": true
     },
     {
       "key": "wrists",
@@ -911,7 +913,7 @@
       "sub": "Your legs carry you everywhere — give them this.",
       "steps": [
         "Sit at the very edge of your chair.",
-        "Straighten your right leg, heel resting on the floor.",
+        "Straighten your left leg, heel resting on the floor.",
         "Sit tall and hinge slowly forward from your hips — not your back.",
         "Reach toward your foot. Hold 20 seconds, breathing deeply.",
         "Switch legs. Repeat twice on each side.",
@@ -922,7 +924,9 @@
       "pauseSteps": [
         4,
         8
-      ]
+      ],
+      "holdLabel": "Hold",
+      "holdPing": true
     }
   ],
   "moods": [
@@ -1035,7 +1039,7 @@
       "paged": true,
       "clips": [
         {
-          "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+          "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F6b9889cf-4f33-4079-b030-2819cf9a41dc-Shoulders_01_roll_up_back_down.mp4",
           "steps": [
             2
           ],
@@ -1113,19 +1117,31 @@
     ],
     "shoulders": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fa8c06e7f-1abd-40f3-878e-c9c3fe1fa565-shoulder_1_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F6b9889cf-4f33-4079-b030-2819cf9a41dc-Shoulders_01_roll_up_back_down.mp4",
         "steps": [
           1
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F21f91fdf-6ed3-4990-9242-b6d5c34e546c-shoulder_2_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F4dc9c6de-e2aa-4595-afda-7933bc973592-Shoulders_02_roll_forward_down.mp4",
         "steps": [
           2
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F333d9764-2c46-48fb-a75e-182ddb34bc0a-shoulder_3.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Ff92df8f4-dc38-418d-9298-cad62f5abc09-Shoulders_03_right_arm_across_chest.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fd2d38b47-2352-41df-9814-c5c00c2363ab-Shoulders_04_left_arm_across_chest.mp4",
+        "steps": [
+          4
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fd208fce7-488a-4d0c-b106-b7b84a7c4e73-Shoulders_05_arms_overhead_palms_up.mp4",
         "steps": [
           5
         ]
@@ -1133,7 +1149,7 @@
     ],
     "spine": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Ffc806272-da90-4a06-b413-224f36b9bfb8-spin_1_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F7bdd95ae-8bb7-468a-aa3c-53e577b5cb40-Spine_01_flexion.mp4",
         "steps": [
           1
         ]
@@ -1157,16 +1173,23 @@
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F3b491034-0c49-4d74-8ced-c921c6457f94-spin_5_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F0112c581-9267-40cb-8c21-c547ce1cc727-Spine_05_rotation_left.mp4",
         "steps": [
           5
         ]
       },
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2F5dd6a497-d801-47b8-a92f-c5041f797ae2-spin_6_.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fc9489d23-6e2d-4c93-aa2a-2daf50bafe59-Spine_06_rotation_right.mp4",
         "steps": [
           6
         ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F5d529cc7-c88f-431d-b27c-823971e84e36-Spine_07_return_to_centre_rest.mp4",
+        "steps": [
+          7
+        ],
+        "once": true
       }
     ],
     "wrists": [
@@ -1192,17 +1215,56 @@
     ],
     "legs": [
       {
-        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F09%2Fd1dd4e2b-395e-4074-bfa9-c2f9c2552e16-leg.mp4",
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F9d8a12c8-a018-4c00-937c-b633076f15a1-Legs_01_sit_at_edge_of_chair.mp4",
         "steps": [
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8
+          1
         ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F93166da0-bfe0-4455-bab1-a4530ea312ad-Legs_02_straighten_right_leg.mp4",
+        "steps": [
+          2
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fde74415b-66b6-4b0d-bb5a-04b4ed7a61c1-Legs_03_hinge_forward_from_hips.mp4",
+        "steps": [
+          3
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F4d27cbeb-e1a4-4396-8c1b-568bb6603657-Legs_04_reach_toward_foot.mp4",
+        "steps": [
+          4
+        ],
+        "once": true
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fb4850d5f-9a22-48c3-bf41-24129756fe66-Legs_05_switch_legs.mp4",
+        "steps": [
+          5
+        ],
+        "plays": 2
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2F62146580-b61a-436c-b8a8-9193b698fdc9-Legs_06_stand_in_front_of_chair.mp4",
+        "steps": [
+          6
+        ]
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fbb36fe6b-03c6-41d3-a9b0-b2286f0ac449-Legs_07_chair_squat.mp4",
+        "steps": [
+          7
+        ],
+        "caption": "10 reps"
+      },
+      {
+        "url": "/media/connect%2Fposts%2F4ff86809-85ca-447b-b05f-69d9b5dfdd1b%2F2026%2F10%2Fe1e5e550-a7f8-49e1-8dee-7a1a503122f3-Legs_08_stand_rest_hands_on_hips.mp4",
+        "steps": [
+          8
+        ],
+        "once": true
       }
     ]
   },

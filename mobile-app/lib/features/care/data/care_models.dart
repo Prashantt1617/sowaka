@@ -30,13 +30,31 @@ class CareTrack {
 /// One clip of a stretch and the steps, counted from 1, it shows. A clip
 /// that covers several steps advances them evenly over its length.
 class MoveClip {
-  const MoveClip({required this.url, required this.steps, this.until});
+  const MoveClip({
+    required this.url,
+    required this.steps,
+    this.until,
+    this.plays = 1,
+    this.once = false,
+    this.caption,
+  });
 
   final String url;
   final List<int> steps;
 
   /// Seconds in: the clip stops here and holds that frame. Null plays it all.
   final double? until;
+
+  /// How many times the clip plays through before the step is done — "switch
+  /// legs, repeat" is the same clip twice.
+  final int plays;
+
+  /// On a timed hold: play the clip once and rest on its last frame while the
+  /// countdown runs, rather than looping it.
+  final bool once;
+
+  /// Words drawn over the clip — "10 reps".
+  final String? caption;
 
   factory MoveClip.fromJson(Map<String, dynamic> json) => MoveClip(
     url: json['url'] as String? ?? '',
@@ -45,6 +63,11 @@ class MoveClip {
         (s as num).toInt(),
     ],
     until: (json['until'] as num?)?.toDouble(),
+    plays: ((json['plays'] as num?)?.toInt() ?? 1).clamp(1, 20),
+    once: json['once'] == true,
+    caption: (json['caption'] as String?)?.trim().isNotEmpty == true
+        ? (json['caption'] as String).trim()
+        : null,
   );
 }
 
