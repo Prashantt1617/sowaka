@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../auth/data/auth_models.dart';
 import '../data/manager_api_service.dart';
+import '../data/requests_socket_service.dart';
 import '../data/manager_models.dart';
 
 enum ManagerLoadStatus { initial, loading, ready, failure }
@@ -372,6 +373,17 @@ class ManagerBloc {
   Timer? _leavePollingTimer;
   bool _refreshingLeaves = false;
 
+  /// A change arrived while a refresh was already on its way; read again once
+  /// it lands, or the newest request waits for the next minute's poll.
+  bool _refreshLeavesAgain = false;
+
+  /// The person's own live channel: a request raised to them or decided for
+  /// them shows at once, not on the next minute's poll.
+  RequestsSocketService? _requestsSocket;
+  StreamSubscription<String>? _requestsChangedSub;
+  StreamSubscription<void>? _requestsReconnectSub;
+  Timer? _fullRefreshDebounce;
+
   ManagerState get state => _state;
   ManagerApiService get service => _service;
 
@@ -429,7 +441,35 @@ class ManagerBloc {
 
   void dispose() {
     _leavePollingTimer?.cancel();
+    _fullRefreshDebounce?.cancel();
+    _requestsChangedSub?.cancel();
+    _requestsReconnectSub?.cancel();
+    _requestsSocket?.dispose();
     _controller.close();
+  }
+
+  /// Something about this person's requests changed on the server — from the
+  /// live channel, a notification that arrived while the app was open, or a
+  /// reconnection after time away. Leaves are read straight away (they are
+  /// the cheap, common case); anything else, or not knowing what, brings the
+  /// whole dashboard up to date, coalesced so a burst becomes one read.
+  void refreshRequestsNow([String kind = '']) {
+    if (_state.dashboard == null) return;
+    unawaited(_refreshLeavesSilently());
+    if (kind.startsWith('leave')) return;
+    _fullRefreshDebounce?.cancel();
+    _fullRefreshDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(add(const LoadManagerDashboard()));
+    });
+  }
+
+  void _listenForRequestChanges() {
+    if (_requestsSocket != null) return;
+    final socket = RequestsSocketService(session: session);
+    _requestsChangedSub = socket.changes.listen(refreshRequestsNow);
+    _requestsReconnectSub = socket.reconnects.listen((_) => refreshRequestsNow());
+    socket.connect();
+    _requestsSocket = socket;
   }
 
   void _emit(ManagerState state) {
@@ -479,7 +519,10 @@ class ManagerBloc {
           } finally {
             // Whatever the live load did, the minute's refresh runs: it is
             // what brings a copy up to date once the network is back.
-            if (_state.dashboard != null) _startLeavePolling();
+            if (_state.dashboard != null) {
+              _startLeavePolling();
+              _listenForRequestChanges();
+            }
           }
         case ChangeManagerTab(:final tab):
           // Team is open to everyone now — individual contributors get the
@@ -504,6 +547,7 @@ class ManagerBloc {
               dashboard: data?.copyWith(
                 attendance: result.$1,
                 regularizations: result.$2,
+                serverDays: result.$3,
               ),
             ),
           );
@@ -906,7 +950,11 @@ class ManagerBloc {
 
   Future<void> _refreshLeavesSilently() async {
     final data = _state.dashboard;
-    if (data == null || _refreshingLeaves) return;
+    if (data == null) return;
+    if (_refreshingLeaves) {
+      _refreshLeavesAgain = true;
+      return;
+    }
     _refreshingLeaves = true;
     try {
       final readPolicy =
@@ -950,6 +998,10 @@ class ManagerBloc {
       // Polling is best-effort; foreground actions still surface errors.
     } finally {
       _refreshingLeaves = false;
+      if (_refreshLeavesAgain) {
+        _refreshLeavesAgain = false;
+        unawaited(_refreshLeavesSilently());
+      }
     }
   }
 

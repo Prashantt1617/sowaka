@@ -43,6 +43,11 @@ function teamRoom(org: string, teamId: string): string {
   return `connect:org:${org}:team:${teamId}`;
 }
 
+/** One person's own channel: things only they need to hear about. */
+function personalRoom(userId: string): string {
+  return `user:${userId}`;
+}
+
 /** @deprecated Rooms for posts written while Team meant "same department". */
 function departmentRoom(org: string, department: string): string {
   return `connect:org:${org}:dept:${department}`;
@@ -82,6 +87,7 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
     void socket.join(teamRoom(org, userId));
     if (managerUserId) void socket.join(teamRoom(org, managerUserId));
     if (department) void socket.join(departmentRoom(org, department));
+    void socket.join(personalRoom(userId));
     logger.info('Connect socket connected', {
       userId,
       org,
@@ -187,6 +193,19 @@ export function emitConnectChange(change: ConnectChangeTarget): void {
       ? departmentRoom(org, department)
       : orgRoom(org);
   io.to(room).emit('connect:changed', payload);
+}
+
+/**
+ * Tells these people their requests changed — a leave, overtime, correction
+ * or claim raised to them or decided for them — so an open app refreshes the
+ * list at once instead of on its next minute's poll. Carries only what kind of
+ * request it was: each app reads its own lists, with its own permissions.
+ */
+export function emitRequestsChanged(userIds: (string | undefined | null)[], kind: string): void {
+  if (!io) return;
+  const rooms = [...new Set(userIds.filter((id): id is string => Boolean(id)))].map(personalRoom);
+  if (rooms.length === 0) return;
+  io.to(rooms).emit('requests:changed', { kind });
 }
 
 export function closeConnectRealtime(): void {

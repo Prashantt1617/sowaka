@@ -1489,6 +1489,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
   bool _failed = false;
   DateTime? _selected;
   List<AttendanceRecord> _records = const [];
+  Map<String, ServerDayStatus> _serverDays = const {};
 
   /// This member's own shift, which grades their days: a server that predates
   /// sending it leaves this null and the viewer's shift stands in, with the
@@ -1530,6 +1531,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
         _regularizations = result.$2;
         _singlePunch = result.$3;
         _shift = result.$4;
+        _serverDays = result.$5;
         _loading = false;
       });
     } catch (_) {
@@ -1552,6 +1554,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
   List<AttendanceDayView> get _days => buildAttendanceDays(
     month: _month,
     records: _records,
+    serverDays: _serverDays,
     regularizations: _regularizations,
     leaves: widget.data.leaves
         .where((item) => item.userId == widget.member.userId)
@@ -2097,6 +2100,7 @@ class _ProfileAttendanceCalendarState
   List<AttendanceDayView> get _days => buildAttendanceDays(
     month: _month,
     records: widget.dashboard.attendance,
+    serverDays: widget.dashboard.serverDays,
     regularizations: widget.dashboard.regularizations,
     leaves: widget.dashboard.myLeaves,
     holidays: widget.dashboard.holidays,

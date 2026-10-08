@@ -254,7 +254,11 @@ export type CalendarDayDTO = {
   punchOut: string | null;
   lateByMinutes: number;
   earlyByMinutes?: number;
+  /** Set when HR marked the day: what it would have been, and who changed it. */
+  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
 };
+/** What HR can mark a day as. */
+export type HrDayStatus = 'present' | 'half_day' | 'absent' | 'on_leave' | 'week_off' | 'holiday';
 export type EmployeeCalendarDTO = {
   month: string;
   shift: string;
@@ -265,6 +269,14 @@ export type EmployeeCalendarDTO = {
 };
 export const getEmployeeCalendar = (userId: string, month: string) =>
   api<{ calendar: EmployeeCalendarDTO }>(`/admin/employees/${userId}/calendar?month=${month}`).then((r) => r.calendar);
+
+/** Mark one day of the current month; it overrides punches, leave and holidays everywhere. */
+export const setCalendarDay = (userId: string, date: string, status: HrDayStatus, note?: string) =>
+  api(`/admin/employees/${userId}/calendar/${date}`, { method: 'PUT', body: { status, ...(note ? { note } : {}) } });
+
+/** Take HR's mark off a day; it goes back to what the record says. */
+export const clearCalendarDay = (userId: string, date: string) =>
+  api(`/admin/employees/${userId}/calendar/${date}`, { method: 'DELETE' });
 
 /** What HR may file against an employee. Mirrors the server's list. */
 export const EMPLOYEE_DOCUMENT_TYPES = ['Offer letter', 'ID proof', 'Address proof', 'Experience letter', 'Resume'] as const;

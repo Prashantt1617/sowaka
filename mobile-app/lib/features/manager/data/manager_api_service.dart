@@ -214,6 +214,7 @@ class ManagerApiService {
       overtimeEnabled: workspace['overtimeEnabled'] as bool? ?? true,
       attendance: attendanceData.$1,
       regularizations: attendanceData.$2,
+      serverDays: attendanceData.$3,
       managerRegularizations: managerRegularizations,
     );
     // The first screen has what it needs; the rest fills in behind it,
@@ -238,7 +239,13 @@ class ManagerApiService {
     );
   }
 
-  Future<(List<AttendanceRecord>, List<AttendanceRegularization>)>
+  Future<
+    (
+      List<AttendanceRecord>,
+      List<AttendanceRegularization>,
+      Map<String, ServerDayStatus>,
+    )
+  >
   fetchAttendance(DateTime from, DateTime to) async {
     final json = await _request(
       'GET',
@@ -253,6 +260,7 @@ class ManagerApiService {
             (v) => AttendanceRegularization.fromJson(v as Map<String, dynamic>),
           )
           .toList(),
+      ServerDayStatus.parseAll(json),
     );
   }
 
@@ -261,7 +269,13 @@ class ManagerApiService {
   /// theirs. The shift is null from a server that predates it; the
   /// single-punch flag is kept for that case.
   Future<
-    (List<AttendanceRecord>, List<AttendanceRegularization>, bool, ShiftPolicy?)
+    (
+      List<AttendanceRecord>,
+      List<AttendanceRegularization>,
+      bool,
+      ShiftPolicy?,
+      Map<String, ServerDayStatus>,
+    )
   >
   fetchTeamMemberAttendance(
     String employeeUserId,
@@ -285,6 +299,7 @@ class ManagerApiService {
       json['shift'] is Map<String, dynamic>
           ? ShiftPolicy.fromJson(json['shift'] as Map<String, dynamic>)
           : null,
+      ServerDayStatus.parseAll(json),
     );
   }
 

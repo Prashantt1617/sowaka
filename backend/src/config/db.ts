@@ -28,7 +28,7 @@ import {
   RelayTeamProgress,
 } from '../models/relay.model';
 import { AppNotification, DeviceToken } from '../models/notification.model';
-import { AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
+import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
@@ -203,6 +203,10 @@ export function payHeads(): Collection<PayHead> {
   return getDb().collection<PayHead>('pay_heads');
 }
 
+export function attendanceOverrides(): Collection<AttendanceOverride> {
+  return getDb().collection<AttendanceOverride>('attendance_overrides');
+}
+
 export function statutoryRules(): Collection<StateStatutoryRule> {
   return getDb().collection<StateStatutoryRule>('statutory_rules');
 }
@@ -261,6 +265,8 @@ export function careWritings(): Collection<CareWriting> {
 }
 
 async function ensureIndexes(database: Db): Promise<void> {
+  // One HR mark per person per day; the calendars read them by person and range.
+  await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
   await database
     .collection<OtpChallenge>('otp_challenges')
     .createIndex({ email: 1 }, { unique: true });

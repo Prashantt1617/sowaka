@@ -118,3 +118,26 @@ export interface AttendanceRegularization {
   /** Whether the reporting manager or an HR admin settled it. */
   decidedByRole?: 'manager' | 'admin';
 }
+
+/** What HR can mark a day as from the employee's calendar. */
+export type HrDayStatus = 'present' | 'half_day' | 'absent' | 'on_leave' | 'week_off' | 'holiday';
+export const HR_DAY_STATUSES: HrDayStatus[] = ['present', 'half_day', 'absent', 'on_leave', 'week_off', 'holiday'];
+
+/**
+ * HR's word on one person's day, set from their calendar on the dashboard.
+ * It outranks everything else that grades the day (punches, leave, holidays,
+ * week-offs, corrections), in the org report, the employee calendar, payroll,
+ * the manager's team card and the app. Removing it puts the day back to what
+ * the record says.
+ */
+export interface AttendanceOverride {
+  org: string;
+  userId: string;
+  /** YYYY-MM-DD, the employee's local working day. */
+  workDate: string;
+  status: HrDayStatus;
+  note?: string;
+  setByUserId: string;
+  setByName?: string;
+  setAt: Date;
+}

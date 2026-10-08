@@ -97,6 +97,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   bool _punchPrompted = false;
   late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
+  StreamSubscription<Map<String, dynamic>>? _receivedSubscription;
 
   @override
   void initState() {
@@ -133,6 +134,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _notificationSubscription = AppNotificationService.instance.opened.listen(
       _handleNotificationDestination,
     );
+    // A notification about a request means the request list on screen is
+    // already out of date: read it now rather than on the next poll.
+    _receivedSubscription = AppNotificationService.instance.received.listen(
+      (data) => _bloc.refreshRequestsNow('${data['type'] ?? ''}'),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The tablet rail lives above the navigator, so it reads the bloc from
       // here rather than from a context it cannot see. Published after the
@@ -152,6 +158,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
       ..dispose();
     if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
+    _receivedSubscription?.cancel();
     super.dispose();
   }
 

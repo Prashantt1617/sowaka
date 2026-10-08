@@ -153,6 +153,9 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
   required ShiftPolicy shift,
+  /// The server's settled status per day, by YYYY-MM-DD. Where it has one,
+  /// that is what the day is — see [_settledByServer].
+  Map<String, ServerDayStatus> serverDays = const {},
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -412,7 +415,7 @@ List<AttendanceDayView> buildAttendanceDays({
       );
     }
 
-    final view = natural();
+    final view = _settledByServer(natural(), serverDays[key]);
     // A correction raised but not yet decided leaves the day exactly as it
     // was. Repainting it the moment someone asks would show a half day as
     // settled on the strength of a request the manager has not looked at.
@@ -427,6 +430,71 @@ List<AttendanceDayView> buildAttendanceDays({
     }
     return view;
   });
+}
+
+/// The day as the server settled it, keeping the app's own reading wherever
+/// the two agree.
+///
+/// The server is the source of truth: it grades every day the same way for
+/// payroll and the HR dashboard, and HR's marks come through it. The app still
+/// grades on its own — for today, which is not settled until it is over, when
+/// offline, and against a server that predates this — so its richer reading
+/// (hours, late, early out, the correction prompt) is kept when it reaches the
+/// same verdict, and replaced when it does not.
+AttendanceDayView _settledByServer(
+  AttendanceDayView local,
+  ServerDayStatus? server,
+) {
+  if (server == null || !server.isFinal) return local;
+  final (kind, cell, title) = switch (server.status) {
+    'present' => (AttendanceKind.present, '', 'Present'),
+    'half_day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
+    'absent' => (AttendanceKind.attention, 'Absent', 'Absent'),
+    'on_leave' => (AttendanceKind.leaveApproved, 'Leave', 'Leave'),
+    'week_off' => (AttendanceKind.weekoff, 'Week off', 'Weekly off'),
+    'holiday' => (AttendanceKind.holiday, 'Holiday', server.label ?? 'Holiday'),
+    'missed_punch' => switch (server.countsAs) {
+      'Present' => (AttendanceKind.present, '', 'Present'),
+      'Half Day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
+      _ => (AttendanceKind.attention, 'Absent', 'Absent'),
+    },
+    _ => (local.kind, local.cellLabel, local.title),
+  };
+  if (server.byHr) {
+    // HR's word, whatever the punches said. Nothing left to correct.
+    return AttendanceDayView(
+      date: local.date,
+      kind: kind,
+      title: '$title · ${server.reason ?? 'Marked by HR'}',
+      cellLabel: cell,
+      record: local.record,
+      regularization: local.regularization,
+      leave: local.leave,
+      holiday: local.holiday,
+    );
+  }
+  // Same verdict: the app's reading says more (hours, late, early out).
+  if (kind == local.kind) return local;
+  // A day still open to correction stays flagged only while the server also
+  // reads it as short of a full day.
+  final stillShort =
+      kind == AttendanceKind.attention || kind == AttendanceKind.halfDay;
+  final reason = server.reason;
+  return AttendanceDayView(
+    date: local.date,
+    kind: kind,
+    title: reason == null || reason.isEmpty || reason == title
+        ? title
+        : '$title · $reason',
+    cellLabel: cell,
+    record: local.record,
+    regularization: local.regularization,
+    leave: local.leave,
+    holiday: local.holiday,
+    late: local.late,
+    earlyOut: local.earlyOut,
+    needsCorrection: stillShort && local.needsCorrection,
+  );
 }
 
 const int _maxLeaveApplyDays = 30;
@@ -2743,6 +2811,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
     month: _attendanceMonth,
     records: widget.dashboard.attendance,
+    serverDays: widget.dashboard.serverDays,
     regularizations: widget.dashboard.regularizations,
     leaves: widget.dashboard.myLeaves,
     holidays: widget.dashboard.holidays,

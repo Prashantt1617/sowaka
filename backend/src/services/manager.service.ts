@@ -4,6 +4,7 @@ import {
   recognitionNominations,
   users,
   leaves,
+  attendanceOverrides,
 } from '../config/db';
 import { getCompanyConfig } from './company-settings.service';
 import {
@@ -325,6 +326,11 @@ export async function getManagerWorkspace(
     .map((report) => report.employeeId)
     .filter((value): value is string => Boolean(value));
   const today = new Date().toISOString().slice(0, 10);
+  // HR's marks on today, by Indian date, read alongside everything below.
+  const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todaysMarksPromise = reportIds.length
+    ? attendanceOverrides().find({ userId: { $in: reportIds }, workDate: istToday }, { projection: { _id: 0, userId: 1, status: 1 } }).toArray()
+    : Promise.resolve([]);
   const [
     currentFeedback,
     latestSent,
@@ -411,6 +417,7 @@ export async function getManagerWorkspace(
   const attendanceByUserId = new Map(
     todaysAttendance.filter((record) => record.userId).map((record) => [record.userId, record]),
   );
+  const todaysMarks = new Map((await todaysMarksPromise).map((mark) => [mark.userId, mark.status]));
   const todaysRecordFor = (report: (typeof reports)[number]) =>
     (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
     attendanceByUserId.get(report.userId);
@@ -469,6 +476,9 @@ export async function getManagerWorkspace(
     report: (typeof reports)[number],
     record: ReturnType<typeof todaysRecordFor>,
   ): Promise<ManagerTeamMemberView['todayMark']> => {
+    // HR's mark on today outranks the punches.
+    const hr = todaysMarks.get(report.userId);
+    if (hr) return hr === 'present' ? 'present' : hr === 'half_day' ? 'half_day' : hr === 'on_leave' ? 'leave' : 'not_in';
     if (onLeaveToday.has(report.userId)) return 'leave';
     const away = record?.dayType === 'wfh' || record?.dayType === 'client_visit' || record?.dayType === 'office_visit';
     if (away) return 'wfh';

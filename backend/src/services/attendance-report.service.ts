@@ -1,6 +1,7 @@
-import { attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
+import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
+import { AttendanceOverride, HrDayStatus } from '../models/attendance.model';
 import { Leave } from '../models/leave.model';
-import { OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
+import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
 import { markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
@@ -133,6 +134,20 @@ export function invalidateAttendanceReport(org: string): void {
   for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
 }
 
+/** HR's marks for these people over a range, keyed `userId|YYYY-MM-DD`. */
+async function hrMarks(userIds: string[], from: string, to: string): Promise<Map<string, AttendanceOverride>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await attendanceOverrides()
+    .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to } }, { projection: { _id: 0 } })
+    .toArray();
+  return new Map(rows.map((row) => [`${row.userId}|${row.workDate}`, row]));
+}
+
+/** The calendar's words for an HR mark. */
+const HR_STATUS_LABEL: Record<HrDayStatus, string> = {
+  present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'Leave', week_off: 'Week off', holiday: 'Holiday',
+};
+
 async function orgSetup(org: string): Promise<OrgSetup> {
   const hit = setupCache.get(org);
   if (hit && hit.expires > Date.now()) return hit.value;
@@ -260,7 +275,7 @@ export async function attendanceReport(
   // roster rather than to the date alone.
   const employeeIds = roster.map((u) => u.employeeId).filter((id): id is string => !!id);
 
-  const [records, approvedLeaves, holidayRows] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
     attendanceRecords()
       .find({
         workDate: { $gte: from, $lte: to },
@@ -273,6 +288,7 @@ export async function attendanceReport(
       .batchSize(BATCH)
       .toArray(),
     holidays().find({ org, date: { $gte: dayOf(from), $lte: dayOf(to) } }).toArray(),
+    hrMarks(userIds, from, to),
   ]);
 
   console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${records.length}`);
@@ -345,6 +361,18 @@ export async function attendanceReport(
       const key = keyOf(day);
       // The shift that covered this day, which is not always today's.
       const onDay = policyOn(user, key);
+      // HR's mark on the day outranks everything below it.
+      const hrMark = marks.get(`${user.userId}|${key}`);
+      if (hrMark) {
+        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') continue;
+        if (hrMark.status === 'on_leave') {
+          leaveTypes.add('Marked by HR');
+          days.push([user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0]);
+        } else {
+          days.push([user.userId, key, hrMark.status, 0, null, null, null, 'hr', 0]);
+        }
+        continue;
+      }
       // Not a day they owed us, so not a day to grade.
       if (isWeekOffDay(day, onDay.weeklyOff) || isHoliday(user, key)) continue;
 
@@ -362,6 +390,13 @@ export async function attendanceReport(
       }
 
       const record = punchesBy.get(punchKey(user.userId, key)) ?? punchesBy.get(punchKey(user.employeeId ?? '', key));
+      // A correction approved as leave carries no punches by design; it is a
+      // leave day, not an absence (payroll reads this report).
+      if (record?.dayType === 'leave') {
+        leaveTypes.add('Leave (regularised)');
+        days.push([user.userId, key, 'on_leave', 0, null, null, 'Leave (regularised)', record.source ?? null, 0]);
+        continue;
+      }
       // Read as they should be, not as the device filed them: a reversed pair
       // is a morning shift, and one tap recorded twice is one punch.
       const { punchIn, punchOut } = normalisePunches(
@@ -434,6 +469,10 @@ export interface CalendarDay {
   status: CalendarDayStatus;
   /** The holiday's name, the leave type, or which punch is missing. */
   label: string | null;
+  /** Set when HR marked the day: what it would have been, and who changed it. */
+  hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
+  /** A missed punch: what the shift says that gap counts as, which is what payroll pays it as. */
+  countsAs?: DayMark;
   punchIn: string | null;
   punchOut: string | null;
   lateByMinutes: number;
@@ -450,60 +489,56 @@ export interface EmployeeCalendar {
 }
 
 /**
- * A month of one employee's days, the way the app's calendar shows them —
- * every day, including the ones nobody worked: week-offs and holidays are
- * named rather than skipped, and days still to come are marked as such rather
- * than graded absent. Working days are graded exactly as the org report
- * grades them, by the same resolver and the same punch normalisation.
+ * One employee's days over a range, graded once, here, for everyone who shows
+ * them: the dashboard calendar, the app and (through the same rules in the org
+ * report) payroll. Week-offs and holidays are named rather than skipped, days
+ * still to come are "upcoming", and HR's mark on a day outranks everything.
  */
-export async function employeeCalendar(
-  adminUserId: string,
-  userId: string,
-  monthInput: string,
-): Promise<EmployeeCalendar> {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthInput)) throw new ReportError(400, 'month must be YYYY-MM');
-  const [year, month] = monthInput.split('-').map(Number);
-  const from = `${monthInput}-01`;
-  const to = `${monthInput}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
-
-  const org = await adminOrg(adminUserId);
-  const setup = await orgSetup(org);
-  const user = setup.roster.find((u) => u.userId === userId);
-  if (!user) throw new ReportError(404, 'Employee not found');
+async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, from: string, to: string): Promise<CalendarDay[]> {
   const policyOn = dayPolicyResolver(setup);
-
-  const [records, approvedLeaves, holidayRows] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
     attendanceRecords()
       .find({
         workDate: { $gte: from, $lte: to },
-        $or: [{ userId }, ...(user.employeeId ? [{ employeeId: user.employeeId }] : [])],
+        $or: [{ userId: user.userId }, ...(user.employeeId ? [{ employeeId: user.employeeId }] : [])],
       })
       .toArray(),
     leaves()
-      .find({ userId, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
+      .find({ userId: user.userId, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
       .toArray(),
     // The roster row carries no org, and without one the lookup returns nothing.
     holidaysForUser({ ...user, org }, { from: dayOf(from), to: dayOf(to) }),
+    hrMarks([user.userId], from, to),
   ]);
   const punchByDate = new Map(records.map((r) => [r.workDate, r]));
   const holidayByDate = new Map(holidayRows.map((h) => [keyOf(h.date), h.name]));
   const today = keyOf(new Date());
 
-  const totals: Record<CalendarDayStatus, number> = {
-    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, week_off: 0, holiday: 0, upcoming: 0,
-  };
   const days: CalendarDay[] = [];
   const add = (
     date: string, status: CalendarDayStatus, label: string | null = null,
-    punchIn: Date | null = null, punchOut: Date | null = null, lateByMinutes = 0, earlyByMinutes = 0,
+    punchIn: Date | null = null, punchOut: Date | null = null, lateByMinutes = 0, earlyByMinutes = 0, countsAs?: DayMark,
   ) => {
-    totals[status] += 1;
+    // HR's mark replaces the graded day; the graded day is kept as "previous".
+    const mark = marks.get(`${user.userId}|${date}`);
     days.push({
-      date, status, label,
+      date,
+      status: mark ? mark.status : status,
+      label: mark ? (mark.note || HR_STATUS_LABEL[mark.status]) : label,
       punchIn: punchIn ? punchIn.toISOString() : null,
       punchOut: punchOut ? punchOut.toISOString() : null,
-      lateByMinutes,
-      earlyByMinutes,
+      lateByMinutes: mark ? 0 : lateByMinutes,
+      earlyByMinutes: mark ? 0 : earlyByMinutes,
+      ...(!mark && countsAs ? { countsAs } : {}),
+      ...(mark ? {
+        hr: {
+          previousStatus: status,
+          previousLabel: label,
+          ...(mark.note ? { note: mark.note } : {}),
+          ...(mark.setByName ? { setByName: mark.setByName } : {}),
+          setAt: mark.setAt.toISOString(),
+        },
+      } : {}),
     });
   };
 
@@ -520,6 +555,9 @@ export async function employeeCalendar(
     if (onDay.correction.punchFormat === 'Present by default (Auto Punch)') { add(key, 'present', 'Auto punch'); continue; }
 
     const record = punchByDate.get(key);
+    // A correction approved as leave carries no punches by design; it is a
+    // leave day, not an absence.
+    if (record?.dayType === 'leave') { add(key, 'on_leave', 'Leave (regularised)'); continue; }
     const { punchIn, punchOut } = normalisePunches(
       onDay,
       record?.punchIn ? new Date(record.punchIn) : null,
@@ -537,10 +575,33 @@ export async function employeeCalendar(
         ? 'missed_punch'
         : mark === 'Present' ? 'present' : mark === 'Half Day' ? 'half_day' : 'absent';
     const label = nothing ? 'No punch' : missing ? (punchIn ? 'Missing punch-out' : 'Missing punch-in') : null;
-    add(key, status, label, punchIn, punchOut, late, short);
+    add(key, status, label, punchIn, punchOut, late, short, status === 'missed_punch' ? mark : undefined);
   }
+  return days;
+}
 
-  const current = policyOn(user, today);
+/** A month of one employee's days, for HR on the dashboard. */
+export async function employeeCalendar(
+  adminUserId: string,
+  userId: string,
+  monthInput: string,
+): Promise<EmployeeCalendar> {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthInput)) throw new ReportError(400, 'month must be YYYY-MM');
+  const [year, month] = monthInput.split('-').map(Number);
+  const from = `${monthInput}-01`;
+  const to = `${monthInput}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+
+  const org = await adminOrg(adminUserId);
+  const setup = await orgSetup(org);
+  const user = setup.roster.find((u) => u.userId === userId);
+  if (!user) throw new ReportError(404, 'Employee not found');
+
+  const days = await gradeEmployeeDays(org, setup, user, from, to);
+  const totals: Record<CalendarDayStatus, number> = {
+    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, week_off: 0, holiday: 0, upcoming: 0,
+  };
+  for (const day of days) totals[day.status] += 1;
+  const current = dayPolicyResolver(setup)(user, keyOf(new Date()));
   return {
     month: monthInput,
     shift: current.templateName ?? 'Org policy',
@@ -549,4 +610,54 @@ export async function employeeCalendar(
     days,
     totals,
   };
+}
+
+/** The final word on one of the employee's days, as the app shows it. */
+export interface EmployeeDayStatus {
+  date: string;
+  status: CalendarDayStatus;
+  label: string | null;
+  /** Why, in words: "Late by 25 min", "Missing punch-out", "Marked by HR". */
+  reason: string | null;
+  /** A missed punch: what it counts as. */
+  countsAs?: DayMark;
+  /** Who decided: the punches and rules, or HR. */
+  source: 'rules' | 'hr';
+  /**
+   * Whether this is settled. Today is not, until it is over (unless HR has
+   * marked it); the app keeps its own live view for a day still under way.
+   */
+  final: boolean;
+}
+
+/**
+ * The server's statuses for one employee's own days. These are the source of
+ * truth: payroll, the dashboard and the app all show the same thing because
+ * all three are graded here. Null when the person is not on their org's
+ * roster (the app then falls back to grading on its own).
+ */
+export async function employeeDayStatuses(org: string | undefined, userId: string, from: string, to: string): Promise<EmployeeDayStatus[] | null> {
+  if (!org) return null;
+  const setup = await orgSetup(org);
+  const user = setup.roster.find((u) => u.userId === userId);
+  if (!user) return null;
+  const today = keyOf(new Date());
+  const days = await gradeEmployeeDays(org, setup, user, from, to);
+  return days.map((day) => {
+    const reason = day.hr
+      ? (day.hr.note ? `Marked by HR: ${day.hr.note}` : 'Marked by HR')
+      : day.status === 'half_day' && day.lateByMinutes > 0 ? `Late by ${day.lateByMinutes} min`
+      : day.status === 'half_day' && day.earlyByMinutes > 0 ? `Left ${day.earlyByMinutes} min early`
+      : day.status === 'missed_punch' && day.countsAs ? `${day.label ?? 'Missed punch'} · counts as ${day.countsAs}`
+      : day.label;
+    return {
+      date: day.date,
+      status: day.status,
+      label: day.label,
+      reason,
+      ...(day.countsAs ? { countsAs: day.countsAs } : {}),
+      source: day.hr ? 'hr' : 'rules',
+      final: Boolean(day.hr) || day.date < today,
+    };
+  });
 }
