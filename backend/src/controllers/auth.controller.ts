@@ -44,7 +44,11 @@ export async function teammates(req: Request, res: Response, next: NextFunction)
     // screen shows, so the caller sets its own page size.
     const requested = Number(req.query.limit);
     const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), 500) : undefined;
-    const result = await getTeammates(req.auth?.userId ?? '', limit);
+    // Asked with a page size, it is the tag picker, and that is the whole
+    // company — the apps already out ask exactly that way, so they get
+    // everyone without an update. Without one, the welcome screen's team.
+    const scope = req.query.scope === 'company' || limit !== undefined ? 'company' : 'team';
+    const result = await getTeammates(req.auth?.userId ?? '', limit, scope);
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);
