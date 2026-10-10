@@ -545,7 +545,7 @@ function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; init
       setEditing(null);
       flash(status ? `${day.date} marked ${CAL_TONE[status].label.toLowerCase()}` : `${day.date} back to the recorded state`);
     } catch (e) {
-      flash(e instanceof Error ? e.message : 'Could not save');
+      flash(e instanceof Error ? e.message : 'Could not save', 'error');
     } finally {
       setSaving(false);
     }

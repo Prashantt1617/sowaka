@@ -30,9 +30,12 @@ const TABS: { key: SubTab; label: string }[] = [
 // their own. Accesses itself is not in the list: it comes with being an admin.
 type Unit = { key: string; title: string; tabs: AccessKey[]; hint: string };
 const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
-const SECTION_UNITS: Unit[] = SECTIONS.map((s) => {
+// A section left with no tabs (Support: its desk is a role) is not a unit,
+// or it would read as given to everyone.
+const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support');
-  return { key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') };
+  if (items.length === 0) return [];
+  return [{ key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
 });
 const UNITS: Unit[] = [
   { key: 'overview', title: OVERVIEW_ITEM.label, tabs: ['overview'], hint: 'Pending requests at a glance' },

@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
-function DialogShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+// While the action is on its way the dialog stays: closing it then would free
+// the desk underneath before the action has landed.
+function DialogShell({ title, busy, onClose, children }: { title: string; busy: boolean; onClose: () => void; children: ReactNode }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)', animation: 'ovl .2s ease both' }} />
+      <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)', animation: 'ovl .2s ease both' }} />
       <div style={{ position: 'relative', width: 'min(480px, 100%)', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(34,34,34,.25)', padding: '20px 22px', animation: 'pop .18s ease both' }}>
         <div style={{ fontSize: 18, fontWeight: 800 }}>{title}</div>
         {children}
@@ -19,7 +21,7 @@ function Buttons({ busy, onClose, onConfirm, label, busyLabel, tone = '#0571A6',
   const off = busy || disabled;
   return (
     <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-      <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+      <button type="button" disabled={busy} onClick={onClose} style={{ ...ghostBtn, opacity: busy ? 0.55 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>Cancel</button>
       <button type="button" disabled={off} onClick={onConfirm} style={{ ...primaryBtn, background: tone, opacity: off ? 0.55 : 1, cursor: off ? 'not-allowed' : 'pointer' }}>
         {busy ? busyLabel : label}
       </button>
@@ -30,7 +32,7 @@ function Buttons({ busy, onClose, onConfirm, label, busyLabel, tone = '#0571A6',
 export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; onClose: () => void; onConfirm: (note: string) => void }) {
   const [note, setNote] = useState('');
   return (
-    <DialogShell title="Send back to the Support head?" onClose={onClose}>
+    <DialogShell title="Send back to the Support head?" busy={busy} onClose={onClose}>
       <div style={{ fontSize: 14.5, color: '#484848', lineHeight: 1.55, marginTop: 8 }}>
         The ticket leaves your desk and goes back to the head’s queue with its conversation. The employee isn’t told.
       </div>
@@ -43,7 +45,7 @@ export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; on
 
 export function ConfirmResolveDialog({ busy, onClose, onConfirm }: { busy: boolean; onClose: () => void; onConfirm: () => void }) {
   return (
-    <DialogShell title="Resolve this ticket?" onClose={onClose}>
+    <DialogShell title="Resolve this ticket?" busy={busy} onClose={onClose}>
       <div style={{ fontSize: 14.5, color: '#484848', lineHeight: 1.55, marginTop: 8 }}>
         The conversation closes for good. The employee is notified and can’t reply here; to continue they raise a new ticket.
       </div>

@@ -27,6 +27,8 @@ export type SupportTicket = {
   lastMessageAt: string;
   lastMessagePreview: string;
   unread: number;
+  /** Goes up on every change; an assign sent with an older one is refused (409). */
+  version: number;
 };
 
 export type SupportAttachment = { name: string; contentType: string; size: number; url: string };
@@ -94,9 +96,12 @@ export function sendSupportMessage(id: string, text: string, files: File[] = [])
   return apiUpload<{ message: SupportMessage }>(path, form);
 }
 
-/** Head only. Assigning to yourself is "Keep it". */
-export const assignSupportTicket = (id: string, assigneeUserId: string) =>
-  api<unknown>(`/admin/support/tickets/${encodeURIComponent(id)}/assign`, { method: 'POST', body: { assigneeUserId } });
+/**
+ * Head only. Assigning to yourself is "Keep it". `version` is the ticket as
+ * the head saw it: if someone changed it since, the server refuses with 409.
+ */
+export const assignSupportTicket = (id: string, assigneeUserId: string, version?: number) =>
+  api<unknown>(`/admin/support/tickets/${encodeURIComponent(id)}/assign`, { method: 'POST', body: { assigneeUserId, version } });
 
 /** Assignee (staff) only: back to the head's queue, unassigned. */
 export const sendBackSupportTicket = (id: string, note?: string) =>

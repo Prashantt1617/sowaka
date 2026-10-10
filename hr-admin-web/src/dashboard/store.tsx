@@ -35,6 +35,16 @@ export type Store = ReturnType<typeof useProvideStore>;
 
 const first = (name: string) => name.split(' ')[0];
 
+// A list behind a tab this person wasn't given comes back 403: it is simply
+// empty for them, not a reason to fail the whole load (someone who only works
+// the Support desk has none of these tabs).
+function unlessForbidden<T>(p: Promise<T[]>): Promise<T[]> {
+  return p.catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 403) return [] as T[];
+    throw e;
+  });
+}
+
 function useProvideStore() {
   const { user, signOut } = useAuth();
   const managerName = user?.name ?? '';
@@ -190,14 +200,6 @@ function useProvideStore() {
     if (!user) return;
     setLoading(true);
     try {
-      // A list behind a tab this person wasn't given comes back 403: it is
-      // simply empty for them, not a reason to fail the whole load (someone
-      // who only works the Support desk has none of these tabs).
-      const unlessForbidden = <T,>(p: Promise<T[]>) =>
-        p.catch((e: unknown) => {
-          if (e instanceof ApiError && e.status === 403) return [] as T[];
-          throw e;
-        });
       const [lv, ot, rb, cr, fb, emp, live] = await Promise.all([
         unlessForbidden(getLeaveInbox()),
         unlessForbidden(getOvertimeInbox()),
@@ -242,7 +244,12 @@ function useProvideStore() {
   const refreshRequests = useCallback(async () => {
     if (!user) return;
     try {
-      const [lv, ot, rb, cr] = await Promise.all([getLeaveInbox(), getOvertimeInbox(), getReimbInbox(), getRegularizationInbox()]);
+      const [lv, ot, rb, cr] = await Promise.all([
+        unlessForbidden(getLeaveInbox()),
+        unlessForbidden(getOvertimeInbox()),
+        unlessForbidden(getReimbInbox()),
+        unlessForbidden(getRegularizationInbox()),
+      ]);
       const mgrByUser = new Map(empRawRef.current.map((e) => [e.userId, e.managerName ?? '']));
       const mgrName = (userId: string) => mgrByUser.get(userId) || '—';
       setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))));

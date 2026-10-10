@@ -72,13 +72,15 @@ const FORMATS: Format[] = [
   },
 ];
 
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// Closing times read in India time, whatever zone the browser is in.
+const IST_WEEKDAY_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long', hour: 'numeric', minute: '2-digit', hour12: true });
+const IST_CLOSES = new Intl.DateTimeFormat(undefined, { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
 
 /** "Friday, 5 pm" / "Friday, 5:30 pm", as the app writes a closing time. */
 function weekdayTime(when: Date) {
-  const hour = when.getHours() % 12 === 0 ? 12 : when.getHours() % 12;
-  const minute = when.getMinutes() === 0 ? '' : `:${String(when.getMinutes()).padStart(2, '0')}`;
-  return `${WEEKDAYS[when.getDay()]}, ${hour}${minute} ${when.getHours() < 12 ? 'am' : 'pm'}`;
+  const part = Object.fromEntries(IST_WEEKDAY_TIME.formatToParts(when).map((p) => [p.type, p.value]));
+  const minute = part.minute === '00' ? '' : `:${part.minute}`;
+  return `${part.weekday}, ${part.hour}${minute} ${part.dayPeriod.toLowerCase()}`;
 }
 
 /** Which of the two lengths a closing time matches, if either (_selectedDays). */
@@ -211,10 +213,7 @@ export function EngagementPosts() {
                   <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>
                     {entries} {entries === 1 ? 'entry' : 'entries'} · {points} pts per vote
                     {post.body.closesAt
-                      ? ` · closes ${new Date(String(post.body.closesAt)).toLocaleString(
-                          undefined,
-                          { dateStyle: 'medium', timeStyle: 'short' },
-                        )}`
+                      ? ` · closes ${IST_CLOSES.format(new Date(String(post.body.closesAt)))}`
                       : ''}
                   </div>
                 </div>

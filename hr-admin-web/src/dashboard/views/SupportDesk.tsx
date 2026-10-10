@@ -153,16 +153,24 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
 
+  // Reloads overlap (a live change during a view switch) and can come back out
+  // of order: a reply lands only for the view still on screen, and only if
+  // nothing asked after it has landed already.
+  const listSeq = useRef({ asked: 0, landed: 0 });
   const loadList = useCallback(async (quiet = false) => {
     const asked = viewRef.current;
+    const seq = ++listSeq.current.asked;
+    const stale = () => viewRef.current !== asked || seq < listSeq.current.landed;
     if (!quiet) setListError('');
     try {
       const r = await listSupportTickets(asked);
-      if (viewRef.current !== asked) return;
+      if (stale()) return;
+      listSeq.current.landed = seq;
       setTickets(r.tickets);
       setCounts(r.counts);
       setListError('');
     } catch (e) {
+      if (stale()) return;
       if (!quiet) { setTickets([]); setListError(errText(e, 'Could not load tickets')); }
     }
   }, []);
@@ -184,7 +192,7 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
         setSelectedId(null);
         setDetail(null);
         setDetailState('idle');
-        flash(live ? 'This ticket was moved to another desk' : errText(e, 'You can no longer open this ticket'));
+        flash(live ? 'This ticket was moved to another desk' : errText(e, 'You can no longer open this ticket'), 'error');
         void loadList(true);
         return;
       }
@@ -216,10 +224,73 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
   /** After this desk changed a ticket: re-read both, and drop it if it left the desk. */
   const afterAction = useCallback(async (id: string, msg: string, leavesDesk = false) => {
     if (msg) flash(msg);
-    if (leavesDesk) { setSelectedId(null); setDetail(null); }
+    // Only if it is still the one open: another may have been picked meanwhile.
+    if (leavesDesk && selectedRef.current === id) { setSelectedId(null); setDetail(null); }
     await Promise.all([loadList(true), leavesDesk ? Promise.resolve() : loadDetail(id, true)]);
     refreshSupportBadge();
   }, [flash, loadList, loadDetail]);
+
+  // Replies shown the moment they are written, per ticket: sent in the
+  // background, and marked only if the server turns them down. Held here, not
+  // in the ticket pane, so a reply on its way (or its Retry) survives opening
+  // another ticket and coming back.
+  const [pending, setPending] = useState<Record<string, PendingMessage[]>>({});
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const patchPending = useCallback((ticketId: string, change: (list: PendingMessage[]) => PendingMessage[]) => {
+    setPending((all) => ({ ...all, [ticketId]: change(all[ticketId] ?? []) }));
+  }, []);
+  /** Done with a local reply, sent or deleted: drop it and free its image previews. */
+  const dropPending = useCallback((item: PendingMessage) => {
+    revokePreviews(item);
+    patchPending(item.ticketId, (list) => list.filter((p) => p.id !== item.id));
+  }, [patchPending]);
+
+  const deliver = useCallback((item: PendingMessage) => {
+    patchPending(item.ticketId, (list) => list.map((p) => (p.id === item.id ? { ...p, failed: false } : p)));
+    sendSupportMessage(item.ticketId, item.text, item.files).then(
+      (r) => {
+        // From here it is matched by the server's id, so two identical
+        // replies (two screenshots, "ok" twice) stay two.
+        patchPending(item.ticketId, (list) => list.map((p) => (p.id === item.id ? { ...p, serverId: r.message.id } : p)));
+        void afterAction(item.ticketId, '');
+      },
+      (e) => {
+        patchPending(item.ticketId, (list) => list.map((p) => (p.id === item.id ? { ...p, failed: true } : p)));
+        flash(errText(e, 'Your reply was not sent. Click it to try again.'), 'error');
+      },
+    );
+  }, [afterAction, flash, patchPending]);
+
+  const sendReply = useCallback((ticketId: string, text: string, files: File[]) => {
+    const item: PendingMessage = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      ticketId,
+      side: 'staff',
+      senderLabel: 'You',
+      text,
+      files,
+      attachments: files.map((f) => ({
+        name: f.name,
+        contentType: f.type,
+        size: f.size,
+        url: f.type.startsWith('image/') ? URL.createObjectURL(f) : '',
+      })),
+      createdAt: new Date().toISOString(),
+      failed: false,
+    };
+    patchPending(ticketId, (list) => [...list, item]);
+    deliver(item);
+  }, [deliver, patchPending]);
+
+  // Once the server's copy is in the open thread, the local one is done with.
+  useEffect(() => {
+    if (!detail) return;
+    const have = new Set(detail.messages.map((m) => m.id));
+    for (const p of pending[detail.ticket.id] ?? []) if (p.serverId && have.has(p.serverId)) dropPending(p);
+  }, [detail, pending, dropPending]);
+  // Leaving the tab frees whatever previews are still held.
+  useEffect(() => () => { for (const list of Object.values(pendingRef.current)) list.forEach(revokePreviews); }, []);
 
   const topics = useMemo(() => {
     const m = new Map<string, string>();
@@ -308,7 +379,8 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
             </div>
           )}
           {selectedId && detail && detail.ticket.id === selectedId && (
-            <TicketPane key={detail.ticket.id} detail={detail} role={role} meId={meId} onChanged={afterAction} />
+            <TicketPane key={detail.ticket.id} detail={detail} role={role} meId={meId} onChanged={afterAction}
+              pending={pending[detail.ticket.id] ?? []} onSend={sendReply} onRetry={deliver} onDiscard={dropPending} />
           )}
         </Card>
       </div>
@@ -379,7 +451,17 @@ function TicketRow({ ticket: t, role, meId, active, onOpen }: { ticket: SupportT
 
 type Dialog = 'sendback' | 'resolve' | null;
 
-function TicketPane({ detail, role, meId, onChanged }: { detail: Detail; role: SupportRole; meId: string; onChanged: (id: string, msg: string, leavesDesk?: boolean) => Promise<void> }) {
+function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, onDiscard }: {
+  detail: Detail;
+  role: SupportRole;
+  meId: string;
+  onChanged: (id: string, msg: string, leavesDesk?: boolean) => Promise<void>;
+  /** This ticket's replies still on their way, held by the desk. */
+  pending: PendingMessage[];
+  onSend: (ticketId: string, text: string, files: File[]) => void;
+  onRetry: (item: PendingMessage) => void;
+  onDiscard: (item: PendingMessage) => void;
+}) {
   const { flash } = useStore();
   const { ticket: t, messages, events } = detail;
   const isHead = role === 'head';
@@ -388,56 +470,8 @@ function TicketPane({ detail, role, meId, onChanged }: { detail: Detail; role: S
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  // Replies shown the moment they are written: sent in the background, and
-  // marked only if the server turns them down.
-  const [pending, setPending] = useState<PendingMessage[]>([]);
-  // Once the server's copy is in the thread (it can arrive through the live
-  // refresh before the send itself returns), the local one steps aside.
-  const shownPending = pending.filter(
-    (p) =>
-      p.ticketId === t.id &&
-      !messages.some(
-        (m) =>
-          m.side === 'staff' &&
-          m.text === p.text &&
-          m.attachments.length === p.attachments.length &&
-          Date.parse(m.createdAt) >= Date.parse(p.createdAt) - 60_000,
-      ),
-  );
-
-  const deliver = (item: PendingMessage) => {
-    setPending((all) => all.map((p) => (p.id === item.id ? { ...p, failed: false } : p)));
-    sendSupportMessage(item.ticketId, item.text, item.files)
-      .then(async () => {
-        await onChanged(item.ticketId, '', false);
-        setPending((all) => all.filter((p) => p.id !== item.id));
-      })
-      .catch((e) => {
-        setPending((all) => all.map((p) => (p.id === item.id ? { ...p, failed: true } : p)));
-        flash(errText(e, 'Your reply was not sent. Click it to try again.'), 'error');
-      });
-  };
-
-  const sendNow = (text: string, files: File[]) => {
-    const item: PendingMessage = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      ticketId: t.id,
-      side: 'staff',
-      senderLabel: 'You',
-      text,
-      files,
-      attachments: files.map((f) => ({
-        name: f.name,
-        contentType: f.type,
-        size: f.size,
-        url: f.type.startsWith('image/') ? URL.createObjectURL(f) : '',
-      })),
-      createdAt: new Date().toISOString(),
-      failed: false,
-    };
-    setPending((all) => [...all, item]);
-    deliver(item);
-  };
+  // A sent reply steps aside once the server's copy, by its id, is in the thread.
+  const shownPending = pending.filter((p) => !p.serverId || !messages.some((m) => m.id === p.serverId));
   const firstName = (n: string) => n.split(/\s+/)[0] || n;
 
   const run = async (work: () => Promise<unknown>, msg: string, leavesDesk = false) => {
@@ -448,14 +482,17 @@ function TicketPane({ detail, role, meId, onChanged }: { detail: Detail; role: S
       await onChanged(t.id, msg, leavesDesk);
     } catch (e) {
       flash(errText(e, 'Something went wrong. Try again.'), 'error');
+      // Someone changed it first: show it as it is now.
+      if (e instanceof ApiError && e.status === 409) void onChanged(t.id, '');
     } finally {
       setBusy(false);
     }
   };
 
+  // Sent with the version on screen, so a ticket changed meanwhile is refused, not overwritten.
   const assign = (p: SupportAssignee) =>
-    run(() => assignSupportTicket(t.id, p.userId), p.userId === meId ? 'You kept this ticket' : `Assigned to ${p.name}`);
-  const keep = () => run(() => assignSupportTicket(t.id, meId), 'You kept this ticket');
+    run(() => assignSupportTicket(t.id, p.userId, t.version), p.userId === meId ? 'You kept this ticket' : `Assigned to ${p.name}`);
+  const keep = () => run(() => assignSupportTicket(t.id, meId, t.version), 'You kept this ticket');
 
   const requesterMeta = [t.requester.employeeId, t.requester.department].filter(Boolean).join(' · ');
   const resolvedEvent = [...events].reverse().find((e) => e.type === 'resolved');
@@ -503,12 +540,7 @@ function TicketPane({ detail, role, meId, onChanged }: { detail: Detail; role: S
 
       {showHistory && <HistoryPanel events={events} meId={meId} />}
 
-      <Thread
-        messages={messages}
-        pending={shownPending}
-        onRetry={deliver}
-        onDiscard={(id) => setPending((all) => all.filter((p) => p.id !== id))}
-      />
+      <Thread messages={messages} pending={shownPending} onRetry={onRetry} onDiscard={onDiscard} />
 
       {/* Footer: who may write here, and when */}
       {resolved ? (
@@ -525,7 +557,7 @@ function TicketPane({ detail, role, meId, onChanged }: { detail: Detail; role: S
           <button type="button" disabled={busy} onClick={() => void keep()} style={primaryBtn}>Keep it</button>
         </FooterNote>
       ) : (
-        <Composer onSend={sendNow} />
+        <Composer onSend={(text, files) => onSend(t.id, text, files)} />
       )}
 
       {dialog === 'sendback' && (
@@ -672,14 +704,22 @@ function HistoryPanel({ events, meId }: { events: SupportEvent[]; meId: string }
 
 // —— Thread ————————————————————————————————————————————————————————————————
 
-/** A reply on its way: shown as sent straight away, flagged only on failure. */
-type PendingMessage = SupportMessage & { ticketId: string; files: File[]; failed: boolean };
+/**
+ * A reply on its way: shown as sent straight away, flagged only on failure.
+ * `serverId` is the message the server stored, once the send has returned.
+ */
+type PendingMessage = SupportMessage & { ticketId: string; files: File[]; failed: boolean; serverId?: string };
+
+/** Frees the in-browser image previews a local reply was shown with. */
+function revokePreviews(item: PendingMessage) {
+  for (const a of item.attachments) if (a.url) URL.revokeObjectURL(a.url);
+}
 
 function Thread({ messages, pending, onRetry, onDiscard }: {
   messages: SupportMessage[];
   pending: PendingMessage[];
   onRetry: (item: PendingMessage) => void;
-  onDiscard: (id: string) => void;
+  onDiscard: (item: PendingMessage) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const last = pending[pending.length - 1]?.id ?? messages[messages.length - 1]?.id;
@@ -710,7 +750,7 @@ function Thread({ messages, pending, onRetry, onDiscard }: {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, margin: '-6px 4px 12px', fontSize: 12.5, fontWeight: 700 }}>
               <span style={{ color: '#B42318' }}>Not sent</span>
               <button type="button" onClick={() => onRetry(p)} style={{ border: 'none', background: 'none', color: '#0571A6', fontWeight: 700, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Retry</button>
-              <button type="button" onClick={() => onDiscard(p.id)} style={{ border: 'none', background: 'none', color: '#717171', fontWeight: 700, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Delete</button>
+              <button type="button" onClick={() => onDiscard(p)} style={{ border: 'none', background: 'none', color: '#717171', fontWeight: 700, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Delete</button>
             </div>
           )}
         </div>
@@ -784,9 +824,9 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
     if (!list) return;
     const next = [...files];
     for (const f of Array.from(list)) {
-      if (!allowedFile(f)) { flash(`${f.name}: only images and PDFs`); continue; }
-      if (f.size > SUPPORT_MAX_FILE_BYTES) { flash(`${f.name} is over 10 MB`); continue; }
-      if (next.length >= SUPPORT_MAX_FILES) { flash(`Up to ${SUPPORT_MAX_FILES} files per message`); break; }
+      if (!allowedFile(f)) { flash(`${f.name}: only images and PDFs`, 'error'); continue; }
+      if (f.size > SUPPORT_MAX_FILE_BYTES) { flash(`${f.name} is over 10 MB`, 'error'); continue; }
+      if (next.length >= SUPPORT_MAX_FILES) { flash(`Up to ${SUPPORT_MAX_FILES} files per message`, 'error'); break; }
       next.push(f);
     }
     setFiles(next);
