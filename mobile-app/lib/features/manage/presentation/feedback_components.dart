@@ -160,7 +160,9 @@ class _ParamCardState extends State<_ParamCard> {
                     Opacity(
                       opacity: .8,
                       child: Text(
-                        rated ? scoreLabel(widget.param.score) : '-',
+                        rated
+                            ? scoreLabel(widget.param.score, short: true)
+                            : '-',
                         style: TextStyle(
                           color: rated
                               ? const Color(0xFF675AFF)
@@ -192,22 +194,21 @@ class _ParamCardState extends State<_ParamCard> {
                         onTap: widget.locked
                             ? null
                             : () => widget.onScore(star.toDouble()),
-                        // The star at the current rating is drawn larger, the
-                        // way the design calls out the active value.
+                        // 34px stars (node 3165:59874); the one at the
+                        // rating is the design's 40px star, spilling 3px past
+                        // its button on every side so the row does not move.
                         child: SizedBox(
                           width: 34,
                           height: 34,
-                          child: Center(
+                          child: OverflowBox(
+                            maxWidth: 41,
+                            maxHeight: 41,
                             child: SvgPicture.asset(
                               star <= filled
                                   ? (star == filled
                                         ? 'assets/icons/grow_star_active.svg'
                                         : 'assets/icons/grow_star_filled.svg')
                                   : 'assets/icons/grow_star_empty.svg',
-                              // 28px stars in 34px buttons (node 729:12580);
-                              // the one at the rating a touch larger.
-                              width: star == filled ? 32 : 28,
-                              height: star == filled ? 32 : 28,
                             ),
                           ),
                         ),
@@ -215,14 +216,24 @@ class _ParamCardState extends State<_ParamCard> {
                     ),
                   ),
                 if (rated) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    scoreLabel(widget.param.score),
-                    style: const TextStyle(
-                      color: Color(0xFF0571A6),
-                      fontSize: 12,
-                      height: 18 / 12,
-                      fontWeight: FontWeight.w600,
+                  const SizedBox(width: 10),
+                  // "Need Improvement" is the longest; on a narrow phone it
+                  // gives way rather than pushing the stars off the card.
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        scoreLabel(widget.param.score),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF0571A6),
+                          fontSize: 12,
+                          height: 18 / 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                 ],

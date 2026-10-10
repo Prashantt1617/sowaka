@@ -2,14 +2,32 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
+import '../../auth/data/auth_models.dart';
 import '../../shared/app_toast.dart';
+import '../data/game_bridge.dart';
+import '../data/game_socket_service.dart';
+import '../data/games_api_service.dart';
+import '../data/games_models.dart';
 
-/// A lightweight full-screen WebView for externally hosted games
-/// (Scribble, Find your Mate, Know your Nation). Unlike the Connect
-/// game player it carries no leaderboard — these games manage their
-/// own scoring — so it just loads the URL and shows load progress.
+/// A web game, full screen under a bar with the way back and its name.
+///
+/// Two ways in. [WebGameScreen.catalog] opens a game from the company's
+/// catalog: its page is fetched with the person's session and loaded here,
+/// with the Sowaka bridge (`window.Sowaka`) in it before the game's first
+/// line runs, so the game can post a score, read the player's name and show
+/// the company's leaderboard; a catalog game hosted elsewhere is opened at
+/// its address and given the same bridge once it loads. The plain
+/// constructor opens a hosted game by its address, as before the catalog.
+///
+/// A catalog game also hears about the person's colleague challenges while
+/// it is open: each `game:challenge` from the server is passed to the page
+/// ([GameEventForwarder]). Opened from a challenge notification, it carries
+/// that challenge's id, and the page opens straight on it.
 ///
 /// The games trigger sharing via the Web Share API (`navigator.share`),
 /// which on Android pops the OEM-styled system share sheet — off-brand
@@ -17,10 +35,38 @@ import '../../shared/app_toast.dart';
 /// route into a Sowaka-styled bottom sheet instead, keeping a native
 /// fallback for genuine cross-app sharing.
 class WebGameScreen extends StatefulWidget {
-  const WebGameScreen({super.key, required this.title, required this.url});
+  /// A hosted game opened by its address, without a bridge.
+  const WebGameScreen({super.key, required this.title, required String this.url})
+    : game = null,
+      session = null,
+      service = null,
+      challengeId = null,
+      realtime = null;
+
+  /// A game from the company's catalog.
+  WebGameScreen.catalog({
+    super.key,
+    required GameCatalogEntry this.game,
+    required AuthSession this.session,
+    this.service,
+    this.challengeId,
+    this.realtime,
+  }) : title = game.name,
+       url = null;
 
   final String title;
-  final String url;
+  final String? url;
+  final GameCatalogEntry? game;
+  final AuthSession? session;
+
+  /// Supplied by tests; the screen makes its own otherwise.
+  final GamesApiService? service;
+
+  /// The challenge to open the game on, from a tapped notification.
+  final String? challengeId;
+
+  /// Supplied by tests; the screen opens its own socket otherwise.
+  final GameRealtime? realtime;
 
   @override
   State<WebGameScreen> createState() => _WebGameScreenState();
@@ -36,21 +82,49 @@ class _WebGameScreenState extends State<WebGameScreen> {
   static const _line = Color(0xFFF0E8DD);
 
   late final WebViewController _controller;
+  GameBridge? _bridge;
+  GameEventForwarder? _forwarder;
+  GamesApiService? _service;
   bool _loading = true;
   int _progress = 0;
+  String? _error;
+
+  /// Where the game's page lives once loaded: the address a catalog page is
+  /// given, or a hosted game's own. Navigation stays there.
+  Uri? _home;
+
+  GameCatalogEntry? get _game => widget.game;
+
+  /// The page's own background, so the bar and the strip under the home
+  /// indicator are of a piece with it.
+  Color get _background => _game?.backgroundColor ?? _bg;
+  bool get _dark => _background.computeLuminance() < 0.4;
+  Color get _foreground => _dark ? Colors.white : _ink;
 
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
+    final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      // Game sounds play without a tap of their own, and inline.
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+    final game = _game;
+    _controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(_bg)
+      ..setBackgroundColor(_background)
       ..addJavaScriptChannel(
         'SowakaShare',
         onMessageReceived: (message) => _handleShare(message.message),
       )
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: game == null ? null : _onNavigationRequest,
           onProgress: (progress) {
             if (mounted) setState(() => _progress = progress);
           },
@@ -58,12 +132,144 @@ class _WebGameScreenState extends State<WebGameScreen> {
             if (mounted) setState(() => _loading = true);
           },
           onPageFinished: (_) async {
-            await _controller.runJavaScript(_shareBridge);
+            try {
+              await _controller.runJavaScript(_shareBridge);
+              // A hosted catalog game gets the bridge now; a page loaded
+              // here already has it, and the script leaves it alone.
+              if (game != null) await _controller.runJavaScript(_bridgeScript());
+            } catch (_) {
+              // A page that refuses scripts still plays.
+            }
             if (mounted) setState(() => _loading = false);
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.url));
+      );
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      platform.setMediaPlaybackRequiresUserGesture(false);
+    }
+    if (game == null) {
+      _controller.loadRequest(Uri.parse(widget.url!));
+      return;
+    }
+    final service = widget.service ?? GamesApiService(session: widget.session!);
+    _service = service;
+    _bridge = GameBridge(
+      service: service,
+      gameKey: game.key,
+      company: widget.session!.user.company,
+    );
+    _controller
+      ..enableZoom(false)
+      ..addJavaScriptChannel(
+        gameBridgeChannel,
+        onMessageReceived: (message) => _onBridgeMessage(message.message),
+      );
+    // Challenges change while the game is open: the page hears it at once.
+    _forwarder = GameEventForwarder(
+      realtime: widget.realtime ?? GameSocketService(session: widget.session!),
+      gameKey: game.key,
+      run: _runInPage,
+    )..start();
+    _open();
+  }
+
+  @override
+  void dispose() {
+    _forwarder?.dispose();
+    super.dispose();
+  }
+
+  String _bridgeScript() => gameBridgeScript(
+    playerName: widget.session!.user.name,
+    startChallengeId: widget.challengeId,
+  );
+
+  Future<void> _runInPage(String script) async {
+    if (!mounted) return;
+    try {
+      await _controller.runJavaScript(script);
+    } catch (_) {
+      // Not loaded yet, or gone: the page reads its lists when it loads.
+    }
+  }
+
+  /// Loads the game: a page from the catalog is fetched with the session and
+  /// loaded as the app's own copy; a hosted one is opened at its address.
+  Future<void> _open() async {
+    final game = _game!;
+    final service = _service!;
+    try {
+      if (game.hasPage) {
+        final html = await service.page(game);
+        if (!mounted) return;
+        final home = service.pageUri(game.key);
+        _home = home;
+        await _controller.loadHtmlString(
+          injectGameBridge(html, _bridgeScript()),
+          baseUrl: home.toString(),
+        );
+      } else {
+        final home = Uri.parse(game.hostedUrl!);
+        _home = home;
+        await _controller.loadRequest(home);
+      }
+    } on GamesApiException catch (error) {
+      _failed(error.message);
+    } catch (_) {
+      _failed('This game could not be opened. Check your connection and try again.');
+    }
+  }
+
+  void _failed(String message) {
+    if (!mounted) return;
+    setState(() {
+      _error = message;
+      _loading = false;
+    });
+  }
+
+  void _retry() {
+    setState(() {
+      _error = null;
+      _loading = true;
+      _progress = 0;
+    });
+    _open();
+  }
+
+  /// The game stays on its own page. Its copy here lives at the address it
+  /// was given and nothing else on that host is opened; a hosted game keeps
+  /// to its own site. A link elsewhere goes to the phone's browser, and a
+  /// frame from anywhere else is not loaded, so nothing but the game can
+  /// reach the bridge.
+  NavigationDecision _onNavigationRequest(NavigationRequest request) {
+    final to = Uri.tryParse(request.url);
+    if (to == null) return NavigationDecision.prevent;
+    if (to.scheme == 'about' || to.scheme == 'data' || to.scheme == 'blob') {
+      return NavigationDecision.navigate;
+    }
+    final home = _home;
+    if (home != null && to.scheme == home.scheme && to.host == home.host) {
+      if (!_game!.hasPage || to.path == home.path) {
+        return NavigationDecision.navigate;
+      }
+    }
+    if (request.isMainFrame &&
+        const {'https', 'http', 'mailto', 'tel'}.contains(to.scheme)) {
+      launchUrl(to, mode: LaunchMode.externalApplication);
+    }
+    return NavigationDecision.prevent;
+  }
+
+  Future<void> _onBridgeMessage(String raw) async {
+    final reply = await _bridge?.handle(raw);
+    if (reply == null || !mounted) return;
+    try {
+      await _controller.runJavaScript(reply);
+    } catch (_) {
+      // The page went away while the answer was on its way.
+    }
   }
 
   /// Redirects the game's `navigator.share()` calls into our bottom sheet,
@@ -187,37 +393,160 @@ class _WebGameScreenState extends State<WebGameScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+  void _showHowToPlay() {
+    final game = _game!;
+    showModalBottomSheet<void>(
+      context: context,
       backgroundColor: _bg,
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          IconButton(
-            onPressed: () => _controller.reload(),
-            tooltip: 'Reload',
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
+      showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_loading)
-            Align(
-              alignment: Alignment.topCenter,
-              child: LinearProgressIndicator(
-                value: _progress == 0 ? null : _progress / 100,
-                minHeight: 3,
-                backgroundColor: const Color(0xFFEFE7DA),
-                color: _terra,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                game.name,
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
               ),
-            ),
-        ],
+              if (game.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  game.description,
+                  style: const TextStyle(color: _inkSoft, fontSize: 14.5, height: 1.4),
+                ),
+              ],
+              if (game.instructions.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'How to play',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  game.instructions,
+                  style: const TextStyle(color: _inkSoft, fontSize: 14.5, height: 1.45),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final game = _game;
+    final explains =
+        game != null && (game.instructions.isNotEmpty || game.description.isNotEmpty);
+    return Scaffold(
+      backgroundColor: _background,
+      appBar: AppBar(
+        backgroundColor: _background,
+        foregroundColor: _foreground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: _dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        leading: const BackButton(),
+        title: Text(
+          widget.title,
+          style: TextStyle(
+            color: _foreground,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+        actions: [
+          if (explains)
+            IconButton(
+              onPressed: _showHowToPlay,
+              tooltip: 'How to play',
+              icon: const Icon(Icons.help_outline_rounded),
+            ),
+          // A catalog game keeps its round going; only a hosted one by
+          // address offers a reload.
+          if (game == null)
+            IconButton(
+              onPressed: () => _controller.reload(),
+              tooltip: 'Reload',
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+        ],
+      ),
+      // Under the bar the page has the screen to itself, clear of the home
+      // indicator; the strip below it is the page's colour.
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_error != null)
+              Positioned.fill(child: _errorView(_error!)),
+            if (_loading && _error == null)
+              Align(
+                alignment: Alignment.topCenter,
+                child: LinearProgressIndicator(
+                  value: _progress == 0 ? null : _progress / 100,
+                  minHeight: 3,
+                  backgroundColor: _dark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : const Color(0xFFEFE7DA),
+                  color: game?.accentColor ?? _terra,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _errorView(String message) => ColoredBox(
+    color: _background,
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.wifi_off_rounded, size: 34, color: _foreground.withValues(alpha: 0.7)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _foreground, fontSize: 15, height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            _SheetButton(
+              icon: Icons.refresh_rounded,
+              label: 'Try again',
+              background: _game?.accentColor ?? _terra,
+              foreground: (_game?.accentColor ?? _terra).computeLuminance() > 0.5
+                  ? _ink
+                  : Colors.white,
+              onTap: _retry,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _SheetButton extends StatelessWidget {

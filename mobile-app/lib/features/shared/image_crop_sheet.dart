@@ -26,14 +26,21 @@ import '../shared/app_toast.dart';
 /// Extracted so the arithmetic can be checked without a screen.
 double coverScaleFor(double imageAspect, double frameAspect) {
   if (imageAspect <= 0 || frameAspect <= 0) return 1;
-  return imageAspect > frameAspect ? imageAspect / frameAspect : frameAspect / imageAspect;
+  return imageAspect > frameAspect
+      ? imageAspect / frameAspect
+      : frameAspect / imageAspect;
 }
 
 /// The transform that leaves the photo filling the frame, centred.
 Matrix4 coverTransform(double imageAspect, Size frame) {
   final scale = coverScaleFor(imageAspect, frame.width / frame.height);
   return Matrix4.identity()
-    ..translateByDouble(-(scale - 1) * frame.width / 2, -(scale - 1) * frame.height / 2, 0, 1)
+    ..translateByDouble(
+      -(scale - 1) * frame.width / 2,
+      -(scale - 1) * frame.height / 2,
+      0,
+      1,
+    )
     ..scaleByDouble(scale, scale, 1, 1);
 }
 
@@ -43,6 +50,7 @@ enum CropShape {
   square(1, 'Square', '1:1'),
   portrait(4 / 5, 'Portrait', '4:5'),
   landscape(16 / 9, 'Landscape', '16:9'),
+
   /// The photo well on an engagement card — 308 wide by 224 tall. Locked to
   /// it so what someone lines up is exactly what the feed shows, rather than
   /// a 16:9 crop the card then trims the sides off.
@@ -55,8 +63,11 @@ enum CropShape {
 
   /// The shapes the picker offers. `challengeCard` is not among them: it is a
   /// fixed frame for one surface, never a choice someone makes for a post.
-  static List<CropShape> get choosable =>
-      const [CropShape.square, CropShape.portrait, CropShape.landscape];
+  static List<CropShape> get choosable => const [
+    CropShape.square,
+    CropShape.portrait,
+    CropShape.landscape,
+  ];
 }
 
 /// [maxEdge] caps the longest side of the saved crop, in pixels.
@@ -113,6 +124,7 @@ class _CropPageState extends State<_CropPage> {
   final _controller = TransformationController();
   late CropShape _shape = widget.initial;
   bool _saving = false;
+
   /// The picked image's own aspect ratio, needed to work out how far it has to
   /// be zoomed to fill the frame. Null until the file has been decoded.
   double? _imageAspect;
@@ -127,20 +139,28 @@ class _CropPageState extends State<_CropPage> {
 
   /// Reads the image's dimensions off the decoded file.
   void _measure() {
-    final stream = FileImage(File(widget.path)).resolve(ImageConfiguration.empty);
+    final stream = FileImage(
+      File(widget.path),
+    ).resolve(ImageConfiguration.empty);
     late final ImageStreamListener listener;
-    listener = ImageStreamListener((info, _) {
-      stream.removeListener(listener);
-      if (!mounted) return;
-      setState(() {
-        _imageAspect = info.image.width / info.image.height;
-        _sourceSize = Size(info.image.width.toDouble(), info.image.height.toDouble());
-      });
-      _reset();
-    }, onError: (error, stack) {
-      stream.removeListener(listener);
-      if (mounted) setState(() => _imageAspect = 1);
-    });
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (!mounted) return;
+        setState(() {
+          _imageAspect = info.image.width / info.image.height;
+          _sourceSize = Size(
+            info.image.width.toDouble(),
+            info.image.height.toDouble(),
+          );
+        });
+        _reset();
+      },
+      onError: (error, stack) {
+        stream.removeListener(listener);
+        if (mounted) setState(() => _imageAspect = 1);
+      },
+    );
     stream.addListener(listener);
   }
 
@@ -172,7 +192,8 @@ class _CropPageState extends State<_CropPage> {
     setState(() => _saving = true);
     try {
       final object = _boundary.currentContext?.findRenderObject();
-      if (object is! RenderRepaintBoundary) throw StateError('nothing to capture');
+      if (object is! RenderRepaintBoundary)
+        throw StateError('nothing to capture');
       // Captured at the source's own density where possible, so cropping a
       // 4000px photo does not hand back a 700px one. Capped so a huge original
       // cannot produce an unencodable canvas.
@@ -180,7 +201,9 @@ class _CropPageState extends State<_CropPage> {
       final sourceWidth = (_imageAspect ?? 1) >= 1
           ? (_sourceSize?.width ?? 0)
           : (_sourceSize?.height ?? 0);
-      final density = frameWidth > 0 && sourceWidth > 0 ? sourceWidth / frameWidth : 2.0;
+      final density = frameWidth > 0 && sourceWidth > 0
+          ? sourceWidth / frameWidth
+          : 2.0;
       var pixelRatio = density.clamp(1.5, 4.0);
       // Held to the caller's ceiling: a PNG of a camera photo grows with every
       // pixel kept, and a profile picture is shown far smaller than the
@@ -206,7 +229,9 @@ class _CropPageState extends State<_CropPage> {
 
   Future<File> _writeTemp(Uint8List bytes) async {
     final dir = await Directory.systemTemp.createTemp('sowaka_crop');
-    final file = File('${dir.path}/crop_${DateTime.now().millisecondsSinceEpoch}.png');
+    final file = File(
+      '${dir.path}/crop_${DateTime.now().millisecondsSinceEpoch}.png',
+    );
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
@@ -219,13 +244,20 @@ class _CropPageState extends State<_CropPage> {
         backgroundColor: const Color(0xFF16181B),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: Text(widget.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
         actions: [
           TextButton(
             onPressed: _saving ? null : _confirm,
             child: Text(
               _saving ? 'Saving…' : 'Done',
-              style: const TextStyle(color: Color(0xFF4FA8DA), fontSize: 16, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: Color(0xFF4FA8DA),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -240,7 +272,10 @@ class _CropPageState extends State<_CropPage> {
                   aspectRatio: _shape.aspect,
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final size = Size(constraints.maxWidth, constraints.maxHeight);
+                      final size = Size(
+                        constraints.maxWidth,
+                        constraints.maxHeight,
+                      );
                       if (_frame != size) {
                         _frame = size;
                         // The frame is only known once it is laid out, and the
@@ -254,40 +289,47 @@ class _CropPageState extends State<_CropPage> {
                       return Stack(
                         fit: StackFit.expand,
                         children: [
-                      RepaintBoundary(
-                        key: _boundary,
-                        child: ClipRect(
-                          child: ColoredBox(
-                            color: const Color(0xFF0E0F11),
-                            child: InteractiveViewer(
-                              transformationController: _controller,
-                              minScale: 0.4,
-                              maxScale: 8,
-                              // Unbounded, so the subject can be dragged to any
-                              // corner of the frame rather than being pinned
-                              // once an edge is reached.
-                              boundaryMargin: const EdgeInsets.all(double.infinity),
-                              clipBehavior: Clip.none,
-                              child: Image.file(
-                                File(widget.path),
-                                // Contain: the whole photo is laid out, and the
-                                // transform decides what the frame keeps.
-                                fit: BoxFit.contain,
-                                width: double.infinity,
-                                height: double.infinity,
-                                filterQuality: FilterQuality.medium,
-                                errorBuilder: (context, error, stack) => const Center(
-                                  child: Text('Could not open that image',
-                                      style: TextStyle(color: Colors.white70)),
+                          RepaintBoundary(
+                            key: _boundary,
+                            child: ClipRect(
+                              child: ColoredBox(
+                                color: const Color(0xFF0E0F11),
+                                child: InteractiveViewer(
+                                  transformationController: _controller,
+                                  minScale: 0.4,
+                                  maxScale: 8,
+                                  // Unbounded, so the subject can be dragged to any
+                                  // corner of the frame rather than being pinned
+                                  // once an edge is reached.
+                                  boundaryMargin: const EdgeInsets.all(
+                                    double.infinity,
+                                  ),
+                                  clipBehavior: Clip.none,
+                                  child: Image.file(
+                                    File(widget.path),
+                                    // Contain: the whole photo is laid out, and the
+                                    // transform decides what the frame keeps.
+                                    fit: BoxFit.contain,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    filterQuality: FilterQuality.medium,
+                                    errorBuilder: (context, error, stack) =>
+                                        const Center(
+                                          child: Text(
+                                            'Could not open that image',
+                                            style: TextStyle(
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      // Guides only — outside the RepaintBoundary, so they
-                      // help line a subject up without ending up in the file.
-                      const IgnorePointer(child: _ThirdsGrid()),
+                          // Guides only — outside the RepaintBoundary, so they
+                          // help line a subject up without ending up in the file.
+                          const IgnorePointer(child: _ThirdsGrid()),
                         ],
                       );
                     },
@@ -306,22 +348,27 @@ class _CropPageState extends State<_CropPage> {
           if (widget.allowShapeChange)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              // Each chip takes an even share of the width and its label
+              // shrinks to fit, so "Landscape · 16:9" never runs off a narrow
+              // phone.
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   for (final shape in CropShape.choosable)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child: _ShapeChip(
-                        shape: shape,
-                        selected: shape == _shape,
-                        onTap: () {
-                          // The old pan belongs to the old frame, so refit.
-                          setState(() => _shape = shape);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _reset();
-                          });
-                        },
+                    Flexible(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _ShapeChip(
+                          shape: shape,
+                          selected: shape == _shape,
+                          onTap: () {
+                            // The old pan belongs to the old frame, so refit.
+                            setState(() => _shape = shape);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) _reset();
+                            });
+                          },
+                        ),
                       ),
                     ),
                 ],
@@ -333,7 +380,10 @@ class _CropPageState extends State<_CropPage> {
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
               child: TextButton(
                 onPressed: _reset,
-                child: const Text('Reset', style: TextStyle(color: Colors.white70)),
+                child: const Text(
+                  'Reset',
+                  style: TextStyle(color: Colors.white70),
+                ),
               ),
             ),
           ),
@@ -377,7 +427,11 @@ class _ThirdsPainter extends CustomPainter {
 }
 
 class _ShapeChip extends StatelessWidget {
-  const _ShapeChip({required this.shape, required this.selected, required this.onTap});
+  const _ShapeChip({
+    required this.shape,
+    required this.selected,
+    required this.onTap,
+  });
 
   final CropShape shape;
   final bool selected;
@@ -388,17 +442,22 @@ class _ShapeChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.white10,
           borderRadius: BorderRadius.circular(99),
         ),
-        child: Text(
-          '${shape.label} · ${shape.ratio}',
-          style: TextStyle(
-            color: selected ? const Color(0xFF16181B) : Colors.white70,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            '${shape.label} · ${shape.ratio}',
+            maxLines: 1,
+            style: TextStyle(
+              color: selected ? const Color(0xFF16181B) : Colors.white70,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),

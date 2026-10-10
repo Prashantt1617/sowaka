@@ -126,7 +126,7 @@ void main() {
     expect(find.text('Change'), findsOneWidget);
     expect(find.text('MY WELLBEING'), findsOneWidget);
     expect(find.text('Session history'), findsOneWidget);
-    expect(find.text('My preferences'), findsOneWidget);
+    expect(find.text('MY PREFERENCES'), findsOneWidget);
     // Why they were matched is on their own page, not here.
     expect(find.textContaining('switching off after work'), findsNothing);
     // Matching happens once: having answered, nobody is asked again.
@@ -139,7 +139,7 @@ void main() {
     // The card's title and its button say the same thing.
     expect(find.text('Match with a counsellor'), findsOneWidget);
     expect(find.text('Answer the questions'), findsOneWidget);
-    expect(find.text('My preferences'), findsNothing);
+    expect(find.text('MY PREFERENCES'), findsNothing);
   });
 
   testWidgets('answered but nobody free says so, and does not ask again', (

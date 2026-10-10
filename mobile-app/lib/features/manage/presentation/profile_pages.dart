@@ -1,6 +1,82 @@
 part of '../../manager/presentation/manager_screen.dart';
 
-class _TeamMemberProfilePage extends StatelessWidget {
+// ── Which tabs a profile has, and who sees them ──────────────────────────────
+
+/// The profile's tabs, in the order the design lays them out (node 3074:45389).
+enum ProfileTab {
+  request('Request'),
+  attendance('Attendance'),
+  workDetail('Work detail'),
+  orgChart('Org chart'),
+  grow('Grow'),
+  rank('Rank'),
+  counselor('Counselor'),
+  documentation('Documentation');
+
+  const ProfileTab(this.label);
+
+  final String label;
+}
+
+/// What anyone in the company sees on a colleague's profile: their
+/// attendance, who they are, where they sit, and where they stand on points.
+/// Nothing about their requests, their reviews or their documents.
+///
+/// This is the one list to edit to widen or narrow the colleague view. The
+/// server reads a colleague's month for anyone in the same company
+/// (`getTeamMemberAttendance`).
+const colleagueProfileTabs = [
+  ProfileTab.attendance,
+  ProfileTab.workDetail,
+  ProfileTab.orgChart,
+  ProfileTab.rank,
+];
+
+/// The tabs on someone else's profile.
+///
+/// Someone in the viewer's own reporting line — a report, or a report's
+/// report — keeps everything their profile has always shown the viewer: their
+/// day, their details, where they sit and their growth; the requests waiting on
+/// the viewer when the viewer is the one who decides them; their documents when
+/// HR has filed any. Rank is on every profile. Everyone else gets
+/// [colleagueProfileTabs].
+List<ProfileTab> memberProfileTabs({
+  required bool inViewerChain,
+  required bool viewerCanManage,
+  required bool hasDocuments,
+}) {
+  if (!inViewerChain) return colleagueProfileTabs;
+  return [
+    if (viewerCanManage) ProfileTab.request,
+    ProfileTab.attendance,
+    ProfileTab.workDetail,
+    ProfileTab.orgChart,
+    ProfileTab.grow,
+    ProfileTab.rank,
+    if (hasDocuments) ProfileTab.documentation,
+  ];
+}
+
+/// The tabs on one's own profile. Growth is reviewed by one's manager, so
+/// someone with nobody above them has no Grow; the counsellor is there where
+/// the company has Help.
+List<ProfileTab> ownProfileTabs({
+  required bool hasManager,
+  required bool showsHelp,
+}) => [
+  ProfileTab.request,
+  ProfileTab.attendance,
+  ProfileTab.workDetail,
+  ProfileTab.orgChart,
+  if (hasManager) ProfileTab.grow,
+  ProfileTab.rank,
+  if (showsHelp) ProfileTab.counselor,
+];
+
+/// Another person's profile: a report's from the Team tab, or anyone's in the
+/// company from wherever their name was tapped. Which tabs it carries is
+/// [memberProfileTabs]'s to say.
+class _TeamMemberProfilePage extends StatefulWidget {
   const _TeamMemberProfilePage({
     required this.member,
     required this.data,
@@ -8,6 +84,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
     required this.onNotifications,
     required this.onOpenComposer,
     this.canManage = true,
+    this.publicOnly = false,
   });
 
   final TeamMember member;
@@ -20,6 +97,21 @@ class _TeamMemberProfilePage extends StatelessWidget {
   /// no approve/decline actions.
   final bool canManage;
 
+  /// Fetched as anyone in the company may see them rather than read from the
+  /// viewer's own team, so only [colleagueProfileTabs] have anything to show.
+  final bool publicOnly;
+
+  @override
+  State<_TeamMemberProfilePage> createState() => _TeamMemberProfilePageState();
+}
+
+class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
+  int _tab = 0;
+
+  late final ProfileApiService _profileService = ProfileApiService(
+    session: widget.bloc.service.session,
+  );
+
   @override
   Widget build(BuildContext context) {
     // Pushed as its own route, so it sits outside the shell's StreamBuilder
@@ -27,21 +119,22 @@ class _TeamMemberProfilePage extends StatelessWidget {
     // buttons here could not go busy: their spinner state is read once, at
     // build, and nothing would rebuild them.
     return StreamBuilder<ManagerState>(
-      stream: bloc.stream,
-      initialData: bloc.state,
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
       builder: (context, _) => _build(context),
     );
   }
 
-  Widget _build(BuildContext context) {
-    final present = member.todayStatus == TeamPresenceStatus.present;
-    final today = DateTime.now();
-    // The dashboard as it stands now, not the copy handed over when this page
-    // was pushed. Deciding a request updates the bloc, and reading the old
-    // copy left the card sitting there, still pending, under its own toast.
-    final data = bloc.state.dashboard ?? this.data;
-
-    final openRequests = <(DateTime date, Widget card)>[
+  /// What is waiting on the viewer from this person, newest first: leave,
+  /// overtime and corrections to decide, and their reimbursement claims, which
+  /// HR decides from the dashboard and so only show here.
+  List<(DateTime, Widget)> _openRequests(
+    BuildContext context,
+    ManagerDashboard data,
+  ) {
+    final bloc = widget.bloc;
+    final member = widget.member;
+    return <(DateTime date, Widget card)>[
       for (final leave in data.leaves.where(
         (item) =>
             item.userId == member.userId &&
@@ -50,7 +143,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
         (
           leave.requestedOn,
           _ProfileRequestCard(
-            icon: Icons.calendar_month_rounded,
+            iconAsset: _RequestIcons.leave,
             title: '${leave.type} leave request',
             rows: [
               ('Date:', _leaveDateRange(leave)),
@@ -86,7 +179,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
         (
           request.requestedOn,
           _ProfileRequestCard(
-            icon: Icons.schedule_rounded,
+            iconAsset: _RequestIcons.overtime,
             title: 'Overtime Request',
             rows: [
               ('Date:', _managerDate(request.workDate)),
@@ -126,9 +219,7 @@ class _TeamMemberProfilePage extends StatelessWidget {
         (
           request.createdAt,
           _ProfileRequestCard(
-            icon: request.isOutOfLocation
-                ? Icons.location_off_rounded
-                : Icons.edit_calendar_rounded,
+            iconAsset: _RequestIcons.correction,
             title: request.heading,
             rows: _attendanceRequestRows(request),
             decision: LeaveDecision.pending,
@@ -158,7 +249,131 @@ class _TeamMemberProfilePage extends StatelessWidget {
             ),
           ),
         ),
+      for (final claim in data.reimbursements.where(
+        (item) => item.userId == member.userId && item.status == 'Pending',
+      ))
+        (claim.createdAt, _ProfileClaimCard(claim: claim)),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
+  }
+
+  Widget _build(BuildContext context) {
+    final bloc = widget.bloc;
+    final member = widget.member;
+    // The dashboard as it stands now, not the copy handed over when this page
+    // was pushed. Deciding a request updates the bloc, and reading the old
+    // copy left the card sitting there, still pending, under its own toast.
+    final data = bloc.state.dashboard ?? widget.data;
+    final present = member.todayStatus == TeamPresenceStatus.present;
+    final today = DateTime.now();
+    final tabs = widget.publicOnly
+        ? colleagueProfileTabs
+        : memberProfileTabs(
+            inViewerChain: member.inViewerChain,
+            viewerCanManage: widget.canManage,
+            hasDocuments: member.documents.isNotEmpty,
+          );
+    final selected = _tab.clamp(0, tabs.length - 1);
+    // Whether they are in today is their attendance, so it shows only where
+    // their Attendance tab does.
+    final showsPresence = tabs.contains(ProfileTab.attendance);
+
+    final content = switch (tabs[selected]) {
+      ProfileTab.request => () {
+        final open = _openRequests(context, data);
+        return open.isEmpty
+            ? const [_ProfileTabNote('No open requests.')]
+            : [
+                for (final (index, entry) in open.indexed) ...[
+                  if (index > 0) const SizedBox(height: 12),
+                  entry.$2,
+                ],
+              ];
+      }(),
+      // Today's card and the month below it, as on one's own profile — both
+      // read by this member's shift, which the calendar fetches with the month.
+      ProfileTab.attendance => [
+        _MemberAttendanceCalendar(
+          member: member,
+          data: data,
+          bloc: bloc,
+          todayCard: (shift) => _AttendanceCard(
+            date: today,
+            present: present,
+            punchIn: member.punchIn,
+            punchOut: member.punchOut,
+            autoPresent: shift.markedPresentAutomatically,
+            singlePunch: shift.singlePunchDay,
+            fullDayHours: shift.minFullDayHours,
+          ),
+        ),
+      ],
+      ProfileTab.workDetail => [
+        if (member.email.isNotEmpty)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_email.svg',
+            label: 'Email',
+            value: member.email,
+          ),
+        if (member.employeeId case final id?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_employee_id.svg',
+            label: 'Employee ID',
+            value: id,
+          ),
+        if (member.joiningDate case final joined?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_joining_date.svg',
+            label: 'Joining Date',
+            value: _joiningDateLabel(joined),
+          ),
+        _WorkDetailRow(
+          iconAsset: 'assets/icons/work_department.svg',
+          label: 'Department',
+          value: member.team,
+        ),
+        if (_nonEmpty(member.managerName) case final name?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_manager_head.svg',
+            label: 'Manager',
+            value: name,
+          ),
+        if (member.employmentType case final type?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/work_employment_type.svg',
+            label: 'Employment Type',
+            value: _employmentTypeLabel(type),
+          ),
+        if (member.birthday case final born?)
+          _WorkDetailRow(
+            icon: Icons.cake_outlined,
+            label: 'Date of birth',
+            value: _joiningDateLabel(born),
+          ),
+      ],
+      ProfileTab.orgChart => [
+        if (member.orgChart.length > 1)
+          _OrgChartCard(
+            nodes: member.orgChart,
+            selfName: member.name,
+            selfPhotoUrl: member.photoUrl,
+          )
+        else
+          const _ProfileTabNote('No reporting line to show yet.'),
+      ],
+      // No "your manager" line here: the reader usually is the manager, and
+      // the month row's due card says what to do.
+      ProfileTab.grow => [
+        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id),
+      ],
+      ProfileTab.rank => [
+        _RankHistory(service: _profileService, userId: member.userId),
+      ],
+      ProfileTab.documentation => [
+        _DocumentationList(documents: member.documents),
+      ],
+      // Never on someone else's profile.
+      ProfileTab.counselor => const <Widget>[],
+    };
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -172,81 +387,35 @@ class _TeamMemberProfilePage extends StatelessWidget {
               size: 30,
               label: 'Close profile',
             ),
-            onNotifications: onNotifications,
-            onQuickCreate: onOpenComposer,
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
           ),
           _ProfilePageTopBar(
             // "Profile-Ananya" (node 3106:49189): whose page this is.
             title: 'Profile-${member.name.trim().split(' ').first}',
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-              children: [
-                Center(
-                  child: Column(
-                    children: [
-                      _TeamMemberPhoto(
-                        member: member,
-                        size: 112,
-                        showStatus: true,
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        member.name,
-                        style: const TextStyle(
-                          color: Color(0xFF222222),
-                          fontSize: 24,
-                          height: 32 / 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        [
-                          member.designation,
-                          member.team,
-                        ].where((value) => value.isNotEmpty).join(' • '),
-                        style: const TextStyle(
-                          color: Color(0xFF717171),
-                          fontSize: 16,
-                          height: 24 / 16,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ],
-                  ),
+            child: _ProfileScrollFrame(
+              hero: _ProfileHero(
+                avatar: _HeroAvatar(
+                  dotColor: showsPresence
+                      ? (present
+                            ? const Color(0xFF00C950)
+                            : const Color(0xFFDDDDDD))
+                      : null,
+                  child: _TeamMemberPhoto(member: member, size: 112),
                 ),
-                const SizedBox(height: 16),
-                _MemberProfileTabs(
-                  member: member,
-                  canManage: canManage,
-                  openRequests: openRequests,
-                  // No "your manager" line here: the reader usually is the
-                  // manager, and the month row's due card says what to do.
-                  grow: _ProfileGrowTab(
-                    data: data,
-                    bloc: bloc,
-                    memberId: member.id,
-                  ),
-                  // Today's card and the month below it, as on one's own
-                  // profile — both read by this member's shift, which the
-                  // calendar fetches with the month.
-                  attendance: _MemberAttendanceCalendar(
-                    member: member,
-                    data: data,
-                    bloc: bloc,
-                    todayCard: (shift) => _AttendanceCard(
-                      date: today,
-                      present: present,
-                      punchIn: member.punchIn,
-                      punchOut: member.punchOut,
-                      autoPresent: shift.markedPresentAutomatically,
-                      singlePunch: shift.singlePunchDay,
-                    ),
-                  ),
-                ),
-              ],
+                name: member.name,
+                subtitle: [
+                  member.designation,
+                  member.team,
+                ].where((value) => value.isNotEmpty).join(' • '),
+                recognition: _nonEmpty(member.recognitionLabel),
+              ),
+              tabs: [for (final tab in tabs) tab.label],
+              selected: selected,
+              onChanged: (index) => setState(() => _tab = index),
+              children: content,
             ),
           ),
           _BottomTabs(
@@ -261,6 +430,111 @@ class _TeamMemberProfilePage extends StatelessWidget {
   }
 }
 
+/// A colleague who is not in the viewer's own team: fetched as anyone in the
+/// company may see them, then shown as [_TeamMemberProfilePage] with only the
+/// colleague tabs.
+class _ColleagueProfileLoader extends StatefulWidget {
+  const _ColleagueProfileLoader({
+    required this.userId,
+    required this.data,
+    required this.bloc,
+    required this.onNotifications,
+    required this.onOpenComposer,
+  });
+
+  final String userId;
+  final ManagerDashboard data;
+  final ManagerBloc bloc;
+  final VoidCallback onNotifications;
+  final VoidCallback onOpenComposer;
+
+  @override
+  State<_ColleagueProfileLoader> createState() =>
+      _ColleagueProfileLoaderState();
+}
+
+class _ColleagueProfileLoaderState extends State<_ColleagueProfileLoader> {
+  late final _service = ProfileApiService(session: widget.bloc.service.session);
+  late Future<TeamMember> _person = _service.fetchPerson(widget.userId);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<TeamMember>(
+      future: _person,
+      builder: (context, snapshot) {
+        if (snapshot.data case final person?) {
+          return _TeamMemberProfilePage(
+            member: person,
+            data: widget.data,
+            bloc: widget.bloc,
+            onNotifications: widget.onNotifications,
+            onOpenComposer: widget.onOpenComposer,
+            canManage: false,
+            publicOnly: true,
+          );
+        }
+        final error = snapshot.error;
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F7F9),
+          body: Column(
+            children: [
+              AppHomeHeader(
+                profileAction: _ProfileAvatarAction(
+                  initial: widget.data.managerInitial,
+                  photoUrl: widget.data.managerPhotoUrl,
+                  onTap: () => Navigator.of(context).pop(),
+                  size: 30,
+                  label: 'Close profile',
+                ),
+                onNotifications: widget.onNotifications,
+                onQuickCreate: widget.onOpenComposer,
+              ),
+              const _ProfilePageTopBar(title: 'Profile'),
+              Expanded(
+                child: error == null
+                    ? const Center(
+                        child: CircularProgressIndicator(color: MColors.terra),
+                      )
+                    : ProfileEmptyNote(
+                        error is ProfileApiException && error.statusCode == 404
+                            ? 'This person is not in your company’s directory.'
+                            : 'Could not open this profile.',
+                        onRetry: () => setState(
+                          () => _person = _service.fetchPerson(widget.userId),
+                        ),
+                      ),
+              ),
+              _BottomTabs(
+                state: widget.bloc.state,
+                bloc: widget.bloc,
+                onBeforeChange: () =>
+                    Navigator.of(context).popUntil((route) => route.isFirst),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The Rank tab: the point history (node 3605:30658), inset 16 inside the
+/// tab as the design draws it.
+class _RankHistory extends StatelessWidget {
+  const _RankHistory({required this.service, this.userId});
+
+  final ProfileApiService service;
+
+  /// Whose profile it is. Null on one's own.
+  final String? userId;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+    child: CreditHistoryView(service: service, userId: userId),
+  );
+}
+
 String _joiningDateLabel(DateTime value) =>
     '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]} ${value.day}, ${value.year}';
 
@@ -272,104 +546,214 @@ String _employmentTypeLabel(String value) => value
     .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
     .join(' ');
 
-class _OrgChartCard extends StatelessWidget {
-  const _OrgChartCard({required this.nodes});
+/// 'Aug 5 2023', as the documents list dates a file (node 3106:50806).
+String _documentDate(DateTime value) =>
+    '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]} ${value.day} ${value.year}';
 
-  final List<OrgChartNode> nodes;
+/// '₹1,24,500' or '₹124.50': Indian grouping, paise only when there are any.
+String _rupees(double amount) {
+  final whole = amount.truncate();
+  final paise = ((amount - whole) * 100).round();
+  final grouped = '$whole'.replaceAllMapped(
+    RegExp(r'(\d)(?=(\d\d)+\d$)'),
+    (match) => '${match[1]},',
+  );
+  return paise == 0
+      ? '₹$grouped'
+      : '₹$grouped.${paise.toString().padLeft(2, '0')}';
+}
+
+// ── The page around a profile ────────────────────────────────────────────────
+
+/// The scrolling body every profile shares (nodes 3070:44930, 3074:45990):
+/// who they are, the tabs pinned once they reach the top, and the open tab
+/// under them.
+class _ProfileScrollFrame extends StatelessWidget {
+  const _ProfileScrollFrame({
+    required this.hero,
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.children,
+    this.footer = const [],
+  });
+
+  final Widget hero;
+  final List<String> tabs;
+  final int selected;
+  final ValueChanged<int> onChanged;
+  final List<Widget> children;
+
+  /// Below whichever tab is open — the log-out on one's own profile.
+  final List<Widget> footer;
+
+  /// Tablets get the phone's column rather than lines a foot long.
+  static Widget _column(Widget child) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 620),
+      child: child,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _column(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: hero,
+            ),
+          ),
+        ),
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedTabs(
+            child: _column(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _ProfileTabs(
+                  labels: tabs,
+                  selected: selected,
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+            selected: selected,
+            tabs: tabs,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _column(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [...children, ...footer],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The tab row, held at the top of the page once it scrolls there.
+class _PinnedTabs extends SliverPersistentHeaderDelegate {
+  _PinnedTabs({required this.child, required this.selected, required this.tabs});
+
+  final Widget child;
+  final int selected;
+  final List<String> tabs;
+
+  static const _height = 42.0;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      ColoredBox(color: const Color(0xFFF7F7F9), child: child);
+
+  @override
+  bool shouldRebuild(_PinnedTabs old) =>
+      old.selected != selected || old.tabs.join() != tabs.join();
+}
+
+/// Who the profile is (node 3106:50096): the photo, the name, the role. Someone
+/// HR has recognised gets the warm card, the trophy and their title
+/// (node 3106:49420).
+class _ProfileHero extends StatelessWidget {
+  const _ProfileHero({
+    required this.avatar,
+    required this.name,
+    required this.subtitle,
+    this.recognition,
+    this.nameSize = 24,
+    this.subtitleSize = 16,
+  });
+
+  final Widget avatar;
+  final String name;
+  final String subtitle;
+
+  /// "Employee of the Month", as HR worded it.
+  final String? recognition;
+  final double nameSize;
+  final double subtitleSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final recognition = this.recognition;
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
+        color: recognition == null ? null : const Color(0xFFFFF8E6),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
         children: [
-          for (final (index, node) in nodes.indexed) ...[
-            if (index > 0)
-              Container(width: 1, height: 12, color: const Color(0xFFDDDDDD)),
-            if (node.isReport && !nodes[index - 1].isReport) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 6),
+          Padding(padding: const EdgeInsets.only(bottom: 16), child: avatar),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              style: ProfileStyle.sora(
+                nameSize,
+                weight: FontWeight.w700,
+                height: 32,
+              ),
+            ),
+          ),
+          if (subtitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: ProfileStyle.sora(
+                  subtitleSize,
+                  color: ProfileStyle.tertiary,
+                  height: 24,
+                ),
+              ),
+            ),
+          if (recognition != null) ...[
+            const _TrophyPulse(),
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E6),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0xFFFFDF8D),
+                    width: 1.114,
+                  ),
+                ),
+                // As wide as its words, not the card.
+                child: Center(
+                  widthFactor: 1,
                   child: Text(
-                    nodes.where((item) => item.isReport).length == 1
-                        ? 'REPORTS TO THEM'
-                        : '${nodes.where((item) => item.isReport).length} REPORT TO THEM',
-                    style: const TextStyle(
-                      color: Color(0xFF929292),
-                      fontSize: 10,
-                      letterSpacing: .5,
-                      fontWeight: FontWeight.w700,
+                    recognition,
+                    style: ProfileStyle.sora(
+                    14,
+                    weight: FontWeight.w600,
+                      color: const Color(0xFFFFBF1B),
+                      height: 16.2,
+                      spacing: -0.16,
                     ),
                   ),
                 ),
-              ),
-            ],
-            Container(
-              margin: EdgeInsets.only(left: node.isReport ? 18 : 0),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: node.isSelf ? const Color(0xFFF0F7FC) : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: node.isSelf
-                      ? const Color(0xFF0571A6)
-                      : const Color(0xFFEBEBEB),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF2F2F2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: SvgPicture.asset(
-                        'assets/icons/work_manager.svg',
-                        width: 18,
-                        height: 18,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          node.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: MColors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (node.designation.isNotEmpty)
-                          Text(
-                            node.designation.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF929292),
-                              fontSize: 10,
-                              letterSpacing: .4,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
@@ -379,75 +763,124 @@ class _OrgChartCard extends StatelessWidget {
   }
 }
 
-class _DocumentationCard extends StatelessWidget {
-  const _DocumentationCard({required this.documents});
+/// The 112pt photo with its soft shadow and, where it is shown, the dot that
+/// says whether they are in today. [overlay] sits on top — one's own camera.
+class _HeroAvatar extends StatelessWidget {
+  const _HeroAvatar({required this.child, this.dotColor, this.overlay});
 
-  final List<EmployeeDocument> documents;
+  final Widget child;
+  final Color? dotColor;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: MColors.line),
-      ),
-      child: Column(
+    return SizedBox(
+      width: 112,
+      height: 112,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          for (final (index, document) in documents.indexed) ...[
-            if (index > 0)
-              const Divider(height: 1, thickness: 1, color: Color(0xFFF2F2F2)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF2F2F2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: SvgPicture.asset(
-                        'assets/icons/document_file.svg',
-                        width: 18,
-                        height: 18,
-                      ),
-                    ),
+          Container(
+            width: 112,
+            height: 112,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 6,
+                  spreadRadius: -1,
+                  offset: Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 4,
+                  spreadRadius: -2,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipOval(child: child),
+          ),
+          if (dotColor case final color?)
+            Positioned(
+              left: 88,
+              top: 88,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFF7F7F7),
+                    width: 3.342,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          document.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: MColors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (document.uploadedAt case final uploaded?)
-                          Text(
-                            _joiningDateLabel(uploaded),
-                            style: const TextStyle(
-                              color: Color(0xFF929292),
-                              fontSize: 11,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ],
+          ?overlay,
         ],
       ),
+    );
+  }
+}
+
+/// The recognition trophy (node 3106:49442): it lands from 120% to its own
+/// size over the first 29% of every two seconds, ease-out, then holds — the
+/// design's own keyframes. Still for anyone who has asked for less motion.
+class _TrophyPulse extends StatefulWidget {
+  const _TrophyPulse();
+
+  @override
+  State<_TrophyPulse> createState() => _TrophyPulseState();
+}
+
+class _TrophyPulseState extends State<_TrophyPulse>
+    with SingleTickerProviderStateMixin {
+  static const _landsBy = 0.29166;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 2),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (still) {
+      _controller.stop();
+      _controller.value = 1;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final trophy = Image.asset(
+      'assets/images/trophy.png',
+      width: 151,
+      height: 152,
+      fit: BoxFit.cover,
+    );
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        final scale = t >= _landsBy
+            ? 1.0
+            : 1.2 - 0.2 * Curves.easeOut.transform(t / _landsBy);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: trophy,
     );
   }
 }
@@ -494,16 +927,22 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   /// Which profile tab is open. Request first, as the design opens it.
   int _tab = 0;
 
+  late final ProfileApiService _profileService = ProfileApiService(
+    session: widget.bloc.service.session,
+  );
+
   /// The Request tab: every request of theirs, newest first, or a line
   /// saying there are none.
   List<Widget> _requestTab(ManagerDashboard dashboard) {
-    final entries = _MyRequestsSection.entriesFor(dashboard);
+    final entries = _myRequestEntries(dashboard);
     if (entries.isEmpty) {
       return const [_ProfileTabNote('No requests yet.')];
     }
     return [
-      for (final entry in entries)
-        Padding(padding: const EdgeInsets.only(bottom: 12), child: entry.$2),
+      for (final (index, entry) in entries.indexed) ...[
+        if (index > 0) const SizedBox(height: 12),
+        entry.$2,
+      ],
     ];
   }
 
@@ -554,15 +993,72 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     }
   }
 
+  /// One's own photo: tap it, or the camera, to change it.
+  Widget _ownAvatar(AuthUser user) => _HeroAvatar(
+    dotColor: const Color(0xFF00C950),
+    overlay: Positioned(
+      right: -2,
+      top: -2,
+      child: GestureDetector(
+        onTap: _changePhoto,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: MColors.terra,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFF7F7F7), width: 2.5),
+          ),
+          // The same camera as the onboarding screen's "Add or take a photo".
+          child: Center(
+            child: SvgPicture.asset(
+              'assets/onboarding/camera.svg',
+              width: 16,
+              height: 16,
+              colorFilter: const ColorFilter.mode(
+                Colors.white,
+                BlendMode.srcIn,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    child: GestureDetector(
+      onTap: _changePhoto,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _ProfileAvatar(
+            initials: _initials(user.name),
+            profilePhotoUrl: user.profilePhotoUrl,
+            size: 112,
+          ),
+          if (_uploadingPhoto)
+            const ColoredBox(
+              color: Color(0x66000000),
+              child: Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
     final dashboard = widget.dashboard;
     final bloc = widget.bloc;
     final onBack = widget.onBack;
-    final onLogout = widget.onLogout;
-    final onNotifications = widget.onNotifications;
-    final onOpenComposer = widget.onOpenComposer;
     final user = session.user;
     final designation =
         _nonEmpty(user.designation) ??
@@ -576,19 +1072,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         ? (_nonEmpty(user.managerName) ?? _nonEmpty(dashboard.approverName))
         : null;
     // What this company's app is for.
-    final tabs = user.enabledTabs;
-    final worksHere = profileShowsWork(tabs);
-    final helpHere = profileShowsHelp(tabs);
-    // Growth is reviewed by one's manager; without one there is nothing to
-    // show there, so the tab is not offered.
-    final profileTabs = [
-      'Details',
-      'Attendance',
-      'Requests',
-      if (dashboard.hasManager) 'Grow',
-      'Org chart',
-      if (helpHere) 'Counselor',
-    ];
+    final worksHere = profileShowsWork(user.enabledTabs);
+    final helpHere = profileShowsHelp(user.enabledTabs);
+    final helpOnly = !worksHere && helpHere;
+    final tabs = ownProfileTabs(
+      hasManager: dashboard.hasManager,
+      showsHelp: helpHere,
+    );
+    final selected = _tab.clamp(0, tabs.length - 1);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -598,6 +1089,102 @@ class _ProfileScreenState extends State<_ProfileScreen> {
               record.workDate.day == today.day,
         )
         .firstOrNull;
+
+    final hero = _ProfileHero(
+      avatar: _ownAvatar(user),
+      name: user.name,
+      subtitle: department.isNotEmpty
+          ? '$designation • $department'
+          : designation,
+      recognition: _nonEmpty(user.recognition?.label),
+      nameSize: helpOnly ? 26 : 24,
+      subtitleSize: helpOnly ? 15 : 16,
+    );
+    // Room between whatever came last and the log-out, whichever kind of
+    // profile this is; the privacy footnote under it is deliberately small —
+    // a note about this person's own account, not company policy.
+    final footer = [
+      const SizedBox(height: 24),
+      _LogoutButton(onPressed: widget.onLogout),
+      const SizedBox(height: 14),
+      _PrivacyAndDataRow(session: session),
+      const SizedBox(height: 24),
+    ];
+
+    final content = switch (tabs[selected]) {
+      ProfileTab.request => _requestTab(dashboard),
+      ProfileTab.attendance => [
+        _AttendanceCard(
+          date: today,
+          present: todayRecord?.punchIn != null,
+          punchIn: todayRecord?.punchIn,
+          punchOut: todayRecord?.punchOut,
+          onPunch: dashboard.shift.punchesFromApp
+              ? (type) => _startProfilePunch(context, bloc, dashboard, type)
+              : null,
+          autoPresent: dashboard.shift.markedPresentAutomatically,
+          singlePunch: dashboard.shift.singlePunchDay,
+          fullDayHours: dashboard.shift.minFullDayHours,
+        ),
+        const SizedBox(height: 33),
+        _ProfileAttendanceCalendar(dashboard: dashboard),
+      ],
+      ProfileTab.workDetail => [
+        _WorkDetailRow(
+          iconAsset: 'assets/icons/profile_email.svg',
+          label: 'Email',
+          value: user.email,
+        ),
+        if (_nonEmpty(user.joiningDate) != null)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_joining_date.svg',
+            label: 'Joining Date',
+            value: _formatDate(user.joiningDate),
+          ),
+        _WorkDetailRow(
+          iconAsset: 'assets/icons/work_department.svg',
+          label: 'Department',
+          value: department,
+        ),
+        if (reportsTo case final name?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_manager_head.svg',
+            label: 'Manager',
+            value: name,
+          ),
+        if (_nonEmpty(user.employmentType) case final type?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/work_employment_type.svg',
+            label: 'Employment Type',
+            value: _employmentTypeLabel(type),
+          ),
+        if (_nonEmpty(user.birthday) != null)
+          _WorkDetailRow(
+            icon: Icons.cake_outlined,
+            label: 'Date of birth',
+            value: _formatDate(user.birthday),
+          ),
+      ],
+      ProfileTab.orgChart => [
+        if (dashboard.myOrgChart.length > 1)
+          _OrgChartCard(
+            nodes: dashboard.myOrgChart,
+            selfName: user.name,
+            selfPhotoUrl: user.profilePhotoUrl,
+          )
+        else
+          const _ProfileTabNote(
+            'Your reporting line will show here once it is set up.',
+          ),
+      ],
+      ProfileTab.grow => [
+        _ProfileGrowTab(data: dashboard, bloc: bloc, managerName: reportsTo),
+      ],
+      ProfileTab.rank => [_RankHistory(service: _profileService)],
+      ProfileTab.counselor => [HelpProfileSection(session: session)],
+      // One's own documents are not loaded with the workspace.
+      ProfileTab.documentation => const <Widget>[],
+    };
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
@@ -610,261 +1197,42 @@ class _ProfileScreenState extends State<_ProfileScreen> {
               profilePhotoUrl: user.profilePhotoUrl,
               size: 30,
             ),
-            onNotifications: onNotifications,
-            onQuickCreate: onOpenComposer,
+            onNotifications: widget.onNotifications,
+            onQuickCreate: widget.onOpenComposer,
           ),
           // Titled as the design draws it (node 3106:49749); a teammate's
           // page is "Profile-Ananya", so the two are never mistaken.
           _ProfilePageTopBar(onBack: onBack, title: 'My Profile'),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 620),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(
+            // The profile reads as tabs (node 3074:45990): one thing at a
+            // time, rather than every section stacked. A company whose app is
+            // Help alone has none of them — the counsellor is the profile.
+            child: worksHere
+                ? _ProfileScrollFrame(
+                    hero: hero,
+                    tabs: [for (final tab in tabs) tab.label],
+                    selected: selected,
+                    onChanged: (index) => setState(() => _tab = index),
+                    footer: footer,
+                    children: content,
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 620),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SizedBox(
-                              width: 112,
-                              height: 112,
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  GestureDetector(
-                                    onTap: _changePhoto,
-                                    child: Container(
-                                      width: 112,
-                                      height: 112,
-                                      decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Color(0x1A000000),
-                                            blurRadius: 6,
-                                            offset: Offset(0, 4),
-                                          ),
-                                          BoxShadow(
-                                            color: Color(0x1A000000),
-                                            blurRadius: 4,
-                                            offset: Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          _ProfileAvatar(
-                                            initials: _initials(user.name),
-                                            profilePhotoUrl:
-                                                user.profilePhotoUrl,
-                                            size: 112,
-                                          ),
-                                          if (_uploadingPhoto)
-                                            const ColoredBox(
-                                              color: Color(0x66000000),
-                                              child: Center(
-                                                child: SizedBox(
-                                                  width: 28,
-                                                  height: 28,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2.5,
-                                                        color: Colors.white,
-                                                      ),
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    left: 88,
-                                    top: 88,
-                                    child: Container(
-                                      width: 20,
-                                      height: 20,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF00C950),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: const Color(0xFFF7F7F7),
-                                          width: 3.34,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: -2,
-                                    top: -2,
-                                    child: GestureDetector(
-                                      onTap: _changePhoto,
-                                      child: Container(
-                                        width: 32,
-                                        height: 32,
-                                        decoration: BoxDecoration(
-                                          color: MColors.terra,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: const Color(0xFFF7F7F7),
-                                            width: 2.5,
-                                          ),
-                                        ),
-                                        // The same camera as the onboarding
-                                        // screen's "Add or take a photo".
-                                        child: Center(
-                                          child: SvgPicture.asset(
-                                            'assets/onboarding/camera.svg',
-                                            width: 16,
-                                            height: 16,
-                                            colorFilter: const ColorFilter.mode(
-                                              Colors.white,
-                                              BlendMode.srcIn,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              user.name,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: const Color(0xFF222222),
-                                fontSize: !worksHere && helpHere ? 26 : 24,
-                                height: 32 / 24,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              !worksHere && helpHere && department.isNotEmpty
-                                  ? '$designation • $department'
-                                  : designation,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: MColors.inkSoft,
-                                fontSize: !worksHere && helpHere ? 15 : 16,
-                                fontWeight: !worksHere && helpHere
-                                    ? FontWeight.w400
-                                    : FontWeight.w600,
-                              ),
-                            ),
+                            hero,
+                            const SizedBox(height: 6),
+                            if (helpHere) HelpProfileSection(session: session),
+                            ...footer,
                           ],
                         ),
                       ),
-                      const SizedBox(height: 22),
-                      if (!worksHere && helpHere)
-                        HelpProfileSection(session: session),
-                      // The profile reads as tabs (node 3074:45990): one
-                      // thing at a time, rather than every section stacked.
-                      if (worksHere) ...[
-                        _ProfileTabs(
-                          labels: profileTabs,
-                          selected: _tab.clamp(0, profileTabs.length - 1),
-                          onChanged: (index) => setState(() => _tab = index),
-                        ),
-                        const SizedBox(height: 16),
-                        ...switch (profileTabs[_tab.clamp(
-                          0,
-                          profileTabs.length - 1,
-                        )]) {
-                          'Requests' => _requestTab(dashboard),
-                          'Attendance' => [
-                            _AttendanceCard(
-                              date: today,
-                              present: todayRecord?.punchIn != null,
-                              punchIn: todayRecord?.punchIn,
-                              punchOut: todayRecord?.punchOut,
-                              onPunch: dashboard.shift.punchesFromApp
-                                  ? (type) => _startProfilePunch(
-                                      context,
-                                      bloc,
-                                      dashboard,
-                                      type,
-                                    )
-                                  : null,
-                              autoPresent:
-                                  dashboard.shift.markedPresentAutomatically,
-                              singlePunch: dashboard.shift.singlePunchDay,
-                            ),
-                            const SizedBox(height: 24),
-                            _ProfileAttendanceCalendar(dashboard: dashboard),
-                          ],
-                          'Details' => [
-                            _WorkDetailRow(
-                              iconAsset: 'assets/icons/profile_email.svg',
-                              label: 'Email',
-                              value: user.email,
-                            ),
-                            if (_nonEmpty(user.joiningDate) != null)
-                              _WorkDetailRow(
-                                iconAsset:
-                                    'assets/icons/profile_joining_date.svg',
-                                label: 'Joining Date',
-                                value: _formatDate(user.joiningDate),
-                              ),
-                            _WorkDetailRow(
-                              iconAsset: 'assets/icons/work_department.svg',
-                              label: 'Department',
-                              value: department,
-                            ),
-                            if (reportsTo case final name?)
-                              _WorkDetailRow(
-                                iconAsset: 'assets/icons/work_manager.svg',
-                                label: 'Manager',
-                                value: name,
-                              ),
-                            if (_nonEmpty(user.birthday) != null)
-                              _WorkDetailRow(
-                                icon: Icons.cake_outlined,
-                                label: 'Date of birth',
-                                value: _formatDate(user.birthday),
-                              ),
-                          ],
-                          'Org chart' => [
-                            if (dashboard.myOrgChart.length > 1)
-                              _OrgChartCard(nodes: dashboard.myOrgChart)
-                            else
-                              const _ProfileTabNote(
-                                'Your reporting line will show here once it '
-                                'is set up.',
-                              ),
-                          ],
-                          'Grow' => [
-                            _ProfileGrowTab(
-                              data: dashboard,
-                              bloc: bloc,
-                              managerName: reportsTo,
-                            ),
-                          ],
-                          _ => [HelpProfileSection(session: session)],
-                        },
-                      ],
-                      // Room between whatever came last and the log-out,
-                      // whichever kind of profile this is.
-                      const SizedBox(height: 24),
-                      _LogoutButton(onPressed: onLogout),
-                      // Below the logout button and deliberately small: it is
-                      // a footnote about this person's own account, not a
-                      // company policy competing for attention.
-                      const SizedBox(height: 14),
-                      _PrivacyAndDataRow(session: session),
-                      const SizedBox(height: 24),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ),
           ),
           _BottomTabs(state: bloc.state, bloc: bloc, onBeforeChange: onBack),
         ],
@@ -873,9 +1241,76 @@ class _ProfileScreenState extends State<_ProfileScreen> {
   }
 }
 
+// ── Requests ─────────────────────────────────────────────────────────────────
+
+/// The 3D icons the request cards wear (node 3070:45251).
+abstract final class _RequestIcons {
+  static const leave = 'assets/icons/team/calendar.png';
+  static const correction = 'assets/icons/request_correction.png';
+  static const reimbursement = 'assets/icons/request_reimbursement_money.png';
+
+  /// Not drawn on the profile; the Quick Actions overtime card's hourglass,
+  /// from the same family.
+  static const overtime = 'assets/icons/action_card_overtime_hourglass.png';
+}
+
+/// One's own requests as cards, newest first: leave, overtime, corrections
+/// and reimbursement claims, each with where it stands.
+List<(DateTime date, Widget card)> _myRequestEntries(ManagerDashboard data) {
+  return <(DateTime date, Widget card)>[
+    for (final leave in data.myLeaves)
+      (
+        leave.requestedOn,
+        _ProfileRequestCard(
+          iconAsset: _RequestIcons.leave,
+          title: '${leave.type} leave request',
+          rows: [
+            ('Date:', _leaveDateRange(leave)),
+            ('Comment:', leave.reason),
+          ],
+          decision: leave.decision,
+          readOnly: true,
+        ),
+      ),
+    for (final request in data.myOvertime)
+      (
+        request.requestedOn,
+        _ProfileRequestCard(
+          iconAsset: _RequestIcons.overtime,
+          title: 'Overtime Request',
+          rows: [
+            ('Date:', _managerDate(request.workDate)),
+            ('Overtime hrs:', request.hoursLabel),
+            (
+              'Comment:',
+              request.note.isEmpty ? request.timeRangeLabel : request.note,
+            ),
+          ],
+          decision: request.decision,
+          readOnly: true,
+        ),
+      ),
+    for (final request in data.regularizations)
+      (
+        request.createdAt,
+        _ProfileRequestCard(
+          iconAsset: _RequestIcons.correction,
+          title: request.heading,
+          rows: _attendanceRequestRows(request),
+          decision: request.decision,
+          readOnly: true,
+        ),
+      ),
+    for (final claim in data.myReimbursements)
+      (claim.createdAt, _ProfileClaimCard(claim: claim, showStatus: true)),
+  ]..sort((a, b) => b.$1.compareTo(a.$1));
+}
+
+/// A request on a profile (node 3070:45251): its icon, what it is, the
+/// details, and — when it is the viewer's to decide — Approve and Reject.
 class _ProfileRequestCard extends StatelessWidget {
   const _ProfileRequestCard({
-    required this.icon,
+    required this.iconAsset,
     required this.title,
     required this.rows,
     required this.decision,
@@ -886,7 +1321,7 @@ class _ProfileRequestCard extends StatelessWidget {
     this.declining = false,
   });
 
-  final IconData icon;
+  final String iconAsset;
   final String title;
   final List<(String label, String value)> rows;
   final LeaveDecision decision;
@@ -906,14 +1341,7 @@ class _ProfileRequestCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .1),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: ProfileStyle.line, width: 1.114),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -921,16 +1349,7 @@ class _ProfileRequestCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F7F9),
-                  border: Border.all(color: const Color(0xFFEBEBEB)),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 20, color: const Color(0xFF222222)),
-              ),
+              _RequestIcon(asset: iconAsset),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -941,38 +1360,35 @@ class _ProfileRequestCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(
-                              color: Color(0xFF222222),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
+                            style: ProfileStyle.sora(
+                              16,
+                              weight: FontWeight.w700,
+                              height: 24,
                             ),
                           ),
                         ),
                         if (readOnly) _ProfileStatusPill(decision: decision),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    for (final row in rows)
+                    for (final (index, row) in rows.indexed)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
+                        padding: EdgeInsets.only(top: index == 0 ? 0 : 4),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               row.$1,
-                              style: const TextStyle(
-                                color: Color(0xFF717171),
-                                fontSize: 14,
+                              style: ProfileStyle.sora(
+                                14,
+                                color: ProfileStyle.tertiary,
+                                height: 20,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 row.$2,
-                                style: const TextStyle(
-                                  color: Color(0xFF222222),
-                                  fontSize: 14,
-                                ),
+                                style: ProfileStyle.sora(14, height: 20),
                               ),
                             ),
                           ],
@@ -984,34 +1400,166 @@ class _ProfileRequestCard extends StatelessWidget {
             ],
           ),
           if (!readOnly) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
-                  child: _TeamDecisionButton(
+                  child: _ProfileDecisionButton(
                     label: 'Approve',
-                    background: busy ? MColors.line : MColors.approveTint,
-                    foreground: busy ? MColors.inkFaint : MColors.approveInk,
+                    background: busy ? MColors.line : const Color(0xFFDAFFD3),
+                    foreground: busy
+                        ? MColors.inkFaint
+                        : const Color(0xFF34C759),
                     onTap: busy ? null : onApprove,
                     busy: approving,
-                    radius: 8,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _TeamDecisionButton(
+                  child: _ProfileDecisionButton(
                     label: 'Reject',
-                    background: busy ? MColors.line : MColors.rejectTint,
-                    foreground: busy ? MColors.inkFaint : MColors.rejectInk,
+                    background: busy ? MColors.line : const Color(0xFFFDDBDB),
+                    foreground: busy
+                        ? MColors.inkFaint
+                        : const Color(0xFFFF383C),
                     onTap: busy ? null : onReject,
                     busy: declining,
-                    radius: 8,
                   ),
                 ),
               ],
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A reimbursement claim (node 3070:45300): what it was for and how much.
+/// HR decides these from the dashboard, so a manager only sees them here.
+class _ProfileClaimCard extends StatelessWidget {
+  const _ProfileClaimCard({required this.claim, this.showStatus = false});
+
+  final ReimbursementClaim claim;
+
+  /// On one's own profile, where it stands.
+  final bool showStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final what = _nonEmpty(claim.note) ?? claim.category;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: ProfileStyle.line),
+      ),
+      child: Row(
+        children: [
+          const _RequestIcon(asset: _RequestIcons.reimbursement),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reimbursement',
+                  style: ProfileStyle.sora(
+                    14,
+                    weight: FontWeight.w700,
+                    height: 20,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$what • ${_rupees(claim.amount)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ProfileStyle.sora(
+                    14,
+                    color: ProfileStyle.tertiary,
+                    height: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (showStatus) ...[
+            const SizedBox(width: 8),
+            _ProfileStatusPill(
+              decision: switch (claim.status) {
+                'Approved' || 'Paid' => LeaveDecision.approved,
+                'Declined' => LeaveDecision.declined,
+                _ => LeaveDecision.pending,
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The 40pt disc a request's 3D icon sits in.
+class _RequestIcon extends StatelessWidget {
+  const _RequestIcon({required this.asset});
+
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: const Color(0xFFF7F7F9),
+      shape: BoxShape.circle,
+      border: Border.all(color: ProfileStyle.line),
+    ),
+    // Drawn at 20pt; decoded near that rather than at the source's 1024.
+    child: Image.asset(asset, width: 20, height: 20, cacheWidth: 80),
+  );
+}
+
+/// Approve or Reject on a profile's request card (node 3070:45271): the
+/// Team tab's own decision button — a tint behind coloured text, a spinner
+/// while the decision is on its way — set in Sora on the design's soft shadow.
+class _ProfileDecisionButton extends StatelessWidget {
+  const _ProfileDecisionButton({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.onTap,
+    this.busy = false,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+  final VoidCallback? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [
+          BoxShadow(color: Color(0x1A000000), blurRadius: 1.5, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0x1A000000), blurRadius: 1, offset: Offset(0, 1)),
+        ],
+      ),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: 'Sora', height: 20 / 14),
+        child: _TeamDecisionButton(
+          label: label,
+          background: background,
+          foreground: foreground,
+          onTap: onTap,
+          busy: busy,
+          radius: 8,
+        ),
       ),
     );
   }
@@ -1060,6 +1608,8 @@ class _ProfileStatusPill extends StatelessWidget {
   }
 }
 
+// ── Attendance ───────────────────────────────────────────────────────────────
+
 /// Opens the punch screen from a profile, and reloads the month after it.
 ///
 /// The profile has no state of its own to hang this on, so it is a function
@@ -1097,16 +1647,18 @@ Future<void> _startProfilePunch(
   }
 }
 
+/// Today on the Attendance tab (node 3198:20917): the date and whether they
+/// are in, how far into the working day they are, and the two punches.
 class _AttendanceCard extends StatelessWidget {
   const _AttendanceCard({
     required this.date,
     required this.present,
     required this.punchIn,
     required this.punchOut,
-    this.onViewCalendar,
     this.onPunch,
     this.autoPresent = false,
     this.singlePunch = false,
+    this.fullDayHours = 0,
   });
 
   final DateTime date;
@@ -1127,9 +1679,20 @@ class _AttendanceCard extends StatelessWidget {
   /// One punch makes the day. There is no punch-out to take or to show.
   final bool singlePunch;
 
-  /// Only the manager's read-only view of a report links through to the full
-  /// calendar; the signed-in user's own profile omits it.
-  final VoidCallback? onViewCalendar;
+  /// The hours a full day asks for, from their shift; the bar fills against
+  /// it. Zero leaves the bar out.
+  final double fullDayHours;
+
+  /// How much of a full day is behind them: from the punch-in to the
+  /// punch-out, or to now while they are still in.
+  double get _dayDone {
+    final start = punchIn;
+    if (start == null || fullDayHours <= 0) return 0;
+    if (singlePunch) return 1;
+    final end = punchOut ?? DateTime.now();
+    final worked = end.difference(start).inMinutes / (fullDayHours * 60);
+    return worked.clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1138,87 +1701,143 @@ class _AttendanceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF0571A6), width: 1.5),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2)),
+        ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F9),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: ProfileStyle.line),
+                ),
+                child: SvgPicture.asset(
+                  'assets/icons/attendance_card_small_icon.svg',
+                  width: 16,
+                  height: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Attendance',
+                  style: ProfileStyle.sora(
+                    16,
+                    weight: FontWeight.w600,
+                    color: ProfileStyle.inkStrong,
+                    height: 16.2,
+                    spacing: -0.16,
+                  ),
+                ),
+              ),
+              SvgPicture.asset(
+                'assets/icons/attendance_card_chevron.svg',
+                width: 20,
+                height: 20,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  '${_shortAttendanceDate(date)}, ${_fullWeekday(date)}',
-                  style: const TextStyle(
-                    color: MColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
+                  '${date.day.toString().padLeft(2, '0')} '
+                  '${_monthName(date.month)}, ${_fullWeekday(date)}',
+                  style: ProfileStyle.sora(
+                    14,
+                    weight: FontWeight.w600,
+                    color: ProfileStyle.secondary,
+                    height: 16.2,
+                    spacing: -0.16,
                   ),
                 ),
               ),
-              _AttendanceStatusDot(present: present),
+              _PresencePill(present: present || autoPresent),
             ],
           ),
           if (onPunch case final punch?) ...[
-            const SizedBox(height: 16),
-            if (punchIn == null)
+            if (punchIn == null) ...[
+              const SizedBox(height: 16),
               SlideToPunch(
                 label: 'Slide to Punch In',
                 onComplete: () => punch('in'),
-              )
-            else if (!singlePunch && punchOut == null)
+              ),
+            ] else if (!singlePunch && punchOut == null) ...[
+              const SizedBox(height: 16),
               SlideToPunch.filled(
                 label: 'Slide to Punch Out',
                 color: const Color(0xFF34A853),
                 onComplete: () => punch('out'),
               ),
+            ],
           ],
-          const SizedBox(height: 16),
-          if (autoPresent)
-            const Text(
-              'Present by default',
-              style: TextStyle(
-                color: MColors.inkSoft,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: _PunchColumn(
-                    label: 'PUNCH-IN',
-                    value: _attendanceClock(punchIn),
-                  ),
-                ),
-                Expanded(
-                  child: _PunchColumn(
-                    label: 'PUNCH-OUT',
-                    // Not required where HR's shift asks for one punch.
-                    value: singlePunch ? 'NR' : _attendanceClock(punchOut),
-                  ),
-                ),
-              ],
-            ),
-          if (onViewCalendar case final open?) ...[
+          if (autoPresent) ...[
             const SizedBox(height: 16),
-            InkWell(
-              onTap: open,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SvgPicture.asset(
-                    'assets/icons/calendar_view_link.svg',
-                    width: 16,
-                    height: 16,
+            Text(
+              'Present by default',
+              style: ProfileStyle.sora(
+                13,
+                weight: FontWeight.w500,
+                color: ProfileStyle.tertiary,
+              ),
+            ),
+          ] else ...[
+            if (fullDayHours > 0) ...[
+              const SizedBox(height: 24),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: SizedBox(
+                  height: 6,
+                  child: Stack(
+                    children: [
+                      const Positioned.fill(
+                        child: ColoredBox(color: ProfileStyle.line),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: _dayDone,
+                        heightFactor: 1,
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.all(Radius.circular(99)),
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF0571A6), Color(0xFF0EA5E9)],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'View Calendar',
-                    style: TextStyle(
-                      color: Color(0xFF0571A6),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+            ] else
+              const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SizedBox(
+                    width: 93,
+                    child: _PunchTime(
+                      label: 'PUNCH-IN',
+                      value: _cardClock(punchIn),
+                    ),
+                  ),
+                  Container(width: 1, height: 32, color: ProfileStyle.line),
+                  SizedBox(
+                    width: 93,
+                    child: _PunchTime(
+                      label: 'PUNCH-OUT',
+                      // Not required where HR's shift asks for one punch.
+                      value: singlePunch ? 'NR' : _cardClock(punchOut),
                     ),
                   ),
                 ],
@@ -1231,8 +1850,45 @@ class _AttendanceCard extends StatelessWidget {
   }
 }
 
-class _AttendanceStatusDot extends StatelessWidget {
-  const _AttendanceStatusDot({required this.present});
+/// '09:42 AM', as today's card writes a punch (node 3198:20949); a dash
+/// where there is none.
+String _cardClock(DateTime? value) => value == null
+    ? '—'
+    : '${(value.hour % 12 == 0 ? 12 : value.hour % 12).toString().padLeft(2, '0')}:'
+          '${value.minute.toString().padLeft(2, '0')} ${value.hour >= 12 ? 'PM' : 'AM'}';
+
+class _PunchTime extends StatelessWidget {
+  const _PunchTime({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: ProfileStyle.sora(
+          10,
+          weight: FontWeight.w500,
+          color: ProfileStyle.tertiary,
+          height: 15,
+          spacing: 0.25,
+        ),
+      ),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: ProfileStyle.sora(14, weight: FontWeight.w600, height: 20),
+      ),
+    ],
+  );
+}
+
+/// "● Present", or "● Not Punched In" in grey.
+class _PresencePill extends StatelessWidget {
+  const _PresencePill({required this.present});
 
   final bool present;
 
@@ -1258,10 +1914,11 @@ class _AttendanceStatusDot extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             present ? 'Present' : 'Not Punched In',
-            style: TextStyle(
+            style: ProfileStyle.sora(
+              12,
+              weight: FontWeight.w600,
               color: text,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              height: 16,
             ),
           ),
         ],
@@ -1270,184 +1927,382 @@ class _AttendanceStatusDot extends StatelessWidget {
   }
 }
 
-class _RequestsSection extends StatefulWidget {
-  const _RequestsSection({required this.title, required this.entries});
+// ── Where they sit, and their documents ──────────────────────────────────────
 
-  final String title;
-  final List<(DateTime date, Widget card)> entries;
+/// The reporting line (node 3106:49385): the chain above in a single column,
+/// the person themselves highlighted with their photo, and whoever reports to
+/// them hanging below. Anyone on it opens their own profile.
+class _OrgChartCard extends StatelessWidget {
+  const _OrgChartCard({
+    required this.nodes,
+    required this.selfName,
+    this.selfPhotoUrl,
+  });
 
-  @override
-  State<_RequestsSection> createState() => _RequestsSectionState();
-}
-
-class _RequestsSectionState extends State<_RequestsSection> {
-  // Collapsed by default so a long request history doesn't bury the rest of
-  // the profile.
-  bool _expanded = false;
+  final List<OrgChartNode> nodes;
+  final String selfName;
+  final String? selfPhotoUrl;
 
   @override
   Widget build(BuildContext context) {
+    final reports = nodes.where((item) => item.isReport).length;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    style: const TextStyle(
-                      color: MColors.ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+        for (final (index, node) in nodes.indexed) ...[
+          if (index > 0 && !(node.isReport && !nodes[index - 1].isReport))
+            // The line that joins one card to the next.
+            Padding(
+              padding: EdgeInsets.only(left: node.isReport ? 71 : 53),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  width: 2,
+                  height: 16,
+                  color: const Color(0xFFDDDDDD),
                 ),
-                AnimatedRotation(
-                  turns: _expanded ? 0 : 0.5,
-                  duration: const Duration(milliseconds: 180),
-                  child: const Icon(
-                    Icons.expand_more_rounded,
-                    color: MColors.ink,
-                    size: 20,
-                  ),
+              ),
+            ),
+          if (node.isReport && index > 0 && !nodes[index - 1].isReport)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 16, 0, 8),
+              child: Text(
+                reports == 1 ? 'REPORTS TO THEM' : '$reports REPORT TO THEM',
+                style: ProfileStyle.sora(
+                  10,
+                  weight: FontWeight.w700,
+                  color: const Color(0xFF929292),
+                  spacing: .5,
                 ),
-              ],
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.only(left: node.isReport ? 18 : 0),
+            child: _OrgChartNodeCard(
+              node: node,
+              photo: node.isSelf
+                  ? ProfilePhoto(name: selfName, url: selfPhotoUrl, size: 40)
+                  : null,
+              onTap: node.isSelf || node.userId.isEmpty
+                  ? null
+                  : () => openPersonProfile(node.userId),
             ),
           ),
-        ),
-        if (_expanded) ...[
-          const SizedBox(height: 6),
-          for (final entry in widget.entries) ...[
-            entry.$2,
-            const SizedBox(height: 12),
-          ],
         ],
       ],
     );
   }
 }
 
-class _MyRequestsSection extends StatelessWidget {
-  const _MyRequestsSection({required this.data});
+class _OrgChartNodeCard extends StatelessWidget {
+  const _OrgChartNodeCard({required this.node, this.photo, this.onTap});
 
-  final ManagerDashboard data;
-
-  /// Every request of theirs as a card, newest first.
-  static List<(DateTime date, Widget card)> entriesFor(ManagerDashboard data) {
-    final myRequests = <(DateTime date, Widget card)>[
-      for (final leave in data.myLeaves)
-        (
-          leave.requestedOn,
-          _ProfileRequestCard(
-            icon: Icons.calendar_month_rounded,
-            title: '${leave.type} leave request',
-            rows: [
-              ('Date:', _leaveDateRange(leave)),
-              ('Comment:', leave.reason),
-            ],
-            decision: leave.decision,
-            readOnly: true,
-          ),
-        ),
-      for (final request in data.myOvertime)
-        (
-          request.requestedOn,
-          _ProfileRequestCard(
-            icon: Icons.schedule_rounded,
-            title: 'Overtime Request',
-            rows: [
-              ('Date:', _managerDate(request.workDate)),
-              ('Overtime hrs:', request.hoursLabel),
-              (
-                'Comment:',
-                request.note.isEmpty ? request.timeRangeLabel : request.note,
-              ),
-            ],
-            decision: request.decision,
-            readOnly: true,
-          ),
-        ),
-      for (final request in data.regularizations)
-        (
-          request.createdAt,
-          _ProfileRequestCard(
-            icon: request.isOutOfLocation
-                ? Icons.location_off_rounded
-                : Icons.edit_calendar_rounded,
-            title: request.heading,
-            rows: _attendanceRequestRows(request),
-            decision: request.decision,
-            readOnly: true,
-          ),
-        ),
-    ]..sort((a, b) => b.$1.compareTo(a.$1));
-    return myRequests;
-  }
+  final OrgChartNode node;
+  final Widget? photo;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final myRequests = entriesFor(data);
-    if (myRequests.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 18),
-      child: _RequestsSection(title: 'My Requests', entries: myRequests),
+    final self = node.isSelf;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Color(0x1A000000), blurRadius: 3, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Material(
+        color: self ? const Color(0xFFF7F7FF) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: self ? const Color(0xFFBEEDFF) : const Color(0xFFF7F7F9),
+            width: 1.114,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(13.114),
+            child: Row(
+              children: [
+                photo ??
+                    Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F7F7),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFF7F7F9),
+                          width: 1.114,
+                        ),
+                      ),
+                      child: SvgPicture.asset(
+                        'assets/icons/profile_org_person.svg',
+                        width: 20,
+                        height: 20,
+                      ),
+                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        node.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ProfileStyle.sora(
+                          14,
+                          weight: FontWeight.w700,
+                          height: 20,
+                        ),
+                      ),
+                      if (node.designation.isNotEmpty)
+                        Text(
+                          node.designation.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ProfileStyle.sora(
+                            11,
+                            weight: FontWeight.w600,
+                            color: ProfileStyle.tertiary,
+                            height: 16.5,
+                            spacing: 0.55,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _ProfilePageTopBar extends StatelessWidget {
-  const _ProfilePageTopBar({
-    this.onCalendarTap,
-    this.onBack,
-    this.title = 'Profile',
-  });
+/// The documents HR has filed for someone (node 3106:50795). A tap opens one.
+class _DocumentationList extends StatelessWidget {
+  const _DocumentationList({required this.documents});
 
-  final VoidCallback? onCalendarTap;
+  final List<EmployeeDocument> documents;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, document) in documents.indexed)
+          Padding(
+            padding: EdgeInsets.only(top: index == 0 ? 0 : 20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: document.url.isEmpty
+                  ? null
+                  : () async {
+                      final opened = await openExternalLink(document.url);
+                      if (!opened && context.mounted) {
+                        showAppToast(context, 'Could not open this document.');
+                      }
+                    },
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF7F7F7),
+                      shape: BoxShape.circle,
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/icons/document_file.svg',
+                      width: 20,
+                      height: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          document.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ProfileStyle.sora(
+                            14,
+                            weight: FontWeight.w500,
+                            height: 20,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            for (final (index, part) in [
+                              if (document.uploadedAt case final uploaded?)
+                                _documentDate(uploaded),
+                              ?_nonEmpty(document.type),
+                            ].indexed) ...[
+                              if (index > 0) ...[
+                                const SizedBox(width: 8),
+                                // Drawn on a 24pt line from the top of the
+                                // 20pt row, so it sits 2pt low; the row keeps
+                                // its 20.
+                                Transform.translate(
+                                  offset: const Offset(0, 2),
+                                  child: Text(
+                                    '•',
+                                    style: ProfileStyle.sora(
+                                      14,
+                                      color: ProfileStyle.tertiary,
+                                      height: 20,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  part,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: ProfileStyle.sora(
+                                    12,
+                                    color: ProfileStyle.tertiary,
+                                    height: 20,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The bar under the app header: back, and whose profile this is
+/// (node 3106:50080).
+class _ProfilePageTopBar extends StatelessWidget {
+  const _ProfilePageTopBar({this.onBack, this.title = 'Profile'});
+
   final VoidCallback? onBack;
   final String title;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
-      decoration: const BoxDecoration(color: Color(0xFFF7F7F9)),
+      padding: const EdgeInsets.all(16),
+      color: const Color(0xFFF7F7F9),
       child: Row(
         children: [
-          RoundIconButton(
-            onTap: onBack ?? () => Navigator.of(context).pop(),
-            child: SvgPicture.asset(
-              'assets/icons/chevron_left_small.svg',
-              width: 18,
-              height: 18,
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 1.5,
+                  offset: Offset(0, 1),
+                ),
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 1,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.white,
+              shape: const CircleBorder(
+                side: BorderSide(color: ProfileStyle.line, width: 1.114),
+              ),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onBack ?? () => Navigator.of(context).pop(),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: SvgPicture.asset(
+                      'assets/icons/chevron_back.svg',
+                      width: 20,
+                      height: 20,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
           Expanded(
             child: Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: MColors.ink,
-                fontSize: 16.5,
-                fontWeight: FontWeight.w800,
-              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ProfileStyle.sora(16, weight: FontWeight.w700, height: 24),
             ),
           ),
-          if (onCalendarTap != null)
-            RoundIconButton(
-              onTap: onCalendarTap!,
-              child: SvgPicture.asset(
-                'assets/icons/calendar_header.svg',
-                width: 20,
-                height: 20,
-              ),
-            )
-          else
-            const SizedBox(width: 38),
+          const SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+}
+
+/// The month on show with the arrows either side of it (node 3198:20958),
+/// centred rather than pushed to the edges. A null [onNext] is a month that
+/// has not happened yet: the arrow stays, faded.
+class _MonthNav extends StatelessWidget {
+  const _MonthNav({
+    required this.label,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final String label;
+  final VoidCallback onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    // The arrows are 32pt targets around a 20pt glyph, so 14 here is the
+    // design's 20 between glyph and month.
+    return SizedBox(
+      height: 40,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AttendanceCalendarArrow(
+            onPressed: onPrevious,
+            asset: 'assets/icons/calendar_chevron_prev.svg',
+          ),
+          const SizedBox(width: 14),
+          Text(
+            label,
+            style: ProfileStyle.sora(16, color: const Color(0xFF2A2A2A)),
+          ),
+          const SizedBox(width: 14),
+          Opacity(
+            opacity: onNext == null ? .3 : 1,
+            child: AttendanceCalendarArrow(
+              onPressed: onNext,
+              asset: 'assets/icons/calendar_chevron_next.svg',
+            ),
+          ),
         ],
       ),
     );
@@ -1635,33 +2490,11 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         widget.todayCard(_policy),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            AttendanceCalendarArrow(
-              onPressed: () => _changeMonth(-1),
-              asset: 'assets/icons/calendar_chevron_prev.svg',
-            ),
-            Expanded(
-              child: Text(
-                '${_monthName(_month.month)} ${_month.year}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: Color(0xFF2A2A2A),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-            Opacity(
-              opacity: canGoForward ? 1 : .3,
-              child: AttendanceCalendarArrow(
-                onPressed: canGoForward ? () => _changeMonth(1) : null,
-                asset: 'assets/icons/calendar_chevron_next.svg',
-              ),
-            ),
-          ],
+        const SizedBox(height: 33),
+        _MonthNav(
+          label: '${_growMonthsLong[_month.month - 1]} ${_month.year}',
+          onPrevious: () => _changeMonth(-1),
+          onNext: canGoForward ? () => _changeMonth(1) : null,
         ),
         const SizedBox(height: 16),
         if (_loading)
@@ -1687,7 +2520,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
               _selected = null;
             }),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
           if (_filter case final filter?) ...[
             if (!days.any((day) => matchesAttendanceFilter(day, filter)))
               const _ProfileTabNote('Nothing under this heading this month.'),
@@ -1744,15 +2577,10 @@ ImageProvider _profileImage(String url) {
 }
 
 class _TeamMemberPhoto extends StatelessWidget {
-  const _TeamMemberPhoto({
-    required this.member,
-    required this.size,
-    this.showStatus = false,
-  });
+  const _TeamMemberPhoto({required this.member, required this.size});
 
   final TeamMember member;
   final double size;
-  final bool showStatus;
 
   Widget _photo() {
     final url = member.photoUrl;
@@ -1778,72 +2606,10 @@ class _TeamMemberPhoto extends StatelessWidget {
     );
   }
 
+  // The dot that says whether they are in is the profile's to draw
+  // (`_HeroAvatar`), and only where their attendance is the viewer's to see.
   @override
-  Widget build(BuildContext context) {
-    final photo = _photo();
-    if (!showStatus) return photo;
-    final present = member.todayStatus == TeamPresenceStatus.present;
-    final dotSize = size * .18;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          photo,
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: dotSize,
-              height: dotSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: present
-                    ? const Color(0xFF00C950)
-                    : const Color(0xFFDDDDDD),
-                border: Border.all(color: Colors.white, width: dotSize * .18),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PunchColumn extends StatelessWidget {
-  const _PunchColumn({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: MColors.inkFaint,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: .6,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: MColors.ink,
-            fontSize: 14.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _photo();
 }
 
 class _ProfileAvatar extends StatelessWidget {
@@ -1911,13 +2677,14 @@ class _ProfileTabs extends StatelessWidget {
   Widget _tab(int index, {required bool stretched}) => InkWell(
     onTap: () => onChanged(index),
     child: Container(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 13),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
             color: index == selected
                 ? const Color(0xFF222222)
                 : Colors.transparent,
+            width: 1.114,
           ),
         ),
       ),
@@ -2149,40 +2916,18 @@ class _ProfileAttendanceCalendarState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            AttendanceCalendarArrow(
-              onPressed: () => setState(() {
-                _month = DateTime(_month.year, _month.month - 1);
-                _selected = null;
-              }),
-              asset: 'assets/icons/calendar_chevron_prev.svg',
-            ),
-            Expanded(
-              child: Text(
-                '${months[_month.month - 1]} ${_month.year}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: Color(0xFF2A2A2A),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-            Opacity(
-              opacity: canGoForward ? 1 : .3,
-              child: AttendanceCalendarArrow(
-                onPressed: canGoForward
-                    ? () => setState(() {
-                        _month = DateTime(_month.year, _month.month + 1);
-                        _selected = null;
-                      })
-                    : null,
-                asset: 'assets/icons/calendar_chevron_next.svg',
-              ),
-            ),
-          ],
+        _MonthNav(
+          label: '${months[_month.month - 1]} ${_month.year}',
+          onPrevious: () => setState(() {
+            _month = DateTime(_month.year, _month.month - 1);
+            _selected = null;
+          }),
+          onNext: canGoForward
+              ? () => setState(() {
+                  _month = DateTime(_month.year, _month.month + 1);
+                  _selected = null;
+                })
+              : null,
         ),
         const SizedBox(height: 16),
         AttendanceFilterChips(
@@ -2200,7 +2945,7 @@ class _ProfileAttendanceCalendarState
             _selected = null;
           }),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 28),
         // A heading opens the days it covers, the same list Quick Actions
         // shows (node 3214:40887); without one the month is the calendar.
         if (_filter case final filter?) ...[
@@ -2297,125 +3042,6 @@ class _ProfileAttendanceCalendarState
           ),
         ),
       );
-}
-
-/// A report's profile as tabs (node 3070:44930): what is waiting on you,
-/// their day, their details, where they sit, their growth (where a manager
-/// also gives feedback), and their documents.
-class _MemberProfileTabs extends StatefulWidget {
-  const _MemberProfileTabs({
-    required this.member,
-    required this.canManage,
-    required this.openRequests,
-    required this.attendance,
-    required this.grow,
-  });
-
-  final TeamMember member;
-  final bool canManage;
-  final List<(DateTime date, Widget card)> openRequests;
-  final Widget attendance;
-  final Widget grow;
-
-  @override
-  State<_MemberProfileTabs> createState() => _MemberProfileTabsState();
-}
-
-class _MemberProfileTabsState extends State<_MemberProfileTabs> {
-  int _tab = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final member = widget.member;
-    // Anyone can be looked up: their day, their details and where they sit.
-    // Requests, growth and documents are a manager's business, so they show
-    // only for someone in the viewer's own reporting line.
-    final managed = member.inViewerChain;
-    final labels = [
-      'Details',
-      'Attendance',
-      if (managed && widget.canManage) 'Requests',
-      if (managed) 'Grow',
-      'Org chart',
-      if (managed && member.documents.isNotEmpty) 'Documentation',
-    ];
-    final tab = labels[_tab.clamp(0, labels.length - 1)];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ProfileTabs(
-          labels: labels,
-          selected: _tab.clamp(0, labels.length - 1),
-          onChanged: (index) => setState(() => _tab = index),
-        ),
-        const SizedBox(height: 16),
-        ...switch (tab) {
-          'Requests' =>
-            widget.openRequests.isEmpty
-                ? const [_ProfileTabNote('No open requests.')]
-                : [
-                    for (final entry in widget.openRequests)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: entry.$2,
-                      ),
-                  ],
-          'Attendance' => [widget.attendance],
-          'Details' => [
-            if (member.email.isNotEmpty)
-              _WorkDetailRow(
-                iconAsset: 'assets/icons/profile_email.svg',
-                label: 'Email',
-                value: member.email,
-              ),
-            if (member.employeeId case final id?)
-              _WorkDetailRow(
-                iconAsset: 'assets/icons/profile_employee_id.svg',
-                label: 'Employee ID',
-                value: id,
-              ),
-            if (member.joiningDate case final joined?)
-              _WorkDetailRow(
-                iconAsset: 'assets/icons/profile_joining_date.svg',
-                label: 'Joining Date',
-                value: _joiningDateLabel(joined),
-              ),
-            _WorkDetailRow(
-              iconAsset: 'assets/icons/work_department.svg',
-              label: 'Department',
-              value: member.team,
-            ),
-            if (_nonEmpty(member.managerName) case final name?)
-              _WorkDetailRow(
-                iconAsset: 'assets/icons/work_manager.svg',
-                label: 'Manager',
-                value: name,
-              ),
-            if (member.employmentType case final type?)
-              _WorkDetailRow(
-                iconAsset: 'assets/icons/work_employment_type.svg',
-                label: 'Employment Type',
-                value: _employmentTypeLabel(type),
-              ),
-            if (member.birthday case final born?)
-              _WorkDetailRow(
-                icon: Icons.cake_outlined,
-                label: 'Date of birth',
-                value: _joiningDateLabel(born),
-              ),
-          ],
-          'Org chart' => [
-            if (member.orgChart.length > 1)
-              _OrgChartCard(nodes: member.orgChart)
-            else
-              const _ProfileTabNote('No reporting line to show yet.'),
-          ],
-          'Grow' => [widget.grow],
-          _ => [_DocumentationCard(documents: member.documents)],
-        },
-      ],
-    );
-  }
 }
 
 class _PrivacyAndDataRow extends StatelessWidget {
@@ -2683,33 +3309,7 @@ String _formatDate(String? value) {
   return '${parsed.day.toString().padLeft(2, '0')} ${months[parsed.month - 1]} ${parsed.year}';
 }
 
-const _cardDecoration = BoxDecoration(
-  color: Colors.white,
-  borderRadius: BorderRadius.all(Radius.circular(16)),
-  border: Border.fromBorderSide(BorderSide(color: _ProfileColors.line)),
-  boxShadow: [
-    BoxShadow(color: Color(0x0A462D1C), blurRadius: 22, offset: Offset(0, 10)),
-  ],
-);
-
-class _ProfileText {
-  static const label = TextStyle(
-    color: _ProfileColors.inkFaint,
-    fontSize: 11,
-    fontWeight: FontWeight.w700,
-    letterSpacing: .55,
-  );
-
-  static const value = TextStyle(
-    color: _ProfileColors.ink,
-    fontSize: 14.5,
-    fontWeight: FontWeight.w700,
-  );
-}
-
 class _ProfileColors {
-  static const ink = Color(0xFF2A2420);
-  static const inkFaint = Color(0xFFA79D92);
   static const line = Color(0xFFF0E8DD);
   static const terra = Color(0xFFBE5A36);
   static const sage = Color(0xFF7E8B6E);
@@ -2730,11 +3330,17 @@ class _EmployeeGrowthPage extends StatefulWidget {
     this.memberId,
     this.embedded = false,
     this.onOpenProfile,
+    this.showTeamSections = false,
   });
 
   final String name;
   final String designation;
   final List<GrowthRecord> history;
+
+  /// Opened from the Team tab's Feedback section: the My Team / Requests /
+  /// Feedback bar stays above the page, as the design draws it (node
+  /// 3165:59012), and the feedback form it opens keeps it too.
+  final bool showTeamSections;
 
   /// True when rendered as the Grow tab itself (an individual contributor's
   /// only Grow view) rather than pushed as a route: the shell already provides
@@ -2827,10 +3433,14 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
 
     Future<void> openForm() => Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            _FeedbackFormPage(bloc: widget.bloc, memberId: widget.memberId!),
+        builder: (_) => _FeedbackFormPage(
+          bloc: widget.bloc,
+          memberId: widget.memberId!,
+          showTeamSections: widget.showTeamSections,
+        ),
       ),
     );
+    final dashboard = widget.bloc.state.dashboard ?? widget.data;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F9),
@@ -2861,28 +3471,34 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
             onNotifications: widget.onNotifications,
             onQuickCreate: widget.onOpenComposer,
           ),
+          if (widget.showTeamSections && widget.bloc.state.canManage)
+            _PushedTeamSectionBar(bloc: widget.bloc, data: dashboard),
           if (!widget.embedded)
             _GrowthPageTopBar(
               name: widget.name,
               designation: widget.designation,
             ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              children: _growthContent(
-                context: context,
-                data: widget.data,
-                history: history,
-                selected: selected,
-                period: period,
-                ownPage: ownPage,
-                canReview: canReview,
-                onSelectPeriod: (picked) =>
-                    setState(() => _selectedPeriod = picked),
-                onPickMonth: periods.length > 1
-                    ? () => _pickMonth(periods, selected)
-                    : null,
-                openForm: openForm,
+            // Sora throughout, as the design sets this page (node 3165:59213).
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(fontFamily: 'Sora'),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                children: _growthContent(
+                  context: context,
+                  data: widget.data,
+                  history: history,
+                  selected: selected,
+                  period: period,
+                  ownPage: ownPage,
+                  canReview: canReview,
+                  onSelectPeriod: (picked) =>
+                      setState(() => _selectedPeriod = picked),
+                  onPickMonth: periods.length > 1
+                      ? () => _pickMonth(periods, selected)
+                      : null,
+                  openForm: openForm,
+                ),
               ),
             ),
           ),
@@ -2944,7 +3560,6 @@ List<Widget> _growthContent({
       managerName: managerLine,
       score: record?.overallScore,
       pending: record == null && isCurrent,
-      warmPending: canReview,
       missed: record == null && !isCurrent,
       onTap: onPickMonth,
     ),
@@ -3426,7 +4041,6 @@ class _MonthStatusRow extends StatelessWidget {
     required this.pending,
     required this.missed,
     required this.onTap,
-    this.warmPending = false,
     this.managerName,
   });
 
@@ -3438,66 +4052,68 @@ class _MonthStatusRow extends StatelessWidget {
   /// profile's Grow tab (node 3106:49749).
   final String? managerName;
 
-  /// Orange on a report's page, where "pending" is the viewer's to act on;
-  /// yellow on one's own, where it is only news (nodes 2406:75231, 2412:80204).
-  final bool warmPending;
   final bool missed;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: missed ? const Color(0xFFEBEBEB) : Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
+    // The fill sits on the decoration with the shadow: on an unfilled box the
+    // shadow showed through and greyed a row the design draws white (node
+    // 3165:59260). The ink rides a transparent Material above it.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: missed ? const Color(0xFFEBEBEB) : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: missed ? const Color(0xFFEBEBEB) : const Color(0xFFF0EEF8),
-              width: 1.114,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 10,
-                offset: Offset(0, 2),
-              ),
-            ],
+        border: Border.all(
+          color: missed ? const Color(0xFFEBEBEB) : const Color(0xFFF0EEF8),
+          width: 1.114,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: _rowChildren()),
-              if (managerName case final name?) ...[
-                const SizedBox(height: 10),
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      fontFamily: 'Sora',
-                      color: Color(0xFF717171),
-                      fontSize: 12.5,
-                      height: 18.75 / 12.5,
-                    ),
-                    children: [
-                      const TextSpan(
-                        text: 'Feedback is given by your manager ',
+        ],
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(19.114, 17.114, 19.114, 17.114),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: _rowChildren()),
+                if (managerName case final name?) ...[
+                  const SizedBox(height: 10),
+                  Text.rich(
+                    TextSpan(
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0xFF717171),
+                        fontSize: 12.5,
+                        height: 18.75 / 12.5,
                       ),
-                      TextSpan(
-                        text: name,
-                        style: const TextStyle(
-                          color: Color(0xFF0571A6),
-                          fontWeight: FontWeight.w700,
+                      children: [
+                        const TextSpan(
+                          text: 'Feedback is given by your manager ',
                         ),
-                      ),
-                    ],
+                        TextSpan(
+                          text: name,
+                          style: const TextStyle(
+                            color: Color(0xFF0571A6),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -3525,13 +4141,13 @@ class _MonthStatusRow extends StatelessWidget {
         ),
       ),
     const Spacer(),
+    // Yellow wherever it shows: the new pills draw "Pending" the same on a
+    // report's page as on one's own (node 3165:59267).
     if (pending)
-      _MonthChip(
+      const _MonthChip(
         text: 'Pending',
-        background: const Color(0xFFFEFDDA),
-        foreground: warmPending
-            ? const Color(0xFFFF8D28)
-            : const Color(0xFFFFCC00),
+        background: Color(0xFFFEFDDA),
+        foreground: Color(0xFFFFCC00),
       )
     else if (score != null)
       _MonthChip(
@@ -3931,6 +4547,8 @@ class _GrowthScoreSection extends StatelessWidget {
             child: _OverallScoreCard(
               eyebrow: _periodTitle(shown.period),
               labelColor: const Color(0xFF484848),
+              scoreColor: const Color(0xFF222222),
+              outOfColor: const Color(0xFF717171),
               overall: shown.overallScore,
               previousScore: previous,
               showAveragesNote: true,
@@ -3976,22 +4594,36 @@ class _GrowthPageTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Per node 861:7716: this row sits flush against AppHomeHeader above
-    // it — both white, no visible seam — unlike the grey fill this had.
+    // Node 3165:59202: this row sits flush against the white header above
+    // it, 16 below it and 4 above the page; the back button is a 36px grey
+    // disc, 10 from the name.
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       decoration: const BoxDecoration(color: Colors.white),
       child: Row(
         children: [
-          RoundIconButton(
-            onTap: onBack ?? () => Navigator.of(context).pop(),
-            child: SvgPicture.asset(
-              'assets/icons/chevron_left_small.svg',
-              width: 18,
-              height: 18,
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: Material(
+              color: const Color(0xFFF7F7F9),
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onBack ?? () => Navigator.of(context).pop(),
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Center(
+                    child: SvgPicture.asset(
+                      'assets/icons/chevron_left_small.svg',
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4142,10 +4774,18 @@ class _FeedbackDuePeriodCard extends StatelessWidget {
 /// open this, so giving feedback never switches tabs or changes what the
 /// Manage tab is showing underneath.
 class _FeedbackFormPage extends StatefulWidget {
-  const _FeedbackFormPage({required this.bloc, required this.memberId});
+  const _FeedbackFormPage({
+    required this.bloc,
+    required this.memberId,
+    this.showTeamSections = false,
+  });
 
   final ManagerBloc bloc;
   final int memberId;
+
+  /// Opened from the Team tab: the section bar stays above the form (node
+  /// 3165:59470).
+  final bool showTeamSections;
 
   @override
   State<_FeedbackFormPage> createState() => _FeedbackFormPageState();
@@ -4222,6 +4862,7 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
                   state: state,
                   bloc: widget.bloc,
                   onClose: () => Navigator.of(context).pop(),
+                  showTeamSections: widget.showTeamSections,
                 ),
               ),
               _BottomTabs(

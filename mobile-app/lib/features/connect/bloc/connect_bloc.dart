@@ -19,6 +19,7 @@ class ConnectState {
     this.loadingMore = false,
     this.loadMoreFailed = false,
     this.fromCache = false,
+    this.publishingTo,
   });
 
   final ConnectLoadStatus status;
@@ -40,6 +41,11 @@ class ConnectState {
   /// confirmed by the server.
   final bool fromCache;
 
+  /// A post is on its way to the feed: who it goes to, 'everyone' or
+  /// 'my_team', for the placeholder card the feed shows meanwhile. Null when
+  /// nothing is being published.
+  final String? publishingTo;
+
   factory ConnectState.initial() {
     return const ConnectState(status: ConnectLoadStatus.initial, posts: []);
   }
@@ -54,9 +60,11 @@ class ConnectState {
     bool? loadingMore,
     bool? loadMoreFailed,
     bool? fromCache,
+    String? publishingTo,
     bool clearError = false,
     bool clearMessage = false,
     bool clearBusy = false,
+    bool clearPublishing = false,
   }) {
     return ConnectState(
       status: status ?? this.status,
@@ -68,9 +76,18 @@ class ConnectState {
       loadingMore: loadingMore ?? this.loadingMore,
       loadMoreFailed: loadMoreFailed ?? this.loadMoreFailed,
       fromCache: fromCache ?? this.fromCache,
+      publishingTo: clearPublishing ? null : publishingTo ?? this.publishingTo,
     );
   }
 }
+
+/// What a failed background read (a refresh, the next page, a resync)
+/// should say: nothing when it was the connection — the offline banner
+/// already says so — and the error's own words otherwise.
+String? _backgroundMessage(Object error) =>
+    error is ConnectOfflineException || NetworkStatus.isNetworkError(error)
+        ? null
+        : error.toString();
 
 class ConnectBloc {
   ConnectBloc({
@@ -132,7 +149,7 @@ class ConnectBloc {
       // The copy stays on show if there was one, still marked as the copy;
       // only an empty feed fails.
       if (_state.posts.isNotEmpty) {
-        _emit(_state.copyWith(message: error.toString()));
+        _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
         return;
       }
       _emit(
@@ -234,24 +251,33 @@ class ConnectBloc {
         fromCache: false,
       ));
     } catch (error) {
-      _emit(_state.copyWith(message: error.toString()));
+      _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
     }
   }
 
-  /// One post made sure of, for a notification about it: fetched and put
-  /// at the top if it is not among the pages loaded. False if it cannot be
-  /// had — deleted, or not visible to this viewer.
+  /// One post made sure of, for a notification about it: always read fresh,
+  /// since the notification is about something that just changed on it — a
+  /// copy already in the feed may predate it (a change missed while the app
+  /// was in the background, or the feed the device kept from last time).
+  /// Updated in place when loaded, put at the top when not. False if it
+  /// cannot be had — deleted, or not visible to this viewer.
   Future<bool> ensurePost(String postId) async {
-    if (_state.posts.any((post) => post.id == postId)) return true;
+    final loaded = _state.posts.any((post) => post.id == postId);
     try {
       final post = await _api.fetchPost(postId);
       if (_controller.isClosed) return false;
-      if (!_state.posts.any((p) => p.id == postId)) {
-        _emit(_state.copyWith(posts: [post, ..._state.posts]));
+      final index = _state.posts.indexWhere((p) => p.id == postId);
+      final posts = [..._state.posts];
+      if (index >= 0) {
+        posts[index] = post;
+      } else {
+        posts.insert(0, post);
       }
+      _emit(_state.copyWith(posts: posts));
       return true;
     } catch (_) {
-      return false;
+      // Offline or slow: the copy on hand is still better than nothing.
+      return loaded;
     }
   }
 
@@ -279,7 +305,7 @@ class ConnectBloc {
       ));
     } catch (error) {
       if (_controller.isClosed) return;
-      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: error.toString()));
+      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
     }
   }
 
@@ -311,6 +337,7 @@ class ConnectBloc {
     String postId,
     String text, {
     String? parentId,
+    List<ConnectMention> mentions = const [],
   }) async {
     final user = _session.user;
     final pending = ConnectComment(
@@ -321,6 +348,7 @@ class ConnectBloc {
       createdAt: DateTime.now(),
       parentId: parentId,
       photoUrl: user.profilePhotoUrl,
+      mentions: mentions,
     );
     await _mutateOptimistically(
       postId,
@@ -328,7 +356,12 @@ class ConnectBloc {
         commentCount: post.commentCount + 1,
         comments: [...post.comments, pending],
       ),
-      () => _api.addComment(postId, text, parentId: parentId),
+      () => _api.addComment(
+        postId,
+        text,
+        parentId: parentId,
+        mentionedUserIds: [for (final mention in mentions) mention.userId],
+      ),
     );
   }
 
@@ -385,8 +418,19 @@ class ConnectBloc {
     await _mutatePost(postId, () => _api.voteCaption(postId, entryId));
   }
 
-  Future<bool> createPost(ConnectPostDraft draft) async {
-    _emit(_state.copyWith(busyPostId: '__create__', clearMessage: true));
+  Future<bool> createPost(ConnectPostDraft draft) async =>
+      (await publishPost(draft)) != null;
+
+  /// [createPost], handing back the post as the server made it — null when
+  /// it failed, which the feed has already said.
+  Future<ConnectPost?> publishPost(ConnectPostDraft draft) async {
+    _emit(
+      _state.copyWith(
+        busyPostId: '__create__',
+        publishingTo: '${draft.body['sendTo'] ?? 'everyone'}',
+        clearMessage: true,
+      ),
+    );
     try {
       final post = await _api.createPost(draft);
       _emit(
@@ -395,18 +439,20 @@ class ConnectBloc {
           message: 'Post published',
           busyPostId: null,
           clearBusy: true,
+          clearPublishing: true,
         ),
       );
-      return true;
+      return post;
     } catch (error) {
       _emit(
         _state.copyWith(
           message: error.toString(),
           busyPostId: null,
           clearBusy: true,
+          clearPublishing: true,
         ),
       );
-      return false;
+      return null;
     }
   }
 

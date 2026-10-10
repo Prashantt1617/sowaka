@@ -41,6 +41,11 @@ class FloatingTreeSettings {
 /// left. Tap it to open the tree. It is read again each time a screen
 /// opens, so a flower given a minute ago is already on it.
 class FloatingTree extends StatefulWidget {
+  /// Off for now (Tanvi, 10 Oct 2026): the garden is reached from the Games
+  /// tab only. With it on, the tree shows where the Games tab is on and
+  /// Gratitude Garden is among the company's games.
+  static bool shown = false;
+
   const FloatingTree({super.key, required this.session, required this.refreshKey, this.service});
 
   final AuthSession session;
@@ -155,7 +160,11 @@ class _FloatingTreeState extends State<FloatingTree> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.session.user.enabledTabs.contains('games')) return const SizedBox.shrink();
+    final user = widget.session.user;
+    final gardenOn = FloatingTree.shown &&
+        user.enabledTabs.contains('games') &&
+        (user.enabledGames?.contains('gratitude-garden') ?? true);
+    if (!gardenOn) return const SizedBox.shrink();
     return ValueListenableBuilder<bool>(
       valueListenable: FloatingTreeSettings.enabled,
       builder: (context, enabled, _) {

@@ -46,12 +46,12 @@ class OnboardingFlow extends StatefulWidget {
     _Interest('Travel', 'int_travel.png'),
     _Interest('Cricket', 'int_cricket.png'),
     _Interest('Fitness', 'int_fitness.png'),
-    _Interest('Gaming', 'int_gaming.png'),
+    _Interest('Gaming', 'int_gaming.png', width: 20, height: 20),
     _Interest('Art', 'int_art.png'),
     _Interest('Stocks', 'int_stocks.png'),
     _Interest('Books', 'int_books.png'),
-    _Interest('Pets', 'int_books.png'),
-    _Interest('Clubbing', 'int_books.png'),
+    _Interest('Pets', 'int_pets.png', width: 16),
+    _Interest('Clubbing', 'int_clubbing.png'),
     _Interest('AI', 'int_ai.png'),
   ];
 
@@ -64,9 +64,14 @@ class OnboardingFlow extends StatefulWidget {
 enum _Step { photo, interests }
 
 class _Interest {
-  const _Interest(this.label, this.icon);
+  const _Interest(this.label, this.icon, {this.width = 24, this.height = 24});
   final String label;
   final String icon;
+
+  /// The art's own size in the design (node 2755:28782): most are 24x24,
+  /// Gaming is 20x20 and Pets 16x24. The label follows 10 after it.
+  final double width;
+  final double height;
 }
 
 const _asset = 'assets/onboarding';
@@ -548,7 +553,12 @@ class _InterestChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Image.asset('$_asset/${interest.icon}', width: 24, height: 24),
+            Image.asset(
+              '$_asset/${interest.icon}',
+              width: interest.width,
+              height: interest.height,
+              fit: BoxFit.cover,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(

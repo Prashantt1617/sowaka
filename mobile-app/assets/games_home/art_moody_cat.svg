@@ -1,0 +1,18 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="128.5" height="112" viewBox="0 0 128.5 112" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Moody cat">
+<path id="Cream sticker outline" d="M16 49L12 13C11.3333 8.33333 13.3333 7 18 9L44 25C56.6667 20.3333 68.6667 20.6667 80 26L100 9C104.667 5.66667 107.333 7 108 13L111 49C119.667 60.3333 119.667 72.6667 111 86C102.333 97.3333 87.3333 103.667 66 105C44 107 27.6667 102.333 17 91C7.66667 81.6667 7.33333 67.6667 16 49Z" fill="#FFF8E3" stroke="#160D2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Purple cat silhouette" d="M22 49L18 17L43 33C56.3333 28.3333 69.3333 28.6667 82 34L101 17L103 51C111 60.3333 111.667 70.3333 105 81C99 91.6667 86 97.3333 66 98C47.3333 100 33 96 23 86C13.6667 76.6667 13.3333 64.3333 22 49Z" fill="#FF8A3D" stroke="#160D2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Left inner ear" d="M24 26L27 45L39 38L24 26Z" fill="#FF5C93" stroke="#160D2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Right inner ear" d="M95 27L85 40L98 45L95 27Z" fill="#FF5C93" stroke="#160D2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Left narrowed eye" d="M31 55L52 62C49.3333 68.6667 45 71 39 69C33.6667 67.6667 31 63 31 55Z" fill="#FF5C93" stroke="#160D2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Right narrowed eye" d="M78 62L98 54C98.6667 62.6667 96 67.6667 90 69C84.6667 71 80.6667 68.6667 78 62Z" fill="#FF5C93" stroke="#160D2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Left pupil" d="M43 60L42 66" stroke="#160D2C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Right pupil" d="M87 59L88 66" stroke="#160D2C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Nose" d="M60 72C63.3333 70.6667 66.6667 70.6667 70 72L65 77L60 72Z" fill="#160D2C" stroke="#160D2C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Grumpy mouth" d="M65 77V81.8921M55 77C61.6667 83.6667 68.6667 84 76 78" stroke="#160D2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Left whiskers" d="M13 68L28 72M12 79L28 78" stroke="#160D2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Right whiskers" d="M103 71L119 65M104 77L120 78" stroke="#160D2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Forehead fur" d="M54 34L59 42L65 34L71 42L76 35" stroke="#160D2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Pink comment bubble" d="M113 11.8906C121.008 11.8906 127.5 18.6061 127.5 26.8906C127.5 35.1751 121.008 41.8906 113 41.8906C110.97 41.8906 109.042 41.4586 107.291 40.6801L99.95 44.8906L101.835 36.4606C99.747 33.8656 98.5 30.5356 98.5 26.8906C98.5 18.6061 104.992 11.8906 113 11.8906Z" fill="#F7FF5C" stroke="#160D2C" stroke-width="2" stroke-linecap="round"/>
+</g>
+</svg>

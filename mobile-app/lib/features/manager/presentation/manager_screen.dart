@@ -22,8 +22,15 @@ import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/blocked_people_screen.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../manager_shell/presentation/app_bottom_nav.dart';
+import '../../notifications/notification_badge.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
+import '../../games/data/games_api_service.dart';
+import '../../games/data/games_home_models.dart';
+import '../../games/data/games_models.dart';
+import '../../games/presentation/games_home.dart';
 import '../../games/presentation/web_game_screen.dart';
+import '../../policies/data/policies_api_service.dart';
 import '../../attendance/presentation/punch_screen.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
@@ -35,15 +42,16 @@ import '../data/dashboard_cache.dart';
 import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
+import '../../support/presentation/support_desk_screen.dart';
 import '../../shared/network_status.dart';
 import '../../shared/offline_banner.dart';
-import '../../manager_shell/presentation/tab_specs.dart';
 import '../../help/data/help_api_service.dart';
 import '../../help/presentation/help_profile_section.dart';
 import '../../help/presentation/help_tab.dart';
 import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
+import '../../profile/profile.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 part '../../connect/presentation/connect_tab.dart';
@@ -67,9 +75,14 @@ class ManagerScreen extends StatefulWidget {
     required this.session,
     this.justOnboarded = false,
     this.bloc,
+    this.onOpenGameChallenge,
   });
 
   final AuthSession session;
+
+  /// Supplied only by tests: what a tapped challenge notification opens,
+  /// instead of the game's own screen.
+  final void Function(String gameKey, String challengeId)? onOpenGameChallenge;
 
   /// Supplied only by tests, which drive the screen from a fake service
   /// rather than the network. Null everywhere else, and the screen makes
@@ -98,6 +111,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late AuthSession _session;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
   StreamSubscription<Map<String, dynamic>>? _receivedSubscription;
+  AppLifecycleListener? _lifecycle;
 
   @override
   void initState() {
@@ -137,7 +151,16 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // A notification about a request means the request list on screen is
     // already out of date: read it now rather than on the next poll.
     _receivedSubscription = AppNotificationService.instance.received.listen(
-      (data) => _bloc.refreshRequestsNow('${data['type'] ?? ''}'),
+      (data) {
+        NotificationBadge.arrived();
+        _bloc.refreshRequestsNow('${data['type'] ?? ''}');
+      },
+    );
+    // The bell's dot: anything unread since the inbox was last opened, read
+    // now and again whenever the app comes back to the front.
+    unawaited(NotificationBadge.refresh(_session));
+    _lifecycle = AppLifecycleListener(
+      onResume: () => unawaited(NotificationBadge.refresh(_session)),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The tablet rail lives above the navigator, so it reads the bloc from
@@ -147,10 +170,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
       activeManagerBloc.value = _bloc;
       AppNotificationService.instance.consumePending();
     });
+    // A name tapped anywhere — a post's author, a commenter — opens their
+    // profile through here.
+    registerPersonProfileOpener(_openTeamMember);
   }
 
   @override
   void dispose() {
+    unregisterPersonProfileOpener(_openTeamMember);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
@@ -159,6 +186,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (_ownsBloc) _bloc.dispose();
     _notificationSubscription?.cancel();
     _receivedSubscription?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 
@@ -282,7 +310,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
     } else if (state.view == ManagerView.feedbackList) {
       _bloc.add(const CloseFeedbackList());
     } else if (state.tab == ManagerTab.manage &&
-        state.teamSection == TeamSection.requests) {
+        state.teamSection != TeamSection.myTeam) {
       _bloc.add(const ShowTeamSection(TeamSection.myTeam));
     } else if (state.tab == ManagerTab.quick &&
         _quickActionsController.canGoBack) {
@@ -343,8 +371,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
           );
         }
       case 'employee_profile':
-        if (!_openTeamMember(employeeUserId)) {
-          _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+        // Over the Team tab, and only for someone in the viewer's own team:
+        // a push about anyone else lands on the Team tab alone.
+        _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+        if (_teamMember(employeeUserId) != null) {
+          _openTeamMember(employeeUserId);
         }
       case 'manage_leave':
         _openTeamRequests();
@@ -365,11 +396,67 @@ class _ManagerScreenState extends State<ManagerScreen> {
       case 'profile_leaves':
       case 'profile_recognition':
         setState(() => _profileOpen = true);
+      // A reply, a resolution or an identity notice on one of the person's
+      // own Support desk tickets: the desk opens with the ticket on top.
+      case 'support_ticket':
+        _bloc.add(const ChangeManagerTab(ManagerTab.quick));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openSupportTicket('${data['ticketId'] ?? ''}');
+        });
+      // A colleague's game challenge (received, answered, or its result):
+      // the Games tab, with the game open on that challenge.
+      case 'game_challenge':
+        if (visibleTabs(_session.user.enabledTabs).contains(ManagerTab.games)) {
+          _bloc.add(const ChangeManagerTab(ManagerTab.games));
+        }
+        final gameKey = '${data['gameKey'] ?? ''}';
+        final challengeId = '${data['challengeId'] ?? ''}';
+        if (gameKey.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _openGameChallenge(gameKey, challengeId);
+          });
+        }
       case '':
         _openRequestNotification(data);
       default:
         _bloc.add(const ChangeManagerTab(ManagerTab.connect));
     }
+  }
+
+  void _openGameChallenge(String gameKey, String challengeId) {
+    final hook = widget.onOpenGameChallenge;
+    if (hook != null) {
+      hook(gameKey, challengeId);
+      return;
+    }
+    unawaited(
+      openGameChallenge(
+        context,
+        _session,
+        gameKey: gameKey,
+        challengeId: challengeId,
+      ).then((opened) {
+        if (!opened && mounted) {
+          showAppToast(context, 'That game is not available any more.');
+        }
+      }),
+    );
+  }
+
+  void _openSupportTicket(String ticketId) {
+    final dashboard = _bloc.state.dashboard;
+    openSupportDesk(
+      context,
+      session: _session,
+      ticketId: ticketId.isEmpty ? null : ticketId,
+      onNotifications: () => _openNotifications(context),
+      profileAction: _ProfileAvatarAction(
+        initial: dashboard?.managerInitial ?? '',
+        photoUrl: dashboard?.managerPhotoUrl,
+        onTap: _openProfile,
+        size: 30,
+      ),
+    );
   }
 
   /// Requests carry no destination, only what kind they are and whose side
@@ -411,23 +498,39 @@ class _ManagerScreenState extends State<ManagerScreen> {
         .firstOrNull;
   }
 
-  /// Opens a teammate's profile page over the Manage tab. False when the
-  /// person is not someone this viewer can see.
+  /// Opens someone's profile by userId, over whatever is on screen: one's own
+  /// profile when it is the viewer; a teammate's from the loaded team, with
+  /// everything [memberProfileTabs] gives a report; anyone else in the company
+  /// fetched as the colleague view ([colleagueProfileTabs]). False only when
+  /// there is nobody to open. Registered as [openPersonProfile], so other
+  /// libraries reach it without importing the shell.
   bool _openTeamMember(String userId) {
-    final member = _teamMember(userId);
     final dashboard = _bloc.state.dashboard;
-    if (member == null || dashboard == null) return false;
-    _bloc.add(const ChangeManagerTab(ManagerTab.manage));
+    if (!mounted || userId.isEmpty || dashboard == null) return false;
+    if (userId == _session.user.id) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => _profileOpen = true);
+      return true;
+    }
+    final member = _teamMember(userId);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _TeamMemberProfilePage(
-          member: member,
-          data: dashboard,
-          bloc: _bloc,
-          onNotifications: () => _openNotifications(context),
-          onOpenComposer: _connectComposerController.openComposer,
-          canManage: _bloc.state.canManage,
-        ),
+        builder: (_) => member != null
+            ? _TeamMemberProfilePage(
+                member: member,
+                data: dashboard,
+                bloc: _bloc,
+                onNotifications: () => _openNotifications(context),
+                onOpenComposer: _connectComposerController.openComposer,
+                canManage: _bloc.state.canManage,
+              )
+            : _ColleagueProfileLoader(
+                userId: userId,
+                data: dashboard,
+                bloc: _bloc,
+                onNotifications: () => _openNotifications(context),
+                onOpenComposer: _connectComposerController.openComposer,
+              ),
       ),
     );
     return true;
@@ -470,6 +573,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
         .catchError((_) {});
     // Nothing of theirs is left behind for whoever signs in next.
     forgetHelpHome();
+    forgetGames();
+    forgetPolicies();
     await AuthSessionStore().clear();
     if (!mounted) return;
     Navigator.of(
