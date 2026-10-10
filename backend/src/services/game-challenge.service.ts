@@ -70,6 +70,7 @@ export type ChallengeViewer = Pick<User, 'userId' | 'name' | 'email'> & Partial<
 
 const SCORE_CEILING = 1_000_000_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const IST_MS = 330 * 60 * 1000;
 const LIST_SCAN = 80;
 const RECENT_RESULTS = 10;
 const COLLEAGUE_LIMIT = 50;
@@ -393,6 +394,18 @@ export async function listMyChallenges(viewer: ChallengeViewer, gameKey: unknown
 
 // ---------------------------------------------------------------- playing
 
+/** Each game's largest score, as its catalog entry says, kept a minute: live scores come a couple a second. */
+const maxScores = new Map<string, { max: number; at: number }>();
+
+async function maxScoreOf(key: string): Promise<number> {
+  const kept = maxScores.get(key);
+  if (kept && Date.now() - kept.at < 60_000) return kept.max;
+  const entry = await gameCatalog().findOne({ key }, { projection: { _id: 0, scoring: 1 } });
+  const max = Math.min(entry?.scoring?.max ?? SCORE_CEILING, SCORE_CEILING);
+  maxScores.set(key, { max, at: Date.now() });
+  return max;
+}
+
 /** When each player last had a live score passed on, by `${challengeId}:${userId}`. */
 const lastLive = new Map<string, number>();
 
@@ -402,9 +415,9 @@ const lastLive = new Map<string, number>();
  * LIVE_MIN_INTERVAL_MS are dropped (the page sends at most a couple a second).
  */
 export async function reportLive(viewer: ChallengeViewer, id: string, raw: unknown) {
-  const score = parseChallengeScore(raw, SCORE_CEILING);
-  if (score === null) throw new GameChallengeError(400, 'Score is invalid');
   const c = await loadFor(viewer, id, 'live');
+  const score = parseChallengeScore(raw, await maxScoreOf(c.gameKey));
+  if (score === null) throw new GameChallengeError(400, 'Score is invalid');
   if (!c.started?.[viewer.userId]) {
     // The page reports as the round begins: when it began, for the final to be measured against.
     await gameChallenges().updateOne(
@@ -640,7 +653,8 @@ async function holdPlaces(
   rules: ChallengeRewardRules,
   now: Date,
 ): Promise<{ awards: GameChallengeAward[]; held: string[] }> {
-  const day = istDayStart(now).toISOString().slice(0, 10);
+  // The India date, as people there call the day: its midnight is the evening before in UTC.
+  const day = new Date(istDayStart(now).getTime() + IST_MS).toISOString().slice(0, 10);
   const held: string[] = [];
   const out: GameChallengeAward[] = [];
   for (const award of awards) {
