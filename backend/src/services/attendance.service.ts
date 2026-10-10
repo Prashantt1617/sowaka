@@ -25,7 +25,7 @@ const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
   const employee = await users().findOne({ userId });
   if (!employee) throw new AttendanceError(404, 'Employee not found');
-  return getAttendanceForEmployee(userId, employee.employeeId, fromInput, toInput);
+  return getAttendanceForEmployee(userId, employee.employeeId, fromInput, toInput, employee.org);
 }
 
 // Split out so callers that already have the employee record (e.g.
@@ -37,6 +37,7 @@ async function getAttendanceForEmployee(
   employeeId: string | undefined,
   fromInput: string,
   toInput: string,
+  org?: string,
 ) {
   const from = parseDate(fromInput, 'from');
   const to = parseDate(toInput, 'to');
@@ -46,11 +47,17 @@ async function getAttendanceForEmployee(
   const recordFilter = employeeId
     ? { $or: [{ userId }, { employeeId }], workDate: { $gte: fromInput, $lte: toInput } }
     : { userId, workDate: { $gte: fromInput, $lte: toInput } };
-  const [records, regularizations] = await Promise.all([
+  // The server's word on each day, graded the way payroll and the dashboard
+  // grade it. Imported here, not at the top: the report imports this module.
+  const { employeeDayStatuses } = await import('./attendance-report.service');
+  const [records, regularizations, days] = await Promise.all([
     attendanceRecords().find(recordFilter).sort({ workDate: 1 }).toArray(),
     attendanceRegularizations()
       .find({ userId, workDate: { $gte: fromInput, $lte: toInput } })
       .sort({ createdAt: -1 }).toArray(),
+    // A failure here must not take the punches down with it: the app grades
+    // on its own when there is no server status.
+    employeeDayStatuses(org, userId, fromInput, toInput).catch(() => null),
   ]);
   return {
     records: records.map((item) => ({
@@ -60,6 +67,8 @@ async function getAttendanceForEmployee(
       outsideLocation: outsideLocationView(item.outsideLocation),
     })),
     regularizations: regularizations.map(toRegularizationView),
+    // New field: apps that predate it ignore it and keep grading on their own.
+    ...(days ? { days } : {}),
   };
 }
 
@@ -682,6 +691,7 @@ export async function getTeamMemberAttendance(
     employee.employeeId,
     fromInput,
     toInput,
+    employee.org,
   );
   // The employee's own shift decides how their days read, and they may be on a
   // different template from the manager looking at them: their week-offs,

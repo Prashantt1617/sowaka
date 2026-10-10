@@ -183,7 +183,7 @@ export function SalaryTemplates() {
       setTemplates(ts);
       setPayHeadsList(phs);
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not load templates');
+      flash(e instanceof ApiError ? e.message : 'Could not load templates', 'error');
     } finally {
       setLoading(false);
     }
@@ -226,7 +226,7 @@ export function SalaryTemplates() {
       setDetailTpl(t);
       setMode('detail');
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not load template');
+      flash(e instanceof ApiError ? e.message : 'Could not load template', 'error');
     }
   };
 
@@ -270,7 +270,7 @@ export function SalaryTemplates() {
       setForm(null);
       void openDetail(input.code);
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not save template');
+      flash(e instanceof ApiError ? e.message : 'Could not save template', 'error');
     } finally {
       setSaving(false);
     }
@@ -288,7 +288,7 @@ export function SalaryTemplates() {
       setMode('list');
       await load();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not delete template');
+      flash(e instanceof ApiError ? e.message : 'Could not delete template', 'error');
     } finally {
       setSaving(false);
     }
@@ -619,7 +619,7 @@ function RulesSummary({ rules, paidLeaveDays }: { rules: SalaryDeductionRule[]; 
 // Who is on a template is a payroll list, not something to edit here: it
 // exports as an Excel sheet with each person's CTC.
 
-async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string) => void) {
+async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string, tone?: 'ok' | 'error') => void) {
   try {
     const [rows, people] = await Promise.all([listSalaryStructures(), getAllEmployees()]);
     const byId = new Map(people.map((e) => [e.userId, e]));
@@ -645,7 +645,7 @@ async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Employees');
     XLSX.writeFile(wb, `${t.code.toLowerCase()}-employees.xlsx`);
-  } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not export'); }
+  } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not export', 'error'); }
 }
 
 function Suffixed({ value, onChange, suffix, step }: { value: number; onChange: (v: number) => void; suffix: string; step: string }) {

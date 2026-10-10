@@ -82,6 +82,40 @@ export async function uploadEmployeeDocument(userId: string, file: ReceiptFile) 
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/**
+ * A file attached to a Support desk message. Same bucket and encryption; its
+ * own prefix, `…/support/<org>/<ticketId>/`. The key is random and carries no
+ * part of the client's file name; the name is kept on the message instead.
+ */
+export async function uploadSupportAttachment(org: string, ticketId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const root = env.s3.receiptPrefix.replace(/^\/+|\/+$/g, '').split('/')[0];
+  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'application/pdf': '.pdf' }[file.contentType] ?? '';
+  const objectKey = [root, 'support', safe(org), safe(ticketId), `${randomUUID()}${extension}`].filter(Boolean).join('/');
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return { objectKey, contentType: file.contentType, size: file.size };
+}
+
+export async function deleteSupportAttachment(objectKey: string) {
+  validateConfiguration();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+}
+
+/** Whether uploads can be stored at all on this host. */
+export function hasReceiptStorage(): boolean {
+  return Boolean(env.s3.region && env.s3.bucket);
+}
+
 export async function deleteEmployeeDocument(objectKey: string) {
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
@@ -99,14 +133,32 @@ export async function presignReceiptDownload(objectKey: string, fileName?: strin
   const command = new GetObjectCommand({
     Bucket: env.s3.bucket,
     Key: objectKey,
-    ...(fileName
-      ? { ResponseContentDisposition: `inline; filename="${fileName.replace(/"/g, '')}"` }
-      : {}),
+    ...(fileName ? { ResponseContentDisposition: inlineDisposition(fileName) } : {}),
   });
   return getSignedUrl(getClient(), command, {
     expiresIn: env.s3.presignTtl,
     signingDate: stablePresignDate(),
   });
+}
+
+/**
+ * `inline`, under the file's own name. S3 refuses the whole download when the
+ * header carries anything outside ISO-8859-1, and real names often do: the
+ * narrow space in a macOS screenshot's time, a name in Hindi. So `filename`
+ * is a plain-ASCII stand-in and the real name goes in `filename*`, which
+ * browsers prefer when it is there.
+ */
+function inlineDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '');
+  let utf8: string;
+  try {
+    // encodeURIComponent leaves these four alone, but `filename*` may not carry them bare.
+    utf8 = encodeURIComponent(fileName).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  } catch {
+    // A broken surrogate pair cannot be encoded; the stand-in still opens the file.
+    return `inline; filename="${ascii}"`;
+  }
+  return `inline; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
 
 function getClient() {

@@ -13,6 +13,8 @@ import {
   listOutOfLocation,
   saveOfficeHandler,
   employeeCalendarHandler,
+  setCalendarDayHandler,
+  clearCalendarDayHandler,
   listAccessesHandler,
   setAccessHandler,
   getCompanySettingsHandler,
@@ -80,6 +82,9 @@ adminRouter.post('/employees', createEmployee);
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 // One person's month, graded the way the report grades it.
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
+// HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
+adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
+adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);
 // Every payslip a payroll run has produced for them.
 adminRouter.get('/employees/:userId/payslips', employeePayslipsHandler);
 // Documents filed against an employee — offer letter, ID proof and the like.

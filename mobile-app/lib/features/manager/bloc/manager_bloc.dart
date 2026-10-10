@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../auth/data/auth_models.dart';
 import '../data/manager_api_service.dart';
+import '../data/requests_socket_service.dart';
 import '../data/manager_models.dart';
 
 enum ManagerLoadStatus { initial, loading, ready, failure }
@@ -372,6 +373,27 @@ class ManagerBloc {
   Timer? _leavePollingTimer;
   bool _refreshingLeaves = false;
 
+  /// A change arrived while a refresh was already on its way; read again once
+  /// it lands, or the newest request waits for the next minute's poll.
+  bool _refreshLeavesAgain = false;
+
+  /// The person's own live channel: a request raised to them or decided for
+  /// them shows at once, not on the next minute's poll.
+  RequestsSocketService? _requestsSocket;
+  StreamSubscription<String>? _requestsChangedSub;
+  StreamSubscription<void>? _requestsReconnectSub;
+  Timer? _listsRefreshDebounce;
+
+  /// Lists a change has asked for that the coalesced read has not taken yet.
+  final Set<_RequestList> _listsDue = <_RequestList>{};
+  bool _refreshingLists = false;
+
+  /// The month the attendance calendar is on. Every read of attendance — the
+  /// full load, a refresh after a change — is for this month, so a calendar
+  /// paged back to September is never handed October's days.
+  DateTime _attendanceMonth = _monthOf(DateTime.now());
+  DateTime get attendanceMonth => _attendanceMonth;
+
   ManagerState get state => _state;
   ManagerApiService get service => _service;
 
@@ -429,7 +451,64 @@ class ManagerBloc {
 
   void dispose() {
     _leavePollingTimer?.cancel();
+    _listsRefreshDebounce?.cancel();
+    _requestsChangedSub?.cancel();
+    _requestsReconnectSub?.cancel();
+    _requestsSocket?.dispose();
     _controller.close();
+  }
+
+  /// Something about this person's requests changed on the server — from the
+  /// live channel or a notification that arrived while the app was open,
+  /// whose [kind] says which, or a reconnection after time away (no kind:
+  /// anything may have, so every list).
+  ///
+  /// Only the request lists are read again, never the whole dashboard: the
+  /// attendance calendar keeps the month it is on, and a resume costs a few
+  /// calls rather than a dozen. Leaves are read straight away (the cheap,
+  /// common case); the rest is coalesced so a burst becomes one read. A kind
+  /// that is not about a request — a post, a support reply — reads nothing.
+  void refreshRequestsNow([String? kind]) {
+    if (_state.dashboard == null) return;
+    final lists = kind == null ? _RequestList.values.toSet() : _listsFor(kind);
+    if (lists.remove(_RequestList.leaves)) {
+      unawaited(_refreshLeavesSilently());
+    }
+    if (lists.isEmpty) return;
+    _listsDue.addAll(lists);
+    _listsRefreshDebounce?.cancel();
+    _listsRefreshDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_refreshListsSilently());
+    });
+  }
+
+  /// The lists a change of [kind] can touch: the server's own kinds on the
+  /// live channel (`leave_decided`, `correction_requested`, `punch_out`, …)
+  /// and the `type` a notification carries (`leave`, `attendance`, …).
+  static Set<_RequestList> _listsFor(String kind) => switch (kind) {
+    _ when kind.startsWith('leave') => {_RequestList.leaves},
+    _ when kind.startsWith('overtime') => {_RequestList.overtime},
+    _ when kind.startsWith('reimbursement') => {_RequestList.claims},
+    // A correction and a punch both change the attendance month.
+    _
+        when kind.startsWith('correction') ||
+            kind.startsWith('attendance') ||
+            kind.startsWith('punch') =>
+      {_RequestList.attendance},
+    _ => <_RequestList>{},
+  };
+
+  void _listenForRequestChanges() {
+    if (_requestsSocket != null) return;
+    final socket = RequestsSocketService(session: session);
+    // Every event on this channel is about a request; one that does not say
+    // which reads them all.
+    _requestsChangedSub = socket.changes.listen(
+      (kind) => refreshRequestsNow(kind.isEmpty ? null : kind),
+    );
+    _requestsReconnectSub = socket.reconnects.listen((_) => refreshRequestsNow());
+    socket.connect();
+    _requestsSocket = socket;
   }
 
   void _emit(ManagerState state) {
@@ -459,11 +538,17 @@ class ManagerBloc {
             _emit(_state.copyWith(status: ManagerLoadStatus.loading));
           }
           try {
+            // The month the calendar is on, not always this one. Only this
+            // month's load is kept on the device: the copy is read back for
+            // this month at the next launch.
+            final month = _attendanceMonth;
             final dashboard = await _service.fetchDashboard(
               previous: _state.dashboard,
+              attendanceMonth: month,
+              keep: _sameMonth(month, DateTime.now()),
               onCore: (core) => _emit(_state.copyWith(
                 status: ManagerLoadStatus.ready,
-                dashboard: core,
+                dashboard: _keepCalendarMonth(core, month),
                 fromCache: false,
                 error: null,
               )),
@@ -471,7 +556,7 @@ class ManagerBloc {
             _emit(
               _state.copyWith(
                 status: ManagerLoadStatus.ready,
-                dashboard: dashboard,
+                dashboard: _keepCalendarMonth(dashboard, month),
                 fromCache: false,
                 error: null,
               ),
@@ -479,7 +564,10 @@ class ManagerBloc {
           } finally {
             // Whatever the live load did, the minute's refresh runs: it is
             // what brings a copy up to date once the network is back.
-            if (_state.dashboard != null) _startLeavePolling();
+            if (_state.dashboard != null) {
+              _startLeavePolling();
+              _listenForRequestChanges();
+            }
           }
         case ChangeManagerTab(:final tab):
           // Team is open to everyone now — individual contributors get the
@@ -495,18 +583,37 @@ class ManagerBloc {
             ),
           );
         case LoadAttendanceMonth(:final month):
-          final from = DateTime(month.year, month.month, 1);
-          final to = DateTime(month.year, month.month + 1, 0);
-          final result = await _service.fetchAttendance(from, to);
-          final data = _state.dashboard;
-          _emit(
-            _state.copyWith(
-              dashboard: data?.copyWith(
-                attendance: result.$1,
-                regularizations: result.$2,
+          // Taken before the read, so the calendar turns the moment it is
+          // asked to and a refresh meanwhile reads the new month.
+          final previous = _attendanceMonth;
+          final wanted = _monthOf(month);
+          _attendanceMonth = wanted;
+          try {
+            final result = await _service.fetchAttendance(
+              wanted,
+              DateTime(wanted.year, wanted.month + 1, 0),
+            );
+            // Paged on while this was on its way: that month's read lands
+            // instead, and this one would put the wrong days under it.
+            if (!_sameMonth(_attendanceMonth, wanted)) return true;
+            final data = _state.dashboard;
+            _emit(
+              _state.copyWith(
+                dashboard: data?.copyWith(
+                  attendance: result.$1,
+                  regularizations: result.$2,
+                  serverDays: result.$3,
+                ),
               ),
-            ),
-          );
+            );
+          } catch (_) {
+            // Not read: the calendar goes back to the month it has the days
+            // for, unless it has been paged on since.
+            if (_sameMonth(_attendanceMonth, wanted)) {
+              _attendanceMonth = previous;
+            }
+            rethrow;
+          }
         case RecordPunch(:final type):
           final record = await _service.recordPunch(type);
           _mergePunch(record, type == 'in' ? 'Punched in' : 'Punched out');
@@ -906,7 +1013,11 @@ class ManagerBloc {
 
   Future<void> _refreshLeavesSilently() async {
     final data = _state.dashboard;
-    if (data == null || _refreshingLeaves) return;
+    if (data == null) return;
+    if (_refreshingLeaves) {
+      _refreshLeavesAgain = true;
+      return;
+    }
     _refreshingLeaves = true;
     try {
       final readPolicy =
@@ -950,7 +1061,96 @@ class ManagerBloc {
       // Polling is best-effort; foreground actions still surface errors.
     } finally {
       _refreshingLeaves = false;
+      if (_refreshLeavesAgain) {
+        _refreshLeavesAgain = false;
+        unawaited(_refreshLeavesSilently());
+      }
     }
+  }
+
+  /// Reads again the lists [refreshRequestsNow] has asked for — overtime,
+  /// claims, the attendance month with its corrections — each the person's
+  /// own and, where they decide them, their inbox. Nothing else on the
+  /// dashboard is touched, and attendance is read for the month on screen.
+  Future<void> _refreshListsSilently() async {
+    if (_state.dashboard == null || _listsDue.isEmpty) return;
+    // One read at a time; whatever arrives meanwhile goes in the next.
+    if (_refreshingLists) return;
+    _refreshingLists = true;
+    final lists = Set.of(_listsDue);
+    _listsDue.clear();
+    final overtime = lists.contains(_RequestList.overtime);
+    final claims = lists.contains(_RequestList.claims);
+    final attendance = lists.contains(_RequestList.attendance);
+    final manages = _state.canManage;
+    final month = _attendanceMonth;
+    // Each list on its own: one the server refuses keeps what is on screen
+    // rather than holding the others back.
+    Future<T?> read<T>(bool wanted, Future<T> Function() fetch) => wanted
+        ? fetch().then<T?>((value) => value).catchError((_) => null)
+        : Future<T?>.value(null);
+    try {
+      final myOvertimeFuture = read(overtime, _service.fetchMyOvertime);
+      final overtimeFuture = read(overtime, _service.fetchManagerOvertime);
+      final myClaimsFuture = read(claims, _service.fetchMyReimbursements);
+      final claimsFuture = read(
+        claims && manages,
+        _service.fetchManagerReimbursements,
+      );
+      final attendanceFuture = read(
+        attendance,
+        () => _service.fetchAttendance(
+          month,
+          DateTime(month.year, month.month + 1, 0),
+        ),
+      );
+      final correctionsFuture = read(
+        attendance && manages,
+        _service.fetchManagerAttendanceRegularizations,
+      );
+      final myOvertime = await myOvertimeFuture;
+      final overtimeInbox = await overtimeFuture;
+      final myClaims = await myClaimsFuture;
+      final claimsInbox = await claimsFuture;
+      final monthDays = await attendanceFuture;
+      final corrections = await correctionsFuture;
+      final latest = _state.dashboard;
+      if (latest == null || _controller.isClosed) return;
+      // The calendar paged on while this was out: its own read brings that
+      // month, and this one is not put under it.
+      final days = _sameMonth(month, _attendanceMonth) ? monthDays : null;
+      _emit(
+        _state.copyWith(
+          dashboard: latest.copyWith(
+            myOvertime: myOvertime,
+            overtime: overtimeInbox,
+            myReimbursements: myClaims,
+            reimbursements: claimsInbox,
+            attendance: days?.$1,
+            regularizations: days?.$2,
+            serverDays: days?.$3,
+            managerRegularizations: corrections,
+          ),
+        ),
+      );
+    } finally {
+      _refreshingLists = false;
+      if (_listsDue.isNotEmpty && !_controller.isClosed) {
+        unawaited(_refreshListsSilently());
+      }
+    }
+  }
+
+  /// [loaded] with the attendance already on screen kept in place of its own,
+  /// when it was read for [month] and the calendar has since been paged on.
+  ManagerDashboard _keepCalendarMonth(ManagerDashboard loaded, DateTime month) {
+    final current = _state.dashboard;
+    if (current == null || _sameMonth(month, _attendanceMonth)) return loaded;
+    return loaded.copyWith(
+      attendance: current.attendance,
+      regularizations: current.regularizations,
+      serverDays: current.serverDays,
+    );
   }
 
   /// Folds a punch into the day it belongs to.
@@ -976,3 +1176,11 @@ class ManagerBloc {
 
 bool _sameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
+
+bool _sameMonth(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month;
+
+DateTime _monthOf(DateTime date) => DateTime(date.year, date.month);
+
+/// The request lists a change can touch, each read again on its own.
+enum _RequestList { leaves, overtime, attendance, claims }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -14,7 +15,11 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../policies/data/policies_api_service.dart';
+import '../../policies/data/policies_models.dart';
+import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
+import '../../support/presentation/support_desk_screen.dart';
 
 class QuickActionsController extends ChangeNotifier {
   _QuickActionsScreenState? _state;
@@ -153,6 +158,9 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
   required ShiftPolicy shift,
+  /// The server's settled status per day, by YYYY-MM-DD. Where it has one,
+  /// that is what the day is — see [_settledByServer].
+  Map<String, ServerDayStatus> serverDays = const {},
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -412,7 +420,7 @@ List<AttendanceDayView> buildAttendanceDays({
       );
     }
 
-    final view = natural();
+    final view = _settledByServer(natural(), serverDays[key]);
     // A correction raised but not yet decided leaves the day exactly as it
     // was. Repainting it the moment someone asks would show a half day as
     // settled on the strength of a request the manager has not looked at.
@@ -429,6 +437,71 @@ List<AttendanceDayView> buildAttendanceDays({
   });
 }
 
+/// The day as the server settled it, keeping the app's own reading wherever
+/// the two agree.
+///
+/// The server is the source of truth: it grades every day the same way for
+/// payroll and the HR dashboard, and HR's marks come through it. The app still
+/// grades on its own — for today, which is not settled until it is over, when
+/// offline, and against a server that predates this — so its richer reading
+/// (hours, late, early out, the correction prompt) is kept when it reaches the
+/// same verdict, and replaced when it does not.
+AttendanceDayView _settledByServer(
+  AttendanceDayView local,
+  ServerDayStatus? server,
+) {
+  if (server == null || !server.isFinal) return local;
+  final (kind, cell, title) = switch (server.status) {
+    'present' => (AttendanceKind.present, '', 'Present'),
+    'half_day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
+    'absent' => (AttendanceKind.attention, 'Absent', 'Absent'),
+    'on_leave' => (AttendanceKind.leaveApproved, 'Leave', 'Leave'),
+    'week_off' => (AttendanceKind.weekoff, 'Week off', 'Weekly off'),
+    'holiday' => (AttendanceKind.holiday, 'Holiday', server.label ?? 'Holiday'),
+    'missed_punch' => switch (server.countsAs) {
+      'Present' => (AttendanceKind.present, '', 'Present'),
+      'Half Day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
+      _ => (AttendanceKind.attention, 'Absent', 'Absent'),
+    },
+    _ => (local.kind, local.cellLabel, local.title),
+  };
+  if (server.byHr) {
+    // HR's word, whatever the punches said. Nothing left to correct.
+    return AttendanceDayView(
+      date: local.date,
+      kind: kind,
+      title: '$title · ${server.reason ?? 'Marked by HR'}',
+      cellLabel: cell,
+      record: local.record,
+      regularization: local.regularization,
+      leave: local.leave,
+      holiday: local.holiday,
+    );
+  }
+  // Same verdict: the app's reading says more (hours, late, early out).
+  if (kind == local.kind) return local;
+  // A day still open to correction stays flagged only while the server also
+  // reads it as short of a full day.
+  final stillShort =
+      kind == AttendanceKind.attention || kind == AttendanceKind.halfDay;
+  final reason = server.reason;
+  return AttendanceDayView(
+    date: local.date,
+    kind: kind,
+    title: reason == null || reason.isEmpty || reason == title
+        ? title
+        : '$title · $reason',
+    cellLabel: cell,
+    record: local.record,
+    regularization: local.regularization,
+    leave: local.leave,
+    holiday: local.holiday,
+    late: local.late,
+    earlyOut: local.earlyOut,
+    needsCorrection: stillShort && local.needsCorrection,
+  );
+}
+
 const int _maxLeaveApplyDays = 30;
 
 class QuickActionsScreen extends StatefulWidget {
@@ -440,6 +513,7 @@ class QuickActionsScreen extends StatefulWidget {
     required this.profileAction,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.policies,
   });
 
   final ManagerBloc bloc;
@@ -448,6 +522,10 @@ class QuickActionsScreen extends StatefulWidget {
   final Widget profileAction;
   final VoidCallback onNotifications;
   final VoidCallback onOpenComposer;
+
+  /// Where the company's own policies come from. Supplied by tests; the
+  /// screen makes its own otherwise.
+  final PoliciesApiService? policies;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -481,11 +559,31 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   final _text = TextEditingController();
   final Map<String, String> _answers = {};
   _Policy? _policy;
+
+  /// The company's own policies, from the server: null until known, empty
+  /// when it has none. With none, the Policies page is the built-in one —
+  /// [_policiesData], with the texts written from the shift rules — exactly
+  /// as it was before policies lived on the server.
+  List<PolicyDocument>? _companyPolicies;
+
+  /// The company policy open on the policy page; null when it is a built-in
+  /// one ([_policy]).
+  PolicyDocument? _companyPolicy;
+
+  /// Where leaving the policy page goes: the list, or the Leave screen whose
+  /// link opened it.
+  _QuickPage _policyReturnPage = _QuickPage.policies;
+  late final PoliciesApiService _policiesApi =
+      widget.policies ?? PoliciesApiService(session: widget.bloc.session);
+  DateTime? _policiesFetchedAt;
+  bool _policiesFetching = false;
+  static const _policiesStale = Duration(minutes: 2);
   bool _submitting = false;
-  DateTime _attendanceMonth = DateTime(
-    DateTime.now().year,
-    DateTime.now().month,
-  );
+
+  /// The bloc keeps the month, and reads attendance for it whenever it reads
+  /// attendance at all — so the calendar and the days under it cannot drift
+  /// apart, whoever asked for the read.
+  DateTime get _attendanceMonth => widget.bloc.attendanceMonth;
   AttendanceFilter? _attendanceFilter;
   AttendanceDayView? _selectedCalendarDay;
   bool _overtimeHistoryView = false;
@@ -507,6 +605,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void initState() {
     super.initState();
     widget.controller._attach(this);
+    _companyPolicies = companyPoliciesFor(widget.bloc.session.user.id);
     // The Apply button is disabled until the form is complete, so typing has
     // to rebuild the header.
     _reimbursementAmount.addListener(_onReimbursementFieldChanged);
@@ -574,12 +673,95 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   void _open(_QuickPage page) {
     setState(() => _page = page);
     widget.controller._navigationChanged();
+    // Read again whenever the list is opened, so an edit shows the next time
+    // anyone looks; the Leave screen only needs to know whether there is a
+    // leave policy to link to.
+    if (page == _QuickPage.policies) {
+      unawaited(_loadPolicies(force: true));
+    } else if (page == _QuickPage.leave) {
+      unawaited(_loadPolicies());
+    }
+  }
+
+  /// The company's own policies: the copy kept on the device at once, then
+  /// the server's. Whatever fails leaves what was there, and with nothing
+  /// there the page stays the built-in one.
+  Future<void> _loadPolicies({bool force = false}) async {
+    final fetched = _policiesFetchedAt;
+    final due =
+        !_policiesFetching &&
+        (force ||
+            fetched == null ||
+            DateTime.now().difference(fetched) >= _policiesStale);
+    // Until the first answer, with nothing kept either, the list waits
+    // rather than showing the built-in policies and swapping them out.
+    if (due && mounted) setState(() => _policiesFetching = true);
+    try {
+      if (_companyPolicies == null) {
+        final kept = await _policiesApi.policiesFromCache();
+        if (mounted && _companyPolicies == null && kept != null) {
+          setState(() => _companyPolicies = kept);
+        }
+      }
+      if (!due) return;
+      final policies = await _policiesApi.policies();
+      _policiesFetchedAt = DateTime.now();
+      if (!mounted) return;
+      setState(() {
+        _companyPolicies = policies;
+        // The page open stays open, in its newest words if it still exists.
+        final open = _companyPolicy;
+        if (open != null) {
+          _companyPolicy =
+              policies.where((policy) => policy.key == open.key).firstOrNull ??
+              open;
+        }
+      });
+    } catch (_) {
+      // Offline, or a server error: keep what is shown — with nothing kept,
+      // the built-in policies.
+    } finally {
+      if (due) {
+        _policiesFetching = false;
+        if (mounted) setState(() {});
+      }
+    }
+  }
+
+  /// The company's own policy under [key], if it has one.
+  PolicyDocument? _companyPolicyFor(String key) =>
+      _companyPolicies?.where((policy) => policy.key == key).firstOrNull;
+
+  /// The Leave screen's "leave policy" link: the company's own leave policy
+  /// when it has one, and the Policies list otherwise, as it always was.
+  void _openLeavePolicy() {
+    final leave = _companyPolicyFor('leave');
+    if (leave == null) {
+      _open(_QuickPage.policies);
+      return;
+    }
+    setState(() {
+      _companyPolicy = leave;
+      _policy = null;
+      _policyReturnPage = _QuickPage.leave;
+      _page = _QuickPage.policy;
+    });
+    widget.controller._navigationChanged();
+    unawaited(_loadPolicies(force: true));
   }
 
   void _back() {
+    // Out of a calendar paged to another month: the page underneath reads
+    // today's punch from the same days, so this month comes back with it.
+    final now = DateTime.now();
+    if (_page == _QuickPage.calendar &&
+        (_attendanceMonth.year != now.year ||
+            _attendanceMonth.month != now.month)) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(now)));
+    }
     setState(() {
       if (_page == _QuickPage.policy) {
-        _page = _QuickPage.policies;
+        _page = _policyReturnPage;
       } else if (_page == _QuickPage.applyLeave) {
         _page = _QuickPage.leave;
       } else if (_page == _QuickPage.applyOvertime) {
@@ -847,6 +1029,24 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       imageAsset:
                           'assets/icons/action_card_reimbursement_money.png',
                     ),
+                    // Support desk (node 2896:32193): a concern raised to HR
+                    // and the chat on it. Opens over the tabs, as the
+                    // designs show it without the bar.
+                    _HomeActionCard(
+                      key: const ValueKey('support-desk-card'),
+                      icon: Icons.support_agent_rounded,
+                      color: const Color(0xFF2F7FD9),
+                      tint: const Color(0xFFE3EEFB),
+                      title: 'Support Desk',
+                      subtitle: 'Submit concern to HR.',
+                      onTap: () => openSupportDesk(
+                        context,
+                        session: widget.bloc.session,
+                        profileAction: widget.profileAction,
+                        onNotifications: widget.onNotifications,
+                      ),
+                      imageAsset: 'assets/icons/support_headset.png',
+                    ),
                     // Payslips are built and served, but the way in waits for
                     // the next release — the card is all that is held back.
                     _HomeActionCard(
@@ -926,7 +1126,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     fontWeight: FontWeight.w700,
                   ),
                   recognizer: TapGestureRecognizer()
-                    ..onTap = () => _open(_QuickPage.policies),
+                    ..onTap = _openLeavePolicy,
                 ),
               ],
             ),
@@ -2418,6 +2618,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   Widget _policies() {
+    final companyPolicies = _companyPolicies ?? const <PolicyDocument>[];
     return _HubScaffold(
       key: const ValueKey('policies'),
       title: 'Policies',
@@ -2429,23 +2630,86 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       children: [
         // One list, one treatment — the coloured icon tiles made four policies
         // read as four unrelated products.
-        ..._policiesData.map(
-          (policy) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _PolicyRow(
-              title: policy.title,
-              onTap: () => setState(() {
-                _policy = policy;
-                _page = _QuickPage.policy;
-              }),
+        // The company's own policies when it has any; the built-in ones,
+        // written from its rules, when it has none.
+        if (_companyPolicies == null && _policiesFetching)
+          const Padding(
+            key: ValueKey('policies-loading'),
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+          )
+        else if (companyPolicies.isNotEmpty)
+          ...companyPolicies.map(
+            (policy) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _PolicyRow(
+                key: ValueKey('policy-row-${policy.key}'),
+                label: policyHeading(policy.title),
+                subtitle: policy.summary,
+                onTap: () => setState(() {
+                  _companyPolicy = policy;
+                  _policy = null;
+                  _policyReturnPage = _QuickPage.policies;
+                  _page = _QuickPage.policy;
+                }),
+              ),
+            ),
+          )
+        else
+          ..._policiesData.map(
+            (policy) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _PolicyRow(
+                label: '${policy.title} policy',
+                onTap: () => setState(() {
+                  _policy = policy;
+                  _companyPolicy = null;
+                  _policyReturnPage = _QuickPage.policies;
+                  _page = _QuickPage.policy;
+                }),
+              ),
             ),
           ),
-        ),
+      ],
+    );
+  }
+
+  /// One of the company's own policies, in its own words.
+  Widget _companyPolicyDetail(PolicyDocument policy) {
+    final updatedAt = policy.updatedAt;
+    return _HubScaffold(
+      key: ValueKey('company-policy-${policy.key}'),
+      title: policyHeading(policy.title),
+      onBack: _back,
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: _showQuickCreateComingSoon,
+      backgroundColor: const Color(0xFFF7F7F9),
+      children: [
+        Text(policy.title, style: _QText.heroSmall),
+        if (policy.summary.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            policy.summary,
+            style: const TextStyle(color: _Q.inkSoft, fontSize: 13),
+          ),
+        ],
+        if (updatedAt != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            policyUpdatedLabel(updatedAt),
+            style: const TextStyle(color: _Q.inkFaint, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 16),
+        PolicyBodyView(body: policy.body),
       ],
     );
   }
 
   Widget _policyDetail() {
+    final companyPolicy = _companyPolicy;
+    if (companyPolicy != null) return _companyPolicyDetail(companyPolicy);
     final policy = _policy!;
     // Written from what HR saved, so the app never states a rule the policy
     // does not. Paragraphs are separated by blank lines in the source text.
@@ -2743,6 +3007,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
     month: _attendanceMonth,
     records: widget.dashboard.attendance,
+    serverDays: widget.dashboard.serverDays,
     regularizations: widget.dashboard.regularizations,
     leaves: widget.dashboard.myLeaves,
     holidays: widget.dashboard.holidays,
@@ -2771,11 +3036,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final now = DateTime.now();
     final furthest = DateTime(now.year, now.month + _attendanceMonthsAhead);
     if (month.isAfter(furthest)) return;
-    setState(() {
-      _attendanceMonth = month;
-      _selectedCalendarDay = null;
-    });
-    await widget.bloc.add(LoadAttendanceMonth(month));
+    // The bloc turns to the month as the read starts, before this rebuild.
+    final load = widget.bloc.add(LoadAttendanceMonth(month));
+    setState(() => _selectedCalendarDay = null);
+    await load;
   }
 
   /// Tapping a day selects it; the detail strip below the grid then shows its
@@ -6015,44 +6279,71 @@ class _ViewDetailsLink extends StatelessWidget {
   );
 }
 
-/// A policy in the list: its name and nothing else, in the app's own palette.
+/// A policy in the list: its name, and the company's line about it when it
+/// wrote one, in the app's own palette.
 class _PolicyRow extends StatelessWidget {
-  const _PolicyRow({required this.title, required this.onTap});
+  const _PolicyRow({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.subtitle = '',
+  });
 
-  final String title;
+  /// 'Leave policy'.
+  final String label;
+  final String subtitle;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(16),
-    child: InkWell(
-      onTap: onTap,
+  Widget build(BuildContext context) {
+    final name = Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF2A2A2A),
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    return Material(
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '$title policy',
-                style: const TextStyle(
-                  color: Color(0xFF2A2A2A),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: subtitle.isEmpty
+                    ? name
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          name,
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFF6E655C),
+                              fontSize: 12.5,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
               ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: Color(0xFF9CA3AF),
-            ),
-          ],
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Color(0xFF9CA3AF),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _QuickStatsCard extends StatelessWidget {
@@ -6947,6 +7238,7 @@ class _HomeAttendanceCard extends StatelessWidget {
 
 class _HomeActionCard extends StatelessWidget {
   const _HomeActionCard({
+    super.key,
     required this.icon,
     required this.color,
     required this.tint,

@@ -8,6 +8,7 @@ import { closeConnectRealtime, initConnectRealtime } from './services/connect-re
 import { closeRelayRealtime, initRelayRealtime } from './services/relay-realtime.service';
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
+import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
 
 async function start(): Promise<void> {
   await connectDb();
@@ -15,6 +16,8 @@ async function start(): Promise<void> {
   startConnectScheduler();
   startNotificationScheduler();
   startCareScheduler();
+  // Expires game challenges nobody finished in time, and tells both players.
+  startGameChallengeSweeper();
 
 
 logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v1.cloudfront.net'})
@@ -40,6 +43,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     stopConnectScheduler();
     stopNotificationScheduler();
     stopCareScheduler();
+    stopGameChallengeSweeper();
     await closeRedis();
     await closeDb();
     process.exit(0);

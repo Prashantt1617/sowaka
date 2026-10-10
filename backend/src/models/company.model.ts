@@ -66,6 +66,13 @@ export interface Company {
    * comes later, a script does it until then.
    */
   enabledTabs?: AppTab[];
+  /**
+   * Which games from `game_catalog` this company's Games tab shows, by key.
+   * Absent means the tab's original game, Gratitude Garden, for a company
+   * that shows the tab, and nothing for one that does not; see
+   * DEFAULT_ENABLED_GAMES. Set by Sowaka with src/scripts/game-catalog.ts.
+   */
+  enabledGames?: string[];
   createdAt?: number;
   updatedAt?: Date;
 }

@@ -44,8 +44,8 @@ bool get _hasNativeGallery =>
 ///
 /// [allowedExtensions] applies to the Files branch only — the camera and the
 /// gallery hand back their own formats, which are images by construction.
-/// With [allowVideo] the sheet also offers recording a video and choosing
-/// one from the library, for surfaces that take a clip as well as a photo.
+/// With [allowVideo] the gallery offers clips alongside photos, for surfaces
+/// that take a video as well; the choices on the sheet stay the same.
 /// Returns null when the person backs out at any step.
 Future<PickedImage?> pickImageFrom(
   BuildContext context, {
@@ -56,33 +56,26 @@ Future<PickedImage?> pickImageFrom(
     return _pickFromFiles(allowedExtensions);
   }
 
-  final source = await _askSource(context, allowVideo: allowVideo);
+  final source = await _askSource(context);
   if (source == null) return null;
   if (source == _ImageSource.files) return _pickFromFiles(allowedExtensions);
 
   try {
     final picker = ImagePicker();
-    final picked = switch (source) {
-      _ImageSource.recordVideo || _ImageSource.galleryVideo =>
-        await picker.pickVideo(
-          source: source == _ImageSource.recordVideo
-              ? ImageSource.camera
-              : ImageSource.gallery,
-          // Long enough for a message to the team, short enough to upload.
-          maxDuration: const Duration(minutes: 5),
-        ),
-      _ => await picker.pickImage(
-        source: source == _ImageSource.camera
-            ? ImageSource.camera
-            : ImageSource.gallery,
-        // Big enough for any surface the app shows a photo on, and small
-        // enough that a 12-megapixel phone capture does not become a 6 MB
-        // upload.
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 90,
-      ),
-    };
+    // Big enough for any surface the app shows a photo on, and small enough
+    // that a 12-megapixel phone capture does not become a 6 MB upload. Where
+    // the surface takes clips too, the gallery offers them alongside photos;
+    // the size limits apply to the photos only.
+    final picked = source == _ImageSource.gallery && allowVideo
+        ? await picker.pickMedia(maxWidth: 2048, maxHeight: 2048, imageQuality: 90)
+        : await picker.pickImage(
+            source: source == _ImageSource.camera
+                ? ImageSource.camera
+                : ImageSource.gallery,
+            maxWidth: 2048,
+            maxHeight: 2048,
+            imageQuality: 90,
+          );
     if (picked == null) return null;
     return PickedImage(
       path: picked.path,
@@ -90,10 +83,7 @@ Future<PickedImage?> pickImageFrom(
       size: await File(picked.path).length(),
       extension: picked.name.contains('.')
           ? picked.name.split('.').last.toLowerCase()
-          : (source == _ImageSource.recordVideo ||
-                    source == _ImageSource.galleryVideo
-                ? 'mp4'
-                : 'jpg'),
+          : 'jpg',
     );
   } on PlatformException catch (error) {
     // A denied camera or photo permission arrives here rather than as a crash.
@@ -112,14 +102,21 @@ Future<PickedImage?> pickImageFrom(
 /// The same choice, for a surface that accepts several files at once.
 ///
 /// The camera returns the one shot it just took; the gallery and the file
-/// browser both allow a multi-selection.
+/// browser both allow a multi-selection. With [allowVideo] the gallery offers
+/// clips alongside photos; the choices on the sheet stay the same.
 Future<List<PickedImage>> pickImagesFrom(
   BuildContext context, {
   List<String> allowedExtensions = const ['jpg', 'jpeg', 'png'],
+  bool allowVideo = false,
+  /// The most files the gallery lets the person tick, where it can say so.
+  /// Callers still trim to their own limit.
+  int? limit,
 }) async {
   if (!_hasNativeGallery) {
     return _pickManyFromFiles(allowedExtensions);
   }
+  // The gallery refuses a limit under two; one file left is trimmed after.
+  final galleryLimit = limit != null && limit >= 2 ? limit : null;
 
   final source = await _askSource(context);
   if (source == null) return const [];
@@ -127,20 +124,30 @@ Future<List<PickedImage>> pickImagesFrom(
 
   try {
     final picker = ImagePicker();
-    final picked = source == _ImageSource.camera
-        ? [
-            ?await picker.pickImage(
-              source: ImageSource.camera,
-              maxWidth: 2048,
-              maxHeight: 2048,
-              imageQuality: 90,
-            ),
-          ]
-        : await picker.pickMultiImage(
-            maxWidth: 2048,
-            maxHeight: 2048,
-            imageQuality: 90,
-          );
+    final picked = switch (source) {
+      _ImageSource.camera => [
+        ?await picker.pickImage(
+          source: ImageSource.camera,
+          maxWidth: 2048,
+          maxHeight: 2048,
+          imageQuality: 90,
+        ),
+      ],
+      // Photos and clips together where the surface takes both; the size
+      // limits apply to the photos only.
+      _ when allowVideo => await picker.pickMultipleMedia(
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 90,
+        limit: galleryLimit,
+      ),
+      _ => await picker.pickMultiImage(
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 90,
+        limit: galleryLimit,
+      ),
+    };
     return [
       for (final file in picked)
         PickedImage(
@@ -198,12 +205,9 @@ Future<PickedImage?> _pickFromFiles(List<String> allowedExtensions) async {
   );
 }
 
-enum _ImageSource { camera, gallery, recordVideo, galleryVideo, files }
+enum _ImageSource { camera, gallery, files }
 
-Future<_ImageSource?> _askSource(
-  BuildContext context, {
-  bool allowVideo = false,
-}) {
+Future<_ImageSource?> _askSource(BuildContext context) {
   return showModalBottomSheet<_ImageSource>(
     context: context,
     backgroundColor: Colors.white,
@@ -235,20 +239,6 @@ Future<_ImageSource?> _askSource(
             label: 'Choose from gallery',
             onTap: () => Navigator.pop(sheetContext, _ImageSource.gallery),
           ),
-          if (allowVideo) ...[
-            _SourceTile(
-              icon: Icons.videocam_rounded,
-              label: 'Record a video',
-              onTap: () =>
-                  Navigator.pop(sheetContext, _ImageSource.recordVideo),
-            ),
-            _SourceTile(
-              icon: Icons.video_library_rounded,
-              label: 'Choose a video',
-              onTap: () =>
-                  Navigator.pop(sheetContext, _ImageSource.galleryVideo),
-            ),
-          ],
           _SourceTile(
             icon: Icons.folder_outlined,
             label: 'Browse files',

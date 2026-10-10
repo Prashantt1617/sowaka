@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.5+28
+version: 1.3.6+30
 
 environment:
   sdk: ^3.10.4
@@ -102,6 +102,9 @@ flutter:
     - assets/games/relay/
     # First-run screens: the photo step, the interest chips and the logos.
     - assets/onboarding/
+    # The Games tab's home and leaderboard (Figma section 3692:43200): the
+    # green Game CTA button, the explore cards' art, the nav's controller.
+    - assets/games_home/
 
   fonts:
     - family: Plus Jakarta Sans
@@ -125,6 +128,14 @@ flutter:
     - family: La Belle Aurore
       fonts:
         - asset: assets/fonts/la_belle_aurore/LaBelleAurore-Regular.ttf
+    # The Games tab: Lilita One for its display type, Figtree for its small
+    # print (both from Google Fonts, OFL; licences beside them).
+    - family: Lilita One
+      fonts:
+        - asset: assets/fonts/lilita_one/LilitaOne-Regular.ttf
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/figtree/Figtree-Variable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

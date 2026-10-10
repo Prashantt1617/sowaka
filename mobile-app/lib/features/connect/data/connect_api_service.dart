@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager/data/dashboard_cache.dart';
+import '../../shared/network_status.dart';
 import 'connect_models.dart';
 
 class ConnectApiService {
@@ -118,11 +119,16 @@ class ConnectApiService {
     String postId,
     String text, {
     String? parentId,
+    List<String> mentionedUserIds = const [],
   }) async {
     final json = await _request(
       'POST',
       '/connect/posts/$postId/comments',
-      body: {'text': text, 'parentId': ?parentId},
+      body: {
+        'text': text,
+        'parentId': ?parentId,
+        if (mentionedUserIds.isNotEmpty) 'mentionedUserIds': mentionedUserIds,
+      },
     );
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
@@ -197,8 +203,15 @@ class ConnectApiService {
     request.files.add(
       await http.MultipartFile.fromPath('entryPhoto', photoPath),
     );
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final http.Response response;
+    try {
+      final streamed = await _client.send(request);
+      response = await http.Response.fromStream(streamed);
+    } catch (error) {
+      // An upload is not sent twice; it is reported in plain words.
+      if (NetworkStatus.isNetworkError(error)) throw const ConnectOfflineException();
+      rethrow;
+    }
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return ConnectPost.fromJson(decoded['post'] as Map<String, dynamic>);
@@ -262,7 +275,7 @@ class ConnectApiService {
       'Authorization': 'Bearer ${session.token}',
       'Content-Type': 'application/json',
     };
-    final response = await switch (method) {
+    Future<http.Response> send() => switch (method) {
       'GET' => _client.get(uri, headers: headers),
       'POST' => _client.post(
         uri,
@@ -277,6 +290,27 @@ class ConnectApiService {
       'DELETE' => _client.delete(uri, headers: headers),
       _ => throw UnsupportedError('Unsupported method $method'),
     };
+    http.Response response;
+    try {
+      response = await send();
+    } catch (error) {
+      if (!NetworkStatus.isNetworkError(error)) rethrow;
+      // Back from the background, the phone has closed the connection the
+      // client kept open, and the first request on it fails ("Bad file
+      // descriptor"). A read is safe to send again once on a fresh one; a
+      // write is not, in case it reached the server.
+      if (method != 'GET') throw const ConnectOfflineException();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      try {
+        response = await send();
+      } catch (again) {
+        if (NetworkStatus.isNetworkError(again)) {
+          NetworkStatus.reportFailure(again, probe: Uri.parse('$_baseUrl/health'));
+          throw const ConnectOfflineException();
+        }
+        rethrow;
+      }
+    }
 
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -332,8 +366,15 @@ class ConnectApiService {
         pollOptionImageIndexes,
       );
     }
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final http.Response response;
+    try {
+      final streamed = await _client.send(request);
+      response = await http.Response.fromStream(streamed);
+    } catch (error) {
+      // An upload is not sent twice; it is reported in plain words.
+      if (NetworkStatus.isNetworkError(error)) throw const ConnectOfflineException();
+      rethrow;
+    }
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
@@ -381,4 +422,14 @@ class ConnectApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// No connection to the server. Said in words a person can act on, never as
+/// the socket error underneath it.
+class ConnectOfflineException implements Exception {
+  const ConnectOfflineException();
+
+  @override
+  String toString() =>
+      "Couldn't reach Sowaka. Check your connection and try again.";
 }

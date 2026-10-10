@@ -19,6 +19,8 @@ class ConnectState {
     this.loadingMore = false,
     this.loadMoreFailed = false,
     this.fromCache = false,
+    this.publishing = 0,
+    this.publishingTo,
   });
 
   final ConnectLoadStatus status;
@@ -40,6 +42,15 @@ class ConnectState {
   /// confirmed by the server.
   final bool fromCache;
 
+  /// How many posts are on their way to the feed. The feed shows a
+  /// placeholder card while any is — counted on its own, so a like or a
+  /// comment finishing meanwhile never takes the placeholder away.
+  final int publishing;
+
+  /// Who the post on its way goes to, 'everyone' or 'my_team', for the
+  /// placeholder card. Null when nothing is being published.
+  final String? publishingTo;
+
   factory ConnectState.initial() {
     return const ConnectState(status: ConnectLoadStatus.initial, posts: []);
   }
@@ -54,9 +65,12 @@ class ConnectState {
     bool? loadingMore,
     bool? loadMoreFailed,
     bool? fromCache,
+    int? publishing,
+    String? publishingTo,
     bool clearError = false,
     bool clearMessage = false,
     bool clearBusy = false,
+    bool clearPublishing = false,
   }) {
     return ConnectState(
       status: status ?? this.status,
@@ -68,9 +82,19 @@ class ConnectState {
       loadingMore: loadingMore ?? this.loadingMore,
       loadMoreFailed: loadMoreFailed ?? this.loadMoreFailed,
       fromCache: fromCache ?? this.fromCache,
+      publishing: publishing ?? this.publishing,
+      publishingTo: clearPublishing ? null : publishingTo ?? this.publishingTo,
     );
   }
 }
+
+/// What a failed background read (a refresh, the next page, a resync)
+/// should say: nothing when it was the connection — the offline banner
+/// already says so — and the error's own words otherwise.
+String? _backgroundMessage(Object error) =>
+    error is ConnectOfflineException || NetworkStatus.isNetworkError(error)
+        ? null
+        : error.toString();
 
 class ConnectBloc {
   ConnectBloc({
@@ -107,9 +131,11 @@ class ConnectBloc {
     if (remembered != null && remembered.posts.isNotEmpty) {
       _emit(ConnectState(
         status: ConnectLoadStatus.ready,
-        posts: remembered.posts,
+        posts: _withEnsured(remembered.posts, settle: false),
         hasMore: false,
         fromCache: true,
+        publishing: _state.publishing,
+        publishingTo: _state.publishingTo,
       ));
     } else if (_state.posts.isEmpty) {
       _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
@@ -122,8 +148,10 @@ class ConnectBloc {
       _cursor = page.nextCursor;
       _emit(ConnectState(
         status: ConnectLoadStatus.ready,
-        posts: page.posts,
+        posts: _withEnsured(page.posts),
         hasMore: page.nextCursor != null,
+        publishing: _state.publishing,
+        publishingTo: _state.publishingTo,
       ));
       // The second page is asked for as soon as the first is on screen, so
       // the first scroll never waits on a spinner.
@@ -132,7 +160,7 @@ class ConnectBloc {
       // The copy stays on show if there was one, still marked as the copy;
       // only an empty feed fails.
       if (_state.posts.isNotEmpty) {
-        _emit(_state.copyWith(message: error.toString()));
+        _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
         return;
       }
       _emit(
@@ -206,9 +234,11 @@ class ConnectBloc {
       _cursor = page.nextCursor;
       _emit(_state.copyWith(
         status: ConnectLoadStatus.ready,
-        posts: page.posts,
+        posts: _withEnsured(page.posts),
         hasMore: page.nextCursor != null,
         loadingMore: false,
+        // The live page now, whatever was on show before it.
+        fromCache: false,
       ));
     } catch (error) {
       _emit(_state.copyWith(message: error.toString()));
@@ -234,24 +264,58 @@ class ConnectBloc {
         fromCache: false,
       ));
     } catch (error) {
-      _emit(_state.copyWith(message: error.toString()));
+      _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
     }
   }
 
-  /// One post made sure of, for a notification about it: fetched and put
-  /// at the top if it is not among the pages loaded. False if it cannot be
-  /// had — deleted, or not visible to this viewer.
+  /// Posts [ensurePost] fetched for a notification. A page that lands after
+  /// one — the first load still on its way, a refresh — would otherwise
+  /// replace the list without it, and the comments it was opened for go
+  /// blank under the reader.
+  final _ensured = <String>{};
+
+  /// [page], with the posts fetched for a notification that it does not
+  /// carry kept on top, as [ensurePost] put them. A live page that does
+  /// carry one settles it back into its own place from then on; the device's
+  /// copy ([settle] false) does not, since the live page is still to come.
+  List<ConnectPost> _withEnsured(
+    List<ConnectPost> page, {
+    bool settle = true,
+  }) {
+    final inPage = {for (final post in page) post.id};
+    if (settle) _ensured.removeAll(inPage);
+    final kept = [
+      for (final post in _state.posts)
+        if (_ensured.contains(post.id) && !inPage.contains(post.id)) post,
+    ];
+    return [...kept, ...page];
+  }
+
+  /// One post made sure of, for a notification about it: always read fresh,
+  /// since the notification is about something that just changed on it — a
+  /// copy already in the feed may predate it (a change missed while the app
+  /// was in the background, or the feed the device kept from last time).
+  /// Updated in place when loaded, put at the top when not, and kept there
+  /// through a load or refresh that does not bring it (see [_withEnsured]).
+  /// False if it cannot be had — deleted, or not visible to this viewer.
   Future<bool> ensurePost(String postId) async {
-    if (_state.posts.any((post) => post.id == postId)) return true;
+    final loaded = _state.posts.any((post) => post.id == postId);
     try {
       final post = await _api.fetchPost(postId);
       if (_controller.isClosed) return false;
-      if (!_state.posts.any((p) => p.id == postId)) {
-        _emit(_state.copyWith(posts: [post, ..._state.posts]));
+      final index = _state.posts.indexWhere((p) => p.id == postId);
+      final posts = [..._state.posts];
+      if (index >= 0) {
+        posts[index] = post;
+      } else {
+        posts.insert(0, post);
       }
+      _ensured.add(postId);
+      _emit(_state.copyWith(posts: posts));
       return true;
     } catch (_) {
-      return false;
+      // Offline or slow: the copy on hand is still better than nothing.
+      return loaded;
     }
   }
 
@@ -279,7 +343,7 @@ class ConnectBloc {
       ));
     } catch (error) {
       if (_controller.isClosed) return;
-      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: error.toString()));
+      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
     }
   }
 
@@ -305,12 +369,33 @@ class ConnectBloc {
     );
   }
 
+  /// A double-tap likes a post and never unlikes it. The server flips
+  /// whatever it holds, so nothing is sent while the feed is still the
+  /// device's copy — its hearts may be out of date — and a reply that says
+  /// the post ended up unliked (it was liked already, from elsewhere) is
+  /// flipped straight back.
+  Future<void> likeFromDoubleTap(String postId) async {
+    if (_state.fromCache) return;
+    final post = _state.posts.where((item) => item.id == postId).firstOrNull;
+    if (post == null || post.liked) return;
+    await _mutateOptimistically(
+      postId,
+      (post) => post.copyWith(liked: true, likeCount: post.likeCount + 1),
+      () async {
+        final post = await _api.toggleReaction(postId);
+        return post.liked ? post : _api.toggleReaction(postId);
+      },
+    );
+  }
+
   /// The comment appears in the thread the moment it is sent, under the
   /// viewer's own name, and is swapped for the server's copy when that lands.
-  Future<void> addComment(
+  /// False when it did not go, so the box can have the words back.
+  Future<bool> addComment(
     String postId,
     String text, {
     String? parentId,
+    List<ConnectMention> mentions = const [],
   }) async {
     final user = _session.user;
     final pending = ConnectComment(
@@ -321,14 +406,20 @@ class ConnectBloc {
       createdAt: DateTime.now(),
       parentId: parentId,
       photoUrl: user.profilePhotoUrl,
+      mentions: mentions,
     );
-    await _mutateOptimistically(
+    return _mutateOptimistically(
       postId,
       (post) => post.copyWith(
         commentCount: post.commentCount + 1,
         comments: [...post.comments, pending],
       ),
-      () => _api.addComment(postId, text, parentId: parentId),
+      () => _api.addComment(
+        postId,
+        text,
+        parentId: parentId,
+        mentionedUserIds: [for (final mention in mentions) mention.userId],
+      ),
     );
   }
 
@@ -360,13 +451,14 @@ class ConnectBloc {
     );
   }
 
-  Future<void> submitCaption(
+  /// False when the entry did not go, so the card keeps what was written.
+  Future<bool> submitCaption(
     String postId,
     String text, {
     String? photoPath,
     String? taggedUserId,
-  }) async {
-    await _mutatePost(
+  }) {
+    return _mutatePost(
       postId,
       () => _api.submitCaption(
         postId,
@@ -385,28 +477,41 @@ class ConnectBloc {
     await _mutatePost(postId, () => _api.voteCaption(postId, entryId));
   }
 
-  Future<bool> createPost(ConnectPostDraft draft) async {
-    _emit(_state.copyWith(busyPostId: '__create__', clearMessage: true));
+  Future<bool> createPost(ConnectPostDraft draft) async =>
+      (await publishPost(draft)) != null;
+
+  /// [createPost], handing back the post as the server made it — null when
+  /// it failed, which the feed has already said.
+  Future<ConnectPost?> publishPost(ConnectPostDraft draft) async {
+    _emit(
+      _state.copyWith(
+        publishing: _state.publishing + 1,
+        publishingTo: '${draft.body['sendTo'] ?? 'everyone'}',
+        clearMessage: true,
+      ),
+    );
     try {
       final post = await _api.createPost(draft);
+      final left = (_state.publishing - 1).clamp(0, 1 << 30);
       _emit(
         _state.copyWith(
           posts: [post, ..._state.posts],
           message: 'Post published',
-          busyPostId: null,
-          clearBusy: true,
+          publishing: left,
+          clearPublishing: left == 0,
         ),
       );
-      return true;
+      return post;
     } catch (error) {
+      final left = (_state.publishing - 1).clamp(0, 1 << 30);
       _emit(
         _state.copyWith(
           message: error.toString(),
-          busyPostId: null,
-          clearBusy: true,
+          publishing: left,
+          clearPublishing: left == 0,
         ),
       );
-      return false;
+      return null;
     }
   }
 
@@ -513,34 +618,40 @@ class ConnectBloc {
   /// Applies `guess` to the post straight away, without marking it busy, then
   /// sends the request. The post is swapped for the server's version on
   /// success and put back as it was on failure, so the feed never waits on
-  /// the network for a like or a comment.
-  Future<void> _mutateOptimistically(
+  /// the network for a like or a comment. False when the request failed.
+  Future<bool> _mutateOptimistically(
     String postId,
     ConnectPost Function(ConnectPost post) guess,
     Future<ConnectPost> Function() request,
   ) async {
     final index = _state.posts.indexWhere((post) => post.id == postId);
-    if (index < 0) return;
+    if (index < 0) return false;
     final before = _state.posts[index];
-    final posts = [..._state.posts]..[index] = guess(before);
+    final guessed = guess(before);
+    final posts = [..._state.posts]..[index] = guessed;
     _emit(_state.copyWith(posts: posts, clearMessage: true));
     try {
       final post = await request();
-      if (_controller.isClosed) return;
+      if (_controller.isClosed) return true;
       _emit(_state.copyWith(posts: _replacePost(post)));
+      return true;
     } catch (error) {
-      if (_controller.isClosed) return;
-      // Undo only if nothing else has replaced the post in the meantime.
-      final current = _state.posts.indexWhere((post) => post.id == postId);
+      if (_controller.isClosed) return false;
+      // Undo only if the post is still this guess. Anything newer — another
+      // tap, the server's copy from another request, a live update — stands.
+      final current = _state.posts.indexWhere(
+        (post) => identical(post, guessed),
+      );
       final rolledBack = [..._state.posts];
-      if (current >= 0 && rolledBack[current].id == posts[index].id) {
-        rolledBack[current] = before;
-      }
+      if (current >= 0) rolledBack[current] = before;
       _emit(_state.copyWith(posts: rolledBack, message: error.toString()));
+      return false;
     }
   }
 
-  Future<void> _mutatePost(
+  /// Marks the post busy, sends the request and puts the server's copy in
+  /// place. False when it failed — the feed has already said why.
+  Future<bool> _mutatePost(
     String postId,
     Future<ConnectPost> Function() request,
   ) async {
@@ -554,6 +665,7 @@ class ConnectBloc {
           clearBusy: true,
         ),
       );
+      return true;
     } catch (error) {
       _emit(
         _state.copyWith(
@@ -562,6 +674,7 @@ class ConnectBloc {
           clearBusy: true,
         ),
       );
+      return false;
     }
   }
 

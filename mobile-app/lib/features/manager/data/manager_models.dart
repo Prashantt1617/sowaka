@@ -32,9 +32,10 @@ List<ManagerTab> visibleTabs(List<String> keys) {
 
 enum ManagerView { home, feedbackList }
 
-/// The two halves of the Team tab. Held in app state rather than in the
-/// widget, so a notification can land on Requests directly.
-enum TeamSection { myTeam, requests }
+/// The sections of a manager's Team tab: their people, the requests waiting
+/// on them, and the month's feedback to give. Held in app state rather than
+/// in the widget, so a notification can land on Requests directly.
+enum TeamSection { myTeam, requests, feedback }
 
 enum FeedbackStatus { pending, saved, sent, missed }
 
@@ -958,6 +959,62 @@ class ReimbursementClaim {
   }
 }
 
+/// The server's final word on one of the employee's days. The server grades
+/// every day the same way for payroll, the HR dashboard and here, and HR's
+/// marks come through it; when it says a day is settled the calendar shows
+/// that. The app still grades on its own for today, offline, and against a
+/// server that predates this.
+class ServerDayStatus {
+  const ServerDayStatus({
+    required this.date,
+    required this.status,
+    this.label,
+    this.reason,
+    this.countsAs,
+    this.byHr = false,
+    this.isFinal = false,
+  });
+
+  /// YYYY-MM-DD.
+  final String date;
+
+  /// present, half_day, absent, missed_punch, on_leave, week_off, holiday or
+  /// upcoming.
+  final String status;
+  final String? label;
+
+  /// Why, in words: "Late by 25 min", "Missing punch-out", "Marked by HR".
+  final String? reason;
+
+  /// A missed punch: what it counts as — Present, Half Day or Absent.
+  final String? countsAs;
+
+  /// HR marked the day from the dashboard.
+  final bool byHr;
+
+  /// Settled. Today is not, until it is over (unless HR has marked it).
+  final bool isFinal;
+
+  factory ServerDayStatus.fromJson(Map<String, dynamic> json) =>
+      ServerDayStatus(
+        date: json['date'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+        label: json['label'] as String?,
+        reason: json['reason'] as String?,
+        countsAs: json['countsAs'] as String?,
+        byHr: json['source'] == 'hr',
+        isFinal: json['final'] as bool? ?? false,
+      );
+
+  /// The `days` list of an attendance response, by date. Empty from a server
+  /// that predates it.
+  static Map<String, ServerDayStatus> parseAll(Map<String, dynamic> json) => {
+    for (final item in json['days'] as List<dynamic>? ?? const [])
+      if (item is Map<String, dynamic>)
+        (item['date'] as String? ?? ''): ServerDayStatus.fromJson(item),
+  }..remove('');
+}
+
 class ManagerDashboard {
   const ManagerDashboard({
     required this.managerName,
@@ -992,6 +1049,7 @@ class ManagerDashboard {
     this.attendance = const [],
     this.regularizations = const [],
     this.managerRegularizations = const [],
+    this.serverDays = const {},
   });
 
   final String managerName;
@@ -1048,6 +1106,10 @@ class ManagerDashboard {
   final List<OrgChartNode> myOrgChart;
   final bool overtimeEnabled;
   final List<AttendanceRecord> attendance;
+
+  /// The server's settled status for each day of the month on screen, by
+  /// YYYY-MM-DD. Empty from a server that predates it.
+  final Map<String, ServerDayStatus> serverDays;
   final List<AttendanceRegularization> regularizations;
   final List<AttendanceRegularization> managerRegularizations;
 
@@ -1066,6 +1128,7 @@ class ManagerDashboard {
     List<ReimbursementClaim>? myReimbursements,
     List<ReimbursementClaim>? reimbursements,
     List<AttendanceRecord>? attendance,
+    Map<String, ServerDayStatus>? serverDays,
     List<AttendanceRegularization>? regularizations,
     List<AttendanceRegularization>? managerRegularizations,
     ShiftPolicy? shift,
@@ -1104,6 +1167,7 @@ class ManagerDashboard {
       myOrgChart: myOrgChart,
       overtimeEnabled: overtimeEnabled,
       attendance: attendance ?? this.attendance,
+      serverDays: serverDays ?? this.serverDays,
       regularizations: regularizations ?? this.regularizations,
       managerRegularizations:
           managerRegularizations ?? this.managerRegularizations,

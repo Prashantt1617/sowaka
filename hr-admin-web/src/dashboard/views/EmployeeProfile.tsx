@@ -17,14 +17,14 @@ import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { clearReportingManager, getEmployeeCalendar, setReportingManager } from '../../services/hrms';
+import { clearCalendarDay, clearReportingManager, getEmployeeCalendar, setCalendarDay, setReportingManager } from '../../services/hrms';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getSalaryStructure, inr as inrPaise, type PayrollRunDTO, type PayslipDTO, type SalaryStructureDTO } from '../../services/payroll';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
-import type { CalendarDayStatus, EmployeeCalendarDTO } from '../../services/hrms';
+import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus } from '../../services/hrms';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -309,7 +309,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
         </div>
       )}
 
-      {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} />}
+      {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} onChanged={setCurrentMonth} />}
       {tab === 'salary' && seesSalary && <SalarySlips userId={emp.id} />}
 
       {tab === 'requests' && (
@@ -409,7 +409,10 @@ const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: strin
   upcoming: { bg: '#FFFFFF', fg: '#C7CBD3', label: 'Upcoming' },
 };
 const LEAVE_NAMES: Record<string, string> = { sick: 'Sick leave', casual: 'Casual leave', earned: 'Earned leave', comp_off: 'Comp off' };
-const thisMonth = () => new Date().toISOString().slice(0, 7);
+// The current month by Indian time: the month HR can still correct.
+const thisMonth = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 7);
+// What HR can mark a day as, in the order the dialog offers them.
+const HR_CHOICES: HrDayStatus[] = ['present', 'half_day', 'absent', 'on_leave', 'week_off', 'holiday'];
 const shiftMonth = (month: string, by: number) => {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 1 + by, 1));
@@ -518,11 +521,35 @@ function SalarySlips({ userId }: { userId: string }) {
 
 const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
 
-function EmployeeCalendar({ userId, initial }: { userId: string; initial: EmployeeCalendarDTO | null }) {
+function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; initial: EmployeeCalendarDTO | null; onChanged: (c: EmployeeCalendarDTO) => void }) {
+  const { flash } = useStore();
   const [month, setMonth] = useState(thisMonth());
   const [cal, setCal] = useState<EmployeeCalendarDTO | null>(initial);
   const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState('');
+  // The day HR is marking, if any. Only the current month can be marked.
+  const [editing, setEditing] = useState<CalendarDayDTO | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editable = month === thisMonth();
+  const reload = async () => {
+    const fresh = await getEmployeeCalendar(userId, month);
+    setCal(fresh);
+    if (fresh.month === thisMonth()) onChanged(fresh);
+  };
+  const mark = async (day: CalendarDayDTO, status: HrDayStatus | null, note: string) => {
+    setSaving(true);
+    try {
+      if (status) await setCalendarDay(userId, day.date, status, note.trim() || undefined);
+      else await clearCalendarDay(userId, day.date);
+      await reload();
+      setEditing(null);
+      flash(status ? `${day.date} marked ${CAL_TONE[status].label.toLowerCase()}` : `${day.date} back to the recorded state`);
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Could not save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
   useEffect(() => {
     // The profile already holds this month; only other months are fetched here.
     if (initial && initial.month === month) { setCal(initial); setLoading(false); return; }
@@ -579,19 +606,70 @@ function EmployeeCalendar({ userId, initial }: { userId: string; initial: Employ
               : day.status === 'holiday' || day.status === 'week_off' ? day.label
                 : day.status === 'upcoming' ? ''
                   : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');
+            const prev = day.hr ? CAL_TONE[day.hr.previousStatus] : null;
             return (
-              <div key={day.date} title={`${day.date}${detail ? ` · ${detail}` : ''}`} style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div
+                key={day.date}
+                title={`${day.date}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
+                onClick={editable ? () => setEditing(day) : undefined}
+                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: day.hr ? 'inset 0 0 0 2px #0571A6' : undefined }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <span style={{ fontSize: 15, fontWeight: 800, color: day.status === 'upcoming' ? '#C7CBD3' : '#222222' }}>{Number(day.date.slice(8))}</span>
-                  {day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#7E5FB0' }}>late {day.lateByMinutes}m</span>}
+                  {day.hr ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: '#0571A6', borderRadius: 5, padding: '1px 5px' }}>HR</span>
+                    : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#7E5FB0' }}>late {day.lateByMinutes}m</span>}
                 </div>
-                {day.status !== 'upcoming' && <div style={{ fontSize: 12.5, fontWeight: 700, color: tone.fg }}>{tone.label}</div>}
-                {detail && <div style={{ fontSize: 12, color: tone.fg, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
+                {day.hr && prev && (
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: prev.fg, textDecoration: 'line-through', opacity: .75 }}>{prev.label}</div>
+                )}
+                {day.status !== 'upcoming' && <div style={{ fontSize: 12.5, fontWeight: 700, color: tone.fg }}>{day.hr ? '→ ' : ''}{tone.label}</div>}
+                {detail && !(day.hr && detail === tone.label) && <div style={{ fontSize: 12, color: tone.fg, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
               </div>
             );
           })}
         </div>
       </Card>
+      {editable && <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10 }}>Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
+    </div>
+  );
+}
+
+/** Pick what one day was. Shows what it is now and, when HR already marked it, what it was before. */
+function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving: boolean; onClose: () => void; onSave: (status: HrDayStatus | null, note: string) => void }) {
+  const [status, setStatus] = useState<HrDayStatus>(day.hr && HR_CHOICES.includes(day.status as HrDayStatus) ? (day.status as HrDayStatus) : 'present');
+  const [note, setNote] = useState(day.hr?.note ?? '');
+  const recorded = day.hr ? CAL_TONE[day.hr.previousStatus] : CAL_TONE[day.status];
+  const when = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)' }} />
+      <div style={{ position: 'relative', width: 'min(440px, 100%)', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(34,34,34,.25)', padding: '20px 22px' }}>
+        <div style={{ fontSize: 18, fontWeight: 800 }}>{when}</div>
+        <div style={{ fontSize: 13.5, color: '#717171', marginTop: 4 }}>
+          Recorded as <strong style={{ color: recorded.fg }}>{recorded.label}</strong>
+          {day.hr && <> · now <strong style={{ color: CAL_TONE[day.status].fg }}>{CAL_TONE[day.status].label}</strong>, marked by {day.hr.setByName ?? 'HR'}</>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, margin: '16px 0 12px' }}>
+          {HR_CHOICES.map((choice) => {
+            const tone = CAL_TONE[choice];
+            const on = status === choice;
+            return (
+              <button key={choice} type="button" onClick={() => setStatus(choice)}
+                style={{ border: `2px solid ${on ? tone.fg : 'transparent'}`, background: tone.bg, color: tone.fg, borderRadius: 10, padding: '10px 6px', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {tone.label}
+              </button>
+            );
+          })}
+        </div>
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Note (optional), e.g. client visit approved by email"
+          style={{ width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
+          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} style={{ background: 'none', border: 'none', color: '#A8475F', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove mark</button>}
+          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -719,7 +797,7 @@ function ManagerRow({ emp }: { emp: Emp }) {
       setEditing(false); setQ('');
       void reload();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not change the manager');
+      flash(e instanceof ApiError ? e.message : 'Could not change the manager', 'error');
     } finally {
       setSaving(false);
     }

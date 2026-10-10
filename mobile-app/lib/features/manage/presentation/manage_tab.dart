@@ -1126,10 +1126,15 @@ class _RecordFeedback extends StatefulWidget {
     required this.state,
     required this.bloc,
     this.onClose,
+    this.showTeamSections = false,
   });
 
   final ManagerState state;
   final ManagerBloc bloc;
+
+  /// Opened from the Team tab: My Team / Requests / Feedback stays above the
+  /// form, as the design draws it (node 3165:59470).
+  final bool showTeamSections;
 
   /// Set when the form is a pushed route (opened from Grow or a profile) so
   /// closing pops instead of resetting the Manage tab's view.
@@ -1298,144 +1303,152 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
           onNotifications: () {},
           onQuickCreate: () {},
         ),
+        if (state.dashboard case final dashboard?
+            when widget.showTeamSections && state.canManage)
+          _PushedTeamSectionBar(bloc: bloc, data: dashboard),
         _GrowthPageTopBar(
           name: member.name,
           designation: _periodTitle(_EmployeeGrowthPage._currentPeriod()),
           onBack: widget.onClose,
         ),
         Expanded(
-          child: state.recordParams.isEmpty
-              // There is no default parameter set: HR assigns one per person
-              // per cycle, and the server refuses feedback without it.
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 40),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'No KPIs assigned',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: MColors.ink,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+          // Sora throughout, as the design sets the form (node 3165:59797).
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(fontFamily: 'Sora'),
+            child: state.recordParams.isEmpty
+                // There is no default parameter set: HR assigns one per person
+                // per cycle, and the server refuses feedback without it.
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 40),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'No KPIs assigned',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: MColors.ink,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          'HR has not assigned feedback parameters for this '
-                          'person this cycle, so there is nothing to score yet.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: MColors.inkSoft,
-                            fontSize: 13.5,
+                          SizedBox(height: 6),
+                          Text(
+                            'HR has not assigned feedback parameters for this '
+                            'person this cycle, so there is nothing to score yet.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: MColors.inkSoft,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView(
+                    // 16 under the name, 14 between the cards (node 3165:59797).
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    children: [
+                      _OverallScoreCard(
+                        overall: overall,
+                        previousScore: member.previousScore,
+                      ),
+                      if (alreadySent) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3FAF5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBFE3CC)),
+                          ),
+                          child: const Text(
+                            'Submitted — editable until the cycle ends. Updating '
+                            'replaces the review this person sees.',
+                            style: TextStyle(
+                              color: Color(0xFF2F7A4F),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  children: [
-                    _OverallScoreCard(
-                      overall: overall,
-                      previousScore: member.previousScore,
-                    ),
-                    if (alreadySent) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 11,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3FAF5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFBFE3CC)),
-                        ),
-                        child: const Text(
-                          'Submitted — editable until the cycle ends. Updating '
-                          'replaces the review this person sees.',
-                          style: TextStyle(
-                            color: Color(0xFF2F7A4F),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    for (final (index, param) in state.recordParams.indexed)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ParamCard(
-                          key: ValueKey(
-                            'feedback-param-${member.id}-${param.name}',
-                          ),
-                          param: param,
-                          locked: locked,
-                          listening: _listeningField == 'param-$index',
-                          transcribing: _transcribingField == 'param-$index',
-                          onScore: (value) =>
-                              bloc.add(UpdateFeedbackScore(index, value)),
-                          onNote: (value) =>
-                              bloc.add(UpdateFeedbackNote(index, value)),
-                          onVoice: () => _toggleSpeech(
-                            field: 'param-$index',
-                            currentText: param.note,
-                            onText: (value) =>
+                      const SizedBox(height: 14),
+                      for (final (index, param) in state.recordParams.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _ParamCard(
+                            key: ValueKey(
+                              'feedback-param-${member.id}-${param.name}',
+                            ),
+                            param: param,
+                            locked: locked,
+                            listening: _listeningField == 'param-$index',
+                            transcribing: _transcribingField == 'param-$index',
+                            onScore: (value) =>
+                                bloc.add(UpdateFeedbackScore(index, value)),
+                            onNote: (value) =>
                                 bloc.add(UpdateFeedbackNote(index, value)),
+                            onVoice: () => _toggleSpeech(
+                              field: 'param-$index',
+                              currentText: param.note,
+                              onText: (value) =>
+                                  bloc.add(UpdateFeedbackNote(index, value)),
+                            ),
                           ),
                         ),
-                      ),
-                    // Node 781:7079 — the actions sit at the end of the
-                    // content, scrolling with it rather than pinned above the
-                    // nav.
-                    if (!locked && state.recordParams.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, bottom: 8),
-                        child: Row(
-                          children: [
-                            // A review already on its way to the server takes
-                            // both buttons with it: sending twice would mail
-                            // the person's manager the same review again.
-                            Expanded(
-                              child: _FeedbackActionButton(
-                                label: 'Save',
-                                background: const Color(0xFFF7F7F9),
-                                foreground: writing
-                                    ? const Color(0xFF96B7C7)
-                                    : const Color(0xFF0571A6),
-                                border: const Color(0xFFEBEBEB),
-                                onTap: writing
-                                    ? null
-                                    : () => bloc.add(const SaveFeedback()),
-                                busy: saving,
+                      // Node 781:7079 — the actions sit at the end of the
+                      // content, scrolling with it rather than pinned above the
+                      // nav.
+                      if (!locked && state.recordParams.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2, bottom: 8),
+                          child: Row(
+                            children: [
+                              // A review already on its way to the server takes
+                              // both buttons with it: sending twice would mail
+                              // the person's manager the same review again.
+                              Expanded(
+                                child: _FeedbackActionButton(
+                                  label: 'Save',
+                                  background: const Color(0xFFF7F7F9),
+                                  foreground: writing
+                                      ? const Color(0xFF96B7C7)
+                                      : const Color(0xFF0571A6),
+                                  border: const Color(0xFFEBEBEB),
+                                  onTap: writing
+                                      ? null
+                                      : () => bloc.add(const SaveFeedback()),
+                                  busy: saving,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _FeedbackActionButton(
-                                label: alreadySent ? 'Update' : 'Send',
-                                background: complete && !writing
-                                    ? const Color(0xFF0571A6)
-                                    : const Color(0xFF96B7C7),
-                                foreground: Colors.white,
-                                // Sends straight away — the extra confirmation
-                                // sheet added a step without adding safety.
-                                onTap: complete && !writing
-                                    ? () => bloc.add(const SendFeedback())
-                                    : null,
-                                busy: sending,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _FeedbackActionButton(
+                                  label: alreadySent ? 'Update' : 'Send',
+                                  background: complete && !writing
+                                      ? const Color(0xFF0571A6)
+                                      : const Color(0xFF96B7C7),
+                                  foreground: Colors.white,
+                                  // Sends straight away — the extra confirmation
+                                  // sheet added a step without adding safety.
+                                  onTap: complete && !writing
+                                      ? () => bloc.add(const SendFeedback())
+                                      : null,
+                                  busy: sending,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                  ],
-                ),
+                    ],
+                  ),
+          ),
         ),
       ],
     );
@@ -1534,10 +1547,17 @@ class _OverallScoreCard extends StatelessWidget {
     this.onDeltaTap,
     this.eyebrow,
     this.labelColor = const Color(0xFF9CA3AF),
+    this.scoreColor = const Color(0xFF101828),
+    this.outOfColor = const Color(0xFF6A7282),
   });
 
   final double overall;
   final double? previousScore;
+
+  /// The score and its "/ 5": near-black and slate on the form (node
+  /// 3165:59806), the page's #222 and grey on a growth page (node 3165:59226).
+  final Color scoreColor;
+  final Color outOfColor;
 
   /// The month this score belongs to, over the label (node 2406:74944).
   final String? eyebrow;
@@ -1562,7 +1582,7 @@ class _OverallScoreCard extends StatelessWidget {
         ? null
         : overall - previousScore!;
     final up = (delta ?? 0) >= 0;
-    final content = Row(
+    final scoreRow = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
@@ -1598,20 +1618,22 @@ class _OverallScoreCard extends StatelessWidget {
                 children: [
                   Text(
                     overall <= 0 ? '—' : overall.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: Color(0xFF101828),
+                    style: TextStyle(
+                      fontFamily: 'Sora',
+                      color: scoreColor,
                       fontSize: 44,
                       height: 1,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
                       '/ 5',
                       style: TextStyle(
-                        color: Color(0xFF6A7282),
+                        fontFamily: 'Sora',
+                        color: outOfColor,
                         fontSize: 18,
                         height: 1,
                         fontWeight: FontWeight.w600,
@@ -1620,17 +1642,6 @@ class _OverallScoreCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (showAveragesNote) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'This score averages all the parameters below.',
-                  style: TextStyle(
-                    color: Color(0xFF717171),
-                    fontSize: 12.5,
-                    height: 18.75 / 12.5,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -1661,6 +1672,26 @@ class _OverallScoreCard extends StatelessWidget {
           ),
       ],
     );
+    // The note runs the card's full width under the score and its chip
+    // (node 3165:59233), rather than squeezing beside the chip.
+    final content = showAveragesNote
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              scoreRow,
+              const SizedBox(height: 8),
+              const Text(
+                'This score averages all the parameters below.',
+                style: TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF717171),
+                  fontSize: 12.5,
+                  height: 18.75 / 12.5,
+                ),
+              ),
+            ],
+          )
+        : scoreRow;
 
     if (!boxed) return content;
     return Container(

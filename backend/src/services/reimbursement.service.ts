@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { env } from '../config/env';
 import { reimbursementClaims, users } from '../config/db';
+import { emitRequestsChanged } from './connect-realtime.service';
 import { ReimbursementClaim, ReimbursementStatus } from '../models/reimbursement.model';
 import { User } from '../models/user.model';
 import {
@@ -95,6 +96,7 @@ export async function createReimbursementClaim(
   };
   try {
     const result = await reimbursementClaims().insertOne(claim);
+    emitRequestsChanged([claim.userId, claim.managerUserId], 'reimbursement_submitted');
     return await toView({ ...claim, _id: result.insertedId }, employee);
   } catch (error) {
     if (uploadedReceipt) {
@@ -192,6 +194,7 @@ export async function adminDecideReimbursement(
     { returnDocument: 'after' },
   );
   if (!updated) throw new ReimbursementError(409, 'Reimbursement claim has already been decided');
+  emitRequestsChanged([updated.userId, updated.managerUserId], 'reimbursement_decided');
   return await toView(updated, employee);
 }
 

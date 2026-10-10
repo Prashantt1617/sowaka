@@ -66,6 +66,9 @@ class ManagerApiService {
     ManagerDashboard? previous,
     void Function(ManagerDashboard core)? onCore,
     bool keep = true,
+    /// Whose attendance to read: the month the calendar is on. This month
+    /// when not given.
+    DateTime? attendanceMonth,
   }) async {
     // One recording at a time: a second load while one is in flight would
     // split the replies between two maps and leave both copies incomplete.
@@ -74,7 +77,11 @@ class ManagerApiService {
     final startedAt = DateTime.now();
     if (recording != null) _recording = recording;
     try {
-      final dashboard = await _fetchDashboard(previous: previous, onCore: onCore);
+      final dashboard = await _fetchDashboard(
+        previous: previous,
+        onCore: onCore,
+        attendanceMonth: attendanceMonth ?? startedAt,
+      );
       if (recording != null) {
         unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
       }
@@ -87,6 +94,7 @@ class ManagerApiService {
   Future<ManagerDashboard> _fetchDashboard({
     ManagerDashboard? previous,
     void Function(ManagerDashboard core)? onCore,
+    required DateTime attendanceMonth,
   }) async {
     final workspaceFuture = _request('GET', '/manager/workspace');
     final myLeavesFuture = fetchMyLeaves();
@@ -99,10 +107,10 @@ class ManagerApiService {
     final managerReimbursementsFuture = session.user.role == 'manager'
         ? fetchManagerReimbursements()
         : Future<List<ReimbursementClaim>>.value(const []);
-    final now = DateTime.now();
+    final month = attendanceMonth;
     final attendanceFuture = fetchAttendance(
-      DateTime(now.year, now.month, 1),
-      DateTime(now.year, now.month + 1, 0),
+      DateTime(month.year, month.month, 1),
+      DateTime(month.year, month.month + 1, 0),
     );
     final regularizationInboxFuture = session.user.role == 'manager'
         ? fetchManagerAttendanceRegularizations()
@@ -214,6 +222,7 @@ class ManagerApiService {
       overtimeEnabled: workspace['overtimeEnabled'] as bool? ?? true,
       attendance: attendanceData.$1,
       regularizations: attendanceData.$2,
+      serverDays: attendanceData.$3,
       managerRegularizations: managerRegularizations,
     );
     // The first screen has what it needs; the rest fills in behind it,
@@ -238,7 +247,13 @@ class ManagerApiService {
     );
   }
 
-  Future<(List<AttendanceRecord>, List<AttendanceRegularization>)>
+  Future<
+    (
+      List<AttendanceRecord>,
+      List<AttendanceRegularization>,
+      Map<String, ServerDayStatus>,
+    )
+  >
   fetchAttendance(DateTime from, DateTime to) async {
     final json = await _request(
       'GET',
@@ -253,6 +268,7 @@ class ManagerApiService {
             (v) => AttendanceRegularization.fromJson(v as Map<String, dynamic>),
           )
           .toList(),
+      ServerDayStatus.parseAll(json),
     );
   }
 
@@ -261,7 +277,13 @@ class ManagerApiService {
   /// theirs. The shift is null from a server that predates it; the
   /// single-punch flag is kept for that case.
   Future<
-    (List<AttendanceRecord>, List<AttendanceRegularization>, bool, ShiftPolicy?)
+    (
+      List<AttendanceRecord>,
+      List<AttendanceRegularization>,
+      bool,
+      ShiftPolicy?,
+      Map<String, ServerDayStatus>,
+    )
   >
   fetchTeamMemberAttendance(
     String employeeUserId,
@@ -285,6 +307,7 @@ class ManagerApiService {
       json['shift'] is Map<String, dynamic>
           ? ShiftPolicy.fromJson(json['shift'] as Map<String, dynamic>)
           : null,
+      ServerDayStatus.parseAll(json),
     );
   }
 

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
+import { clearAttendanceOverride, setAttendanceOverride } from '../services/attendance-override.service';
 import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
 import {
   AttendanceError,
@@ -207,8 +208,29 @@ export async function listAccessesHandler(req: Request, res: Response, next: Nex
 /** Give, change or remove one person's dashboard access and tabs. */
 export async function setAccessHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const body = (req.body ?? {}) as { access?: unknown; admin?: unknown; tabs?: unknown };
+    const body = (req.body ?? {}) as { access?: unknown; admin?: unknown; tabs?: unknown; supportRole?: unknown };
     res.status(200).json({ success: true, ...(await setDashboardAccess(adminUserId(req), String(req.params.userId ?? ''), body)) });
+  } catch (error) { next(error); }
+}
+
+/** HR marks one day on an employee's calendar (current month only). */
+export async function setCalendarDayHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const mark = await setAttendanceOverride(
+      adminUserId(req),
+      String(req.params.userId ?? ''),
+      String(req.params.date ?? ''),
+      (req.body ?? {}) as { status?: unknown; note?: unknown },
+    );
+    res.status(200).json({ success: true, mark: { ...mark, setAt: mark.setAt.toISOString() } });
+  } catch (error) { next(error); }
+}
+
+/** HR takes their mark off a day; the day goes back to what the record says. */
+export async function clearCalendarDayHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await clearAttendanceOverride(adminUserId(req), String(req.params.userId ?? ''), String(req.params.date ?? ''));
+    res.status(200).json({ success: true, ...result });
   } catch (error) { next(error); }
 }
 

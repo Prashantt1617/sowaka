@@ -9,6 +9,7 @@ import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './ic
 import { useStore } from './store';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
+import { useSupportBadge } from './supportBadge';
 
 export type NavItem = { key: View; label: string };
 
@@ -18,6 +19,11 @@ const REQUESTS: NavItem[] = [
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
   { key: 'oolcheckins', label: 'OOL check-ins' },
+];
+// Support is its own section, like Claims: a desk of conversations handled by
+// the people given a Support role, not one more approval queue.
+const SUPPORT: NavItem[] = [
+  { key: 'support', label: 'Tickets' },
 ];
 const PEOPLE: NavItem[] = [
   { key: 'departments', label: 'Departments' },
@@ -68,6 +74,7 @@ const CONNECT: NavItem[] = [
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REQUESTS', items: REQUESTS },
+  { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
@@ -224,6 +231,8 @@ export function Sidebar() {
   const claims = rbs.filter((r) => r.status === 'Pending').length;
   const corrPending = corrs.filter((c) => c.status === 'Pending').length;
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
+  // New tickets plus unread for a Support head; their own unread for staff.
+  const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
 
   const badgeFor = (key: View): ReactNode => {
     switch (key) {
@@ -237,6 +246,8 @@ export function Sidebar() {
         return <CountBadge value={reviewsPending} />;
       case 'reimbursements':
         return <CountBadge value={claims} danger />;
+      case 'support':
+        return <CountBadge value={supportCount} danger={supportCount > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }
@@ -435,8 +446,9 @@ export function Topbar() {
 }
 
 export function Toast() {
-  const { toast } = useStore();
+  const { toast, toastTone } = useStore();
   if (!toast) return null;
+  const failed = toastTone === 'error';
   return (
     <div
       style={{
@@ -458,7 +470,11 @@ export function Toast() {
         animation: 'tst .24s ease both',
       }}
     >
-      <IconCheck size={17} stroke="#7FBF82" />
+      {failed ? (
+        <span aria-hidden style={{ width: 18, height: 18, borderRadius: 99, background: '#E5484D', color: '#fff', fontSize: 12, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+      ) : (
+        <IconCheck size={17} stroke="#7FBF82" />
+      )}
       {toast}
     </div>
   );

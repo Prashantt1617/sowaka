@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../notifications/notification_badge.dart';
 import '../../shared/org_branding.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -9,6 +10,7 @@ class AppHomeHeader extends StatelessWidget {
     required this.profileAction,
     required this.onNotifications,
     this.onQuickCreate,
+    this.divider = true,
   });
 
   final Widget profileAction;
@@ -19,12 +21,18 @@ class AppHomeHeader extends StatelessWidget {
   /// creating a post now starts from the "Post" tab in the bottom nav.
   final VoidCallback? onQuickCreate;
 
+  /// The hairline under the header. Off where a top bar sits straight under
+  /// it with no line between them (the Support desk, node 2896:32383).
+  final bool divider;
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+        border: divider
+            ? const Border(bottom: BorderSide(color: Color(0xFFF3F4F6)))
+            : null,
       ),
       child: SafeArea(
         bottom: false,
@@ -82,10 +90,17 @@ class _AppHeaderBellButton extends StatelessWidget {
                   height: 22,
                 ),
               ),
-              const Positioned(
-                right: 6,
-                top: 6,
-                child: _AppHeaderNotificationDot(),
+              // Only when something new has arrived since the inbox was last
+              // opened (see NotificationBadge).
+              ValueListenableBuilder<bool>(
+                valueListenable: NotificationBadge.hasNew,
+                builder: (context, hasNew, _) => hasNew
+                    ? const Positioned(
+                        right: 6,
+                        top: 6,
+                        child: _AppHeaderNotificationDot(),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ],
           ),

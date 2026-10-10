@@ -9,6 +9,8 @@ import { OtpDeliveryError, sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { DEFAULT_APP_TABS } from '../models/company.model';
+import { supportRoleOf } from '../models/support.model';
+import { enabledGamesOf } from './game-catalog.service';
 
 const defaultCompany = 'Sowaka';
 
@@ -270,10 +272,15 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     // The app draws only the tabs it is told about. A company that has never
     // been given a list gets the four the app has always had.
     enabledTabs: company?.enabledTabs?.length ? company.enabledTabs : DEFAULT_APP_TABS,
+    // Which games, so the app shows only what is on — the garden's tree
+    // included, which used to follow the Games tab alone.
+    enabledGames: enabledGamesOf(company),
     dashboardAccess: user.dashboardAccess === true,
     dashboardAdmin: user.dashboardAdmin === true,
     // The dashboard tabs this person may open; null means every tab.
     dashboardTabs: user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs) ? null : user.dashboardTabs,
+    // Whether the dashboard shows the Support desk, and which desk.
+    supportRole: supportRoleOf(user),
     isLeadership: user.isLeadership === true,
   };
 }

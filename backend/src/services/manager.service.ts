@@ -4,6 +4,7 @@ import {
   recognitionNominations,
   users,
   leaves,
+  attendanceOverrides,
 } from '../config/db';
 import { getCompanyConfig } from './company-settings.service';
 import {
@@ -90,9 +91,10 @@ export interface ManagerTeamMemberView {
   todayStatus: 'present' | 'not_punched_in';
   /**
    * How today reads on the team card: punched in on time, late, a half day,
-   * working away (an approved WFH / client-visit day), on approved leave, or
-   * not in yet. Graded against the member's own shift, so a manager looking
-   * across two shifts sees each person by their own rules.
+   * working away (an approved WFH / client-visit day), on approved leave (or a
+   * holiday or week-off HR marked), or not in yet. Graded against the member's
+   * own shift, so a manager looking across two shifts sees each person by
+   * their own rules.
    */
   todayMark: 'present' | 'late' | 'half_day' | 'wfh' | 'leave' | 'not_in';
   /**
@@ -325,6 +327,11 @@ export async function getManagerWorkspace(
     .map((report) => report.employeeId)
     .filter((value): value is string => Boolean(value));
   const today = new Date().toISOString().slice(0, 10);
+  // HR's marks on today, by Indian date, read alongside everything below.
+  const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todaysMarksPromise = reportIds.length
+    ? attendanceOverrides().find({ userId: { $in: reportIds }, workDate: istToday }, { projection: { _id: 0, userId: 1, status: 1 } }).toArray()
+    : Promise.resolve([]);
   const [
     currentFeedback,
     latestSent,
@@ -411,6 +418,7 @@ export async function getManagerWorkspace(
   const attendanceByUserId = new Map(
     todaysAttendance.filter((record) => record.userId).map((record) => [record.userId, record]),
   );
+  const todaysMarks = new Map((await todaysMarksPromise).map((mark) => [mark.userId, mark.status]));
   const todaysRecordFor = (report: (typeof reports)[number]) =>
     (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
     attendanceByUserId.get(report.userId);
@@ -469,6 +477,15 @@ export async function getManagerWorkspace(
     report: (typeof reports)[number],
     record: ReturnType<typeof todaysRecordFor>,
   ): Promise<ManagerTeamMemberView['todayMark']> => {
+    // HR's mark on today outranks the punches. A holiday or week-off HR gave
+    // reads as leave: off today and owing nothing. The released app knows no
+    // other way to say that, and "not in" would read as absent.
+    const hr = todaysMarks.get(report.userId);
+    if (hr) {
+      if (hr === 'present' || hr === 'half_day') return hr;
+      if (hr === 'on_leave' || hr === 'week_off' || hr === 'holiday') return 'leave';
+      return 'not_in';
+    }
     if (onLeaveToday.has(report.userId)) return 'leave';
     const away = record?.dayType === 'wfh' || record?.dayType === 'client_visit' || record?.dayType === 'office_visit';
     if (away) return 'wfh';
@@ -831,7 +848,7 @@ async function requireRecognitionCandidate(managerUserId: string, employeeUserId
  * Walked from `managerUserId`, with each id visited once: a reporting loop in
  * the data stops the walk instead of looping forever.
  */
-function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[] {
+export function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[] {
   const node = (user: User, isSelf: boolean): OrgChartNode => ({
     userId: user.userId,
     name: user.name,
@@ -949,7 +966,7 @@ export class ManagerError extends Error {
 }
 
 /** Whether the viewer sits anywhere above this person's reporting line. */
-function reportsUpTo(person: User, viewerId: string, byId: Map<string, User>): boolean {
+export function reportsUpTo(person: User, viewerId: string, byId: Map<string, User>): boolean {
   const seen = new Set<string>();
   let current: User | undefined = person;
   while (current?.managerUserId && !seen.has(current.managerUserId)) {

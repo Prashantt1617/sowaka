@@ -378,13 +378,16 @@ Color scoreColor(double score) {
   return MColors.live;
 }
 
-/// Qualitative word shown under a parameter score, as in the feedback design.
-String scoreLabel(double score) {
+/// Qualitative word for a parameter score, as the feedback form words it
+/// (node 3165:59470): "Strong" for 4, "Good" for 3, "Need Improvement" below.
+/// [short] is the score chip's one word, "Improve", where the longer phrase
+/// will not fit.
+String scoreLabel(double score, {bool short = false}) {
   if (score <= 0) return '-';
   if (score >= 4.25) return 'Excellent';
   if (score >= 3.5) return 'Strong';
-  if (score >= 2.5) return 'On track';
-  return 'Needs work';
+  if (score >= 2.5) return 'Good';
+  return short ? 'Improve' : 'Need Improvement';
 }
 
 (Color, Color) leavePalette(String type) {

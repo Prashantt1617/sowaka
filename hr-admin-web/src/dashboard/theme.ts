@@ -16,6 +16,7 @@ export type View =
   | 'holidaybank'
   | 'offices'
   | 'oolcheckins'
+  | 'support'
   | 'roster'
   | 'shiftswaps'
   | 'reimbursements'
@@ -125,6 +126,7 @@ export const TITLES: Record<View, [string, string]> = {
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
   oolcheckins: ['OOL check-ins', 'Requests · punches taken away from every office'],
+  support: ['Support desk', 'Support · tickets employees raised from the app'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
   shiftswaps: ['Swap Requests', 'Shifts · shift swap & change approvals'],
   reimbursements: ['Reimbursements', 'People'],

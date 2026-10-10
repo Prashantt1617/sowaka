@@ -1,0 +1,13 @@
+Your shift runs 09:30–18:30 (Default).
+
+A day counts as a full day at 8 hours and as a half day at 4.
+
+You are marked late after 15 minutes past the start, and as an early-out if you leave more than 15 minutes before the end.
+
+Week-offs: every Sunday, and the 2nd and 4th Saturday.
+
+Punches are captured by Biometric.
+
+A correction can be raised for: missing punch-in, missing punch-out, both punches missing — up to 15 days back.
+
+Week-offs and company holidays are not up for correction; claim overtime if you worked one.

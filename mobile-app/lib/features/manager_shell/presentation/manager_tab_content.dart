@@ -47,6 +47,8 @@ class _TabContent extends StatelessWidget {
           recognitionCandidates: state.dashboard!.recognitionCandidates,
           composerController: connectComposerController,
           data: state.dashboard!,
+          bloc: bloc,
+          onOpenProfile: onOpenProfile,
           profileAction: _ProfileAvatarAction(
             key: const ValueKey('connect-profile-avatar'),
             initial: state.dashboard!.managerInitial,
@@ -61,11 +63,11 @@ class _TabContent extends StatelessWidget {
         _GamesTab(
           key: const ValueKey('games'),
           session: session,
-          profileAction: _ProfileAvatarAction(
-            key: const ValueKey('games-profile-avatar'),
-            initial: state.dashboard!.managerInitial,
-            onTap: onOpenProfile,
-          ),
+          bloc: bloc,
+          connectComposerController: connectComposerController,
+          // The home is fetched when the tab is first looked at, not for
+          // every company the moment the app opens.
+          visible: state.tab == ManagerTab.games,
         ),
         QuickActionsScreen(
           key: const ValueKey('quick-actions'),

@@ -23,6 +23,11 @@ class AppNotificationService {
   final _opened = StreamController<Map<String, dynamic>>.broadcast();
   final _local = FlutterLocalNotificationsPlugin();
   Stream<Map<String, dynamic>> get opened => _opened.stream;
+
+  /// A notification that arrived while the app was open. Whatever it is
+  /// about may have changed on screen, so listeners read it again.
+  final _received = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get received => _received.stream;
   Map<String, dynamic>? pendingDestination;
   AuthSession? _session;
 
@@ -31,7 +36,12 @@ class AppNotificationService {
       await _initializeFirebase();
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       if (!kIsWeb) await _initializeLocalNotifications();
-      FirebaseMessaging.onMessage.listen(_showForeground);
+      FirebaseMessaging.onMessage.listen((message) {
+        if (!_received.isClosed) {
+          _received.add(Map<String, dynamic>.from(message.data));
+        }
+        _showForeground(message);
+      });
       FirebaseMessaging.onMessageOpenedApp.listen(
         (message) => _emit(message.data),
       );

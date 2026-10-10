@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- A game, not a document: no pinch or double-tap zoom, and the page runs under the notch with its own safe-area padding. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#15122B">
+<meta name="color-scheme" content="dark">
+<title>Odd One Out</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* One arcade column: clock, score and streak on top, a square board of emoji tiles under the thumbs. One dark look on purpose; the accent hue (--h) shifts as the grid grows.
+   Sowaka: this one file is the whole game. The Sowaka app stores it in game_catalog and loads it into its own screen with a bridge (window.Sowaka) for the
+   player's name, the company's leaderboard and colleague challenges; in a plain browser there is no bridge, scores stay on this device and there are no challenges. */
+[hidden]{display:none!important}
+:root{
+  color-scheme:dark; --h:45;
+  --bg:#15122B; --panel:#211D42; --panel2:#2A2553; --line:#3B3668; --ink:#F6F1FF; --muted:#A9A3CC;
+  --tile:#FFF6DE; --tile-edge:#D2BC7E;
+  --accent:hsl(var(--h) 95% 60%); --accent-deep:hsl(var(--h) 85% 40%); --accent-ink:#15122B;
+  --good:#4BE39A; --bad:#FF6B6B; --gold:#FFD23F;
+  --display:"Baloo 2","Trebuchet MS",system-ui,sans-serif; --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(36px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+input{-webkit-user-select:text;user-select:text}
+.app{max-width:440px;margin-inline:auto;display:flex;flex-direction:column;gap:12px;position:relative}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:2.1rem;line-height:.9;margin:0;color:var(--accent);text-wrap:balance}
+.hright{display:flex;align-items:flex-end;gap:14px}
+.bank{text-align:right}
+.bank small,.scorebox small,.combo small{display:block;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.bank b{font-family:var(--display);font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;display:inline-block}
+.pill{font:inherit;font-size:.8rem;font-weight:700;height:32px;padding:0 12px;border-radius:999px;border:2px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
+.hud{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.clock{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.7rem;font-variant-numeric:tabular-nums;background:conic-gradient(var(--accent) var(--pct,100%),var(--panel2) 0);position:relative}
+.clock::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--bg)}
+.clock span{position:relative}
+.clock.low,.clock.hit{--accent:var(--bad)}
+.scorebox{min-width:0}
+.score{font-family:var(--display);font-weight:800;font-size:2.6rem;line-height:1;font-variant-numeric:tabular-nums;display:inline-block;transform-origin:left center}
+.combo{font-family:var(--display);font-weight:800;text-align:center;min-width:86px;padding:6px 10px 8px;border-radius:16px;background:var(--panel);border:2px solid var(--line)}
+.combo b{display:block;font-size:1.5rem;line-height:1}
+.combo.hot{border-color:var(--gold);color:var(--gold);box-shadow:0 0 18px -4px var(--gold)}
+.combo.hot small{color:var(--gold)}
+.goal{position:relative;height:16px;border-radius:999px;background:var(--panel2);margin-top:8px}
+.goal .fill{position:absolute;inset:0 auto 0 0;border-radius:999px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));width:0;transition:width .3s cubic-bezier(.2,1.4,.4,1)}
+.goal .st{position:absolute;top:-12px;transform:translateX(-50%);font-size:1.25rem;line-height:1;color:var(--line)}
+.goal .st.on{color:var(--gold);filter:drop-shadow(0 0 6px var(--gold))}
+.goalrow{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.rival{display:grid;grid-template-columns:minmax(64px,auto) 1fr auto;gap:6px 8px;align-items:center;font-size:.85rem;font-weight:700;padding:8px 12px;border-radius:16px;background:var(--panel);border:2px solid var(--line)}
+.rival .rn{min-width:0;max-width:9.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.1}
+.rival .rn small{display:block;font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.rival .rn small.on{color:var(--good)}
+.rival .bar{height:10px;border-radius:999px;background:var(--panel2);position:relative;overflow:hidden}
+.rival .bar i{position:absolute;inset:0 auto 0 0;background:var(--bad);border-radius:999px;width:0;transition:width .4s}
+.rival .bar.me i{background:var(--accent)}
+.rival b{font-variant-numeric:tabular-nums;text-align:right;min-width:3.5ch}
+.ranks{display:flex;flex-direction:column;gap:4px}
+.rank{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;border-radius:10px;background:var(--panel2);font-size:.9rem;font-weight:600;font-variant-numeric:tabular-nums}
+.rank.me{outline:2px solid var(--accent)}
+.rank span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage{position:relative;container-type:inline-size}
+.grid{--n:3;display:grid;grid-template-columns:repeat(var(--n),1fr);gap:calc(100cqw/var(--n)*.08);aspect-ratio:1;touch-action:manipulation}
+.cell{font:inherit;font-size:calc(100cqw/var(--n)*.56);line-height:1;padding:0;border:0;border-radius:calc(100cqw/var(--n)*.2);background:var(--panel);box-shadow:0 calc(100cqw/var(--n)*.05) 0 #0d0b1d;cursor:pointer;display:grid;place-items:center;color:var(--ink);user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;min-width:0;min-height:0;overflow:hidden}
+.cell i{font-style:normal;display:block;pointer-events:none}
+.cell.flip i{transform:scaleX(-1)}
+.cell.ok{background:var(--good)}
+.cell.no{background:var(--bad)}
+.cell.was{outline:4px solid var(--gold);outline-offset:-4px}
+.cell:focus-visible,.btn:focus-visible,.pill:focus-visible,.link:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.cover{position:absolute;inset:-6px;border-radius:22px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:12px;z-index:2}
+.cover.m{position:static;padding:8px 0}
+.cover h2{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:0;line-height:1.05;text-wrap:balance}
+.cover p{margin:0;color:var(--muted);max-width:30ch}
+.cover .n{font-family:var(--display);font-weight:800;font-size:7rem;line-height:1;color:var(--accent)}
+.demo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:min(46cqw,190px)}
+.demo span{aspect-ratio:1;border-radius:14px;background:var(--panel);display:grid;place-items:center;font-size:1.7rem;box-shadow:0 4px 0 #0d0b1d}
+.demo span.odd{outline:3px solid var(--gold)}
+.menu{display:grid;grid-template-columns:1fr;gap:8px;width:100%}
+.menu .go{grid-column:1/-1}
+.btn{font:inherit;font-weight:700;min-height:50px;padding:0 10px;border-radius:16px;border:2px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.btn:active{transform:translateY(2px)}
+.btn.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-family:var(--display);font-weight:800;font-size:1.6rem;min-height:60px;box-shadow:0 5px 0 var(--accent-deep)}
+.btn.go:active{transform:translateY(4px);box-shadow:0 1px 0 var(--accent-deep)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.toasts{position:absolute;inset:0;pointer-events:none;z-index:3}
+.toast{position:absolute;left:50%;top:-18px;font-family:var(--display);font-weight:800;font-size:1.5rem;white-space:nowrap;text-shadow:0 2px 0 rgba(0,0,0,.45);color:var(--ink);transform:translate(-50%,0)}
+.toast.big{font-size:2.3rem;color:var(--gold);top:30%}
+.toast.bad{color:var(--bad)}
+.toast.feed{font-size:.95rem;color:var(--muted);top:-40px;font-family:var(--body);font-weight:700}
+.ticker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:800;font-size:9rem;line-height:1;color:var(--bad);opacity:.3;pointer-events:none;z-index:1}
+.foot{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}
+.link{font:inherit;font-size:.85rem;color:var(--muted);background:none;border:0;padding:6px 0;text-decoration:underline;cursor:pointer}
+.sheet{position:fixed;inset:0;background:rgba(8,6,20,.78);display:flex;flex-direction:column;align-items:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));z-index:9;overflow-y:auto;overscroll-behavior:contain}
+/* Pushed to the bottom when it fits; when it is taller than the screen it starts at the top and the sheet scrolls. */
+.card{background:var(--panel);color:var(--ink);border-radius:24px;padding:22px;width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px;border:1px solid var(--line);margin-top:auto;flex-shrink:0}
+.lb{display:flex;flex-direction:column;gap:6px}
+.lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.lb .ranks{gap:3px}
+.lb .rank{padding:4px 10px;font-size:.85rem}
+.lb .rank b{font-family:var(--display);font-weight:800;flex-shrink:0}
+.lb .pos{font-style:normal;color:var(--muted);display:inline-block;min-width:2.4ch}
+.lb .rank.me .pos{color:var(--accent)}
+.lb .wait{margin:0;font-size:.85rem;color:var(--muted)}
+.lb .link{align-self:center;padding:2px 0}
+.card h2{font-family:var(--display);font-weight:800;font-size:1.9rem;margin:0;line-height:1.05;text-wrap:balance}
+.card dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-variant-numeric:tabular-nums}
+.card dt{color:var(--muted)} .card dd{margin:0;text-align:right;font-weight:700}
+.card .total dt,.card .total dd{color:var(--ink);font-weight:800;font-size:1.15rem;border-top:1px solid var(--line);padding-top:8px}
+.card .note{margin:0;font-size:.88rem;color:var(--muted)}
+.card .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card .acts.one{grid-template-columns:1fr}
+.stars{display:flex;justify-content:center;gap:10px;font-size:3rem;line-height:1;color:var(--line)}
+.stars span.on{color:var(--gold);filter:drop-shadow(0 0 10px var(--gold))}
+.bigscore{font-family:var(--display);font-weight:800;font-size:3.2rem;text-align:center;line-height:1;font-variant-numeric:tabular-nums}
+/* Challenges: the inbox under the menu, the colleague picker, the two scores side by side, and what the result paid. */
+.inbox{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left}
+.inbox .lbh .link{padding:0;font-size:.75rem;letter-spacing:0;text-transform:none}
+.inbox .wait{margin:0;font-size:.85rem;color:var(--muted);max-width:none}
+.crow{font:inherit;color:var(--ink);display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:14px;background:var(--panel);border:2px solid var(--line);text-align:left;width:100%}
+button.crow{cursor:pointer}
+.crow.hot{border-color:var(--gold)}
+.crow p{margin:0;font-size:.88rem;color:var(--ink);max-width:none;line-height:1.25;min-width:0}
+.crow p small{display:block;color:var(--muted);font-size:.75rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .bt{display:flex;gap:6px}
+.crow .pts{font-family:var(--display);font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
+.crow .pts.zero{color:var(--muted)}
+.mini{font:inherit;font-size:.8rem;font-weight:800;min-height:36px;padding:0 12px;border-radius:12px;border:2px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
+.mini.yes{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.mini:disabled{opacity:.5}
+.mini:focus-visible,.person:focus-visible,.crow:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:.95rem;color:#15122B;background:hsl(var(--ah,45) 85% 72%);flex-shrink:0;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.people{display:flex;flex-direction:column;gap:4px;max-height:min(44vh,360px);overflow-y:auto;overscroll-behavior:contain}
+.person{font:inherit;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;text-align:left;padding:8px 10px;border-radius:14px;border:2px solid transparent;background:var(--panel2);color:var(--ink);cursor:pointer;width:100%}
+.person:active{transform:translateY(1px)}
+.person span{min-width:0}
+.person b{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person small{display:block;color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person i{font-style:normal;color:var(--accent);font-weight:800;font-size:.85rem}
+.vs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;text-align:center}
+.vs .side{padding:10px 6px;border-radius:16px;background:var(--panel2);min-width:0;border:2px solid transparent}
+.vs .side.win{border-color:var(--gold);box-shadow:0 0 18px -6px var(--gold)}
+.vs .side small{display:block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vs .side b{display:block;font-family:var(--display);font-weight:800;font-size:1.7rem;line-height:1.15;font-variant-numeric:tabular-nums}
+.vs .side em{display:block;font-style:normal;font-size:.75rem;color:var(--muted);font-weight:700}
+.vs .side em.on{color:var(--good)}
+.vs .mid{font-family:var(--display);font-weight:800;color:var(--muted)}
+.prize{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:var(--panel2);font-weight:700}
+.prize span{white-space:nowrap}
+.prize b{font-family:var(--display);font-size:1.35rem;color:var(--gold);font-variant-numeric:tabular-nums;text-align:right}
+.prize.none b{color:var(--muted);font-family:var(--body);font-size:.88rem}
+.lrow{display:grid;grid-template-columns:1fr;gap:6px}
+.lrow label{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.lrow input{font:inherit;font-weight:600;min-height:46px;padding:0 12px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:10}
+.flash{position:fixed;inset:0;background:var(--gold);opacity:0;pointer-events:none;z-index:7}
+@media (min-width:700px){.card{margin-block:auto}}
+@keyframes rise{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}18%{opacity:1;transform:translate(-50%,0) scale(1.1)}100%{opacity:0;transform:translate(-50%,-56px) scale(1)}}
+@keyframes bump{40%{transform:scale(1.18)}}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes okpop{50%{transform:scale(1.25)}100%{transform:scale(0);opacity:0}}
+@keyframes shake{20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+@keyframes beat{50%{transform:scale(1.08)}}
+@keyframes tickbeat{0%{transform:translate(-50%,-50%) scale(1.5);opacity:.6}100%{transform:translate(-50%,-50%) scale(1);opacity:.3}}
+@keyframes flashk{0%{opacity:.5}100%{opacity:0}}
+@keyframes hint{50%{transform:scale(1.12)}}
+@media (prefers-reduced-motion:no-preference){
+  .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b,.bank b.bump{animation:bump .3s} .clock.low{animation:beat .5s infinite}
+  .grid.in .cell{animation:pop .16s cubic-bezier(.2,1.6,.4,1) both} .cell.ok{animation:okpop .22s ease-in forwards} .cell.no{animation:shake .3s}
+  .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
+  .ticker.beat{animation:tickbeat .9s ease-out} .demo span.odd{animation:hint 1s ease-in-out infinite}
+}
+@media (prefers-reduced-motion:reduce){.toast{opacity:1}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>Odd One Out</h1>
+    <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button></div>
+  </header>
+  <div class="hud">
+    <div class="clock" id="clock" role="timer" aria-label="Seconds left"><span id="secs">45</span></div>
+    <div class="scorebox"><small>Score</small><span class="score" id="score">0</span></div>
+    <div class="combo" id="combo"><b id="cx">×1</b><small id="streak">streak 0</small></div>
+  </div>
+  <div>
+    <div class="goalrow"><span id="glabel">Fill the bar</span><span id="gnext"></span></div>
+    <div class="goal"><div class="fill" id="gfill"></div><span class="st" id="st1">★</span><span class="st" id="st2">★</span><span class="st" id="st3">★</span></div>
+  </div>
+  <div class="rival" id="rival" hidden aria-live="off">
+    <span class="rn">You<small>this round</small></span><div class="bar me"><i id="mbar"></i></div><b id="mscore">0</b>
+    <span class="rn"><span id="rname"></span><small id="rstate"></small></span><div class="bar"><i id="rbar"></i></div><b id="rscore">0</b>
+  </div>
+  <div class="stage">
+    <div class="grid" id="grid" aria-label="Find the tile that is different"></div>
+    <div class="ticker" id="ticker" hidden></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <div class="cover" id="cover"></div>
+  </div>
+  <div class="foot"><span class="link" style="text-decoration:none;cursor:default" id="best"></span><span><button class="link" id="lbopen" type="button">Leaderboard</button>&nbsp;&nbsp;<button class="link" id="reset" type="button">Start over</button></span></div>
+  <div class="sheet" id="sheet" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="sh"><h2 id="sh"></h2><div id="sb" style="display:contents"></div><div class="acts" id="sa"></div></div></div>
+  <div class="flash" id="flash"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const ROUND=45, PENALTY=1, QUICK=1.0, MAXMULT=5, STARS=[400,1000,1800];
+const bankFor=s=>Math.round(s/20), fmtn=x=>Math.round(x).toLocaleString('en-IN');
+/* seeded-boards:start
+   Everything a board depends on, and nothing else: board g of a round is a pure function of (seed, g), so two players given one seed see the same
+   boards in the same order whatever they tap. A solo round takes a random seed; a challenge takes the server's. The Sowaka backend's check script
+   (src/scripts/game-challenge-check.ts) runs this block on its own, so keep it free of anything outside it. */
+const EASY=[['🐶','🐱'],['🍎','🍌'],['⭐','🌙'],['🚗','🚲'],['🌵','🌸'],['🐸','🐷'],['🍕','🍩'],['⚽','🎈'],['🐧','🦊'],['☕','🍦']];
+const MED=[['🙂','🙃'],['🍊','🍑'],['🐭','🐹'],['🐻','🐨'],['🌲','🌳'],['👍','👎'],['🔒','🔓'],['🍋','🍐'],['🐯','🦁'],['🌞','🌝'],['🚕','🚗'],['👈','👉'],['🐰','🐭'],['🍓','🍒']];
+const HARD=[['😀','😃'],['😐','😑'],['🕐','🕑'],['🌖','🌔'],['😮','😯'],['🔈','🔉'],['🙈','🙉'],['😺','😸'],['📪','📫'],['😛','😝'],['🕒','🕘'],['🌗','🌓'],['😄','😁'],['🐵','🙊']];
+const MIRROR=['🐟','🦆','🐕','🚀','🐌','🦖','🏃','🐘','🚜','🦄','🐊','🐿'];
+const sizeFor=g=>g<3?2:g<7?3:g<13?4:g<21?5:6;
+function rng(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function boardAt(sd,g){
+  const r=rng(sd*7919+g*104729+13), n=sizeFor(g), pick=a=>a[Math.floor(r()*a.length)];
+  const roll=r(); let tier=g<4?'e':g<10?(roll<.5?'e':'m'):g<18?(roll<.5?'m':'h'):(roll<.45?'h':roll<.75?'x':'m');
+  let base,odd,flip=false;
+  if(tier==='x'){ base=odd=pick(MIRROR); flip=true; } else { const p=pick(tier==='e'?EASY:tier==='m'?MED:HARD); const sw=r()<.5; base=sw?p[1]:p[0]; odd=sw?p[0]:p[1]; }
+  return {n,base,odd,flip,at:Math.floor(r()*n*n)};
+}
+/* seeded-boards:end */
+const HUES=[45,200,330,150,265];
+const MILE={5:'On fire!',10:'Unstoppable!',15:'Machine!',20:'Legend!',30:'Unreal!'};
+let save={bank:0,best:0,rounds:0,sound:true,scores:[]};
+try{const s=JSON.parse(localStorage.getItem('oddone.v1')||'null'); if(s&&typeof s.bank==='number') save=Object.assign(save,s);}catch(e){}
+if(!Array.isArray(save.scores))save.scores=[];
+const store=()=>{try{localStorage.setItem('oddone.v1',JSON.stringify(save));}catch(e){}};
+
+/* ---------- Sowaka bridge ----------
+   In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
+     Sowaka.playerName()                -> "Tanvi Shah"
+     Sowaka.submitScore(n)              -> Promise of the board after it, posted under the player's own session
+     Sowaka.leaderboard()               -> Promise of {entries:[{rank,name,score,me}], me:{rank,score}|null, company, label}
+   and for colleague challenges (each a Promise; a refusal rejects with .message, .status and sometimes .details):
+     Sowaka.colleagues(query)           -> {colleagues:[{userId,name,designation,department,photoUrl}]}
+     Sowaka.challenge(userId)           -> the new challenge
+     Sowaka.challenges()                -> {incoming, outgoing, active, recent}: lists of challenges
+     Sowaka.getChallenge(id)            -> one challenge
+     Sowaka.acceptChallenge(id) / declineChallenge(id) -> the challenge after it
+     Sowaka.reportLive(score, id)       -> the score mid-round, passed to the other player
+     Sowaka.finishChallenge(id, score)  -> the challenge once this player's final is in
+     Sowaka.startChallengeId            -> the challenge a tapped notification opened the game for, or null
+   A challenge, as each player sees it: {id, seed (once accepted), status: pending|accepted|declined|expired|finished, role: challenger|opponent,
+     me/them: {userId, name, score|null, live|null, liveAt}, outcome: won|lost|draw|null, myAward/theirAward: {kind, points, onlyOwnScore, reason}|null, expiresAt}.
+   The app calls window.onSowakaChallenge(evt) for each change: {kind: created|accepted|declined|scored|finished|expired, challengeId, challenge},
+     {kind:'live', challengeId, userId, score} for the other player's score mid-round, or {kind:'resync'} after a reconnection.
+   In a plain browser there is no bridge: scores stay on this device, in localStorage, the board is your own, and there are no challenges. */
+const LOCAL_TOP=10;
+const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
+let board=null; /* the last board seen, for the best line under the grid */
+function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
+  const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
+  return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',shared:true}; }
+function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
+  return {rows:list.map((x,i)=>({rank:i+1,name:'You',score:x.s,me:x.t===at})),me:null,title:'Your best on this device',shared:false}; }
+function keepLocal(s){ const t=Date.now(); save.scores=save.scores.concat({s,t}).sort((a,b)=>b.s-a.s||a.t-b.t).slice(0,LOCAL_TOP); store(); return t; }
+const Board={
+  name(){ const b=bridge(); try{ const n=b&&b.playerName(); if(n)return String(n); }catch(e){} return ''; },
+  first(){ return Board.name().trim().split(/\s+/)[0]||''; },
+  /* Every round is kept on the device too, so a round played offline is not lost to the player. */
+  submit(s){ const t=keepLocal(s), b=bridge(); if(!b)return Promise.resolve(localBoard(t));
+    return Promise.resolve().then(()=>b.submitScore(s)).then(shapeBoard).catch(()=>Object.assign(localBoard(t),{offline:true})); },
+  fetch(){ const b=bridge(); if(!b)return Promise.resolve(localBoard(-1)); return Promise.resolve().then(()=>b.leaderboard()).then(shapeBoard); },
+};
+function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();} renderTop(); }
+function refreshBoard(){ if(bridge())Board.fetch().then(seeBoard).catch(()=>{}); }
+/* The board, drawn into box: the top `limit` and, when the player is further down, their own row under it. */
+function drawBoard(box,b,limit){
+  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
+  if(b.offline)box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.'));
+  if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
+  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(' '+name)); w.append(left,el('b','',fmtn(r.score))); list.appendChild(w); };
+  const shown=b.rows.slice(0,limit); shown.forEach(r=>row(r,r.me&&b.shared?(r.name+' (you)'):r.name));
+  if(b.me&&b.shared&&!shown.some(r=>r.me))row({rank:b.me.rank,score:b.me.score,me:true},(Board.name()||'You')+' (you)');
+  box.appendChild(list);
+  if(b.rows.length>limit){ const more=el('button','link','Show the top '+b.rows.length); more.type='button'; more.onclick=()=>{sfx.ui();drawBoard(box,b,b.rows.length);}; box.appendChild(more); }
+}
+function boardBox(pending){ const box=el('div','lb'); box.append(el('div','lbh','Leaderboard'),el('p','wait',bridge()?'Saving your score…':''));
+  pending.then(b=>{seeBoard(b);drawBoard(box,b,5);}).catch(()=>{box.lastChild.textContent='Could not load the leaderboard.';}); return box; }
+function openBoard(){ sfx.ui(); const box=el('div','lb'); box.appendChild(el('p','wait','Loading…'));
+  openSheet('Leaderboard',[box],[['Close',closeSheet,true]]);
+  Board.fetch().then(b=>{seeBoard(b);drawBoard(box,b,LOCAL_TOP);}).catch(()=>{box.innerHTML='';box.appendChild(el('p','wait','Could not load the leaderboard. Try again in a moment.'));}); }
+let mode='idle', seed=1, gi=0, cur=null, score=0, shown=0, streak=0, bestStreak=0, miss=0, cleared=0, endAt=0, shownAt=0, timer=null, countTimer=null, lastSec=-1, locked=false, duel=null, resetArmed=false, starsNow=0;
+const now=()=>performance.now()/1000;
+const reduce=()=>window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const multFor=s=>Math.min(MAXMULT,1+Math.floor(Math.max(0,s-1)/3));
+const makeGrid=g=>boardAt(seed,g);
+/* ---------- sound ---------- */
+let AC=null, OUT=null, audioMode='web', audioChecked=false, tagBlocked=false;
+function ac(){ if(!save.sound)return null; if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();
+    const comp=AC.createDynamicsCompressor(); OUT=AC.createGain(); OUT.gain.value=2.2; OUT.connect(comp); comp.connect(AC.destination);}catch(e){AC=null;return null;}}
+  if(AC.state!=='running'){try{const p=AC.resume(); if(p&&p.catch)p.catch(()=>{});}catch(e){}} return AC; }
+function webTone(a,f,d,o){ const t=a.currentTime+(o.at||0), os=a.createOscillator(), g=a.createGain();
+  os.type=o.type||'triangle'; os.frequency.setValueAtTime(f,t); if(o.to)os.frequency.exponentialRampToValueAtTime(o.to,t+d);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(o.vol||0.16,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+  os.connect(g); g.connect(OUT); os.start(t); os.stop(t+d+0.03); }
+const wavCache={};
+function wav(f,d,to){ const k=Math.round(f)+'|'+d+'|'+(to||0); if(wavCache[k])return wavCache[k];
+  const sr=11025, N=Math.floor(sr*d), buf=new Uint8Array(44+N), dv=new DataView(buf.buffer); const w=(o,s)=>{for(let i=0;i<s.length;i++)buf[o+i]=s.charCodeAt(i);};
+  w(0,'RIFF'); dv.setUint32(4,36+N,true); w(8,'WAVEfmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true); dv.setUint32(24,sr,true); dv.setUint32(28,sr,true); dv.setUint16(32,1,true); dv.setUint16(34,8,true); w(36,'data'); dv.setUint32(40,N,true);
+  let ph=0; for(let i=0;i<N;i++){ const x=i/N, fr=to?f*Math.pow(to/f,x):f; ph+=2*Math.PI*fr/sr; const env=Math.min(1,i/60)*Math.pow(1-x,1.5); buf[44+i]=128+Math.round(110*env*Math.sin(ph)); }
+  let s=''; for(let i=0;i<buf.length;i++)s+=String.fromCharCode(buf[i]); return wavCache[k]='data:audio/wav;base64,'+btoa(s); }
+function tagTone(f,d,o){ const go=()=>{ try{ const au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.volume=Math.min(1,(o.vol||0.16)*4); const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
+function tone(f,d,o){ o=o||{}; if(!save.sound)return; if(audioMode==='tag')return tagTone(f,d,o); const a=ac(); if(!a)return tagTone(f,d,o); webTone(a,f,d,o); }
+function sndLabel(){ const b=$('snd'); b.textContent=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on'); b.setAttribute('aria-pressed',save.sound?'true':'false'); }
+function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
+  setTimeout(()=>{ if(audioChecked)return; audioChecked=true; if(!a||a.state!=='running'){ audioMode='tag'; tagTone(660,0.08,{vol:.12}); } },450); }
+['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,true));
+const SC=[0,2,4,7,9], nt=i=>261.63*Math.pow(2,(SC[i%5]+12*Math.min(2,Math.floor(i/5)))/12);
+const sfx={
+  pop(s,m){ const i=Math.min(s,14); tone(nt(i),0.12,{vol:.2}); tone(nt(i)*2,0.09,{type:'sine',vol:.09,at:.03}); if(m>1)tone(nt(i)*1.5,0.16,{type:'sine',vol:.05+m*.01,at:.05}); },
+  quick(){tone(1568,0.06,{type:'sine',vol:.09,at:.06});tone(2093,0.1,{type:'sine',vol:.09,at:.11});},
+  no(){tone(150,0.12,{type:'square',to:90,vol:.12});tone(110,0.16,{type:'square',to:70,vol:.1,at:.1});},
+  mult(m){tone(440*Math.pow(1.122,m*2),0.18,{type:'sawtooth',to:880*Math.pow(1.122,m*2),vol:.07,at:.04});},
+  lost(){tone(330,0.25,{type:'sine',to:165,vol:.09,at:.15});},
+  grow(){[392,523,659,784].forEach((f,i)=>tone(f,0.1,{vol:.13,at:.08+i*.05}));},
+  mile(){[523,659,784,1047,1319].forEach((f,i)=>tone(f,0.2,{vol:.18,at:i*.07}));[523,784,1047].forEach(f=>tone(f,0.8,{type:'sine',vol:.08,at:.4}));},
+  star(k){tone(1047*Math.pow(1.26,k),0.5,{type:'sine',vol:.16});tone(2093*Math.pow(1.26,k),0.6,{type:'sine',vol:.08,at:.04});},
+  tick(k){k=k||1;tone(700+k*70,0.05,{type:'square',vol:.07+k*.008});tone(350+k*35,0.09,{type:'sine',vol:.1,at:.02});},
+  count(){tone(523,0.14,{vol:.18});},
+  go(){tone(784,0.12,{vol:.2});tone(1047,0.3,{vol:.2,at:.1});},
+  timeup(){tone(196,0.9,{type:'sine',to:98,vol:.22});tone(294,0.9,{type:'triangle',to:147,vol:.12});},
+  coin(i){tone(1175+i*40,0.05,{type:'square',vol:.05});},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,0.2,{vol:.2,at:i*.1}));[523,659,784].forEach(f=>tone(f,0.9,{type:'sine',vol:.1,at:.42}));},
+  lose(){[392,330,262,196].forEach((f,i)=>tone(f,0.24,{type:'sawtooth',vol:.08,at:i*.13}));},
+  ui(){tone(700,0.05,{type:'sine',vol:.1});},
+  horn(){tone(294,0.16,{type:'sawtooth',vol:.1});tone(440,0.3,{type:'sawtooth',vol:.1,at:.14});},
+  ahead(){tone(880,0.09,{vol:.12});tone(1175,0.16,{vol:.12,at:.08});},
+  behind(){tone(466,0.1,{type:'square',vol:.07});tone(370,0.2,{type:'square',vol:.07,at:.1});}
+};
+function buzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(e){}}
+
+/* ---------- confetti ---------- */
+const fx=$('fx'), fctx=fx.getContext('2d'); let parts=[], fxOn=false;
+function fxSize(){fx.width=innerWidth;fx.height=innerHeight;} fxSize(); addEventListener('resize',fxSize);
+function burst(x,y,n,cols){ if(reduce())return; for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2, sp=3+Math.random()*9; parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-5,s:4+Math.random()*6,r:Math.random()*6,vr:(Math.random()-.5)*.5,c:cols[i%cols.length],life:60+Math.random()*30});}
+  if(!fxOn){fxOn=true;requestAnimationFrame(fxLoop);} }
+function fxLoop(){ fctx.clearRect(0,0,fx.width,fx.height); parts=parts.filter(p=>p.life>0);
+  for(const p of parts){p.vy+=0.35;p.x+=p.vx;p.y+=p.vy;p.vx*=.985;p.r+=p.vr;p.life--; fctx.save();fctx.translate(p.x,p.y);fctx.rotate(p.r);fctx.globalAlpha=Math.min(1,p.life/25);fctx.fillStyle=p.c;fctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6);fctx.restore();}
+  if(parts.length)requestAnimationFrame(fxLoop); else {fxOn=false;fctx.clearRect(0,0,fx.width,fx.height);} }
+const COLS=['#39C6C0','#4C9BFF','#A77BFF','#FF6FB5','#FFD23F','#4BE39A','#FFF6DE'];
+function centre(el){const r=el.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];}
+
+const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+function toast(text,cls,xy){ const t=el('span','toast'+(cls?' '+cls:''),text); if(xy){ const r=$('toasts').getBoundingClientRect(); t.style.left=Math.max(84,Math.min(r.width-84,xy[0]-r.left))+'px'; t.style.top=Math.max(-10,xy[1]-r.top-40)+'px'; } $('toasts').appendChild(t); setTimeout(()=>t.remove(),1050); }
+
+/* ---------- render ---------- */
+function renderTop(){ sndLabel(); $('best').textContent=save.best?'Your best: '+fmtn(save.best)+(board&&board.me?' · #'+board.me.rank+' here':''):''; }
+function renderHud(instant){
+  const left=mode==='play'?Math.max(0,endAt-now()):ROUND; $('secs').textContent=Math.ceil(left);
+  $('clock').style.setProperty('--pct',Math.min(100,left/ROUND*100)+'%'); $('clock').classList.toggle('low',mode==='play'&&left<=10);
+  if(instant){shown=score;$('score').textContent=fmtn(score);}
+  const m=multFor(streak+1); $('cx').textContent='×'+m; $('streak').textContent='streak '+streak; $('combo').classList.toggle('hot',m>1);
+}
+function renderGoal(){ const max=STARS[2]*1.08; $('gfill').style.width=Math.min(100,score/max*100)+'%';
+  STARS.forEach((t,i)=>{const e=$('st'+(i+1)); e.style.left=(t/max*100)+'%'; e.classList.toggle('on',score>=t);});
+  const nxt=STARS.find(t=>score<t); $('glabel').textContent=mode==='play'||mode==='over'?cleared+' found':'Fill the bar'; $('gnext').textContent=nxt?fmtn(nxt-score)+' to next star':'All three stars!'; }
+/* The other player's score as this page last heard it: their final once it is in, else the last live one. */
+function rivalScore(){ if(!duel)return 0; return duel.theirFinal!=null?duel.theirFinal:(duel.theirLive||0); }
+const liveNow=d=>!!d.theirLiveAt&&Date.now()-d.theirLiveAt<8000;
+function renderRival(){ const r=$('rival'); r.hidden=!duel; if(!duel)return; const rs=rivalScore(), max=STARS[2]*1.08;
+  $('rname').textContent=duel.first; const st=$('rstate');
+  st.textContent=duel.theirFinal!=null?'finished':(liveNow(duel)?'playing now':'not playing yet'); st.className=duel.theirFinal==null&&liveNow(duel)?'on':'';
+  $('rscore').textContent=duel.theirFinal==null&&!duel.theirLive?'—':fmtn(rs); $('rbar').style.width=Math.min(100,rs/max*100)+'%';
+  $('mscore').textContent=fmtn(score); $('mbar').style.width=Math.min(100,score/max*100)+'%'; }
+function showGrid(){
+  cur=makeGrid(gi); const g=$('grid'); g.style.setProperty('--n',cur.n); g.innerHTML=''; g.className='grid in';
+  for(let i=0;i<cur.n*cur.n;i++){ const b=el('button','cell'+(cur.flip&&i===cur.at?' flip':'')); b.type='button'; b.setAttribute('aria-label','Tile '+(Math.floor(i/cur.n)+1)+', '+(i%cur.n+1)); b.appendChild(el('i','',i===cur.at?cur.odd:cur.base));
+    b.addEventListener('pointerdown',e=>{e.preventDefault();tap(i,b);}); b.addEventListener('click',e=>{if(e.detail===0)tap(i,b);}); g.appendChild(b); }
+  shownAt=now(); locked=false;
+}
+function menu(){
+  mode='idle'; duel=null; const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; $('grid').hidden=true;
+  const d=el('div','demo'); for(let i=0;i<9;i++){ const s=el('span',i===5?'odd':'',i===5?'🙃':'🙂'); d.appendChild(s); }
+  const m=el('div','menu'); const go=el('button','btn go','Play'); go.type='button'; go.onclick=()=>start(null); m.append(go);
+  if(canChallenge()){ const du=el('button','btn','Challenge a colleague'); du.type='button'; du.id='chbtn'; du.onclick=()=>{sfx.ui();openPicker();}; m.append(du); }
+  const inbox=el('div','inbox'); inbox.id='inbox'; inbox.hidden=true;
+  c.append(d,el('h2','','Tap the one that is different'),el('p','','45 seconds. The grids get bigger and sneakier. A wrong tap costs a second and your streak.'),m,inbox);
+  $('grid').innerHTML=''; $('ticker').hidden=true; renderHud(true); renderGoal(); renderRival(); renderTop(); renderInbox();
+}
+/* opp: the challenge being played ({id, name, theirFinal, theirLive, theirLiveAt}), or null for a round on your own. */
+function start(opp,sd){
+  if(mode==='count'||mode==='play')return; clearInterval(timer); clearInterval(countTimer); closeSheet();
+  seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; streak=0; bestStreak=0; miss=0; cleared=0; lastSec=-1; starsNow=0; locked=true;
+  duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal,theirLive:+opp.theirLive||0,theirLiveAt:opp.theirLiveAt||0,lead:0}:null;
+  liveSent=-1;
+  document.documentElement.style.setProperty('--h',HUES[0]); $('grid').innerHTML=''; renderHud(true); renderGoal(); renderRival();
+  mode='count'; const c=$('cover'); c.hidden=false; c.className='cover'; $('grid').hidden=false; let k=3;
+  const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();buzz(20);};
+  show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
+}
+function begin(){ mode='play'; $('cover').hidden=true; endAt=now()+ROUND; sfx.go(); showGrid(); timer=setInterval(tick,100); tick(); if(duel)liveSend(true); }
+function countUp(){ const e=$('score'); const from=shown, to=score, t0=performance.now(), dur=260; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump');
+  const step=()=>{const k=Math.min(1,(performance.now()-t0)/dur); shown=from+(to-from)*k; e.textContent=fmtn(shown); if(k<1&&score===to)requestAnimationFrame(step); else {shown=score;e.textContent=fmtn(score);} }; requestAnimationFrame(step); }
+
+/* ---------- play ---------- */
+function tap(i,b){
+  if(mode!=='play'||locked)return; const xy=centre(b);
+  if(i!==cur.at){ if(b.classList.contains('no'))return; miss++; const had=streak; streak=0; endAt-=PENALTY; b.classList.add('no'); sfx.no(); if(had>=4)sfx.lost(); buzz([30,40,30]); toast('−'+PENALTY+' s','bad',xy);
+    const c=$('clock'); c.classList.add('hit'); setTimeout(()=>c.classList.remove('hit'),350); renderHud(); return; }
+  locked=true; const dt=now()-shownAt, quick=dt<=QUICK; streak++; bestStreak=Math.max(bestStreak,streak); cleared++;
+  const m=multFor(streak), pm=multFor(streak-1), pts=(20+(quick?10:0))*m, before=score; score+=pts;
+  b.classList.add('ok'); sfx.pop(streak,m); if(quick)sfx.quick(); if(m>pm&&streak>1)sfx.mult(m); buzz(m>2?[15,20,25]:12);
+  burst(xy[0],xy[1],10+m*7+(quick?8:0),COLS); toast('+'+fmtn(pts)+(quick?'  quick!':''),'',xy);
+  if(MILE[streak]){ setTimeout(()=>{toast(MILE[streak],'big');sfx.mile();const f=$('flash');f.classList.remove('on');void f.offsetWidth;f.classList.add('on');buzz([40,30,80]);},120); }
+  else if(m>pm&&streak>1) setTimeout(()=>toast('×'+m+'!','big'),100);
+  STARS.forEach((th,k)=>{ if(before<th&&score>=th){ starsNow=k+1; setTimeout(()=>{sfx.star(k);const [sx,sy]=centre($('st'+(k+1)));burst(sx,sy,50,['#FFD23F','#FFF3A6','#FFB800']);},200); } });
+  countUp(); const cb=$('combo'); cb.classList.remove('bump'); void cb.offsetWidth; cb.classList.add('bump');
+  if(duel){ const rs=rivalScore(), lead=score>rs?1:(score<rs?-1:0); if(lead===1&&duel.lead!==1&&rs>0)setTimeout(sfx.ahead,250); duel.lead=lead; liveSend(); renderRival(); }
+  const n0=cur.n; gi++; renderHud(); renderGoal();
+  setTimeout(()=>{ if(mode!=='play')return; if(sizeFor(gi)>n0){ sfx.grow(); document.documentElement.style.setProperty('--h',HUES[(sizeFor(gi)-2)%HUES.length]); } showGrid(); },reduce()?40:130);
+}
+function tick(){
+  if(mode!=='play')return; const left=endAt-now();
+  const s=Math.ceil(left); if(s!==lastSec){lastSec=s; const tk=$('ticker'); if(s<=10&&s>0){sfx.tick(11-s); if(s<=3)buzz(15); tk.hidden=false; tk.textContent=s; tk.classList.remove('beat'); void tk.offsetWidth; tk.classList.add('beat');} else tk.hidden=true;}
+  if(duel){ const rs=rivalScore(), lead=score>rs?1:(score<rs?-1:0); if(lead===-1&&duel.lead!==-1&&rs>0)sfx.behind(); duel.lead=lead; renderRival(); }
+  renderHud(); if(left<=0)endRound();
+}
+function endRound(){
+  mode='over'; locked=true; clearInterval(timer); timer=null; $('ticker').hidden=true; sfx.timeup(); buzz([60,40,160]); renderHud(true);
+  const cells=$('grid').children; if(cur&&cells[cur.at])cells[cur.at].classList.add('was');
+  const stars=STARS.filter(t=>score>=t).length, mine=bankFor(score), newBest=score>save.best;
+  const rows=[['Found',cleared],['Best streak',bestStreak],['Wrong taps',miss]], total=null;
+  if(newBest)save.best=score; save.bank+=mine; save.rounds++; store(); renderTop();
+  const pending=Board.submit(score);
+  if(duel){
+    /* A challenge round: the final goes to the server (kept on the device until it lands), and the card shows both scores as they come in. */
+    const d=duel; clearTimeout(liveT); liveT=null; renderRival();
+    save.pendingFinish={id:d.id,score}; store();
+    const played={stars,rows,total,pending,score,animate:true};
+    const mineNow=findCh(d.id), base=mineNow||{id:d.id,status:'accepted',role:'challenger',me:{name:Board.name()||'You'},
+      them:{name:d.name,score:d.theirFinal,live:d.theirLive,liveAt:d.theirLiveAt?new Date(d.theirLiveAt).toISOString():null},outcome:null,myAward:null,theirAward:null};
+    if(!base.me||base.me.score==null)base.me=Object.assign({},base.me,{score});
+    sendFinish(d.id,score);
+    setTimeout(()=>{ if(mode==='over')showResult(findCh(d.id)||base,played); },reduce()?100:900);
+    return;
+  }
+  const title=newBest&&save.rounds>1?'New best!':['Good eyes!','Sharp!','Eagle eyes!','Unreal!'][stars], first=Board.first();
+  setTimeout(()=>results(first?title.replace(/!$/,', '+first+'!'):title,stars,rows,total,pending),reduce()?100:900);
+}
+function openSheet(title,body,acts){
+  $('sh').textContent=title; const sb=$('sb'); sb.innerHTML=''; body.forEach(x=>{ if(x)sb.appendChild(x); });
+  const sa=$('sa'); sa.innerHTML=''; sa.className='acts'+(acts.length===1?' one':'');
+  acts.forEach(a=>{const b=el('button','btn'+(a[2]?' primary':''),a[0]);b.type='button';b.onclick=()=>{sfx.ui();a[1]();};sa.appendChild(b);});
+  $('sheet').hidden=false; if(sa.lastChild)sa.lastChild.focus({preventScroll:true});
+}
+function closeSheet(){ $('sheet').hidden=true; CH.waiting=null; CH.result=null; }
+/* Closing a challenge sheet after a round goes back to the menu, not to the finished board. */
+function dismiss(){ closeSheet(); if(mode==='over')menu(); else renderInbox(); }
+/* Stars stamped in and the score counted up: the end of a round. */
+function animateScore(st,big,target,stars,won){
+  const t0=performance.now(), dur=reduce()?1:800; let lastTick=0;
+  const step=()=>{const k=Math.min(1,(performance.now()-t0)/dur); big.textContent=fmtn(target*k); const tk=Math.floor(k*14); if(tk!==lastTick){lastTick=tk;sfx.coin(tk);} if(k<1)requestAnimationFrame(step); else stamp(0);};
+  const stamp=i=>{ if(i>=stars){ if(won===true){sfx.win();const [x,y]=centre(big);burst(x,y,90+stars*30,COLS);} else if(won===false)sfx.lose(); return; } st.children[i].classList.add('on'); sfx.star(i); buzz(30); setTimeout(()=>stamp(i+1),reduce()?1:350); };
+  requestAnimationFrame(step);
+}
+function starsEl(lit){ const st=el('div','stars'); for(let i=0;i<3;i++)st.appendChild(el('span',i<lit?'on':'', '★')); return st; }
+function statsList(rows,total){ const dl=el('dl'); const add=(k,v,cls)=>{const w=el('div',cls||'');w.style.display='contents';w.append(el('dt','',k),el('dd','',String(v)));dl.appendChild(w);};
+  rows.forEach(r=>add(r[0],r[1])); if(total)add(total[0],total[1],'total'); return dl; }
+function results(title,stars,rows,total,pending){
+  if(mode!=='over')return;
+  const st=starsEl(0), big=el('div','bigscore','0');
+  openSheet(title,[st,big,statsList(rows,total),boardBox(pending)],[['Menu',()=>{closeSheet();menu();},false],['Play again',()=>start(null),true]]);
+  animateScore(st,big,score,stars,true);
+}
+
+/* ---------- challenges ----------
+   Real colleagues, through the bridge. Both play the server's seed, so the same boards; scores go back and forth live while both play, and the
+   result shows once both have finished. What it pays (engagement points, scaled and capped) is the server's to say. */
+const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,celebrated:{},opened:false};
+const KINDS=['incoming','outgoing','active','recent'];
+function canChallenge(){ const b=bridge(); return !!(b&&['challenge','challenges','getChallenge','acceptChallenge','declineChallenge','finishChallenge','colleagues'].every(k=>typeof b[k]==='function')); }
+function ask(method,...args){ const b=bridge(); if(!b||typeof b[method]!=='function')return Promise.reject(new Error('Challenges need the Sowaka app.'));
+  return Promise.resolve().then(()=>b[method](...args)); }
+const errText=e=>(e&&e.message)||'Something went wrong. Try again.';
+const firstOf=n=>String(n||'').trim().split(/\s+/)[0]||'them';
+function findCh(id){ for(const k of KINDS){ const v=CH[k].find(x=>x.id===id); if(v)return v; } return null; }
+/* Files a challenge under the list it now belongs in. */
+function upsert(v){ if(!v||!v.id)return v; KINDS.forEach(k=>{CH[k]=CH[k].filter(x=>x.id!==v.id);});
+  const k=v.status==='pending'?(v.role==='opponent'?'incoming':'outgoing'):v.status==='accepted'?'active':'recent';
+  if(k==='recent')CH.recent=[v].concat(CH.recent).slice(0,10); else CH[k].unshift(v); return v; }
+function refreshChallenges(){ if(!canChallenge())return Promise.resolve();
+  return ask('challenges').then(r=>{ r=r||{}; KINDS.forEach(k=>{CH[k]=Array.isArray(r[k])?r[k]:[];}); renderInbox(); }).catch(()=>{}); }
+function avatar(name,photo){ const a=el('span','av'); let h=0; for(const ch of String(name||'?'))h=(h*31+ch.codePointAt(0))%360; a.style.setProperty('--ah',h);
+  const parts=String(name||'?').trim().split(/\s+/); a.textContent=((parts[0]||'?')[0]+(parts.length>1?parts[parts.length-1][0]:'')).toUpperCase();
+  if(photo){ const img=new Image(); img.alt=''; img.onload=()=>{a.textContent='';a.appendChild(img);}; img.src=photo; } a.setAttribute('aria-hidden','true'); return a; }
+function mini(label,fn,yes){ const b=el('button','mini'+(yes?' yes':''),label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; }
+function leftText(v){ const ms=Date.parse(v.expiresAt)-Date.now(); if(!(ms>0))return 'Expired'; const h=Math.floor(ms/3600000); return h>=1?'Expires in '+h+' h':'Expires in '+Math.max(1,Math.round(ms/60000))+' min'; }
+const liveRecent=p=>!!(p&&p.liveAt&&p.score==null&&Date.now()-Date.parse(p.liveAt)<10000);
+/* One line of the inbox: a challenge waiting for this player. */
+function chRow(kind,v){
+  const r=el('div','crow'+(kind==='in'?' hot':'')), p=el('p'), bt=el('div','bt'), n=v.them.name;
+  r.append(avatar(n));
+  if(kind==='in'){ p.append(el('b','',n),document.createTextNode(' challenged you'),el('small','',leftText(v)));
+    bt.append(mini('Decline',b=>{b.disabled=true;decline(v.id);}),mini('Accept',b=>{b.disabled=true;accept(v.id);},true)); }
+  else { p.append(document.createTextNode('Your turn vs '),el('b','',firstOf(n)),el('small','',v.them.score!=null?firstOf(n)+' scored '+fmtn(v.them.score):'Same boards for both of you'));
+    bt.append(mini('Play',()=>openChallenge(v.id),true)); }
+  r.append(p,bt); return r; }
+/* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge. */
+function infoRow(v){
+  const b=el('button','crow'), p=el('p'), n=firstOf(v.them.name); b.type='button'; b.append(avatar(v.them.name));
+  let line, sub='', pts=null;
+  if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=leftText(v); }
+  else if(v.status==='accepted'){ line='Waiting for '+n+' to play'; sub='You scored '+fmtn(v.me.score); }
+  else if(v.status==='finished'){ line=v.outcome==='won'?'You beat '+n:v.outcome==='lost'?n+' beat you':'Tied with '+n; sub=fmtn(v.me.score)+' – '+fmtn(v.them.score);
+    pts=v.myAward?v.myAward.points:0;
+    if(!pts&&v.myAward&&v.myAward.reason)sub+=' · '+v.myAward.reason; }
+  else if(v.status==='declined'){ line=v.role==='challenger'?n+' declined':'You declined '+n; }
+  else { line='Expired with '+n; sub='Nobody wins an expired challenge'; }
+  p.append(document.createTextNode(line),el('small','',sub)); b.append(p);
+  b.append(pts==null?el('span',''):el('span','pts'+(pts>0?'':' zero'),pts>0?'+'+pts+' pts':'No pts'));
+  b.onclick=()=>{sfx.ui();openChallenge(v.id);}; return b; }
+function renderInbox(){
+  const box=$('inbox'); if(!box)return; box.innerHTML='';
+  if(!canChallenge()||mode!=='idle'){box.hidden=true;return;}
+  const mine=[...CH.incoming.map(v=>['in',v]),...CH.active.filter(v=>v.me&&v.me.score==null).map(v=>['turn',v])];
+  const others=CH.outgoing.length+CH.active.filter(v=>v.me&&v.me.score!=null).length, all=mine.length+others+CH.recent.length;
+  if(!all){box.hidden=true;return;}
+  box.hidden=false; const head=el('div','lbh'); head.append(el('span','',mine.length?'Challenges for you':'Your challenges'));
+  const more=el('button','link','See all'); more.type='button'; more.onclick=()=>{sfx.ui();openList();}; head.append(more); box.append(head);
+  mine.slice(0,3).forEach(([k,v])=>box.append(chRow(k,v)));
+  if(!mine.length&&others)box.append(el('p','wait','Waiting on '+others+' colleague'+(others===1?'':'s')+'.'));
+  else if(!mine.length&&CH.recent[0])box.append(infoRow(CH.recent[0]));
+}
+function openList(){
+  const body=[], sec=(title,list,make)=>{ if(!list.length)return; body.push(el('div','lbh',title)); const b=el('div','inbox'); list.forEach(v=>b.append(make(v))); body.push(b); };
+  sec('For you',[...CH.incoming,...CH.active.filter(v=>v.me&&v.me.score==null)],v=>chRow(v.status==='pending'?'in':'turn',v));
+  sec('Waiting on them',[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)],infoRow);
+  sec('Results',CH.recent,infoRow);
+  if(!body.length)body.push(el('p','note','No challenges yet. Pick a colleague and play the same boards.'));
+  openSheet('Challenges',body,[['Close',dismiss,false],['New challenge',openPicker,true]]);
+}
+function openPicker(){
+  const input=el('input'); input.type='search'; input.placeholder='Search by name'; input.autocomplete='off'; input.enterKeyHint='search'; input.setAttribute('aria-label','Search colleagues');
+  const wrap=el('div','lrow'); wrap.append(input);
+  const list=el('div','people'), msg=el('p','note','Loading colleagues…');
+  openSheet('Challenge a colleague',[el('p','note','They get a notification. Once they accept, you both play the same boards for 45 seconds, and the higher score wins.'),wrap,msg,list],[['Cancel',dismiss,false]]);
+  let t=null, seq=0;
+  const load=()=>{ const my=++seq, q=input.value.trim();
+    ask('colleagues',q).then(r=>{ if(my!==seq)return; const people=(r&&Array.isArray(r.colleagues))?r.colleagues:[]; list.innerHTML='';
+      msg.hidden=people.length>0; msg.textContent=q?'Nobody called "'+q+'" here.':'Nobody to challenge yet.';
+      people.forEach(pp=>{ const b=el('button','person'), s=el('span'); b.type='button'; s.append(el('b','',pp.name),el('small','',[pp.designation,pp.department].filter(Boolean).join(' · ')||'Colleague'));
+        b.append(avatar(pp.name,pp.photoUrl),s,el('i','','Challenge')); b.onclick=()=>sendChallenge(pp); list.append(b); }); })
+    .catch(e=>{ if(my===seq){msg.hidden=false;msg.textContent=errText(e);} }); };
+  input.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(load,250);});
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){clearTimeout(t);load();} });
+  load();
+}
+function sendChallenge(p){ sfx.horn(); openSheet('Challenging '+firstOf(p.name)+'…',[el('p','note','Sending…')],[['Cancel',dismiss,false]]);
+  ask('challenge',p.userId).then(v=>{ upsert(v); waitFor(v); renderInbox(); }).catch(challengeRefused); }
+function challengeRefused(e){ const id=e&&e.details&&e.details.challengeId; if(id){ openChallenge(id); return; }
+  sfx.no(); openSheet("Couldn't send it",[el('p','note',errText(e))],[['Back',openPicker,false],['Close',dismiss,true]]); }
+/* The challenger's wait. Still here when they accept, and both rounds start together. */
+function waitFor(v){ const n=firstOf(v.them.name);
+  openSheet('Waiting for '+n,[el('p','note','Challenge sent. Stay on this screen and you both start the moment '+n+' accepts, or close it and come back when you get the notification.'),el('p','note',leftText(v)+' if '+n+" doesn't answer.")],
+    [['Close',dismiss,true]]);
+  CH.waiting=v.id; }
+function openChallenge(id){
+  openSheet('Challenge',[el('p','note','Loading…')],[['Close',dismiss,false]]);
+  return ask('getChallenge',id).then(v=>{ upsert(v); renderInbox(); showChallenge(v); })
+    .catch(e=>{ const known=findCh(id); if(known)showChallenge(known); else openSheet('Challenge',[el('p','note',errText(e))],[['Close',dismiss,true]]); }); }
+function showChallenge(v){ const n=firstOf(v.them.name);
+  if(v.status==='pending'&&v.role==='opponent')
+    return openSheet(v.them.name+' challenged you',[el('p','note','Same boards for both of you, 45 seconds. The higher score wins, and the result shows once you have both played.'),el('p','note',leftText(v)+'.')],
+      [['Decline',()=>decline(v.id),false],['Accept and play',()=>accept(v.id),true]]);
+  if(v.status==='pending')return waitFor(v);
+  if(v.status==='accepted'&&v.me.score==null){
+    const line=v.them.score!=null?n+' scored '+fmtn(v.them.score)+'. Beat it.':liveRecent(v.them)?n+' is playing right now.':n+" hasn't played yet. You can go first.";
+    return openSheet('You vs '+n,[el('p','note',line),el('p','note','Same boards for both of you, 45 seconds. The result shows once you have both played.')],[['Not now',dismiss,false],['Play',()=>startChallenge(v),true]]); }
+  return showResult(v,null);
+}
+function accept(id){ ask('acceptChallenge',id).then(v=>{ upsert(v); closeSheet(); startChallenge(v); })
+  .catch(e=>{ sfx.no(); openSheet("Couldn't accept it",[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},true]]); }); }
+function decline(id){ ask('declineChallenge',id).then(v=>{ upsert(v); if(!$('sheet').hidden&&!CH.result)dismiss(); else renderInbox(); })
+  .catch(e=>{ openSheet("Couldn't decline it",[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},true]]); }); }
+function startChallenge(v){ if(mode==='count'||mode==='play')return; if(v.seed==null)return openChallenge(v.id);
+  sfx.horn(); start({id:v.id,name:v.them.name,theirFinal:v.them.score,theirLive:v.them.live,theirLiveAt:liveRecent(v.them)?Date.parse(v.them.liveAt):0},v.seed); }
+function rematch(v){ openSheet('Challenging '+firstOf(v.them.name)+'…',[el('p','note','Sending…')],[['Cancel',dismiss,false]]);
+  ask('challenge',v.them.userId).then(nv=>{ upsert(nv); waitFor(nv); renderInbox(); }).catch(challengeRefused); }
+/* The score mid-round, to the other player: at most every 600 ms, and always the latest. */
+let liveT=null, liveLast=0, liveSent=-1;
+function liveSend(force){ if(!duel||mode!=='play')return; const due=600-(Date.now()-liveLast);
+  if(!force&&due>0){ if(!liveT)liveT=setTimeout(()=>{liveT=null;liveSend();},due); return; }
+  if(!force&&score===liveSent)return; liveLast=Date.now(); liveSent=score; const b=bridge();
+  if(b&&typeof b.reportLive==='function')Promise.resolve().then(()=>b.reportLive(score,duel.id)).catch(()=>{}); }
+/* The final score, retried until the server has it; kept on the device in case the page closes first. */
+function sendFinish(id,sc,attempt){ attempt=attempt||0;
+  const drop=()=>{ if(save.pendingFinish&&save.pendingFinish.id===id){ delete save.pendingFinish; store(); } };
+  ask('finishChallenge',id,sc).then(v=>{ drop(); upsert(v); if(CH.result&&CH.result.id===id)showResult(v,CH.result.played); renderInbox(); })
+    .catch(e=>{ const st=e&&+e.status;
+      if(st>=400&&st<500&&st!==429){ drop(); if(CH.result&&CH.result.id===id){ CH.result.error=errText(e); showResult(CH.result.view,CH.result.played); } return; }
+      if(attempt<4)setTimeout(()=>sendFinish(id,sc,attempt+1),1500*(attempt+1));
+      else if(CH.result&&CH.result.id===id){ CH.result.error="Couldn't send your score yet. It goes the next time you open the game."; showResult(CH.result.view,CH.result.played); } }); }
+function vsBlock(v){
+  const w=el('div','vs'), side=(p,label,win,key)=>{ const s=el('div','side'+(win?' win':'')), live=liveRecent(p);
+    const b=el('b','',p.score!=null?fmtn(p.score):live?fmtn(p.live):'—'), em=el('em',live?'on':'',p.score!=null?(v.status==='finished'?'final':'done'):live?'playing now':'not played yet');
+    if(key){b.id=key;em.id=key+'s';} s.append(el('small','',label),b,em); return s; };
+  w.append(side(v.me||{},'You',v.outcome==='won'),el('span','mid','vs'),side(v.them||{},firstOf(v.them.name),v.outcome==='lost','vsthem')); return w; }
+/* What the challenge paid this player, or why nothing. */
+function prizeLine(v){ const box=el('div','prize'), a=v.myAward, line=(l,r)=>box.append(el('span','',l),el('b','',r));
+  if(v.status==='finished'){
+    if(a&&a.points>0)line(a.kind==='win'?'You won':'For playing','+'+fmtn(a.points)+' point'+(a.points===1?'':'s'));
+    else { box.classList.add('none'); line('No points',a&&a.reason?a.reason:'this time'); } }
+  else if(v.status==='expired'){ box.classList.add('none'); line('No points','It expired before you both played'); }
+  else if(v.status==='declined')return null;
+  else { box.classList.add('none'); line('Points','once you have both played'); }
+  return box; }
+/* The challenge's result card. With `played` it is the end of this player's round too: stars, their stats and the leaderboard. Drawn again on every change. */
+function showResult(v,played){
+  const prev=CH.result&&CH.result.id===v.id?CH.result:null;
+  CH.result={id:v.id,view:v,played,error:prev?prev.error:null};
+  const n=firstOf(v.them.name), done=v.status==='finished';
+  const title=done?(v.outcome==='won'?'You beat '+n+'!':v.outcome==='lost'?n+' wins this one':'A tie with '+n)
+    :v.status==='expired'?'This challenge expired':v.status==='declined'?(v.role==='challenger'?n+' declined':'You declined')
+    :v.me&&v.me.score!=null?'Waiting for '+n:'You vs '+n;
+  const body=[];
+  let st=null, big=null;
+  if(played){ st=starsEl(played.animate?0:played.stars); big=el('div','bigscore',played.animate?'0':fmtn(played.score)); body.push(st,big); }
+  body.push(vsBlock(v)); body.push(prizeLine(v));
+  if(played)body.push(statsList(played.rows,played.total));
+  if(done&&v.myAward&&v.myAward.kind==='win'&&v.myAward.onlyOwnScore&&v.myAward.points>0)body.push(el('p','note',n+"'s score was too low to add to yours, so only your own counted toward points."));
+  if(done&&v.outcome==='lost'&&v.theirAward&&v.theirAward.points>0)body.push(el('p','note',n+' won '+v.theirAward.points+' point'+(v.theirAward.points===1?'':'s')+'.'));
+  if(done&&v.myAward&&v.myAward.points>0)body.push(el('p','note','Points go to your Sowaka rank.'));
+  if(!done&&v.status==='accepted'&&v.me&&v.me.score!=null)body.push(el('p','note','You both played the same boards. '+n+"'s score shows here the moment they finish, and you get a notification if you have left."));
+  if(CH.result.error)body.push(el('p','note',CH.result.error));
+  if(played){ played.box=played.box||boardBox(played.pending); body.push(played.box); }
+  const over=done||v.status==='expired'||v.status==='declined';
+  const acts=over?[['Menu',()=>{closeSheet();menu();},false],['Rematch',()=>rematch(v),true]]
+    :[['Menu',()=>{closeSheet();menu();},false],['Play solo',()=>start(null),true]];
+  if(!played&&over)acts[0]=['Close',dismiss,false];
+  openSheet(title,body,acts);
+  const celebrate=done&&!CH.celebrated[v.id]; if(celebrate)CH.celebrated[v.id]=true;
+  const won=celebrate?v.outcome!=='lost':null;
+  if(played&&played.animate){ played.animate=false; animateScore(st,big,played.score,played.stars,celebrate?(v.outcome==='lost'?false:true):null); }
+  else if(celebrate){ if(won){ sfx.win(); const [x,y]=centre($('sh')); burst(x,y,120,COLS); } else sfx.lose(); }
+}
+function liveIntoResult(v,sc){ if(!v||!v.them||v.them.score!=null)return; v.them.live=sc; v.them.liveAt=new Date().toISOString();
+  const b=$('vsthem'), s=$('vsthems'); if(b)b.textContent=fmtn(sc); if(s){s.textContent='playing now';s.className='on';} }
+/* What the app passes on from the server, as it happens. */
+function onChallengeEvent(evt){
+  if(!evt||typeof evt!=='object')return;
+  if(evt.kind==='resync'){ refreshChallenges(); return; }
+  const id=evt.challengeId;
+  if(evt.kind==='live'){ const sc=+evt.score||0, v=findCh(id);
+    if(duel&&duel.id===id&&duel.theirFinal==null){ duel.theirLive=sc; duel.theirLiveAt=Date.now(); renderRival(); }
+    if(v&&v.them&&v.them.userId===evt.userId&&v.them.score==null){ v.them.live=sc; v.them.liveAt=new Date().toISOString(); }
+    if(CH.result&&CH.result.id===id)liveIntoResult(CH.result.view,sc);
+    return; }
+  const v=evt.challenge; if(!v||!v.id)return; upsert(v); const n=firstOf(v.them.name), busy=mode==='play'||mode==='count';
+  switch(evt.kind){
+    case 'created': if(v.role==='opponent'&&!busy){ sfx.horn(); toast(n+' challenged you','feed'); } break;
+    case 'accepted':
+      if(CH.waiting===id){ closeSheet(); startChallenge(v); return; }
+      if(v.role==='challenger'&&!busy)toast(n+' accepted. Your turn!','feed'); break;
+    case 'declined':
+      if(CH.waiting===id){ sfx.no(); openSheet(n+' declined',[el('p','note','Maybe another time. Challenge someone else, or play a round on your own.')],[['Challenge someone',openPicker,false],['Play solo',()=>start(null),true]]); return; }
+      break;
+    case 'scored': if(duel&&duel.id===id&&v.them.score!=null){ duel.theirFinal=v.them.score; renderRival(); toast(n+' finished on '+fmtn(v.them.score),'feed'); } break;
+    case 'expired':
+      if(CH.waiting===id){ openSheet('No answer from '+n,[el('p','note','The challenge expired. Nobody wins an expired challenge.')],[['Close',dismiss,false],['Challenge someone',openPicker,true]]); return; }
+      break;
+  }
+  if(CH.result&&CH.result.id===id)showResult(v,CH.result.played);
+  renderInbox();
+}
+window.onSowakaChallenge=evt=>{ try{ onChallengeEvent(evt); }catch(e){} };
+/* With the bridge: the lists, a final that never landed, and the challenge a tapped notification opened the game for. */
+function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn'))menu(); refreshChallenges();
+  if(save.pendingFinish&&save.pendingFinish.id)sendFinish(save.pendingFinish.id,save.pendingFinish.score);
+  const want=bridge().startChallengeId; if(want&&!CH.opened){ CH.opened=true; openChallenge(String(want)); } }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='idle')refreshChallenges(); });
+/* ---------- input ---------- */
+$('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.go();} };
+$('reset').onclick=()=>{ if(!resetArmed){resetArmed=true;$('reset').textContent='Tap again to wipe your bank';setTimeout(()=>{resetArmed=false;$('reset').textContent='Start over';},3000);return;}
+  resetArmed=false;$('reset').textContent='Start over';save=Object.assign(save,{bank:0,best:0,rounds:0});store();clearInterval(timer);clearInterval(countTimer);duel=null;menu(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('sheet').hidden&&mode!=='over')closeSheet(); });
+$('lbopen').onclick=openBoard;
+['gesturestart','gesturechange'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+addEventListener('sowaka-ready',()=>{ refreshBoard(); challengesReady(); });
+menu();
+refreshBoard();
+challengesReady();
+</script>
+</body>
+</html>

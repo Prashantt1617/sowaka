@@ -21,7 +21,7 @@ TabSpec tabSpecFor(ManagerTab tab) => switch (tab) {
     activeIconAsset: 'assets/icons/nav_connect_active.svg',
   ),
   ManagerTab.manage => const TabSpec(
-    label: 'Team',
+    label: 'Teams',
     iconAsset: 'assets/icons/nav_team.svg',
     activeIconAsset: 'assets/icons/nav_team_active.svg',
   ),

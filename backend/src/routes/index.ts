@@ -21,12 +21,19 @@ import { talkRouter } from './talk.routes';
 import { gardenRouter } from './garden.routes';
 import { helpRouter } from './help.routes';
 import { careRouter } from './care.routes';
+import { profileRouter } from './profile.routes';
+import { supportAdminRouter, supportRouter } from './support.routes';
+import { gamesRouter, playRouter } from './game-catalog.routes';
+import { policiesRouter } from './policy-document.routes';
 
 export const router = Router();
 
 router.use('/auth', authRouter);
 router.use('/health', healthRouter);
 router.use('/holidays', holidayRouter);
+// Before `/admin`: the Support desk is gated by a Support role, not by a
+// dashboard tab, and has its own auth chain.
+router.use('/admin/support', supportAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -46,5 +53,12 @@ router.use('/admin/relay', relayRouter);
 router.use('/relay', relayPlayerRouter);
 router.use('/talk', talkRouter);
 router.use('/garden', gardenRouter);
+// The Games tab: which games a company has, their pages and their scores.
+router.use('/games', gamesRouter);
+router.use('/play', playRouter);
+// Actions › View Policies: the company's own policy texts, when it has them.
+router.use('/policies', policiesRouter);
 router.use('/help', helpRouter);
 router.use('/care', careRouter);
+router.use('/profile', profileRouter);
+router.use('/support', supportRouter);

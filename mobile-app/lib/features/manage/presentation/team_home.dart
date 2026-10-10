@@ -25,12 +25,6 @@ class _TeamHomeState extends State<_TeamHome> {
     final data = widget.state.dashboard!;
     final canManage = widget.state.canManage;
     final section = widget.state.teamSection;
-    final pendingRequests =
-        data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
-        data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
-        data.managerRegularizations
-            .where((r) => r.decision == LeaveDecision.pending)
-            .length;
 
     return ColoredBox(
       color: const Color(0xFFF7F7F9),
@@ -51,83 +45,156 @@ class _TeamHomeState extends State<_TeamHome> {
                   onNotifications: widget.onNotifications,
                   onQuickCreate: widget.onOpenComposer,
                 ),
-                // Requests are a manager capability: an individual contributor
-                // gets the same team list, read-only, with no segment to
-                // switch — and no white gap where the segment would have sat,
-                // so the header meets the page background the way it does on
-                // the Apply Leave and Reimbursement screens.
-                if (canManage) ...[
-                  const SizedBox(height: 14),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _TeamSegmentedControl(
-                      section: section,
-                      pendingRequests: pendingRequests,
-                      onChanged: (value) =>
-                          widget.bloc.add(ShowTeamSection(value)),
-                    ),
+                // Requests and Feedback are a manager's to act on: an
+                // individual contributor gets the same team list, read-only,
+                // with no sections to switch — and no white gap where they
+                // would have sat, so the header meets the page background the
+                // way it does on the Apply Leave and Reimbursement screens.
+                if (canManage)
+                  _TeamSectionBar(
+                    data: data,
+                    section: section,
+                    onChanged: (value) =>
+                        widget.bloc.add(ShowTeamSection(value)),
                   ),
-                ],
               ],
             ),
           ),
-          const SizedBox(height: 14),
           Expanded(
-            child: !canManage || section == TeamSection.myTeam
-                ? _MyTeamView(
-                    data: data,
-                    bloc: widget.bloc,
-                    onNotifications: widget.onNotifications,
-                    onOpenComposer: widget.onOpenComposer,
-                    onOpenProfile: widget.onOpenProfile,
-                    canManage: canManage,
-                  )
-                : _TeamRequestsView(data: data, bloc: widget.bloc),
+            child: !canManage
+                ? _myTeam(data, canManage)
+                : switch (section) {
+                    TeamSection.myTeam => _myTeam(data, canManage),
+                    TeamSection.requests => Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _TeamRequestsView(data: data, bloc: widget.bloc),
+                    ),
+                    TeamSection.feedback => _TeamFeedbackList(
+                      key: const ValueKey('team-feedback'),
+                      data: data,
+                      bloc: widget.bloc,
+                      onNotifications: widget.onNotifications,
+                      onOpenComposer: widget.onOpenComposer,
+                      fromTeamTab: true,
+                    ),
+                  },
           ),
         ],
       ),
     );
   }
+
+  Widget _myTeam(ManagerDashboard data, bool canManage) => _MyTeamView(
+    data: data,
+    bloc: widget.bloc,
+    onNotifications: widget.onNotifications,
+    onOpenComposer: widget.onOpenComposer,
+    onOpenProfile: widget.onOpenProfile,
+    canManage: canManage,
+  );
 }
 
-class _TeamSegmentedControl extends StatelessWidget {
-  const _TeamSegmentedControl({
+/// Requests still waiting on this manager: leave, overtime and attendance
+/// corrections alike.
+int _pendingTeamRequests(ManagerDashboard data) =>
+    data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
+    data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
+    data.managerRegularizations
+        .where((r) => r.decision == LeaveDecision.pending)
+        .length;
+
+/// The viewer's direct reports — the only people they may review. Never
+/// themselves, a peer, or the person they report to.
+List<TeamMember> _reviewableReports(ManagerDashboard data) => data.team
+    .where((member) => member.reportsToViewer && !member.isSelf)
+    .toList();
+
+/// Whether this month's review of [member] is in: the same signal the
+/// feedback list ticks green and the growth page shows a score for.
+bool _reviewedThisMonth(TeamMember member) {
+  final period = _EmployeeGrowthPage._currentPeriod();
+  return member.history.any((record) => record.period == period);
+}
+
+/// Reports still waiting on this month's review.
+int _pendingTeamFeedback(ManagerDashboard data) =>
+    _reviewableReports(data).where((m) => !_reviewedThisMonth(m)).length;
+
+/// My Team / Requests / Feedback (node 2944:42323): a hairline under three
+/// equal tabs, the open one in bold over a dark underline, and an orange count
+/// beside Requests and Feedback while anything there is waiting.
+class _TeamSectionBar extends StatelessWidget {
+  const _TeamSectionBar({
+    required this.data,
     required this.section,
-    required this.pendingRequests,
     required this.onChanged,
   });
 
+  final ManagerDashboard data;
   final TeamSection section;
-  final int pendingRequests;
   final ValueChanged<TeamSection> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFEBEBEB))),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _SegmentTab(
-              label: 'My Team',
-              selected: section == TeamSection.myTeam,
-              onTap: () => onChanged(TeamSection.myTeam),
-            ),
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Color(0xFFEBEBEB), width: 1.114),
           ),
-          Expanded(
-            child: _SegmentTab(
-              label: pendingRequests == 0
-                  ? 'Requests'
-                  : 'Requests · $pendingRequests',
-              selected: section == TeamSection.requests,
-              onTap: () => onChanged(TeamSection.requests),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _SegmentTab(
+                label: 'My Team',
+                selected: section == TeamSection.myTeam,
+                onTap: () => onChanged(TeamSection.myTeam),
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: _SegmentTab(
+                label: 'Requests',
+                count: _pendingTeamRequests(data),
+                selected: section == TeamSection.requests,
+                onTap: () => onChanged(TeamSection.requests),
+              ),
+            ),
+            Expanded(
+              child: _SegmentTab(
+                label: 'Feedback',
+                count: _pendingTeamFeedback(data),
+                selected: section == TeamSection.feedback,
+                onTap: () => onChanged(TeamSection.feedback),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+/// The section bar again, on a page pushed over the Team tab (a report's
+/// growth page, the feedback form), as the design keeps it there (node
+/// 3165:59012). Choosing a section unwinds to the tab and opens it.
+class _PushedTeamSectionBar extends StatelessWidget {
+  const _PushedTeamSectionBar({required this.bloc, required this.data});
+
+  final ManagerBloc bloc;
+  final ManagerDashboard data;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TeamSectionBar(
+      data: data,
+      section: TeamSection.feedback,
+      onChanged: (value) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        bloc.add(ShowTeamSection(value));
+      },
     );
   }
 }
@@ -137,34 +204,90 @@ class _SegmentTab extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.count = 0,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
+  /// What is waiting in this section; no badge at zero.
+  final int count;
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected ? const Color(0xFF222222) : Colors.transparent,
-              width: 2,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: count > 0 ? '$label, $count waiting' : label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 33.1,
+          alignment: Alignment.topCenter,
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? const Color(0xFF222222) : Colors.transparent,
+                width: 1.114,
+              ),
             ),
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? const Color(0xFF222222) : const Color(0xFF717171),
-            fontSize: 14,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: selected
+                        ? const Color(0xFF222222)
+                        : const Color(0xFF717171),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (count > 0) ...[
+                const SizedBox(width: 4),
+                _CountBadge(count: count),
+              ],
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The orange count on a section tab (node 3459:62154).
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF8D28),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFF8D28)),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          fontFamily: 'Sora',
+          color: Colors.white,
+          fontSize: 10,
+          height: 12 / 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -269,7 +392,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
               .toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       children: [
         _FeedbackSearchField(
           query: _query,
@@ -277,7 +400,7 @@ class _MyTeamViewState extends State<_MyTeamView> {
           onClear: () => setState(() => _query = ''),
           hint: 'Search employee',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         // The viewer is part of the team the server sends, so there is no
         // separate card for them any more — their row simply says "(You)".
         if (filtered.isEmpty)
@@ -352,7 +475,8 @@ class _MyTeamViewState extends State<_MyTeamView> {
                   members: _myTeamOnly(filtered),
                   onTap: () => _toggleTeam('My Team'),
                 ),
-              const SizedBox(height: 16),
+              // 12 to the next heading (node 2944:42329, gap-[12px]).
+              const SizedBox(height: 12),
             ],
             if (_ledTeams(filtered).length > 1)
               // Reports across more than one department are grouped exactly
@@ -442,12 +566,7 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    // The dot says where they are: green in, blue away or on leave, grey out.
-    final dot = switch (member.todayMark) {
-      'present' || 'late' || 'half_day' => const Color(0xFF00C950),
-      'wfh' || 'leave' => const Color(0xFF0571A6),
-      _ => const Color(0xFFDDDDDD),
-    };
+    final dot = _presenceDotColor(member);
     // Working away says where from — "Work from home", "Client visit", in
     // HR's words — in the same green as the time beside it.
     final away = member.todayAway;
@@ -569,33 +688,51 @@ class _TeamMemberRow extends StatelessWidget {
                           ],
                         ),
                       ),
+                    // What is coming up for them, one badge under another
+                    // (node 3459:62071, a column 8 apart).
                     if (upcomingLeave != null ||
                         birthdaySoon ||
                         (recognition != null && recognition.isNotEmpty))
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (upcomingLeave != null)
-                              const _TagChip(
-                                icon: Image(
-                                  image: AssetImage(
-                                    'assets/icons/team_pill_leave_calendar.png',
+                            for (final (index, chip) in [
+                              if (upcomingLeave != null)
+                                // The design's own calendar (node 3459:62021),
+                                // decoded at the size it is drawn.
+                                const _TagChip(
+                                  icon: Image(
+                                    image: ResizeImage(
+                                      AssetImage('assets/icons/team/calendar.png'),
+                                      width: 60,
+                                      height: 60,
+                                    ),
                                   ),
+                                  label: 'Leave Upcoming',
                                 ),
-                                label: 'Leave Upcoming',
-                              ),
-                            if (birthdaySoon)
-                              _TagChip(
-                                icon: SvgPicture.asset(
-                                  'assets/icons/team_pill_birthday_cupcake.svg',
+                              if (birthdaySoon)
+                                _TagChip(
+                                  icon: SvgPicture.asset(
+                                    'assets/icons/team_pill_birthday_cupcake.svg',
+                                  ),
+                                  label: 'Birthday Soon',
                                 ),
-                                label: 'Birthday Soon',
-                              ),
-                            if (recognition != null && recognition.isNotEmpty)
-                              _RecognitionPill(label: recognition),
+                              if (recognition != null && recognition.isNotEmpty)
+                                // "Employee of month" with the trophy (node
+                                // 3459:62088), a badge like the others.
+                                _TagChip(
+                                  icon: Image.asset(
+                                    'assets/icons/team/trophy.png',
+                                    fit: BoxFit.cover,
+                                  ),
+                                  label: recognition,
+                                ),
+                            ].indexed) ...[
+                              if (index > 0) const SizedBox(height: 8),
+                              chip,
+                            ],
                           ],
                         ),
                       ),
@@ -684,7 +821,20 @@ class _MyTeamCard extends StatelessWidget {
   }
 }
 
-/// "9:45 AM" with a clock, the green of a day that has started (node 3198:20671).
+/// The presence dot on a teammate's photo (node 2944:42338): green while they
+/// are working today, wherever from; blue on leave; slate when they have not
+/// come in; a pale grey when the day has nothing to say yet.
+Color _presenceDotColor(TeamMember member) {
+  if (member.todayAway != null) return const Color(0xFF34C759);
+  return switch (member.todayMark) {
+    'present' || 'late' || 'half_day' || 'wfh' => const Color(0xFF34C759),
+    'leave' => const Color(0xFF0571A6),
+    'not_in' => const Color(0xFF9197A2),
+    _ => const Color(0xFFDDDDDD),
+  };
+}
+
+/// "9:45 AM" with a clock, the green of a day that has started (node 3459:62011).
 class _PunchTimePill extends StatelessWidget {
   const _PunchTimePill({required this.at});
 
@@ -704,7 +854,14 @@ class _PunchTimePill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF34C759)),
+          // akar-icons:clock (node 3459:62012): an 11px glyph in a 12px box.
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: Center(
+              child: SvgPicture.asset('assets/icons/team/punch_clock.svg'),
+            ),
+          ),
           const SizedBox(width: 4),
           Text(
             label,
@@ -723,8 +880,8 @@ class _PunchTimePill extends StatelessWidget {
 }
 
 /// How the day reads — Late, Half-day, WFH, Leave or Not-in — in the tint
-/// the design gives each (node 3198:20671). Nothing for a plain present day:
-/// the time pill already says they are in.
+/// the design gives each (nodes 3459:62043, 3459:62112, 3459:62127). Nothing
+/// for a plain present day: the time pill already says they are in.
 class _TodayStatusPill extends StatelessWidget {
   const _TodayStatusPill({
     required this.label,
@@ -754,13 +911,13 @@ class _TodayStatusPill extends StatelessWidget {
     ),
     'leave' => const _TodayStatusPill(
       label: 'Leave',
-      background: Color(0xFFE3F0F7),
+      background: Color(0xFFE6EEFF),
       foreground: Color(0xFF0571A6),
     ),
     'not_in' => const _TodayStatusPill(
       label: 'Not-in',
-      background: Color(0xFFF3F4F6),
-      foreground: Color(0xFF9CA3AF),
+      background: Color(0xFFEBEBEB),
+      foreground: Color(0xFF9197A2),
     ),
     _ => null,
   };
@@ -788,35 +945,7 @@ class _TodayStatusPill extends StatelessWidget {
   }
 }
 
-/// "Employee of month" on a gold wash (node 2488:90748).
-class _RecognitionPill extends StatelessWidget {
-  const _RecognitionPill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0x4DFFD700),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontFamily: 'Sora',
-          color: Color(0xFFFFCC00),
-          fontSize: 12,
-          height: 16.2 / 12,
-          letterSpacing: -0.16,
-          fontWeight: FontWeight.w400,
-        ),
-      ),
-    );
-  }
-}
-
+/// "2 requests" waiting on the viewer, in red (node 3459:62017).
 class _RequestCountPill extends StatelessWidget {
   const _RequestCountPill({required this.count});
 
@@ -854,24 +983,33 @@ class _TagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // TypeBadge (node 3459:62020): a hairline pill on the page grey, its 20px
+    // icon 4 from a 10px label.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 13.114, vertical: 6.114),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(width: 20, height: 20, child: icon),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF484848),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Color(0xFF484848),
+                fontSize: 10,
+                height: 16.2 / 10,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -1792,13 +1930,16 @@ class _DirectReportsTree extends StatelessWidget {
   /// opens — for the row that is them.
   final VoidCallback? onOpenProfile;
 
+  /// 28 to the cards, 16 above the first, 12 between them (node 3459:61996:
+  /// pl-[28px] pt-[16px] gap-[12px]).
   static const _indent = 28.0;
-  static const _gap = 16.0;
+  static const _leadIn = 16.0;
+  static const _gap = 12.0;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: _gap),
+      padding: const EdgeInsets.only(top: _leadIn),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1812,7 +1953,7 @@ class _DirectReportsTree extends StatelessWidget {
                       first: index == 0,
                       last: index == members.length - 1,
                       gap: index == members.length - 1 ? 0 : _gap,
-                      leadIn: _gap,
+                      leadIn: _leadIn,
                     ),
                     child: const SizedBox(width: _indent),
                   ),
@@ -1960,9 +2101,8 @@ class _TeamFacesCard extends StatelessWidget {
               height: 14,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: member.todayStatus == TeamPresenceStatus.present
-                    ? const Color(0xFF00C950)
-                    : const Color(0xFFDDDDDD),
+                // The same reading as the card below it (node 2944:42341).
+                color: _presenceDotColor(member),
                 border: Border.all(color: Colors.white, width: 1.114),
               ),
             ),

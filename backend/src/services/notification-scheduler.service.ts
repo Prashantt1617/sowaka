@@ -1,6 +1,7 @@
 import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
 import { sendLeavePlanningReport, sendWeeklyAttendanceReport } from './notification-digests.service';
 import { runFeedbackCycleMessages } from './feedback-cycle-scheduler.service';
+import { sendLatePunchInReminders } from './punch-reminder.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -16,7 +17,20 @@ async function run(name: string, job: () => Promise<void>) {
 }
 
 let timer: NodeJS.Timeout | undefined;
+let punchTimer: NodeJS.Timeout | undefined;
+let punchRunning = false;
 export function startNotificationScheduler() {
+  // Shifts start at different times, so the punch-in reminder checks every
+  // five minutes rather than on the hour. A tick still running when the next
+  // one is due is not doubled up.
+  punchTimer = setInterval(() => {
+    if (punchRunning) return;
+    punchRunning = true;
+    void run('sendLatePunchInReminders', async () => { await sendLatePunchInReminders(); })
+      .finally(() => { punchRunning = false; });
+  }, 5 * 60 * 1000);
+  punchTimer.unref();
+
   const schedule = () => {
     const now = new Date();
     const next = new Date(now); next.setMinutes(60, 0, 0);
@@ -55,4 +69,9 @@ export function startNotificationScheduler() {
   };
   schedule();
 }
-export function stopNotificationScheduler() { if (timer) clearTimeout(timer); timer = undefined; }
+export function stopNotificationScheduler() {
+  if (timer) clearTimeout(timer);
+  timer = undefined;
+  if (punchTimer) clearInterval(punchTimer);
+  punchTimer = undefined;
+}

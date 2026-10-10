@@ -19,6 +19,7 @@ class AuthUser {
     this.birthday,
     this.recognition,
     this.enabledTabs = const [],
+    this.enabledGames,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -54,6 +55,9 @@ class AuthUser {
         for (final value in (json['enabledTabs'] as List<dynamic>? ?? const []))
           '$value',
       ],
+      enabledGames: json['enabledGames'] is List
+          ? [for (final value in json['enabledGames'] as List) '$value']
+          : null,
     );
   }
 
@@ -85,6 +89,10 @@ class AuthUser {
   /// app falls back to the four it has always had.
   final List<String> enabledTabs;
 
+  /// The games switched on for the company, from the server. Null from a
+  /// server that predates the list: then the Games tab alone decides.
+  final List<String>? enabledGames;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -105,6 +113,7 @@ class AuthUser {
     'birthday': birthday,
     'recognition': recognition?.toJson(),
     'enabledTabs': enabledTabs,
+    if (enabledGames != null) 'enabledGames': enabledGames,
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -127,6 +136,7 @@ class AuthUser {
     birthday: birthday,
     recognition: recognition,
     enabledTabs: enabledTabs,
+    enabledGames: enabledGames,
   );
 }
 

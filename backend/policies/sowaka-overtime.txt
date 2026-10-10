@@ -1,0 +1,5 @@
+Overtime is claimed as a full day or a half day, and needs your manager's approval.
+
+A full day is 8 hours and credits 1 day of comp-off. A half day is 4 hours and credits 0.5.
+
+Claims reach back up to 21 days.

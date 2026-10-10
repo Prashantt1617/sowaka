@@ -8,6 +8,8 @@ class _ConnectTab extends StatelessWidget {
     required this.recognitionCandidates,
     required this.composerController,
     required this.data,
+    required this.bloc,
+    required this.onOpenProfile,
   });
 
   final AuthSession session;
@@ -15,6 +17,21 @@ class _ConnectTab extends StatelessWidget {
   final List<TeamMember> recognitionCandidates;
   final ConnectComposerController composerController;
   final ManagerDashboard data;
+  final ManagerBloc bloc;
+
+  /// Opens the signed-in person's own profile — the one the top-right photo
+  /// opens.
+  final VoidCallback onOpenProfile;
+
+  /// A name or face tapped in the feed — an author, a commenter (in the
+  /// full comments or the two previews under a post), an entrant, someone
+  /// tagged. It goes through the same opener as a Team row or the org chart:
+  /// your own name opens your own profile, a report opens their full profile,
+  /// and anyone else in the company opens the colleague view.
+  void _openPerson(BuildContext context, String userId) {
+    if (userId.isEmpty) return;
+    openPersonProfile(userId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,9 +40,9 @@ class _ConnectTab extends StatelessWidget {
       session: session,
       profileAction: profileAction,
       composerController: composerController,
+      onOpenPerson: (userId) => _openPerson(context, userId),
       // The people who can be tagged, and recognised: the same team the Team
-      // tab lists. Tags render as labels only for now — `onOpenPerson` is
-      // deliberately left unset, so the chips aren't tappable.
+      // tab lists.
       recognitionCandidates:
           {
                 for (final member in [...recognitionCandidates, ...data.team])

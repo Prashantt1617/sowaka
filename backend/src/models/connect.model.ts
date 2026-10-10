@@ -49,6 +49,8 @@ export interface ConnectComment {
   createdAt: Date;
   parentId?: string;
   likedBy: string[];
+  /** People tagged in it with "@", as picked from the directory. */
+  mentions?: { userId: string; name: string }[];
 }
 
 export interface ConnectCaptionEntry {
@@ -102,6 +104,12 @@ export interface ConnectPost {
   /** One vote each, viewer id -> entry id. Voting again moves the vote. */
   captionVotes?: Record<string, string>;
   publishedAt: Date;
+  /**
+   * Pinned to the top of the feed until this moment, then back in its own
+   * place by `publishedAt`. Set straight in the database (see
+   * `src/scripts/pin-post.ts`); nothing in the app or dashboard writes it.
+   */
+  pinnedUntil?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

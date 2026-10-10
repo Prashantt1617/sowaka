@@ -143,6 +143,19 @@ class ConnectAudience {
   }
 }
 
+/// Someone tagged in a comment with "@".
+class ConnectMention {
+  const ConnectMention({required this.userId, required this.name});
+
+  final String userId;
+  final String name;
+
+  factory ConnectMention.fromJson(Map<String, dynamic> json) => ConnectMention(
+    userId: json['userId'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+  );
+}
+
 class ConnectComment {
   const ConnectComment({
     required this.id,
@@ -154,6 +167,7 @@ class ConnectComment {
     this.likeCount = 0,
     this.liked = false,
     this.photoUrl,
+    this.mentions = const [],
   });
 
   final String id;
@@ -171,6 +185,9 @@ class ConnectComment {
   /// The commenter's own photo, when they have set one.
   final String? photoUrl;
 
+  /// The people tagged in it, drawn as links in the text.
+  final List<ConnectMention> mentions;
+
   ConnectComment copyWith({int? likeCount, bool? liked}) {
     return ConnectComment(
       id: id,
@@ -182,6 +199,7 @@ class ConnectComment {
       likeCount: likeCount ?? this.likeCount,
       liked: liked ?? this.liked,
       photoUrl: photoUrl,
+      mentions: mentions,
     );
   }
 
@@ -196,6 +214,10 @@ class ConnectComment {
       parentId: json['parentId'] as String?,
       likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
       liked: json['liked'] as bool? ?? false,
+      mentions: [
+        for (final value in json['mentions'] as List<dynamic>? ?? const [])
+          if (value is Map<String, dynamic>) ConnectMention.fromJson(value),
+      ],
     );
   }
 }
@@ -237,6 +259,7 @@ class ConnectCaptionEntry {
     required this.votedByViewer,
     required this.isMine,
     this.rank,
+    this.createdAt,
   });
 
   final String id;
@@ -255,6 +278,11 @@ class ConnectCaptionEntry {
   /// Set only on the leaderboard's copy of an entry.
   final int? rank;
 
+  /// When the entry went in — what the entries sheet's "Most recent" order
+  /// sorts by. On a Most Likely board row (one per person named) it is when
+  /// that person was last tagged.
+  final DateTime? createdAt;
+
   factory ConnectCaptionEntry.fromJson(Map<String, dynamic> json) {
     return ConnectCaptionEntry(
       id: json['id'] as String? ?? '',
@@ -268,6 +296,7 @@ class ConnectCaptionEntry {
       votedByViewer: json['votedByViewer'] as bool? ?? false,
       isMine: json['isMine'] as bool? ?? false,
       rank: (json['rank'] as num?)?.toInt(),
+      createdAt: DateTime.tryParse('${json['createdAt'] ?? ''}'),
     );
   }
 }

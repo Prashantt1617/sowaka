@@ -26,6 +26,7 @@ import { getKpiCycle } from '../services/kpi';
 import type { KpiCycleDTO } from '../services/kpi';
 import { ApiError } from '../services/http';
 import { useAuth } from './auth/AuthContext';
+import { useRequestsLive } from './live';
 
 type LeaveStatusFilter = ReqStatus | 'all';
 type FbStatusFilter = FeedbackStatus | 'all';
@@ -33,6 +34,16 @@ type FbStatusFilter = FeedbackStatus | 'all';
 export type Store = ReturnType<typeof useProvideStore>;
 
 const first = (name: string) => name.split(' ')[0];
+
+// A list behind a tab this person wasn't given comes back 403: it is simply
+// empty for them, not a reason to fail the whole load (someone who only works
+// the Support desk has none of these tabs).
+function unlessForbidden<T>(p: Promise<T[]>): Promise<T[]> {
+  return p.catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 403) return [] as T[];
+    throw e;
+  });
+}
 
 function useProvideStore() {
   const { user, signOut } = useAuth();
@@ -49,6 +60,8 @@ function useProvideStore() {
 
   const [view, setViewRaw] = useState<View>('overview');
   const [toast, setToast] = useState('');
+  // A failure reads as one: no green tick on "Could not save".
+  const [toastTone, setToastTone] = useState<'ok' | 'error'>('ok');
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,8 +178,9 @@ function useProvideStore() {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
 
-  const flash = useCallback((msg: string) => {
+  const flash = useCallback((msg: string, tone: 'ok' | 'error' = 'ok') => {
     setToast(msg);
+    setToastTone(tone);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 2600);
   }, []);
@@ -177,7 +191,7 @@ function useProvideStore() {
         void signOut();
         return;
       }
-      flash(e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
+      flash(e instanceof ApiError ? e.message : 'Something went wrong. Try again.', 'error');
     },
     [flash, signOut],
   );
@@ -187,11 +201,11 @@ function useProvideStore() {
     setLoading(true);
     try {
       const [lv, ot, rb, cr, fb, emp, live] = await Promise.all([
-        getLeaveInbox(),
-        getOvertimeInbox(),
-        getReimbInbox(),
-        getRegularizationInbox(),
-        getAllFeedback(),
+        unlessForbidden(getLeaveInbox()),
+        unlessForbidden(getOvertimeInbox()),
+        unlessForbidden(getReimbInbox()),
+        unlessForbidden(getRegularizationInbox()),
+        unlessForbidden(getAllFeedback()),
         getAllEmployees(),
         getKpiCycle(),
       ]);
@@ -222,6 +236,31 @@ function useProvideStore() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Just the request lists, quietly — no loading bar, nothing else re-read.
+  // Runs the moment the server says a request changed anywhere in the company.
+  const empRawRef = useRef(empRaw);
+  empRawRef.current = empRaw;
+  const refreshRequests = useCallback(async () => {
+    if (!user) return;
+    try {
+      const [lv, ot, rb, cr] = await Promise.all([
+        unlessForbidden(getLeaveInbox()),
+        unlessForbidden(getOvertimeInbox()),
+        unlessForbidden(getReimbInbox()),
+        unlessForbidden(getRegularizationInbox()),
+      ]);
+      const mgrByUser = new Map(empRawRef.current.map((e) => [e.userId, e.managerName ?? '']));
+      const mgrName = (userId: string) => mgrByUser.get(userId) || '—';
+      setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))));
+      setOts(ot.map((d) => adaptOvertime(d, mgrName(d.userId))));
+      setRbs(rb.map((d) => adaptReimb(d, mgrName(d.userId))));
+      setCorrs(cr.map((d) => adaptCorrection(d, mgrName(d.userId))));
+    } catch {
+      // Best effort: the next change, or a reload, brings the lists up to date.
+    }
+  }, [user]);
+  useRequestsLive(Boolean(user?.dashboardAccess), () => void refreshRequests());
 
   const closeAllOverlays = () => {
     setDrawerId(null);
@@ -508,7 +547,7 @@ function useProvideStore() {
 
   return {
     view, setView,
-    toast, flash, loading, loaded, reload,
+    toast, toastTone, flash, loading, loaded, reload,
     user, signOut, currentUserId,
     // leave
     leaves, leaveSearch, setLeaveSearch, leaveStatus, setLeaveStatus, leaveType, setLeaveType,

@@ -13,7 +13,9 @@ import { users } from '../config/db';
 import { User } from '../models/user.model';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
-import { notifyUsers } from './notification.service';import { leaveTypeLabel } from '../models/shift.model';
+import { notifyUsers } from './notification.service';
+import { emitRequestsChanged } from './connect-realtime.service';
+import { leaveTypeLabel } from '../models/shift.model';
 
 
 /** "10 September 2026". */
@@ -53,6 +55,8 @@ const firstName = (name?: string) => (name ?? '').trim().split(/\s+/)[0] || 'the
 export const dayCount = (days: number) => `${days} ${days === 1 ? 'day' : 'days'}`;
 
 async function deliver(userIds: string[], input: Parameters<typeof notifyUsers>[1]) {
+  // The open app hears about it the same instant, push permission or not.
+  emitRequestsChanged(userIds, input.scenario);
   try {
     await notifyUsers(userIds, input);
   } catch (error) {
