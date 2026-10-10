@@ -20,6 +20,8 @@ import { OvertimeRequest } from '../models/overtime.model';
 import { ReimbursementClaim } from '../models/reimbursement.model';
 import { ConnectPost } from '../models/connect.model';
 import { Game, GameScore } from '../models/game.model';
+import { GameCatalogEntry } from '../models/game-catalog.model';
+import { GameChallenge } from '../models/game-challenge.model';
 import {
   RelayEvent,
   RelayPresence,
@@ -41,6 +43,8 @@ import { ConnectBlock, ContentReport } from '../models/moderation.model';
 import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
 import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
+import { SupportEvent, SupportMessage, SupportTicket } from '../models/support.model';
+import { PolicyDocument } from '../models/policy-document.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -137,6 +141,21 @@ export function games(): Collection<Game> {
 
 export function gameScores(): Collection<GameScore> {
   return getDb().collection<GameScore>('game_scores');
+}
+
+/** The Games tab's games, one document per game; see GameCatalogEntry. */
+export function gameCatalog(): Collection<GameCatalogEntry> {
+  return getDb().collection<GameCatalogEntry>('game_catalog');
+}
+
+/** Each company's policies as the app shows them, one document per policy; see PolicyDocument. */
+export function policyDocuments(): Collection<PolicyDocument> {
+  return getDb().collection<PolicyDocument>('policy_documents');
+}
+
+/** Colleagues challenging each other to a catalog game; see GameChallenge. */
+export function gameChallenges(): Collection<GameChallenge> {
+  return getDb().collection<GameChallenge>('game_challenges');
 }
 
 export function relayEvents(): Collection<RelayEvent> {
@@ -264,6 +283,26 @@ export function careWritings(): Collection<CareWriting> {
   return getDb().collection<CareWriting>('care_writings');
 }
 
+/** Support desk: one row per ticket an employee raises. */
+export function supportTickets(): Collection<SupportTicket> {
+  return getDb().collection<SupportTicket>('support_tickets');
+}
+
+/** Support desk: the thread of each ticket. */
+export function supportMessages(): Collection<SupportMessage> {
+  return getDb().collection<SupportMessage>('support_messages');
+}
+
+/** Support desk: append-only audit trail of each ticket. */
+export function supportEvents(): Collection<SupportEvent> {
+  return getDb().collection<SupportEvent>('support_events');
+}
+
+/** Support desk: one running ticket number per org. */
+export function supportCounters(): Collection<{ org: string; seq: number }> {
+  return getDb().collection<{ org: string; seq: number }>('support_counters');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
@@ -308,6 +347,23 @@ async function ensureIndexes(database: Db): Promise<void> {
   await journal.createIndex({ id: 1 }, { unique: true });
   // A person's week, oldest first; the digest walks every person the same way.
   await journal.createIndex({ userId: 1, createdAt: 1 });
+
+  const supportTicketsCollection = database.collection<SupportTicket>('support_tickets');
+  await supportTicketsCollection.createIndex({ id: 1 }, { unique: true });
+  await supportTicketsCollection.createIndex({ org: 1, ticketNo: 1 }, { unique: true });
+  await database.collection('support_counters').createIndex({ org: 1 }, { unique: true });
+  // A head's New / Assigned / All lists.
+  await supportTicketsCollection.createIndex({ org: 1, status: 1, lastMessageAt: -1 });
+  // Each desk, and the sweep that returns a departed assignee's tickets.
+  await supportTicketsCollection.createIndex({ org: 1, assigneeUserId: 1, status: 1 });
+  // The app's list of one's own tickets.
+  await supportTicketsCollection.createIndex({ requesterUserId: 1, lastMessageAt: -1 });
+  const supportMessagesCollection = database.collection<SupportMessage>('support_messages');
+  await supportMessagesCollection.createIndex({ id: 1 }, { unique: true });
+  await supportMessagesCollection.createIndex({ ticketId: 1, createdAt: 1 });
+  const supportEventsCollection = database.collection<SupportEvent>('support_events');
+  await supportEventsCollection.createIndex({ id: 1 }, { unique: true });
+  await supportEventsCollection.createIndex({ ticketId: 1, createdAt: 1 });
 
   const usersCollection = database.collection<User>('users');
   // Legacy index from the earlier auth-only schema (keyed on `id`); replaced by `userId`.
@@ -380,6 +436,18 @@ async function ensureIndexes(database: Db): Promise<void> {
   const scoresCollection = database.collection<GameScore>('game_scores');
   await scoresCollection.createIndex({ gameId: 1, userId: 1 }, { unique: true });
   await scoresCollection.createIndex({ gameId: 1, score: -1, achievedAt: 1 });
+  await database.collection<GameCatalogEntry>('game_catalog').createIndex({ key: 1 }, { unique: true });
+  // One document per policy per company, and how a company's are found.
+  await database.collection<PolicyDocument>('policy_documents').createIndex({ org: 1, key: 1 }, { unique: true });
+  const challengesCollection = database.collection<GameChallenge>('game_challenges');
+  await challengesCollection.createIndex({ id: 1 }, { unique: true });
+  // Each player's list, newest first, and the counts that cap open challenges.
+  await challengesCollection.createIndex({ challengerUserId: 1, status: 1, createdAt: -1 });
+  await challengesCollection.createIndex({ opponentUserId: 1, status: 1, createdAt: -1 });
+  // The sweep that expires what nobody finished in time.
+  await challengesCollection.createIndex({ status: 1, expiresAt: 1 });
+  // What each player has already been paid today, for the daily and same-pair caps.
+  await challengesCollection.createIndex({ 'awards.userId': 1, gameKey: 1, closedAt: -1 });
 
   const tokensCollection = database.collection<DeviceToken>('device_tokens');
   await tokensCollection.createIndex({ token: 1 }, { unique: true });

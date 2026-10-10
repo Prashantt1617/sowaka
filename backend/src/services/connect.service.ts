@@ -3,11 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
 import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
-import { notifyUsers } from './notification.service';
+import { notifyUsers, removePostNotifications } from './notification.service';
+import { challengePointSource, recordPointChanges } from './points-ledger.service';
 import {
   notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
+import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { fetchLinkPreview } from './link-preview.service';
 import { companyDisplayName } from './company-settings.service';
@@ -47,6 +49,14 @@ const CHALLENGE_POST_TYPES: ConnectPostType[] = [
 const isChallenge = (type: ConnectPostType) => CHALLENGE_POST_TYPES.includes(type);
 
 /**
+ * Sends notifications after the response, so a slow push never delays the
+ * write it is about. A failure is logged; the write has already succeeded.
+ */
+function inBackground(what: string, job: () => Promise<unknown>): void {
+  void job().catch((error) => logger.error(`Connect ${what} failed`, {}, error));
+}
+
+/**
  * Tells every other client in the post's audience that it changed. Fire-and-
  * forget: a realtime hiccup must never fail the write that already succeeded.
  */
@@ -76,6 +86,8 @@ function announceChange(
 /** How many posts a page holds when the app does not say, and the most it may ask for. */
 export const FEED_DEFAULT_LIMIT = 50;
 export const FEED_MAX_LIMIT = 50;
+/** At most this many pinned posts lead the feed at once, newest first. */
+export const FEED_MAX_PINNED = 3;
 
 /**
  * Where the next page starts: the last post's publish moment and creation
@@ -148,34 +160,47 @@ export async function getConnectFeed(
         }
       : {};
 
+  const audienceFilter = {
+    $or: [
+      // MongoDB's driver stores `undefined` as BSON null rather than
+      // dropping the key, so company-wide posts persist with an explicit
+      // null — querying for `null` matches both that and a genuinely
+      // missing field, unlike `$exists: false`.
+      { 'audience.teamId': null, 'audience.department': null },
+      { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
+      // Posts written while Team meant "same department".
+      { 'audience.department': viewer.department },
+    ],
+  };
+  // A pinned post leads the first page while its pin lasts and is left out of
+  // the paged list meanwhile, so it never shows twice.
+  const now = new Date();
+  const notPinned = { $or: [{ pinnedUntil: null }, { pinnedUntil: { $lte: now } }] };
+
   // One more than the page, to know whether another page follows without a
   // second count query.
-  const page = await connectPosts()
-    .find({
-      org,
-      ...typeFilter,
-      ...blockFilter,
-      $and: [
-        {
-          $or: [
-            // MongoDB's driver stores `undefined` as BSON null rather than
-            // dropping the key, so company-wide posts persist with an explicit
-            // null — querying for `null` matches both that and a genuinely
-            // missing field, unlike `$exists: false`.
-            { 'audience.teamId': null, 'audience.department': null },
-            { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
-            // Posts written while Team meant "same department".
-            { 'audience.department': viewer.department },
-          ],
-        },
-        ...(after ? [cursorFilter] : []),
-      ],
-    })
-    .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
-    .limit(limit + 1)
-    .toArray();
+  const [pinned, page] = await Promise.all([
+    after
+      ? Promise.resolve([])
+      : connectPosts()
+          .find({ org, ...typeFilter, ...blockFilter, pinnedUntil: { $gt: now }, $and: [audienceFilter] })
+          .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+          .limit(FEED_MAX_PINNED)
+          .toArray(),
+    connectPosts()
+      .find({
+        org,
+        ...typeFilter,
+        ...blockFilter,
+        $and: [audienceFilter, notPinned, ...(after ? [cursorFilter] : [])],
+      })
+      .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .toArray(),
+  ]);
   const hasMore = page.length > limit;
-  const posts = hasMore ? page.slice(0, limit) : page;
+  const paged = hasMore ? page.slice(0, limit) : page;
+  const posts = [...pinned, ...paged];
 
   // `post.author.photoUrl` is a snapshot frozen at creation time (see
   // `createConnectPost`), so a post predates whatever profile photo its
@@ -218,7 +243,9 @@ export async function getConnectFeed(
   );
   return {
     posts: views,
-    nextCursor: hasMore && posts.length > 0 ? encodeFeedCursor(posts[posts.length - 1]) : null,
+    // From the last post in feed order — never a pinned one, which sits
+    // outside it.
+    nextCursor: hasMore && paged.length > 0 ? encodeFeedCursor(paged[paged.length - 1]) : null,
   };
 }
 
@@ -262,13 +289,17 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
     : { $addToSet: { likedBy: viewerUserId } };
   await connectPosts().updateOne({ id: postId }, update);
   const updated = await connectPosts().findOne({ id: postId });
+  // Open feeds hear about it first; the push follows in the background, so it
+  // can never arrive before the like shows, nor hold up the liker's response.
+  announceChange(post, 'updated', viewerUserId);
   // Only on like, never on unlike: an unlike lowers the count that the next
   // notification reports, and announces nothing of its own.
   if (!liked) {
-    const viewer = await users().findOne({ userId: viewerUserId });
-    if (viewer) await notifyPostLiked(updated ?? post, viewer);
+    inBackground('post like notification', async () => {
+      const viewer = await users().findOne({ userId: viewerUserId });
+      if (viewer) await notifyPostLiked(updated ?? post, viewer);
+    });
   }
-  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -277,6 +308,8 @@ export async function addConnectComment(
   postId: string,
   textInput: string,
   parentId?: string,
+  /** People tagged with "@" from the directory. */
+  mentionedUserIdsInput: string[] = [],
 ) {
   const post = await requireVisiblePost(viewerUserId, postId);
   const viewer = await users().findOne({ userId: viewerUserId });
@@ -288,6 +321,20 @@ export async function addConnectComment(
     if (!parent) throw new ConnectError(400, 'Reply target not found');
     if (parent.parentId) throw new ConnectError(400, 'Cannot reply to a reply');
   }
+  // Anyone in the post's company may be tagged, and only while their name is
+  // still in the text — a tag deleted while typing is not a tag.
+  const mentionIds = [...new Set(mentionedUserIdsInput.filter((id) => typeof id === 'string' && id))].slice(0, 20);
+  const tagged = mentionIds.length
+    ? await users()
+        .find(
+          { userId: { $in: mentionIds }, org: post.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+          { projection: { _id: 0, userId: 1, name: 1 } },
+        )
+        .toArray()
+    : [];
+  const mentions = tagged
+    .filter((person) => text.includes(`@${person.name}`))
+    .map((person) => ({ userId: person.userId, name: person.name }));
   const comment = {
     id: randomUUID(),
     userId: viewerUserId,
@@ -296,18 +343,24 @@ export async function addConnectComment(
     createdAt: new Date(),
     likedBy: [] as string[],
     ...(parentId ? { parentId } : {}),
+    ...(mentions.length ? { mentions } : {}),
   };
   await connectPosts().updateOne(
     { id: post.id },
     { $push: { comments: comment }, $set: { updatedAt: new Date() } },
   );
+  const updated = await connectPosts().findOne({ id: postId });
+  // Feeds first, then the push in the background — see toggleConnectReaction.
+  announceChange(post, 'updated', viewerUserId);
   if (viewer) {
     // `post` is the pre-insert copy on purpose: prior commenters are the people
     // who had commented before this one.
-    await notifyPostCommented(post, comment, viewer, mentionedUserIdsIn(text, post));
+    inBackground('comment notification', () =>
+      notifyPostCommented(post, comment, viewer, [
+        ...new Set([...mentions.map((person) => person.userId), ...mentionedUserIdsIn(text, post)]),
+      ]),
+    );
   }
-  const updated = await connectPosts().findOne({ id: postId });
-  announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -327,11 +380,14 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
-  if (!liked) {
-    const viewer = await users().findOne({ userId: viewerUserId });
-    if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
-  }
+  // Feeds first, then the push in the background — see toggleConnectReaction.
   announceChange(post, 'updated', viewerUserId);
+  if (!liked) {
+    inBackground('comment like notification', async () => {
+      const viewer = await users().findOne({ userId: viewerUserId });
+      if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
+    });
+  }
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -424,6 +480,10 @@ export async function addCaptionEntry(
       { userId: tagged.userId },
       { $inc: { points: normalizePoints(post.body.pointsPerVote) } },
     );
+    recordPointChanges([{
+      userId: tagged.userId, org: post.org, delta: normalizePoints(post.body.pointsPerVote),
+      source: challengePointSource(post.type), reason: 'tagged', refId: post.id,
+    }]);
     const afterTag = await connectPosts().findOne({ id: postId });
     announceChange(post, 'updated', viewerUserId);
     return viewPost(afterTag ?? post, viewerUserId);
@@ -524,6 +584,12 @@ export async function removeCaptionEntry(viewerUserId: string, postId: string) {
         )
       : Promise.resolve(),
   ]);
+  if (refund > 0) {
+    recordPointChanges([{
+      userId: pointsRecipient(mine), org: post.org, delta: -refund,
+      source: challengePointSource(post.type), reason: 'entry_removed', refId: post.id,
+    }]);
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -576,6 +642,10 @@ export async function voteOnCaptionEntry(
       { userId: pointsRecipient(entry) },
       { $inc: { points: -pointsPerVote } },
     );
+    recordPointChanges([{
+      userId: pointsRecipient(entry), org: post.org, delta: -pointsPerVote,
+      source: challengePointSource(post.type), reason: 'vote_withdrawn', refId: post.id,
+    }]);
   } else {
     await connectPosts().updateOne(
       { id: postId },
@@ -591,6 +661,18 @@ export async function voteOnCaptionEntry(
         { $inc: { points: -pointsPerVote } },
       );
     }
+    recordPointChanges([
+      {
+        userId: pointsRecipient(entry), org: post.org, delta: pointsPerVote,
+        source: challengePointSource(post.type), reason: 'vote_received', refId: post.id,
+      },
+      ...(previous
+        ? [{
+            userId: pointsRecipient(previous), org: post.org, delta: -pointsPerVote,
+            source: challengePointSource(post.type), reason: 'vote_withdrawn' as const, refId: post.id,
+          }]
+        : []),
+    ]);
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
@@ -864,6 +946,8 @@ export async function deleteConnectPost(viewerUserId: string, postId: string) {
   await connectPosts().deleteOne({ id: post.id });
   await deleteConnectMediaByKeys(mediaObjectKeys(post.body));
   announceChange(post, 'deleted', viewerUserId);
+  // Its likes, comments and "new post" alerts go with it.
+  inBackground('notification cleanup', () => removePostNotifications(post.id));
   return { id: post.id };
 }
 
@@ -896,6 +980,12 @@ async function reverseChallengePoints(post: ConnectPost) {
       updateOne: { filter: { userId }, update: { $inc: { points: -points } } },
     })),
     { ordered: false },
+  );
+  recordPointChanges(
+    [...owed.entries()].map(([userId, points]) => ({
+      userId, org: post.org, delta: -points,
+      source: challengePointSource(post.type), reason: 'challenge_deleted' as const, refId: post.id,
+    })),
   );
 }
 
@@ -1097,9 +1187,18 @@ async function viewPost(
       // not count, and someone you blocked does not appear as a row. The
       // entry list above already drops the first; doing it here too keeps the
       // board from disagreeing with the card it sits under.
+      // Each row also carries when its latest tag came in, for the entries
+      // sheet's "Most recent" order. Only the time — never who tagged them.
       const board = new Map<
         string,
-        { userId: string; name: string; initials: string; designation: string; votes: number }
+        {
+          userId: string;
+          name: string;
+          initials: string;
+          designation: string;
+          votes: number;
+          createdAt?: Date;
+        }
       >();
       for (const entry of post.captionEntries ?? []) {
         if (!entry.taggedUserId) continue;
@@ -1113,6 +1212,10 @@ async function viewPost(
           votes: 0,
         };
         row.votes += 1;
+        const taggedAt = entry.createdAt ? new Date(entry.createdAt) : undefined;
+        if (taggedAt && (!row.createdAt || taggedAt > row.createdAt)) {
+          row.createdAt = taggedAt;
+        }
         board.set(entry.taggedUserId, row);
       }
       body.leaderboard = [...board.values()]

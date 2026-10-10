@@ -89,6 +89,7 @@ export async function commentOnConnectPost(req: Request, res: Response, next: Ne
       String(req.params.postId ?? ''),
       String(req.body.text ?? ''),
       req.body.parentId ? String(req.body.parentId) : undefined,
+      Array.isArray(req.body.mentionedUserIds) ? req.body.mentionedUserIds.map(String) : [],
     );
     res.status(201).json({ success: true, post });
   } catch (error) {

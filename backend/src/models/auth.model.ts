@@ -24,6 +24,8 @@ export interface AuthUser {
   dashboardAdmin?: boolean;
   /** Dashboard tabs this person may open; null means every tab. */
   dashboardTabs?: string[] | null;
+  /** Support desk role; null when they have none (no Support tab). */
+  supportRole?: 'head' | 'staff' | null;
   isLeadership?: boolean;
   company: string;
   /** The company's id, which is what branding is chosen by. */
@@ -46,4 +48,6 @@ export interface AuthUser {
   };
   /** The tabs this person's company shows in the app; see Company.enabledTabs. */
   enabledTabs?: string[];
+  /** The games switched on for this person's company; see Company.enabledGames. */
+  enabledGames?: string[];
 }

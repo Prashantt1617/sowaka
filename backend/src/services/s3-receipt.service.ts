@@ -82,6 +82,40 @@ export async function uploadEmployeeDocument(userId: string, file: ReceiptFile) 
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/**
+ * A file attached to a Support desk message. Same bucket and encryption; its
+ * own prefix, `…/support/<org>/<ticketId>/`. The key is random and carries no
+ * part of the client's file name; the name is kept on the message instead.
+ */
+export async function uploadSupportAttachment(org: string, ticketId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const root = env.s3.receiptPrefix.replace(/^\/+|\/+$/g, '').split('/')[0];
+  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'application/pdf': '.pdf' }[file.contentType] ?? '';
+  const objectKey = [root, 'support', safe(org), safe(ticketId), `${randomUUID()}${extension}`].filter(Boolean).join('/');
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return { objectKey, contentType: file.contentType, size: file.size };
+}
+
+export async function deleteSupportAttachment(objectKey: string) {
+  validateConfiguration();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+}
+
+/** Whether uploads can be stored at all on this host. */
+export function hasReceiptStorage(): boolean {
+  return Boolean(env.s3.region && env.s3.bucket);
+}
+
 export async function deleteEmployeeDocument(objectKey: string) {
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));

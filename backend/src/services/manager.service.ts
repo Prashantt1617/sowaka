@@ -841,7 +841,7 @@ async function requireRecognitionCandidate(managerUserId: string, employeeUserId
  * Walked from `managerUserId`, with each id visited once: a reporting loop in
  * the data stops the walk instead of looping forever.
  */
-function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[] {
+export function buildOrgChart(report: User, byUserId: Map<string, User>): OrgChartNode[] {
   const node = (user: User, isSelf: boolean): OrgChartNode => ({
     userId: user.userId,
     name: user.name,
@@ -959,7 +959,7 @@ export class ManagerError extends Error {
 }
 
 /** Whether the viewer sits anywhere above this person's reporting line. */
-function reportsUpTo(person: User, viewerId: string, byId: Map<string, User>): boolean {
+export function reportsUpTo(person: User, viewerId: string, byId: Map<string, User>): boolean {
   const seen = new Set<string>();
   let current: User | undefined = person;
   while (current?.managerUserId && !seen.has(current.managerUserId)) {

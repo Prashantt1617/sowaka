@@ -16,6 +16,9 @@ import { ReportError } from '../services/attendance-report.service';
 import { ConnectError } from '../services/connect.service';
 import { ConnectBlockError } from '../services/connect-blocks.service';
 import { GameError } from '../services/game.service';
+import { GameCatalogError } from '../services/game-catalog.service';
+import { GameChallengeError } from '../services/game-challenge.service';
+import { PolicyDocumentError } from '../services/policy-document.service';
 import { NotificationError } from '../services/notification.service';
 import { PayHeadError } from '../services/payHead.service';
 import { StatutoryError } from '../services/statutory.service';
@@ -32,6 +35,7 @@ import { ZoomError } from '../services/zoom.service';
 import { GardenError } from '../services/garden.service';
 import { HelpError } from '../services/help.service';
 import { CareError } from '../services/care.service';
+import { SupportError } from '../services/support.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
   logger.warn('Route not found', requestLogContext(request, 404));
@@ -99,6 +103,9 @@ function getStatusCode(error: unknown): number {
     || error instanceof ConnectError
     || error instanceof ConnectBlockError
     || error instanceof GameError
+    || error instanceof GameCatalogError
+    || error instanceof GameChallengeError
+    || error instanceof PolicyDocumentError
     || error instanceof NotificationError
     || error instanceof PayHeadError
     || error instanceof StatutoryError
@@ -114,6 +121,7 @@ function getStatusCode(error: unknown): number {
     || error instanceof GardenError
     || error instanceof HelpError
     || error instanceof CareError
+    || error instanceof SupportError
     || error instanceof ReimbursementTypeError
     || error instanceof ReportError
   ) {

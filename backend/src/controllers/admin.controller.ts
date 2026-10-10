@@ -208,7 +208,7 @@ export async function listAccessesHandler(req: Request, res: Response, next: Nex
 /** Give, change or remove one person's dashboard access and tabs. */
 export async function setAccessHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const body = (req.body ?? {}) as { access?: unknown; admin?: unknown; tabs?: unknown };
+    const body = (req.body ?? {}) as { access?: unknown; admin?: unknown; tabs?: unknown; supportRole?: unknown };
     res.status(200).json({ success: true, ...(await setDashboardAccess(adminUserId(req), String(req.params.userId ?? ''), body)) });
   } catch (error) { next(error); }
 }

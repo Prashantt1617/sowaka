@@ -1,8 +1,9 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server as SocketServer, type Socket } from 'socket.io';
-import { authSessions } from '../config/db';
+import { authSessions, users } from '../config/db';
 import { env } from '../config/env';
 import type { User } from '../models/user.model';
+import { supportRoleOf, type SupportChangeKind } from '../models/support.model';
 import { hashSessionToken } from './auth.service';
 import { logger } from '../utils/logger';
 
@@ -48,6 +49,20 @@ function personalRoom(userId: string): string {
   return `user:${userId}`;
 }
 
+/** Everyone in a company who works the HR dashboard. */
+function dashboardRoom(org: string): string {
+  return `dashboard:${org}`;
+}
+
+/**
+ * The org's Support heads: they see every ticket, so they hear about every
+ * change to one. Support staff are not in it; they hear only through their
+ * own `user:` room, about the tickets assigned to them.
+ */
+function supportHeadRoom(org: string): string {
+  return `support-head:${org}`;
+}
+
 /** @deprecated Rooms for posts written while Team meant "same department". */
 function departmentRoom(org: string, department: string): string {
   return `connect:org:${org}:dept:${department}`;
@@ -73,6 +88,8 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
     socket.data.org = identity.org;
     socket.data.department = identity.department;
     socket.data.managerUserId = identity.managerUserId;
+    socket.data.dashboardAccess = identity.dashboardAccess === true;
+    socket.data.supportRole = identity.supportRole ?? null;
     next();
   });
 
@@ -88,6 +105,10 @@ export function initConnectRealtime(httpServer: HttpServer): SocketServer {
     if (managerUserId) void socket.join(teamRoom(org, managerUserId));
     if (department) void socket.join(departmentRoom(org, department));
     void socket.join(personalRoom(userId));
+    // HR on the dashboard sees every request in the company, so it hears
+    // about every change to one.
+    if (socket.data.dashboardAccess) void socket.join(dashboardRoom(org));
+    if (socket.data.supportRole === 'head') void socket.join(supportHeadRoom(org));
     logger.info('Connect socket connected', {
       userId,
       org,
@@ -109,6 +130,10 @@ export interface SocketIdentity {
   org: string;
   department?: string;
   managerUserId?: string;
+  /** Uses the HR dashboard: hears about every request in the company. */
+  dashboardAccess?: boolean;
+  /** Support desk role; a head hears about every ticket of the org. */
+  supportRole?: 'head' | 'staff' | null;
 }
 
 /**
@@ -143,6 +168,8 @@ export async function authenticateSocket(
                   department: 1,
                   managerUserId: 1,
                   lifecycleStatus: 1,
+                  dashboardAccess: 1,
+                  supportRole: 1,
                 },
               },
             ],
@@ -161,6 +188,8 @@ export async function authenticateSocket(
       org: user.org ?? user.email.split('@').at(1) ?? 'default',
       department: user.department,
       managerUserId: user.managerUserId,
+      dashboardAccess: user.dashboardAccess === true,
+      supportRole: supportRoleOf(user),
     };
   } catch (error) {
     logger.error('Socket authentication failed', {}, error);
@@ -203,9 +232,62 @@ export function emitConnectChange(change: ConnectChangeTarget): void {
  */
 export function emitRequestsChanged(userIds: (string | undefined | null)[], kind: string): void {
   if (!io) return;
-  const rooms = [...new Set(userIds.filter((id): id is string => Boolean(id)))].map(personalRoom);
+  const ids = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return;
+  io.to(ids.map(personalRoom)).emit('requests:changed', { kind });
+  // And the company's HR dashboards, which list every request. The org is
+  // read here rather than passed in, so every caller stays a one-liner; it
+  // never holds up the request that changed.
+  const server = io;
+  void users()
+    .findOne({ userId: ids[0] }, { projection: { _id: 0, org: 1 } })
+    .then((user) => { if (user?.org) server.to(dashboardRoom(user.org)).emit('requests:changed', { kind }); })
+    .catch(() => undefined);
+}
+
+/**
+ * Tells whoever may see a ticket that it changed. Ids only — never a ticket
+ * body, a name or a message: each client refetches through the API with its
+ * own permissions, which is where identity is stripped.
+ */
+export function emitSupportChanged(target: {
+  org: string;
+  ticketId: string;
+  kind: SupportChangeKind;
+  /** Also the org's Support heads. */
+  heads: boolean;
+  /** Requester, assignee, previous assignee — whoever is relevant. */
+  userIds: (string | undefined | null)[];
+}): void {
+  if (!io) return;
+  const rooms = [...new Set(target.userIds.filter((id): id is string => Boolean(id)))].map(personalRoom);
+  if (target.heads) rooms.push(supportHeadRoom(target.org));
   if (rooms.length === 0) return;
-  io.to(rooms).emit('requests:changed', { kind });
+  io.to(rooms).emit('support:changed', { ticketId: target.ticketId, kind: target.kind });
+}
+
+/**
+ * One game challenge changed, told to one of its two players on their own
+ * channel: `created`, `accepted`, `declined`, `live` (the other's score
+ * mid-round), `scored` (the other's final is in), `finished` or `expired`.
+ * Each player is sent their own view of it, since "me" and "them" differ;
+ * a `live` carries only whose score it is and what it is.
+ */
+export function emitGameChallenge(userId: string, payload: Record<string, unknown>): void {
+  if (!io || !userId) return;
+  io.to(personalRoom(userId)).emit('game:challenge', payload);
+}
+
+/**
+ * Moves someone's open sockets in or out of their org's Support head room
+ * when People › Accesses changes their role, so a removed head stops hearing
+ * about tickets without having to reconnect.
+ */
+export function syncSupportHeadRoom(userId: string, org: string, isHead: boolean): void {
+  if (!io) return;
+  const sockets = io.in(personalRoom(userId));
+  if (isHead) sockets.socketsJoin(supportHeadRoom(org));
+  else sockets.socketsLeave(supportHeadRoom(org));
 }
 
 export function closeConnectRealtime(): void {

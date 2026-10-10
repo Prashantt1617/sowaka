@@ -1,0 +1,10 @@
+Casual Leave — 12 days a year.
+Can be applied up to 30 days ahead, or up to 30 days after the fact.
+
+Earned Leave — 18 days a year.
+Can be applied up to 90 days ahead, or up to 30 days after the fact.
+
+Comp-off — credited when overtime is approved: 1 day for a full day, 0.5 for a half day.
+Can be applied up to 30 days ahead, and not for a day already past.
+
+Week-offs and company holidays inside a leave range are not counted against your balance.

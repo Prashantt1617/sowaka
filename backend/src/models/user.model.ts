@@ -105,6 +105,15 @@ export interface User {
    */
   dashboardTabs?: string[];
   /**
+   * Support desk role, set only by a dashboard admin in People › Accesses.
+   * 'head' sees and assigns every ticket of the org; 'staff' sees only the
+   * tickets assigned to them. Never implied by dashboard access or admin, and
+   * only effective alongside `dashboardAccess`. Absent: no Support desk.
+   */
+  supportRole?: 'head' | 'staff';
+  supportRoleSetBy?: string;
+  supportRoleSetAt?: Date;
+  /**
    * Per-employee overtime eligibility, set by HR from the dashboard. Absent
    * means eligible, so existing employees keep the behaviour they had before
    * this flag existed. Applied on top of the department-level gate

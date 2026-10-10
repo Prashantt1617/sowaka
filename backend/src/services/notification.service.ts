@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { deviceTokens, getDb, leaves, notifications, users } from '../config/db';
+import { connectPosts, deviceTokens, getDb, leaves, notifications, users } from '../config/db';
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
@@ -74,7 +74,27 @@ export async function unregisterDeviceToken(userId: string, token: string) {
 }
 
 export async function listNotifications(userId: string) {
-  return notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
+  const rows = await notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
+  // A notification about a post that has since been deleted leads nowhere.
+  // Deleting a post now removes its notifications too; this covers the ones
+  // written before that, and any a delete raced with.
+  const postIds = [...new Set(rows.map((row) => row.data?.postId).filter((id): id is string => Boolean(id)))];
+  if (postIds.length === 0) return rows;
+  const live = new Set(
+    (await connectPosts().find({ id: { $in: postIds } }, { projection: { _id: 0, id: 1 } }).toArray()).map((post) => post.id),
+  );
+  return rows.filter((row) => !row.data?.postId || live.has(row.data.postId));
+}
+
+/**
+ * Everything notified about one post, gone with it: the notifications already
+ * in people's inboxes and any still batched up to be sent.
+ */
+export async function removePostNotifications(postId: string) {
+  await Promise.all([
+    notifications().deleteMany({ 'data.postId': postId }),
+    getDb().collection('notification_batches').deleteMany({ entityId: postId }),
+  ]);
 }
 
 export async function markNotificationRead(userId: string, id: string) {
