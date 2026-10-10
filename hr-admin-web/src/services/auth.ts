@@ -17,6 +17,8 @@ export type AuthUser = {
   /** The dashboard tabs this person may open; null or absent means every tab. */
   dashboardTabs?: string[] | null;
   isLeadership?: boolean;
+  /** Support desk role, given in People › Accesses. Absent or null: no Support desk. */
+  supportRole?: 'head' | 'staff' | null;
 };
 
 export function getStoredUser(): AuthUser | null {

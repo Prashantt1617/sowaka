@@ -765,27 +765,23 @@ export type EngagementPostDTO = {
 
 export type CaptionChallengeInput = {
   type: EngagementPostType;
+  /** The name on the card (for Best Photo, the server's default if empty). */
   title: string;
-  /**
-   * The whole brief, in one field. This was a bold opening line plus a
-   * paragraph under it, which asked whoever wrote it to split one thought in
-   * two — and the card ran them together anyway.
-   */
+  /** Best Photo's heading; Caption this carries it too, as the app does. */
   task: string;
+  /** HR's to set (the app always posts 10); the server clamps it to 1–100. */
   pointsPerVote: number;
   /** When entries close, as an ISO instant. Empty leaves it open. */
   closesAt: string;
   photo: File | null;
-  /** Most Likely only — the question card. */
-  label: string;
-  question: string;
 };
 
 /**
- * Publishes a caption challenge to the feed.
+ * Publishes a contest to the feed, with the same body the app's contest
+ * composer posts (ContestDraft.body): title and closesAt, task on every
+ * format but Most Likely, plus the points per vote HR chose.
  *
- * Sent as multipart because the picture is the post — a caption challenge
- * without one is nothing to caption.
+ * Sent as multipart because a caption contest's picture is the post.
  */
 export function publishCaptionChallenge(input: CaptionChallengeInput) {
   const form = new FormData();
@@ -795,11 +791,9 @@ export function publishCaptionChallenge(input: CaptionChallengeInput) {
     'body',
     JSON.stringify({
       title: input.title,
-      task: input.task,
-      pointsPerVote: input.pointsPerVote,
       closesAt: input.closesAt,
-      label: input.label,
-      question: input.question,
+      ...(input.type === 'most_likely' ? {} : { task: input.task }),
+      pointsPerVote: input.pointsPerVote,
     }),
   );
   if (input.photo) form.append('media', input.photo);
@@ -897,11 +891,17 @@ export type DashboardAccessDTO = {
   admin: boolean;
   tabs: string[] | null;
   active: boolean;
+  /** Support desk role; absent or null means none. Never implied by admin or full access. */
+  supportRole?: 'head' | 'staff' | null;
 };
 export const listDashboardAccesses = () =>
   api<{ users: DashboardAccessDTO[]; tabs: string[] }>('/admin/accesses');
-/** Give or change access (`access` true) or take it away (`access` false). */
-export const setDashboardAccess = (userId: string, input: { access: boolean; admin?: boolean; tabs?: string[] | null }) =>
+/**
+ * Give or change access (`access` true) or take it away (`access` false, which
+ * also takes away any Support role). `supportRole` null removes the role;
+ * left out, it is unchanged.
+ */
+export const setDashboardAccess = (userId: string, input: { access: boolean; admin?: boolean; tabs?: string[] | null; supportRole?: 'head' | 'staff' | null }) =>
   api<{ user: DashboardAccessDTO | null }>(`/admin/accesses/${userId}`, { method: 'PUT', body: input });
 
 // —— Reporting manager ————————————————————————————————————————————————

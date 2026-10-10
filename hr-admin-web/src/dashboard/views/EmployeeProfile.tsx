@@ -797,7 +797,7 @@ function ManagerRow({ emp }: { emp: Emp }) {
       setEditing(false); setQ('');
       void reload();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not change the manager');
+      flash(e instanceof ApiError ? e.message : 'Could not change the manager', 'error');
     } finally {
       setSaving(false);
     }

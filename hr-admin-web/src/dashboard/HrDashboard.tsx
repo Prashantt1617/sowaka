@@ -40,6 +40,7 @@ import { Accesses } from './views/Accesses';
 import { KpiParameters } from './views/KpiParameters';
 import { KpiTemplates } from './views/KpiTemplates';
 import { KpiBulkAssign } from './views/KpiBulkAssign';
+import { SupportDesk } from './views/SupportDesk';
 
 function CurrentView() {
   const { view } = useStore();
@@ -110,6 +111,8 @@ function CurrentView() {
       return <Offices />;
     case 'oolcheckins':
       return <OutOfLocation />;
+    case 'support':
+      return <SupportDesk />;
     default:
       return <Placeholder />;
   }

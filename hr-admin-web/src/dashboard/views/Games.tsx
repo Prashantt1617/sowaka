@@ -13,7 +13,7 @@ export function Games() {
   const [editing, setEditing] = useState<GameDTO | 'new' | null>(null);
   const [form, setForm] = useState<GameInput>(empty);
   const [busy, setBusy] = useState(false);
-  const load = async () => { try { setGames(await getGames()); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not load games'); } };
+  const load = async () => { try { setGames(await getGames()); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not load games', 'error'); } };
   useEffect(() => { void load(); }, []);
   const open = (game?: GameDTO) => {
     setEditing(game ?? 'new');
@@ -25,15 +25,15 @@ export function Games() {
       if (editing === 'new') await createGame(form);
       else if (editing) await updateGame(editing.id, form);
       setEditing(null); await load(); flash('Game saved');
-    } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not save game'); }
+    } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not save game', 'error'); }
     finally { setBusy(false); }
   };
   const remove = async (game: GameDTO) => {
     if (!window.confirm(`Delete ${game.name} and its leaderboard?`)) return;
-    try { await deleteGame(game.id); await load(); flash('Game deleted'); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not delete game'); }
+    try { await deleteGame(game.id); await load(); flash('Game deleted'); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not delete game', 'error'); }
   };
   const publish = async (game: GameDTO) => {
-    try { await publishGame(game.id); flash(`${game.name} published to Connect`); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not publish game'); }
+    try { await publishGame(game.id); flash(`${game.name} published to Connect`); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not publish game', 'error'); }
   };
 
   return <div style={{ animation: 'fade .3s ease both' }}>

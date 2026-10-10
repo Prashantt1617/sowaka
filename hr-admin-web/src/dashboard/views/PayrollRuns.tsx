@@ -56,7 +56,7 @@ export function PayrollRuns() {
     try {
       setRuns(await listRuns());
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not load runs');
+      flash(e instanceof ApiError ? e.message : 'Could not load runs', 'error');
     } finally {
       setLoading(false);
     }
@@ -77,7 +77,7 @@ export function PayrollRuns() {
       return;
     }
     loadDetail(openId).catch((e) => {
-      flash(e instanceof ApiError ? e.message : 'Could not load run');
+      flash(e instanceof ApiError ? e.message : 'Could not load run', 'error');
       setOpenId(null);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,7 +91,7 @@ export function PayrollRuns() {
       await loadRuns();
       setOpenId(run.id);
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not create run');
+      flash(e instanceof ApiError ? e.message : 'Could not create run', 'error');
     } finally {
       setCreating(false);
     }
@@ -105,7 +105,7 @@ export function PayrollRuns() {
       setDetail((d) => (d ? { ...d, run } : d));
       await loadRuns();
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Action failed');
+      flash(e instanceof ApiError ? e.message : 'Action failed', 'error');
     } finally {
       setBusy(false);
     }

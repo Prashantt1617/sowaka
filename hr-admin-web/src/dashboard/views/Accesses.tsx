@@ -2,6 +2,8 @@
 // sees. Only a dashboard admin opens this page. An admin sees every tab;
 // everyone else sees the tabs ticked for them, and the server refuses the
 // APIs behind the rest. Roles are starting points for the tick list.
+// The Support desk is not a tab: it is a role per person (head or staff) set
+// here, never implied by Admin or by every tab.
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
@@ -10,6 +12,7 @@ import { refreshMe } from '../../services/auth';
 import { ApiError } from '../../services/http';
 import { getAllEmployees, listDashboardAccesses, setDashboardAccess } from '../../services/hrms';
 import type { DashboardAccessDTO, EmployeeDTO } from '../../services/hrms';
+import type { SupportRole } from '../../services/support';
 import { Avatar, Card } from '../ui';
 import { IconPlus } from '../icons';
 import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
@@ -28,7 +31,7 @@ const TABS: { key: SubTab; label: string }[] = [
 type Unit = { key: string; title: string; tabs: AccessKey[]; hint: string };
 const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 const SECTION_UNITS: Unit[] = SECTIONS.map((s) => {
-  const items = s.items.filter((i) => i.key !== 'usersroles');
+  const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support');
   return { key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') };
 });
 const UNITS: Unit[] = [
@@ -72,17 +75,36 @@ export function Accesses() {
   );
 }
 
+// —— Support desk role ——————————————————————————————————————————————————
+const SUPPORT_CHOICES: { value: SupportRole | null; label: string; hint: string }[] = [
+  { value: null, label: 'None', hint: 'No Support desk.' },
+  { value: 'staff', label: 'Support staff', hint: 'Sees only the tickets the Support head assigns to them. Replies, resolves, sends back.' },
+  { value: 'head', label: 'Support head', hint: 'Sees every ticket, assigns or keeps them, replies and resolves.' },
+];
+const SUPPORT_TONE: Record<SupportRole, { bg: string; fg: string; label: string }> = {
+  head: { bg: '#E7F4FB', fg: '#0571A6', label: 'Support head' },
+  staff: { bg: '#EEF0E6', fg: '#5E6B3E', label: 'Support staff' },
+};
+
+function SupportRolePill({ role }: { role?: SupportRole | null }) {
+  if (!role) return <span style={{ fontSize: 14, color: '#9197A2' }}>—</span>;
+  const t = SUPPORT_TONE[role];
+  return <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}>{t.label}</span>;
+}
+
 // —— Users ————————————————————————————————————————————————————————————
-const USER_COLS = '2.2fr 2.4fr 0.8fr 44px';
+const USER_COLS = '2.2fr 2.2fr 1.1fr 0.8fr 44px';
 
 function accessSummary(u: DashboardAccessDTO): string {
   if (u.admin) return 'Admin · everything';
   if (u.tabs === null) return 'Everything';
   const names = UNITS.filter((unit) => hasUnit(u.tabs as AccessKey[], unit)).map((unit) => unit.title);
+  // Support desk is a role, not a tab: someone given only that has no tabs.
+  if (names.length === 0 && u.supportRole) return 'Support desk only';
   return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
 }
 
-type Editing = { person: { userId: string; name: string; email: string }; admin: boolean; tabs: Set<AccessKey>; isNew: boolean };
+type Editing = { person: { userId: string; name: string; email: string }; admin: boolean; tabs: Set<AccessKey>; supportRole: SupportRole | null; isNew: boolean };
 
 function UsersTab() {
   const { flash } = useStore();
@@ -92,22 +114,23 @@ function UsersTab() {
   const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const load = () => listDashboardAccesses().then((r) => setRows(r.users)).catch((e) => flash(e instanceof ApiError ? e.message : 'Could not load accesses'));
+  const load = () => listDashboardAccesses().then((r) => setRows(r.users)).catch((e) => flash(e instanceof ApiError ? e.message : 'Could not load accesses', 'error'));
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = (u: DashboardAccessDTO) =>
-    setEditing({ person: u, admin: u.admin, tabs: new Set<AccessKey>(u.tabs === null ? ALL_TABS : (u.tabs as AccessKey[])), isNew: false });
+    setEditing({ person: u, admin: u.admin, tabs: new Set<AccessKey>(u.tabs === null ? ALL_TABS : (u.tabs as AccessKey[])), supportRole: u.supportRole ?? null, isNew: false });
 
   const save = async (access: boolean) => {
     if (!editing) return;
     // Only whole sections are given: a half-ticked one left from before is dropped.
     const given = UNITS.filter((u) => hasUnit(editing.tabs, u)).flatMap((u) => u.tabs);
-    if (access && !editing.admin && given.length === 0) { flash('Tick at least one, or remove their access'); return; }
+    // A Support role alone is enough: someone can work tickets and open nothing else.
+    if (access && !editing.admin && given.length === 0 && !editing.supportRole) { flash('Tick at least one, or give a Support role, or remove their access'); return; }
     setSaving(true);
     try {
       const everything = ALL_TABS.every((t) => given.includes(t));
       await setDashboardAccess(editing.person.userId, access
-        ? { access: true, admin: editing.admin, tabs: editing.admin || everything ? null : given }
+        ? { access: true, admin: editing.admin, tabs: editing.admin || everything ? null : given, supportRole: editing.supportRole }
         : { access: false });
       flash(access ? `${editing.person.name}'s access saved` : `${editing.person.name} no longer has dashboard access`);
       setEditing(null);
@@ -115,14 +138,22 @@ function UsersTab() {
       // Changing your own access shows at once.
       if (editing.person.userId === me?.id) setUser(await refreshMe());
     } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not save');
+      flash(e instanceof ApiError ? e.message : 'Could not save', 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  // Staff can't assign: without a head, new tickets wait with nobody to hand them out.
+  const noHead = rows !== null && rows.some((r) => r.supportRole === 'staff') && !rows.some((r) => r.supportRole === 'head');
+
   return (
     <div>
+      {noHead && (
+        <div style={{ background: '#FBF4E8', border: '1px solid #F0DFC0', color: '#8A5F1F', borderRadius: 12, padding: '11px 15px', fontSize: 14, fontWeight: 600, marginBottom: 14, lineHeight: 1.45 }}>
+          There’s support staff but no Support head. New support tickets will wait unassigned until someone is made Support head.
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 14, color: '#717171' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : 'Loading…'}</div>
         <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => setPicking(true)}><IconPlus size={15} /> Give access</button>
@@ -132,6 +163,7 @@ function UsersTab() {
         <div style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
           <div>User details</div>
           <div>Tabs</div>
+          <div>Support desk</div>
           <div>Status</div>
           <div />
         </div>
@@ -145,6 +177,7 @@ function UsersTab() {
               </div>
             </div>
             <div style={{ fontSize: 14, fontWeight: 600, color: u.admin ? '#0571A6' : '#484848' }}>{accessSummary(u)}</div>
+            <div><SupportRolePill role={u.supportRole} /></div>
             <div><span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: u.active ? '#4F7A52' : '#9197A2' }}>{u.active ? 'ACTIVE' : 'INACTIVE'}</span></div>
             <span style={{ ...rowMenuBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>›</span>
           </div>
@@ -155,7 +188,7 @@ function UsersTab() {
         <PickPerson
           exclude={new Set((rows ?? []).map((r) => r.userId))}
           onClose={() => setPicking(false)}
-          onPick={(p) => { setPicking(false); setEditing({ person: { userId: p.userId, name: p.name, email: p.email ?? '' }, admin: false, tabs: new Set<AccessKey>(), isNew: true }); }}
+          onPick={(p) => { setPicking(false); setEditing({ person: { userId: p.userId, name: p.name, email: p.email ?? '' }, admin: false, tabs: new Set<AccessKey>(), supportRole: null, isNew: true }); }}
         />
       )}
       {editing && <EditAccess editing={editing} setEditing={setEditing} saving={saving} onSave={save} self={editing.person.userId === me?.id} />}
@@ -197,6 +230,21 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
             <span style={{ display: 'block', fontSize: 13, color: '#717171' }}>Everything, and can change who sees what on this page.</span>
           </span>
         </label>
+
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', color: '#717171', margin: '18px 0 4px' }}>SUPPORT DESK</div>
+        <div style={{ fontSize: 13, color: '#717171', marginBottom: 8 }}>A role of its own: Admin and every tab don’t include it.</div>
+        <div role="radiogroup" aria-label="Support desk role" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          {SUPPORT_CHOICES.map((c) => {
+            const on = editing.supportRole === c.value;
+            return (
+              <button key={c.label} type="button" role="radio" aria-checked={on} onClick={() => setEditing({ ...editing, supportRole: c.value })}
+                style={{ border: `1.5px solid ${on ? '#0571A6' : '#EBEBEB'}`, background: on ? '#F3F8FB' : '#fff', color: on ? '#0571A6' : '#484848', borderRadius: 11, padding: '9px 8px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 13, color: '#717171', marginTop: 7, lineHeight: 1.45 }}>{SUPPORT_CHOICES.find((c) => c.value === editing.supportRole)?.hint}</div>
 
         {!editing.admin && (
           <>
