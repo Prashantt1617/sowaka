@@ -121,7 +121,8 @@ class _GamesTab extends StatelessWidget {
       onOpenPost: (postId) {
         bloc.add(const ChangeManagerTab(ManagerTab.connect));
         WidgetsBinding.instance.addPostFrameCallback(
-          (_) => connectComposerController.openPost(postId),
+          // Where it sits in the feed: opening a contest never moves it to the top.
+          (_) => connectComposerController.openPost(postId, inPlace: true),
         );
       },
       onCreateContest: (kind) async {

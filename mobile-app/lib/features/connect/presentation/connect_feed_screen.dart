@@ -17,6 +17,7 @@ import '../../auth/data/auth_models.dart';
 import '../bloc/connect_bloc.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
+import 'feed_video.dart';
 import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
@@ -54,8 +55,11 @@ class ConnectComposerController {
 
   /// Brings one post into view — a notification about it was tapped — and
   /// opens its comments when that is what the notification was about.
-  void openPost(String postId, {bool comments = false}) =>
-      _state?._revealPost(postId, comments: comments);
+  /// [inPlace] scrolls to the post where it sits in the feed (from the
+  /// Games tab); otherwise one beyond the loaded pages is fetched and put on
+  /// top (from a notification).
+  void openPost(String postId, {bool comments = false, bool inPlace = false}) =>
+      _state?._revealPost(postId, comments: comments, inPlace: inPlace);
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -521,10 +525,20 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// Scrolls until the post's card is on screen. Cards are built lazily, so
   /// this walks down a screen at a time until the card exists, then settles
   /// it near the top. A post not in the loaded feed is fetched first.
-  Future<void> _revealPost(String postId, {bool comments = false}) async {
+  Future<void> _revealPost(
+    String postId, {
+    bool comments = false,
+    bool inPlace = false,
+  }) async {
+    // In place: the older pages it is on, so it is found where it sits and
+    // the feed's order stays as it is. Only a post not found that way is
+    // fetched on its own.
+    if (inPlace && !await _bloc.loadUntil(postId)) {
+      if (!await _bloc.ensurePost(postId, keepOnTop: false)) return;
+    }
     // The post itself, wherever it sits in the feed — a notification is
     // often about one beyond the pages loaded.
-    if (!await _bloc.ensurePost(postId)) return;
+    if (!inPlace && !await _bloc.ensurePost(postId)) return;
     if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
       return;
     }
@@ -1961,10 +1975,13 @@ class _MediaPreview extends StatelessWidget {
       return _MediaGallery(urls: mediaUrls);
     }
     final isImage = mediaKind == 'image' && mediaUrl.isNotEmpty;
-    // A photo keeps its own shape. Everything else — video posters, the
-    // gradient placeholder — stays on the fixed frame it was designed for.
+    // A photo keeps its own shape, and so does a video, which plays in place.
+    // Only a post whose file is missing falls back to the placeholder.
     if (isImage) {
       return _AdaptiveImage(url: mediaUrl);
+    }
+    if (mediaKind == 'video' && mediaUrl.isNotEmpty) {
+      return FeedVideo(url: mediaUrl);
     }
     return Container(
       height: 200,
@@ -2007,15 +2024,6 @@ class _MediaPreview extends StatelessWidget {
                 ),
                 child: const Icon(Icons.play_arrow_rounded, size: 34),
               ),
-            ),
-          // The media title is the uploaded file's name, which is worth showing
-          // over a video poster and never over a photo.
-          if (mediaKind == 'video' &&
-              _bodyString(post, 'mediaTitle').isNotEmpty)
-            Positioned(
-              left: 12,
-              top: 12,
-              child: _DarkChip(label: _bodyString(post, 'mediaTitle')),
             ),
           if (_bodyString(post, 'mediaDuration').isNotEmpty)
             Positioned(
@@ -2434,8 +2442,9 @@ class _PhotoLoadingState extends State<_PhotoLoading> with SingleTickerProviderS
   }
 }
 
-/// One picked file, previewed at the shape it was cropped to. Video keeps the
-/// fixed frame — there is no still to take a shape from.
+/// One picked file, previewed at the shape it was cropped to; a video plays
+/// here before it is posted, at the shape it was filmed, as the feed will
+/// show it.
 class _LocalMediaPreview extends StatelessWidget {
   const _LocalMediaPreview({required this.attachment});
 
@@ -2443,6 +2452,9 @@ class _LocalMediaPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (attachment.mimeType.startsWith('video/')) {
+      return FeedVideo.file(key: ValueKey(attachment.path), path: attachment.path);
+    }
     if (!attachment.mimeType.startsWith('image/')) {
       return SizedBox(
         height: 200,
@@ -8457,12 +8469,19 @@ class _MediaToggle extends StatelessWidget {
         child: Image.file(File(media.path), fit: BoxFit.cover),
       );
     }
+    // A video plays here before it is posted, at the shape the feed will show it.
+    if (media != null && media.mimeType.startsWith('video/')) {
+      return FeedVideo.file(key: ValueKey(media.path), path: media.path);
+    }
     final url = existingMediaUrl;
     if (url != null && url.isNotEmpty && existingMediaKind == 'image') {
       return _AspectFrame(
         provider: _remoteImage(url),
         child: Image(image: _remoteImage(url), fit: BoxFit.cover),
       );
+    }
+    if (url != null && url.isNotEmpty && existingMediaKind == 'video') {
+      return FeedVideo(key: ValueKey(url), url: url);
     }
     return AspectRatio(
       aspectRatio: 16 / 9,

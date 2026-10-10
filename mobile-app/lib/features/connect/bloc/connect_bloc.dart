@@ -298,7 +298,10 @@ class ConnectBloc {
   /// Updated in place when loaded, put at the top when not, and kept there
   /// through a load or refresh that does not bring it (see [_withEnsured]).
   /// False if it cannot be had — deleted, or not visible to this viewer.
-  Future<bool> ensurePost(String postId) async {
+  ///
+  /// [keepOnTop] false puts a post not loaded on top for now only: the next
+  /// load or refresh settles the feed back to its own order.
+  Future<bool> ensurePost(String postId, {bool keepOnTop = true}) async {
     final loaded = _state.posts.any((post) => post.id == postId);
     try {
       final post = await _api.fetchPost(postId);
@@ -310,7 +313,7 @@ class ConnectBloc {
       } else {
         posts.insert(0, post);
       }
-      _ensured.add(postId);
+      if (keepOnTop) _ensured.add(postId);
       _emit(_state.copyWith(posts: posts));
       return true;
     } catch (_) {
@@ -345,6 +348,25 @@ class ConnectBloc {
       if (_controller.isClosed) return;
       _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
     }
+  }
+
+  /// Loads older pages until [postId] is in the feed, for opening a post
+  /// where it really sits rather than moving it to the top: at most
+  /// [maxPages], stopping at the end of the feed or on a failed page. True
+  /// once it is there.
+  Future<bool> loadUntil(String postId, {int maxPages = 20}) async {
+    bool has() => _state.posts.any((post) => post.id == postId);
+    for (var page = 0; page < maxPages && !has(); page++) {
+      if (_controller.isClosed) return false;
+      // A page already on its way: wait for it rather than skip it.
+      if (_state.loadingMore) {
+        await stream.firstWhere((state) => !state.loadingMore);
+        continue;
+      }
+      if (!_state.hasMore || _state.loadMoreFailed) break;
+      await loadMore();
+    }
+    return has();
   }
 
   /// Another go at the page that failed.

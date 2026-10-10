@@ -172,13 +172,61 @@ async function completeLogin(user: User): Promise<AuthUser> {
  * Projected deliberately: a full user document carries the profile photo, and
  * this runs right after sign-in.
  */
-export async function getTeammates(viewerUserId: string, limit = 12) {
+/**
+ * Everyone the viewer can tag in a post or a comment: the whole company, by
+ * name, bar themselves, counsellors (a pool shared across companies) and
+ * anyone who has left. Photos come only as links: an older account's photo
+ * kept inline would make a company-sized list megabytes long.
+ */
+async function companyForTagging(viewerUserId: string, org: string, limit: number) {
+  const rows = await users()
+    .find(
+      {
+        userId: { $ne: viewerUserId },
+        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+        isCounsellor: { $ne: true },
+        $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${org.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } }],
+      },
+      { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, role: 1, profilePhotoKey: 1 } },
+    )
+    .sort({ name: 1 })
+    .toArray();
+  const shown = rows.slice(0, limit);
+  const links = new Map(
+    (
+      await users()
+        .find(
+          { userId: { $in: shown.map((row) => row.userId) }, profilePhotoUrl: { $regex: '^http' } },
+          { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } },
+        )
+        .toArray()
+    ).map((row) => [row.userId, row.profilePhotoUrl]),
+  );
+  const teammates = await Promise.all(
+    shown.map(async (row) => ({
+      userId: row.userId,
+      name: row.name,
+      designation: row.designation ?? row.role ?? 'Teammate',
+      department: row.department ?? '',
+      photoUrl: await resolveProfilePhoto({ profilePhotoKey: row.profilePhotoKey, profilePhotoUrl: links.get(row.userId) }),
+    })),
+  );
+  return { teammates, total: rows.length };
+}
+
+/**
+ * The viewer's team, for the welcome screen: their manager, the people under
+ * the same manager in their department, and their own reports. With
+ * `scope: 'company'` (the tag picker), everyone at the company instead.
+ */
+export async function getTeammates(viewerUserId: string, limit = 12, scope: 'team' | 'company' = 'team') {
   const viewer = await users().findOne(
     { userId: viewerUserId },
     { projection: { _id: 0, org: 1, email: 1, managerUserId: 1, department: 1 } },
   );
   if (!viewer) return { teammates: [], total: 0 };
   const org = viewer.org ?? viewer.email.split('@').at(1) ?? 'default';
+  if (scope === 'company') return companyForTagging(viewerUserId, org, limit);
   const projection = {
     _id: 0, userId: 1, name: 1, designation: 1, department: 1,
     role: 1, profilePhotoKey: 1, profilePhotoUrl: 1, managerUserId: 1,
