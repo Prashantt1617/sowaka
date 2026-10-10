@@ -14,11 +14,13 @@
  * that happens, and it pays a challenge once.
  */
 import { randomUUID } from 'node:crypto';
-import type { Filter } from 'mongodb';
-import { gameCatalog, gameChallenges, users } from '../config/db';
+import { MongoServerError, type Collection, type Filter } from 'mongodb';
+import { gameCatalog, gameChallenges, getDb, users } from '../config/db';
 import {
   OPEN_CHALLENGE_STATUSES,
+  type ChallengeRewardRules,
   type GameChallenge,
+  type GameChallengeAward,
 } from '../models/game-challenge.model';
 import type { User } from '../models/user.model';
 import { logger } from '../utils/logger';
@@ -29,6 +31,7 @@ import {
   LIVE_MIN_INTERVAL_MS,
   cappedReason,
   challengeMay,
+  challengeRewardsOf,
   computeAwards,
   effectiveStatus,
   expiryMs,
@@ -42,6 +45,7 @@ import {
   otherPlayer,
   outcomeFor,
   parseChallengeScore,
+  playedLongEnough,
   resultLine,
   type Decision,
   type PaidToday,
@@ -65,6 +69,7 @@ export class GameChallengeError extends Error {
 export type ChallengeViewer = Pick<User, 'userId' | 'name' | 'email'> & Partial<Pick<User, 'org'>>;
 
 const SCORE_CEILING = 1_000_000_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_SCAN = 80;
 const RECENT_RESULTS = 10;
 const COLLEAGUE_LIMIT = 50;
@@ -196,9 +201,17 @@ async function load(id: string): Promise<GameChallenge> {
   return c;
 }
 
+/**
+ * Whether the viewer plays in `c` and is still at its company: someone who
+ * has moved on is told it does not exist, so a challenge never crosses companies.
+ */
+const playsIn = (c: GameChallenge, viewer: ChallengeViewer) =>
+  isParticipant(c, viewer.userId) && c.org === orgOf(viewer);
+
 /** The challenge, provided the viewer may do `action` to it now. */
 async function loadFor(viewer: ChallengeViewer, id: string, action: Parameters<typeof challengeMay>[0]) {
   const c = await load(id);
+  if (!playsIn(c, viewer)) throw new GameChallengeError(404, 'Challenge not found');
   const decision = challengeMay(action, viewer.userId, c, new Date());
   if (!decision.ok) refuse(decision);
   return c;
@@ -356,6 +369,7 @@ export async function listMyChallenges(viewer: ChallengeViewer, gameKey: unknown
   const rows = await gameChallenges()
     .find(
       {
+        org: orgOf(viewer),
         $or: [{ challengerUserId: viewer.userId }, { opponentUserId: viewer.userId }],
         ...(typeof gameKey === 'string' && gameKey ? { gameKey } : {}),
       },
@@ -391,6 +405,13 @@ export async function reportLive(viewer: ChallengeViewer, id: string, raw: unkno
   const score = parseChallengeScore(raw, SCORE_CEILING);
   if (score === null) throw new GameChallengeError(400, 'Score is invalid');
   const c = await loadFor(viewer, id, 'live');
+  if (!c.started?.[viewer.userId]) {
+    // The page reports as the round begins: when it began, for the final to be measured against.
+    await gameChallenges().updateOne(
+      { id: c.id, status: 'accepted', [`started.${viewer.userId}`]: { $exists: false } },
+      { $set: { [`started.${viewer.userId}`]: new Date() } },
+    );
+  }
   const key = `${c.id}:${viewer.userId}`;
   const nowMs = Date.now();
   if (nowMs - (lastLive.get(key) ?? 0) < LIVE_MIN_INTERVAL_MS) return { ok: true, throttled: true };
@@ -410,19 +431,28 @@ export async function reportLive(viewer: ChallengeViewer, id: string, raw: unkno
 /**
  * The viewer's final score. Once both are in the challenge finishes: the
  * result is decided, the points paid, and whoever finished first is told.
- * Posting again returns the challenge as it is, so a retry is harmless.
+ * Posting again returns the challenge as it is, so a retry is harmless — and
+ * finishes it, if the first try stopped short of that.
  */
 export async function finishChallenge(viewer: ChallengeViewer, id: string, raw: unknown) {
   const existing = await load(id);
-  if (!isParticipant(existing, viewer.userId)) throw new GameChallengeError(404, 'Challenge not found');
-  if (existing.scores?.[viewer.userId]) return toView(existing, viewer.userId);
+  if (!playsIn(existing, viewer)) throw new GameChallengeError(404, 'Challenge not found');
+  if (existing.scores?.[viewer.userId]) {
+    if (existing.status === 'accepted' && resultOfBoth(existing)) {
+      const done = await settle(existing, await rulesOf(existing.gameKey), viewer.userId);
+      return toView(done ?? (await load(id)), viewer.userId);
+    }
+    return toView(existing, viewer.userId);
+  }
   const decision = challengeMay('finish', viewer.userId, existing, new Date());
   if (!decision.ok) refuse(decision);
   const game = await requireChallengeGame(viewer, existing.gameKey);
   const score = parseChallengeScore(raw, game.maxScore);
   if (score === null) throw new GameChallengeError(400, 'Score is invalid');
-
   const now = new Date();
+  const long = playedLongEnough(existing, viewer.userId, game.rewards, now);
+  if (!long.ok) refuse(long);
+
   lastLive.delete(`${id}:${viewer.userId}`);
   const scored = await gameChallenges().findOneAndUpdate(
     {
@@ -451,24 +481,51 @@ export async function finishChallenge(viewer: ChallengeViewer, id: string, raw: 
     broadcast(scored, 'scored');
     return toView(scored, viewer.userId, now);
   }
-  // Both are in. Only one request moves it to finished, and only that one decides the awards.
-  const payout = computeAwards(scored, game.rewards, await paidToday(scored, now));
+  const done = await settle(scored, game, viewer.userId, now);
+  return toView(done ?? (await load(id)), viewer.userId, now);
+}
+
+/** What settling a game's challenges needs from its catalog entry. */
+type SettleRules = { name: string; rewards: ChallengeRewardRules };
+
+/** A game's name and reward rules straight from the catalog, for settling when nobody's access is being checked. */
+async function rulesOf(key: string): Promise<SettleRules> {
+  const entry = await gameCatalog().findOne({ key }, { projection: { _id: 0, name: 1, challengeRewards: 1 } });
+  return { name: entry?.name ?? 'Game challenge', rewards: challengeRewardsOf(entry?.challengeRewards) };
+}
+
+/**
+ * Finishes an accepted challenge both have played: decides the awards, holds
+ * the day's places they need, moves it to finished, pays, and tells both
+ * players. Only one caller gets to move it, and only that one pays; null for
+ * the others. Whoever is `watching` sees the result on screen; everyone else
+ * gets a push.
+ */
+async function settle(c: GameChallenge, game: SettleRules, watching?: string, now = new Date()): Promise<GameChallenge | null> {
+  const payout = computeAwards(c, game.rewards, await paidToday(c, now));
+  if (!payout) return null;
+  const { awards, held } = await holdPlaces(c, payout.awards, game.rewards, now);
+  const reward = awards.find((award) => award.kind === 'win') ?? null;
   const done = await gameChallenges().findOneAndUpdate(
-    { id, status: 'accepted' },
-    { $set: { status: 'finished', closedAt: now, updatedAt: now, reward: payout?.reward ?? null, awards: payout?.awards ?? [] } },
+    { id: c.id, status: 'accepted' },
+    { $set: { status: 'finished', closedAt: now, updatedAt: now, reward, awards } },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
-  if (!done) return toView(await load(id), viewer.userId);
+  if (!done) {
+    await givePlacesBack(held);
+    return null;
+  }
   // The result stands whatever happens to the payment; the sweep pays anything left unpaid.
   await awardChallengePoints(done, game.name).catch((error) =>
-    logger.error('Game challenge award failed', { challengeId: id }, error));
+    logger.error('Game challenge award failed', { challengeId: c.id }, error));
   broadcast(done, 'finished');
-  const first = otherPlayer(done, viewer.userId);
-  const line = resultLine(done, first);
-  const earned = (done.awards ?? []).find((a) => a.userId === first);
-  if (line) {
+  for (const userId of [done.challengerUserId, done.opponentUserId]) {
+    if (userId === watching) continue;
+    const line = resultLine(done, userId);
+    if (!line) continue;
+    const earned = (done.awards ?? []).find((a) => a.userId === userId);
     push(
-      first,
+      userId,
       'game_challenge_result',
       line,
       earned && earned.points > 0
@@ -477,7 +534,7 @@ export async function finishChallenge(viewer: ChallengeViewer, id: string, raw: 
       done,
     );
   }
-  return toView(done, viewer.userId, now);
+  return done;
 }
 
 const resultOfBoth = (c: GameChallenge) =>
@@ -516,6 +573,108 @@ async function paidToday(c: GameChallenge, now: Date): Promise<PaidToday> {
   return paid;
 }
 
+// ---------------------------------------------------------------- the day's places
+
+/**
+ * How many paid awards each person has had today, kept as counters that only
+ * move atomically. `paidToday` reads finished challenges, which two finishes
+ * at the same moment both read before either is written; these are what stop
+ * both from being paid past the cap.
+ */
+interface PlaceTally {
+  _id: string;
+  count: number;
+  expiresAt: Date;
+}
+
+function placeTallies(): Collection<PlaceTally> {
+  return getDb().collection<PlaceTally>('game_challenge_places');
+}
+
+let placeIndexes: Promise<unknown> | null = null;
+
+/** Made on first use; a failure is retried next time. Counters go two days after their day. */
+function ensurePlaceIndexes(): Promise<unknown> {
+  placeIndexes ??= placeTallies()
+    .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+    .catch((error) => {
+      placeIndexes = null;
+      logger.warn('Game challenge place index could not be made', {}, error);
+    });
+  return placeIndexes;
+}
+
+/** One of today's `cap` places under `key`, or false when they are all taken. */
+async function takePlace(key: string, cap: number, now: Date): Promise<boolean> {
+  if (cap <= 0) return false;
+  await ensurePlaceIndexes();
+  try {
+    // No room left: the filter misses, the upsert collides with the full counter, and that is the answer.
+    await placeTallies().updateOne(
+      { _id: key, count: { $lt: cap } },
+      { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(istDayStart(now).getTime() + 2 * DAY_MS) } },
+      { upsert: true },
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) return false;
+    throw error;
+  }
+}
+
+async function givePlacesBack(keys: string[]) {
+  if (keys.length === 0) return;
+  await placeTallies()
+    .updateMany({ _id: { $in: keys }, count: { $gt: 0 } }, { $inc: { count: -1 } })
+    .catch((error) => logger.warn('Game challenge places could not be given back', { keys }, error));
+}
+
+/**
+ * The awards as the day's places allow: each paid award takes its place
+ * (a win, its place over this opponent too); one that finds none left is
+ * kept at zero with why, as `computeAwards` would have.
+ */
+async function holdPlaces(
+  c: GameChallenge,
+  awards: GameChallengeAward[],
+  rules: ChallengeRewardRules,
+  now: Date,
+): Promise<{ awards: GameChallengeAward[]; held: string[] }> {
+  const day = istDayStart(now).toISOString().slice(0, 10);
+  const held: string[] = [];
+  const out: GameChallengeAward[] = [];
+  for (const award of awards) {
+    if (award.points <= 0) {
+      out.push(award);
+      continue;
+    }
+    if (award.kind === 'participation') {
+      const key = `${day}|${c.gameKey}|participation|${award.userId}`;
+      if (await takePlace(key, rules.dailyWinCap, now)) {
+        held.push(key);
+        out.push(award);
+      } else {
+        out.push({ ...award, points: 0, capped: 'daily_limit' });
+      }
+      continue;
+    }
+    const winKey = `${day}|${c.gameKey}|win|${award.userId}`;
+    if (!(await takePlace(winKey, rules.dailyWinCap, now))) {
+      out.push({ ...award, points: 0, capped: 'daily_limit' });
+      continue;
+    }
+    const pairKey = `${day}|${c.gameKey}|pair|${award.userId}|${otherPlayer(c, award.userId)}`;
+    if (!(await takePlace(pairKey, rules.samePairPerDay, now))) {
+      await givePlacesBack([winKey]);
+      out.push({ ...award, points: 0, capped: 'same_pair' });
+      continue;
+    }
+    held.push(winKey, pairKey);
+    out.push(award);
+  }
+  return { awards: out, held };
+}
+
 // ---------------------------------------------------------------- points
 
 /**
@@ -523,10 +682,33 @@ async function paidToday(c: GameChallenge, now: Date): Promise<PaidToday> {
  * and a row each in the points ledger (source `game_challenge`, the
  * challenge as its ref). The only place challenge points are paid.
  *
- * Pays once: the challenge is claimed (`awardedAt`) before anything moves, so
- * a retry, a second request or the sweep finding it again pays nothing more.
+ * Pays once: each award is claimed (`paidAt`) before its points move, and
+ * given back if they could not, so a retry, a second request or the sweep
+ * pays only what is still unpaid. The history is written once, by whoever
+ * marks the whole challenge paid (`awardedAt`).
  */
 export async function awardChallengePoints(c: GameChallenge, gameName: string): Promise<void> {
+  const current = await gameChallenges().findOne(
+    { id: c.id, status: 'finished', awardedAt: { $exists: false } },
+    { projection: { _id: 0 } },
+  );
+  if (!current) return;
+  for (const award of current.awards ?? []) {
+    if (award.points <= 0 || award.paidAt) continue;
+    const claim = await gameChallenges().updateOne(
+      { id: c.id, awards: { $elemMatch: { userId: award.userId, paidAt: { $exists: false } } } },
+      { $set: { 'awards.$.paidAt': new Date() } },
+    );
+    if (claim.modifiedCount === 0) continue;
+    try {
+      await users().updateOne({ userId: award.userId }, { $inc: { points: award.points } });
+    } catch (error) {
+      await gameChallenges()
+        .updateOne({ id: c.id, 'awards.userId': award.userId }, { $unset: { 'awards.$.paidAt': '' } })
+        .catch(() => {});
+      throw error;
+    }
+  }
   const claimed = await gameChallenges().findOneAndUpdate(
     { id: c.id, status: 'finished', awardedAt: { $exists: false } },
     { $set: { awardedAt: new Date() } },
@@ -534,13 +716,6 @@ export async function awardChallengePoints(c: GameChallenge, gameName: string): 
   );
   if (!claimed) return;
   const awards = claimed.awards ?? [];
-  const paying = awards.filter((award) => award.points > 0);
-  if (paying.length > 0) {
-    await users().bulkWrite(
-      paying.map((award) => ({ updateOne: { filter: { userId: award.userId }, update: { $inc: { points: award.points } } } })),
-      { ordered: false },
-    );
-  }
   // Every finished game goes in both players' history — a win the caps paid
   // nothing for too, with why, so a game never looks as if it went missing.
   recordPointChanges(
@@ -600,14 +775,26 @@ export async function expireChallenges(now = new Date()): Promise<number> {
           { status: 'accepted', expiresAt: { $lte: new Date(now.getTime() - FINISH_GRACE_MS) } },
         ],
       },
-      { projection: { _id: 0, id: 1, status: 1 } },
+      { projection: { _id: 0 } },
     )
     .limit(200)
     .toArray();
   let expired = 0;
   for (const row of due) {
+    // Both played, but the second final stopped short of finishing it: it finishes now, not expires.
+    if (row.status === 'accepted' && resultOfBoth(row)) {
+      await settle(row, await rulesOf(row.gameKey), undefined, now);
+      continue;
+    }
     const c = await gameChallenges().findOneAndUpdate(
-      { id: row.id, status: row.status },
+      {
+        id: row.id,
+        status: row.status,
+        // A final that lands meanwhile makes it one to settle on the next sweep, not expire.
+        ...(row.status === 'accepted'
+          ? { $or: [{ [`scores.${row.challengerUserId}`]: { $exists: false } }, { [`scores.${row.opponentUserId}`]: { $exists: false } }] }
+          : {}),
+      },
       { $set: { status: 'expired', closedAt: now, updatedAt: now } },
       { returnDocument: 'after', projection: { _id: 0 } },
     );

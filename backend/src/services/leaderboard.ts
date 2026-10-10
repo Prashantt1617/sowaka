@@ -177,12 +177,15 @@ export function groupActivity(events: PointEvent[]): ActivityGroup[] {
   return rows.sort((a, b) => b.at.localeCompare(a.at));
 }
 
-/** 'YYYY-MM' for a date, in UTC as the rest of the server dates months. */
+/** India's offset: a month of points is an India month, as everyone here lives it. */
+const IST_MS = 330 * 60 * 1000;
+
+/** 'YYYY-MM' for a date, in India time. */
 export function monthKey(date: Date): string {
-  return date.toISOString().slice(0, 7);
+  return new Date(date.getTime() + IST_MS).toISOString().slice(0, 7);
 }
 
-/** The first instant of a 'YYYY-MM' month and of the one after it, in UTC. */
+/** The first instant of a 'YYYY-MM' month in India and of the one after it. */
 export function monthBounds(month: string): { start: Date; end: Date } | null {
   const match = /^(\d{4})-(\d{2})$/.exec(month);
   if (!match) return null;
@@ -190,7 +193,7 @@ export function monthBounds(month: string): { start: Date; end: Date } | null {
   const index = Number(match[2]) - 1;
   if (index < 0 || index > 11) return null;
   return {
-    start: new Date(Date.UTC(year, index, 1)),
-    end: new Date(Date.UTC(year, index + 1, 1)),
+    start: new Date(Date.UTC(year, index, 1) - IST_MS),
+    end: new Date(Date.UTC(year, index + 1, 1) - IST_MS),
   };
 }

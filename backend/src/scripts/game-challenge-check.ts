@@ -28,6 +28,7 @@ import {
   istDayStart,
   ledgerNote,
   mayChallenge,
+  playedLongEnough,
   mayOpenAnother,
   newSeed,
   outcomeFor,
@@ -245,6 +246,19 @@ console.log('the Rank tab activity');
   check('titled by the game, detailed by the match', rows[1].title === 'Odd One Out' && rows[1].detail === 'Game · Beat Priya 864–796', `${rows[1].title} / ${rows[1].detail}`);
   check('carries the game, for its picture', rows[0].gameKey === 'odd-one-out' && rows[0].points === 2);
   check('a row without a title still reads', groupActivity([event({ title: undefined })])[0].title === 'Game challenge');
+}
+
+{
+  // A final can only follow a round really played.
+  const R = DEFAULT_CHALLENGE_REWARDS;
+  const accepted = new Date('2026-10-10T06:00:00.000Z');
+  const at = (seconds: number) => new Date(accepted.getTime() + seconds * 1000);
+  const c = { createdAt: accepted, acceptedAt: accepted, started: { 'u-kritik': at(60) } };
+  check('a minimum round by default', R.minPlaySeconds === 30);
+  check('a final a second into the round is refused', !playedLongEnough(c, 'u-kritik', R, at(61)).ok);
+  check('a final after a whole round counts', playedLongEnough(c, 'u-kritik', R, at(108)).ok);
+  check('with no live score, measured from the accept', !playedLongEnough(c, 'u-priya', R, at(5)).ok && playedLongEnough(c, 'u-priya', R, at(50)).ok);
+  check('a game can drop the minimum', playedLongEnough(c, 'u-kritik', { minPlaySeconds: 0 }, at(60)).ok);
 }
 
 if (failures > 0) {

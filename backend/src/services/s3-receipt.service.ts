@@ -133,14 +133,32 @@ export async function presignReceiptDownload(objectKey: string, fileName?: strin
   const command = new GetObjectCommand({
     Bucket: env.s3.bucket,
     Key: objectKey,
-    ...(fileName
-      ? { ResponseContentDisposition: `inline; filename="${fileName.replace(/"/g, '')}"` }
-      : {}),
+    ...(fileName ? { ResponseContentDisposition: inlineDisposition(fileName) } : {}),
   });
   return getSignedUrl(getClient(), command, {
     expiresIn: env.s3.presignTtl,
     signingDate: stablePresignDate(),
   });
+}
+
+/**
+ * `inline`, under the file's own name. S3 refuses the whole download when the
+ * header carries anything outside ISO-8859-1, and real names often do: the
+ * narrow space in a macOS screenshot's time, a name in Hindi. So `filename`
+ * is a plain-ASCII stand-in and the real name goes in `filename*`, which
+ * browsers prefer when it is there.
+ */
+function inlineDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '');
+  let utf8: string;
+  try {
+    // encodeURIComponent leaves these four alone, but `filename*` may not carry them bare.
+    utf8 = encodeURIComponent(fileName).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  } catch {
+    // A broken surrogate pair cannot be encoded; the stand-in still opens the file.
+    return `inline; filename="${ascii}"`;
+  }
+  return `inline; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
 
 function getClient() {

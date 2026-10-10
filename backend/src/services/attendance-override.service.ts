@@ -30,6 +30,11 @@ export async function overridesFor(userIds: string[], from: string, to: string):
 }
 
 async function adminAndEmployee(adminUserId: string, userId: string) {
+  // A mark moves pay, so HR never settles their own day; another admin does,
+  // the same way nobody approves their own correction request.
+  if (userId === adminUserId) {
+    throw new AttendanceOverrideError(403, 'You cannot mark your own attendance');
+  }
   const [admin, employee] = await Promise.all([
     users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1, name: 1 } }),
     users().findOne({ userId }, { projection: { _id: 0, org: 1, userId: 1 } }),

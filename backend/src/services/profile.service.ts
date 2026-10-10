@@ -135,7 +135,7 @@ export async function getPointsActivity(
     pointEvents()
       .aggregate<{ _id: string }>([
         { $match: { userId: viewer.userId } },
-        { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'Asia/Kolkata' } } } },
       ])
       .toArray(),
     // Everyone's net change this month, to re-rank the company as it stood on
@@ -154,10 +154,9 @@ export async function getPointsActivity(
   const activity = groupActivity(events);
   // The last six months are always offered, so the month filter always has
   // somewhere to go, plus any older month that has activity.
-  const recent = Array.from({ length: 6 }, (_, back) => {
-    const now = new Date();
-    return monthKey(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1)));
-  });
+  const [year, month0] = current.split('-').map(Number);
+  const recent = Array.from({ length: 6 }, (_, back) =>
+    new Date(Date.UTC(year, month0 - 1 - back, 1)).toISOString().slice(0, 7));
   const months = [...new Set([...recent, ...monthsWithActivity.map((row) => row._id)])]
     .filter((value) => monthBounds(value))
     .sort()
@@ -166,7 +165,8 @@ export async function getPointsActivity(
   return {
     name: viewer.name,
     photoUrl: photo ?? null,
-    rank: own?.rank ?? null,
+    // Nobody is ranked for zero points: they would all share the last place.
+    rank: own && own.points > 0 ? own.rank : null,
     points: own?.points ?? 0,
     total: ranked.length,
     // Places climbed since the month began; negative is down. Zero until the

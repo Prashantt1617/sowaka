@@ -43,6 +43,8 @@ export interface GameChallengeAward {
   onlyOwnScore?: boolean;
   /** Why it came to nothing: the day's cap, or a win over the same person already paid today. */
   capped: 'daily_limit' | 'same_pair' | null;
+  /** When these points went into `User.points`. Each award is claimed on its own, so a retry pays only what is unpaid. */
+  paidAt?: Date;
 }
 
 export interface GameChallenge {
@@ -63,6 +65,8 @@ export interface GameChallenge {
   scores: Record<string, GameChallengeScore>;
   /** By userId. */
   live: Record<string, GameChallengeLive>;
+  /** When each player's round began, by userId: their first live score. A final sooner than a round takes is refused. */
+  started?: Record<string, Date>;
   createdAt: Date;
   updatedAt: Date;
   /** `expiryHours` to answer; once accepted, `expiryHours` from then to play. */
@@ -74,7 +78,7 @@ export interface GameChallenge {
   reward?: GameChallengeAward | null;
   /** Every award it made when it finished, capped ones included. */
   awards?: GameChallengeAward[];
-  /** When the awards were paid into `User.points`. Set once: a challenge pays out once. */
+  /** When every award was paid and the history written. Set once: a challenge pays out once. */
   awardedAt?: Date;
 }
 
@@ -97,6 +101,8 @@ export interface ChallengeRewardRules {
   participation: number;
   /** Hours to answer, and once accepted, to play. */
   expiryHours: number;
+  /** The shortest a real round can take, in seconds: a final posted sooner after the round began is refused. */
+  minPlaySeconds: number;
 }
 
 /** Statuses that still need someone to do something. */

@@ -91,9 +91,10 @@ export interface ManagerTeamMemberView {
   todayStatus: 'present' | 'not_punched_in';
   /**
    * How today reads on the team card: punched in on time, late, a half day,
-   * working away (an approved WFH / client-visit day), on approved leave, or
-   * not in yet. Graded against the member's own shift, so a manager looking
-   * across two shifts sees each person by their own rules.
+   * working away (an approved WFH / client-visit day), on approved leave (or a
+   * holiday or week-off HR marked), or not in yet. Graded against the member's
+   * own shift, so a manager looking across two shifts sees each person by
+   * their own rules.
    */
   todayMark: 'present' | 'late' | 'half_day' | 'wfh' | 'leave' | 'not_in';
   /**
@@ -476,9 +477,15 @@ export async function getManagerWorkspace(
     report: (typeof reports)[number],
     record: ReturnType<typeof todaysRecordFor>,
   ): Promise<ManagerTeamMemberView['todayMark']> => {
-    // HR's mark on today outranks the punches.
+    // HR's mark on today outranks the punches. A holiday or week-off HR gave
+    // reads as leave: off today and owing nothing. The released app knows no
+    // other way to say that, and "not in" would read as absent.
     const hr = todaysMarks.get(report.userId);
-    if (hr) return hr === 'present' ? 'present' : hr === 'half_day' ? 'half_day' : hr === 'on_leave' ? 'leave' : 'not_in';
+    if (hr) {
+      if (hr === 'present' || hr === 'half_day') return hr;
+      if (hr === 'on_leave' || hr === 'week_off' || hr === 'holiday') return 'leave';
+      return 'not_in';
+    }
     if (onLeaveToday.has(report.userId)) return 'leave';
     const away = record?.dayType === 'wfh' || record?.dayType === 'client_visit' || record?.dayType === 'office_visit';
     if (away) return 'wfh';

@@ -8,6 +8,7 @@ import type { PointEvent } from '../models/points.model';
 import {
   groupActivity,
   monthBounds,
+  monthKey,
   placesMoved,
   podiumOf,
   rankByPoints,
@@ -96,7 +97,9 @@ check('a mention is a mention', activity.find((row) => row.source === 'most_like
   'Social challenge · 1 mention');
 
 console.log('months');
-check('a month has bounds', monthBounds('2026-12')?.end.toISOString() === '2027-01-01T00:00:00.000Z');
+check('a month has bounds, in India time', monthBounds('2026-12')?.start.toISOString() === '2026-11-30T18:30:00.000Z'
+  && monthBounds('2026-12')?.end.toISOString() === '2026-12-31T18:30:00.000Z');
+check('1 Nov 02:00 India time is November', monthKey(new Date('2026-10-31T20:30:00.000Z')) === '2026-11');
 check('a bad month has none', monthBounds('2026-13') === null && monthBounds('soon') === null);
 
 if (failures > 0) {

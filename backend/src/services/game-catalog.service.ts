@@ -50,15 +50,17 @@ const SCORE_CEILING = 1_000_000_000;
 const LEADERBOARD_SIZE = 10;
 
 /**
- * The games a company has. Its own list when Sowaka gave it one; otherwise the
- * Games tab's original game, Gratitude Garden, for a company that shows the
- * tab, and nothing at all for one that does not.
+ * The games a company has: none without the Games tab, whatever its list
+ * says, so a game switched on ahead of the tab is not playable (or paying
+ * points) through the API meanwhile. With the tab, its own list when Sowaka
+ * gave it one; otherwise the tab's original game, Gratitude Garden.
  */
 export function enabledGamesOf(company: Pick<Company, 'enabledTabs' | 'enabledGames'> | null): string[] {
-  if (Array.isArray(company?.enabledGames)) {
+  if (!company?.enabledTabs?.includes('games')) return [];
+  if (Array.isArray(company.enabledGames)) {
     return company.enabledGames.filter((key): key is string => typeof key === 'string');
   }
-  return company?.enabledTabs?.includes('games') ? [...DEFAULT_ENABLED_GAMES] : [];
+  return [...DEFAULT_ENABLED_GAMES];
 }
 
 async function gamesForOrg(org: string | undefined): Promise<string[]> {

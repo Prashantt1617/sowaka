@@ -50,6 +50,8 @@ export const DEFAULT_CHALLENGE_REWARDS: ChallengeRewardRules = {
   minLoserShare: 0.25,
   participation: 2,
   expiryHours: 24,
+  // Odd One Out's round is 45 s; a final much sooner than that was never played.
+  minPlaySeconds: 30,
 };
 
 /** The limits each field is held to, whatever the database says. */
@@ -61,6 +63,7 @@ const REWARD_BOUNDS: Record<keyof ChallengeRewardRules, { min: number; max: numb
   minLoserShare: { min: 0, max: 1, integer: false },
   participation: { min: 0, max: 1_000, integer: true },
   expiryHours: { min: 1, max: 24 * 14, integer: false },
+  minPlaySeconds: { min: 0, max: 3600, integer: false },
 };
 
 export const CHALLENGE_REWARD_FIELDS = Object.keys(REWARD_BOUNDS) as (keyof ChallengeRewardRules)[];
@@ -200,6 +203,24 @@ export function challengeMay(action: ChallengeAction, userId: string, c: GameCha
 }
 
 // ---------------------------------------------------------------- result and reward
+
+/**
+ * Whether a final posted at `now` can be a round really played: not sooner
+ * than `minPlaySeconds` after the player's round began (their first live
+ * score), or, when no live score ever arrived, after the challenge was accepted.
+ */
+export function playedLongEnough(
+  c: Pick<GameChallenge, 'started' | 'acceptedAt' | 'createdAt'>,
+  userId: string,
+  rules: Pick<ChallengeRewardRules, 'minPlaySeconds'>,
+  now: Date,
+): Decision {
+  const began = c.started?.[userId] ?? c.acceptedAt ?? c.createdAt;
+  if (now.getTime() - new Date(began).getTime() < rules.minPlaySeconds * 1000) {
+    return no(400, 'That round ended too soon to count');
+  }
+  return ok;
+}
 
 /** Who won: the higher score, a tie is a draw; null until both have played. */
 export function resultOf(

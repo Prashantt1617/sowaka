@@ -117,6 +117,15 @@ export interface NotificationInput {
   email?: NotificationEmail;
 }
 
+/**
+ * Whether this process may notify someone in this org at all: the
+ * NOTIFY_ORGS allowlist (see `env.notifyOrgs`), which keeps a dev server on
+ * the shared database away from real employees.
+ */
+export function notifiesOrg(org: string | undefined): boolean {
+  return env.notifyOrgs.length === 0 || env.notifyOrgs.includes(org ?? '');
+}
+
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
@@ -124,9 +133,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   // Same allowlist the mail transport enforces — see `env.notifyOrgs`. Applied
   // here too so a suppressed org gets no push and no stored notification
   // either, not just no email.
-  const recipients = env.notifyOrgs.length
-    ? all.filter((user) => env.notifyOrgs.includes(user.org ?? ''))
-    : all;
+  const recipients = all.filter((user) => notifiesOrg(user.org));
   if (recipients.length !== all.length) {
     logger.info('Notification suppressed for orgs outside NOTIFY_ORGS', {
       allowed: env.notifyOrgs, suppressed: all.length - recipients.length, scenario: input.scenario,

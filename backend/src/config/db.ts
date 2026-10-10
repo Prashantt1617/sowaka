@@ -306,6 +306,8 @@ export function supportCounters(): Collection<{ org: string; seq: number }> {
 async function ensureIndexes(database: Db): Promise<void> {
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  // The reads name people and days but not the org, which the unique key leads with.
+  await database.collection('attendance_overrides').createIndex({ userId: 1, workDate: 1 });
   await database
     .collection<OtpChallenge>('otp_challenges')
     .createIndex({ email: 1 }, { unique: true });
@@ -456,6 +458,12 @@ async function ensureIndexes(database: Db): Promise<void> {
   await notificationsCollection.createIndex({ id: 1 }, { unique: true });
   await notificationsCollection.createIndex({ userId: 1, createdAt: -1 });
   await notificationsCollection.createIndex({ userId: 1, readAt: 1, createdAt: -1 });
+  // Deleting a post takes its notifications with it. Only those about a post
+  // are indexed, which leaves out every reminder and request.
+  await notificationsCollection.createIndex(
+    { 'data.postId': 1 },
+    { partialFilterExpression: { 'data.postId': { $exists: true } } },
+  );
 
   const attendanceCollection = database.collection<AttendanceRecord>('attendance_records');
   await attendanceCollection.createIndex({ sourceKey: 1 }, { unique: true });

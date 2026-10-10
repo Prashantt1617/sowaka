@@ -93,25 +93,37 @@ export const FEED_MAX_PINNED = 3;
  * Where the next page starts: the last post's publish moment and creation
  * moment, which together are the feed's sort order. Opaque to the app, which
  * hands it straight back.
+ *
+ * It also carries the ids the first page showed as pinned, so every later
+ * page leaves out exactly those — see `getConnectFeed`.
  */
 export function encodeFeedCursor(
   post: Pick<ConnectPost, 'publishedAt' | 'createdAt'> & { _id?: ObjectId },
+  pinnedIds: string[] = [],
 ): string {
   // The id breaks ties: posts made in one batch can share a millisecond.
-  return `${post.publishedAt.toISOString()}|${post.createdAt.toISOString()}|${post._id?.toHexString() ?? ''}`;
+  const at = `${post.publishedAt.toISOString()}|${post.createdAt.toISOString()}|${post._id?.toHexString() ?? ''}`;
+  return pinnedIds.length > 0 ? `${at}|${pinnedIds.join(',')}` : at;
 }
 
 function decodeFeedCursor(
   value: string | undefined,
-): { publishedAt: Date; createdAt: Date; id: ObjectId | null } | null {
+): { publishedAt: Date; createdAt: Date; id: ObjectId | null; pinnedIds: string[] } | null {
   if (!value) return null;
-  const [published, created, id] = value.split('|');
+  const [published, created, id, pinned] = value.split('|');
   const publishedAt = new Date(published ?? '');
   const createdAt = new Date(created ?? published ?? '');
   if (Number.isNaN(publishedAt.getTime()) || Number.isNaN(createdAt.getTime())) {
     throw new ConnectError(400, 'The feed cursor is not valid');
   }
-  return { publishedAt, createdAt, id: id && ObjectId.isValid(id) ? new ObjectId(id) : null };
+  return {
+    publishedAt,
+    createdAt,
+    id: id && ObjectId.isValid(id) ? new ObjectId(id) : null,
+    // A cursor from before pins rode along has none; that page may then
+    // repeat a pinned post, which the app drops as one it already has.
+    pinnedIds: (pinned ?? '').split(',').filter(Boolean).slice(0, FEED_MAX_PINNED),
+  };
 }
 
 export async function getConnectFeed(
@@ -172,14 +184,14 @@ export async function getConnectFeed(
       { 'audience.department': viewer.department },
     ],
   };
-  // A pinned post leads the first page while its pin lasts and is left out of
-  // the paged list meanwhile, so it never shows twice.
+  // Up to FEED_MAX_PINNED pinned posts lead the first page while their pins
+  // last. The paged list leaves out exactly the ones that page showed, on
+  // every page, by the ids the cursor carries: a pin past the limit keeps its
+  // place in the list, and a post pinned or unpinned mid-scroll is neither
+  // skipped nor shown twice.
   const now = new Date();
-  const notPinned = { $or: [{ pinnedUntil: null }, { pinnedUntil: { $lte: now } }] };
 
-  // One more than the page, to know whether another page follows without a
-  // second count query.
-  const [pinned, page] = await Promise.all([
+  const [pinned, rows] = await Promise.all([
     after
       ? Promise.resolve([])
       : connectPosts()
@@ -192,12 +204,16 @@ export async function getConnectFeed(
         org,
         ...typeFilter,
         ...blockFilter,
-        $and: [audienceFilter, notPinned, ...(after ? [cursorFilter] : [])],
+        $and: [audienceFilter, ...(after ? [cursorFilter] : [])],
       })
       .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
-      .limit(limit + 1)
+      // One more than the page, to know whether another page follows without
+      // a second count query, and room for the pinned ones taken out below.
+      .limit(limit + 1 + FEED_MAX_PINNED)
       .toArray(),
   ]);
+  const shownPinnedIds = after ? after.pinnedIds : pinned.map((post) => post.id);
+  const page = rows.filter((post) => !shownPinnedIds.includes(post.id)).slice(0, limit + 1);
   const hasMore = page.length > limit;
   const paged = hasMore ? page.slice(0, limit) : page;
   const posts = [...pinned, ...paged];
@@ -244,8 +260,9 @@ export async function getConnectFeed(
   return {
     posts: views,
     // From the last post in feed order — never a pinned one, which sits
-    // outside it.
-    nextCursor: hasMore && paged.length > 0 ? encodeFeedCursor(paged[paged.length - 1]) : null,
+    // outside it — with the first page's pins passed along to the next.
+    nextCursor:
+      hasMore && paged.length > 0 ? encodeFeedCursor(paged[paged.length - 1], shownPinnedIds) : null,
   };
 }
 

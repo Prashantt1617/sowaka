@@ -5,6 +5,7 @@
  * pin. A pinned post leads the first page of the feed until `pinnedUntil`,
  * then drops back to its own place by publish time. Nothing else on the post
  * changes: its entries, votes, comments and publish time stay as they are.
+ * A company has at most FEED_MAX_PINNED pins at once; one more is refused.
  *
  *   node --env-file=.env --import tsx src/scripts/pin-post.ts <postId>            # until a challenge closes, else 24 h
  *   node --env-file=.env --import tsx src/scripts/pin-post.ts <postId> 2026-10-12T18:00:00+05:30
@@ -12,6 +13,7 @@
  *   node --env-file=.env --import tsx src/scripts/pin-post.ts list <org>
  */
 import { connectDb, connectPosts } from '../config/db';
+import { FEED_MAX_PINNED } from '../services/connect.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,6 +60,27 @@ async function main() {
       : new Date(Date.now() + DAY_MS);
   if (Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) {
     throw new Error(`"${second}" is not a time in the future`);
+  }
+  // The feed leads with at most FEED_MAX_PINNED pins; one more would sit in
+  // the list unpinned while looking pinned here. Re-pinning a post that is
+  // already one of them only moves its time, so that is always allowed.
+  const now = new Date();
+  if (!(post.pinnedUntil && post.pinnedUntil > now)) {
+    const live = await connectPosts()
+      .find({ org: post.org, pinnedUntil: { $gt: now } })
+      .project<{ id: string; body: Record<string, unknown>; pinnedUntil: Date }>({
+        _id: 0, id: 1, 'body.title': 1, 'body.text': 1, pinnedUntil: 1,
+      })
+      .toArray();
+    if (live.length >= FEED_MAX_PINNED) {
+      const list = live
+        .map((pin) => `  ${pin.id}  "${String(pin.body?.title ?? pin.body?.text ?? '').slice(0, 60)}"  until ${pin.pinnedUntil.toISOString()}`)
+        .join('\n');
+      throw new Error(
+        `${post.org} already has ${live.length} pinned posts, the most the feed shows (${FEED_MAX_PINNED}):\n${list}\n` +
+          'Unpin one first with: pin-post.ts <postId> off',
+      );
+    }
   }
   await connectPosts().updateOne({ id: post.id }, { $set: { pinnedUntil: until } });
   console.log(`Pinned ${post.org} "${title}" until ${until.toISOString()}.`);

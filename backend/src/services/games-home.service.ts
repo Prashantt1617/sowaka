@@ -71,6 +71,18 @@ async function requireViewer(userId: string): Promise<User> {
 const feedOrgOf = (user: Pick<User, 'org' | 'email'>) => user.org ?? user.email.split('@').at(1) ?? 'default';
 
 /** A photo as a whole URL, never a legacy inline one. */
+/** Photos kept as links rather than uploads, by userId: only the rows that have one, and only that field. */
+async function linkPhotosOf(userIds: string[]): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await users()
+    .find(
+      { userId: { $in: userIds }, profilePhotoUrl: { $regex: '^http' } },
+      { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } },
+    )
+    .toArray();
+  return new Map(rows.map((row) => [row.userId, row.profilePhotoUrl!]));
+}
+
 async function photoOf(row: Partial<PhotoFields> | null | undefined): Promise<string | null> {
   if (!row) return null;
   const url = await resolveProfilePhoto({
@@ -522,7 +534,8 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
   const own = ranked.find((entry) => entry.userId === viewer.userId);
   return {
     points: own?.points ?? 0,
-    rank: own?.rank ?? null,
+    // Nobody is ranked for zero points: they would all share the last place.
+    rank: own && own.points > 0 ? own.rank : null,
     total: ranked.length,
     banner,
     liveContests,
@@ -565,7 +578,9 @@ export async function pointsLeaderboardFor(viewerUserId: string, period: Leaderb
   const viewer = await requireViewer(viewerUserId);
   const since = istWeekStart(now);
   const [roster, weekly] = await Promise.all([
-    rosterFor(viewer, { department: 1, profilePhotoKey: 1, profilePhotoUrl: 1 }),
+    // Not `profilePhotoUrl`: on older accounts it is a whole image inline, and
+    // the board only uses links (`linkPhotosOf`).
+    rosterFor(viewer, { department: 1, profilePhotoKey: 1 }),
     viewer.org
       ? pointEvents()
           .aggregate<{ _id: string; delta: number }>([
@@ -589,8 +604,11 @@ export async function pointsLeaderboardFor(viewerUserId: string, period: Leaderb
       : null;
 
   const byId = new Map(roster.map((person) => [person.userId, person]));
+  const links = await linkPhotosOf(roster.map((person) => person.userId));
   const photos = new Map(
-    await Promise.all(roster.map(async (person) => [person.userId, await photoOf(person)] as const)),
+    await Promise.all(
+      roster.map(async (person) => [person.userId, await photoOf({ ...person, profilePhotoUrl: links.get(person.userId) })] as const),
+    ),
   );
   const entries: PointsLeaderboardEntry[] = ranked.map((entry) => ({
     rank: entry.rank,
