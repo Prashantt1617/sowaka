@@ -579,10 +579,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   bool _policiesFetching = false;
   static const _policiesStale = Duration(minutes: 2);
   bool _submitting = false;
-  DateTime _attendanceMonth = DateTime(
-    DateTime.now().year,
-    DateTime.now().month,
-  );
+
+  /// The bloc keeps the month, and reads attendance for it whenever it reads
+  /// attendance at all — so the calendar and the days under it cannot drift
+  /// apart, whoever asked for the read.
+  DateTime get _attendanceMonth => widget.bloc.attendanceMonth;
   AttendanceFilter? _attendanceFilter;
   AttendanceDayView? _selectedCalendarDay;
   bool _overtimeHistoryView = false;
@@ -750,6 +751,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _back() {
+    // Out of a calendar paged to another month: the page underneath reads
+    // today's punch from the same days, so this month comes back with it.
+    final now = DateTime.now();
+    if (_page == _QuickPage.calendar &&
+        (_attendanceMonth.year != now.year ||
+            _attendanceMonth.month != now.month)) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(now)));
+    }
     setState(() {
       if (_page == _QuickPage.policy) {
         _page = _policyReturnPage;
@@ -3027,11 +3036,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final now = DateTime.now();
     final furthest = DateTime(now.year, now.month + _attendanceMonthsAhead);
     if (month.isAfter(furthest)) return;
-    setState(() {
-      _attendanceMonth = month;
-      _selectedCalendarDay = null;
-    });
-    await widget.bloc.add(LoadAttendanceMonth(month));
+    // The bloc turns to the month as the read starts, before this rebuild.
+    final load = widget.bloc.add(LoadAttendanceMonth(month));
+    setState(() => _selectedCalendarDay = null);
+    await load;
   }
 
   /// Tapping a day selects it; the detail strip below the grid then shows its

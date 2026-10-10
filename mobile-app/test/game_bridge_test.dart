@@ -167,8 +167,15 @@ void main() {
     expect(injected.indexOf('BRIDGE();'), greaterThan(injected.indexOf('<head>')));
     expect(injected, startsWith('<!doctype html>'));
 
+    // The page's policy comes first, frames refused, so it covers the bridge and the game.
+    final policy = injected.indexOf('http-equiv="Content-Security-Policy"');
+    expect(policy, greaterThan(injected.indexOf('<head>')));
+    expect(policy, lessThan(injected.indexOf('BRIDGE();')));
+    expect(injected, contains("frame-src 'none'"));
+
     final noHead = injectGameBridge('<!DOCTYPE html><title>x</title><script>game()</script>', 'BRIDGE();');
-    expect(noHead, startsWith('<!DOCTYPE html>\n<script>'));
-    expect(injectGameBridge('<script>game()</script>', 'BRIDGE();'), startsWith('<script>\nBRIDGE();'));
+    expect(noHead, startsWith('<!DOCTYPE html>\n<meta http-equiv="Content-Security-Policy"'));
+    expect(noHead.indexOf('BRIDGE();'), lessThan(noHead.indexOf('game()')));
+    expect(injectGameBridge('<script>game()</script>', 'BRIDGE();'), startsWith('<meta http-equiv="Content-Security-Policy"'));
   });
 }

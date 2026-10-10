@@ -10,7 +10,9 @@ class _CommentMentions {
   _CommentMentions(this.controller);
 
   final TextEditingController controller;
-  final Map<String, ConnectTeammate> _picked = {};
+
+  /// In the order they were picked, the latest last.
+  final List<ConnectTeammate> _picked = [];
 
   int get _cursor {
     final value = controller.value;
@@ -68,19 +70,64 @@ class _CommentMentions {
       text: text.replaceRange(at, cursor, inserted),
       selection: TextSelection.collapsed(offset: at + inserted.length),
     );
-    _picked[person.userId] = person;
+    _picked
+      ..removeWhere((picked) => picked.userId == person.userId)
+      ..add(person);
   }
 
   /// The people picked whose name is still in [text]: a tag deleted while
-  /// typing is not sent.
-  List<ConnectMention> mentionsIn(String text) => [
-    for (final person in _picked.values)
-      if (text.contains('@${person.name}'))
-        ConnectMention(userId: person.userId, name: person.name),
-  ];
+  /// typing is not sent. Two people with the same name read the same in the
+  /// text, so the one picked last is the one meant. A name counts only where
+  /// it stands whole — "@Ana" inside "@Ana Bisht" or "@Anaya" is not Ana.
+  List<ConnectMention> mentionsIn(String text) {
+    final byName = {for (final person in _picked) person.name: person};
+    final names = byName.keys.toList();
+    return [
+      for (final person in byName.values)
+        if (_tagsIn(text, person.name, names).isNotEmpty)
+          ConnectMention(userId: person.userId, name: person.name),
+    ];
+  }
+
+  /// Puts back the people of a comment that did not go, so sending it again
+  /// tags them again.
+  void restore(List<ConnectMention> mentions) {
+    for (final mention in mentions) {
+      _picked
+        ..removeWhere((picked) => picked.userId == mention.userId)
+        ..add(
+          ConnectTeammate(
+            userId: mention.userId,
+            name: mention.name,
+            initials: '',
+          ),
+        );
+    }
+  }
 
   void clear() => _picked.clear();
 }
+
+/// Where "@[name]" stands whole in [text]: not run on into more of a word
+/// ("@Ana" in "@Anaya"), and not the start of a longer one of [names] at the
+/// same spot ("@Ana" in "@Ana Bisht").
+List<int> _tagsIn(String text, String name, Iterable<String> names) {
+  final tag = '@$name';
+  final found = <int>[];
+  for (var at = text.indexOf(tag); at >= 0; at = text.indexOf(tag, at + 1)) {
+    final end = at + tag.length;
+    if (end < text.length && _nameCharacter.hasMatch(text[end])) continue;
+    final inLonger = names.any(
+      (other) => other.length > name.length && text.startsWith('@$other', at),
+    );
+    if (!inLonger) found.add(at);
+  }
+  return found;
+}
+
+/// What carries a name on past its end: a letter, a mark or a digit. So
+/// "@Ana," and "@Ana's" are Ana, and "@Anaya" is not.
+final _nameCharacter = RegExp(r'[\p{L}\p{M}\p{N}]', unicode: true);
 
 /// The colleagues matching the "@" being typed, drawn above the comment box.
 class _MentionSuggestions extends StatelessWidget {
@@ -174,29 +221,22 @@ Widget _commentBody(
 }) {
   if (comment.mentions.isEmpty) return plain;
   final text = comment.text;
+  // Each tag where it stands whole, earliest first, linked to the person the
+  // comment carries for that name. Two people of one name (an older comment)
+  // are told apart by order: the first such tag is the first of them.
+  final byName = <String, List<ConnectMention>>{};
+  for (final mention in comment.mentions) {
+    (byName[mention.name] ??= []).add(mention);
+  }
+  final tags = <(int, ConnectMention)>[
+    for (final MapEntry(key: name, value: people) in byName.entries)
+      for (final (index, at) in _tagsIn(text, name, byName.keys).indexed)
+        (at, people[math.min(index, people.length - 1)]),
+  ]..sort((a, b) => a.$1.compareTo(b.$1));
   final spans = <InlineSpan>[];
   var index = 0;
-  while (index < text.length) {
-    // The earliest tag from here on; the longest name wins a tie, so
-    // "@Ananya Bisht" is not read as "@Ananya".
-    ConnectMention? next;
-    var nextAt = -1;
-    for (final mention in comment.mentions) {
-      final at = text.indexOf('@${mention.name}', index);
-      if (at < 0) continue;
-      if (nextAt < 0 ||
-          at < nextAt ||
-          (at == nextAt && mention.name.length > next!.name.length)) {
-        next = mention;
-        nextAt = at;
-      }
-    }
-    if (next == null) {
-      spans.add(TextSpan(text: text.substring(index)));
-      break;
-    }
-    if (nextAt > index) spans.add(TextSpan(text: text.substring(index, nextAt)));
-    final tagged = next;
+  for (final (at, tagged) in tags) {
+    if (at > index) spans.add(TextSpan(text: text.substring(index, at)));
     spans.add(
       WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
@@ -213,7 +253,8 @@ Widget _commentBody(
         ),
       ),
     );
-    index = nextAt + tagged.name.length + 1;
+    index = at + tagged.name.length + 1;
   }
+  if (index < text.length) spans.add(TextSpan(text: text.substring(index)));
   return Text.rich(TextSpan(style: style, children: spans));
 }

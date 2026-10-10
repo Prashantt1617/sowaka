@@ -462,8 +462,9 @@ class _LeaderboardRow extends StatelessWidget {
             width: 24,
             child: FittedBox(
               fit: BoxFit.scaleDown,
+              // Nobody is ranked for zero points; they would all share the last place.
               child: Text(
-                '${entry.rank}',
+                entry.points > 0 ? '${entry.rank}' : '–',
                 textAlign: TextAlign.center,
                 style: GamesStyle.lilita(17, color: ink),
               ),
@@ -580,8 +581,14 @@ class _StickyRank extends StatelessWidget {
   final PointsStanding standing;
   final PointsPeriod period;
 
+  // Drawn to the design's fixed size: larger text would spill out of it.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.0,
+    child: Builder(builder: _drawn),
+  );
+
+  Widget _drawn(BuildContext context) {
     final gap = standing.gap;
     final name = standing.nextUpName;
     final points = standing.points;
@@ -624,7 +631,7 @@ class _StickyRank extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: Transform.rotate(
                       angle: 4 * math.pi / 180,
-                      child: _YourRankBadge(rank: standing.rank, dark: true),
+                      child: _YourRankBadge(rank: points > 0 ? standing.rank : null, dark: true),
                     ),
                   ),
                 ),

@@ -497,7 +497,12 @@ class _ColleagueProfileLoaderState extends State<_ColleagueProfileLoader> {
                       )
                     : ProfileEmptyNote(
                         error is ProfileApiException && error.statusCode == 404
-                            ? 'This person is not in your company’s directory.'
+                            // A server from before colleague profiles has no
+                            // such route at all, which is not the same as no
+                            // such person.
+                            ? (error.message.startsWith('Route not found')
+                                  ? 'Colleague profiles are not available yet.'
+                                  : 'This person is not in your company’s directory.')
                             : 'Could not open this profile.',
                         onRetry: () => setState(
                           () => _person = _service.fetchPerson(widget.userId),

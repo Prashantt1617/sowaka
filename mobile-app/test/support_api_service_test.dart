@@ -1,10 +1,13 @@
 // The Support desk's API calls: routes, the multipart "files" field when
-// there is something attached, and the server's message on a refusal.
+// there is something attached, the server's message on a refusal, and plain
+// words — never a route or an exception — for a server without the desk, a
+// server fault or no connection.
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:mobile_app/features/shared/network_status.dart';
 import 'package:mobile_app/features/support/data/support_api_service.dart';
 import 'package:mobile_app/features/support/data/support_models.dart';
 
@@ -93,6 +96,59 @@ void main() {
     expect(body, contains('filename="slip.pdf"'));
     expect(body, contains('content-type: application/pdf'));
     expect(body, contains('content-type: image/png'));
+  });
+
+  test('a server without the desk, or a fault, reads as plain words', () async {
+    Future<SupportApiException> failure(http.Response response) async {
+      final api = service(MockClient((request) async => response));
+      try {
+        await api.fetchTickets();
+      } on SupportApiException catch (error) {
+        return error;
+      }
+      fail('expected a SupportApiException');
+    }
+
+    final missing = await failure(
+      supportError('Route not found: GET /api/support/tickets', 404),
+    );
+    expect(missing.message, SupportApiException.unavailable);
+    expect(missing.statusCode, 404);
+    // A 404 from the desk itself keeps its own words.
+    expect(
+      (await failure(supportError('Ticket not found', 404))).message,
+      'Ticket not found',
+    );
+    expect(
+      (await failure(supportError('TypeError: x is undefined', 500))).message,
+      SupportApiException.failed,
+    );
+    // A gateway's page rather than the API's reply.
+    expect(
+      (await failure(http.Response('<html>Bad gateway</html>', 502))).message,
+      SupportApiException.failed,
+    );
+  });
+
+  test('no connection reads as plain words', () async {
+    final api = service(
+      MockClient((request) async => throw http.ClientException('refused')),
+    );
+    await expectLater(
+      api.fetchTopics(),
+      throwsA(
+        isA<SupportApiException>().having(
+          (e) => e.message,
+          'message',
+          SupportApiException.offline,
+        ),
+      ),
+    );
+    NetworkStatus.reportSuccess();
+    expect(
+      supportErrorText(StateError('Bad state: raw')),
+      SupportApiException.failed,
+    );
   });
 
   test('a refusal carries the server message and status', () async {

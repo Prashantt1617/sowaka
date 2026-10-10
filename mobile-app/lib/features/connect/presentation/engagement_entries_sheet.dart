@@ -81,9 +81,18 @@ class _EntriesSheetState extends State<_EntriesSheet> {
     );
   }
 
-  void _vote(ConnectPost post, String entryId) {
-    if (post.challengeClosed) return;
-    widget.bloc?.voteCaption(post.id, entryId);
+  /// Votes on their way. The server flips a vote, so a second tap on the
+  /// same entry before the first is answered would take it straight back.
+  final _voting = <String>{};
+
+  Future<void> _vote(ConnectPost post, String entryId) async {
+    final bloc = widget.bloc;
+    if (bloc == null || _contestClosed(post) || !_voting.add(entryId)) return;
+    try {
+      await bloc.voteCaption(post.id, entryId);
+    } finally {
+      _voting.remove(entryId);
+    }
   }
 
   Future<void> _addEntry() async {
@@ -152,7 +161,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
   }
 
   bool _canAddEntry(ConnectPost post) {
-    if (post.challengeClosed || widget.onAddEntry == null) return false;
+    if (_contestClosed(post) || widget.onAddEntry == null) return false;
     if (post.type == ConnectPostType.mostLikely) {
       return post.myTaggedUserId == null;
     }
@@ -512,7 +521,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
           isPhoto ? 16 : 12,
         ),
         child: Text(
-          post.challengeClosed
+          _contestClosed(post)
               ? 'This contest has closed.'
               : 'You can change your vote while the contest is live',
           style: TextStyle(
@@ -545,11 +554,11 @@ class _EntriesSheetState extends State<_EntriesSheet> {
             key: _keyFor(entry.id),
             child: _CaptionEntryCard(
               entry: entry,
-              closed: post.challengeClosed,
+              closed: _contestClosed(post),
               photo: _photos[entry.userId],
               onVote: () => _vote(post, entry.id),
               onOpenPerson: () => _openPerson(entry.userId),
-              onDelete: entry.isMine && !post.challengeClosed
+              onDelete: entry.isMine && !_contestClosed(post)
                   ? () => _confirmDeleteEntry(context, entry, () async {
                       await widget.bloc?.deleteCaption(post.id);
                     }, noun: 'caption')
@@ -595,10 +604,10 @@ class _EntriesSheetState extends State<_EntriesSheet> {
           key: _keyFor(entry.id),
           child: _GalleryEntryCard(
             entry: entry,
-            closed: post.challengeClosed,
+            closed: _contestClosed(post),
             onVote: () => _vote(post, entry.id),
             onOpenPerson: () => _openPerson(entry.userId),
-            onDelete: entry.isMine && !post.challengeClosed
+            onDelete: entry.isMine && !_contestClosed(post)
                 ? () => _confirmDeleteEntry(context, entry, () async {
                     await widget.bloc?.deleteCaption(post.id);
                   }, noun: 'photo')
@@ -651,7 +660,7 @@ class _SheetHero extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _SheetLivePill(closed: post.challengeClosed),
+        _SheetLivePill(closed: _contestClosed(post)),
         const SizedBox(height: 8),
         if (isPhoto)
           Padding(

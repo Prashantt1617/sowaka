@@ -101,7 +101,10 @@ class _GamesHomeViewState extends State<GamesHomeView> {
   final Map<PointsPeriod, PointsLeaderboard> _boards = {};
   PointsPeriod _period = PointsPeriod.week;
   String? _boardError;
-  bool _boardLoading = false;
+
+  /// The boards on their way: each period loads on its own, so switching to
+  /// one while the other is still coming does not leave it never asked for.
+  final Set<PointsPeriod> _boardsLoading = {};
 
   /// Moves the "Ends in" clocks on while the tab is looked at.
   Timer? _clock;
@@ -172,6 +175,8 @@ class _GamesHomeViewState extends State<GamesHomeView> {
       // A server from before the home: the catalog, as the tab always had.
       if (error.statusCode == 404) {
         await _refreshCatalog();
+        // Asked and answered: coming back to the tab need not ask again at once.
+        _fetchedAt ??= DateTime.now();
       } else if (mounted && _home == null) {
         setState(() => _error = error.message);
       }
@@ -212,16 +217,24 @@ class _GamesHomeViewState extends State<GamesHomeView> {
   }
 
   Future<void> _loadBoard(PointsPeriod period, {bool force = false}) async {
-    if (_boardLoading || (!force && _boards.containsKey(period))) return;
+    if (!mounted) return;
+    if (_boardsLoading.contains(period) || (!force && _boards.containsKey(period))) return;
     setState(() {
-      _boardLoading = true;
+      _boardsLoading.add(period);
       _boardError = null;
     });
     try {
       final board = await _service.pointsLeaderboard(period);
       if (mounted) setState(() => _boards[period] = board);
     } on GamesApiException catch (error) {
-      if (mounted) setState(() => _boardError = error.message);
+      if (mounted) {
+        setState(
+          // A server from before the leaderboard says so in its own words.
+          () => _boardError = error.statusCode == 404
+              ? "The leaderboard isn't available yet."
+              : error.message,
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -230,7 +243,7 @@ class _GamesHomeViewState extends State<GamesHomeView> {
         );
       }
     } finally {
-      if (mounted) setState(() => _boardLoading = false);
+      if (mounted) setState(() => _boardsLoading.remove(period));
     }
   }
 
@@ -327,7 +340,11 @@ class _GamesHomeViewState extends State<GamesHomeView> {
         children: [
           _GamesHeader(
             points: home?.points ?? 0,
-            rank: home?.rank,
+            // On the leaderboard, the rank of the board on screen, so the
+            // pill and the card under it never disagree.
+            rank: _pane == _GamesPane.leaderboard && _boards[_period] != null
+                ? ((_boards[_period]!.me?.points ?? 0) > 0 ? _boards[_period]!.me!.rank : null)
+                : home?.rank,
             pane: _pane,
             onPane: _choosePane,
           ),
@@ -341,7 +358,7 @@ class _GamesHomeViewState extends State<GamesHomeView> {
                 : _LeaderboardPane(
                     board: _boards[_period],
                     period: _period,
-                    loading: _boardLoading,
+                    loading: _boardsLoading.contains(_period),
                     error: _boardError,
                     viewerId: widget.session.user.id,
                     onPeriod: _choosePeriod,

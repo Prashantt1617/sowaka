@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -63,19 +65,28 @@ class _CreditHistoryViewState extends State<CreditHistoryView> {
     );
     // A game's row shows the game's own art, which lives in the games
     // catalog. Opening a profile before the Games tab means the catalog has
-    // not been read this run; read it once so the art is there.
+    // not been read this run: it is read once, behind the history rather
+    // than ahead of it, and the rows pick their art up when it lands.
     final missingArt = history.activity.any(
       (row) => row.gameKey != null && keptCatalogGame(row.gameKey!) == null,
     );
-    if (missingArt) {
-      try {
-        await GamesApiService(session: widget.service.session).catalog();
-      } catch (_) {
-        // The controller icon stands in; the history still shows.
-      }
+    if (missingArt && !_catalogAsked) {
+      _catalogAsked = true;
+      unawaited(
+        GamesApiService(session: widget.service.session)
+            .catalog()
+            .then((_) {
+              if (mounted) setState(() {});
+            })
+            // The controller icon stands in.
+            .catchError((_) => const <GameCatalogEntry>[]),
+      );
     }
     return history;
   }
+
+  /// The catalog is read for the art at most once while this is open.
+  bool _catalogAsked = false;
 
   void _reload() => setState(() {
     _showAll = false;

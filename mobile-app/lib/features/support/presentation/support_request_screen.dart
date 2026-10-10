@@ -63,7 +63,7 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
     try {
       topics = _topics ?? await _loadTopics();
     } catch (error) {
-      if (mounted) showAppToast(context, '$error');
+      if (mounted) showAppToast(context, supportErrorText(error));
       return;
     }
     if (!mounted || topics.isEmpty) return;

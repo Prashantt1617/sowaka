@@ -104,11 +104,23 @@ String _scriptJson(Object? value) => jsonEncode(value)
 String challengeEventScript(Map<String, dynamic> event) =>
     'window.onSowakaChallenge && window.onSowakaChallenge(${_scriptJson(event)});';
 
-/// [html] with [script] in it, ahead of the page's own scripts, so the
-/// bridge is there before the game's first line runs: right after `<head>`,
-/// else after the doctype, else at the very start.
+/// What a game page may load, as the server sends it with `/play` (a page
+/// loaded from a string never gets the header), plus no frames at all: on
+/// Android a frame could reach the bridge, which every frame can see there.
+const gamePagePolicy =
+    "default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline' https://fonts.googleapis.com; "
+    'font-src https://fonts.gstatic.com data:; img-src data: blob: https:; '
+    "media-src data: blob:; connect-src 'none'; frame-src 'none'; "
+    "base-uri 'none'; form-action 'none'";
+
+/// [html] with the page policy and [script] in it, ahead of the page's own
+/// scripts, so both are in force before the game's first line runs: right
+/// after `<head>`, else after the doctype, else at the very start.
 String injectGameBridge(String html, String script) {
-  final tag = '<script>\n$script</script>\n';
+  final tag =
+      '<meta http-equiv="Content-Security-Policy" content="$gamePagePolicy">\n'
+      '<script>\n$script</script>\n';
   final head = RegExp(r'<head(\s[^>]*)?>', caseSensitive: false).firstMatch(html);
   if (head != null) {
     return html.replaceRange(head.end, head.end, '\n$tag');

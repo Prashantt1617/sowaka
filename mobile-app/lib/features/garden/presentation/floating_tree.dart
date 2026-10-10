@@ -78,9 +78,23 @@ class _FloatingTreeState extends State<FloatingTree> with TickerProviderStateMix
   bool _dragging = false;
   Offset _dragPosition = Offset.zero;
 
+  /// Whether the tree is in this app at all. Off, it does nothing: no
+  /// fetches, no timers, no animation drawing frames nobody sees.
+  bool get _gardenOn {
+    final user = widget.session.user;
+    return FloatingTree.shown &&
+        user.enabledTabs.contains('games') &&
+        (user.enabledGames?.contains('gratitude-garden') ?? true);
+  }
+
+  /// Set once the tree started its work, so only then is there any to stop.
+  bool _live = false;
+
   @override
   void initState() {
     super.initState();
+    if (!_gardenOn) return;
+    _live = true;
     WidgetsBinding.instance.addObserver(this);
     FloatingTreeSettings.load();
     _restorePosition();
@@ -100,20 +114,22 @@ class _FloatingTreeState extends State<FloatingTree> with TickerProviderStateMix
   @override
   void didUpdateWidget(covariant FloatingTree old) {
     super.didUpdateWidget(old);
-    if (old.refreshKey != widget.refreshKey) _load();
+    if (_live && old.refreshKey != widget.refreshKey) _load();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _load(force: true);
+    if (_live && state == AppLifecycleState.resumed) _load(force: true);
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _hopTimer?.cancel();
-    _hop.dispose();
-    _bob.dispose();
+    if (_live) {
+      WidgetsBinding.instance.removeObserver(this);
+      _hopTimer?.cancel();
+      _hop.dispose();
+      _bob.dispose();
+    }
     super.dispose();
   }
 
@@ -160,11 +176,7 @@ class _FloatingTreeState extends State<FloatingTree> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.session.user;
-    final gardenOn = FloatingTree.shown &&
-        user.enabledTabs.contains('games') &&
-        (user.enabledGames?.contains('gratitude-garden') ?? true);
-    if (!gardenOn) return const SizedBox.shrink();
+    if (!_live) return const SizedBox.shrink();
     return ValueListenableBuilder<bool>(
       valueListenable: FloatingTreeSettings.enabled,
       builder: (context, enabled, _) {

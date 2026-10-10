@@ -32,9 +32,11 @@ class SupportDraft {
 /// back and forth. A resolved ticket is read only: the composer gives way to
 /// the note asking for a new ticket.
 ///
-/// Nothing waits on the network: a message shows as sent the moment it is
-/// sent, and goes out behind it. One that does not get through stays, marked
-/// "Not sent · Tap to retry"; a long press offers to delete it.
+/// Nothing waits on the network: a message shows the moment it is sent,
+/// marked "Sending…" until the server has it, and goes out behind it. One
+/// that does not get through stays, marked "Not sent · Tap to retry"; a long
+/// press offers to delete it. Leaving with anything still unsent asks first,
+/// since what is unsent lives only on this screen.
 class SupportTicketScreen extends StatefulWidget {
   const SupportTicketScreen({
     super.key,
@@ -198,7 +200,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = '$error');
+      setState(() => _error = supportErrorText(error));
     } finally {
       _loading = false;
       if (_reloadAgain && mounted) {
@@ -371,11 +373,54 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
     );
     if (remove != true || !mounted) return;
     if (draft) {
-      // Nothing reached the server: leaving is the whole of deleting it.
-      Navigator.of(context).maybePop();
+      // Nothing reached the server: leaving is the whole of deleting it, and
+      // asking whether to leave would be asking twice.
+      Navigator.of(context).pop();
       return;
     }
     setState(() => _pending.remove(pending));
+  }
+
+  /// Something of the person's own the server does not have yet: the ticket
+  /// itself while it is being raised, or a reply.
+  bool get _hasUnsent => _draft != null || _pending.isNotEmpty;
+
+  /// Asked before the person leaves with something unsent: the queue lives
+  /// on this screen, and goes with it.
+  Future<bool> _confirmLeave() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const ValueKey('support-leave-unsent'),
+        content: Text(
+          _draft != null
+              ? 'Your ticket hasn\'t been sent yet. Leave anyway?'
+              : 'Your message hasn\'t been sent yet. Leave anyway?',
+          style: const TextStyle(
+            fontFamily: 'Sora',
+            color: SupportStyle.ink,
+            fontSize: 14,
+            height: 20 / 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  /// Back, or the system's back, with something unsent.
+  Future<void> _leaveIfConfirmed() async {
+    if (await _confirmLeave() && mounted) Navigator.of(context).pop();
   }
 
   /// What the top bar and footer go by: the server's ticket, or the draft's
@@ -403,66 +448,74 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
     final ticket = _ticket;
     final draft = _draft;
     final ready = _thread != null || draft != null;
-    return SupportScaffold(
-      shell: widget.shell,
-      title: 'Chat',
-      compactBar: true,
-      background: Colors.white,
-      body: !ready
-          ? _error == null
-                ? const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+    final unsent = _hasUnsent;
+    return PopScope(
+      canPop: !unsent,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leaveIfConfirmed());
+      },
+      child: SupportScaffold(
+        shell: widget.shell,
+        title: 'Chat',
+        compactBar: true,
+        background: Colors.white,
+        confirmLeave: unsent ? _confirmLeave : null,
+        body: !ready
+            ? _error == null
+                  ? const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : _ThreadError(message: _error!, onRetry: _load)
+            : _ThreadList(
+                topicLabel: ticket!.topicLabel,
+                messages: _thread?.messages ?? const [],
+                draft: draft == null
+                    ? null
+                    : _PendingView(
+                        text: draft.text,
+                        files: draft.files,
+                        at: _draftAt,
+                        failed: _draftFailed,
+                        onRetry: _draftFailed ? _create : null,
+                        onDelete: _draftFailed ? () => _offerDelete() : null,
+                      ),
+                pending: [
+                  for (final pending in _pending)
+                    _PendingView(
+                      key: ValueKey('support-pending-${pending.tempId}'),
+                      text: pending.text,
+                      files: pending.files,
+                      at: pending.at,
+                      failed: pending.delivery == _Delivery.failed,
+                      onRetry: () => _retry(pending),
+                      onDelete: () => _offerDelete(pending: pending),
                     ),
-                  )
-                : _ThreadError(message: _error!, onRetry: _load)
-          : _ThreadList(
-              topicLabel: ticket!.topicLabel,
-              messages: _thread?.messages ?? const [],
-              draft: draft == null
-                  ? null
-                  : _PendingView(
-                      text: draft.text,
-                      files: draft.files,
-                      at: _draftAt,
-                      failed: _draftFailed,
-                      onRetry: _draftFailed ? _create : null,
-                      onDelete: _draftFailed ? () => _offerDelete() : null,
-                    ),
-              pending: [
-                for (final pending in _pending)
-                  _PendingView(
-                    key: ValueKey('support-pending-${pending.tempId}'),
-                    text: pending.text,
-                    files: pending.files,
-                    at: pending.at,
-                    failed: pending.delivery == _Delivery.failed,
-                    onRetry: () => _retry(pending),
-                    onDelete: () => _offerDelete(pending: pending),
-                  ),
-              ],
-              controller: _scroll,
-            ),
-      footer: ticket == null
-          ? null
-          : ticket.resolved
-          ? const _ResolvedNote()
-          : _Composer(
-              controller: _text,
-              files: _files,
-              canSend: _canSend,
-              onAdd: _addFiles,
-              onSend: _send,
-              onRemoveFile: (index) => setState(() => _files.removeAt(index)),
-            ),
+                ],
+                controller: _scroll,
+              ),
+        footer: ticket == null
+            ? null
+            : ticket.resolved
+            ? const _ResolvedNote()
+            : _Composer(
+                controller: _text,
+                files: _files,
+                canSend: _canSend,
+                onAdd: _addFiles,
+                onSend: _send,
+                onRemoveFile: (index) => setState(() => _files.removeAt(index)),
+              ),
+      ),
     );
   }
 }
 
-/// A message of the person's own not yet confirmed by the server: shown as
-/// sent, or with the retry marker once it has failed.
+/// A message of the person's own not yet confirmed by the server: marked
+/// "Sending…", or with the retry marker once it has failed.
 class _PendingView {
   const _PendingView({
     this.key,
@@ -538,6 +591,7 @@ class _ThreadList extends StatelessWidget {
             mine: true,
             maxWidth: maxBubble,
             time: supportTime(view.at),
+            sending: !view.failed,
             failed: view.failed,
             padding: request
                 ? const EdgeInsets.all(16)
@@ -627,6 +681,7 @@ class _Bubble extends StatelessWidget {
     required this.time,
     required this.child,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    this.sending = false,
     this.failed = false,
   });
 
@@ -635,6 +690,9 @@ class _Bubble extends StatelessWidget {
   final String time;
   final Widget child;
   final EdgeInsets padding;
+
+  /// On its way: no time yet, as it has not been delivered at one.
+  final bool sending;
 
   /// Did not reach the server: the time gives way to the retry marker.
   final bool failed;
@@ -682,6 +740,28 @@ class _Bubble extends StatelessWidget {
                           fontSize: 12,
                           height: 16 / 12,
                           fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  )
+                : sending
+                ? const Row(
+                    key: ValueKey('support-sending'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 13,
+                        color: SupportStyle.time,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Sending…',
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: SupportStyle.time,
+                          fontSize: 12,
+                          height: 16 / 12,
                         ),
                       ),
                     ],

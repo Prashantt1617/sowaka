@@ -613,8 +613,14 @@ class _GameCardLarge extends StatelessWidget {
   final PlayedGame played;
   final VoidCallback onPlay;
 
+  // Drawn to the design's fixed size: larger text would spill out of it.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.0,
+    child: Builder(builder: _drawn),
+  );
+
+  Widget _drawn(BuildContext context) {
     final rank = played.rank;
     final players = played.players;
     return Container(
@@ -717,11 +723,18 @@ class _GameCardLarge extends StatelessWidget {
 class _YourRankBadge extends StatelessWidget {
   const _YourRankBadge({required this.rank, this.dark = false});
 
-  final int rank;
+  /// Null while unranked (no points yet).
+  final int? rank;
   final bool dark;
 
+  // Drawn to the design's fixed size: larger text would spill out of it.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.0,
+    child: Builder(builder: _drawn),
+  );
+
+  Widget _drawn(BuildContext context) {
     final ink = dark ? GamesStyle.yellow2 : GamesStyle.ink2;
     return Container(
       width: 55,
@@ -737,7 +750,7 @@ class _YourRankBadge extends StatelessWidget {
         children: [
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text('#$rank', style: GamesStyle.lilita(22, color: ink, height: 19.8)),
+            child: Text(rank == null ? '–' : '#$rank', style: GamesStyle.lilita(22, color: ink, height: 19.8)),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 3),

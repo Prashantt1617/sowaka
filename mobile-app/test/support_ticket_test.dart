@@ -1,6 +1,8 @@
 // A ticket's thread against a fake server: the ticket bubble, the HR team's
-// replies, a reply shown at once and confirmed behind (or marked to retry,
-// never shown twice), and a resolved ticket closing the composer.
+// replies, a reply shown at once as sending and confirmed behind (or marked to
+// retry, never shown twice, and marked too when the server never answers),
+// leaving with something unsent asking first, and a resolved ticket closing
+// the composer.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -9,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:mobile_app/features/shared/network_status.dart';
 import 'package:mobile_app/features/support/data/support_api_service.dart';
 import 'package:mobile_app/features/support/data/support_models.dart';
 import 'package:mobile_app/features/support/presentation/support_ticket_screen.dart';
@@ -147,7 +150,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('support-send')));
     await tester.pump();
 
-    // Sent as far as the person can tell: cleared, shown, nothing spinning.
+    // Shown at once and cleared from the composer, nothing spinning — but
+    // marked as on its way, not with a time as if it had arrived.
     expect(find.text('Sharing it now'), findsOneWidget);
     final field = tester.widget<TextField>(
       find.byKey(const ValueKey('support-composer')),
@@ -155,12 +159,16 @@ void main() {
     expect(field.controller!.text, isEmpty);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byKey(const ValueKey('support-not-sent')), findsNothing);
+    expect(find.byKey(const ValueKey('support-sending')), findsOneWidget);
+    expect(find.text('Sending…'), findsOneWidget);
 
     server.complete();
     await tester.pumpAndSettle();
     expect(sent, {'text': 'Sharing it now'});
     expect(find.text('Sharing it now'), findsOneWidget);
     expect(find.byKey(const ValueKey('support-message-m9')), findsOneWidget);
+    expect(find.byKey(const ValueKey('support-sending')), findsNothing);
+    expect(find.text('10:00 AM'), findsOneWidget);
   });
 
   testWidgets('a live refetch never shows a reply twice', (tester) async {
@@ -271,6 +279,119 @@ void main() {
     expect(find.text('Not sent · Tap to retry'), findsNothing);
   });
 
+  testWidgets('a reply the server never answers is marked to retry', (
+    tester,
+  ) async {
+    final never = Completer<void>();
+    final client = MockClient((request) async {
+      if (request.method == 'POST') {
+        await never.future;
+      }
+      return supportOk({
+        'ticket': supportTicketJson('t1'),
+        'messages': _messages().take(3).toList(),
+        'events': [],
+      });
+    });
+    await _open(tester, client);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('support-composer')),
+      'Anyone there?',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('support-send')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('support-sending')), findsOneWidget);
+
+    await tester.pump(SupportApiService.requestTimeout);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('support-sending')), findsNothing);
+    expect(find.text('Not sent · Tap to retry'), findsOneWidget);
+    // The hang read as a lost connection; the probe it started goes with
+    // the test.
+    NetworkStatus.reportSuccess();
+  });
+
+  testWidgets('leaving with a reply unsent asks first, by back or avatar', (
+    tester,
+  ) async {
+    final server = Completer<void>();
+    final client = MockClient((request) async {
+      if (request.method == 'POST') {
+        await server.future;
+        return supportOk({
+          'message': supportMessageJson('m9', 'employee', 'Still there?'),
+        });
+      }
+      return supportOk({
+        'ticket': supportTicketJson('t1'),
+        'messages': _messages().take(3).toList(),
+        'events': [],
+      });
+    });
+    supportTall(tester);
+    final shell = supportShell(client, realtime: FakeSupportRealtime());
+    await tester.pumpWidget(
+      supportApp(
+        Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      SupportTicketScreen(shell: shell, ticketId: 't1'),
+                ),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Nothing unsent: back simply leaves.
+    await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(SupportTicketScreen), findsNothing);
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('support-composer')),
+      'Still there?',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('support-send')));
+    await tester.pump();
+
+    // Back asks; staying keeps the thread and the message on its way.
+    await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Your message hasn\'t been sent yet. Leave anyway?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Stay'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SupportTicketScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('support-sending')), findsOneWidget);
+
+    // The avatar asks too, and leaving takes the desk away.
+    await tester.tap(find.byKey(const ValueKey('support-avatar-held')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('support-leave-unsent')), findsOneWidget);
+    await tester.tap(find.text('Leave'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SupportTicketScreen), findsNothing);
+    expect(find.text('Open'), findsOneWidget);
+
+    server.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a resolved ticket is read only and asks for a new ticket', (
     tester,
   ) async {
@@ -372,8 +493,23 @@ void main() {
     );
     expect(find.text('slip.pdf'), findsOneWidget);
 
+    expect(find.byKey(const ValueKey('support-sending')), findsOneWidget);
+
     server.complete();
     await tester.pumpAndSettle();
     expect(find.text('Not sent · Tap to retry'), findsOneWidget);
+  });
+
+  testWidgets('a thread the server has no route for says so plainly', (
+    tester,
+  ) async {
+    final client = MockClient(
+      (request) async =>
+          supportError('Route not found: GET /api/support/tickets/t1', 404),
+    );
+    await _open(tester, client);
+
+    expect(find.text(SupportApiException.unavailable), findsOneWidget);
+    expect(find.textContaining('Route not found'), findsNothing);
   });
 }

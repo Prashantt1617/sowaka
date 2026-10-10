@@ -149,11 +149,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
       _handleNotificationDestination,
     );
     // A notification about a request means the request list on screen is
-    // already out of date: read it now rather than on the next poll.
+    // already out of date: read it now rather than on the next poll. Only a
+    // request's notification names its type; a post's or a support reply's
+    // reads nothing.
     _receivedSubscription = AppNotificationService.instance.received.listen(
       (data) {
         NotificationBadge.arrived();
-        _bloc.refreshRequestsNow('${data['type'] ?? ''}');
+        final type = '${data['type'] ?? ''}';
+        if (type.isNotEmpty) _bloc.refreshRequestsNow(type);
       },
     );
     // The bell's dot: anything unread since the inbox was last opened, read

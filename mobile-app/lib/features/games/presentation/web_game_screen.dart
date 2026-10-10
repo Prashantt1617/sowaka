@@ -288,11 +288,12 @@ class _WebGameScreenState extends State<WebGameScreen> {
 ''';
 
   void _handleShare(String raw) {
-    Map<String, dynamic> data;
+    final Map<String, dynamic> data;
     try {
       data = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
-      data = const {};
+      // Not a share the page could have made: nothing to offer.
+      return;
     }
     final parts = [data['title'], data['text'], data['url']]
         .whereType<String>()
@@ -300,7 +301,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
         .where((s) => s.isNotEmpty)
         .toList();
     final shareText = parts.join('\n');
-    _showShareSheet(shareText, raw);
+    // Handed back to the page re-encoded, never as it came: it goes into a script.
+    _showShareSheet(shareText, jsonEncode(data));
   }
 
   void _showShareSheet(String shareText, String rawPayload) {
@@ -386,7 +388,7 @@ class _WebGameScreenState extends State<WebGameScreen> {
   }
 
   /// Re-invokes the browser's original share sheet for genuine cross-app
-  /// sharing (unavoidably the OS UI). `rawPayload` is already valid JSON.
+  /// sharing (unavoidably the OS UI). `rawPayload` is JSON this app encoded.
   Future<void> _nativeShare(String rawPayload) async {
     await _controller.runJavaScript(
       'window.__sowakaNativeShare && window.__sowakaNativeShare($rawPayload);',

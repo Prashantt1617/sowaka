@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -9,15 +10,31 @@ import '../../auth/data/auth_models.dart';
 import '../../shared/network_status.dart';
 import 'support_models.dart';
 
+/// A Support call that did not work. [message] is always fit to show: the
+/// API turns a missing route, a server fault or a dead connection into plain
+/// words here, so no screen ever shows a route or a stack.
 class SupportApiException implements Exception {
   const SupportApiException(this.message, {this.statusCode});
 
   final String message;
   final int? statusCode;
 
+  /// A server without the Support routes yet — production, until the
+  /// backend ships them.
+  static const unavailable =
+      'Support desk isn\'t available yet. Try again later.';
+  static const failed = 'Something went wrong. Try again.';
+  static const offline = 'No internet connection';
+  static const tooSlow = 'The support desk is taking too long. Try again.';
+
   @override
   String toString() => message;
 }
+
+/// What a Support screen says when a call fails: the API's own words, and a
+/// plain line for anything else — never an exception's text.
+String supportErrorText(Object error) =>
+    error is SupportApiException ? error.message : SupportApiException.failed;
 
 /// A file chosen to go with a request or a reply: read from [path] on a
 /// device, or handed over as [bytes] (tests, the web).
@@ -68,6 +85,12 @@ class SupportApiService {
   /// At most this many files go with one message, each under [maxFileBytes].
   static const maxFiles = 5;
   static const maxFileBytes = 10 * 1024 * 1024;
+
+  /// How long a call may take before it counts as failed: a message left on
+  /// "Sending…" for good is worse than one marked to retry. Files get longer,
+  /// as five photos on a slow connection are a minute's upload.
+  static const requestTimeout = Duration(seconds: 30);
+  static const uploadTimeout = Duration(minutes: 2);
 
   final AuthSession session;
   final String _baseUrl;
@@ -177,34 +200,53 @@ class SupportApiService {
         );
       }
     }
-    return _send(request);
+    return _send(request, limit: uploadTimeout);
   }
 
-  Future<Map<String, dynamic>> _send(http.BaseRequest request) async {
+  Future<Map<String, dynamic>> _send(
+    http.BaseRequest request, {
+    Duration limit = requestTimeout,
+  }) async {
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await _client.send(request));
+      response = await _client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(limit);
     } catch (error) {
       NetworkStatus.reportFailure(error, probe: Uri.parse('$_baseUrl/health'));
-      if (NetworkStatus.isNetworkError(error)) {
-        throw const SupportApiException('No internet connection');
-      }
-      rethrow;
+      throw SupportApiException(switch (error) {
+        TimeoutException() => SupportApiException.tooSlow,
+        _ when NetworkStatus.isNetworkError(error) =>
+          SupportApiException.offline,
+        _ => SupportApiException.failed,
+      });
     }
     NetworkStatus.reportSuccess();
     Map<String, dynamic> json;
     try {
-      json = response.body.isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final body = response.body.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+      // A proxy's page or anything else that is not the API's own reply.
+      json = body is Map<String, dynamic> ? body : <String, dynamic>{};
     } on FormatException {
       json = <String, dynamic>{};
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw SupportApiException(
-        json['message'] as String? ?? 'Something went wrong. Try again.',
-        statusCode: response.statusCode,
-      );
+    final status = response.statusCode;
+    if (status < 200 || status >= 300) {
+      final said = json['message'] is String
+          ? (json['message'] as String).trim()
+          : '';
+      throw SupportApiException(switch (status) {
+        // No such route: a server that predates the desk. A 404 the desk
+        // itself sends ("Ticket not found") says so in its own words.
+        404 when said.isEmpty || said.startsWith('Route not found') =>
+          SupportApiException.unavailable,
+        >= 500 => SupportApiException.failed,
+        _ when said.isEmpty => SupportApiException.failed,
+        _ => said,
+      }, statusCode: status);
     }
     return json;
   }

@@ -118,7 +118,7 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = '$error');
+      setState(() => _error = supportErrorText(error));
     } finally {
       _loading = false;
       if (_reloadAgain && mounted) {

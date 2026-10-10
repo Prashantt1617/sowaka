@@ -1,6 +1,6 @@
 // The Support desk list against a fake server: tickets with their chips, the
-// empty state, a live change reading the list again, and the way in from the
-// Actions tab.
+// empty state, a server without the desk saying so plainly, a live change
+// reading the list again, and the way in from the Actions tab.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -90,6 +90,28 @@ void main() {
     expect(find.byKey(const ValueKey('support-empty')), findsOneWidget);
     // One in the top bar, one under the empty state.
     expect(find.text('Raise Ticket'), findsNWidgets(2));
+  });
+
+  testWidgets('a server without the desk says so, not its route', (
+    tester,
+  ) async {
+    supportTall(tester);
+    final client = MockClient(
+      (request) async =>
+          supportError('Route not found: GET /api/support/tickets', 404),
+    );
+    await tester.pumpWidget(
+      supportApp(
+        SupportDeskScreen(
+          shell: supportShell(client, realtime: FakeSupportRealtime()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(SupportApiException.unavailable), findsOneWidget);
+    expect(find.textContaining('Route not found'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
   });
 
   testWidgets('a live change reads the list again', (tester) async {

@@ -79,6 +79,7 @@ class SupportScaffold extends StatelessWidget {
     this.background = SupportStyle.page,
     this.compactBar = false,
     this.onBack,
+    this.confirmLeave,
   });
 
   final SupportShell shell;
@@ -92,8 +93,15 @@ class SupportScaffold extends StatelessWidget {
   final bool compactBar;
   final VoidCallback? onBack;
 
+  /// Set while the page holds something unsent: the avatar then asks this
+  /// before it leaves the desk, and leaves only on true.
+  final Future<bool> Function()? confirmLeave;
+
   @override
   Widget build(BuildContext context) {
+    final confirm = confirmLeave;
+    void leaveDesk() =>
+        Navigator.of(context).popUntil((route) => route.isFirst);
     return Scaffold(
       backgroundColor: background,
       body: Column(
@@ -103,12 +111,22 @@ class SupportScaffold extends StatelessWidget {
             // Opening the profile from here leaves the desk: the profile
             // opens under it, so the desk's pages step aside first. A
             // listener rather than a tap handler, so the avatar's own tap
-            // still runs.
-            profileAction: Listener(
-              onPointerUp: (_) =>
-                  Navigator.of(context).popUntil((route) => route.isFirst),
-              child: shell.profileAction,
-            ),
+            // still runs. With something unsent the avatar's own tap is held
+            // back and the question asked instead: on leaving, the desk
+            // steps aside without the profile.
+            profileAction: confirm == null
+                ? Listener(
+                    onPointerUp: (_) => leaveDesk(),
+                    child: shell.profileAction,
+                  )
+                : GestureDetector(
+                    key: const ValueKey('support-avatar-held'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () async {
+                      if (await confirm() && context.mounted) leaveDesk();
+                    },
+                    child: AbsorbPointer(child: shell.profileAction),
+                  ),
             onNotifications: shell.onNotifications,
           ),
           Container(

@@ -249,7 +249,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       );
     }
     final posts = state.posts;
-    final publishing = state.busyPostId == '__create__' ? 1 : 0;
+    final publishing = state.publishing > 0 ? 1 : 0;
     return _FeedScope(
       bloc: _bloc,
       people: _taggablePeople,
@@ -346,6 +346,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                   post.author.userId.isNotEmpty &&
                   post.author.userId == widget.session.user.id,
               onLike: () => _bloc.toggleReaction(post.id),
+              // Not on the device's copy of the feed: its hearts may be out
+              // of date, and the server flips whatever it holds.
+              onDoubleTapLike: state.fromCache
+                  ? null
+                  : () => _bloc.likeFromDoubleTap(post.id),
               onComment: (text, mentions) =>
                   _bloc.addComment(post.id, text, mentions: mentions),
               onAction: ({optionId}) =>
@@ -606,6 +611,7 @@ class _ConnectPostCard extends StatefulWidget {
     required this.busy,
     required this.canManage,
     required this.onLike,
+    this.onDoubleTapLike,
     required this.onComment,
     required this.onAction,
     required this.onPlayGame,
@@ -627,8 +633,14 @@ class _ConnectPostCard extends StatefulWidget {
   final bool busy;
   final bool canManage;
   final VoidCallback onLike;
-  /// Sends a comment, with the people tagged in it.
-  final void Function(String text, List<ConnectMention> mentions) onComment;
+
+  /// Likes the post and never unlikes it; null while a double-tap should do
+  /// nothing.
+  final VoidCallback? onDoubleTapLike;
+
+  /// Sends a comment, with the people tagged in it. False when it did not go.
+  final Future<bool> Function(String text, List<ConnectMention> mentions)
+  onComment;
   final Future<void> Function({String? optionId}) onAction;
   final VoidCallback onPlayGame;
   final VoidCallback onEdit;
@@ -644,7 +656,7 @@ class _ConnectPostCard extends StatefulWidget {
   final ValueChanged<String>? onOpenPerson;
 
   /// Challenge posts only.
-  final Future<void> Function(
+  final Future<bool> Function(
     String text,
     String? photoPath,
     String? taggedUserId,
@@ -661,13 +673,22 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
   final _commentController = TextEditingController();
   late final _mentions = _CommentMentions(_commentController);
 
-  /// Sends what is in the comment box, with whoever was tagged in it.
-  void _sendComment() {
+  /// Sends what is in the comment box, with whoever was tagged in it. A
+  /// comment that does not go comes back to the box, tags and all, unless
+  /// something new has been typed there since.
+  Future<void> _sendComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
-    widget.onComment(text, _mentions.mentionsIn(text));
+    final mentions = _mentions.mentionsIn(text);
     _mentions.clear();
     _commentController.clear();
+    final sent = await widget.onComment(text, mentions);
+    if (sent || !mounted || _commentController.text.isNotEmpty) return;
+    _commentController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _mentions.restore(mentions);
   }
 
   @override
@@ -759,8 +780,11 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
             _DoubleTapToLike(
               // Contests carry no like; a second double-tap never unlikes.
               enabled: !_isContestPost(post.type),
-              onLike: () {
-                if (!post.liked && !widget.busy) widget.onLike();
+              onLike: switch (widget.onDoubleTapLike) {
+                final like? => () {
+                  if (!post.liked && !widget.busy) like();
+                },
+                null => null,
               },
               child: _PostBody(
                 post: post,
@@ -1075,7 +1099,10 @@ class _DoubleTapToLike extends StatefulWidget {
   });
 
   final bool enabled;
-  final VoidCallback onLike;
+
+  /// Null while a double-tap does nothing — no like and no heart — without
+  /// rebuilding what is under it.
+  final VoidCallback? onLike;
   final Widget child;
 
   @override
@@ -1096,7 +1123,7 @@ class _DoubleTapToLikeState extends State<_DoubleTapToLike>
   }
 
   void _liked() {
-    widget.onLike();
+    widget.onLike?.call();
     _pop.forward(from: 0);
   }
 
@@ -1105,7 +1132,7 @@ class _DoubleTapToLikeState extends State<_DoubleTapToLike>
     if (!widget.enabled) return widget.child;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onDoubleTap: _liked,
+      onDoubleTap: widget.onLike == null ? null : _liked,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1563,7 +1590,7 @@ class _PostBody extends StatelessWidget {
 
   /// Challenge posts only — one entry each, one vote each. `photoPath` is set
   /// on a photo-story challenge, where the entry carries a picture too.
-  final Future<void> Function(
+  final Future<bool> Function(
     String text,
     String? photoPath,
     String? taggedUserId,
@@ -4283,10 +4310,18 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   /// What one post can carry, as the server allows.
   static const _maxMedia = 6;
 
+  bool get _hasVideo =>
+      _media.any((item) => item.mimeType.startsWith('video/'));
+
   Future<void> _addMedia() async {
+    // A video goes on its own, so nothing is added beside one.
+    if (_hasVideo) {
+      showAppToast(context, 'A video goes on its own — remove it to add photos.');
+      return;
+    }
     final room = _maxMedia - _media.length;
     if (room <= 0) {
-      showAppToast(context, 'A post can have up to $_maxMedia photos or videos.');
+      showAppToast(context, 'A post can have up to $_maxMedia photos.');
       return;
     }
     final chosen = await pickImagesFrom(
@@ -4295,13 +4330,13 @@ class _QuickPostPageState extends State<_QuickPostPage> {
       allowVideo: true,
       limit: room,
     );
-    if (chosen.length > room && mounted) {
-      showAppToast(
-        context,
-        'Only the first $room added — a post can have up to $_maxMedia photos or videos.',
-      );
-    }
-    final files = chosen.take(room).toList();
+    if (chosen.isEmpty || !mounted) return;
+    final files = _keepForPost(
+      context,
+      chosen,
+      alreadyChosen: _media.length,
+      max: _maxMedia,
+    );
     final photoCount = files
         .where((f) => _mimeTypeFor(f.extension).startsWith('image/'))
         .length;
@@ -4493,7 +4528,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                           _buildMediaPreview(),
                           const SizedBox(height: 8),
                           Text(
-                            '${_media.length} of $_maxMedia · select up to $_maxMedia photos or videos',
+                            '${_hasVideo ? '1 video' : '${_media.length} of $_maxMedia'} · select up to $_maxMedia photos, or one video',
                             style: const TextStyle(
                               color: Color(0xFF717171),
                               fontSize: 12,
@@ -6035,10 +6070,19 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       // A post takes a clip as well as a photo, from the camera or the library.
       allowVideo: true,
     );
-    if (file == null) return;
+    if (file == null || !mounted) return;
     var path = file.path;
     if (path.isEmpty) {
       _showValidation('Could not read the selected file.');
+      return;
+    }
+    if (file.size > _maxPostMediaBytes) {
+      _showValidation('That file is over 50 MB, so it was left out.');
+      return;
+    }
+    // A video goes on its own, so it cannot join photos already chosen.
+    if (_isVideoFile(file) && _extraMedia.isNotEmpty) {
+      _showValidation('A video goes on its own — remove the photos to add one.');
       return;
     }
     // Images get a crop step so the author decides what the card shows; video
@@ -6079,22 +6123,22 @@ class _PostComposerPageState extends State<_PostComposerPage> {
 
   static const _maxMediaCount = 6;
 
+  /// More photos beside the first. Photos only: a video goes on its own.
   Future<void> _pickExtraMedia() async {
     final remaining = _maxMediaCount - 1 - _extraMedia.length;
     if (remaining <= 0) return;
     final chosen = await pickImagesFrom(
       context,
-      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
-      allowVideo: true,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
       limit: remaining,
     );
-    if (chosen.length > remaining && mounted) {
-      showAppToast(
-        context,
-        'Only the first $remaining added — a post can have up to $_maxMediaCount photos.',
-      );
-    }
-    final files = chosen.take(remaining).toList();
+    if (chosen.isEmpty || !mounted) return;
+    final files = _keepForPost(
+      context,
+      chosen,
+      alreadyChosen: 1 + _extraMedia.length,
+      max: _maxMediaCount,
+    );
     final photoCount = files
         .where((f) => _mimeTypeFor(f.extension).startsWith('image/'))
         .length;
@@ -6105,7 +6149,6 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       if (path.isEmpty) continue;
       if (!mounted) return;
       final mime = _mimeTypeFor(file.extension);
-      // A clip has no frame to crop; a photo gets its crop step.
       if (mime.startsWith('image/')) {
         final cropped = await cropImageFile(
           context,
@@ -6313,20 +6356,35 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    widget.bloc.addComment(
-      widget.postId,
-      text,
-      parentId: _replyingToId,
-      mentions: _mentions.mentionsIn(text),
-    );
+    final parentId = _replyingToId;
+    final parentName = _replyingToName;
+    final mentions = _mentions.mentionsIn(text);
     _mentions.clear();
     _controller.clear();
     setState(() {
       _replyingToId = null;
       _replyingToName = null;
+    });
+    final sent = await widget.bloc.addComment(
+      widget.postId,
+      text,
+      parentId: parentId,
+      mentions: mentions,
+    );
+    // A comment that did not go comes back to the box — the reply it was,
+    // and its tags — unless something new has been typed there since.
+    if (sent || !mounted || _controller.text.isNotEmpty) return;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _mentions.restore(mentions);
+    setState(() {
+      _replyingToId = parentId;
+      _replyingToName = parentName;
     });
   }
 
@@ -9170,6 +9228,60 @@ String _mimeTypeFor(String? extension) {
     'mp4' => 'video/mp4',
     _ => 'application/octet-stream',
   };
+}
+
+/// The most one photo or video on a post can weigh — the server's own limit.
+const _maxPostMediaBytes = 50 * 1024 * 1024;
+
+bool _isVideoFile(PickedImage file) =>
+    _mimeTypeFor(file.extension).startsWith('video/');
+
+/// What a post keeps from one pick. A post is up to [max] photos, or one
+/// video on its own: the feed draws several files as a photo gallery, where
+/// a video would never load. So a video comes only alone, into a post with
+/// nothing chosen yet; picked with anything else, the photos are kept.
+/// Anything over 50 MB is left out, as the server would refuse it. Says
+/// what was left out, if anything.
+List<PickedImage> _keepForPost(
+  BuildContext context,
+  List<PickedImage> picked, {
+  required int alreadyChosen,
+  required int max,
+}) {
+  final fitting = [
+    for (final file in picked)
+      if (file.size <= _maxPostMediaBytes) file,
+  ];
+  final tooBig = picked.length - fitting.length;
+  final photos = [
+    for (final file in fitting)
+      if (!_isVideoFile(file)) file,
+  ];
+  final videos = fitting.length - photos.length;
+  final room = max - alreadyChosen;
+  String? note;
+  List<PickedImage> kept;
+  if (videos == 1 && photos.isEmpty && alreadyChosen == 0) {
+    kept = fitting;
+  } else {
+    kept = photos.take(room).toList();
+    if (videos > 0) {
+      note = photos.isNotEmpty
+          ? 'A video goes on its own — kept your photos.'
+          : alreadyChosen > 0
+          ? 'A video goes on its own — remove the photos to add one.'
+          : 'A post can have one video — choose just one.';
+    } else if (photos.length > room) {
+      note = 'Only the first $room added — a post can have up to $max photos.';
+    }
+  }
+  if (tooBig > 0) {
+    note = tooBig == 1
+        ? 'That file is over 50 MB, so it was left out.'
+        : '$tooBig files are over 50 MB, so they were left out.';
+  }
+  if (note != null && context.mounted) showAppToast(context, note);
+  return kept;
 }
 
 class _ConnectEmptyState extends StatelessWidget {

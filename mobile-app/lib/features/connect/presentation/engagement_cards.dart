@@ -174,6 +174,20 @@ DateTime? _closesAtOf(ConnectPost post) {
   return raw.isEmpty ? null : DateTime.tryParse(raw);
 }
 
+/// The time now, as the contest cards read it. A test sets its own, to run a
+/// countdown out on fake time rather than waiting on the wall clock.
+@visibleForTesting
+DateTime Function() contestClock = DateTime.now;
+
+/// Closed by the server, or by the clock since the feed was loaded: the
+/// countdown reaching zero closes the way in at once rather than leaving a
+/// button the server would refuse.
+bool _contestClosed(ConnectPost post) {
+  if (post.challengeClosed) return true;
+  final closesAt = _closesAtOf(post);
+  return closesAt != null && !contestClock().isBefore(closesAt);
+}
+
 /// The countdown a contest card shows under its name: "END IN: 02:14" —
 /// hours and minutes left, so one closing in two days reads "END IN: 48:00" —
 /// and "Ended" once [closesAt] has passed. Empty when there is no closing
@@ -579,7 +593,7 @@ class _ContestCountdownState extends State<_ContestCountdown> {
     _tick = null;
     final closesAt = widget.closesAt;
     if (closesAt == null) return;
-    final left = closesAt.difference(DateTime.now());
+    final left = closesAt.difference(contestClock());
     if (left <= Duration.zero) return;
     // Just past the moment the shown minute rolls over — or the close itself.
     final untilNext = Duration(
@@ -592,7 +606,7 @@ class _ContestCountdownState extends State<_ContestCountdown> {
     if (!mounted) return;
     setState(() {});
     final closesAt = widget.closesAt;
-    if (closesAt != null && !DateTime.now().isBefore(closesAt)) {
+    if (closesAt != null && !contestClock().isBefore(closesAt)) {
       widget.onEnded();
       return;
     }
@@ -602,7 +616,7 @@ class _ContestCountdownState extends State<_ContestCountdown> {
   @override
   Widget build(BuildContext context) {
     return Text(
-      contestCountdownLabel(widget.closesAt, DateTime.now()),
+      contestCountdownLabel(widget.closesAt, contestClock()),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
@@ -1375,7 +1389,8 @@ class _EngagementBody extends StatefulWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final Future<void> Function(
+  /// Sends the entry; false when it did not go.
+  final Future<bool> Function(
     String text,
     String? photoPath,
     String? taggedUserId,
@@ -1415,14 +1430,7 @@ class _EngagementBodyState extends State<_EngagementBody> {
   bool get _isPhoto => _post.type == ConnectPostType.photoStoryChallenge;
   bool get _isTag => _post.type == ConnectPostType.mostLikely;
 
-  /// Closed by the server, or by the clock since the feed was loaded: the
-  /// countdown reaching zero closes the way in at once rather than leaving a
-  /// button the server would refuse.
-  bool get _closed {
-    if (_post.challengeClosed) return true;
-    final closesAt = _closesAtOf(_post);
-    return closesAt != null && !DateTime.now().isBefore(closesAt);
-  }
+  bool get _closed => _contestClosed(_post);
 
   Widget _countdownRow() => _CountdownRow(
     closesAt: _closesAtOf(_post),
@@ -1562,12 +1570,14 @@ class _EngagementBodyState extends State<_EngagementBody> {
     }
     setState(() => _busy = true);
     try {
-      await submit(
+      final sent = await submit(
         _isTag ? '' : text,
         _isPhoto ? _photoPath : null,
         taggedUserId,
       );
-      if (!mounted) return;
+      // An entry that did not go keeps what was written and the photo, for
+      // another try; the feed has said why.
+      if (!sent || !mounted) return;
       _answer.clear();
       _answerFocus.unfocus();
       setState(() {
@@ -1595,10 +1605,18 @@ class _EngagementBodyState extends State<_EngagementBody> {
   void _openEntries() =>
       _openEntriesSheet(context, _post, onAddEntry: _startAnswer);
 
-  void _vote(String entryId) {
+  /// Votes on their way. The server flips a vote, so a second tap on the
+  /// same entry before the first is answered would take it straight back.
+  final _voting = <String>{};
+
+  Future<void> _vote(String entryId) async {
     final vote = widget.onVoteCaption;
-    if (vote == null || _closed) return;
-    vote(entryId);
+    if (vote == null || _closed || !_voting.add(entryId)) return;
+    try {
+      await vote(entryId);
+    } finally {
+      _voting.remove(entryId);
+    }
   }
 
   @override

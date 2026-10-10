@@ -132,6 +132,34 @@ void main() {
     await _tearDown(tester, bloc);
   });
 
+  testWidgets('a tag in a comment opens the person it names', (tester) async {
+    final (opened, bloc) = await _pumpFeed(
+      tester,
+      _post(
+        '4',
+        'new_post',
+        {'text': 'Hello team', 'mediaKind': 'none'},
+        comments: [
+          {
+            ..._comment('c4', 'riya', 'Riya Sharma'),
+            'text': 'Thanks @Ana Bisht and @Ana, cc @Anaya',
+            'mentions': [
+              {'userId': 'ana', 'name': 'Ana'},
+              {'userId': 'ana-bisht', 'name': 'Ana Bisht'},
+            ],
+          },
+        ],
+      ),
+    );
+    // The longer name is read whole, the shorter one only where it stands
+    // alone — "@Anaya" is somebody else, untagged.
+    expect(find.text('@Anaya'), findsNothing);
+    await tester.tap(find.text('@Ana Bisht'));
+    await tester.tap(find.text('@Ana'));
+    expect(opened, ['ana-bisht', 'ana']);
+    await _tearDown(tester, bloc);
+  });
+
   testWidgets('the poll card opens its author and commenters', (tester) async {
     final (opened, bloc) = await _pumpFeed(
       tester,

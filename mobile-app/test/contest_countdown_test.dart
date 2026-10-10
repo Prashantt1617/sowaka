@@ -116,9 +116,14 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
-    // A few seconds to go: "END IN: 00:00" until it passes. Generous, since
-    // the setup below runs on the real clock and a busy full test run is slow.
-    final closesAt = DateTime.now().add(const Duration(seconds: 4));
+    // The cards read the test's fake clock, which moves only as the test
+    // pumps — so however slow the run, the contest closes exactly when the
+    // test says.
+    contestClock = () => tester.binding.clock.now();
+    addTearDown(() => contestClock = DateTime.now);
+
+    // Thirty seconds to go: "END IN: 00:00" until it passes.
+    final closesAt = contestClock().add(const Duration(seconds: 30));
     final client = MockClient((request) async {
       if (request.url.path.endsWith('/connect/feed')) {
         return http.Response(
@@ -159,17 +164,8 @@ void main() {
     expect(find.text('LIVE'), findsOneWidget);
     expect(find.text('Add your answer'), findsOneWidget);
 
-    // The card reads the wall clock; let it pass the close for real, then
-    // let the countdown's own timer fire.
-    final untilClosed =
-        closesAt.difference(DateTime.now()) + const Duration(milliseconds: 300);
-    await tester.runAsync(
-      () => Future<void>.delayed(
-        untilClosed.isNegative ? Duration.zero : untilClosed,
-      ),
-    );
-    // And the card's own timer, which runs on the test clock, past it too.
-    await tester.pump(const Duration(seconds: 6));
+    // Past the close: the countdown's own timer fires on the way.
+    await tester.pump(const Duration(seconds: 31));
     await tester.pump();
 
     expect(find.text('Ended'), findsOneWidget);

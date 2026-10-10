@@ -1,8 +1,9 @@
 // Raising a ticket against a fake server: the button waits for a topic and a
 // comment, the topics come from the server, the thread opens at once with the
-// ticket shown as sent while it is created behind it (the topic's key and the
-// comment go out, nothing else); a refusal leaves it marked for retry, and too
-// many tickets in a day gets a friendly word.
+// ticket marked as sending while it is created behind it (the topic's key and
+// the comment go out, nothing else); leaving before it is created asks first;
+// a refusal leaves it marked for retry, and too many tickets in a day gets a
+// friendly word.
 import 'dart:async';
 import 'dart:convert';
 
@@ -111,8 +112,8 @@ void main() {
     await tester.tap(find.text('Submit Ticket'));
     await tester.pumpAndSettle();
 
-    // In the thread before the server has answered: the ticket as sent, no
-    // spinner, the composer ready.
+    // In the thread before the server has answered: the ticket marked as on
+    // its way, no spinner, the composer ready.
     expect(find.byType(SupportTicketScreen), findsOneWidget);
     expect(
       find.textContaining('Comment: My salary was short', findRichText: true),
@@ -121,9 +122,22 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byKey(const ValueKey('support-composer')), findsOneWidget);
     expect(find.byKey(const ValueKey('support-not-sent')), findsNothing);
+    expect(find.byKey(const ValueKey('support-sending')), findsOneWidget);
+
+    // Leaving now would drop it: back asks first, and staying stays.
+    await tester.tap(find.bySemanticsLabel('Back').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Your ticket hasn\'t been sent yet. Leave anyway?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Stay'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SupportTicketScreen), findsOneWidget);
 
     server.complete();
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('support-sending')), findsNothing);
 
     expect(sent, {'topic': 'payroll', 'text': 'My salary was short'});
     // Straight into the new thread: the request, then the automatic reply.
