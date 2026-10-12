@@ -353,7 +353,8 @@ export async function createChallenge(viewer: ChallengeViewer, body: { gameKey?:
       },
       { projection: { _id: 0, id: 1 } },
     ),
-    ownOpenOf(viewer, now),
+    // Only looked up while one-at-a-time is on.
+    ONE_OPEN_AT_A_TIME ? ownOpenOf(viewer, now) : Promise.resolve(null),
   ]);
   const room = mayOpenAnother({ outgoing, incomingForOpponent, betweenThem: Boolean(between), own });
   if (!room.ok) {

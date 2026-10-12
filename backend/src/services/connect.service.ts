@@ -365,8 +365,22 @@ export async function getConnectPostLikes(viewerUserId: string, postId: string) 
       department?: string;
       profilePhotoKey?: string;
       profilePhotoUrl?: string;
-    }>({ _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1, profilePhotoUrl: 1 })
+    }>({ _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 })
     .toArray();
+  // Only photo links, never the inline images some older accounts still keep
+  // in profilePhotoUrl: a list of a few hundred likers would otherwise run to
+  // megabytes. As the tagging and list directories read it.
+  const links = new Map(
+    (
+      await users()
+        .find(
+          { userId: { $in: people.map((person) => person.userId) }, profilePhotoUrl: { $regex: '^http' } },
+          { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } },
+        )
+        .toArray()
+    ).map((row) => [row.userId, row.profilePhotoUrl as string]),
+  );
+  for (const person of people) person.profilePhotoUrl = links.get(person.userId);
   const byId = new Map(people.map((person) => [person.userId, person]));
   const namesOnPost = knownNamesOnPost(post);
   const likes = await Promise.all(
@@ -1142,8 +1156,8 @@ export async function requireVisiblePost(viewerUserId: string, postId: string) {
 /**
  * The post, if this viewer may change it: its author, or HR. HR moderates
  * the whole company's feed, but a list post is private to the people on it —
- * HR may take one down (someone on it may have reported it) without seeing
- * it, and may only edit one they are on.
+ * HR may take one down (someone on it may have reported it; the report shows
+ * HR its text), and may only edit one they are on.
  */
 async function requireEditablePost(
   viewerUserId: string,

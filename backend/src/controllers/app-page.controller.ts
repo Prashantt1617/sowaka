@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { appPageFor } from '../services/app-page.service';
+import { orgForUser } from '../services/connect.service';
 
 /**
  * `GET /app-pages/:key`: the page when it is on for the viewer's company,
@@ -9,7 +10,10 @@ import { appPageFor } from '../services/app-page.service';
 export async function appPageHandler(req: Request, res: Response, next: NextFunction) {
   try {
     res.set('Cache-Control', 'no-store');
-    const page = await appPageFor(req.auth?.user?.org, String(req.params.key ?? ''));
+    // The company as the rest of the app places people: by the org field, or
+    // for older accounts by their email's domain.
+    const user = req.auth?.user;
+    const page = await appPageFor(user ? orgForUser(user) : undefined, String(req.params.key ?? ''));
     if (!page) {
       res.status(404).json({ success: false, message: 'No page here', requestId: req.requestId });
       return;

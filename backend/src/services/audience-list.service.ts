@@ -94,8 +94,13 @@ export async function createAudienceList(
   if (!members.ok) throw new ConnectError(400, members.message);
   const [active, owned, clash] = await Promise.all([
     requireColleagues(viewer.org, members.value),
-    audienceLists().countDocuments({ ownerUserId: viewer.userId }),
-    audienceLists().findOne({ ownerUserId: viewer.userId, nameKey: name.value.nameKey }, { projection: { _id: 0, id: 1 } }),
+    // Counted and named within this company, as the lists are read: lists left
+    // behind by a move between companies neither count nor clash.
+    audienceLists().countDocuments({ ownerUserId: viewer.userId, org: viewer.org }),
+    audienceLists().findOne(
+      { ownerUserId: viewer.userId, org: viewer.org, nameKey: name.value.nameKey },
+      { projection: { _id: 0, id: 1 } },
+    ),
   ]);
   if (clash) throw duplicateName(name.value.name);
   if (owned >= AUDIENCE_LISTS_PER_OWNER_MAX) {
