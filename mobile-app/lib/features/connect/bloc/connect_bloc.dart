@@ -47,8 +47,9 @@ class ConnectState {
   /// comment finishing meanwhile never takes the placeholder away.
   final int publishing;
 
-  /// Who the post on its way goes to, 'everyone' or 'my_team', for the
-  /// placeholder card. Null when nothing is being published.
+  /// Who the post on its way goes to, for the placeholder card: 'everyone',
+  /// 'my_team', or 'list:' and the list's name. Null when nothing is being
+  /// published.
   final String? publishingTo;
 
   factory ConnectState.initial() {
@@ -115,6 +116,10 @@ class ConnectBloc {
 
   Stream<ConnectState> get stream => _controller.stream;
   ConnectState get state => _state;
+
+  /// The service the feed talks to, shared with the composer's audience
+  /// lists so both reach the same server.
+  ConnectApiService get api => _api;
 
   /// Five posts a page: the first page is on screen before the rest is
   /// asked for, and the rest comes as the reader scrolls.
@@ -378,6 +383,10 @@ class ConnectBloc {
   /// A like shows at once: the heart fills and the count moves before the
   /// request leaves the device. The server's copy of the post replaces the
   /// guess when it arrives; if the request fails, the guess is undone.
+  /// Who liked a post, latest first. Read fresh each time; never cached.
+  Future<List<ConnectAuthor>> fetchPostLikes(String postId) =>
+      _api.fetchPostLikes(postId);
+
   Future<void> toggleReaction(String postId) async {
     await _mutateOptimistically(
       postId,
@@ -565,7 +574,9 @@ class ConnectBloc {
     _emit(
       _state.copyWith(
         publishing: _state.publishing + 1,
-        publishingTo: '${draft.body['sendTo'] ?? 'everyone'}',
+        publishingTo: draft.body['sendTo'] == 'list'
+            ? 'list:${draft.audienceLabel ?? 'Private'}'
+            : '${draft.body['sendTo'] ?? 'everyone'}',
         clearMessage: true,
       ),
     );

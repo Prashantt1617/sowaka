@@ -19,6 +19,7 @@ Future<void> openSupportDesk(
   required AuthSession session,
   required Widget profileAction,
   required VoidCallback onNotifications,
+  Widget? bottomNav,
   String? ticketId,
 }) {
   return Navigator.of(context).push(
@@ -28,6 +29,7 @@ Future<void> openSupportDesk(
           api: SupportApiService(session: session),
           profileAction: profileAction,
           onNotifications: onNotifications,
+          bottomNav: bottomNav,
         ),
         realtimeFactory:
             SupportDeskScreen.testRealtime ??
@@ -162,7 +164,7 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 28),
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
           children: [
             const _SupportIntroBanner(),
             if (tickets == null && _error == null)
@@ -182,7 +184,7 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
               _SupportEmptyState(onRaise: _raise)
             else
               for (final ticket in tickets) ...[
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 SupportTicketCard(
                   key: ValueKey('support-ticket-${ticket.id}'),
                   ticket: ticket,
@@ -235,15 +237,13 @@ class _SupportIntroBanner extends StatelessWidget {
                   ),
                   TextSpan(
                     text:
-                        'Raise a ticket to HR for workplace, payroll, '
-                        'manager-related, or other concerns. Your ticket '
-                        'will be reviewed in 2-3 days and you can track its '
-                        'status here.',
+                        'Raise a ticket here explaining any problems you are '
+                        'facing as an employee. The support team will get '
+                        'back to you shortly.',
                   ),
                 ],
               ),
               style: TextStyle(
-                fontFamily: 'Sora',
                 color: SupportStyle.body,
                 fontSize: 12,
                 height: 16 / 12,
@@ -278,8 +278,8 @@ class SupportTicketCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 3,
+            color: Color(0x0A000000),
+            blurRadius: 2,
             offset: Offset(0, 1),
           ),
         ],
@@ -291,7 +291,7 @@ class SupportTicketCard extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -304,12 +304,9 @@ class SupportTicketCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontFamily: 'Sora',
                           color: SupportStyle.inkStrong,
                           fontSize: 14,
-                          height: 20 / 14,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.16,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -321,11 +318,8 @@ class SupportTicketCard extends StatelessWidget {
                 Text(
                   'Created on ${supportDayMonth(ticket.createdAt)}',
                   style: const TextStyle(
-                    fontFamily: 'Sora',
                     color: SupportStyle.muted,
                     fontSize: 12,
-                    height: 16 / 12,
-                    letterSpacing: -0.16,
                   ),
                 ),
                 if (preview.isNotEmpty) ...[
@@ -350,12 +344,9 @@ class SupportTicketCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontFamily: 'Sora',
                             color: SupportStyle.muted,
                             fontSize: 12,
-                            height: 16 / 12,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: -0.16,
                           ),
                         ),
                       ),
@@ -397,7 +388,6 @@ class _SupportEmptyState extends StatelessWidget {
             key: ValueKey('support-empty'),
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: 'Sora',
               color: SupportStyle.body,
               fontSize: 12,
               height: 16.2 / 12,
@@ -429,7 +419,6 @@ class _SupportLoadError extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontFamily: 'Sora',
               color: SupportStyle.body,
               fontSize: 13,
               height: 18 / 13,

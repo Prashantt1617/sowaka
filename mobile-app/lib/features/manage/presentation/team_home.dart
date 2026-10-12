@@ -1316,31 +1316,15 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
           ),
           const SizedBox(height: 14),
           if (filtered.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Column(
-                children: [
-                  const Icon(
-                    Icons.task_alt_rounded,
-                    size: 42,
-                    color: MColors.sageDeep,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    entries.isEmpty
-                        ? 'No requests from your team yet.'
-                        : _query.isNotEmpty
-                        ? 'No requests match "$_query".'
-                        : 'No requests match this filter.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: MColors.inkSoft,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+            _RequestsEmptyState(
+              title: entries.isEmpty
+                  ? 'Currently you have no request'
+                  : 'No matching requests',
+              body: entries.isEmpty
+                  ? 'This is where all your team’s open request would be actionable.'
+                  : _query.isNotEmpty
+                  ? 'No requests match "$_query".'
+                  : 'No requests match this filter.',
             )
           else
             for (final entry in filtered) ...[
@@ -2413,4 +2397,60 @@ class _TeamPlusIcon extends StatelessWidget {
     width: 20,
     height: 20,
   );
+}
+
+/// Nothing to act on (node 2549:28098): the clock, a line in orange, and
+/// what the tab is for.
+class _RequestsEmptyState extends StatelessWidget {
+  const _RequestsEmptyState({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 73, bottom: 24),
+      child: Center(
+        child: Column(
+          children: [
+            Image.asset(
+              'assets/icons/attendance_review_clock.png',
+              width: 59,
+              height: 59,
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 217,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFFF8D28),
+                  fontSize: 12,
+                  height: 16.2 / 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.16,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: 249,
+              child: Text(
+                body,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF484848),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

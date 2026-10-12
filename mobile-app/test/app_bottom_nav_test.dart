@@ -56,14 +56,15 @@ void main() {
     expect(asked, [ManagerTab.manage]);
 
     // Another tab open: no key at all; its icon is the filled one and its
-    // label blue, and Games goes back to its small grey controller as "Game".
+    // label blue, and Games goes back to its small grey controller, still "Games".
     await tester.pumpWidget(host(tabs, ManagerTab.connect, asked.add));
     expect(find.byKey(const ValueKey('nav-selected-key')), findsNothing);
     expect(iconsIn(tester, ManagerTab.connect), ['assets/icons/nav_connect_active.svg']);
     expect(iconsIn(tester, ManagerTab.quick), ['assets/icons/nav_actions.svg']);
     expect(iconsIn(tester, ManagerTab.games), ['assets/games_home/nav_controller_idle.svg']);
     expect(tester.widget<Text>(find.text('Connect')).style!.color, AppNavItem.selectedColor);
-    expect(tester.widget<Text>(find.text('Game')).style!.color, AppNavItem.idleColorSoft);
+    expect(tester.widget<Text>(find.text('Games')).style!.color, AppNavItem.idleColorSoft);
+    expect(find.text('Game'), findsNothing);
     expect(tester.widget<Text>(find.text('Actions')).style!.color, AppNavItem.idleColor);
   });
 

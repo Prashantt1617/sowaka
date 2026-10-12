@@ -8,6 +8,7 @@ import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager/data/dashboard_cache.dart';
 import '../../shared/network_status.dart';
+import '../presentation/audience_lists_ui.dart';
 import 'connect_models.dart';
 
 class ConnectApiService {
@@ -108,6 +109,66 @@ class ConnectApiService {
 
   Future<void> deletePost(String postId) async {
     await _request('DELETE', '/connect/posts/$postId');
+  }
+
+  /// Who liked a post, latest first, for the likes list. People the viewer
+  /// has blocked are left out by the server, as their comments are.
+  Future<List<ConnectAuthor>> fetchPostLikes(String postId) async {
+    final json = await _request('GET', '/connect/posts/$postId/likes');
+    return (json['likes'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(ConnectAuthor.fromJson)
+        .toList();
+  }
+
+  /// The viewer's own custom audience lists, A to Z.
+  Future<List<AudienceListSummary>> fetchAudienceLists() async {
+    final json = await _request('GET', '/connect/audience-lists');
+    return (json['lists'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(audienceListFromJson)
+        .toList();
+  }
+
+  /// The whole company for the list picker: name, photo, designation,
+  /// department and city.
+  Future<List<AudiencePerson>> fetchAudiencePeople() async {
+    final json = await _request('GET', '/connect/audience-lists/people');
+    return (json['people'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(audiencePersonFromJson)
+        .toList();
+  }
+
+  Future<AudienceListSummary> createAudienceList({
+    required String name,
+    required List<String> memberUserIds,
+  }) async {
+    final json = await _request(
+      'POST',
+      '/connect/audience-lists',
+      body: {'name': name, 'memberUserIds': memberUserIds},
+    );
+    return audienceListFromJson(json['list'] as Map<String, dynamic>);
+  }
+
+  /// Renames a list, replaces its people, or both. Posts already sent to it
+  /// keep the people they went to.
+  Future<AudienceListSummary> updateAudienceList(
+    String listId, {
+    String? name,
+    List<String>? memberUserIds,
+  }) async {
+    final json = await _request(
+      'PATCH',
+      '/connect/audience-lists/$listId',
+      body: {'name': ?name, 'memberUserIds': ?memberUserIds},
+    );
+    return audienceListFromJson(json['list'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAudienceList(String listId) async {
+    await _request('DELETE', '/connect/audience-lists/$listId');
   }
 
   Future<ConnectPost> toggleReaction(String postId) async {
@@ -432,4 +493,45 @@ class ConnectOfflineException implements Exception {
   @override
   String toString() =>
       "Couldn't reach Sowaka. Check your connection and try again.";
+}
+
+/// One of the viewer's lists as the server sends it.
+AudienceListSummary audienceListFromJson(Map<String, dynamic> json) =>
+    AudienceListSummary(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      memberIds: (json['memberUserIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toList(),
+    );
+
+/// A colleague from the picker's directory, with the face the feed gives
+/// them when they have no photo.
+AudiencePerson audiencePersonFromJson(Map<String, dynamic> json) {
+  final id = json['userId'] as String? ?? '';
+  final name = (json['name'] as String? ?? '').trim();
+  return AudiencePerson(
+    id: id,
+    name: name,
+    initials: name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join(),
+    designation: (json['designation'] as String? ?? '').trim(),
+    department: (json['department'] as String? ?? '').trim(),
+    city: (json['city'] as String? ?? '').trim(),
+    photoUrl: json['photoUrl'] as String?,
+    avatarColor: audienceAvatarColor(id),
+  );
+}
+
+/// The colour an initials avatar wears, as the server picks it for authors
+/// (`avatarColorFor` in connect.service.ts), so a face matches the feed's.
+String audienceAvatarColor(String seed) {
+  const palette = ['#BE5A36', '#C98A2E', '#4C5840', '#4F8C89', '#8A6AA0', '#C26B8A'];
+  final sum = seed.codeUnits.fold<int>(0, (total, unit) => total + unit);
+  return palette[sum % palette.length];
 }

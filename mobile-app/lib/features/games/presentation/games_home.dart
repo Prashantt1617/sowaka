@@ -28,8 +28,8 @@ typedef OpenCatalogGame =
 ///
 /// Its own header — the brand with a GAMES badge, the viewer's points, and
 /// the Games | Leaderboard switch with their rank — then, on Games: a
-/// colleague's new best, what is live (contests in the feed, a Hint Relay),
-/// challenges waiting, the games they have played, and the games to explore.
+/// colleague's new best, challenges waiting, what is live (contests in the
+/// feed, a Hint Relay), the games they have played, and the games to explore.
 /// Everything comes from `GET /games/home` in one round trip.
 ///
 /// Drawn at once from what was last fetched (in memory, else on the phone),
@@ -43,7 +43,7 @@ class GamesHomeView extends StatefulWidget {
     this.service,
     this.onOpenGame,
     this.onOpenPost,
-    this.onCreateContest,
+    this.onOpenContest,
     this.canOpen,
     this.thumbnailFor,
     this.fallbackGames = const [],
@@ -62,12 +62,12 @@ class GamesHomeView extends StatefulWidget {
   /// Opens a game. The shell opens native games itself and web ones at their page.
   final OpenCatalogGame? onOpenGame;
 
-  /// Opens a post in Connect: a live contest, the Hint Relay's.
+  /// Opens a post in Connect: the Hint Relay's, and a live contest when
+  /// [onOpenContest] is not given.
   final ValueChanged<String>? onOpenPost;
 
-  /// Create on a Community board card: sets the contest up and publishes it.
-  /// Completes once the screen is closed.
-  final Future<void> Function(ContestKind kind)? onCreateContest;
+  /// Opens a live contest's entries over this tab, Back returning here.
+  final ValueChanged<String>? onOpenContest;
 
   /// Whether this app can open a catalog game: a native one it has, a web
   /// one with a page. Web games with a page only, when not given.
@@ -89,7 +89,9 @@ class GamesHomeView extends StatefulWidget {
 
 enum _GamesPane { games, leaderboard }
 
-enum _ExploreTab { community, team, solo }
+/// Explore's tabs, in their order. Contests are not made here: they are
+/// set up from Connect's Posts.
+enum _ExploreTab { team, solo }
 
 class _GamesHomeViewState extends State<GamesHomeView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
@@ -114,7 +116,7 @@ class _GamesHomeViewState extends State<GamesHomeView>
   DateTime? _fetchedAt;
 
   _GamesPane _pane = _GamesPane.games;
-  _ExploreTab _explore = _ExploreTab.community;
+  _ExploreTab _explore = _ExploreTab.values.first;
 
   final Map<PointsPeriod, PointsLeaderboard> _boards = {};
   PointsPeriod _period = PointsPeriod.week;
@@ -181,13 +183,12 @@ class _GamesHomeViewState extends State<GamesHomeView>
     super.dispose();
   }
 
-  /// Whether anything that moves is on the Games pane: a live card, or the
-  /// Community board with Best Photo on it.
+  /// Whether anything that moves is on the Games pane: only the live cards'
+  /// pictures do.
   bool get _somethingMoves {
     final home = _home;
     if (home == null) return false;
-    final live = home.liveRelay != null || home.liveContests.isNotEmpty;
-    return live || _explore == _ExploreTab.community;
+    return home.liveRelay != null || home.liveContests.isNotEmpty;
   }
 
   /// Runs the loop while the tab is looked at, on the Games pane, with
@@ -330,10 +331,7 @@ class _GamesHomeViewState extends State<GamesHomeView>
     if (pane == _GamesPane.leaderboard) unawaited(_loadBoard(_period));
   }
 
-  void _chooseExplore(_ExploreTab tab) {
-    setState(() => _explore = tab);
-    _syncMotion();
-  }
+  void _chooseExplore(_ExploreTab tab) => setState(() => _explore = tab);
 
   void _choosePeriod(PointsPeriod period) {
     if (period == _period) return;
@@ -354,26 +352,19 @@ class _GamesHomeViewState extends State<GamesHomeView>
     if (mounted) unawaited(_refresh());
   }
 
-  void _openGameByKey(String key) {
-    final game = _game(key);
-    if (game == null) {
-      showAppToast(context, 'That game is not available any more.');
-      return;
-    }
-    unawaited(_openGame(game));
-  }
 
   void _openPost(String? postId) {
     if (postId == null || postId.isEmpty) return;
     widget.onOpenPost?.call(postId);
   }
 
-  Future<void> _create(ContestKind kind) async {
-    final create = widget.onCreateContest;
-    if (create == null) return;
-    await create(kind);
-    // A contest that went live is live here too.
-    if (mounted) unawaited(_refresh());
+  /// A contest opens on its entries, over the tab, where the shell gives a
+  /// way to; otherwise in Connect, as any post.
+  void _openContest(String postId) {
+    if (postId.isEmpty) return;
+    final open = widget.onOpenContest;
+    if (open == null) return _openPost(postId);
+    open(postId);
   }
 
   /// Accept on a challenge: answered here, then the game opens on it, where
@@ -523,7 +514,7 @@ class _GamesHomeViewState extends State<GamesHomeView>
           now: _now,
           isAuthor: contest.authorUserId == widget.session.user.id,
           motion: motion,
-          onOpen: () => _openPost(contest.id),
+          onOpen: () => _openContest(contest.id),
         ),
     ];
 
@@ -532,28 +523,40 @@ class _GamesHomeViewState extends State<GamesHomeView>
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        if (home.banner case final banner?)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: _ScoreBannerCard(banner: banner, onTap: () => _openGameByKey(banner.gameKey)),
-          ),
-        if (live.isNotEmpty) ...[const _SectionHeading('LIVE GAMES'), _LiveCarousel(cards: live)],
-        if (challenges.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, live.isEmpty ? 12 : 14, 16, 0),
-            child: Column(
-              spacing: 12,
-              children: [
-                for (final challenge in challenges)
-                  _ChallengeCard(
-                    key: ValueKey('challenge-${challenge.id}'),
-                    challenge: challenge,
-                    busy: _accepting == challenge.id,
-                    onAccept: () => _takeUp(challenge),
-                  ),
-              ],
+        // The "just beat your score" banner is gone from the tab (Tanvi,
+        // 12 Oct 2026: not needed); the server may still send it.
+        // "Game invitations" (node 3581:29380): the challenges waiting, right
+        // under the banner, then what is live, then a 14pt gap.
+        if (challenges.isNotEmpty || live.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          if (challenges.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                spacing: 12,
+                children: [
+                  for (final challenge in challenges)
+                    _ChallengeCard(
+                      key: ValueKey('challenge-${challenge.id}'),
+                      challenge: challenge,
+                      now: _now,
+                      busy: _accepting == challenge.id,
+                      onAccept: () => _takeUp(challenge),
+                    ),
+                ],
+              ),
             ),
-          ),
+          if (live.isNotEmpty) ...[
+            const _SectionHeading('LIVE GAMES'),
+            _LiveCarousel(
+              cards: live,
+              // Slides on by itself while the pane is looked at and motion is
+              // allowed, as the rest of the pane's motion does.
+              autoScroll: widget.visible && !_still && _pane == _GamesPane.games,
+            ),
+          ],
+          const SizedBox(height: 14),
+        ],
         if (played.isNotEmpty) ...[
           const _SectionTitle(kicker: 'BACK FOR MORE?', title: 'YOUR GAMES'),
           _YourGamesCarousel(games: played, onPlay: (game) => unawaited(_openGame(game))),
@@ -566,8 +569,6 @@ class _GamesHomeViewState extends State<GamesHomeView>
           soloGames: home.games.where(_opens).toList(),
           thumbnailFor: widget.thumbnailFor,
           playingNow: home.playingNow,
-          motion: motion,
-          onCreate: widget.onCreateContest == null ? null : _create,
           onJoinRelay: (postId) => _openPost(postId),
           onPlay: (game) => unawaited(_openGame(game)),
         ),
@@ -1025,7 +1026,7 @@ String? _countdown(DateTime at, DateTime now) {
 /// A clock's text, redrawn each time [now] ticks and nothing else with it.
 /// Its digits are all one width, so it does not shuffle as they change.
 class _Ticking extends StatelessWidget {
-  const _Ticking({required this.now, required this.text, required this.style});
+  const _Ticking({super.key, required this.now, required this.text, required this.style});
 
   final ValueListenable<DateTime> now;
   final String Function(DateTime now) text;

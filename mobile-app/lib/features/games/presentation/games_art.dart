@@ -1,8 +1,8 @@
 part of 'games_home.dart';
 
-// The explore cards' pictures (Figma 3605:31672), put back together from the
-// design's own vector pieces at the places its CSS puts them. Each is drawn at
-// the design's size and scaled to the box it is given.
+// The Games home's pictures (Figma 3605:31672 and the live cards), put back
+// together from the design's own vector pieces at the places its CSS puts
+// them. Each is drawn at the design's size and scaled to the box it is given.
 
 /// One vector piece of a picture, at its place in design points.
 class _ArtPiece {
@@ -89,47 +89,6 @@ class _ComposedArt extends StatelessWidget {
 /// Caption This: the moody cat sticker (node 3605:31597).
 Widget _moodyCatArt() =>
     SvgPicture.asset('${GamesStyle.asset}/art_moody_cat.svg', width: 128.5, height: 112);
-
-/// Best Photo on the explore card (node 3605:31623): the photo with a camera
-/// over it, tipped 2°. The camera lands and the sparkle blinks on the loop,
-/// as they do on the live card, so the picture is drawn in its three layers
-/// (one viewBox, so they sit exactly where the single picture had them).
-class _PhotoArt extends StatelessWidget {
-  const _PhotoArt({required this.motion});
-
-  /// The pane's loop; the camera and sparkle rest without one.
-  final Animation<double>? motion;
-
-  static const _width = 122.88;
-  static const _height = 104.992;
-
-  /// The camera's own middle within the picture, which it grows from.
-  static const _cameraMiddle = Alignment(0.498, 0.203);
-
-  @override
-  Widget build(BuildContext context) {
-    Widget layer(String file) =>
-        SvgPicture.asset('${GamesStyle.asset}/$file', width: _width, height: _height);
-    return Transform.rotate(
-      angle: 2 * math.pi / 180,
-      child: SizedBox(
-        width: _width,
-        height: _height,
-        child: Stack(
-          children: [
-            layer('art_photo_frame.svg'),
-            _CameraLanding(
-              motion: motion,
-              alignment: _cameraMiddle,
-              child: layer('art_photo_cam.svg'),
-            ),
-            _SparkleBlink(motion: motion, child: layer('art_photo_spark.svg')),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// Best Photo on its live card (node 3690:43102, "Photo with overlapping
 /// camera"): the photo tipped back, the camera over its corner, a sparkle
@@ -436,23 +395,18 @@ class _Rocking extends StatelessWidget {
   }
 }
 
-/// [child] landing on [motion], from [alignment]; its full size at rest.
+/// [child] landing on [motion], from its middle; its full size at rest.
 class _CameraLanding extends StatelessWidget {
-  const _CameraLanding({
-    required this.motion,
-    required this.child,
-    this.alignment = Alignment.center,
-  });
+  const _CameraLanding({required this.motion, required this.child});
 
   final Animation<double>? motion;
   final Widget child;
-  final Alignment alignment;
 
   @override
   Widget build(BuildContext context) {
     final motion = this.motion;
     if (motion == null) return child;
-    return ScaleTransition(scale: _land.animate(motion), alignment: alignment, child: child);
+    return ScaleTransition(scale: _land.animate(motion), child: child);
   }
 }
 

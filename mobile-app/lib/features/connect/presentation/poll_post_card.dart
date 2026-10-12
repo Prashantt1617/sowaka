@@ -133,7 +133,18 @@ class _PollPostCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Align(alignment: Alignment.centerLeft, child: _PollBadge()),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (_showsLeadershipBadge(post))
+                  const _LeadershipBadge(inPoll: true),
+                const _PollBadge(),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           // The design sets the question 318 wide, a little past the card's
           // 314.85 of content, and wraps it there (node 2028:51596).
@@ -190,6 +201,10 @@ class _PollPostCard extends StatelessWidget {
                   count: post.likeCount,
                   label: post.liked ? 'Unlike' : 'Like',
                   onTap: onLike,
+                  // The count lists who liked it, as on every other post.
+                  onCountTap: post.likeCount > 0
+                      ? () => _openPostLikes(context, post)
+                      : null,
                 ),
                 const SizedBox(width: 24),
                 _PollCount(
@@ -323,6 +338,8 @@ class _PollAuthorRow extends StatelessWidget {
                   if (audience.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Container(
+                      // A custom list's name can run to 40 characters.
+                      constraints: const BoxConstraints(maxWidth: 140),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 4,
@@ -334,6 +351,8 @@ class _PollAuthorRow extends StatelessWidget {
                       ),
                       child: Text(
                         audience,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: _soraFont,
                           fontSize: 12,
@@ -648,6 +667,7 @@ class _PollCount extends StatelessWidget {
     required this.count,
     required this.label,
     required this.onTap,
+    this.onCountTap,
   });
 
   final String icon;
@@ -655,8 +675,53 @@ class _PollCount extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
+  /// Given, the number is its own button (the likes list) and only the icon
+  /// does [onTap].
+  final VoidCallback? onCountTap;
+
   @override
   Widget build(BuildContext context) {
+    final number = Text(
+      '$count',
+      style: const TextStyle(
+        fontFamily: _soraFont,
+        fontSize: 16,
+        height: 24 / 16,
+        fontWeight: FontWeight.w600,
+        color: _pollIcons,
+      ),
+    );
+    final countTap = onCountTap;
+    if (countTap != null) {
+      return Row(
+        children: [
+          Semantics(
+            button: true,
+            label: label,
+            child: GestureDetector(
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: SvgPicture.asset(icon, width: 21.987, height: 21.987),
+              ),
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: 'See who liked this',
+            child: GestureDetector(
+              onTap: countTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: number,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Semantics(
       button: true,
       label: label,
@@ -667,16 +732,7 @@ class _PollCount extends StatelessWidget {
           children: [
             SvgPicture.asset(icon, width: 21.987, height: 21.987),
             const SizedBox(width: 8),
-            Text(
-              '$count',
-              style: const TextStyle(
-                fontFamily: _soraFont,
-                fontSize: 16,
-                height: 24 / 16,
-                fontWeight: FontWeight.w600,
-                color: _pollIcons,
-              ),
-            ),
+            number,
           ],
         ),
       ),

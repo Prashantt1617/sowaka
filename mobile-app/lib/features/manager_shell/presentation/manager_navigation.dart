@@ -30,7 +30,7 @@ class _BottomTabs extends StatelessWidget {
       selected: state.tab,
       onSelect: (tab) {
         onBeforeChange?.call();
-        bloc.add(ChangeManagerTab(tab));
+        bloc.add(ChangeManagerTab(tab, fresh: true));
       },
     );
   }

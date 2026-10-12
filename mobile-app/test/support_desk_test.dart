@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
+import 'package:mobile_app/features/manager/data/manager_models.dart';
+import 'package:mobile_app/features/manager_shell/presentation/app_bottom_nav.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/support/data/support_api_service.dart';
 import 'package:mobile_app/features/support/data/support_models.dart';
@@ -261,17 +263,27 @@ void main() {
 
     final card = find.byKey(const ValueKey('support-desk-card'));
     expect(card, findsOneWidget);
-    expect(find.text('Submit concern to HR.'), findsOneWidget);
+    expect(find.text('Raise a ticket'), findsOneWidget);
     await tester.tap(card);
     await tester.pumpAndSettle();
 
     expect(find.byType(SupportDeskScreen), findsOneWidget);
     expect(realtime.connected, isTrue);
+    // The tabs stay under the desk, as under Leave and Overtime.
+    expect(find.byType(AppBottomNav), findsOneWidget);
 
     // Leaving the desk closes the live channel it opened.
     await tester.tap(find.bySemanticsLabel('Back').last);
     await tester.pumpAndSettle();
     expect(realtime.disposed, isTrue);
+
+    // Picking a tab from the desk leaves it for that tab.
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nav-connect')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SupportDeskScreen), findsNothing);
+    expect(bloc.state.tab, ManagerTab.connect);
 
     await tester.pumpWidget(const SizedBox.shrink());
     bloc.dispose();

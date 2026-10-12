@@ -92,8 +92,8 @@ class AppNavItem extends StatelessWidget {
     return tab == ManagerTab.manage || tab == ManagerTab.games ? idleColorSoft : idleColor;
   }
 
-  /// "Game" closed and "Games" open, as the design writes them.
-  String get _label => tab == ManagerTab.games && !selected ? 'Game' : tabSpecFor(tab).label;
+  /// The tab's name, the same selected or not ("Games" both ways).
+  String get _label => tabSpecFor(tab).label;
 
   Widget _icon() {
     if (tab == ManagerTab.games) {

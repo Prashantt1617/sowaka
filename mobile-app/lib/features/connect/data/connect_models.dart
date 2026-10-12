@@ -45,6 +45,8 @@ class ConnectAuthor {
     required this.designation,
     required this.avatarColor,
     this.photoUrl,
+    this.department = '',
+    this.isLeadership = false,
   });
 
   final String userId;
@@ -54,6 +56,13 @@ class ConnectAuthor {
   final String avatarColor;
   final String? photoUrl;
 
+  /// Sent with a post's likers, shown under each name in the likes list.
+  final String department;
+
+  /// One of the company's leaders: their posts carry the LEADERSHIP pill.
+  /// The server reads it off the poster's account on every read.
+  final bool isLeadership;
+
   factory ConnectAuthor.fromJson(Map<String, dynamic> json) {
     return ConnectAuthor(
       userId: json['userId'] as String? ?? '',
@@ -62,6 +71,8 @@ class ConnectAuthor {
       designation: json['designation'] as String? ?? '',
       avatarColor: json['avatarColor'] as String? ?? '#BE5A36',
       photoUrl: json['photoUrl'] as String?,
+      department: json['department'] as String? ?? '',
+      isLeadership: json['isLeadership'] == true,
     );
   }
 }
@@ -74,11 +85,16 @@ class ConnectPostDraft {
     this.mediaList = const [],
     this.pollOptionImages = const [],
     this.removeMedia = false,
+    this.audienceLabel,
   });
 
   final ConnectPostType type;
   final Map<String, dynamic> body;
   final ConnectMediaAttachment? media;
+
+  /// The list's name when the post goes to a custom list, for the card that
+  /// stands in while it publishes. Never sent: the server reads the list.
+  final String? audienceLabel;
 
   /// Multiple images for a single post (item: multi-image support). When
   /// non-empty this is sent instead of `media`.
@@ -134,12 +150,24 @@ String connectPostTypeToWire(ConnectPostType type) {
 }
 
 class ConnectAudience {
-  const ConnectAudience({required this.label});
+  const ConnectAudience({required this.label, this.listId});
 
+  /// "Public", "Team", or for a post sent to a custom list, the list's name
+  /// to its author and "Private" to everyone else.
   final String label;
 
+  /// The custom list a post went to; only ever sent to the post's author.
+  final String? listId;
+
+  /// Sent to a custom list: its audience was settled when it went out.
+  bool get isList => listId != null || label == 'Private';
+
   factory ConnectAudience.fromJson(Map<String, dynamic> json) {
-    return ConnectAudience(label: json['label'] as String? ?? 'Public');
+    final listId = json['listId'];
+    return ConnectAudience(
+      label: json['label'] as String? ?? 'Public',
+      listId: listId is String && listId.isNotEmpty ? listId : null,
+    );
   }
 }
 

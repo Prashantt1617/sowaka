@@ -1620,6 +1620,7 @@ class _EngagementBodyState extends State<_EngagementBody>
       );
     }
     WidgetsBinding.instance.addObserver(this);
+    _PinchToZoom.active.addListener(_syncAutoScroll);
     _inForeground = switch (WidgetsBinding.instance.lifecycleState) {
       null || AppLifecycleState.resumed => true,
       _ => false,
@@ -1663,6 +1664,7 @@ class _EngagementBodyState extends State<_EngagementBody>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _PinchToZoom.active.removeListener(_syncAutoScroll);
     _feedScroll?.removeListener(_queueViewportCheck);
     _autoScroll?.cancel();
     _loop?.dispose();
@@ -1722,7 +1724,13 @@ class _EngagementBodyState extends State<_EngagementBody>
   }
 
   void _syncAutoScroll() {
-    final wanted = _moving && _touches == 0 && _pageCount > 1;
+    // A pinch anywhere — on this card's picture or another post's photo —
+    // holds the carousel where it is until the fingers let go.
+    final wanted =
+        _moving &&
+        _touches == 0 &&
+        !_PinchToZoom.active.value &&
+        _pageCount > 1;
     if (!wanted) {
       _autoScroll?.cancel();
       _autoScroll = null;
@@ -1762,11 +1770,17 @@ class _EngagementBodyState extends State<_EngagementBody>
       onPointerDown: (_) => _touchCarousel(1),
       onPointerUp: (_) => _touchCarousel(-1),
       onPointerCancel: (_) => _touchCarousel(-1),
-      child: PageView.builder(
-        controller: _pages,
-        itemCount: itemCount,
-        onPageChanged: (index) => setState(() => _page = index),
-        itemBuilder: itemBuilder,
+      // Held still while a picture is pinched, so two fingers zoom it
+      // rather than turning the page.
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _PinchToZoom.active,
+        builder: (context, pinching, _) => PageView.builder(
+          physics: pinching ? const NeverScrollableScrollPhysics() : null,
+          controller: _pages,
+          itemCount: itemCount,
+          onPageChanged: (index) => setState(() => _page = index),
+          itemBuilder: itemBuilder,
+        ),
       ),
     );
   }
@@ -2062,7 +2076,9 @@ class _EngagementBodyState extends State<_EngagementBody>
           Positioned(
             left: photoLeft,
             top: 0,
-            child: _TiltedPhoto(url: mediaUrl),
+            // Two fingers lift the picture out to zoom it, as a photo post
+            // does; one finger leaves it be.
+            child: _PinchToZoom(child: _TiltedPhoto(url: mediaUrl)),
           ),
           if (entries.isNotEmpty) ...[
             Positioned(
@@ -2447,19 +2463,23 @@ class _EngagementBodyState extends State<_EngagementBody>
     return Column(
       children: [
         Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 272,
-              height: 201,
-              child: (entry.photoUrl ?? '').isEmpty
-                  ? const ColoredBox(color: Color(0xFFF2F2F5))
-                  : Image(
-                      image: _remoteImage(entry.photoUrl!),
-                      fit: BoxFit.cover,
-                      // Filled across and held at the top, as the design crops it.
-                      alignment: Alignment.topCenter,
-                    ),
+          // Two fingers lift the photo out to zoom it; one finger still
+          // swipes the carousel.
+          child: _PinchToZoom(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 272,
+                height: 201,
+                child: (entry.photoUrl ?? '').isEmpty
+                    ? const ColoredBox(color: Color(0xFFF2F2F5))
+                    : Image(
+                        image: _remoteImage(entry.photoUrl!),
+                        fit: BoxFit.cover,
+                        // Filled across and held at the top, as the design crops it.
+                        alignment: Alignment.topCenter,
+                      ),
+              ),
             ),
           ),
         ),
@@ -2918,20 +2938,33 @@ class _TagBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The design fills 141.67, 94.44 and 62.97 of the bar's 271.5 inside for
-    // 110, 50 and 20 points of a leading 110 (nodes 3684:42370, 42378,
-    // 42387). The curve passes through all three. It is drawn from the
-    // points, not the rank, so a tie reads as one, and a nominee with none
-    // still gets a seventh of the bar for their face to sit against.
+    // Measured against the top score: the leader's bar is full and every
+    // other is its share of the leader's (20 of 20 full, 10 of 20 half), so a
+    // tie reads as two full bars. Drawn from the points, not the rank.
     final share = maxPoints == 0 ? 0.0 : row.points / maxPoints;
-    final fraction = (0.1439 + 0.5076 * share - 0.1297 * share * share).clamp(
-      0.0,
-      1.0,
+    final fraction = share.clamp(0.0, 1.0);
+    final points = '${row.points}pt';
+    const pointsStyle = TextStyle(
+      fontFamily: _soraFont,
+      fontSize: 16,
+      height: 24 / 16,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth - 2 * _border;
         final fill = width * fraction;
+        final pointsWidth = (TextPainter(
+          text: TextSpan(text: points, style: pointsStyle),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout()).width;
+        // The face rides the end of the fill, but never into the points.
+        final pointsStart = width - 10.75 - pointsWidth;
+        final faceLeft = fill.clamp(0.0, math.max(0.0, pointsStart - 8 - 33)).toDouble();
+        // Once the fill runs under the points they turn white to stay read.
+        final pointsOnFill = fill >= pointsStart;
         return Container(
           height: 47.996,
           clipBehavior: Clip.antiAlias,
@@ -2950,7 +2983,7 @@ class _TagBar extends StatelessWidget {
                 child: ColoredBox(color: color),
               ),
               Positioned(
-                left: fill,
+                left: faceLeft,
                 top: 5.42,
                 child: _PersonTap(
                   userId: row.userId,
@@ -2971,14 +3004,9 @@ class _TagBar extends StatelessWidget {
                 bottom: 0,
                 child: Center(
                   child: Text(
-                    '${row.points}pt',
-                    style: TextStyle(
-                      fontFamily: _soraFont,
-                      fontSize: 16,
-                      height: 24 / 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0,
-                      color: color,
+                    points,
+                    style: pointsStyle.copyWith(
+                      color: pointsOnFill ? Colors.white : color,
                     ),
                   ),
                 ),
