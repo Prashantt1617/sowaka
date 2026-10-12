@@ -20,13 +20,12 @@ class _ArtPiece {
 
 /// A letter set on a picture, by its middle.
 class _ArtLetter {
-  const _ArtLetter(this.text, this.x, this.y, {this.size = 9, this.color = GamesStyle.ink2});
+  const _ArtLetter(this.text, this.x, this.y, {this.size = 9});
 
   final String text;
   final double x;
   final double y;
   final double size;
-  final Color color;
 }
 
 class _ComposedArt extends StatelessWidget {
@@ -72,7 +71,11 @@ class _ComposedArt extends StatelessWidget {
                 child: Center(
                   child: Text(
                     letter.text,
-                    style: GamesStyle.lilita(letter.size, color: letter.color, height: letter.size),
+                    style: GamesStyle.lilita(
+                      letter.size,
+                      color: GamesStyle.ink2,
+                      height: letter.size,
+                    ),
                   ),
                 ),
               ),
@@ -87,17 +90,133 @@ class _ComposedArt extends StatelessWidget {
 Widget _moodyCatArt() =>
     SvgPicture.asset('${GamesStyle.asset}/art_moody_cat.svg', width: 128.5, height: 112);
 
-/// Best Photo: the photo with a camera over it (node 3605:31623), tipped 2°.
-Widget _photoArt() => Transform.rotate(
-  angle: 2 * math.pi / 180,
-  child: SvgPicture.asset(
-    '${GamesStyle.asset}/art_photo_camera.svg',
-    width: 122.88,
-    height: 104.99,
-  ),
-);
+/// Best Photo on the explore card (node 3605:31623): the photo with a camera
+/// over it, tipped 2°. The camera lands and the sparkle blinks on the loop,
+/// as they do on the live card, so the picture is drawn in its three layers
+/// (one viewBox, so they sit exactly where the single picture had them).
+class _PhotoArt extends StatelessWidget {
+  const _PhotoArt({required this.motion});
 
-/// Most Likely: a silhouette with a dot and a star (node 3605:31650).
+  /// The pane's loop; the camera and sparkle rest without one.
+  final Animation<double>? motion;
+
+  static const _width = 122.88;
+  static const _height = 104.992;
+
+  /// The camera's own middle within the picture, which it grows from.
+  static const _cameraMiddle = Alignment(0.498, 0.203);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget layer(String file) =>
+        SvgPicture.asset('${GamesStyle.asset}/$file', width: _width, height: _height);
+    return Transform.rotate(
+      angle: 2 * math.pi / 180,
+      child: SizedBox(
+        width: _width,
+        height: _height,
+        child: Stack(
+          children: [
+            layer('art_photo_frame.svg'),
+            _CameraLanding(
+              motion: motion,
+              alignment: _cameraMiddle,
+              child: layer('art_photo_cam.svg'),
+            ),
+            _SparkleBlink(motion: motion, child: layer('art_photo_spark.svg')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Best Photo on its live card (node 3690:43102, "Photo with overlapping
+/// camera"): the photo tipped back, the camera over its corner, a sparkle
+/// above, placed as the design's CSS places them in its 88 × 91 frame. The
+/// tile it sits in shows the top-left 85pt of it.
+class _LivePhotoArt extends StatelessWidget {
+  const _LivePhotoArt({required this.motion});
+
+  final Animation<double>? motion;
+
+  /// A piece of [width] × [height] centred on [centre], turned and slanted
+  /// by the degrees the design gives it (its `rotate` then `skew-x`).
+  static Widget _piece(
+    String file, {
+    required Offset centre,
+    required double width,
+    required double height,
+    required double turn,
+    required double skew,
+    Widget Function(Widget child)? wrap,
+  }) {
+    Widget child = Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.rotationZ(turn * math.pi / 180)
+        ..multiply(Matrix4.skewX(skew * math.pi / 180)),
+      child: SvgPicture.asset('${GamesStyle.asset}/$file', width: width, height: height),
+    );
+    if (wrap != null) child = wrap(child);
+    return Positioned(
+      left: centre.dx - width / 2,
+      top: centre.dy - height / 2,
+      width: width,
+      height: height,
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 88.392,
+      height: 90.641,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // inset 16.18% 26.76% 10.14% 5.79%, rotate -9.23°, skew-x -0.44°.
+          _piece(
+            'art_live_photo.svg',
+            centre: const Offset(34.928, 48.058),
+            width: 53.7158,
+            height: 61.7422,
+            turn: -9.23,
+            skew: -0.44,
+          ),
+          // inset 39.36% 3.79% 20.53% 51.33%, rotate 7.18°, skew-x 0.35°;
+          // it grows from that box's middle.
+          _piece(
+            'art_live_camera.svg',
+            centre: const Offset(65.207, 53.854),
+            width: 38.6177,
+            height: 34.5482,
+            turn: 7.18,
+            skew: 0.35,
+            wrap: (child) => _CameraLanding(motion: motion, child: child),
+          ),
+          // inset 13.27% 15.04% 72.57% 70.8%, the picture 8% past it all round.
+          Positioned(
+            left: 61.581,
+            top: 11.028,
+            child: _SparkleBlink(
+              motion: motion,
+              child: SvgPicture.asset(
+                '${GamesStyle.asset}/art_live_sparkle.svg',
+                width: 14.5157,
+                height: 14.8341,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Most Likely: a silhouette with a dot and a star (node 3605:31650). The
+/// design's code also lists a tiny yellow "?" on the neck, but it is not in
+/// the design as drawn, so it is left out here too.
 Widget _mostLikelyArt() => const _ComposedArt(
   width: 172.593,
   height: 108.786,
@@ -107,7 +226,6 @@ Widget _mostLikelyArt() => const _ComposedArt(
     _ArtPiece('art_likely_body.svg', 38.10, 58.71, 97.09, 51.78),
     _ArtPiece('art_likely_star.svg', 118.66, 11.24, 39.56, 36.68),
   ],
-  letters: [_ArtLetter('?', 86.28, 55.80, size: 8.63, color: GamesStyle.yellow2)],
 );
 
 /// A team word game: four letter tiles over two dashes (node 3646:36898),
@@ -201,36 +319,154 @@ class _GamePicture extends StatelessWidget {
 }
 
 /// The live card's picture: a rounded tile tipped 5°, its art inside
-/// (node 3690:43101, "Photo & camera illustration").
+/// (node 3690:43101, "Photo & camera illustration"), clipped to the tile's
+/// inside as the design's `overflow-clip` does. A [rocking] tile rocks on the
+/// pane's loop as the design's lobby card does (3690:43069).
 class _IllustrationTile extends StatelessWidget {
-  const _IllustrationTile({required this.color, required this.child, this.padding = 6});
+  const _IllustrationTile({
+    required this.color,
+    required this.child,
+    this.padding = 6,
+    this.fitted = true,
+    this.rocking,
+  });
 
   final Color color;
   final Widget child;
   final double padding;
 
+  /// Whether [child] is scaled to fit inside [padding]; otherwise it is
+  /// drawn at its own size.
+  final bool fitted;
+
+  /// The loop to rock on; the tile keeps still at 5° without one.
+  final Animation<double>? rocking;
+
+  static const _radius = 24.0;
+  static const _stroke = 2.5;
+
   @override
   Widget build(BuildContext context) {
+    final tile = Container(
+      width: 90,
+      height: 90,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: GamesStyle.ink, width: _stroke),
+        boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 5))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius - _stroke),
+        child: fitted
+            ? Padding(
+                padding: EdgeInsets.all(padding),
+                child: FittedBox(fit: BoxFit.contain, child: child),
+              )
+            // At its own size from the top-left, the rest cut off, as the
+            // design lays the photo out in its tile.
+            : OverflowBox(
+                alignment: Alignment.topLeft,
+                maxWidth: double.infinity,
+                maxHeight: double.infinity,
+                child: child,
+              ),
+      ),
+    );
     return SizedBox(
       width: 97.5,
       height: 97.5,
-      child: Center(
-        child: Transform.rotate(
-          angle: 5 * math.pi / 180,
-          child: Container(
-            width: 90,
-            height: 90,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: GamesStyle.ink, width: 2.5),
-              boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 5))],
-            ),
-            padding: EdgeInsets.all(padding),
-            child: FittedBox(fit: BoxFit.contain, child: child),
-          ),
-        ),
-      ),
+      child: Center(child: _Rocking(motion: rocking, child: tile)),
     );
+  }
+}
+
+// ---------------------------------------------------------------- motion
+
+// The Games pane's loop (Figma's motion on 3573:61034): one 1.5 s timeline,
+// round and round, that every moving picture on the pane reads. Each eases
+// out over every step, as the design's keyframes do.
+
+/// The lobby card's picture rocking (3690:43069): +5° to -10° by half way,
+/// then back to +5°. In turns, as RotationTransition takes them.
+final _rock = TweenSequence<double>([
+  TweenSequenceItem(
+    tween: Tween(begin: 5 / 360, end: -10 / 360).chain(CurveTween(curve: Curves.easeOut)),
+    weight: 50,
+  ),
+  TweenSequenceItem(
+    tween: Tween(begin: -10 / 360, end: 5 / 360).chain(CurveTween(curve: Curves.easeOut)),
+    weight: 50,
+  ),
+]);
+
+/// The camera landing (3690:43117): 1.2× to 1× over the first third, then
+/// held for the rest of the loop.
+final _land = TweenSequence<double>([
+  TweenSequenceItem(
+    tween: Tween(begin: 1.2, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
+    weight: 100 / 3,
+  ),
+  TweenSequenceItem(tween: ConstantTween(1.0), weight: 200 / 3),
+]);
+
+/// The sparkle blinking back in (3690:43137): unseen to seen over the first
+/// 5.9% of the loop (about 89 ms), then held.
+final _blink = TweenSequence<double>([
+  TweenSequenceItem(
+    tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
+    weight: 5.908,
+  ),
+  TweenSequenceItem(tween: ConstantTween(1.0), weight: 94.092),
+]);
+
+/// [child] rocking about its middle on [motion]; at rest at +5°, the
+/// design's still pose, when there is no motion (reduced motion).
+class _Rocking extends StatelessWidget {
+  const _Rocking({required this.motion, required this.child});
+
+  final Animation<double>? motion;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = this.motion;
+    if (motion == null) return Transform.rotate(angle: 5 * math.pi / 180, child: child);
+    return RotationTransition(turns: _rock.animate(motion), child: child);
+  }
+}
+
+/// [child] landing on [motion], from [alignment]; its full size at rest.
+class _CameraLanding extends StatelessWidget {
+  const _CameraLanding({
+    required this.motion,
+    required this.child,
+    this.alignment = Alignment.center,
+  });
+
+  final Animation<double>? motion;
+  final Widget child;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = this.motion;
+    if (motion == null) return child;
+    return ScaleTransition(scale: _land.animate(motion), alignment: alignment, child: child);
+  }
+}
+
+/// [child] blinking back in on [motion]; fully shown at rest.
+class _SparkleBlink extends StatelessWidget {
+  const _SparkleBlink({required this.motion, required this.child});
+
+  final Animation<double>? motion;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = this.motion;
+    if (motion == null) return child;
+    return FadeTransition(opacity: _blink.animate(motion), child: child);
   }
 }

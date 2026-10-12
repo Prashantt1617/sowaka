@@ -100,7 +100,8 @@ class _ScoreBannerCard extends StatelessWidget {
 
 // ---------------------------------------------------------------- live games
 
-/// The live cards side by side, the next one peeking in (node 3690:43046).
+/// The live cards side by side, the next one peeking in (node 3690:43046):
+/// 341pt cards 12pt apart, so the next shows 24pt at the edge.
 class _LiveCarousel extends StatelessWidget {
   const _LiveCarousel({required this.cards});
 
@@ -115,7 +116,7 @@ class _LiveCarousel extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, box) {
           final room = box.maxWidth - 32;
-          final width = cards.length == 1 ? room : math.min(341.0, room - 21);
+          final width = cards.length == 1 ? room : math.min(341.0, room - 20);
           return ListView.separated(
             key: const ValueKey('games-live'),
             scrollDirection: Axis.horizontal,
@@ -136,11 +137,16 @@ class _LiveCarousel extends StatelessWidget {
 
 /// One live card's frame (node 3690:43048): a coloured card on a hard
 /// shadow, a dark strip over it saying who and how long, then the game.
+///
+/// Its 2pt edge is drawn inside the card and over what is in it, as Figma
+/// draws a stroke, so nothing in it moves in for the edge: the strip is 40pt
+/// from the card's top and the body 16pt from its sides.
 class _LiveCardFrame extends StatelessWidget {
   const _LiveCardFrame({
     required this.color,
     required this.who,
     required this.whoFace,
+    required this.now,
     required this.clock,
     required this.illustration,
     required this.title,
@@ -148,106 +154,127 @@ class _LiveCardFrame extends StatelessWidget {
     required this.cta,
     required this.onTap,
     required this.footer,
+    this.quoteWeight = FontWeight.w800,
   });
 
   final Color color;
   final String who;
   final Widget whoFace;
-  final String clock;
+
+  /// The time, ticking each second while the tab is looked at.
+  final ValueListenable<DateTime> now;
+
+  /// What the strip's clock reads at a time: "END IN: 02:14:20", "LIVE NOW".
+  final String Function(DateTime now) clock;
   final Widget illustration;
   final String title;
   final String quote;
+
+  /// ExtraBold on the lobby card, Bold on the contest one, as designed.
+  final FontWeight quoteWeight;
   final String cta;
   final VoidCallback? onTap;
   final Widget footer;
 
+  static const _radius = 26.0;
+
   @override
   Widget build(BuildContext context) {
+    const top = BorderRadius.vertical(top: Radius.circular(_radius));
+    // A strip pill: the face or the clock on the strip's own colour.
+    Widget pill(Widget child) =>
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), child: child);
     return Container(
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: GamesStyle.ink, width: 2),
+        borderRadius: BorderRadius.circular(_radius),
         boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 7))],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              color: GamesStyle.ink,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      child: Row(
-                        spacing: 6,
-                        children: [
-                          whoFace,
-                          Flexible(
-                            child: Text(
-                              who,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GamesStyle.sora(
-                                10,
-                                weight: FontWeight.w600,
-                                color: Colors.white,
-                                height: 15,
-                                spacing: 0.3,
-                              ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: GamesStyle.ink, width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The strip's faint violet edge (rgba(103,90,255,0.2)) shows only
+          // along its foot; the card's own edge covers the rest.
+          Container(
+            decoration: const BoxDecoration(color: GamesStyle.ink, borderRadius: top),
+            foregroundDecoration: BoxDecoration(
+              borderRadius: top,
+              border: Border.all(color: const Color(0x33675AFF), width: 1.114),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: pill(
+                    Row(
+                      spacing: 6,
+                      children: [
+                        whoFace,
+                        Flexible(
+                          child: Text(
+                            who,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GamesStyle.sora(
+                              10,
+                              weight: FontWeight.w600,
+                              color: Colors.white,
+                              height: 15,
+                              spacing: 0.3,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    child: Text(
-                      clock,
-                      style: GamesStyle.sora(
-                        10,
-                        weight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 15,
-                        spacing: 0.3,
-                      ),
+                ),
+                pill(
+                  _Ticking(
+                    now: now,
+                    text: clock,
+                    style: GamesStyle.sora(
+                      10,
+                      weight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 15,
+                      spacing: 0.3,
                     ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              height: 96.5,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 5,
+                children: [
+                  illustration,
+                  Expanded(
+                    child: _LiveTitle(title: title, quote: quote, quoteWeight: quoteWeight),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                height: 96.5,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: 5,
-                  children: [
-                    illustration,
-                    Expanded(
-                      child: _LiveTitle(title: title, quote: quote),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: GameCtaButton(label: cta, onTap: onTap),
-            ),
-            Center(
-              child: Padding(padding: const EdgeInsets.only(bottom: 3), child: footer),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GameCtaButton(label: cta, onTap: onTap),
+          ),
+          Center(
+            child: Padding(padding: const EdgeInsets.only(bottom: 3), child: footer),
+          ),
+        ],
       ),
     );
   }
@@ -256,10 +283,11 @@ class _LiveCardFrame extends StatelessWidget {
 /// The game's name in the design's 32pt face, made smaller (and then given
 /// a second line) only when it would not fit, and its line under it.
 class _LiveTitle extends StatelessWidget {
-  const _LiveTitle({required this.title, required this.quote});
+  const _LiveTitle({required this.title, required this.quote, required this.quoteWeight});
 
   final String title;
   final String quote;
+  final FontWeight quoteWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +327,7 @@ class _LiveTitle extends StatelessWidget {
                 quote,
                 maxLines: lines == 2 ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
-                style: GamesStyle.sora(14, weight: FontWeight.w800, color: _titleInk, height: 20),
+                style: GamesStyle.sora(14, weight: quoteWeight, color: _titleInk, height: 20),
               ),
             ],
           ),
@@ -350,27 +378,254 @@ class _FacePile extends StatelessWidget {
 }
 
 /// A Connect contest still taking entries, on the lobby card (node 3690:43088).
+/// A live contest's latest entries in its picture's place, sliding to the
+/// next every second: a caption's words, a photo, or the colleague named.
+/// Moves only while [active] (the pane's loop is running) and there is more
+/// than one to show.
+class _EntryCycler extends StatefulWidget {
+  const _EntryCycler({
+    super.key,
+    required this.kind,
+    required this.previews,
+    required this.active,
+    this.overPicture = false,
+  });
+
+  final ContestKind kind;
+  final List<ContestPreview> previews;
+  final bool active;
+
+  /// Drawn over the contest's own picture: light words on a dark wash.
+  final bool overPicture;
+
+  @override
+  State<_EntryCycler> createState() => _EntryCyclerState();
+}
+
+class _EntryCyclerState extends State<_EntryCycler> {
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EntryCycler old) {
+    super.didUpdateWidget(old);
+    if (_index >= widget.previews.length) _index = 0;
+    _sync();
+  }
+
+  void _sync() {
+    final run = widget.active && widget.previews.length > 1;
+    if (!run) {
+      _timer?.cancel();
+      _timer = null;
+    } else {
+      _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _index = (_index + 1) % widget.previews.length);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Widget _face(ContestPreview preview) {
+    final first = preview.name.trim().split(RegExp(r'\s+')).first;
+    final image = preview.imageUrl;
+    if (widget.kind == ContestKind.photo && image != null) {
+      return Image(
+        image: CachedNetworkImageProvider(image),
+        fit: BoxFit.cover,
+        width: 85,
+        height: 85,
+        errorBuilder: (_, _, _) => const ColoredBox(color: GamesStyle.pageDot),
+      );
+    }
+    if (widget.kind == ContestKind.mostLikely) {
+      final photo = preview.photoUrl;
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: GamesStyle.cream,
+              border: Border.all(color: GamesStyle.ink, width: 2),
+              image: photo == null ? null : DecorationImage(image: CachedNetworkImageProvider(photo), fit: BoxFit.cover),
+            ),
+            alignment: Alignment.center,
+            child: photo == null
+                ? Text(first.isEmpty ? '?' : first[0].toUpperCase(), style: GamesStyle.lilita(20))
+                : null,
+          ),
+          const SizedBox(height: 5),
+          Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: GamesStyle.figtree(11, weight: FontWeight.w800, color: GamesStyle.ink)),
+        ],
+      );
+    }
+    // A caption: its words, and whose. Over the picture, in white on a wash
+    // dark enough to read whatever the picture is.
+    final over = widget.overPicture;
+    const shadow = [Shadow(color: Color(0x99000000), blurRadius: 3)];
+    final caption = Padding(
+      padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Text(
+                '“${preview.text ?? ''}”',
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GamesStyle.figtree(
+                  10.5,
+                  weight: FontWeight.w800,
+                  color: over ? Colors.white : GamesStyle.ink,
+                ).copyWith(shadows: over ? shadow : null),
+              ),
+            ),
+          ),
+          Text(
+            first,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GamesStyle.figtree(
+              9,
+              weight: FontWeight.w700,
+              color: over ? Colors.white : GamesStyle.ink2,
+            ).copyWith(shadows: over ? shadow : null),
+          ),
+        ],
+      ),
+    );
+    if (!over) return caption;
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x40000000), Color(0x8C000000)],
+        ),
+      ),
+      child: caption,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previews = widget.previews;
+    if (previews.isEmpty) return const SizedBox.shrink();
+    final preview = previews[_index % previews.length];
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 320),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => SlideTransition(
+          position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+        layoutBuilder: (current, previous) => Stack(
+          fit: StackFit.expand,
+          children: [...previous, ?current],
+        ),
+        child: KeyedSubtree(key: ValueKey(_index), child: _face(preview)),
+      ),
+    );
+  }
+}
+
 class _LiveContestCard extends StatelessWidget {
   const _LiveContestCard({
     super.key,
     required this.contest,
     required this.now,
     required this.isAuthor,
+    required this.motion,
     required this.onOpen,
   });
 
   final LiveContest contest;
-  final DateTime now;
+  final ValueListenable<DateTime> now;
   final bool isAuthor;
+
+  /// The pane's loop, or null to hold still.
+  final Animation<double>? motion;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final closes = contest.closesAt;
-    final (art, tint, fallbackQuote) = switch (contest.kind) {
-      ContestKind.caption => (_moodyCatArt(), GamesStyle.purpleArt, 'Write the funniest caption.'),
-      ContestKind.photo => (_photoArt(), GamesStyle.pageDot, 'Post your best shot.'),
-      ContestKind.mostLikely => (_mostLikelyArt(), GamesStyle.purpleArt, 'Who fits the tag?'),
+    // Once there are entries, they take the picture's place, one a second. A
+    // caption contest shows the picture being captioned behind them, and on
+    // its own until the first caption comes in.
+    final picture = contest.kind == ContestKind.caption ? contest.imageUrl : null;
+    final tile = contest.previews.isNotEmpty || picture != null
+        ? _IllustrationTile(
+            color: contest.kind == ContestKind.photo ? GamesStyle.pageDot : GamesStyle.purpleArt,
+            fitted: false,
+            rocking: contest.kind == ContestKind.photo ? null : motion,
+            child: SizedBox(
+              width: 85,
+              height: 85,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (picture != null)
+                    Image(
+                      key: const ValueKey('contest-picture'),
+                      image: CachedNetworkImageProvider(picture),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const ColoredBox(color: GamesStyle.purpleArt),
+                    ),
+                  if (contest.previews.isNotEmpty)
+                    _EntryCycler(
+                      key: ValueKey('contest-previews-${contest.id}'),
+                      kind: contest.kind,
+                      previews: contest.previews,
+                      active: motion != null,
+                      overPicture: picture != null,
+                    ),
+                ],
+              ),
+            ),
+          )
+        : switch (contest.kind) {
+      ContestKind.caption => _IllustrationTile(
+        color: GamesStyle.purpleArt,
+        padding: 4,
+        rocking: motion,
+        child: _moodyCatArt(),
+      ),
+      // As designed (3690:43101): the tile holds still at 5° while its
+      // camera lands and its sparkle blinks.
+      ContestKind.photo => _IllustrationTile(
+        color: GamesStyle.pageDot,
+        fitted: false,
+        child: _LivePhotoArt(motion: motion),
+      ),
+      ContestKind.mostLikely => _IllustrationTile(
+        color: GamesStyle.purpleArt,
+        padding: 4,
+        rocking: motion,
+        child: _mostLikelyArt(),
+      ),
+          };
+    final fallbackQuote = switch (contest.kind) {
+      ContestKind.caption => 'Write the funniest caption.',
+      ContestKind.photo => 'Post your best shot.',
+      ContestKind.mostLikely => 'Who fits the tag?',
     };
     final first = contest.authorName.trim().split(RegExp(r'\s+')).first;
     final entries = contest.entries;
@@ -385,10 +640,17 @@ class _LiveContestCard extends StatelessWidget {
             ? 'A new contest'
             : '$first created this contest',
         whoFace: _Face(name: contest.authorName, photoUrl: contest.authorPhotoUrl, size: 26),
-        clock: closes == null ? 'OPEN' : 'Ends in ${_timeLeft(closes, now)}',
-        illustration: _IllustrationTile(color: tint, padding: 4, child: art),
+        now: now,
+        // As the feed's contest card counts down: "END IN: 02:14:20".
+        clock: (now) {
+          if (closes == null) return 'OPEN';
+          final left = _countdown(closes, now);
+          return left == null ? 'ENDED' : 'END IN: $left';
+        },
+        illustration: tile,
         title: contest.title.isEmpty ? 'Contest' : contest.title,
         quote: '“${contest.prompt.isEmpty ? fallbackQuote : contest.prompt}”',
+        quoteWeight: FontWeight.w700,
         cta: contest.entered ? 'See entries' : 'Your turn',
         onTap: onOpen,
         footer: Row(
@@ -410,25 +672,40 @@ class _LiveContestCard extends StatelessWidget {
 /// The company's Hint Relay, live or coming up, on the yellow lobby card
 /// (node 3690:43048).
 class _LiveRelayCard extends StatelessWidget {
-  const _LiveRelayCard({super.key, required this.relay, required this.now, required this.onJoin});
+  const _LiveRelayCard({
+    super.key,
+    required this.relay,
+    required this.now,
+    required this.motion,
+    required this.onJoin,
+  });
 
   final LiveRelay relay;
-  final DateTime now;
+  final ValueListenable<DateTime> now;
+
+  /// The pane's loop, or null to hold still.
+  final Animation<double>? motion;
   final VoidCallback? onJoin;
 
   @override
   Widget build(BuildContext context) {
     final starts = relay.startsAt;
-    final clock = switch (relay.phase) {
-      RelayPhaseNow.live => 'LIVE NOW',
-      _ when starts != null && starts.isAfter(now) => 'Starts in ${_timeLeft(starts, now)}',
-      RelayPhaseNow.lobby => 'LOBBY OPEN',
-      RelayPhaseNow.upcoming => 'SOON',
-    };
+    String clock(DateTime now) {
+      final left = starts == null ? null : _countdown(starts, now);
+      return switch (relay.phase) {
+        RelayPhaseNow.live => 'LIVE NOW',
+        _ when left != null => 'STARTS IN: $left',
+        RelayPhaseNow.lobby => 'LOBBY OPEN',
+        RelayPhaseNow.upcoming => 'SOON',
+      };
+    }
+
     final team = relay.teamName;
     final who = team != null
         ? 'You are on $team'
-        : relay.teams > 0
+        : relay.teams == 1
+        ? '1 team is in'
+        : relay.teams > 1
         ? '${_plural(relay.teams, 'team', 'teams')} are in'
         : 'Your company’s team game';
     final players = relay.players;
@@ -454,10 +731,12 @@ class _LiveRelayCard extends StatelessWidget {
           alignment: Alignment.center,
           child: SvgPicture.asset('${GamesStyle.asset}/tag_team.svg', width: 14, height: 14),
         ),
+        now: now,
         clock: clock,
         illustration: _IllustrationTile(
           color: GamesStyle.blueArt,
           padding: 4,
+          rocking: motion,
           // Just the tiles and their dashes, so they read at tile size.
           child: ClipRect(
             child: Align(
@@ -493,7 +772,9 @@ class _LiveRelayCard extends StatelessWidget {
 
 // ---------------------------------------------------------------- challenges
 
-/// "Raghav challenged you in Odd One Out" (node 3581:29409).
+/// "Raghav challenged you in Odd One Out" (node 3581:29409). Its edge is
+/// drawn inside, over its padding, as Figma draws a stroke: the text sits
+/// 14pt and 12pt in from the card's outside.
 class _ChallengeCard extends StatelessWidget {
   const _ChallengeCard({
     super.key,
@@ -514,8 +795,8 @@ class _ChallengeCard extends StatelessWidget {
         : 'Beat ${GamesStyle.count(beat)}. Winner takes both scores.';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: GamesStyle.night,
+      decoration: BoxDecoration(color: GamesStyle.night, borderRadius: BorderRadius.circular(20)),
+      foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: GamesStyle.nightBorder, width: 1.5),
       ),
@@ -646,10 +927,12 @@ class _GameCardLarge extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   _GamePicture(game: game, background: GamesStyle.green),
+                  // The design's box for the tipped badge is 58.5 × 55.7 at
+                  // (163.06, 70.95); the 55 × 52 badge turns in its middle.
                   if (rank != null)
                     Positioned(
-                      left: 163.06,
-                      top: 70.95,
+                      left: 163.06 + (58.493 - 55) / 2,
+                      top: 70.95 + (55.71 - 52) / 2,
                       child: Transform.rotate(
                         angle: 4 * math.pi / 180,
                         child: _YourRankBadge(rank: rank),
@@ -665,9 +948,11 @@ class _GameCardLarge extends StatelessWidget {
                 children: [
                   SizedBox(
                     height: 23.836,
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: game.isWeb
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 0.33, top: 0.36),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: game.isWeb
                           ? const _TypeTag(
                               label: 'SOLO CHALLENGE',
                               icon: 'tag_solo.svg',
@@ -678,6 +963,7 @@ class _GameCardLarge extends StatelessWidget {
                               icon: 'tag_team.svg',
                               color: GamesStyle.blue,
                             ),
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -806,6 +1092,7 @@ class _ExploreSection extends StatelessWidget {
     required this.soloGames,
     required this.thumbnailFor,
     required this.playingNow,
+    required this.motion,
     required this.onCreate,
     required this.onJoinRelay,
     required this.onPlay,
@@ -814,10 +1101,13 @@ class _ExploreSection extends StatelessWidget {
   final _ExploreTab tab;
   final ValueChanged<_ExploreTab> onTab;
   final LiveRelay? relay;
-  final DateTime now;
+  final ValueListenable<DateTime> now;
   final List<GameCatalogEntry> soloGames;
   final String? Function(GameCatalogEntry game)? thumbnailFor;
   final PlayingNow playingNow;
+
+  /// The pane's loop, for Best Photo's camera and sparkle; null holds them.
+  final Animation<double>? motion;
   final Future<void> Function(ContestKind kind)? onCreate;
   final ValueChanged<String> onJoinRelay;
   final ValueChanged<GameCatalogEntry> onPlay;
@@ -860,6 +1150,7 @@ class _ExploreSection extends StatelessWidget {
                     label: 'COMMUNITY BOARD',
                     icon: 'tab_board.svg',
                     iconSize: 12,
+                    iconBox: 14.993,
                     color: GamesStyle.purple,
                     selected: tab == _ExploreTab.community,
                     onTap: () => onTab(_ExploreTab.community),
@@ -923,7 +1214,11 @@ class _ExploreSection extends StatelessWidget {
         artColor: GamesStyle.purpleArt,
         art: Align(
           alignment: Alignment.topCenter,
-          child: SizedBox(width: 126.04, height: 107.82, child: Center(child: _photoArt())),
+          child: SizedBox(
+            width: 126.04,
+            height: 107.82,
+            child: Center(child: _PhotoArt(motion: motion)),
+          ),
         ),
         title: 'Best photo',
         description: 'Get your teammates to capture a moment or a mood.',
@@ -968,14 +1263,15 @@ class _ExploreSection extends StatelessWidget {
       ];
     }
     final starts = event.startsAt;
-    final status = switch (event.phase) {
-      RelayPhaseNow.live => 'LIVE NOW',
-      RelayPhaseNow.lobby => 'LOBBY OPEN',
-      RelayPhaseNow.upcoming =>
-        starts != null && starts.isAfter(now)
-            ? 'STARTS IN ${_timeLeft(starts, now).toUpperCase()}'
-            : 'COMING UP',
-    };
+    String status(DateTime now) {
+      final left = starts == null ? null : _countdown(starts, now);
+      return switch (event.phase) {
+        RelayPhaseNow.live => 'LIVE NOW',
+        RelayPhaseNow.lobby => 'LOBBY OPEN',
+        RelayPhaseNow.upcoming => left == null ? 'COMING UP' : 'STARTS IN: $left',
+      };
+    }
+
     final postId = event.postId;
     return [
       _GameCardSmall(
@@ -985,36 +1281,80 @@ class _ExploreSection extends StatelessWidget {
         art: Stack(
           children: [
             art,
-            Positioned(left: 7.18, top: 5.98, child: _LiveIndicator(label: status)),
+            Positioned(
+              left: 7.18,
+              top: 5.98,
+              child: ValueListenableBuilder<DateTime>(
+                valueListenable: now,
+                builder: (context, now, _) => _LiveIndicator(label: status(now)),
+              ),
+            ),
           ],
         ),
         title: event.title,
         description: 'Crack the clues with your team before the clock runs out.',
-        bottom: SizedBox(
-          height: 45,
-          child: Row(
-            children: [
-              SvgPicture.asset('${GamesStyle.asset}/players.svg', width: 14, height: 14),
-              const SizedBox(width: 2),
-              Expanded(
-                child: Text(
-                  _plural(event.players, 'player', 'players'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GamesStyle.figtree(10, weight: FontWeight.w500, color: GamesStyle.ink),
+        // The design's (3605:31145): a 34pt foot, 5pt under the line about
+        // it, with a 26pt row at its bottom: the players, and the 45pt Join
+        // key hanging over the row's top and bottom.
+        bottom: Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: SizedBox(
+            height: 34,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                height: 26.2,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Row(
+                          spacing: 2,
+                          children: [
+                            SvgPicture.asset(
+                              '${GamesStyle.asset}/players.svg',
+                              width: 14,
+                              height: 14,
+                            ),
+                            Flexible(
+                              child: Text(
+                                _plural(event.players, 'player', 'players'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GamesStyle.figtree(
+                                  10,
+                                  weight: FontWeight.w500,
+                                  color: GamesStyle.ink,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 55,
+                      height: 26.2,
+                      child: OverflowBox(
+                        minHeight: 45,
+                        maxHeight: 45,
+                        child: GameCtaButton(
+                          key: const ValueKey('join-relay'),
+                          label: event.phase == RelayPhaseNow.upcoming ? 'View' : 'Join',
+                          onTap: postId == null ? null : () => onJoinRelay(postId),
+                          small: true,
+                          width: 55,
+                          height: 45,
+                          fontSize: 12,
+                          labelCenter: 0.444,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              GameCtaButton(
-                key: const ValueKey('join-relay'),
-                label: event.phase == RelayPhaseNow.upcoming ? 'View' : 'Join',
-                onTap: postId == null ? null : () => onJoinRelay(postId),
-                small: true,
-                width: 55,
-                height: 45,
-                fontSize: 12,
-                labelCenter: 0.444,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1080,6 +1420,7 @@ class _ExploreChip extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.iconSize = 14,
+    this.iconBox = 14,
   });
 
   final String label;
@@ -1088,6 +1429,9 @@ class _ExploreChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final double iconSize;
+
+  /// The width the icon is given: the board's 12pt icon sits in a 15pt box.
+  final double iconBox;
 
   @override
   Widget build(BuildContext context) {
@@ -1106,7 +1450,7 @@ class _ExploreChip extends StatelessWidget {
         spacing: 5,
         children: [
           SizedBox(
-            width: 14,
+            width: iconBox,
             height: 14,
             child: Center(
               child: SvgPicture.asset(
@@ -1132,11 +1476,15 @@ class _ExploreChip extends StatelessWidget {
   }
 }
 
-/// Two columns, 10pt apart, rows 12pt apart (node 3605:31585).
+/// Two columns, 10pt apart, rows 12pt apart (node 3605:31585). It keeps two
+/// rows' room, as the design's Team tab does with its one card (a second
+/// 217.4pt row), so the page under it does not jump as the tabs change.
 class _CardGrid extends StatelessWidget {
   const _CardGrid({required this.cards});
 
   final List<Widget> cards;
+
+  static const _emptyRow = 217.4;
 
   @override
   Widget build(BuildContext context) {
@@ -1152,6 +1500,7 @@ class _CardGrid extends StatelessWidget {
               Expanded(child: i + 1 < cards.length ? cards[i + 1] : const SizedBox.shrink()),
             ],
           ),
+        if (cards.length <= 2) const SizedBox(height: _emptyRow),
       ],
     );
   }

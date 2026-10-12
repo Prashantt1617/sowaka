@@ -118,6 +118,17 @@ class ContestFace {
   final String? photoUrl;
 }
 
+/// One entry a live contest's picture shows in turn: a caption's words, a
+/// photo, or the colleague a Most Likely entry named.
+class ContestPreview {
+  const ContestPreview({required this.name, this.text, this.imageUrl, this.photoUrl});
+
+  final String name;
+  final String? text;
+  final String? imageUrl;
+  final String? photoUrl;
+}
+
 /// A Connect contest in the viewer's feed that is still taking entries.
 class LiveContest {
   const LiveContest({
@@ -132,6 +143,8 @@ class LiveContest {
     this.entries = 0,
     this.entrants = const [],
     this.entered = false,
+    this.previews = const [],
+    this.imageUrl,
   });
 
   static LiveContest? tryParse(Map<String, dynamic> json, String? Function(Object?) photo) {
@@ -142,6 +155,7 @@ class LiveContest {
         ? Map<String, dynamic>.from(json['author'] as Map)
         : const <String, dynamic>{};
     final entrants = json['entrants'];
+    final previews = json['previews'];
     return LiveContest(
       id: id,
       kind: kind,
@@ -163,6 +177,19 @@ class LiveContest {
               ),
       ],
       entered: json['entered'] == true,
+      // Absent on a server from before them: the card keeps its illustration.
+      previews: [
+        if (previews is List)
+          for (final row in previews)
+            if (row is Map)
+              ContestPreview(
+                name: _string(row['name']),
+                text: _stringOrNull(row['text']),
+                imageUrl: photo(row['imageUrl']),
+                photoUrl: photo(row['photoUrl']),
+              ),
+      ],
+      imageUrl: photo(json['imageUrl']),
     );
   }
 
@@ -182,6 +209,12 @@ class LiveContest {
   final int entries;
   final List<ContestFace> entrants;
   final bool entered;
+
+  /// The latest entries, newest first; empty until the first one.
+  final List<ContestPreview> previews;
+
+  /// A caption contest's picture, the one being captioned.
+  final String? imageUrl;
 }
 
 /// The company's Hint Relay, while it is on or still to come.

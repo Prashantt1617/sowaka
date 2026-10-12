@@ -34,6 +34,14 @@ abstract final class GamesStyle {
   static const muted = Color(0xFF4A4266);
   static const secondary = Color(0xFF484848);
 
+  // The design's `leading: normal` for each face: its own ascent plus
+  // descent (from the fonts' metrics). A style given no height gets this,
+  // not what it would inherit: the app's Material text theme sets 1.43× on
+  // every line, which makes pills and stacked lines taller than designed.
+  static const _lilitaNormal = 1.143; // (923 + 220) / 1000
+  static const _soraNormal = 1.26; // (970 + 290) / 1000
+  static const _figtreeNormal = 1.2; // (950 + 250) / 1000
+
   /// Lilita One, the display face. One weight.
   static TextStyle lilita(
     double size, {
@@ -45,7 +53,7 @@ abstract final class GamesStyle {
     fontFamily: 'Lilita One',
     fontSize: size,
     color: color,
-    height: height == null ? null : height / size,
+    height: height == null ? _lilitaNormal : height / size,
     letterSpacing: spacing,
     shadows: shadows,
   );
@@ -63,7 +71,7 @@ abstract final class GamesStyle {
     fontWeight: weight,
     fontVariations: [FontVariation.weight(weight.value.toDouble())],
     color: color,
-    height: height == null ? null : height / size,
+    height: height == null ? _figtreeNormal : height / size,
     letterSpacing: spacing,
   );
 
@@ -80,7 +88,7 @@ abstract final class GamesStyle {
     fontWeight: weight,
     fontVariations: [FontVariation.weight(weight.value.toDouble())],
     color: color,
-    height: height == null ? null : height / size,
+    height: height == null ? _soraNormal : height / size,
     letterSpacing: spacing,
   );
 
