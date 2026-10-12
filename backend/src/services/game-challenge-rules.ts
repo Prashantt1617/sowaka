@@ -447,8 +447,9 @@ export interface PaidToday {
  *     scored under `minLoserShare` of it), divided by `perPoints`, rounded, at
  *     least 1 and at most `maxPerMatch`. Nothing once they have had
  *     `dailyWinCap` rewarded wins today, or `samePairPerDay` over this opponent.
- *   - The loser, and both players on a draw: `participation`, until they have
- *     had `dailyWinCap` participation awards today.
+ *   - The loser, and both players on a draw: their own score divided by
+ *     `perPoints`, rounded, at most `maxPerMatch`, until they have had
+ *     `dailyWinCap` such awards today. (`participation` is no longer used.)
  *
  * Null until both have played. A capped award is kept, at zero, with why.
  */
@@ -459,12 +460,17 @@ export function computeAwards(
 ): { reward: GameChallengeAward | null; awards: GameChallengeAward[] } | null {
   const result = resultOf(c);
   if (!result) return null;
+  // The loser, and both players on a draw, earn their own score scaled as a
+  // win is — not the flat `participation` award they used to (Tanvi, 12 Oct
+  // 2026: "even if I lose I get my scored points / 100"). Results already in
+  // keep what they were paid; only challenges finishing from now on pay this.
   const participation = (userId: string): GameChallengeAward => {
-    if (rules.participation <= 0) return { userId, kind: 'participation', points: 0, capped: null };
+    const points = Math.min(rules.maxPerMatch, Math.round((c.scores[userId]?.score ?? 0) / rules.perPoints));
+    if (points <= 0) return { userId, kind: 'participation', points: 0, capped: null };
     if ((paid.participation[userId] ?? 0) >= rules.dailyWinCap) {
       return { userId, kind: 'participation', points: 0, capped: 'daily_limit' };
     }
-    return { userId, kind: 'participation', points: rules.participation, capped: null };
+    return { userId, kind: 'participation', points, capped: null };
   };
   if (result.draw) {
     return { reward: null, awards: [participation(c.challengerUserId), participation(c.opponentUserId)] };

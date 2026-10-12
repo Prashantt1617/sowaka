@@ -315,12 +315,16 @@ console.log('what a result pays');
   const fair = winner(1600, 400);
   check('exactly a quarter still counts', fair.onlyOwnScore === false && fair.base === 2000 && fair.points === 20);
   const both = pay(864, 796).awards;
-  check('the loser earns participation', both.find((a) => a.userId === 'u-priya')?.points === 2
+  check('the loser earns their own score / 100: 796 pays 8', both.find((a) => a.userId === 'u-priya')?.points === 8
     && both.find((a) => a.userId === 'u-priya')?.kind === 'participation');
+  check("the loser's points are capped like a win's", pay(40000, 30000).awards.find((a) => a.userId === 'u-priya')?.points === 25);
+  check('a loser who scored under 50 earns nothing, and it is not a cap',
+    pay(864, 40).awards.find((a) => a.userId === 'u-priya')?.points === 0
+    && pay(864, 40).awards.find((a) => a.userId === 'u-priya')?.capped === null);
   check('the win is the reward on the challenge', pay(864, 796).reward?.userId === 'u-kritik' && pay(864, 796).reward?.kind === 'win');
   const draw = pay(800, 800);
-  check('a draw: no reward, each gets participation', draw.reward === null && draw.awards.length === 2
-    && draw.awards.every((a) => a.kind === 'participation' && a.points === 2));
+  check('a draw: no reward, each gets their own score / 100', draw.reward === null && draw.awards.length === 2
+    && draw.awards.every((a) => a.kind === 'participation' && a.points === 8));
 
   // Daily cap: the first `dailyWinCap` rewarded wins of the day pay.
   const third = winner(864, 796, { wins: { 'u-kritik': 2 }, participation: {}, winsOverOther: {} });
@@ -342,13 +346,11 @@ console.log('what a result pays');
   // Participation has its own count, capped at the same number.
   const tired = pay(864, 796, { wins: {}, participation: { 'u-priya': 3 }, winsOverOther: {} }).awards.find((a) => a.userId === 'u-priya')!;
   check('participation stops after dailyWinCap awards a day', tired.points === 0 && tired.capped === 'daily_limit');
-  const drawCapped = pay(10, 10, { wins: {}, participation: { 'u-kritik': 3, 'u-priya': 2 }, winsOverOther: {} }).awards;
+  const drawCapped = pay(500, 500, { wins: {}, participation: { 'u-kritik': 3, 'u-priya': 2 }, winsOverOther: {} }).awards;
   check('on a draw each is capped on their own count', drawCapped.find((a) => a.userId === 'u-kritik')!.points === 0
-    && drawCapped.find((a) => a.userId === 'u-priya')!.points === 2);
+    && drawCapped.find((a) => a.userId === 'u-priya')!.points === 5);
   check('wins do not use up participation', pay(864, 796, { wins: { 'u-priya': 3 }, participation: {}, winsOverOther: {} })
-    .awards.find((a) => a.userId === 'u-priya')!.points === 2);
-  check('participation 0 pays nothing and is not a cap', pay(864, 796, nothingPaid(), { ...R, participation: 0 })
-    .awards.find((a) => a.userId === 'u-priya')!.capped === null);
+    .awards.find((a) => a.userId === 'u-priya')!.points === 8);
   check('dailyWinCap 0 turns paid wins off', winner(864, 796, nothingPaid(), { ...R, dailyWinCap: 0 }).capped === 'daily_limit');
   check('every award is a whole, non-negative number', [pay(1, 2), pay(79999, 1), pay(3, 3)].every((p) =>
     p.awards.every((a) => Number.isInteger(a.points) && a.points >= 0)));
