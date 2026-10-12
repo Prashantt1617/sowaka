@@ -44,6 +44,9 @@ class _TeamHomeState extends State<_TeamHome> {
                   ),
                   onNotifications: widget.onNotifications,
                   onQuickCreate: widget.onOpenComposer,
+                  // The section bar runs straight on from the header, one
+                  // white block; the header's line only shows without it.
+                  divider: !canManage,
                 ),
                 // Requests and Feedback are a manager's to act on: an
                 // individual contributor gets the same team list, read-only,

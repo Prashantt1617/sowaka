@@ -43,7 +43,9 @@ class OrgBranding {
   /// Sowaka's logo drawn under "powered by" instead of the Anton wordmark.
   final String? poweredByLogoAsset;
 
-  bool get isSowaka => org.isEmpty;
+  /// Sowaka's own face: the product's default, and the sowaka company itself,
+  /// which differs only in the logo its header wears.
+  bool get isSowaka => org.isEmpty || org == 'sowaka';
 
   /// Whose brand the app currently wears: the signed-in org's, or the one
   /// this device last saw. Widgets that show the brand listen to this, so a
@@ -57,6 +59,14 @@ class OrgBranding {
   );
 
   static const _known = <String, OrgBranding>{
+    // Sowaka's own company: Sowaka's splash and icon, its own badge in the
+    // header where an unbranded org shows the Convrse logo.
+    'sowaka': OrgBranding(
+      org: 'sowaka',
+      wordmark: 'sowaka',
+      tagline: 'Your workplace, connected.',
+      homeLogoAsset: 'assets/images/sowaka_header_logo.png',
+    ),
     'convrse': OrgBranding(
       org: 'convrse',
       wordmark: 'convrse.ai',
@@ -114,7 +124,7 @@ class OrgBranding {
       final preferences = await SharedPreferences.getInstance();
       final branding = of(org);
       current.value = branding;
-      if (branding.isSowaka) {
+      if (branding.org.isEmpty) {
         await preferences.remove(_key);
       } else {
         await preferences.setString(_key, branding.org);

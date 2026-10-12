@@ -396,7 +396,18 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// Entry point for the "Start a post" card at the top of the feed: the
   /// quick composer opens with its type chips (node 2028:53056), which is
   /// where the post type is chosen now that the nav has no Post tab.
+  ///
+  /// Closing the composer a chip opened comes back here, to choose a type
+  /// again, rather than all the way out to the feed; posting goes to the feed.
   Future<void> _openPostTypePicker() async {
+    while (mounted) {
+      if (await _pickPostType()) return;
+    }
+  }
+
+  /// One round of the chooser. True when it ended: a post went up, or the
+  /// chooser itself was closed. False when a type's composer was backed out of.
+  Future<bool> _pickPostType() async {
     final result = await Navigator.of(context).push<_QuickPostResult>(
       MaterialPageRoute(
         builder: (_) => _QuickPostPage(
@@ -413,17 +424,19 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         ),
       ),
     );
-    if (!mounted || result == null) return;
+    if (!mounted || result == null) return true;
     final draft = result.draft;
     if (draft != null) {
       await _bloc.createPost(draft);
-      return;
+      return true;
     }
     final type = result.type;
-    if (type != null) await _openComposer(type);
+    if (type == null) return true;
+    return _openComposer(type);
   }
 
-  Future<void> _openComposer(
+  /// True when something was posted or saved; false when it was backed out of.
+  Future<bool> _openComposer(
     ConnectPostType type, {
     ConnectPost? existing,
   }) async {
@@ -435,9 +448,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           builder: (_) => ContestComposerPage(existing: existing),
         ),
       );
-      if (!mounted || result == null) return;
+      if (!mounted || result == null) return false;
       await _bloc.updatePost(existing.id, await result.toPostDraft());
-      return;
+      return true;
     }
     _PollDraft? initialPoll;
     if (type == ConnectPostType.survey) {
@@ -447,7 +460,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               _PollEditorPage(initial: _PollDraft.fromPost(existing)),
         ),
       );
-      if (!mounted || initialPoll == null) return;
+      if (!mounted || initialPoll == null) return false;
     }
     final draft = await Navigator.of(context).push<ConnectPostDraft>(
       MaterialPageRoute(
@@ -466,12 +479,13 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         ),
       ),
     );
-    if (!mounted || draft == null) return;
+    if (!mounted || draft == null) return false;
     if (existing == null) {
       await _bloc.createPost(draft);
     } else {
       await _bloc.updatePost(existing.id, draft);
     }
+    return true;
   }
 
   Future<void> _confirmDelete(ConnectPost post) async {
@@ -5760,7 +5774,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
               ),
               const SizedBox(width: 14),
               InkWell(
-                onTap: () => setState(() => _pollDraft = null),
+                // A poll post with its poll taken away has nothing left to
+                // post: closing it goes back to choosing a type instead of
+                // leaving an empty "add a poll" screen.
+                onTap: () => Navigator.of(context).maybePop(),
                 child: const Icon(
                   Icons.close_rounded,
                   size: 18,

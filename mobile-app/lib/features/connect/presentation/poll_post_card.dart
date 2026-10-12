@@ -13,6 +13,59 @@ const _pollBorder = Color(0xFFEBEBEB);
 const _pollSurface = Color(0xFFF7F7F9);
 const _pollBrand = Color(0xFF0571A6);
 
+/// How long a vote takes to settle: bars grow, shares count, the pick lights.
+const _pollMotion = Duration(milliseconds: 380);
+
+/// A share that counts up to its new value instead of jumping to it.
+class _PollPercent extends StatelessWidget {
+  const _PollPercent({required this.value, required this.style});
+
+  final int value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: value.toDouble()),
+    duration: _pollMotion,
+    curve: Curves.easeOutCubic,
+    builder: (context, shown, _) => Text('${shown.round()}%', style: style),
+  );
+}
+
+/// An option that gives under the finger, so a tap is felt before the vote lands.
+class _PollPressable extends StatefulWidget {
+  const _PollPressable({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_PollPressable> createState() => _PollPressableState();
+}
+
+class _PollPressableState extends State<_PollPressable> {
+  bool _down = false;
+
+  void _set(bool down) {
+    if (_down != down) setState(() => _down = down);
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTapDown: (_) => _set(true),
+    onTapCancel: () => _set(false),
+    onTapUp: (_) => _set(false),
+    onTap: widget.onTap,
+    child: AnimatedScale(
+      scale: _down ? 0.97 : 1,
+      duration: const Duration(milliseconds: 110),
+      curve: Curves.easeOut,
+      child: widget.child,
+    ),
+  );
+}
+
 class _PollPostCard extends StatelessWidget {
   const _PollPostCard({
     required this.post,
@@ -396,10 +449,11 @@ class _PollOptionGrid extends StatelessWidget {
         button: true,
         selected: selected,
         label: option.label,
-        child: GestureDetector(
+        child: _PollPressable(
           onTap: () => onAction(optionId: option.id),
-          behavior: HitTestBehavior.opaque,
-          child: Container(
+          child: AnimatedContainer(
+            duration: _pollMotion,
+            curve: Curves.easeOutCubic,
             padding: EdgeInsets.all(selected ? 10.5 : 11),
             decoration: BoxDecoration(
               color: selected ? const Color(0xFFEFF6FF) : Colors.white,
@@ -437,8 +491,8 @@ class _PollOptionGrid extends StatelessWidget {
                 ),
                 if (voted) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    '$pct%',
+                  _PollPercent(
+                    value: pct,
                     style: TextStyle(
                       fontFamily: _soraFont,
                       fontSize: 16,
@@ -501,10 +555,11 @@ class _PollOptionBars extends StatelessWidget {
               final selected = voted && post.selectedPollOptionId == option.id;
               final pct = ((option.votes / total) * 100).round();
               final ink = selected ? _pollBrand : _pollInkSecondary;
-              return GestureDetector(
+              return _PollPressable(
                 onTap: () => onAction(optionId: option.id),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
+                child: AnimatedContainer(
+                  duration: _pollMotion,
+                  curve: Curves.easeOutCubic,
                   height: 48,
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
@@ -518,14 +573,25 @@ class _PollOptionBars extends StatelessWidget {
                   child: Stack(
                     children: [
                       if (voted)
+                        // The bar grows to its share, from nothing on the
+                        // first vote and from where it was after that.
                         Positioned.fill(
-                          child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: (pct / 100).clamp(0.0, 1.0),
-                            child: ColoredBox(
-                              color: selected
-                                  ? const Color(0xF7CCFCFF)
-                                  : _pollBorder,
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(
+                              begin: 0,
+                              end: (pct / 100).clamp(0.0, 1.0),
+                            ),
+                            duration: _pollMotion,
+                            curve: Curves.easeOutCubic,
+                            builder: (context, share, _) => FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: share,
+                              child: AnimatedContainer(
+                                duration: _pollMotion,
+                                color: selected
+                                    ? const Color(0xF7CCFCFF)
+                                    : _pollBorder,
+                              ),
                             ),
                           ),
                         ),
@@ -549,8 +615,8 @@ class _PollOptionBars extends StatelessWidget {
                                 ),
                               ),
                               if (voted)
-                                Text(
-                                  '$pct%',
+                                _PollPercent(
+                                  value: pct,
                                   style: TextStyle(
                                     fontFamily: _soraFont,
                                     fontSize: 16,

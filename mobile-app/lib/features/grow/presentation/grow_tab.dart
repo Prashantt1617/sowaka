@@ -390,10 +390,16 @@ class _FeedbackGivenCardState extends State<_FeedbackGivenCard> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => setState(() => _tipOpen = !_tipOpen),
+                            // Lit while the tip is open, unlit while it is
+                            // closed (nodes 3114:55213, 3114:55349).
                             child: Image.asset(
-                              'assets/icons/grow/light_bulb.png',
+                              _tipOpen
+                                  ? 'assets/icons/grow/light_bulb.png'
+                                  : 'assets/icons/grow/light_bulb_off.jpg',
                               width: 24,
                               height: 24,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
                             ),
                           ),
                         ),
@@ -749,6 +755,11 @@ class _GrowthChartPainter extends CustomPainter {
   /// Score 5 and score 0, from the top of the chart. Room above for the pill.
   static const _top = 14.0;
   static const _baseline = 76.0;
+
+  /// Where the shading under the line and the dashed drop end: a little below
+  /// the lowest a point can sit, so a dip still has shade under it (node
+  /// 3165:59236).
+  static const _areaBottom = 82.0;
   static const _labelTop = 97.0;
 
   @override
@@ -787,17 +798,19 @@ class _GrowthChartPainter extends CustomPainter {
         path.lineTo(point.dx, point.dy);
       }
       final area = Path.from(path)
-        ..lineTo(plotted.last.dx, _baseline)
-        ..lineTo(plotted.first.dx, _baseline)
+        ..lineTo(plotted.last.dx, _areaBottom)
+        ..lineTo(plotted.first.dx, _areaBottom)
         ..close();
+      // Lavender from just above the highest point, fading out at the bottom.
+      final highest = plotted.map((point) => point.dy).reduce(math.min);
       canvas.drawPath(
         area,
         Paint()
           ..shader = const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0x487B61FF), Color(0x007B61FF)],
-          ).createShader(Rect.fromLTWH(0, _top, size.width, _baseline - _top)),
+            colors: [Color(0x387B61FF), Color(0x037B61FF)],
+          ).createShader(Rect.fromLTRB(0, highest - 2.8, size.width, _areaBottom)),
       );
       canvas.drawPath(
         path,
@@ -822,10 +835,10 @@ class _GrowthChartPainter extends CustomPainter {
         ..color = _lavender.withValues(alpha: .4)
         ..strokeWidth = 1;
       var y = pillTop + pillHeight;
-      while (y < _baseline) {
+      while (y < _areaBottom) {
         canvas.drawLine(
           Offset(highlight.dx, y),
-          Offset(highlight.dx, (y + 3).clamp(0.0, _baseline)),
+          Offset(highlight.dx, (y + 3).clamp(0.0, _areaBottom)),
           dash,
         );
         y += 6;
@@ -868,7 +881,8 @@ class _GrowthChartPainter extends CustomPainter {
       if (index == highlightIndex) {
         canvas.drawCircle(point, 6, Paint()..color = _blue);
       } else if (missed[index]) {
-        canvas.drawCircle(point, 4, Paint()..color = _grey);
+        // Filled and outlined in the same grey: a point's 4 and its stroke's 1.
+        canvas.drawCircle(point, 5, Paint()..color = _grey);
       } else {
         canvas.drawCircle(point, 4, Paint()..color = Colors.white);
         canvas.drawCircle(

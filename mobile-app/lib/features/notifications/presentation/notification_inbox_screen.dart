@@ -26,8 +26,6 @@ Future<void> openNotificationInbox(
 ) async {
   if (_inboxOpening) return;
   _inboxOpening = true;
-  // Looked at: the bell's dot goes until something new arrives.
-  unawaited(NotificationBadge.markSeen(session.user.id));
   try {
     await AppNotificationService.instance.requestPermission();
     if (!context.mounted) return;
@@ -172,9 +170,12 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       throw Exception('Could not load notifications');
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return (json['notifications'] as List<dynamic>? ?? const [])
+    final items = (json['notifications'] as List<dynamic>? ?? const [])
         .map((item) => _Item(Map<String, dynamic>.from(item as Map)))
         .toList();
+    // A fresh read of the inbox is the truth about the bell too.
+    NotificationBadge.showUnread(items.any((item) => item.unread));
+    return items;
   }
 
   Future<void> _refresh() {
@@ -195,6 +196,10 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
   Future<void> _open(_Item item) async {
     // Marked read in the background: the person is already on their way.
     _markRead(item);
+    item.read = true;
+    unawaited(_items.then((items) {
+      NotificationBadge.showUnread(items.any((other) => other.unread));
+    }, onError: (_) {}));
     if (!mounted) return;
     Navigator.pop(context);
     AppNotificationService.instance.openDestination(item.data);
@@ -213,6 +218,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
     for (final item in unread) {
       _markRead(item);
     }
+    NotificationBadge.showUnread(false);
   }
 
   @override

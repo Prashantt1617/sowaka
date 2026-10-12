@@ -5470,10 +5470,13 @@ class _AttendancePendingNotice extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SvgPicture.asset(
-            'assets/icons/alert_pending_clock.svg',
+          // The clock with its turning arrow: a request going round for review
+          // (node 3198:21537).
+          Image.asset(
+            'assets/icons/attendance_review_clock.png',
             width: 30,
             height: 30,
+            fit: BoxFit.cover,
           ),
           const SizedBox(width: 8),
           Expanded(

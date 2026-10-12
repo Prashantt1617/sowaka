@@ -343,6 +343,8 @@ class ConnectPost {
     int? likeCount,
     int? commentCount,
     List<ConnectComment>? comments,
+    Map<String, dynamic>? body,
+    String? selectedPollOptionId,
   }) {
     return ConnectPost(
       id: id,
@@ -353,14 +355,78 @@ class ConnectPost {
       tagTint: tagTint,
       author: author,
       audience: audience,
-      body: body,
+      body: body ?? this.body,
       liked: liked ?? this.liked,
       likeCount: likeCount ?? this.likeCount,
       commentCount: commentCount ?? this.commentCount,
       comments: comments ?? this.comments,
       publishedAt: publishedAt,
-      selectedPollOptionId: selectedPollOptionId,
+      selectedPollOptionId: selectedPollOptionId ?? this.selectedPollOptionId,
       actionValue: actionValue,
+    );
+  }
+
+  /// The entry the viewer's vote is on in a contest, or null.
+  String? get myContestVote {
+    for (final entry in captionEntries) {
+      if (entry.votedByViewer) return entry.id;
+    }
+    return null;
+  }
+
+  /// The contest as it reads once the viewer's vote is on [entryId] — or on
+  /// nothing, when null: the entry it leaves loses a vote and its points, the
+  /// one it lands on gains them. Ranks are left for the server's copy.
+  ConnectPost withContestVote(String? entryId) {
+    final previous = myContestVote;
+    if (previous == entryId) return this;
+    final perVote = (body['pointsPerVote'] as num?)?.toInt() ?? 10;
+    final entries = [
+      for (final value in body['entries'] as List<dynamic>? ?? const [])
+        if (value is Map)
+          () {
+            final entry = Map<String, dynamic>.from(value);
+            final id = entry['id'];
+            final votes = (entry['votes'] as num?)?.toInt() ?? 0;
+            final points = (entry['points'] as num?)?.toInt() ?? 0;
+            if (id == previous) {
+              entry['votes'] = (votes - 1).clamp(0, 1 << 30);
+              entry['points'] = (points - perVote).clamp(0, 1 << 30);
+              entry['votedByViewer'] = false;
+            } else if (id == entryId) {
+              entry['votes'] = votes + 1;
+              entry['points'] = points + perVote;
+              entry['votedByViewer'] = true;
+            }
+            return entry;
+          }(),
+    ];
+    return copyWith(body: {...body, 'entries': entries});
+  }
+
+  /// The poll as it reads once the viewer has picked [optionId]: their pick
+  /// marked, its count up one, and the option they had before (if any) down
+  /// one. A first vote adds to the total; a changed one does not.
+  ConnectPost withPollVote(String optionId) {
+    final previous = selectedPollOptionId;
+    if (previous == optionId) return this;
+    final options = [
+      for (final value in body['options'] as List<dynamic>? ?? const [])
+        if (value is Map)
+          {
+            ...Map<String, dynamic>.from(value),
+            'votes': ((value['votes'] as num?)?.toInt() ?? 0) +
+                (value['id'] == optionId ? 1 : 0) -
+                (previous != null && value['id'] == previous ? 1 : 0),
+          },
+    ];
+    return copyWith(
+      selectedPollOptionId: optionId,
+      body: {
+        ...body,
+        'options': options,
+        'totalVotes': totalVotes + (previous == null ? 1 : 0),
+      },
     );
   }
 

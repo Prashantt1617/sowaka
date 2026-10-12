@@ -1,6 +1,6 @@
-// A contest card counts down to its close — "END IN: 02:14" — and reads
-// "Ended" once it has passed, closing the way in there and then rather than
-// leaving a button the server would refuse.
+// A contest card counts down to its close — "END IN: 02:14:05", a second at
+// a time — and reads "Ended" once it has passed, closing the way in there
+// and then rather than leaving a button the server would refuse.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -65,34 +65,41 @@ void main() {
   group('contestCountdownLabel', () {
     final now = DateTime.utc(2026, 10, 10, 12);
 
-    test('hours and minutes left, as the design writes them', () {
+    test('hours, minutes and seconds left, as the card writes them', () {
       expect(
         contestCountdownLabel(
-          now.add(const Duration(hours: 2, minutes: 14, seconds: 30)),
+          now.add(const Duration(hours: 2, minutes: 14, seconds: 5)),
           now,
         ),
-        'END IN: 02:14',
+        'END IN: 02:14:05',
       );
     });
 
-    test('counts whole minutes gone by, like a clock', () {
+    test('counts whole seconds gone by, like a clock, never rounding up', () {
       expect(
-        contestCountdownLabel(now.add(const Duration(seconds: 30)), now),
-        'END IN: 00:00',
+        contestCountdownLabel(now.add(const Duration(milliseconds: 500)), now),
+        'END IN: 00:00:00',
       );
       expect(
-        contestCountdownLabel(now.add(const Duration(minutes: 1)), now),
-        'END IN: 00:01',
+        contestCountdownLabel(now.add(const Duration(seconds: 1)), now),
+        'END IN: 00:00:01',
+      );
+      expect(
+        contestCountdownLabel(
+          now.add(const Duration(minutes: 1, milliseconds: 999)),
+          now,
+        ),
+        'END IN: 00:01:00',
       );
     });
 
     test('a contest days away keeps counting in hours', () {
       expect(
         contestCountdownLabel(
-          now.add(const Duration(days: 2, hours: 4, minutes: 10)),
+          now.add(const Duration(days: 2, hours: 4, minutes: 10, seconds: 5)),
           now,
         ),
-        'END IN: 52:10',
+        'END IN: 52:10:05',
       );
     });
 
@@ -122,7 +129,7 @@ void main() {
     contestClock = () => tester.binding.clock.now();
     addTearDown(() => contestClock = DateTime.now);
 
-    // Thirty seconds to go: "END IN: 00:00" until it passes.
+    // Thirty seconds to go, counted down a second at a time until it passes.
     final closesAt = contestClock().add(const Duration(seconds: 30));
     final client = MockClient((request) async {
       if (request.url.path.endsWith('/connect/feed')) {
@@ -160,12 +167,17 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('END IN: 00:00'), findsOneWidget);
+    // 29.7 seconds left reads 29: whole seconds, never rounded up.
+    expect(find.text('END IN: 00:00:29'), findsOneWidget);
     expect(find.text('LIVE'), findsOneWidget);
     expect(find.text('Add your answer'), findsOneWidget);
 
+    // It ticks on each whole second.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('END IN: 00:00:28'), findsOneWidget);
+
     // Past the close: the countdown's own timer fires on the way.
-    await tester.pump(const Duration(seconds: 31));
+    await tester.pump(const Duration(seconds: 30));
     await tester.pump();
 
     expect(find.text('Ended'), findsOneWidget);

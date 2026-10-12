@@ -811,6 +811,7 @@ class _ContestTitleField extends StatelessWidget {
       controller: controller,
       hint: hint,
       maxLength: 80,
+      autofocus: true,
       style: const TextStyle(
         fontFamily: _soraFont,
         fontSize: 24,
@@ -838,6 +839,7 @@ class _ContestHeadingField extends StatelessWidget {
         hint: hint,
         maxLength: 400,
         maxLines: 4,
+        autofocus: true,
         style: const TextStyle(
           fontFamily: _soraFont,
           fontSize: 20,
@@ -858,6 +860,7 @@ class _CardTextField extends StatelessWidget {
     required this.style,
     required this.maxLength,
     this.maxLines = 2,
+    this.autofocus = false,
   });
 
   final TextEditingController controller;
@@ -866,14 +869,21 @@ class _CardTextField extends StatelessWidget {
   final int maxLength;
   final int maxLines;
 
+  /// The card's main line opens with its cursor blinking after the text
+  /// already there, so it reads as something to type over, not a label.
+  final bool autofocus;
+
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      autofocus: autofocus,
       minLines: 1,
       maxLines: maxLines,
       maxLength: maxLength,
-      cursorColor: Colors.white,
+      // In the text's own colour, so it shows on the dark band and the light card alike.
+      cursorColor: style.color ?? Colors.white,
+      cursorWidth: 2,
       textCapitalization: TextCapitalization.sentences,
       style: style,
       // The card is the field: the app's InputDecorationTheme would fill and
