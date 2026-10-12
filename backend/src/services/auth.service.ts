@@ -310,6 +310,7 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     location: user.location ?? user.branch,
     state: user.state,
     designation: user.designation,
+    employeeId: user.employeeId,
     employmentType: user.employeeType,
     department: user.department,
     teamDescription: user.teamDescription,
@@ -330,6 +331,8 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     // Whether the dashboard shows the Support desk, and which desk.
     supportRole: supportRoleOf(user),
     isLeadership: user.isLeadership === true,
+    // Whether the composer offers contests; the server refuses one without it.
+    canCreateContests: user.canCreateContests === true,
   };
 }
 

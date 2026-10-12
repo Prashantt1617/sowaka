@@ -61,6 +61,7 @@ import {
   mayChallenge,
   mayOpenAnother,
   mayTakeAnother,
+  ONE_OPEN_AT_A_TIME,
   newSeed,
   orgOf,
   otherPlayer,
@@ -102,6 +103,16 @@ const RECENT_RESULTS = 10;
 const COLLEAGUE_LIMIT = 50;
 const BOARD_SIZE = 10;
 const INACTIVE = ['offboarded', 'terminated'];
+
+/**
+ * The lobby (both players in the challenge at once, readying up for one shared
+ * start) is switched off for now: each player plays their round whenever they
+ * like and the result lands once both have. Off, opening a challenge is just a
+ * read (no heartbeat, no "join now" push), accepting it again changes nothing,
+ * and every view says the lobby is closed. The code stays for turning it back on.
+ */
+const LOBBY_ENABLED = false;
+const lobbyOn = (c: GameChallenge, now: Date) => LOBBY_ENABLED && lobbyOpen(c, now);
 
 function refuse(decision: Decision): never {
   if (decision.ok) throw new Error('refuse() called with an allowed decision');
@@ -204,7 +215,7 @@ export function toView(c: GameChallenge, viewerId: string, now = new Date()): Ch
   const status = effectiveStatus(c, now);
   const finished = status === 'finished';
   const outcome = finished ? outcomeFor(c, viewerId) : null;
-  const open = lobbyOpen(c, now);
+  const open = lobbyOn(c, now);
   return {
     id: c.id,
     gameKey: c.gameKey,
@@ -409,9 +420,11 @@ async function ownOpenOf(viewer: ChallengeViewer, now: Date, exceptId?: string):
 async function answer(viewer: ChallengeViewer, id: string, verdict: 'accepted' | 'declined') {
   const pending = await loadFor(viewer, id, verdict === 'accepted' ? 'accept' : 'decline');
   if (verdict === 'accepted') {
-    // One at a time: a challenge waiting on them can wait, not be taken on, while one of theirs is open.
-    const room = mayTakeAnother(await ownOpenOf(viewer, new Date(), id));
-    if (!room.ok) refuse(room);
+    // One at a time (when on): a challenge waiting on them can wait, not be taken on, while one of theirs is open.
+    if (ONE_OPEN_AT_A_TIME) {
+      const room = mayTakeAnother(await ownOpenOf(viewer, new Date(), id));
+      if (!room.ok) refuse(room);
+    }
   }
   // A game since taken off the company's list can still be declined, not played.
   const game = await requireChallengeGame(viewer, pending.gameKey).catch((error) => {
@@ -453,7 +466,9 @@ async function answer(viewer: ChallengeViewer, id: string, verdict: 'accepted' |
  */
 export async function acceptChallenge(viewer: ChallengeViewer, id: string) {
   const c = await loadFor(viewer, id, 'view');
-  if (acceptMeans(c, new Date()) === 'ready') return toggleReady(viewer, c);
+  if (acceptMeans(c, new Date()) === 'ready') {
+    return LOBBY_ENABLED ? toggleReady(viewer, c) : toView(c, viewer.userId);
+  }
   return answer(viewer, id, 'accepted');
 }
 
@@ -559,7 +574,7 @@ function lobbyStill(c: GameChallenge, now: Date): Filter<GameChallenge> {
  * ready, whatever they said before they left.
  */
 async function joinLobby(c: GameChallenge, userId: string, now: Date): Promise<GameChallenge> {
-  if (!lobbyOpen(c, now)) return c;
+  if (!lobbyOn(c, now)) return c;
   if (inLobby(c, userId, now)) {
     // Still here: the heartbeat only, nothing the other needs to hear.
     const kept = await gameChallenges().findOneAndUpdate(

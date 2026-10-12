@@ -43,6 +43,7 @@ import {
   mayTakeAnother,
   playedLongEnough,
   mayOpenAnother,
+  ONE_OPEN_AT_A_TIME,
   readyToggle,
   startAtFor,
   tellOtherOfArrival,
@@ -210,7 +211,8 @@ console.log('one open challenge at a time');
     busy.ok ? '' : busy.message);
   check('and which challenge, for the page to open', !busy.ok && busy.details?.challengeId === 'c9' && busy.details?.reason === 'one_open');
   const send = mayOpenAnother({ outgoing: 1, incomingForOpponent: 0, betweenThem: false, own: { challengeId: 'c9', withName: 'Raghav Menon' } });
-  check('sending another is refused the same way', !send.ok && send.status === 409 && send.details?.challengeId === 'c9');
+  check(ONE_OPEN_AT_A_TIME ? 'sending another is refused the same way' : 'with one at a time off, another can be sent while one is open',
+    ONE_OPEN_AT_A_TIME ? !send.ok && send.status === 409 && send.details?.challengeId === 'c9' : send.ok);
   const pair = mayOpenAnother({ outgoing: 1, incomingForOpponent: 0, betweenThem: true, own: { challengeId: 'c9', withName: 'Raghav Menon' } });
   check('one already open with the same person says so first', !pair.ok && pair.message === 'You already have a challenge open with them');
   check('nothing open still sends', mayOpenAnother({ outgoing: 0, incomingForOpponent: 3, betweenThem: false, own: null }).ok);

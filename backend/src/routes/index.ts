@@ -25,6 +25,7 @@ import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
 import { gamesRouter, playRouter } from './game-catalog.routes';
 import { policiesRouter } from './policy-document.routes';
+import { appPagesRouter } from './app-page.routes';
 
 export const router = Router();
 
@@ -56,6 +57,8 @@ router.use('/garden', gardenRouter);
 // The Games tab: which games a company has, their pages and their scores.
 router.use('/games', gamesRouter);
 router.use('/play', playRouter);
+// Pages the app shows inside a tab (the Games home), when on for the company.
+router.use('/app-pages', appPagesRouter);
 // Actions › View Policies: the company's own policy texts, when it has them.
 router.use('/policies', policiesRouter);
 router.use('/help', helpRouter);

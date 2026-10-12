@@ -3,6 +3,7 @@ import {
   assignHandler,
   assigneesHandler,
   createTicketHandler,
+  editTopicsHandler,
   employeeMessageHandler,
   myTicketHandler,
   myTicketsHandler,
@@ -19,10 +20,15 @@ import { requireDashboardAccess } from '../middleware/admin.middleware';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadSupportFiles } from '../middleware/support-upload.middleware';
 
-/** App: an employee's own Support desk tickets. Mounted at `/support`. */
+/**
+ * App: an employee's own Support desk tickets. Mounted at `/support`. The
+ * ticket types are the company's own; a Support head or a dashboard admin
+ * replaces them from the dashboard (the service checks which).
+ */
 export const supportRouter = Router();
 supportRouter.use(requireAuth);
 supportRouter.get('/topics', topicsHandler);
+supportRouter.put('/topics', requireDashboardAccess, editTopicsHandler);
 supportRouter.get('/tickets', myTicketsHandler);
 supportRouter.post('/tickets', uploadSupportFiles, createTicketHandler);
 supportRouter.get('/tickets/:id', myTicketHandler);

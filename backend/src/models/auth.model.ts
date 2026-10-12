@@ -27,6 +27,8 @@ export interface AuthUser {
   /** Support desk role; null when they have none (no Support tab). */
   supportRole?: 'head' | 'staff' | null;
   isLeadership?: boolean;
+  /** May start a contest in Connect; the app shows the contest options only then. */
+  canCreateContests?: boolean;
   company: string;
   /** The company's id, which is what branding is chosen by. */
   org?: string;
@@ -36,6 +38,7 @@ export interface AuthUser {
   location?: string;
   state?: string;
   designation?: string;
+  employeeId?: string;
   employmentType?: string;
   department?: string;
   teamDescription?: string;

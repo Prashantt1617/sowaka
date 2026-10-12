@@ -166,6 +166,14 @@ export const env = {
    * which is what a developer's machine wants.
    */
   careWebBase: (process.env.CARE_WEB_BASE ?? '').replace(/\/+$/, ''),
+  /**
+   * A folder of app pages (`<key>.html`) to serve from disk instead of the
+   * database, for every company, as version "dev": for trying a page on the
+   * simulator against a local backend with no database write. Honoured only
+   * on a developer's machine (the OTP bypass's allowlist); ignored, loudly,
+   * anywhere else.
+   */
+  appPageDir: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? (process.env.APP_PAGE_DIR ?? '').trim() : '',
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
     clientId: process.env.ZOOM_CLIENT_ID ?? '',
@@ -199,4 +207,9 @@ if (process.env.OTP_DEV_BYPASS === 'true' && !env.otpDevBypass) {
     `[security] OTP_DEV_BYPASS is set on a ${env.nodeEnv} host and has been ignored. ` +
       'The fixed code 123456 will not be accepted. Use OTP_TEST_EMAILS for store-review accounts.',
   );
+}
+
+if ((process.env.APP_PAGE_DIR ?? '').trim() && !env.appPageDir) {
+  // eslint-disable-next-line no-console
+  console.warn(`[app-pages] APP_PAGE_DIR is set on a ${env.nodeEnv} host and has been ignored; pages come from the database.`);
 }

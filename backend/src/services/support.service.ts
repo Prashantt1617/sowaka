@@ -12,9 +12,6 @@ import { randomUUID } from 'node:crypto';
 import type { Sort, UpdateFilter } from 'mongodb';
 import { supportCounters, supportEvents, supportMessages, supportTickets, users } from '../config/db';
 import {
-  SUPPORT_TOPICS,
-  isSupportTopic,
-  supportTopicLabel,
   type SupportAttachment,
   type SupportChangeKind,
   type SupportEvent,
@@ -22,6 +19,7 @@ import {
   type SupportMessage,
   type SupportRole,
   type SupportTicket,
+  type SupportTopicOption,
 } from '../models/support.model';
 import type { User } from '../models/user.model';
 import { logger } from '../utils/logger';
@@ -37,12 +35,16 @@ import {
 import {
   AUTO_REPLY,
   assignmentBlocked,
+  effectiveSupportTopics,
   employeeMay,
   employeeStatus,
+  mayEditSupportTopics,
+  pickSupportTopic,
   preview,
   requesterView,
   staffMay,
   supportRoleOf,
+  topicLabelOf,
   viewAllowed,
   SUPPORT_VIEWS,
   type Decision,
@@ -51,6 +53,7 @@ import {
   type StaffAction,
   type SupportView,
 } from './support-rules';
+import { saveSupportTopics, supportTopicsOf } from './support-topics.service';
 
 export class SupportError extends Error {
   constructor(
@@ -190,17 +193,27 @@ async function presentAttachments(items: SupportAttachment[] | undefined) {
   );
 }
 
+/**
+ * What a ticket's type reads as in a notification. Only a ticket with neither
+ * a label of its own nor a default one needs the org's current list.
+ */
+async function labelOf(ticket: SupportTicket): Promise<string> {
+  const label = topicLabelOf(ticket);
+  return label !== ticket.topic ? label : topicLabelOf(ticket, await supportTopicsOf(ticket.org));
+}
+
 // ---------------------------------------------------------------------------
 // Views
 // ---------------------------------------------------------------------------
 
-function ticketForEmployee(ticket: SupportTicket) {
+/** `topics`: the org's current list, for a ticket that has no label of its own. */
+function ticketForEmployee(ticket: SupportTicket, topics: readonly SupportTopicOption[]) {
   const { status, chip } = employeeStatus(ticket);
   return {
     id: ticket.id,
     ticketNo: ticket.ticketNo,
     topic: ticket.topic,
-    topicLabel: supportTopicLabel(ticket.topic),
+    topicLabel: topicLabelOf(ticket, topics),
     status,
     chip,
     createdAt: ticket.createdAt,
@@ -235,12 +248,17 @@ function eventForEmployee(event: SupportEvent) {
   };
 }
 
-function ticketForStaff(ticket: SupportTicket, requester: RequesterView, names: Map<string, string>) {
+function ticketForStaff(
+  ticket: SupportTicket,
+  requester: RequesterView,
+  names: Map<string, string>,
+  topics: readonly SupportTopicOption[],
+) {
   return {
     id: ticket.id,
     ticketNo: ticket.ticketNo,
     topic: ticket.topic,
-    topicLabel: supportTopicLabel(ticket.topic),
+    topicLabel: topicLabelOf(ticket, topics),
     status: ticket.status,
     requester,
     assignee: ticket.assigneeUserId
@@ -366,8 +384,27 @@ async function appendMessage(
 // App: the employee
 // ---------------------------------------------------------------------------
 
-export function listTopics() {
-  return { topics: SUPPORT_TOPICS.map(({ key, label }) => ({ key, label })) };
+/**
+ * The caller's company's ticket types, in order: `{ topics: [{ key, label }] }`.
+ * An account with no company gets the defaults, as everyone did before.
+ */
+export async function listTopics(actor: Actor) {
+  return { topics: actor.org ? await supportTopicsOf(actor.org) : effectiveSupportTopics(null) };
+}
+
+/**
+ * A Support head or a dashboard admin replaces their company's ticket types:
+ * the whole list, in order, each `{ key?, label }`. See `mergeSupportTopics`.
+ */
+export async function editTopics(actor: Actor, input: { topics?: unknown }) {
+  const org = orgOf(actor);
+  if (!mayEditSupportTopics(actor)) {
+    throw new SupportError(403, 'Only a Support head or a dashboard admin can change the ticket types');
+  }
+  const edit = await saveSupportTopics(org, input.topics, actor.userId);
+  if (!edit.ok) throw new SupportError(edit.status, edit.message);
+  logger.info('Support ticket types changed', { org, userId: actor.userId, topics: edit.topics.map((topic) => topic.key) });
+  return { topics: edit.topics };
 }
 
 async function ownTicket(actor: Actor, ticketId: string, action: 'read' | 'reply'): Promise<SupportTicket> {
@@ -384,7 +421,14 @@ export async function createTicket(
   files: SupportUpload[],
 ) {
   const org = orgOf(actor);
-  if (!isSupportTopic(input.topic)) throw new SupportError(400, 'Choose a type of ticket');
+  const topics = await supportTopicsOf(org);
+  // A type HR has removed since the app loaded the list is refused, not filed.
+  const topic = pickSupportTopic(input.topic, topics);
+  if (!topic) {
+    throw new SupportError(400, typeof input.topic === 'string' && input.topic
+      ? 'That type of ticket is no longer offered. Choose another.'
+      : 'Choose a type of ticket');
+  }
   const text = cleanText(input.text, MAX_TEXT);
   if (!text) throw new SupportError(400, 'Describe your concern');
 
@@ -409,7 +453,9 @@ export async function createTicket(
     org,
     ticketNo: counter?.seq ?? 0,
     requesterUserId: actor.userId,
-    topic: input.topic,
+    topic: topic.key,
+    // Kept on the ticket: a later rename or removal never changes it.
+    topicLabel: topic.label,
     status: 'open',
     lastMessageAt: autoAt,
     // The concern itself, not the automatic reply: it is what a head triages by.
@@ -434,13 +480,13 @@ export async function createTicket(
     notifySafe(heads, {
       scenario: 'support_ticket_new',
       title: 'New support ticket',
-      body: `${supportTopicLabel(ticket.topic)} ticket from ${actor.name}`,
+      body: `${topic.label} ticket from ${actor.name}`,
       data: { destination: 'support_ticket', ticketId: id },
     }),
   );
 
   return {
-    ticket: ticketForEmployee(ticket),
+    ticket: ticketForEmployee(ticket, topics),
     messages: await Promise.all([first, auto].map(messageForEmployee)),
   };
 }
@@ -451,7 +497,8 @@ export async function listMyTickets(actor: Actor) {
     .sort({ lastMessageAt: -1 })
     .limit(LIST_LIMIT)
     .toArray();
-  return { tickets: rows.map(ticketForEmployee) };
+  const topics = actor.org ? await supportTopicsOf(actor.org) : [];
+  return { tickets: rows.map((row) => ticketForEmployee(row, topics)) };
 }
 
 export async function getMyTicket(actor: Actor, ticketId: string) {
@@ -465,7 +512,7 @@ export async function getMyTicket(actor: Actor, ticketId: string) {
     ticket = { ...ticket, unreadForEmployee: 0 };
   }
   return {
-    ticket: ticketForEmployee(ticket),
+    ticket: ticketForEmployee(ticket, await supportTopicsOf(ticket.org)),
     messages: await Promise.all(messages.map(messageForEmployee)),
     events: events.map(eventForEmployee).filter((event) => event.text),
   };
@@ -487,7 +534,7 @@ export async function postEmployeeMessage(actor: Actor, ticketId: string, input:
   void notifySafe(recipients, {
     scenario: 'support_employee_reply',
     title: 'New reply on a support ticket',
-    body: `${actor.name} replied on a ${supportTopicLabel(fresh.topic)} ticket`,
+    body: `${actor.name} replied on a ${await labelOf(fresh)} ticket`,
     data: { destination: 'support_ticket', ticketId: fresh.id },
   });
   return { message: await messageForEmployee(message) };
@@ -522,12 +569,17 @@ async function staffTicket(viewer: StaffViewer, ticketId: string, action: StaffA
 }
 
 async function staffTicketView(ticket: SupportTicket) {
-  const [requester, names] = await Promise.all([requesterOf(ticket), namesOf([ticket.assigneeUserId])]);
-  return ticketForStaff(ticket, requester, names);
+  const [requester, names, topics] = await Promise.all([
+    requesterOf(ticket),
+    namesOf([ticket.assigneeUserId]),
+    supportTopicsOf(ticket.org),
+  ]);
+  return ticketForStaff(ticket, requester, names, topics);
 }
 
+/** `canEditTopics`: whether the dashboard offers this person the ticket types editor. */
 export function supportMe(actor: Actor) {
-  return { role: supportRoleOf(actor) };
+  return { role: supportRoleOf(actor), canEditTopics: mayEditSupportTopics(actor) };
 }
 
 export async function listStaffTickets(actor: Actor, viewInput: unknown) {
@@ -557,12 +609,13 @@ export async function listStaffTickets(actor: Actor, viewInput: unknown) {
         ])
       : Promise.all([0, 0, supportTickets().countDocuments({ org, assigneeUserId: userId, status: 'assigned' }), 0]),
   ]);
-  const [requesters, names] = await Promise.all([
+  const [requesters, names, topics] = await Promise.all([
     requestersOf(rows.map((row) => row.requesterUserId)),
     namesOf(rows.map((row) => row.assigneeUserId)),
+    supportTopicsOf(org),
   ]);
   return {
-    tickets: rows.map((row) => ticketForStaff(row, requesters.get(row.requesterUserId) ?? requesterView(null), names)),
+    tickets: rows.map((row) => ticketForStaff(row, requesters.get(row.requesterUserId) ?? requesterView(null), names, topics)),
     counts: { new: counts[0], assigned: counts[1], mine: counts[2], all: counts[3] },
   };
 }
@@ -581,16 +634,17 @@ export async function getStaffTicket(actor: Actor, ticketId: string) {
     await supportTickets().updateOne({ id: ticketId }, { $set: { unreadForStaff: 0 } });
     ticket = { ...ticket, unreadForStaff: 0 };
   }
-  const [requester, names] = await Promise.all([
+  const [requester, names, topics] = await Promise.all([
     requesterOf(ticket),
     namesOf([
       ticket.assigneeUserId,
       ...messages.filter((m) => m.side === 'staff').map((m) => m.senderUserId),
       ...events.flatMap((e) => [e.actorUserId, e.toUserId, e.fromUserId]),
     ]),
+    supportTopicsOf(viewer.org),
   ]);
   return {
-    ticket: ticketForStaff(ticket, requester, names),
+    ticket: ticketForStaff(ticket, requester, names, topics),
     messages: await Promise.all(messages.map((message) => messageForStaff(message, requester, names))),
     events: events.map((event) => eventForStaff(event, ticket, requester, names)),
   };
@@ -616,7 +670,7 @@ export async function postStaffMessage(actor: Actor, ticketId: string, input: { 
   void notifySafe([fresh.requesterUserId], {
     scenario: 'support_reply',
     title: 'HR team replied',
-    body: `New reply on your ${supportTopicLabel(fresh.topic)} ticket`,
+    body: `New reply on your ${await labelOf(fresh)} ticket`,
     data: { destination: 'support_ticket', ticketId: fresh.id },
   });
   const [requester, names] = await Promise.all([requesterOf(fresh), namesOf([viewer.userId])]);
@@ -677,7 +731,7 @@ async function assignTo(ticket: SupportTicket, viewer: StaffViewer, targetUserId
     void notifySafe([targetUserId], {
       scenario: 'support_ticket_assigned',
       title: 'Support ticket assigned to you',
-      body: `${supportTopicLabel(fresh.topic)} ticket from ${name}`,
+      body: `${await labelOf(fresh)} ticket from ${name}`,
       data: { destination: 'support_ticket', ticketId: fresh.id },
     });
   }
@@ -721,12 +775,12 @@ export async function sendBackTicket(actor: Actor, ticketId: string, input: { no
     visibleToEmployee: false,
   });
   emit(fresh, 'sent_back', true, [viewer.userId]);
-  const names = await namesOf([viewer.userId]);
+  const [names, label] = await Promise.all([namesOf([viewer.userId]), labelOf(fresh)]);
   void headsOf(fresh.org).then((heads) =>
     notifySafe(heads, {
       scenario: 'support_ticket_sent_back',
       title: 'Support ticket sent back',
-      body: `${names.get(viewer.userId) ?? 'Support staff'} sent back a ${supportTopicLabel(fresh.topic)} ticket`,
+      body: `${names.get(viewer.userId) ?? 'Support staff'} sent back a ${label} ticket`,
       data: { destination: 'support_ticket', ticketId: fresh.id },
     }),
   );
@@ -743,7 +797,7 @@ export async function resolveTicket(actor: Actor, ticketId: string) {
   void notifySafe([fresh.requesterUserId], {
     scenario: 'support_resolved',
     title: 'Ticket resolved',
-    body: `Your ${supportTopicLabel(fresh.topic)} ticket was marked as resolved`,
+    body: `Your ${await labelOf(fresh)} ticket was marked as resolved`,
     data: { destination: 'support_ticket', ticketId: fresh.id },
   });
   return { ticket: await staffTicketView(fresh) };

@@ -39,6 +39,19 @@ export interface ConnectAudience {
    * existing posts stay visible, but no longer written.
    */
   department?: string;
+  /**
+   * Set on a post sent to one of the author's custom lists: the list it went
+   * to. Only ever shown to the author (see `audienceView`).
+   */
+  listId?: string;
+  /** The list's name as it was at publish, for the author's own label. */
+  listName?: string;
+  /**
+   * Who may see a list post: the list's members at the moment it was
+   * published, plus the author. A snapshot — editing or deleting the list
+   * afterwards does not move it. Present on list posts only.
+   */
+  userIds?: string[];
 }
 
 export interface ConnectComment {

@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
-import { companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
-import { ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
+import { audienceLists, companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
+import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
 import { challengePointSource, recordPointChanges } from './points-ledger.service';
@@ -13,6 +13,16 @@ import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { fetchLinkPreview } from './link-preview.service';
 import { companyDisplayName } from './company-settings.service';
+import {
+  audienceAllows,
+  audienceView,
+  colleagueFilter,
+  feedAudienceFilter,
+  isListAudience,
+  listAudience,
+  realtimeUserIds,
+  taggableWithin,
+} from './audience-list-rules';
 import {
   deleteConnectMedia,
   presignConnectMedia,
@@ -49,6 +59,22 @@ const CHALLENGE_POST_TYPES: ConnectPostType[] = [
 const isChallenge = (type: ConnectPostType) => CHALLENGE_POST_TYPES.includes(type);
 
 /**
+ * Whether [user] may publish a post of [type]. Contests are started only by
+ * the people granted it (`canCreateContests`); every other type is open as
+ * before, and entering or voting on a contest needs nothing.
+ */
+export function mayPublishType(
+  type: ConnectPostType,
+  user: Pick<User, 'canCreateContests'>,
+): boolean {
+  return !isChallenge(type) || user.canCreateContests === true;
+}
+
+function requireMayPublishType(type: ConnectPostType, user: Pick<User, 'canCreateContests'>) {
+  if (!mayPublishType(type, user)) throw new ConnectError(403, "You can't create contests");
+}
+
+/**
  * Sends notifications after the response, so a slow push never delays the
  * write it is about. A failure is logged; the write has already succeeded.
  */
@@ -72,6 +98,9 @@ function announceChange(
     org: post.org,
     teamId: post.audience.teamId,
     department: post.audience.department,
+    // A list post is told only to the people on it, one by one — never to
+    // the company's room, which would tell everyone it exists.
+    userIds: realtimeUserIds(post.audience),
   });
 }
 
@@ -172,18 +201,9 @@ export async function getConnectFeed(
         }
       : {};
 
-  const audienceFilter = {
-    $or: [
-      // MongoDB's driver stores `undefined` as BSON null rather than
-      // dropping the key, so company-wide posts persist with an explicit
-      // null — querying for `null` matches both that and a genuinely
-      // missing field, unlike `$exists: false`.
-      { 'audience.teamId': null, 'audience.department': null },
-      { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
-      // Posts written while Team meant "same department".
-      { 'audience.department': viewer.department },
-    ],
-  };
+  // Company-wide, the viewer's teams, or a custom list they are on — the
+  // same rule `requireVisiblePost` applies to a single post.
+  const audienceFilter = feedAudienceFilter(viewer);
   // Up to FEED_MAX_PINNED pinned posts lead the first page while their pins
   // last. The paged list leaves out exactly the ones that page showed, on
   // every page, by the ids the cursor carries: a pin past the limit keeps its
@@ -237,14 +257,16 @@ export async function getConnectFeed(
   const [authors, relayStatuses] = await Promise.all([
     users()
       .find({ userId: { $in: authorIds } })
-      .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+      .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string; isLeadership?: boolean }>({
         userId: 1,
         profilePhotoKey: 1,
         profilePhotoUrl: 1,
+        isLeadership: 1,
       })
       .toArray(),
     relayStatusesFor(posts),
   ]);
+  const leaderIds = new Set(authors.filter((author) => author.isLeadership === true).map((author) => author.userId));
   const authorPhotoUrls = new Map(
     await Promise.all(
       authors.map(
@@ -255,7 +277,7 @@ export async function getConnectFeed(
   );
 
   const views = await Promise.all(
-    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses)),
+    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses, leaderIds)),
   );
   return {
     posts: views,
@@ -320,6 +342,87 @@ export async function toggleConnectReaction(viewerUserId: string, postId: string
   return viewPost(updated ?? post, viewerUserId);
 }
 
+/** The most people a likes list returns: the latest likes, past this. */
+export const LIKERS_MAX = 500;
+
+/**
+ * Who liked a post, latest first, for the likes list. Read as the post is:
+ * only by someone who can see it, and without anyone the viewer has blocked,
+ * as their comments are left out. Names and photos are read live; someone
+ * since removed keeps a name only where the post still carries one (a comment
+ * of theirs, or the post itself), and is left out otherwise.
+ */
+export async function getConnectPostLikes(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  const ids = likersLatestFirst(post.likedBy, await blockedUserIdsFor(viewerUserId));
+  if (ids.length === 0) return [];
+  const people = await users()
+    .find({ userId: { $in: ids } })
+    .project<{
+      userId: string;
+      name: string;
+      designation?: string;
+      department?: string;
+      profilePhotoKey?: string;
+      profilePhotoUrl?: string;
+    }>({ _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1, profilePhotoUrl: 1 })
+    .toArray();
+  const byId = new Map(people.map((person) => [person.userId, person]));
+  const namesOnPost = knownNamesOnPost(post);
+  const likes = await Promise.all(
+    ids.map(async (userId) => {
+      const person = byId.get(userId);
+      const name = person?.name || namesOnPost.get(userId);
+      if (!name) return null;
+      return {
+        userId,
+        name,
+        initials: initialsFor(name),
+        designation: person?.designation ?? '',
+        // The list shows the department under each name.
+        department: person?.department ?? '',
+        avatarColor: avatarColorFor(userId),
+        photoUrl: person ? await resolveProfilePhoto(person) : undefined,
+      };
+    }),
+  );
+  return likes.filter((like): like is NonNullable<typeof like> => like !== null);
+}
+
+/**
+ * The ids to list, latest like first. `likedBy` grows by `$addToSet`, so it
+ * is already in the order the likes came in; anyone blocked is dropped, and
+ * past [max] the oldest go.
+ */
+export function likersLatestFirst(
+  likedBy: readonly string[],
+  blockedUserIds: readonly string[],
+  max = LIKERS_MAX,
+): string[] {
+  const blocked = new Set(blockedUserIds);
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (let index = likedBy.length - 1; index >= 0 && ids.length < max; index -= 1) {
+    const userId = likedBy[index];
+    if (!userId || blocked.has(userId) || seen.has(userId)) continue;
+    seen.add(userId);
+    ids.push(userId);
+  }
+  return ids;
+}
+
+/** The names a post itself carries for people: its author and commenters. */
+export function knownNamesOnPost(
+  post: Pick<ConnectPost, 'author' | 'comments'>,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  if (post.author.userId && post.author.name) names.set(post.author.userId, post.author.name);
+  for (const comment of post.comments) {
+    if (comment.userId && comment.name) names.set(comment.userId, comment.name);
+  }
+  return names;
+}
+
 export async function addConnectComment(
   viewerUserId: string,
   postId: string,
@@ -339,8 +442,13 @@ export async function addConnectComment(
     if (parent.parentId) throw new ConnectError(400, 'Cannot reply to a reply');
   }
   // Anyone in the post's company may be tagged, and only while their name is
-  // still in the text — a tag deleted while typing is not a tag.
-  const mentionIds = [...new Set(mentionedUserIdsInput.filter((id) => typeof id === 'string' && id))].slice(0, 20);
+  // still in the text — a tag deleted while typing is not a tag. On a list
+  // post, only someone who can see it: anyone else is dropped, so they are
+  // neither named as tagged nor told about a post they cannot open.
+  const mentionIds = taggableWithin(
+    post.audience,
+    [...new Set(mentionedUserIdsInput.filter((id) => typeof id === 'string' && id))],
+  ).slice(0, 20);
   const tagged = mentionIds.length
     ? await users()
         .find(
@@ -803,6 +911,8 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   const type = parsePostType(input.type);
+  // Before any upload, so a refused contest leaves nothing behind in storage.
+  requireMayPublishType(type, viewer);
   const now = new Date();
   const meta = postMeta(type);
   const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
@@ -828,7 +938,9 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     if (type === 'caption_challenge' && !hasMedia(body)) {
       throw new ConnectError(400, 'Add the picture people will be captioning');
     }
-    const visibility = await visibilityFromBody(type, enrichedBody, viewer);
+    // Company, team, or one of the author's lists — whose members are copied
+    // onto the post now, so the list changing later never moves it.
+    const audience = await audienceFromBody(type, enrichedBody, viewer);
     const post: ConnectPost = {
       id: randomUUID(),
       org: orgForUser(viewer),
@@ -838,12 +950,8 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       tagColor: meta.tagColor,
       tagTint: meta.tagTint,
       author: authorForUser(viewer),
-      audience: {
-        label: visibility.label,
-        org: orgForUser(viewer),
-        teamId: visibility.teamId,
-      },
-      body,
+      audience,
+      body: bodyForAudience(body, audience),
       likedBy: [],
       comments: [],
       actionBy: {},
@@ -878,6 +986,9 @@ export async function updateConnectPost(
 ) {
   const { post, viewer } = await requireEditablePost(viewerUserId, postId);
   const type = parsePostType(input.type ?? post.type);
+  // Editing a contest stays open to whoever may edit it; turning some other
+  // post into one is starting a contest, and takes the same grant.
+  if (!isChallenge(post.type)) requireMayPublishType(type, viewer);
   const meta = postMeta(type);
   const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
   const uploadedPollImages = await storeConnectMediaMany(viewerUserId, input.pollOptionImages ?? []);
@@ -918,7 +1029,7 @@ export async function updateConnectPost(
             : {}),
         }
       : enrichedBody;
-    const visibility = await visibilityFromBody(type, frozenBody, viewer);
+    const audience = await audienceForEdit(post, type, frozenBody, viewer);
     const existingMediaObjectKeys = mediaObjectKeys(post.body);
     const body = input.removeMedia
       ? withoutMedia(frozenBody)
@@ -933,12 +1044,8 @@ export async function updateConnectPost(
         tagIcon: meta.tagIcon,
         tagColor: meta.tagColor,
         tagTint: meta.tagTint,
-        audience: {
-          label: visibility.label,
-          org: post.org,
-          teamId: visibility.teamId,
-        },
-        body,
+        audience,
+        body: bodyForAudience(body, audience),
         updatedAt: new Date(),
       },
     };
@@ -958,7 +1065,7 @@ export async function updateConnectPost(
 }
 
 export async function deleteConnectPost(viewerUserId: string, postId: string) {
-  const { post } = await requireEditablePost(viewerUserId, postId);
+  const { post } = await requireEditablePost(viewerUserId, postId, 'delete');
   // A challenge that ran its course has paid out: people played, they earned,
   // and pulling the post down afterwards does not unearn it. One taken down
   // while it was still running never finished, so what it paid comes back —
@@ -1023,23 +1130,44 @@ export async function requireVisiblePost(viewerUserId: string, postId: string) {
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
-  const { teamId, department } = post.audience;
-  const visible = teamId
-    ? visibleTeamIds(viewer).includes(teamId)
-    : !department || department === viewer.department;
-  if (!visible) {
+  if (!audienceAllows(post.audience, viewer)) {
+    // A list post someone is not on does not exist as far as they can tell:
+    // a 403 would confirm there is something there to be kept from them.
+    if (isListAudience(post.audience)) throw new ConnectError(404, 'Post not found');
     throw new ConnectError(403, 'Post is not visible to you');
   }
   return post;
 }
 
-async function requireEditablePost(viewerUserId: string, postId: string) {
+/**
+ * The post, if this viewer may change it: its author, or HR. HR moderates
+ * the whole company's feed, but a list post is private to the people on it —
+ * HR may take one down (someone on it may have reported it) without seeing
+ * it, and may only edit one they are on.
+ */
+async function requireEditablePost(
+  viewerUserId: string,
+  postId: string,
+  purpose: 'edit' | 'delete' = 'edit',
+) {
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
-  if (post.author.userId !== viewerUserId && !viewer.dashboardAccess) {
+  const isAuthor = Boolean(post.author.userId) && post.author.userId === viewerUserId;
+  if (!isAuthor && !viewer.dashboardAccess) {
+    if (!audienceAllows(post.audience, viewer) && isListAudience(post.audience)) {
+      throw new ConnectError(404, 'Post not found');
+    }
     throw new ConnectError(403, 'You can only edit your own posts');
+  }
+  if (
+    !isAuthor &&
+    purpose === 'edit' &&
+    isListAudience(post.audience) &&
+    !audienceAllows(post.audience, viewer)
+  ) {
+    throw new ConnectError(404, 'Post not found');
   }
   return { post, viewer };
 }
@@ -1081,22 +1209,30 @@ async function viewPost(
   authorPhotoUrls?: Map<string, string | undefined>,
   knownBlockedUserIds?: string[],
   relayStatuses?: Map<string, string>,
+  leaderIds?: Set<string>,
 ) {
   // The feed resolves this once for the whole page; every other caller renders
   // a single post after a write and looks it up here.
   const blockedUserIds = knownBlockedUserIds ?? (await blockedUserIdsFor(viewerUserId));
   let authorPhotoUrl = post.author.photoUrl;
+  // Read live like the photo, so the Leadership pill follows the person's
+  // flag onto posts written before it was set.
+  let authorIsLeadership = false;
   if (post.author.userId) {
     if (authorPhotoUrls) {
       if (authorPhotoUrls.has(post.author.userId)) {
         authorPhotoUrl = authorPhotoUrls.get(post.author.userId);
       }
+      authorIsLeadership = leaderIds?.has(post.author.userId) ?? false;
     } else {
       const authorUser = await users().findOne(
         { userId: post.author.userId },
-        { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+        { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, isLeadership: 1 } },
       );
-      if (authorUser) authorPhotoUrl = await resolveProfilePhoto(authorUser);
+      if (authorUser) {
+        authorPhotoUrl = await resolveProfilePhoto(authorUser);
+        authorIsLeadership = authorUser.isLeadership === true;
+      }
     }
   }
   const liked = post.likedBy.includes(viewerUserId);
@@ -1304,7 +1440,10 @@ async function viewPost(
   }));
   return {
     ...post,
-    author: { ...post.author, photoUrl: authorPhotoUrl },
+    author: { ...post.author, photoUrl: authorPhotoUrl, isLeadership: authorIsLeadership },
+    // The author sees their list's name; everyone else "Private", and never
+    // the list or who else is on it.
+    audience: audienceView(post.audience, viewerUserId, post.author.userId),
     body,
     comments,
     liked,
@@ -1437,6 +1576,7 @@ function normalizePostBody(
         linkDomain: normalizeText(input.linkDomain, '', 120),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        listId: normalizeListId(input.listId),
         taggedUserIds: normalizeTaggedUserIds(input.taggedUserIds),
       };
     case 'recommendation':
@@ -1497,6 +1637,7 @@ function normalizePostBody(
         severity: normalizeAnnouncementSeverity(input.severity),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        listId: normalizeListId(input.listId),
         requireAcknowledgement,
         acknowledgementMessage: requireAcknowledgement
           ? normalizeText(input.acknowledgementMessage, '', 300)
@@ -1519,6 +1660,7 @@ function normalizePostBody(
         options: normalizePollOptions(input.options, pollOptionImageKeys),
         sendTo: normalizeSendTo(input.sendTo),
         sendToDepartment: normalizeDepartment(input.sendToDepartment),
+        listId: normalizeListId(input.listId),
       };
     case 'event':
       return {
@@ -1715,8 +1857,16 @@ function normalizeChoice(value: unknown, fallback: string, allowed: string[]) {
   return allowed.includes(value) ? value : fallback;
 }
 
+/**
+ * Who a post goes to: the company, the author's team, or one of their custom
+ * lists — `'list'`, with the list named by `listId` beside it.
+ */
 function normalizeSendTo(value: unknown) {
-  return normalizeChoice(value, 'all_company', ['all_company', 'my_team']);
+  return normalizeChoice(value, 'all_company', ['all_company', 'my_team', 'list']);
+}
+
+function normalizeListId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 64) : '';
 }
 
 function normalizeAnnouncementSeverity(value: unknown) {
@@ -1724,17 +1874,87 @@ function normalizeAnnouncementSeverity(value: unknown) {
   return normalizeChoice(value, 'plain', ['plain', 'highlight_alert']);
 }
 
-async function visibilityFromBody(
+/**
+ * The post types an author chooses an audience for — Public, Team or one of
+ * their lists. Every other type goes to the whole company.
+ */
+const AUDIENCE_POST_TYPES: ConnectPostType[] = ['hr_announcement', 'survey', 'new_post'];
+
+async function audienceFromBody(
   type: ConnectPostType,
   body: Record<string, unknown>,
   viewer: User,
-) {
-  const canTargetTeam = type === 'hr_announcement' || type === 'survey' || type === 'new_post';
-  const sendTo = canTargetTeam ? body.sendTo : undefined;
+): Promise<ConnectAudience> {
+  const org = orgForUser(viewer);
+  const sendTo = AUDIENCE_POST_TYPES.includes(type) ? body.sendTo : undefined;
+  if (sendTo === 'list') return listAudienceFor(viewer, String(body.listId ?? ''));
   const teamId = sendTo === 'my_team' ? await teamIdForAuthor(viewer) : undefined;
+  return { label: teamId ? 'Team' : 'Public', org, teamId };
+}
+
+/**
+ * A post sent to one of [author]'s lists: the list must be theirs, and its
+ * members are copied onto the post as they stand — only the ones still at
+ * the company. The post keeps exactly these people whatever happens to the
+ * list afterwards.
+ */
+async function listAudienceFor(author: User, listId: string): Promise<ConnectAudience> {
+  const org = orgForUser(author);
+  if (!listId) throw new ConnectError(400, 'Choose a list to send this to');
+  const list = await audienceLists().findOne({ id: listId, ownerUserId: author.userId, org });
+  if (!list) throw new ConnectError(404, 'That list no longer exists');
+  const members = await users()
+    .find({ userId: { $in: list.memberUserIds }, ...colleagueFilter(org) }, { projection: { _id: 0, userId: 1 } })
+    .toArray();
+  if (members.length === 0) {
+    throw new ConnectError(400, 'Nobody on that list is at the company any more. Edit the list first.');
+  }
+  return listAudience(list, org, author.userId, members.map((member) => member.userId));
+}
+
+/**
+ * The audience an edited post keeps. A list post's was settled when it went
+ * out — the people on it have seen it and been told about it — so an edit
+ * never changes it, nor turns it into a type that has no audience of its own
+ * (a contest, which the Games tab would then show the whole company). Nor
+ * does an edit move a published post onto a list.
+ */
+async function audienceForEdit(
+  post: ConnectPost,
+  type: ConnectPostType,
+  body: Record<string, unknown>,
+  editor: User,
+): Promise<ConnectAudience> {
+  if (isListAudience(post.audience)) {
+    if (!AUDIENCE_POST_TYPES.includes(type)) {
+      throw new ConnectError(400, "A post sent to a list can't be changed into that kind of post");
+    }
+    return post.audience;
+  }
+  if (AUDIENCE_POST_TYPES.includes(type) && body.sendTo === 'list') {
+    throw new ConnectError(400, 'Choose a list when you first share a post');
+  }
+  const audience = await audienceFromBody(type, body, editor);
+  return { ...audience, org: post.org };
+}
+
+/**
+ * The body as stored. Never the list's id — the audience carries it, and
+ * shows it to the author alone — and on a list post, tags only for the
+ * people who can see it: anyone else is dropped, never named on the post
+ * and never notified.
+ */
+function bodyForAudience(body: Record<string, unknown>, audience: ConnectAudience): Record<string, unknown> {
+  const rest = { ...body };
+  delete rest.listId;
+  if (!isListAudience(audience)) return rest;
   return {
-    label: teamId ? 'Team' : 'Public',
-    teamId,
+    ...rest,
+    sendTo: 'list',
+    sendToDepartment: undefined,
+    ...(Array.isArray(rest.taggedUserIds)
+      ? { taggedUserIds: taggableWithin(audience, rest.taggedUserIds as string[]) }
+      : {}),
   };
 }
 
@@ -1751,16 +1971,6 @@ async function teamIdForAuthor(author: User): Promise<string | undefined> {
   const leadsATeam = await users().countDocuments({ managerUserId: author.userId }, { limit: 1 });
   if (leadsATeam > 0) return author.userId;
   return author.managerUserId;
-}
-
-/**
- * Every reporting group the viewer is part of: the one they lead and the one
- * they belong to. A Team post is visible when it targets either.
- */
-function visibleTeamIds(viewer: User): string[] {
-  return [viewer.userId, viewer.managerUserId].filter(
-    (id): id is string => typeof id === 'string' && id.length > 0,
-  );
 }
 
 /**

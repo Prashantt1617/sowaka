@@ -23,6 +23,7 @@ import { catalogScoreId } from '../models/game-catalog.model';
 import type { GameChallenge } from '../models/game-challenge.model';
 import type { User } from '../models/user.model';
 import { blockedUserIdsFor } from './connect-blocks.service';
+import { feedAudienceFilter } from './audience-list-rules';
 import { catalogFor, GameCatalogError, type PublicGame } from './game-catalog.service';
 import {
   contestIsLive,
@@ -199,6 +200,11 @@ export interface LiveContest {
   closesAt: Date | null;
   publishedAt: Date;
   author: { userId: string | null; name: string; photoUrl: string | null };
+  /**
+   * Published by HR (a poster with dashboard access): the card says "Sowaka
+   * created this contest" with the company's mark, as the feed's card does.
+   */
+  official: boolean;
   entries: number;
   /** The latest few to enter, for the faces under the card. */
   entrants: { name: string; initials: string; photoUrl: string | null }[];
@@ -214,10 +220,6 @@ export interface LiveContest {
   imageUrl: string | null;
 }
 
-/** Teams the viewer belongs to, as the feed scopes a "Team" post. */
-const visibleTeamIds = (viewer: User) =>
-  [viewer.userId, viewer.managerUserId].filter((id): id is string => typeof id === 'string' && id.length > 0);
-
 /**
  * The contests in the viewer's feed that are still taking entries: the same
  * company, audience and blocks the feed applies, closing soonest first.
@@ -227,13 +229,8 @@ async function liveContestsFor(viewer: User, blockedList: Promise<string[]>, now
     org: feedOrgOf(viewer),
     type: { $in: CONTEST_TYPES },
     $and: [
-      {
-        $or: [
-          { 'audience.teamId': null, 'audience.department': null },
-          { 'audience.teamId': { $in: visibleTeamIds(viewer) } },
-          { 'audience.department': viewer.department },
-        ],
-      },
+      // The feed's own audience rule, custom lists included.
+      feedAudienceFilter(viewer),
       // A closing time still ahead (ISO strings compare as times), or posted
       // recently enough to count when it has none; read exactly below.
       {
@@ -326,6 +323,8 @@ async function liveContestsFor(viewer: User, blockedList: Promise<string[]>, now
         name: (authorId && people.get(authorId)?.name) || post.author.name,
         photoUrl: (authorId && people.get(authorId)?.photoUrl) || post.author.photoUrl || null,
       },
+      // As the feed reads it: only a contest marked as a colleague's is theirs.
+      official: post.body.official !== false,
       entries: entries.length,
       entrants: entries
         .slice(-ENTRANT_FACES)
@@ -356,6 +355,8 @@ export interface LiveRelay {
   teams: number;
   /** The viewer's team, when they are on one. */
   teamName: string | null;
+  /** A few of the players, the viewer's own team first, for the faces on the card. */
+  faces: { name: string; initials: string; photoUrl: string | null }[];
 }
 
 /** The company's Hint Relay, while it is on or still to come. */
@@ -376,6 +377,10 @@ async function liveRelayFor(viewer: User, now: Date): Promise<LiveRelay | null> 
       .toArray(),
   ]);
   const mine = teams.find((team) => team.members.some((member) => member.userId === viewer.userId));
+  const shown = [...(mine ? [mine] : []), ...teams.filter((team) => team !== mine)]
+    .flatMap((team) => team.members)
+    .slice(0, ENTRANT_FACES);
+  const people = await peopleById(shown.map((member) => member.userId));
   const lobbyOpen = !event.lobbyOpensAt || event.lobbyOpensAt.getTime() <= now.getTime();
   return {
     eventId: event.id,
@@ -388,6 +393,11 @@ async function liveRelayFor(viewer: User, now: Date): Promise<LiveRelay | null> 
     players: teams.reduce((sum, team) => sum + team.members.length, 0),
     teams: teams.length,
     teamName: mine?.name ?? null,
+    faces: shown.map((member) => ({
+      name: people.get(member.userId)?.name ?? member.name,
+      initials: initialsOf(member.name),
+      photoUrl: people.get(member.userId)?.photoUrl ?? null,
+    })),
   };
 }
 
@@ -397,6 +407,8 @@ export interface HomeChallenge {
   gameName: string;
   /** Waiting on the viewer's answer, or accepted and waiting on their round. */
   kind: 'incoming' | 'your_turn';
+  /** The viewer sent it: "You challenged Ananya" rather than "Aarav challenged you". */
+  sentByMe: boolean;
   from: { userId: string; name: string; firstName: string; photoUrl: string | null };
   /** What to beat: their round in this challenge once played, else their best in the game. */
   beat: number | null;
@@ -404,8 +416,9 @@ export interface HomeChallenge {
 }
 
 /**
- * Colleague challenges waiting on the viewer: ones sent to them, and ones
- * they accepted but have not played yet. Only in games the company still has.
+ * Colleague challenges waiting on the viewer: new ones to accept, and ones
+ * accepted that the viewer has not played yet (whoever sent them). Only in
+ * games the company still has.
  */
 async function challengesFor(viewer: User, catalog: Promise<PublicGame[]>, now: Date): Promise<HomeChallenge[]> {
   if (!viewer.org) return [];
@@ -455,6 +468,7 @@ async function challengesFor(viewer: User, catalog: Promise<PublicGame[]>, now: 
       gameKey: c.gameKey,
       gameName: games.find((game) => game.key === c.gameKey)!.name,
       kind: c.status === 'pending' ? 'incoming' : 'your_turn',
+      sentByMe: c.challengerUserId === me,
       from: { userId: them, name, firstName: firstNameOf(name), photoUrl: people.get(them)?.photoUrl ?? null },
       beat: c.scores?.[them]?.score ?? best?.score ?? null,
       expiresAt: c.expiresAt,

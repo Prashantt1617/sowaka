@@ -1,28 +1,38 @@
 /**
  * Checks the Support desk's rules: how the requester is shown, who may do
- * what, the Manager-topic assignment rule, and the topic list.
+ * what, the Manager-topic assignment rule, and the ticket types: the
+ * defaults, a company's own list, and how an edit to it lands.
  *
  * No database: the rules live in `services/support-rules.ts`, which is pure.
  * Run with `npx tsx src/scripts/support-check.ts`.
  */
 import {
+  DEFAULT_SUPPORT_TOPICS,
   MANAGER_TOPIC,
-  SUPPORT_TOPICS,
-  isSupportTopic,
-  supportTopicLabel,
   type SupportTicket,
+  type SupportTopicOption,
 } from '../models/support.model';
 import {
+  MAX_SUPPORT_TOPICS,
+  MAX_TOPIC_LABEL,
   assignmentBlocked,
+  cleanTopicLabel,
+  effectiveSupportTopics,
   employeeMay,
   employeeStatus,
+  mayEditSupportTopics,
+  mergeSupportTopics,
+  pickSupportTopic,
   preview,
   requesterView,
+  slugTopicKey,
   staffMay,
   supportRoleOf,
+  topicLabelOf,
   viewAllowed,
   type RequesterCard,
   type StaffAction,
+  type TopicEdit,
 } from '../services/support-rules';
 
 let failures = 0;
@@ -139,14 +149,119 @@ console.log('Manager-topic assignment rule');
     && !assignmentBlocked(ticket({ topic: MANAGER_TOPIC, requesterUserId: 'a' }), loop.get('a')!, 'z', loop));
 }
 
-console.log('topics');
-check('eight topics', SUPPORT_TOPICS.length === 8);
-check('in the design order', SUPPORT_TOPICS.map((t) => t.label).join('|') ===
+console.log('default ticket types');
+check('eight types', DEFAULT_SUPPORT_TOPICS.length === 8);
+check('in the design order', DEFAULT_SUPPORT_TOPICS.map((t) => t.label).join('|') ===
   'Workplace|Manager|Payroll|Attendance|Leaves|Benefits|Safety issues|Other');
-check('keys are unique and stable', new Set(SUPPORT_TOPICS.map((t) => t.key)).size === 8
-  && SUPPORT_TOPICS.map((t) => t.key).join(',') === 'workplace,manager,payroll,attendance,leaves,benefits,safety,other');
-check('the Manager topic is one of them', isSupportTopic(MANAGER_TOPIC) && supportTopicLabel(MANAGER_TOPIC) === 'Manager');
-check('unknown topics are refused', !isSupportTopic('finance') && !isSupportTopic(undefined));
+check('keys are unique and stable', new Set(DEFAULT_SUPPORT_TOPICS.map((t) => t.key)).size === 8
+  && DEFAULT_SUPPORT_TOPICS.map((t) => t.key).join(',') === 'workplace,manager,payroll,attendance,leaves,benefits,safety,other');
+check('the Manager type is one of them', pickSupportTopic(MANAGER_TOPIC, DEFAULT_SUPPORT_TOPICS)?.label === 'Manager');
+check('unknown types are refused', !pickSupportTopic('finance', DEFAULT_SUPPORT_TOPICS) && !pickSupportTopic(undefined, DEFAULT_SUPPORT_TOPICS)
+  && !pickSupportTopic({ key: 'payroll' }, DEFAULT_SUPPORT_TOPICS));
+
+console.log("a company's own ticket types");
+{
+  const saved = (edit: TopicEdit): SupportTopicOption[] => (edit.ok ? edit.topics : []);
+  const keys = (topics: SupportTopicOption[]) => topics.map((t) => t.key).join(',');
+  const defaults = effectiveSupportTopics(null);
+
+  check('no list of its own: the defaults are served', keys(defaults) === keys([...DEFAULT_SUPPORT_TOPICS])
+    && keys(effectiveSupportTopics({ topics: [] })) === keys(defaults));
+  const own = [{ key: 'payroll', label: 'Salary' }, { key: 'it', label: 'IT' }];
+  check('a list of its own is served, in its order', keys(effectiveSupportTopics({ topics: own })) === 'payroll,it'
+    && effectiveSupportTopics({ topics: own })[0].label === 'Salary');
+  check('serving hands out a copy', effectiveSupportTopics(null)[0] !== DEFAULT_SUPPORT_TOPICS[0]);
+
+  // Rename Leaves to Time off, move it first, drop Benefits, add two.
+  const edited = saved(mergeSupportTopics([
+    { key: 'leaves', label: '  Time   off ' },
+    ...defaults.filter((t) => t.key !== 'leaves' && t.key !== 'benefits'),
+    { label: 'IT & laptops' },
+    { label: 'Café' },
+  ], defaults));
+  check('a rename keeps the key', edited[0]?.key === 'leaves' && edited[0]?.label === 'Time off', JSON.stringify(edited[0]));
+  check('the order is as sent', keys(edited) === 'leaves,workplace,manager,payroll,attendance,safety,other,it-laptops,cafe', keys(edited));
+  check('a removed type is gone from the list', !edited.some((t) => t.key === 'benefits'));
+  check('a new type gets a key slugged from its name', slugTopicKey('IT & laptops') === 'it-laptops' && slugTopicKey('Café') === 'cafe'
+    && slugTopicKey('वेतन') === 'type' && slugTopicKey('x'.repeat(60)).length === 32);
+
+  const oldLeave = ticket({ topic: 'leaves', topicLabel: 'Leaves' });
+  const oldBenefits = ticket({ topic: 'benefits', topicLabel: 'Benefits' });
+  const legacy = ticket({ topic: 'leaves' });
+  check('an old ticket keeps the label it was raised under', topicLabelOf(oldLeave, edited) === 'Leaves');
+  check('a ticket of a removed type still reads as it did', topicLabelOf(oldBenefits, edited) === 'Benefits'
+    && topicLabelOf(ticket({ topic: 'benefits' }), edited) === 'Benefits');
+  check('a ticket from before per-company types reads as the default it was raised under', topicLabelOf(legacy, edited) === 'Leaves');
+  check('a new ticket of a renamed type reads as the new name', pickSupportTopic('leaves', edited)?.label === 'Time off');
+  check('a label nobody has falls back to the current list, then the key',
+    topicLabelOf(ticket({ topic: 'it-laptops' }), edited) === 'IT & laptops' && topicLabelOf(ticket({ topic: 'gone' }), edited) === 'gone');
+  check('a removed type is refused for new tickets', pickSupportTopic('benefits', edited) === null);
+
+  const again = saved(mergeSupportTopics([{ label: 'Benefits' }, { label: 'Salary' }], own, ['benefits', 'payroll']));
+  check('a type added back under a default name gets its old key back', again[0]?.key === 'benefits', keys(again));
+  check('a type matching a current name keeps that key', again[1]?.key === 'payroll', keys(again));
+  const fresh = saved(mergeSupportTopics([{ label: 'Travel' }], [{ key: 'other', label: 'Other' }], ['travel']));
+  check('a new type never takes a key old tickets carry', fresh[0]?.key === 'travel-2', keys(fresh));
+  const unknownKey = saved(mergeSupportTopics([{ key: 'travel', label: 'Travel desk' }], defaults, ['travel']));
+  check('a key not on the current list is not taken on trust', unknownKey[0]?.key === 'travel-desk', keys(unknownKey));
+  const swap = saved(mergeSupportTopics([{ key: 'payroll', label: 'Workplace' }, { key: 'workplace', label: 'Payroll' }], defaults));
+  check('two types may trade names, each keeping its key', keys(swap) === 'payroll,workplace' && swap[0].label === 'Workplace');
+  const renamedAndReadded = saved(mergeSupportTopics([{ key: 'leaves', label: 'Time off' }, { label: 'Leaves' }], defaults));
+  check('a new type with a renamed one\'s old name gets a key of its own', keys(renamedAndReadded) === 'leaves,leaves-2', keys(renamedAndReadded));
+}
+
+console.log('the Manager key');
+{
+  const defaults = effectiveSupportTopics(null);
+  const keys = (edit: TopicEdit) => (edit.ok ? edit.topics.map((t) => t.key).join(',') : `refused: ${edit.message}`);
+  const withoutManager = defaults.filter((t) => t.key !== MANAGER_TOPIC);
+  check('renaming the Manager type keeps the key', keys(mergeSupportTopics([{ key: MANAGER_TOPIC, label: 'Reporting manager' }], defaults)) === MANAGER_TOPIC);
+  check('a new type whose name slugs to it gets another key', keys(mergeSupportTopics([{ label: 'Manager.' }], withoutManager)) === 'manager-2',
+    keys(mergeSupportTopics([{ label: 'Manager.' }], withoutManager)));
+  check('a new type sent with the Manager key does not get it', keys(mergeSupportTopics([{ key: MANAGER_TOPIC, label: 'Payroll queries' }], withoutManager)) === 'payroll-queries');
+  check('a new "Manager" beside the renamed Manager type gets another key',
+    keys(mergeSupportTopics([{ key: MANAGER_TOPIC, label: 'Line manager' }, { label: 'Manager' }], defaults)) === 'manager,manager-2');
+  const dropped = mergeSupportTopics([{ key: 'payroll', label: 'Payroll' }, { label: 'Manager!' }, { label: 'Escalations' }], defaults);
+  check('dropping the Manager type frees nothing for another type in the same edit', keys(dropped) === 'payroll,manager-2,escalations',
+    keys(dropped));
+  const restored = mergeSupportTopics([...withoutManager, { label: 'Manager' }], withoutManager, ['manager']);
+  check('the Manager type added back under its own name gets its key, and its routing, back', keys(restored).endsWith(',manager'), keys(restored));
+  const routed = ticket({ topic: restored.ok ? restored.topics.at(-1)!.key : '' });
+  const byId = new Map([['u-rahul', { userId: 'u-rahul', managerUserId: 'u-manager' }], ['u-manager', { userId: 'u-manager' }]]);
+  check('a ticket of it never goes to the requester\'s manager', assignmentBlocked(routed, byId.get('u-rahul')!, 'u-manager', byId));
+}
+
+console.log('ticket type limits');
+{
+  const defaults = effectiveSupportTopics(null);
+  const refused = (edit: TopicEdit, pattern: RegExp) => !edit.ok && edit.status === 400 && pattern.test(edit.message);
+  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Type ${i + 1}` }));
+  check('not a list: refused', refused(mergeSupportTopics('Workplace', defaults), /list/));
+  check('none: refused', refused(mergeSupportTopics([], defaults), /at least one/));
+  check('one: fine', mergeSupportTopics([{ label: 'Anything' }], defaults).ok);
+  check(`${MAX_SUPPORT_TOPICS}: fine`, mergeSupportTopics(many(MAX_SUPPORT_TOPICS), defaults).ok);
+  check(`${MAX_SUPPORT_TOPICS + 1}: refused`, refused(mergeSupportTopics(many(MAX_SUPPORT_TOPICS + 1), defaults), /Up to 20/));
+  check('a blank name: refused', refused(mergeSupportTopics([{ label: '   ' }], defaults), /needs a name/)
+    && refused(mergeSupportTopics([{ key: 'payroll' }], defaults), /needs a name/));
+  check(`${MAX_TOPIC_LABEL} characters: fine`, mergeSupportTopics([{ label: 'x'.repeat(MAX_TOPIC_LABEL) }], defaults).ok);
+  check(`${MAX_TOPIC_LABEL + 1} characters: refused`, refused(mergeSupportTopics([{ label: 'x'.repeat(MAX_TOPIC_LABEL + 1) }], defaults), /40 characters/));
+  check('names are trimmed before they are measured', mergeSupportTopics([{ label: `  ${'x'.repeat(MAX_TOPIC_LABEL)}  ` }], defaults).ok
+    && cleanTopicLabel(' a \n b\t') === 'a b');
+  check('the same name twice, in any case: refused', refused(mergeSupportTopics([{ label: 'Payroll' }, { label: ' PAYROLL ' }], defaults), /listed twice/));
+  check('one key twice: refused', refused(mergeSupportTopics([{ key: 'payroll', label: 'Payroll' }, { key: 'payroll', label: 'Pay' }], defaults), /listed twice/));
+}
+
+console.log('who may edit the ticket types');
+{
+  const active = { dashboardAccess: true, lifecycleStatus: 'active' };
+  check('a Support head', mayEditSupportTopics({ ...active, supportRole: 'head' }));
+  check('a dashboard admin, with or without a role', mayEditSupportTopics({ ...active, dashboardAdmin: true })
+    && mayEditSupportTopics({ ...active, dashboardAdmin: true, supportRole: 'staff' }));
+  check('not support staff', !mayEditSupportTopics({ ...active, supportRole: 'staff' }));
+  check('not someone with dashboard access alone', !mayEditSupportTopics(active));
+  check('not without dashboard access', !mayEditSupportTopics({ dashboardAccess: false, dashboardAdmin: true, supportRole: 'head', lifecycleStatus: 'active' }));
+  check('not once offboarded', !mayEditSupportTopics({ ...active, dashboardAdmin: true, lifecycleStatus: 'offboarded' }));
+}
 
 console.log('chips');
 check('open: Submitted', employeeStatus(ticket()).chip === 'Submitted' && employeeStatus(ticket()).status === 'open');

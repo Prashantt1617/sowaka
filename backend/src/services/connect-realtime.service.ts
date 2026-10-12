@@ -25,6 +25,11 @@ interface ConnectChangeTarget extends ConnectChange {
   teamId?: string | null;
   /** @deprecated Legacy department-scoped posts. */
   department?: string | null;
+  /**
+   * A custom-list post: exactly who may see it. Told to each of them on their
+   * own channel, and to nobody else — not even that it exists.
+   */
+  userIds?: string[] | null;
 }
 
 let io: SocketServer | undefined;
@@ -215,7 +220,11 @@ function socketToken(socket: Socket): string | undefined {
  */
 export function emitConnectChange(change: ConnectChangeTarget): void {
   if (!io) return;
-  const { org, teamId, department, ...payload } = change;
+  const { org, teamId, department, userIds, ...payload } = change;
+  if (userIds) {
+    if (userIds.length > 0) io.to(userIds.map(personalRoom)).emit('connect:changed', payload);
+    return;
+  }
   const room = teamId
     ? teamRoom(org, teamId)
     : department

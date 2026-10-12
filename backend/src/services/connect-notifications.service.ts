@@ -21,6 +21,7 @@ import { ConnectComment, ConnectPost } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
 import { logger } from '../utils/logger';
+import { audienceAllows } from './audience-list-rules';
 
 // ------------------------------------------------------------------ helpers
 
@@ -78,14 +79,18 @@ export const celebrantOf = (post: ConnectPost): string =>
 const titleOf = (post: ConnectPost): string =>
   String(post.body.title ?? post.body.text ?? 'a post').slice(0, 80);
 
-/** Everyone who can see the post — the audience a notification may reach. */
+/**
+ * Everyone who can see the post — the audience a notification may reach.
+ * The same rule a read goes through (`audienceAllows`), so nobody is told
+ * about a post they could not open: a list post reaches only the people
+ * snapshotted onto it, however they are involved.
+ */
 export async function postAudience(post: ConnectPost): Promise<User[]> {
-  const roster = await users().find({ org: post.org }).toArray();
-  const { teamId, department } = post.audience;
-  return roster.filter((u) => {
-    if (teamId) return u.userId === teamId || u.managerUserId === teamId;
-    return !department || department === u.department;
-  });
+  const userIds = post.audience.userIds;
+  const roster = await users()
+    .find(Array.isArray(userIds) ? { org: post.org, userId: { $in: userIds } } : { org: post.org })
+    .toArray();
+  return roster.filter((u) => audienceAllows(post.audience, u));
 }
 
 type Copy = { title: string; body: string };
@@ -349,7 +354,8 @@ export async function notifyCommentLiked(
   const count = (updated?.likedBy ?? []).length;
   if (count === 0 || !comment.userId) return 0;
   const author = await users().findOne({ userId: comment.userId });
-  if (!author) return 0;
+  // Only someone who can still see the post hears about it.
+  if (!author || !audienceAllows(fresh.audience, author)) return 0;
   return send(
     [{
       user: author,

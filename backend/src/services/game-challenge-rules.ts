@@ -15,6 +15,13 @@ import type {
 
 /** Challenges a person may have out at once (waiting for an answer, or not yet played). */
 export const MAX_OPEN_OUTGOING = 5;
+
+/**
+ * One challenge at a time (`mayTakeAnother`) is switched off: a player may
+ * have several open at once, up to MAX_OPEN_OUTGOING sent, and withdraws an
+ * old one when they like. The rule stays for turning back on.
+ */
+export const ONE_OPEN_AT_A_TIME = false;
 /** Unanswered challenges anyone may be sent, so nobody can be flooded. */
 export const MAX_PENDING_INCOMING = 10;
 /** A live score update closer than this to the previous one is dropped. */
@@ -184,7 +191,7 @@ export interface OpenCounts {
 
 export function mayOpenAnother(counts: OpenCounts): Decision {
   if (counts.betweenThem) return no(409, 'You already have a challenge open with them');
-  const one = mayTakeAnother(counts.own);
+  const one = ONE_OPEN_AT_A_TIME ? mayTakeAnother(counts.own) : ok;
   if (!one.ok) return one;
   if (counts.outgoing >= MAX_OPEN_OUTGOING) {
     return no(429, `You have ${MAX_OPEN_OUTGOING} challenges open. Finish one before sending another.`);

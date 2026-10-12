@@ -3,6 +3,7 @@ import {
   SupportError,
   assignTicket,
   createTicket,
+  editTopics,
   getMyTicket,
   getStaffTicket,
   listAssignees,
@@ -50,7 +51,9 @@ const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 const id = (req: Request) => String(req.params.id ?? '');
 
 // App: the employee
-export const topicsHandler = handle(() => listTopics());
+export const topicsHandler = handle((req) => listTopics(actor(req)));
+// Dashboard: a Support head or a dashboard admin edits the list the app shows.
+export const editTopicsHandler = handle((req) => editTopics(actor(req), body(req)));
 export const myTicketsHandler = handle((req) => listMyTickets(actor(req)));
 export const createTicketHandler = handle((req) => createTicket(actor(req), body(req), files(req)), 201);
 export const myTicketHandler = handle((req) => getMyTicket(actor(req), id(req)));

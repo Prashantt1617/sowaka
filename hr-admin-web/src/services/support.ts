@@ -77,7 +77,26 @@ export type SupportAssignee = { userId: string; name: string; role: SupportRole 
 export const SUPPORT_MAX_FILES = 5;
 export const SUPPORT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-export const getSupportMe = () => api<{ role: SupportRole | null }>('/admin/support/me');
+/** One type of ticket, as the app's "Type of request" sheet lists it. The key never changes. */
+export type SupportTopic = { key: string; label: string };
+export const SUPPORT_MAX_TOPICS = 20;
+export const SUPPORT_MAX_TOPIC_LABEL = 40;
+/** The type whose tickets never go to the requester's manager; a rename keeps that. */
+export const SUPPORT_MANAGER_TOPIC = 'manager';
+
+/** `canEditTopics`: a Support head or a dashboard admin, who may change the ticket types. */
+export const getSupportMe = () => api<{ role: SupportRole | null; canEditTopics?: boolean }>('/admin/support/me');
+
+/** The company's ticket types, in the order the app lists them. */
+export const listSupportTopics = () => api<{ topics: SupportTopic[] }>('/support/topics');
+
+/**
+ * Support head or dashboard admin: the whole list, in order. A type sent with
+ * its key keeps it (a rename or a move); one without is new; one left out is
+ * removed, and tickets already raised under it keep their type.
+ */
+export const saveSupportTopics = (topics: { key?: string; label: string }[]) =>
+  api<{ topics: SupportTopic[] }>('/support/topics', { method: 'PUT', body: { topics } });
 
 export const listSupportTickets = (view: SupportView) =>
   api<{ tickets: SupportTicket[]; counts: SupportCounts }>(`/admin/support/tickets?view=${view}`);
