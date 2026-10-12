@@ -30,6 +30,7 @@ class ManagerState {
     this.applyLeaveSent = false,
     this.message,
     this.error,
+    this.tabResets = const {},
   });
 
   factory ManagerState.initial({
@@ -68,6 +69,13 @@ class ManagerState {
   final String? message;
   final String? error;
 
+  /// How many times each tab has been opened fresh from the bar. The shell
+  /// keys a tab on its count, so a new count builds it again from its
+  /// default: Actions on its home, Games on Games, Teams on My Team.
+  final Map<ManagerTab, int> tabResets;
+
+  int resetsOf(ManagerTab tab) => tabResets[tab] ?? 0;
+
   TeamMember? get selectedMember {
     final data = dashboard;
     final id = selectedMemberId;
@@ -100,6 +108,7 @@ class ManagerState {
     String? message,
     bool clearMessage = false,
     String? error,
+    Map<ManagerTab, int>? tabResets,
   }) {
     return ManagerState(
       status: status ?? this.status,
@@ -124,6 +133,7 @@ class ManagerState {
       applyLeaveSent: applyLeaveSent ?? this.applyLeaveSent,
       message: clearMessage ? null : message ?? this.message,
       error: error ?? this.error,
+      tabResets: tabResets ?? this.tabResets,
     );
   }
 }
@@ -137,8 +147,13 @@ class LoadManagerDashboard extends ManagerEvent {
 }
 
 class ChangeManagerTab extends ManagerEvent {
-  const ChangeManagerTab(this.tab);
+  const ChangeManagerTab(this.tab, {this.fresh = false});
   final ManagerTab tab;
+
+  /// Picked from the bar: the tab opens in its default state, not wherever it
+  /// was left. A switch made for a notification is not fresh, so it can land
+  /// on the page the notification is about.
+  final bool fresh;
 }
 
 class OpenFeedbackList extends ManagerEvent {
@@ -569,7 +584,7 @@ class ManagerBloc {
               _listenForRequestChanges();
             }
           }
-        case ChangeManagerTab(:final tab):
+        case ChangeManagerTab(:final tab, :final fresh):
           // Team is open to everyone now — individual contributors get the
           // same list read-only (no requests segment, no decisions), so this
           // no longer blocks the switch.
@@ -580,6 +595,14 @@ class ManagerBloc {
               clearSelectedMember: true,
               clearAwardPicker: true,
               applyLeaveOpen: false,
+              // From the bar, the tab starts over: Teams on My Team with no
+              // search or filter, and the tab itself built again.
+              teamSection: fresh ? TeamSection.myTeam : null,
+              searchQuery: fresh ? '' : null,
+              feedbackFilter: fresh ? FeedbackFilter.all : null,
+              tabResets: fresh
+                  ? {..._state.tabResets, tab: _state.resetsOf(tab) + 1}
+                  : null,
             ),
           );
         case LoadAttendanceMonth(:final month):

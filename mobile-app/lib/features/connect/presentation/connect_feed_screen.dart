@@ -12,11 +12,13 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_api_service.dart';
 import '../../manager/data/manager_api_service.dart';
-import '../../manager/data/manager_models.dart' show ManagerTab, visibleTabs;
 import '../../auth/data/auth_models.dart';
 import '../bloc/connect_bloc.dart';
+import '../data/audience_lists.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
+import 'audience_lists_ui.dart';
+import 'feed_video.dart';
 import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
@@ -32,9 +34,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 // past ten thousand lines. They share this library's private helpers.
 part 'comment_mentions.dart';
 part 'contest_composer.dart';
+part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
 part 'engagement_entries_sheet.dart';
 part 'poll_post_card.dart';
+part 'post_likes_sheet.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
 /// Connect tab itself — the composer's `showModalBottomSheet`/`Navigator.push`
@@ -54,8 +58,11 @@ class ConnectComposerController {
 
   /// Brings one post into view — a notification about it was tapped — and
   /// opens its comments when that is what the notification was about.
-  void openPost(String postId, {bool comments = false}) =>
-      _state?._revealPost(postId, comments: comments);
+  /// [inPlace] scrolls to the post where it sits in the feed (from the
+  /// Games tab); otherwise one beyond the loaded pages is fetched and put on
+  /// top (from a notification).
+  void openPost(String postId, {bool comments = false, bool inPlace = false}) =>
+      _state?._revealPost(postId, comments: comments, inPlace: inPlace);
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -111,6 +118,13 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// only the viewer's own team, so this comes from the org-wide directory
   /// rather than the team data the shell already holds.
   List<ConnectTeammate> _taggablePeople = const [];
+
+  /// The viewer's custom audience lists and the directory they are picked
+  /// from, kept for the session.
+  late final AudienceListsStore _audienceLists = AudienceListsStore.forSession(
+    widget.session,
+    api: _bloc.api,
+  );
 
   @override
   void initState() {
@@ -325,7 +339,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                 initials: _viewerInitials,
                 color: _viewerColor,
                 photoUrl: _viewerPhotoUrl,
-                teamOnly: state.publishingTo == 'my_team',
+                audienceLabel: _publishingLabel(state.publishingTo),
               );
             }
             final post = posts[index - 1 - publishing];
@@ -392,7 +406,18 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// Entry point for the "Start a post" card at the top of the feed: the
   /// quick composer opens with its type chips (node 2028:53056), which is
   /// where the post type is chosen now that the nav has no Post tab.
+  ///
+  /// Closing the composer a chip opened comes back here, to choose a type
+  /// again, rather than all the way out to the feed; posting goes to the feed.
   Future<void> _openPostTypePicker() async {
+    while (mounted) {
+      if (await _pickPostType()) return;
+    }
+  }
+
+  /// One round of the chooser. True when it ended: a post went up, or the
+  /// chooser itself was closed. False when a type's composer was backed out of.
+  Future<bool> _pickPostType() async {
     final result = await Navigator.of(context).push<_QuickPostResult>(
       MaterialPageRoute(
         builder: (_) => _QuickPostPage(
@@ -402,26 +427,29 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           department: widget.session.user.department,
           teammates: _taggablePeople,
           isAdmin: _isAdmin,
-          // A company with the Games tab sets contests up there.
-          offersContest: !contestsStartFromGames(
-            widget.session.user.enabledTabs,
-          ),
+          audienceLists: _audienceLists,
+          // Contests are for the people granted them, whatever tabs the
+          // company has; the server refuses one from anyone else.
+          offersContest: widget.session.user.canCreateContests,
         ),
       ),
     );
-    if (!mounted || result == null) return;
+    if (!mounted || result == null) return true;
     final draft = result.draft;
     if (draft != null) {
       await _bloc.createPost(draft);
-      return;
+      return true;
     }
     final type = result.type;
-    if (type != null) await _openComposer(type);
+    if (type == null) return true;
+    return _openComposer(type, audience: result.audience);
   }
 
-  Future<void> _openComposer(
+  /// True when something was posted or saved; false when it was backed out of.
+  Future<bool> _openComposer(
     ConnectPostType type, {
     ConnectPost? existing,
+    AudienceChoice? audience,
   }) async {
     // A contest is edited on the contest screen it was made on, not in the
     // general composer, which has no fields for one.
@@ -431,9 +459,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           builder: (_) => ContestComposerPage(existing: existing),
         ),
       );
-      if (!mounted || result == null) return;
+      if (!mounted || result == null) return false;
       await _bloc.updatePost(existing.id, await result.toPostDraft());
-      return;
+      return true;
     }
     _PollDraft? initialPoll;
     if (type == ConnectPostType.survey) {
@@ -443,7 +471,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               _PollEditorPage(initial: _PollDraft.fromPost(existing)),
         ),
       );
-      if (!mounted || initialPoll == null) return;
+      if (!mounted || initialPoll == null) return false;
     }
     final draft = await Navigator.of(context).push<ConnectPostDraft>(
       MaterialPageRoute(
@@ -454,6 +482,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           recognitionCandidates: widget.recognitionCandidates,
           taggablePeople: _taggablePeople,
           initialPoll: initialPoll,
+          audienceLists: _audienceLists,
+          initialAudience: audience,
+          viewerIsManager: _isAdmin,
           viewerInitials: _viewerInitials,
           viewerColor: _viewerColor,
           viewerPhotoUrl: _viewerPhotoUrl,
@@ -462,12 +493,13 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         ),
       ),
     );
-    if (!mounted || draft == null) return;
+    if (!mounted || draft == null) return false;
     if (existing == null) {
       await _bloc.createPost(draft);
     } else {
       await _bloc.updatePost(existing.id, draft);
     }
+    return true;
   }
 
   Future<void> _confirmDelete(ConnectPost post) async {
@@ -521,10 +553,20 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// Scrolls until the post's card is on screen. Cards are built lazily, so
   /// this walks down a screen at a time until the card exists, then settles
   /// it near the top. A post not in the loaded feed is fetched first.
-  Future<void> _revealPost(String postId, {bool comments = false}) async {
+  Future<void> _revealPost(
+    String postId, {
+    bool comments = false,
+    bool inPlace = false,
+  }) async {
+    // In place: the older pages it is on, so it is found where it sits and
+    // the feed's order stays as it is. Only a post not found that way is
+    // fetched on its own.
+    if (inPlace && !await _bloc.loadUntil(postId)) {
+      if (!await _bloc.ensurePost(postId, keepOnTop: false)) return;
+    }
     // The post itself, wherever it sits in the feed — a notification is
     // often about one beyond the pages loaded.
-    if (!await _bloc.ensurePost(postId)) return;
+    if (!inPlace && !await _bloc.ensurePost(postId)) return;
     if (!mounted || !_bloc.state.posts.any((post) => post.id == postId)) {
       return;
     }
@@ -744,6 +786,8 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
         mentions: _mentions,
       );
     }
+    if (_isVideoPost(post)) return _buildVideoCard(post);
+    final badges = _postBadges(post);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cardGradient == null
@@ -766,26 +810,22 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 onEdit: widget.onEdit,
                 onDelete: widget.onDelete,
               ),
-            // Exactly one type pill per post, sitting between the author row
-            // and the content at the card's left edge (nodes 496:20866,
-            // 352:1500) rather than indented inside the header column.
-            if (showHeader && _typeBadgeFor(post.type) != null)
+            // The pills sit between the author row and the content at the
+            // card's left edge (nodes 496:20866, 352:1500) rather than
+            // indented inside the header column: LEADERSHIP when a leader
+            // wrote it, then the post's own type, side by side.
+            if (showHeader && badges.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: _typeBadgeFor(post.type)!,
+                  child: Wrap(spacing: 8, runSpacing: 8, children: badges),
                 ),
               ),
             _DoubleTapToLike(
               // Contests carry no like; a second double-tap never unlikes.
               enabled: !_isContestPost(post.type),
-              onLike: switch (widget.onDoubleTapLike) {
-                final like? => () {
-                  if (!post.liked && !widget.busy) like();
-                },
-                null => null,
-              },
+              onLike: _doubleTapLike(post),
               child: _PostBody(
                 post: post,
                 onAction: widget.onAction,
@@ -821,7 +861,112 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
       ),
     );
   }
+
+  /// Likes [post] on a double-tap, never unliking it; null while a double-tap
+  /// should do nothing.
+  VoidCallback? _doubleTapLike(ConnectPost post) {
+    final like = widget.onDoubleTapLike;
+    if (like == null) return null;
+    return () {
+      if (!post.liked && !widget.busy) like();
+    };
+  }
+
+  /// A video post (node 3752:27075): the video fills the top of the card edge
+  /// to edge with who posted it laid over it, in place of the author row
+  /// above it, and the likes and comments under it.
+  Widget _buildVideoCard(ConnectPost post) {
+    final caption = _bodyString(post, 'text').trim();
+    final tagged = _taggedPeople(post);
+    // Only what is there: an empty caption leaves no block and no gap.
+    final below = [
+      if (caption.isNotEmpty) _PostCaption(text: caption),
+      if (tagged.isNotEmpty)
+        _TaggedPeopleRow(
+          people: tagged,
+          onOpenPerson: widget.onOpenPerson,
+          padding: EdgeInsets.zero,
+        ),
+    ];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _ConnectColors.cardBorder, width: 1.129),
+        boxShadow: _cardShadow(post.type),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          // 22 under the card, as drawn, with the footer's own 14.
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The video sits inside the card, 10 from its sides and 8 from
+              // its top (node 3752:27075), not edge to edge.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                child: _DoubleTapToLike(
+                  enabled: true,
+                  onLike: _doubleTapLike(post),
+                  child: _VideoPostMedia(
+                    post: post,
+                    canManage: widget.canManage,
+                    onEdit: widget.onEdit,
+                    onDelete: widget.onDelete,
+                  ),
+                ),
+              ),
+              // What the author wrote goes under the video, the author row
+              // being over it (node 400:9408), each section 12 apart.
+              for (final section in below)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: section,
+                ),
+              // The same 12 down to the action bar, whatever came last.
+              const SizedBox(height: 12),
+              _PostFooter(
+                post: post,
+                busy: widget.busy,
+                controller: _commentController,
+                onLike: widget.onLike,
+                onComment: _sendComment,
+                onOpenComments: widget.onOpenComments,
+                viewerInitials: widget.viewerInitials,
+                viewerColor: widget.viewerColor,
+                viewerPhotoUrl: widget.viewerPhotoUrl,
+                mentions: _mentions,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
+
+/// A post whose media is one video: it is drawn as a video post (node
+/// 3752:27075), the author row laid over the video. Photo and text posts
+/// keep the standard card.
+bool _isVideoPost(ConnectPost post) =>
+    (post.type == ConnectPostType.newPost ||
+        post.type == ConnectPostType.leadership) &&
+    _bodyString(post, 'mediaKind') == 'video' &&
+    _bodyString(post, 'mediaUrl').isNotEmpty;
+
+/// Whether the LEADERSHIP pill goes on [post]: a leader wrote it, or it is a
+/// leadership post. Something with no person behind it never carries it.
+bool _showsLeadershipBadge(ConnectPost post) =>
+    post.author.userId.isNotEmpty &&
+    (post.author.isLeadership || post.type == ConnectPostType.leadership);
+
+/// The pills under a post's author row, LEADERSHIP first.
+List<Widget> _postBadges(ConnectPost post) => [
+  if (_showsLeadershipBadge(post)) const _LeadershipBadge(),
+  ?_typeBadgeFor(post.type),
+];
 
 /// Types that keep the standard author header (avatar, name, audience badge).
 /// System-generated post types render their own compact top strip inside the
@@ -946,7 +1091,7 @@ class _PublishingPostCard extends StatefulWidget {
     required this.initials,
     required this.color,
     required this.photoUrl,
-    required this.teamOnly,
+    required this.audienceLabel,
   });
 
   final String name;
@@ -954,7 +1099,9 @@ class _PublishingPostCard extends StatefulWidget {
   final String initials;
   final Color color;
   final String photoUrl;
-  final bool teamOnly;
+
+  /// "Public", "Team", or the custom list's name.
+  final String audienceLabel;
 
   @override
   State<_PublishingPostCard> createState() => _PublishingPostCardState();
@@ -1024,6 +1171,7 @@ class _PublishingPostCardState extends State<_PublishingPostCard>
                             ),
                           ),
                           Container(
+                            constraints: const BoxConstraints(maxWidth: 180),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 13.114,
                               vertical: 5.114,
@@ -1037,7 +1185,9 @@ class _PublishingPostCardState extends State<_PublishingPostCard>
                               ),
                             ),
                             child: Text(
-                              widget.teamOnly ? 'Team' : 'Public',
+                              widget.audienceLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontFamily: 'Sora',
                                 color: Color(0xFF0571A6),
@@ -1257,6 +1407,14 @@ class _PostHeader extends StatelessWidget {
   }
 }
 
+/// The pill on the card that stands in while a post publishes, from
+/// `ConnectState.publishingTo`.
+String _publishingLabel(String? publishingTo) {
+  if (publishingTo == null) return 'Public';
+  if (publishingTo.startsWith('list:')) return publishingTo.substring(5);
+  return publishingTo == 'my_team' ? 'Team' : 'Public';
+}
+
 /// Maps a `ConnectAudience.label` to an accent color for `_AudienceBadge`.
 /// Today the backend only ever sends "Company" or "Team" (see
 /// connect.service.ts), but this also handles "Public"/"Priority" style
@@ -1277,6 +1435,8 @@ class _AudienceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      // A custom list's name can run to 40 characters.
+      constraints: const BoxConstraints(maxWidth: 180),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1285,6 +1445,8 @@ class _AudienceBadge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontSize: 12,
@@ -1304,19 +1466,28 @@ class _TypeBadge extends StatelessWidget {
     this.asset,
     this.iconWidth = 20,
     this.iconHeight = 20,
+    this.padding = const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+    this.fontFamily,
   });
 
   final String label;
   final String icon;
+
+  /// A PNG, or an SVG by its extension.
   final String? asset;
   final double iconWidth;
   final double iconHeight;
+  final EdgeInsets padding;
+
+  /// The app's own unless the card sets its type in another (the poll card
+  /// is in Sora).
+  final String? fontFamily;
 
   @override
   Widget build(BuildContext context) {
     final assetPath = asset;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+      padding: padding,
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
         border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
@@ -1326,12 +1497,15 @@ class _TypeBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (assetPath != null) ...[
-            Image.asset(
-              assetPath,
-              width: iconWidth,
-              height: iconHeight,
-              fit: BoxFit.contain,
-            ),
+            if (assetPath.endsWith('.svg'))
+              SvgPicture.asset(assetPath, width: iconWidth, height: iconHeight)
+            else
+              Image.asset(
+                assetPath,
+                width: iconWidth,
+                height: iconHeight,
+                fit: BoxFit.contain,
+              ),
             const SizedBox(width: 10),
           ] else if (icon.isNotEmpty) ...[
             Text(icon, style: const TextStyle(fontSize: 12)),
@@ -1339,8 +1513,9 @@ class _TypeBadge extends StatelessWidget {
           ],
           Text(
             label.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF484848),
+            style: TextStyle(
+              fontFamily: fontFamily,
+              color: const Color(0xFF484848),
               fontSize: 12,
               height: 18 / 12,
               fontWeight: FontWeight.w700,
@@ -1348,6 +1523,233 @@ class _TypeBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The LEADERSHIP pill, with its crown (node 3752:27075): on every post a
+/// leader writes, where the type pill sits, and ahead of it when the post has
+/// one too.
+class _LeadershipBadge extends StatelessWidget {
+  const _LeadershipBadge({this.inPoll = false});
+
+  /// Beside the poll card's POLL pill, at its size and in its type.
+  final bool inPoll;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TypeBadge(
+      label: 'Leadership',
+      asset: 'assets/icons/connect_leadership_crown.svg',
+      padding: inPoll
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 5)
+          : const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+      fontFamily: inPoll ? _soraFont : null,
+    );
+  }
+}
+
+/// A video post's media (node 3752:27075): the video edge to edge at its own
+/// shape, rounded and outlined, with who posted it laid over the top.
+class _VideoPostMedia extends StatelessWidget {
+  const _VideoPostMedia({
+    required this.post,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ConnectPost post;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(20);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: const [
+          BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      // Over the picture, or the video would paint across its own outline.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(color: const Color(0xFFEBEBEB), width: 1.114),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: FeedVideo(
+          url: _bodyString(post, 'mediaUrl'),
+          header: (context, closeButton) => _VideoPostHeader(
+            post: post,
+            canManage: canManage,
+            onEdit: onEdit,
+            onDelete: onDelete,
+            closeButton: closeButton,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Who posted a video, laid over its top in the feed and again full screen:
+/// face, name, audience, role and time, the post's menu at the end, and the
+/// LEADERSHIP pill under it all when a leader posted it.
+class _VideoPostHeader extends StatelessWidget {
+  const _VideoPostHeader({
+    required this.post,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+    this.closeButton,
+  });
+
+  final ConnectPost post;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  /// Full screen, the way back, in place of the menu.
+  final Widget? closeButton;
+
+  static const _meta = TextStyle(
+    color: Color(0xFFEBEBEB),
+    fontSize: 14,
+    height: 21 / 14,
+    fontWeight: FontWeight.w400,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final author = post.author;
+    final audience = post.audience.label;
+    final designation = author.designation.trim();
+    final when = _relativeTime(post.publishedAt);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _PersonTap(
+              userId: author.userId,
+              child: _InitialAvatar(
+                initials: author.initials,
+                color: _hexColor(author.avatarColor, _ConnectColors.terra),
+                size: 48,
+                photoUrl: author.photoUrl ?? '',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: _PersonTap(
+                          userId: author.userId,
+                          child: Text(
+                            author.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              height: 24 / 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (audience.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        _VideoAudienceBadge(label: audience),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  // Merged, not replaced, so it keeps the feed's typeface.
+                  DefaultTextStyle.merge(
+                    style: _meta,
+                    child: Row(
+                      children: [
+                        if (designation.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              designation,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (designation.isNotEmpty && when.isNotEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 6),
+                            child: Text('•'),
+                          ),
+                        if (when.isNotEmpty) Text(when),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            closeButton ??
+                _PostMenuButton(
+                  canManage: canManage,
+                  onEdit: onEdit,
+                  onDelete: onDelete,
+                  icon: SvgPicture.asset(
+                    '$_engagementIcons/dots_menu_light.svg',
+                    width: 20,
+                    height: 20,
+                  ),
+                ),
+          ],
+        ),
+        if (_showsLeadershipBadge(post)) ...[
+          const SizedBox(height: 12),
+          const _LeadershipBadge(),
+        ],
+      ],
+    );
+  }
+}
+
+/// The audience pill on a video post: white, so it reads on the picture.
+class _VideoAudienceBadge extends StatelessWidget {
+  const _VideoAudienceBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: const Color(0xFFD2CEFF), width: 1.114),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF0571A6),
+          fontSize: 12,
+          height: 18 / 12,
+          fontWeight: FontWeight.w400,
+        ),
       ),
     );
   }
@@ -1684,14 +2086,93 @@ class _MediaPostBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mediaKind = _bodyString(post, 'mediaKind');
-    final hasMedia = mediaKind == 'image' || mediaKind == 'video';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _BodyText(text: _bodyString(post, 'text')),
-        if (hasMedia) _MediaPreview(post: post),
-      ],
+    if (_hasPostMedia(post)) return _MediaFirstBody(post: post);
+    return _BodyText(text: _bodyString(post, 'text'));
+  }
+}
+
+/// Whether a post carries a photo, photos or a video of its own.
+bool _hasPostMedia(ConnectPost post) {
+  final mediaKind = _bodyString(post, 'mediaKind');
+  return mediaKind == 'image' || mediaKind == 'video';
+}
+
+/// A post with media (node 400:9408): the photo, photos or video first,
+/// rounded, then what the author wrote under it, then whoever is tagged. Each
+/// section sits 12 under the last, and one that is empty is left out whole,
+/// gap and all, so the action bar is always the same 12 under what is there.
+class _MediaFirstBody extends StatelessWidget {
+  const _MediaFirstBody({required this.post, this.onOpenPerson});
+
+  final ConnectPost post;
+  final ValueChanged<String>? onOpenPerson;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = _bodyString(post, 'text').trim();
+    final tagged = _taggedPeople(post);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          _PostMediaFrame(child: _MediaPreview(post: post)),
+          if (caption.isNotEmpty) _PostCaption(text: caption),
+          if (tagged.isNotEmpty)
+            _TaggedPeopleRow(
+              people: tagged,
+              onOpenPerson: onOpenPerson,
+              padding: EdgeInsets.zero,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A post's photo or video in its card (node 400:9408): rounded 16 under a
+/// soft shadow, at the shape the media itself sets.
+class _PostMediaFrame extends StatelessWidget {
+  const _PostMediaFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Color(0x1A000000), blurRadius: 3, offset: Offset(0, 1)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// What the author wrote under their media (node 400:9408), in the feed's
+/// typeface at the design's size; links in it open as they do elsewhere.
+class _PostCaption extends StatelessWidget {
+  const _PostCaption({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return LinkifiedText(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF222222),
+        fontSize: 16,
+        height: 22 / 16,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.4,
+      ),
     );
   }
 }
@@ -1805,7 +2286,8 @@ class _RecommendationBody extends StatelessWidget {
             ),
           ),
         ),
-        _BodyText(text: _bodyString(post, 'text')),
+        if (_bodyString(post, 'text').trim().isNotEmpty)
+          _BodyText(text: _bodyString(post, 'text').trim(), bottom: 12),
       ],
     );
   }
@@ -1846,8 +2328,9 @@ class _TextPostBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mediaKind = _bodyString(post, 'mediaKind');
-    final hasMedia = mediaKind == 'image' || mediaKind == 'video';
+    if (_hasPostMedia(post)) {
+      return _MediaFirstBody(post: post, onOpenPerson: onOpenPerson);
+    }
     final tagged = _taggedPeople(post);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1855,7 +2338,6 @@ class _TextPostBody extends StatelessWidget {
         _BodyText(text: _bodyString(post, 'text')),
         if (tagged.isNotEmpty)
           _TaggedPeopleRow(people: tagged, onOpenPerson: onOpenPerson),
-        if (hasMedia) _MediaPreview(post: post),
       ],
     );
   }
@@ -1864,15 +2346,22 @@ class _TextPostBody extends StatelessWidget {
 /// "with @Ananya Rao, @Priya Nair" under a media post. Each name opens that
 /// person's profile.
 class _TaggedPeopleRow extends StatelessWidget {
-  const _TaggedPeopleRow({required this.people, this.onOpenPerson});
+  const _TaggedPeopleRow({
+    required this.people,
+    this.onOpenPerson,
+    this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 12),
+  });
 
   final List<ConnectTaggedPerson> people;
   final ValueChanged<String>? onOpenPerson;
 
+  /// None where the card spaces its sections itself.
+  final EdgeInsets padding;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: padding,
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1961,10 +2450,13 @@ class _MediaPreview extends StatelessWidget {
       return _MediaGallery(urls: mediaUrls);
     }
     final isImage = mediaKind == 'image' && mediaUrl.isNotEmpty;
-    // A photo keeps its own shape. Everything else — video posters, the
-    // gradient placeholder — stays on the fixed frame it was designed for.
+    // A photo keeps its own shape, and so does a video, which plays in place.
+    // Only a post whose file is missing falls back to the placeholder.
     if (isImage) {
       return _AdaptiveImage(url: mediaUrl);
+    }
+    if (mediaKind == 'video' && mediaUrl.isNotEmpty) {
+      return FeedVideo(url: mediaUrl);
     }
     return Container(
       height: 200,
@@ -2007,15 +2499,6 @@ class _MediaPreview extends StatelessWidget {
                 ),
                 child: const Icon(Icons.play_arrow_rounded, size: 34),
               ),
-            ),
-          // The media title is the uploaded file's name, which is worth showing
-          // over a video poster and never over a photo.
-          if (mediaKind == 'video' &&
-              _bodyString(post, 'mediaTitle').isNotEmpty)
-            Positioned(
-              left: 12,
-              top: 12,
-              child: _DarkChip(label: _bodyString(post, 'mediaTitle')),
             ),
           if (_bodyString(post, 'mediaDuration').isNotEmpty)
             Positioned(
@@ -2170,6 +2653,7 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
   final Map<int, Offset> _pointers = {};
   OverlayEntry? _entry;
   Rect _origin = Rect.zero;
+  Size _size = Size.zero;
   double _startDistance = 1;
   Offset _startFocal = Offset.zero;
   final ValueNotifier<Matrix4> _transform = ValueNotifier(Matrix4.identity());
@@ -2219,7 +2703,13 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
     final box = context.findRenderObject() as RenderBox?;
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (box == null || !box.hasSize || overlay == null) return;
-    _origin = box.localToGlobal(Offset.zero) & box.size;
+    // Where it is on screen at the size it is drawn: a picture shown scaled
+    // down (a contest's, on a narrow phone) lifts out at that size.
+    _origin = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
+    _size = box.size;
     _startDistance = math.max(1, _distance);
     _startFocal = _focal;
     _settle.stop();
@@ -2227,6 +2717,7 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
     _dim.value = 0;
     _entry = OverlayEntry(
       builder: (_) => IgnorePointer(
+        key: const ValueKey('pinch-zoom-overlay'),
         child: Stack(
           children: [
             Positioned.fill(
@@ -2240,7 +2731,10 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
               child: ValueListenableBuilder<Matrix4>(
                 valueListenable: _transform,
                 builder: (_, matrix, child) => Transform(transform: matrix, child: child),
-                child: widget.child,
+                child: FittedBox(
+                  fit: BoxFit.fill,
+                  child: SizedBox.fromSize(size: _size, child: widget.child),
+                ),
               ),
             ),
           ],
@@ -2434,8 +2928,9 @@ class _PhotoLoadingState extends State<_PhotoLoading> with SingleTickerProviderS
   }
 }
 
-/// One picked file, previewed at the shape it was cropped to. Video keeps the
-/// fixed frame — there is no still to take a shape from.
+/// One picked file, previewed at the shape it was cropped to; a video plays
+/// here before it is posted, at the shape it was filmed, as the feed will
+/// show it.
 class _LocalMediaPreview extends StatelessWidget {
   const _LocalMediaPreview({required this.attachment});
 
@@ -2443,6 +2938,9 @@ class _LocalMediaPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (attachment.mimeType.startsWith('video/')) {
+      return FeedVideo.file(key: ValueKey(attachment.path), path: attachment.path);
+    }
     if (!attachment.mimeType.startsWith('image/')) {
       return SizedBox(
         height: 200,
@@ -3858,33 +4356,37 @@ class _PostFooter extends StatelessWidget {
             ),
             child: Row(
               children: [
+                // The heart likes; the count beside it lists who did.
                 InkWell(
+                  key: const ValueKey('post-like-heart'),
                   borderRadius: BorderRadius.circular(99),
                   onTap: onLike,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 4,
-                      horizontal: 2,
+                    padding: const EdgeInsets.fromLTRB(2, 4, 0, 4),
+                    child: SvgPicture.asset(
+                      post.liked
+                          ? 'assets/icons/connect_icon_heart_filled.svg'
+                          : 'assets/icons/connect_icon_heart_outline.svg',
+                      width: 22,
+                      height: 22,
                     ),
-                    child: Row(
-                      children: [
-                        SvgPicture.asset(
-                          post.liked
-                              ? 'assets/icons/connect_icon_heart_filled.svg'
-                              : 'assets/icons/connect_icon_heart_outline.svg',
-                          width: 22,
-                          height: 22,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          '${post.likeCount}',
-                          style: const TextStyle(
-                            color: Color(0xFF9197A2),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+                  ),
+                ),
+                InkWell(
+                  key: const ValueKey('post-like-count'),
+                  borderRadius: BorderRadius.circular(99),
+                  onTap: post.likeCount > 0
+                      ? () => _openPostLikes(context, post)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(5, 4, 2, 4),
+                    child: Text(
+                      '${post.likeCount}',
+                      style: const TextStyle(
+                        color: Color(0xFF9197A2),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
@@ -4108,14 +4610,15 @@ class _PostFooter extends StatelessWidget {
 }
 
 class _BodyText extends StatelessWidget {
-  const _BodyText({required this.text});
+  const _BodyText({required this.text, this.bottom = 14});
 
   final String text;
+  final double bottom;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottom),
       child: LinkifiedText(
         text,
         style: const TextStyle(
@@ -4255,7 +4758,8 @@ class _QuickPostPage extends StatefulWidget {
     required this.department,
     this.teammates = const [],
     this.isAdmin = false,
-    this.offersContest = true,
+    this.offersContest = false,
+    this.audienceLists,
   });
 
   final String viewerInitials;
@@ -4263,15 +4767,18 @@ class _QuickPostPage extends StatefulWidget {
   final String viewerPhotoUrl;
   final String? department;
 
+  /// The viewer's custom lists, offered in the audience sheet.
+  final AudienceListsStore? audienceLists;
+
   /// People who can be tagged in a media post.
   final List<ConnectTeammate> teammates;
 
   /// Admins get the extra Announcement type in the chip row.
   final bool isAdmin;
 
-  /// Whether the chip row starts with Contest. Off for a company with the
-  /// Games tab, where contests are created instead
-  /// ([contestsStartFromGames]).
+  /// Whether the chip row starts with Contest: only for someone allowed to
+  /// start one (`AuthUser.canCreateContests`). Otherwise the chip is not
+  /// there at all.
   final bool offersContest;
 
   @override
@@ -4283,8 +4790,20 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   final _focus = FocusNode();
   final _media = <ConnectMediaAttachment>[];
   int _previewIndex = 0;
-  bool _teamOnly = false;
+
+  /// Who the post goes to: Public, Team, or one of the viewer's lists.
+  AudienceChoice _audience = const PublicAudience();
   final _taggedUserIds = <String>[];
+
+  /// Who can be tagged: on a list post, only the people on the list — the
+  /// server drops anyone else.
+  List<ConnectTeammate> get _taggable => switch (_audience) {
+    ListAudience(:final list) => [
+      for (final person in widget.teammates)
+        if (list.memberIds.contains(person.userId)) person,
+    ],
+    _ => widget.teammates,
+  };
 
   @override
   void initState() {
@@ -4377,15 +4896,20 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   }
 
   Future<void> _pickAudience() async {
-    final teamOnly = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: const Color(0x73000000),
-      builder: (_) => _AudienceSheet(teamOnly: _teamOnly),
+    final chosen = await _chooseAudience(
+      context,
+      current: _audience,
+      store: widget.audienceLists,
+      viewerIsManager: widget.isAdmin,
     );
-    if (!mounted || teamOnly == null) return;
-    setState(() => _teamOnly = teamOnly);
+    if (!mounted) return;
+    setState(() {
+      _audience = chosen;
+      // A tag for someone the post will not reach goes with the change.
+      if (chosen case ListAudience(:final list)) {
+        _taggedUserIds.removeWhere((id) => !list.memberIds.contains(id));
+      }
+    });
   }
 
   /// A type chip was tapped. Media is composed right here; every other type
@@ -4418,7 +4942,7 @@ class _QuickPostPageState extends State<_QuickPostPage> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(_QuickPostResult.switchType(type));
+    Navigator.of(context).pop(_QuickPostResult.switchType(type, _audience));
   }
 
   void _submit() {
@@ -4442,13 +4966,18 @@ class _QuickPostPageState extends State<_QuickPostPage> {
         'linkUrl': '',
         'linkTitle': '',
         'linkDomain': '',
-        'sendTo': _teamOnly ? 'my_team' : 'everyone',
-        'sendToDepartment': _teamOnly ? (widget.department ?? '') : '',
+        ...audienceBodyFields(_audience, publicValue: 'everyone'),
+        'sendToDepartment': _audience is TeamAudience
+            ? (widget.department ?? '')
+            : '',
         // Tagging is a media-post feature, so a text-only post carries none.
         'taggedUserIds': hasMedia ? _taggedUserIds : const <String>[],
       },
       media: hasMedia ? _media.first : null,
       mediaList: _media.length > 1 ? List.of(_media) : const [],
+      audienceLabel: _audience is ListAudience
+          ? audienceChoiceLabel(_audience)
+          : null,
     );
     Navigator.of(context).pop(_QuickPostResult.draft(draft));
   }
@@ -4490,40 +5019,8 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: _text,
-                          focusNode: _focus,
-                          maxLines: null,
-                          minLines: 3,
-                          keyboardType: TextInputType.multiline,
-                          textCapitalization: TextCapitalization.sentences,
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 15,
-                            height: 23 / 15,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          decoration: const InputDecoration(
-                            isCollapsed: true,
-                            filled: false,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            errorBorder: InputBorder.none,
-                            focusedErrorBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            hintText:
-                                'Be the first to spark a conversation and share '
-                                'something amazing with your team!',
-                            hintStyle: TextStyle(
-                              color: Color(0xFF9197A2),
-                              fontSize: 15,
-                              height: 23 / 15,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
+                        // As the post will read (node 400:9408): what was
+                        // picked first, the caption under it.
                         if (_media.isNotEmpty) ...[
                           _buildMediaPreview(),
                           const SizedBox(height: 8),
@@ -4535,10 +5032,51 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                               height: 16 / 12,
                             ),
                           ),
-                          if (widget.teammates.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                        ],
+                        TextField(
+                          key: const ValueKey('quick-post-caption'),
+                          controller: _text,
+                          focusNode: _focus,
+                          maxLines: null,
+                          // Under media a caption is optional, and an empty
+                          // one holds a single line, not a block.
+                          minLines: _media.isEmpty ? 3 : 1,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: const TextStyle(
+                            color: Color(0xFF222222),
+                            fontSize: 15,
+                            height: 23 / 15,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            hintText: _media.isEmpty
+                                ? 'Be the first to spark a conversation and share '
+                                      'something amazing with your team!'
+                                : 'Add a caption...',
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF9197A2),
+                              fontSize: 15,
+                              height: 23 / 15,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        if (_media.isNotEmpty) ...[
+                          if (_taggable.isNotEmpty) ...[
                             const SizedBox(height: 14),
                             _TagPeopleField(
-                              teammates: widget.teammates,
+                              teammates: _taggable,
                               selectedUserIds: _taggedUserIds,
                               onChanged: (ids) => setState(() {
                                 _taggedUserIds
@@ -4577,15 +5115,8 @@ class _QuickPostPageState extends State<_QuickPostPage> {
         child: Row(
           spacing: 10,
           children: [
-            // Contests have their own screen rather than a composer body:
-            // the format is chosen first and decides which fields follow.
-            // Where the app has the Games tab, that is where they start.
-            if (widget.offersContest)
-              _PostTypeChip(
-                label: 'Contest',
-                asset: 'assets/icons/post_type_kudos.png',
-                onTap: _startContest,
-              ),
+            // In the design's order (node 3809:76076): Media, Poll, Contest,
+            // Kudos, Recommend.
             _PostTypeChip(
               label: 'Media',
               asset: 'assets/icons/post_type_media.svg',
@@ -4597,6 +5128,15 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               iconWidth: 30,
               onTap: () => _chooseType(ConnectPostType.survey),
             ),
+            // Contests have their own screen rather than a composer body:
+            // the format is chosen first and decides which fields follow.
+            // Only for people allowed to start one.
+            if (widget.offersContest)
+              _PostTypeChip(
+                label: 'Contest',
+                asset: 'assets/icons/post_type_contest_fire.png',
+                onTap: _startContest,
+              ),
             _PostTypeChip(
               label: 'Kudos',
               asset: 'assets/icons/post_type_kudos.png',
@@ -4623,14 +5163,11 @@ class _QuickPostPageState extends State<_QuickPostPage> {
 
   Widget _buildHeader() {
     return Container(
+      // Node 3809:76060: 16 in from the sides and no rule under it; the chip
+      // row below carries the line.
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1.1),
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      color: Colors.white,
       child: Row(
         children: [
           InkWell(
@@ -4659,7 +5196,11 @@ class _QuickPostPageState extends State<_QuickPostPage> {
             photoUrl: widget.viewerPhotoUrl,
           ),
           const SizedBox(width: 8),
-          InkWell(
+          Expanded(
+            child: Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+            key: const ValueKey('composer-audience'),
             onTap: _pickAudience,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
@@ -4667,14 +5208,20 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _teamOnly ? 'Team' : 'Public',
-                    style: const TextStyle(
-                      color: Color(0xFF484848),
-                      fontSize: 16,
-                      height: 22 / 16,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.4,
+                  // "Public", "Team", or the list's name (node 3809:76071).
+                  Flexible(
+                    child: Text(
+                      audienceChoiceLabel(_audience),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: _soraFont,
+                        color: Color(0xFF484848),
+                        fontSize: 16,
+                        height: 22 / 16,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.4,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -4692,7 +5239,9 @@ class _QuickPostPageState extends State<_QuickPostPage> {
               ),
             ),
           ),
-          const Spacer(),
+            ),
+          ),
+          const SizedBox(width: 12),
           InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: _canPost ? _submit : null,
@@ -4733,7 +5282,6 @@ class _QuickPostPageState extends State<_QuickPostPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: Stack(
@@ -4953,118 +5501,6 @@ class _StartAPostCard extends StatelessWidget {
   }
 }
 
-/// Audience switcher for the composer (node 655:15638).
-class _AudienceSheet extends StatelessWidget {
-  const _AudienceSheet({required this.teamOnly});
-
-  final bool teamOnly;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.only(bottom: 24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x1F000000),
-                blurRadius: 16,
-                offset: Offset(0, -4),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 4),
-                  child: Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD1D5DB),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ),
-                ),
-                _AudienceOption(
-                  label: 'Public',
-                  selected: !teamOnly,
-                  onTap: () => Navigator.of(context).pop(false),
-                ),
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0xFFEDEDED),
-                ),
-                _AudienceOption(
-                  label: 'Team',
-                  selected: teamOnly,
-                  onTap: () => Navigator.of(context).pop(true),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AudienceOption extends StatelessWidget {
-  const _AudienceOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF222222),
-                  fontSize: 16,
-                  height: 22 / 16,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-            if (selected)
-              const Icon(
-                Icons.check_rounded,
-                size: 18,
-                color: Color(0xFF0571A6),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// A local file preview — these are picked files on disk, not network media.
 class _LocalMediaThumb extends StatelessWidget {
   const _LocalMediaThumb({required this.attachment});
@@ -5101,16 +5537,52 @@ class _LocalMediaThumb extends StatelessWidget {
 /// What the quick composer hands back: either a finished draft, or a request to
 /// switch into one of the dedicated typed composers.
 class _QuickPostResult {
-  const _QuickPostResult._({this.draft, this.type});
+  const _QuickPostResult._({this.draft, this.type, this.audience});
 
   factory _QuickPostResult.draft(ConnectPostDraft draft) =>
       _QuickPostResult._(draft: draft);
 
-  factory _QuickPostResult.switchType(ConnectPostType type) =>
-      _QuickPostResult._(type: type);
+  /// The audience chosen so far goes along to the type's own composer.
+  factory _QuickPostResult.switchType(
+    ConnectPostType type,
+    AudienceChoice audience,
+  ) => _QuickPostResult._(type: type, audience: audience);
 
   final ConnectPostDraft? draft;
   final ConnectPostType? type;
+  final AudienceChoice? audience;
+}
+
+/// Opens "Who can see this post" and hands back the audience the post goes
+/// to now: [current] when the sheet was put away without a choice. The sheet
+/// makes, edits and deletes lists itself through the store; a list deleted or
+/// renamed there while it was the choice is followed here.
+Future<AudienceChoice> _chooseAudience(
+  BuildContext context, {
+  required AudienceChoice current,
+  required AudienceListsStore? store,
+  required bool viewerIsManager,
+}) async {
+  final lists = store;
+  if (lists == null) return current;
+  final chosen = await showAudienceSheet(
+    context,
+    current: current,
+    // Team is a manager's direct reports; it stays on offer to anyone whose
+    // post is already going to their team.
+    showTeam: viewerIsManager || current is TeamAudience,
+    loadLists: lists.loadLists,
+    loadPeople: lists.loadPeople,
+    createList: lists.create,
+    updateList: lists.update,
+    deleteList: lists.delete,
+  );
+  final result = chosen ?? current;
+  if (result case ListAudience(:final list) when lists.lists != null) {
+    final kept = lists.listById(list.id);
+    return kept == null ? const PublicAudience() : ListAudience(kept);
+  }
+  return result;
 }
 
 class _PostComposerPage extends StatefulWidget {
@@ -5125,10 +5597,20 @@ class _PostComposerPage extends StatefulWidget {
     this.viewerColor = _ConnectColors.blue,
     this.viewerPhotoUrl = '',
     this.resolveLinkPreview,
+    this.audienceLists,
+    this.initialAudience,
+    this.viewerIsManager = false,
   });
 
   final ConnectPostType type;
   final ConnectPost? existing;
+
+  /// The viewer's custom lists, offered in the audience sheet.
+  final AudienceListsStore? audienceLists;
+
+  /// The audience chosen in the quick composer before switching to this type.
+  final AudienceChoice? initialAudience;
+  final bool viewerIsManager;
   final String? department;
   final List<ConnectTeammate> recognitionCandidates;
 
@@ -5163,7 +5645,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   bool _resolvingLink = false;
   String _resolvedFor = '';
   Timer? _linkDebounce;
-  String _sendTo = 'all_company';
+  /// Who the post goes to. A post already shared with a list keeps it:
+  /// its people have seen it, and the server will not move it.
+  late AudienceChoice _audience;
+  bool get _audienceLocked => widget.existing?.audience.isList ?? false;
   String _newPostKind = 'media';
   final _taggedUserIds = <String>[];
   String _eventCategory = 'sports';
@@ -5209,9 +5694,20 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     _acknowledgementMessage = TextEditingController(
       text: _bodyValue('acknowledgementMessage'),
     );
-    _sendTo = _bodyValue('sendTo').isEmpty
-        ? 'all_company'
-        : _bodyValue('sendTo');
+    final existingAudience = widget.existing?.audience;
+    _audience = existingAudience == null
+        ? (widget.initialAudience ?? const PublicAudience())
+        : existingAudience.isList
+        ? ListAudience(
+            AudienceListSummary(
+              id: existingAudience.listId ?? '',
+              name: existingAudience.label,
+              memberIds: const [],
+            ),
+          )
+        : _bodyValue('sendTo') == 'my_team'
+        ? const TeamAudience()
+        : const PublicAudience();
     _taggedUserIds.addAll(
       (widget.existing?.body['taggedUserIds'] as List<dynamic>? ?? const [])
           .map((id) => id.toString())
@@ -5361,7 +5857,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
                 title: _isDedicatedSubScreen ? _typeTitle : null,
                 audienceLabel: _isDedicatedSubScreen
                     ? null
-                    : (_sendTo == 'my_team' ? 'Team' : 'Public'),
+                    : audienceChoiceLabel(_audience),
                 onAudienceTap: _isDedicatedSubScreen
                     ? null
                     : _openAudiencePicker,
@@ -5387,14 +5883,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
 
   List<Widget> _fieldsForType() {
     return switch (widget.type) {
+      // The media above the message, as the card shows them (node 400:9408).
       ConnectPostType.leadership => [
-        _FieldLabel('MESSAGE'),
-        _ComposerTextField(
-          controller: _text,
-          hint: 'Share a win, milestone, or news from leadership...',
-          minLines: 5,
-        ),
-        const SizedBox(height: 18),
         _FieldLabel('MEDIA'),
         _MediaToggle(
           enabled: _hasMedia,
@@ -5412,6 +5902,14 @@ class _PostComposerPageState extends State<_PostComposerPage> {
             minLines: 1,
           ),
         ],
+        const SizedBox(height: 18),
+        _FieldLabel('MESSAGE'),
+        _ComposerTextField(
+          key: const ValueKey('composer-message'),
+          controller: _text,
+          hint: 'Share a win, milestone, or news from leadership...',
+          minLines: 5,
+        ),
         const SizedBox(height: 18),
         _FieldLabel('LINK (OPTIONAL)'),
         _ComposerTextField(
@@ -5433,15 +5931,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
           ],
           onChanged: (value) => setState(() => _newPostKind = value),
         ),
-        const SizedBox(height: 18),
-        _FieldLabel('MESSAGE'),
-        _ComposerTextField(
-          controller: _text,
-          hint: _newPostKind == 'question'
-              ? 'Ask a question...'
-              : 'Write a post...',
-          minLines: 5,
-        ),
+        // A media post shows its photos or video above the message, as the
+        // card will (node 400:9408); the other kinds are the message alone.
         if (_newPostKind == 'media') ...[
           const SizedBox(height: 18),
           _FieldLabel('VIDEO OR PHOTO'),
@@ -5479,6 +5970,16 @@ class _PostComposerPageState extends State<_PostComposerPage> {
             ),
           ],
         ],
+        const SizedBox(height: 18),
+        _FieldLabel('MESSAGE'),
+        _ComposerTextField(
+          key: const ValueKey('composer-message'),
+          controller: _text,
+          hint: _newPostKind == 'question'
+              ? 'Ask a question...'
+              : 'Write a post...',
+          minLines: 5,
+        ),
         if (_newPostKind == 'media' && widget.taggablePeople.isNotEmpty) ...[
           const SizedBox(height: 18),
           _FieldLabel('TAG PEOPLE'),
@@ -5659,14 +6160,34 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   }
 
   Future<void> _openAudiencePicker() async {
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AudiencePickerSheet(value: _sendTo),
+    if (_audienceLocked) {
+      showAppToast(
+        context,
+        'A post shared with a list stays with the people it went to.',
+      );
+      return;
+    }
+    final chosen = await _chooseAudience(
+      context,
+      current: _audience,
+      store: widget.audienceLists,
+      viewerIsManager: widget.viewerIsManager,
     );
-    if (!mounted || selected == null) return;
-    setState(() => _sendTo = selected);
+    if (!mounted) return;
+    if (_editing && chosen is ListAudience) {
+      showAppToast(context, 'Choose a list when you first share a post.');
+      return;
+    }
+    setState(() => _audience = chosen);
   }
+
+  /// The audience as the body carries it, Team with its department.
+  Map<String, dynamic> get _audienceFields => {
+    ...audienceBodyFields(_audience),
+    'sendToDepartment': _audience is TeamAudience
+        ? widget.department ?? ''
+        : '',
+  };
 
   Future<void> _openPollEditor() async {
     final result = await Navigator.of(context).push<_PollDraft>(
@@ -5748,7 +6269,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
               ),
               const SizedBox(width: 14),
               InkWell(
-                onTap: () => setState(() => _pollDraft = null),
+                // A poll post with its poll taken away has nothing left to
+                // post: closing it goes back to choosing a type instead of
+                // leaving an empty "add a poll" screen.
+                onTap: () => Navigator.of(context).maybePop(),
                 child: const Icon(
                   Icons.close_rounded,
                   size: 18,
@@ -5906,8 +6430,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
         'linkDomain': _newPostKind == 'link'
             ? _linkUrl.text.replaceFirst(RegExp(r'https?://'), '')
             : '',
-        'sendTo': _sendTo,
-        'sendToDepartment': _sendTo == 'my_team' ? widget.department ?? '' : '',
+        ..._audienceFields,
         // Tags belong to media posts only.
         'taggedUserIds': _newPostKind == 'media'
             ? _taggedUserIds
@@ -5917,8 +6440,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
         'title': _mediaTitle.text,
         'text': _text.text,
         'severity': 'plain',
-        'sendTo': _sendTo,
-        'sendToDepartment': _sendTo == 'my_team' ? widget.department ?? '' : '',
+        ..._audienceFields,
         'requireAcknowledgement': _requireAcknowledgement,
         if (_requireAcknowledgement)
           'acknowledgementMessage': _acknowledgementMessage.text.trim(),
@@ -5941,8 +6463,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
             .map((option) => option.text.trim())
             .where((value) => value.isNotEmpty)
             .toList(),
-        'sendTo': _sendTo,
-        'sendToDepartment': _sendTo == 'my_team' ? widget.department ?? '' : '',
+        ..._audienceFields,
       },
       ConnectPostType.event => {
         'title': _title.text,
@@ -5981,6 +6502,9 @@ class _PostComposerPageState extends State<_PostComposerPage> {
         pollOptionImages: _pollOptionImagesForSubmit(),
         removeMedia: _removeMediaForSubmit(),
         body: body,
+        audienceLabel: _audience is ListAudience
+            ? audienceChoiceLabel(_audience)
+            : null,
       ),
     );
   }
@@ -7678,6 +8202,7 @@ class _LinkPreviewCard extends StatelessWidget {
 
 class _ComposerTextField extends StatelessWidget {
   const _ComposerTextField({
+    super.key,
     required this.controller,
     required this.hint,
     required this.minLines,
@@ -8457,12 +8982,19 @@ class _MediaToggle extends StatelessWidget {
         child: Image.file(File(media.path), fit: BoxFit.cover),
       );
     }
+    // A video plays here before it is posted, at the shape the feed will show it.
+    if (media != null && media.mimeType.startsWith('video/')) {
+      return FeedVideo.file(key: ValueKey(media.path), path: media.path);
+    }
     final url = existingMediaUrl;
     if (url != null && url.isNotEmpty && existingMediaKind == 'image') {
       return _AspectFrame(
         provider: _remoteImage(url),
         child: Image(image: _remoteImage(url), fit: BoxFit.cover),
       );
+    }
+    if (url != null && url.isNotEmpty && existingMediaKind == 'video') {
+      return FeedVideo(key: ValueKey(url), url: url);
     }
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -8668,13 +9200,20 @@ class _ComposerHeader extends StatelessWidget {
                             size: 30,
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            audienceLabel ?? 'Public',
-                            style: const TextStyle(
-                              color: Color(0xFF484848),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w400,
-                              letterSpacing: 0.4,
+                          Flexible(
+                            child: Text(
+                              audienceLabel ?? 'Public',
+                              key: const ValueKey('composer-audience-label'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: _soraFont,
+                                color: Color(0xFF484848),
+                                fontSize: 16,
+                                height: 22 / 16,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.4,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 2),
@@ -8768,79 +9307,6 @@ class _HeaderSubmitPill extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Public/Team audience picker (item 1) — replaces the old inline
-/// `_sendToField()` chip choice for the general composer types.
-class _AudiencePickerSheet extends StatelessWidget {
-  const _AudiencePickerSheet({required this.value});
-
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x1F000000),
-              blurRadius: 16,
-              offset: Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            const _SheetHandle(),
-            _AudienceRow(
-              label: 'Public',
-              onTap: () => Navigator.of(context).pop('all_company'),
-            ),
-            const Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6)),
-            _AudienceRow(
-              label: 'Team',
-              onTap: () => Navigator.of(context).pop('my_team'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AudienceRow extends StatelessWidget {
-  const _AudienceRow({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Row(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF222222),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
         ),
       ),
     );

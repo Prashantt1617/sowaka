@@ -4,11 +4,8 @@ part of 'connect_feed_screen.dart';
 // 3464:62471): pick the format from the pills, name it on a live preview of
 // the card it will become, choose how long it runs, and go live — or press
 // Done to see it in the composer first ("New Post-Media", frame 3515:68767).
-//
-// A company with the Games tab sets contests up there instead ("New
-// post-engagement game created", frame 3677:40066): the format is picked on
-// the Games tab, so the screen opens on it with no pills and no Done, and Go
-// live publishes from here — see [openContestComposer].
+// Contests start only here, from the Posts composer's Contest chip, and only
+// for people granted it (`AuthUser.canCreateContests`).
 
 /// The three contest formats, as the pills offer them (node 3417:52959).
 enum ContestFormat { caption, content, mostLikely }
@@ -103,81 +100,6 @@ const _composerSecondary = Color(0xFF484848);
 const _composerBrand = Color(0xFF0571A6);
 const _composerMuted = Color(0xFF96B7C7);
 const _composerSurface = Color(0xFFF7F7F9);
-
-/// Whether contests are set up from the Games tab rather than from the
-/// Connect composer: true for a company whose app has the Games tab, whose
-/// Explore games section creates them. Without it (convrse today) the
-/// composer's Contest chip stays the way in.
-bool contestsStartFromGames(List<String> enabledTabs) =>
-    visibleTabs(enabledTabs).contains(ManagerTab.games);
-
-/// Opens the contest screen from outside the Connect feed — the Games tab's
-/// Create on Caption This, Best Photo or Most Likely — with [format] already
-/// chosen, and publishes the contest when Go live is pressed. The screen
-/// stays open with a spinner on Go live until the contest is up, so a failed
-/// upload loses nothing typed. Returns the post as the server made it, or
-/// null if they backed out.
-///
-/// [feed] is the shell's [ConnectComposerController]. While the Connect feed
-/// is mounted the contest goes up through it — the same path the composer's
-/// Contest chip uses — so it lands at the top of the feed at once with the
-/// feed's own "Post published" (or its error). Without one, or before the
-/// feed has mounted, it goes straight to the server with [session].
-Future<ConnectPost?> openContestComposer(
-  BuildContext context, {
-  required AuthSession session,
-  ContestFormat? format,
-  ConnectComposerController? feed,
-}) async {
-  ConnectPost? created;
-  await Navigator.of(context).push<ContestDraft>(
-    MaterialPageRoute(
-      builder: (_) => ContestComposerPage(
-        initialFormat: format ?? ContestFormat.caption,
-        publish: (draft) async {
-          created = await _publishContest(
-            context,
-            draft,
-            session: session,
-            feed: feed,
-          );
-          return created != null;
-        },
-      ),
-    ),
-  );
-  return created;
-}
-
-Future<ConnectPost?> _publishContest(
-  BuildContext context,
-  ContestDraft contest, {
-  required AuthSession session,
-  ConnectComposerController? feed,
-}) async {
-  final ConnectPostDraft draft;
-  try {
-    draft = await contest.toPostDraft();
-  } catch (_) {
-    if (context.mounted) {
-      showAppToast(context, 'That picture could not be read. Pick it again.');
-    }
-    return null;
-  }
-  final viaFeed = feed?._state;
-  if (viaFeed != null && viaFeed.mounted) {
-    // The feed says "Post published", or why not, itself.
-    return viaFeed._bloc.publishPost(draft);
-  }
-  try {
-    final post = await ConnectApiService(session: session).createPost(draft);
-    if (context.mounted) showAppToast(context, 'Post published');
-    return post;
-  } catch (error) {
-    if (context.mounted) showAppToast(context, error.toString());
-    return null;
-  }
-}
 
 class ContestComposerPage extends StatefulWidget {
   const ContestComposerPage({
@@ -811,6 +733,7 @@ class _ContestTitleField extends StatelessWidget {
       controller: controller,
       hint: hint,
       maxLength: 80,
+      autofocus: true,
       style: const TextStyle(
         fontFamily: _soraFont,
         fontSize: 24,
@@ -838,6 +761,7 @@ class _ContestHeadingField extends StatelessWidget {
         hint: hint,
         maxLength: 400,
         maxLines: 4,
+        autofocus: true,
         style: const TextStyle(
           fontFamily: _soraFont,
           fontSize: 20,
@@ -858,6 +782,7 @@ class _CardTextField extends StatelessWidget {
     required this.style,
     required this.maxLength,
     this.maxLines = 2,
+    this.autofocus = false,
   });
 
   final TextEditingController controller;
@@ -866,14 +791,21 @@ class _CardTextField extends StatelessWidget {
   final int maxLength;
   final int maxLines;
 
+  /// The card's main line opens with its cursor blinking after the text
+  /// already there, so it reads as something to type over, not a label.
+  final bool autofocus;
+
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      autofocus: autofocus,
       minLines: 1,
       maxLines: maxLines,
       maxLength: maxLength,
-      cursorColor: Colors.white,
+      // In the text's own colour, so it shows on the dark band and the light card alike.
+      cursorColor: style.color ?? Colors.white,
+      cursorWidth: 2,
       textCapitalization: TextCapitalization.sentences,
       style: style,
       // The card is the field: the app's InputDecorationTheme would fill and

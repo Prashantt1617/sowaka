@@ -26,7 +26,7 @@ class _TabContent extends StatelessWidget {
       index: ManagerTab.values.indexOf(state.tab),
       children: [
         _ManageContent(
-          key: const ValueKey('manage-tab'),
+          key: ValueKey('manage-tab-${state.resetsOf(ManagerTab.manage)}'),
           state: state,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
@@ -34,7 +34,7 @@ class _TabContent extends StatelessWidget {
           onOpenComposer: connectComposerController.openComposer,
         ),
         _GrowTab(
-          key: const ValueKey('grow-tab'),
+          key: ValueKey('grow-tab-${state.resetsOf(ManagerTab.grow)}'),
           state: state,
           bloc: bloc,
           onOpenProfile: onOpenProfile,
@@ -42,7 +42,7 @@ class _TabContent extends StatelessWidget {
           onOpenComposer: connectComposerController.openComposer,
         ),
         _ConnectTab(
-          key: const ValueKey('connect-tab'),
+          key: ValueKey('connect-tab-${state.resetsOf(ManagerTab.connect)}'),
           session: session,
           recognitionCandidates: state.dashboard!.recognitionCandidates,
           composerController: connectComposerController,
@@ -60,8 +60,12 @@ class _TabContent extends StatelessWidget {
         // Children are positional: the IndexedStack is keyed on the enum's
         // index, so this must stay in ManagerTab order — games sits between
         // connect and quick.
+        // Not keyed on its resets like the others: the tab's web page is
+        // kept loaded, and a fresh pick resets it in place (the native home
+        // is rebuilt inside the tab, as before).
         _GamesTab(
           key: const ValueKey('games'),
+          resets: state.resetsOf(ManagerTab.games),
           session: session,
           bloc: bloc,
           connectComposerController: connectComposerController,
@@ -70,7 +74,7 @@ class _TabContent extends StatelessWidget {
           visible: state.tab == ManagerTab.games,
         ),
         QuickActionsScreen(
-          key: const ValueKey('quick-actions'),
+          key: ValueKey('quick-actions-${state.resetsOf(ManagerTab.quick)}'),
           bloc: bloc,
           dashboard: state.dashboard!,
           controller: quickActionsController,
@@ -87,7 +91,7 @@ class _TabContent extends StatelessWidget {
         // Still in ManagerTab order: care, then talk. Whether either is in the
         // bar is the company's call; the stack simply has them ready.
         CareTab(
-          key: const ValueKey('care-tab'),
+          key: ValueKey('care-tab-${state.resetsOf(ManagerTab.care)}'),
           session: session,
           onOpenHelp: () => bloc.add(const ChangeManagerTab(ManagerTab.talk)),
           onNotifications: () => _openNotifications(context),
@@ -100,7 +104,7 @@ class _TabContent extends StatelessWidget {
           ),
         ),
         HelpTab(
-          key: const ValueKey('help-tab'),
+          key: ValueKey('help-tab-${state.resetsOf(ManagerTab.talk)}'),
           session: session,
           // Every tab is built; only one is looked at. Help asks about a
           // finished session, and that question belongs on Help.

@@ -4,6 +4,8 @@
  * Both play the same board sequence: the server picks `seed` once and each
  * page builds its puzzles from it. A challenge has a result only once both
  * have played; one that runs out first expires with no winner and no points.
+ * Once accepted, the two can meet in its lobby and start at the same moment,
+ * or each play when they like.
  *
  * A finished challenge pays engagement points (`User.points`, with a row in
  * the points ledger under source `game_challenge`), scaled down from the
@@ -67,12 +69,33 @@ export interface GameChallenge {
   live: Record<string, GameChallengeLive>;
   /** When each player's round began, by userId: their first live score. A final sooner than a round takes is refused. */
   started?: Record<string, Date>;
+  /**
+   * The lobby, where two players meet to start their rounds at the same
+   * moment. `seen`: each player's last heartbeat there, by userId; someone
+   * counts as in the lobby while it is under `LOBBY_PRESENCE_MS` old.
+   */
+  seen?: Record<string, Date>;
+  /** When each player said they were ready, by userId. Gone when they say not ready, or come back after being away. */
+  ready?: Record<string, Date>;
+  /** Players whose first time in the lobby the other has been told about, by userId: that push goes once. */
+  lobbyPushed?: Record<string, Date>;
+  /** When both rounds start: set once, the moment both are in the lobby and ready. */
+  startAt?: Date;
+  /**
+   * The challenger took it back before an answer. Its status reads 'declined',
+   * which apps from before withdrawing already understand.
+   */
+  withdrawnBy?: string;
+  /** Either player called it off once accepted, before either had played. Status 'declined' likewise. */
+  cancelledBy?: string;
+  /** Players who cleared it from their own lists. Nobody else's list changes. */
+  hiddenBy?: string[];
   createdAt: Date;
   updatedAt: Date;
   /** `expiryHours` to answer; once accepted, `expiryHours` from then to play. */
   expiresAt: Date;
   acceptedAt?: Date;
-  /** When it was declined, expired, or both scores were in. */
+  /** When it was declined, withdrawn, called off, expired, or both scores were in. */
   closedAt?: Date;
   /** The winner's award; null on a draw. Set when it finishes. */
   reward?: GameChallengeAward | null;

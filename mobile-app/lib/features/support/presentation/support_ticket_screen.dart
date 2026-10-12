@@ -360,7 +360,6 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
             title: Text(
               draft ? 'Delete ticket' : 'Delete message',
               style: const TextStyle(
-                fontFamily: 'Sora',
                 color: Color(0xFFFB2C36),
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -397,7 +396,6 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
               ? 'Your ticket hasn\'t been sent yet. Leave anyway?'
               : 'Your message hasn\'t been sent yet. Leave anyway?',
           style: const TextStyle(
-            fontFamily: 'Sora',
             color: SupportStyle.ink,
             fontSize: 14,
             height: 20 / 14,
@@ -457,7 +455,6 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
       child: SupportScaffold(
         shell: widget.shell,
         title: 'Chat',
-        compactBar: true,
         background: Colors.white,
         confirmLeave: unsent ? _confirmLeave : null,
         body: !ready
@@ -668,7 +665,6 @@ bool _sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
 const _bubbleText = TextStyle(
-  fontFamily: 'Sora',
   fontSize: 16,
   height: 24 / 16,
   letterSpacing: -0.16,
@@ -735,7 +731,6 @@ class _Bubble extends StatelessWidget {
                       Text(
                         'Not sent · Tap to retry',
                         style: TextStyle(
-                          fontFamily: 'Sora',
                           color: Color(0xFFFB2C36),
                           fontSize: 12,
                           height: 16 / 12,
@@ -758,7 +753,6 @@ class _Bubble extends StatelessWidget {
                       Text(
                         'Sending…',
                         style: TextStyle(
-                          fontFamily: 'Sora',
                           color: SupportStyle.time,
                           fontSize: 12,
                           height: 16 / 12,
@@ -769,7 +763,6 @@ class _Bubble extends StatelessWidget {
                 : Text(
                     time,
                     style: const TextStyle(
-                      fontFamily: 'Sora',
                       color: SupportStyle.time,
                       fontSize: 12,
                       height: 16 / 12,
@@ -1004,7 +997,6 @@ class _FileChip extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Sora',
                     color: foreground,
                     fontSize: 12,
                     height: 16 / 12,
@@ -1039,7 +1031,6 @@ class _DayDivider extends StatelessWidget {
             child: Text(
               supportDivider(date),
               style: const TextStyle(
-                fontFamily: 'Sora',
                 color: Color(0xFF331E36),
                 fontSize: 10,
                 height: 15 / 10,
@@ -1215,7 +1206,6 @@ class _ResolvedNote extends StatelessWidget {
                 'This ticket has been marked as resolved by the support '
                 'team. Please start a new ticket if you’d like to continue.',
                 style: TextStyle(
-                  fontFamily: 'Sora',
                   color: SupportStyle.body,
                   fontSize: 12,
                   height: 16 / 12,
@@ -1249,7 +1239,6 @@ class _ThreadError extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Sora',
                 color: SupportStyle.body,
                 fontSize: 13,
                 height: 18 / 13,

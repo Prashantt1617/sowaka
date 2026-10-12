@@ -26,10 +26,10 @@ import '../../manager_shell/presentation/app_bottom_nav.dart';
 import '../../notifications/notification_badge.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../games/data/games_api_service.dart';
-import '../../games/data/games_home_models.dart';
 import '../../games/data/games_models.dart';
 import '../../games/presentation/games_home.dart';
 import '../../games/presentation/web_game_screen.dart';
+import '../../games/presentation/web_games_home.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../attendance/presentation/punch_screen.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
@@ -458,6 +458,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
         photoUrl: dashboard?.managerPhotoUrl,
         onTap: _openProfile,
         size: 30,
+      ),
+      bottomNav: _BottomTabs(
+        state: _bloc.state,
+        bloc: _bloc,
+        onBeforeChange: () =>
+            Navigator.of(context).popUntil((route) => route.isFirst),
       ),
     );
   }

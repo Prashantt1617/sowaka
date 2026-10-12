@@ -6,9 +6,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../manager/data/manager_models.dart';
 import 'tab_specs.dart';
 
-/// The app's bottom bar (Figma BottomNav, node 638:14348, as the Games
-/// frames draw it): outline icons in grey with their labels, and the tab
-/// that is open raised on a tilted yellow key with its icon in ink.
+/// The app's bottom bar (Figma BottomNav, node 638:14350): outline icons in
+/// grey with their labels, and the tab that is open drawn filled with its
+/// label in the brand blue. Games, open, rises on a tilted yellow key instead.
 ///
 /// Which tabs, and in what order, is the company's call ([tabs], from
 /// `enabledTabs`); this only draws them.
@@ -62,7 +62,8 @@ class AppBottomNav extends StatelessWidget {
   }
 }
 
-/// One tab in the bar: its icon (on the yellow key when open) over its label.
+/// One tab in the bar: its icon over its label, filled and blue when open
+/// (Games on its yellow key).
 class AppNavItem extends StatelessWidget {
   const AppNavItem({super.key, required this.tab, required this.selected, required this.onTap});
 
@@ -71,49 +72,94 @@ class AppNavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   static const selectedColor = Color(0xFF0571A6);
+
+  /// The design's two greys: Connect and Actions in one, Teams and Games in
+  /// the other. Each icon carries its own, so only the labels need telling.
   static const idleColor = Color(0xFF9CA3AF);
+  static const idleColorSoft = Color(0xFF9197A2);
   static const keyColor = Color(0xFFFFC531);
-  static const _ink = Color(0xFF170E30);
 
-  /// The Games tab wears the design's game controller (akar-icons).
-  static const _controller = 'assets/games_home/nav_controller.svg';
+  /// The Games tab's game controller (akar-icons): the large one on the key,
+  /// the small grey one when closed. Each drawn at its own size, where the
+  /// design's box puts it.
+  static const _keyController = 'assets/games_home/nav_controller.svg';
+  static const _idleController = 'assets/games_home/nav_controller_idle.svg';
 
-  Widget _icon(Color color, {required bool large}) {
-    final filter = ColorFilter.mode(color, BlendMode.srcIn);
+  bool get _onKey => selected && tab == ManagerTab.games;
+
+  Color get _labelColor {
+    if (selected) return selectedColor;
+    return tab == ManagerTab.manage || tab == ManagerTab.games ? idleColorSoft : idleColor;
+  }
+
+  /// The tab's name, the same selected or not ("Games" both ways).
+  String get _label => tabSpecFor(tab).label;
+
+  Widget _icon() {
     if (tab == ManagerTab.games) {
-      // The controller's box, with the glyph inset in it as the design has it.
-      final width = large ? 29.819 : 22.0;
-      final height = large ? 28.013 : 22.0;
       return SizedBox(
-        width: width,
-        height: height,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            width * 0.0833,
-            height * 0.2083,
-            width * 0.0833,
-            height * 0.2225,
-          ),
-          child: SvgPicture.asset(_controller, fit: BoxFit.fill, colorFilter: filter),
+        width: 21.99,
+        height: 21.99,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [Positioned(left: 0.916, top: 3.664, child: SvgPicture.asset(_idleController))],
         ),
       );
     }
-    final size = large ? 24.0 : 22.0;
-    return SvgPicture.asset(
-      tabSpecFor(tab).iconAsset,
-      width: size,
-      height: size,
-      colorFilter: filter,
+    final spec = tabSpecFor(tab);
+    return SvgPicture.asset(selected ? spec.activeIconAsset : spec.iconAsset);
+  }
+
+  Widget _key() {
+    return Transform.rotate(
+      angle: -2 * math.pi / 180,
+      child: Container(
+        key: const ValueKey('nav-selected-key'),
+        width: 41.808,
+        height: 36.497,
+        decoration: BoxDecoration(
+          color: keyColor,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: const Color(0xFF5F4A99), width: 1.1),
+          boxShadow: const [BoxShadow(color: Color(0xFF150C2E), offset: Offset(0, 3))],
+        ),
+        // The controller sits in the key's top-left corner, inside its 5 by 3
+        // padding, tilted a further 3 degrees: not centred.
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 5,
+              top: 3,
+              width: 31.244,
+              height: 29.535,
+              child: Center(
+                child: Transform.rotate(
+                  angle: -3 * math.pi / 180,
+                  child: SizedBox(
+                    width: 29.819,
+                    height: 28.013,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [Positioned(left: 1.568, top: 4.919, child: SvgPicture.asset(_keyController))],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final label = tabSpecFor(tab).label;
+    final bold = tab == ManagerTab.connect;
     return Semantics(
       button: true,
       selected: selected,
-      label: label,
+      label: tabSpecFor(tab).label,
       // The label and the tap are this, not the pieces inside.
       onTap: onTap,
       excludeSemantics: true,
@@ -121,51 +167,28 @@ class AppNavItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          // Unopened tabs have 6pt above and below; the key has none.
-          padding: EdgeInsets.symmetric(vertical: selected ? 0 : 6),
+          // Every tab has 6pt above and below, bar Games open on its key.
+          padding: EdgeInsets.symmetric(vertical: _onKey ? 0 : 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: selected ? 35 : 22,
-                child: Center(
-                  child: selected
-                      ? Transform.rotate(
-                          angle: -2 * math.pi / 180,
-                          child: Container(
-                            key: const ValueKey('nav-selected-key'),
-                            width: 41.808,
-                            height: 36.497,
-                            decoration: BoxDecoration(
-                              color: keyColor,
-                              borderRadius: BorderRadius.circular(11),
-                              border: Border.all(color: const Color(0xFF5F4A99), width: 1.1),
-                              boxShadow: const [
-                                BoxShadow(color: Color(0xFF150C2E), offset: Offset(0, 3)),
-                              ],
-                            ),
-                            alignment: Alignment.center,
-                            child: Transform.rotate(
-                              angle: -3 * math.pi / 180,
-                              child: _icon(_ink, large: true),
-                            ),
-                          ),
-                        )
-                      : _icon(idleColor, large: false),
-                ),
+                height: _onKey ? 35 : 21.99,
+                child: Center(child: _onKey ? _key() : _icon()),
               ),
               const SizedBox(height: 4),
               Text(
-                label,
+                _label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'Sora',
-                  color: selected ? selectedColor : idleColor,
+                  color: _labelColor,
                   fontSize: 10,
                   height: 13.333 / 10,
-                  fontWeight: FontWeight.w600,
-                  fontVariations: const [FontVariation.weight(600)],
+                  // Connect's label is the design's one bold label, open or not.
+                  fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+                  fontVariations: [FontVariation.weight(bold ? 700 : 600)],
                 ),
               ),
             ],

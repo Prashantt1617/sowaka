@@ -207,7 +207,6 @@ Future<SupportTopic?> showSupportTopicSheet(
                         child: Text(
                           topic.label,
                           style: TextStyle(
-                            fontFamily: 'Sora',
                             color: SupportStyle.ink,
                             fontSize: 16,
                             height: 24 / 16,
@@ -249,7 +248,6 @@ class _FieldLabel extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: const TextStyle(
-          fontFamily: 'Sora',
           color: SupportStyle.faint,
           fontSize: 12,
           height: 16 / 12,
@@ -288,7 +286,6 @@ class _TopicField extends StatelessWidget {
           child: Text(
             topic?.label ?? '',
             style: const TextStyle(
-              fontFamily: 'Sora',
               color: SupportStyle.inkStrong,
               fontSize: 14,
               height: 20 / 14,
@@ -321,7 +318,6 @@ class _CommentField extends StatelessWidget {
         textAlignVertical: TextAlignVertical.top,
         textCapitalization: TextCapitalization.sentences,
         style: const TextStyle(
-          fontFamily: 'Sora',
           fontSize: 14,
           height: 20 / 14,
           color: SupportStyle.inkStrong,
@@ -329,7 +325,6 @@ class _CommentField extends StatelessWidget {
         decoration: const InputDecoration(
           hintText: 'Describe your concern...',
           hintStyle: TextStyle(
-            fontFamily: 'Sora',
             fontSize: 14,
             height: 20 / 14,
             color: Color(0x80111827),
@@ -378,7 +373,6 @@ class _UploadField extends StatelessWidget {
               const Text(
                 'Upload document',
                 style: TextStyle(
-                  fontFamily: 'Sora',
                   color: SupportStyle.faint,
                   fontSize: 12,
                   height: 16 / 12,
@@ -420,7 +414,6 @@ class _SubmitButton extends StatelessWidget {
             child: Text(
               label,
               style: const TextStyle(
-                fontFamily: 'Sora',
                 color: Colors.white,
                 fontSize: 16,
                 height: 24 / 16,

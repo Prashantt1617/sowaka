@@ -99,6 +99,8 @@ Future<ManagerBloc> boot(WidgetTester tester) async {
       role: 'manager',
       company: 'ACMT',
       org: 'acmt',
+      employeeId: 'AC042',
+      employmentType: 'full_time',
     ),
   );
   final bloc = ManagerBloc(
@@ -188,6 +190,31 @@ void main() {
         containsAll([ProfileTab.grow, ProfileTab.counselor, ProfileTab.rank]),
       );
     });
+  });
+
+  testWidgets('one\'s own work detail has the employee ID and type', (
+    tester,
+  ) async {
+    final bloc = await boot(tester);
+    await tester.tap(
+      find
+          .byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_ProfileAvatarAction',
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('profile-screen')), findsOneWidget);
+    // The tab row sits under the pinned header until the page scrolls.
+    await tester.ensureVisible(find.text('Work detail'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Work detail'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Employee ID'), findsOneWidget);
+    expect(find.text('AC042'), findsOneWidget);
+    expect(find.text('Employment Type'), findsOneWidget);
+    await close(tester, bloc);
   });
 
   testWidgets('a peer opens as the colleague view', (tester) async {

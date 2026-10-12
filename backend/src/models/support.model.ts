@@ -23,13 +23,22 @@ export function supportRoleOf(
 
 export type SupportTicketStatus = 'open' | 'assigned' | 'resolved';
 
+/** One type of ticket, as the app's "Type of request" sheet lists it. */
+export interface SupportTopicOption {
+  /** Stored on the ticket and never changed: a rename keeps it. */
+  key: string;
+  /** What the app and dashboard show. */
+  label: string;
+}
+
 /**
- * The eight topics from the design's "Type of request" sheet (Figma node
- * 2896:32710), in its order. Fixed for every company in phase 1. The key is
- * what is stored; the label is what the app and dashboard show, served by
- * `GET /support/topics` so neither hard-codes it.
+ * The eight types from the design's "Type of request" sheet (Figma node
+ * 2896:32710), in its order. What every company has until HR edits its own
+ * list (`support_topics`, see `services/support-topics.service.ts`), and what
+ * `reset` goes back to. Served by `GET /support/topics` so neither the app nor
+ * the dashboard hard-codes them.
  */
-export const SUPPORT_TOPICS = [
+export const DEFAULT_SUPPORT_TOPICS: readonly SupportTopicOption[] = [
   { key: 'workplace', label: 'Workplace' },
   { key: 'manager', label: 'Manager' },
   { key: 'payroll', label: 'Payroll' },
@@ -38,18 +47,28 @@ export const SUPPORT_TOPICS = [
   { key: 'benefits', label: 'Benefits' },
   { key: 'safety', label: 'Safety issues' },
   { key: 'other', label: 'Other' },
-] as const;
-export type SupportTopic = (typeof SUPPORT_TOPICS)[number]['key'];
+];
 
-/** The topic a ticket about the requester's own manager is filed under. */
-export const MANAGER_TOPIC: SupportTopic = 'manager';
+/**
+ * The type a ticket about the requester's own manager is filed under. Routing
+ * keys off it (see `assignmentBlocked`), so an edit never hands it to another
+ * type: renaming the Manager type keeps it, and a new type gets it only when it
+ * is the Manager type added back under its own name (see `mergeSupportTopics`).
+ */
+export const MANAGER_TOPIC = 'manager';
 
-export function isSupportTopic(value: unknown): value is SupportTopic {
-  return SUPPORT_TOPICS.some((topic) => topic.key === value);
-}
-
-export function supportTopicLabel(key: string): string {
-  return SUPPORT_TOPICS.find((topic) => topic.key === key)?.label ?? key;
+/**
+ * A company's own list of ticket types, one document per org, edited by a
+ * Support head or a dashboard admin (or `scripts/support-topics.ts`). No
+ * document: the defaults.
+ */
+export interface SupportTopicList {
+  org: string;
+  /** In the order the app lists them. */
+  topics: SupportTopicOption[];
+  updatedAt: Date;
+  /** A userId, or `cli:<name>` from the script. */
+  updatedByUserId: string;
 }
 
 export interface SupportTicket {
@@ -58,7 +77,14 @@ export interface SupportTicket {
   /** Per-org running number, shown as SUP-0042. */
   ticketNo: number;
   requesterUserId: string;
-  topic: SupportTopic;
+  /** The type's key, as the org's list had it when the ticket was raised. */
+  topic: string;
+  /**
+   * The type's label at that moment, so a later rename or removal never
+   * changes what an old ticket reads as. Absent on tickets raised before
+   * types were per company, which were all raised under the defaults.
+   */
+  topicLabel?: string;
   status: SupportTicketStatus;
   assigneeUserId?: string;
   assignedByUserId?: string;

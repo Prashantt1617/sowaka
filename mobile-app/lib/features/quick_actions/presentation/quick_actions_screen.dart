@@ -14,7 +14,9 @@ import '../../attendance/presentation/slide_to_punch.dart';
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
+import '../../manager_shell/presentation/app_bottom_nav.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../manager_shell/presentation/tablet_shell.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
 import '../../policies/presentation/policy_body_view.dart';
@@ -158,6 +160,7 @@ List<AttendanceDayView> buildAttendanceDays({
   required List<CompanyHoliday> holidays,
   required List<OvertimeRequest> overtime,
   required ShiftPolicy shift,
+
   /// The server's settled status per day, by YYYY-MM-DD. Where it has one,
   /// that is what the day is — see [_settledByServer].
   Map<String, ServerDayStatus> serverDays = const {},
@@ -1030,20 +1033,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                           'assets/icons/action_card_reimbursement_money.png',
                     ),
                     // Support desk (node 2896:32193): a concern raised to HR
-                    // and the chat on it. Opens over the tabs, as the
-                    // designs show it without the bar.
+                    // and the chat on it. Its pages keep the tabs under them,
+                    // as Leave and Overtime do.
                     _HomeActionCard(
                       key: const ValueKey('support-desk-card'),
                       icon: Icons.support_agent_rounded,
                       color: const Color(0xFF2F7FD9),
                       tint: const Color(0xFFE3EEFB),
                       title: 'Support Desk',
-                      subtitle: 'Submit concern to HR.',
+                      subtitle: 'Raise a ticket',
                       onTap: () => openSupportDesk(
                         context,
                         session: widget.bloc.session,
                         profileAction: widget.profileAction,
                         onNotifications: widget.onNotifications,
+                        bottomNav: _PushedTabs(bloc: widget.bloc),
                       ),
                       imageAsset: 'assets/icons/support_headset.png',
                     ),
@@ -5470,10 +5474,13 @@ class _AttendancePendingNotice extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SvgPicture.asset(
-            'assets/icons/alert_pending_clock.svg',
+          // The clock with its turning arrow: a request going round for review
+          // (node 3198:21537).
+          Image.asset(
+            'assets/icons/attendance_review_clock.png',
             width: 30,
             height: 30,
+            fit: BoxFit.cover,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -5604,6 +5611,28 @@ class _SheetPrimaryButton extends StatelessWidget {
 
 /// One punch row on the correction sheet: a wide box showing the time and a
 /// narrow AM/PM box, matching the paired fields in the design.
+/// The shell's tabs under a page pushed over it, as the profile pages have
+/// them: picking one comes back to the shell first.
+class _PushedTabs extends StatelessWidget {
+  const _PushedTabs({required this.bloc});
+
+  final ManagerBloc bloc;
+
+  @override
+  Widget build(BuildContext context) {
+    // On a tablet the rail is the navigation.
+    if (isTabletLayout(context)) return const SizedBox.shrink();
+    return AppBottomNav(
+      tabs: visibleTabs(bloc.session.user.enabledTabs),
+      selected: bloc.state.tab,
+      onSelect: (tab) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        bloc.add(ChangeManagerTab(tab, fresh: true));
+      },
+    );
+  }
+}
+
 class _HubScaffold extends StatelessWidget {
   const _HubScaffold({
     super.key,

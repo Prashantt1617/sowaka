@@ -13,6 +13,59 @@ const _pollBorder = Color(0xFFEBEBEB);
 const _pollSurface = Color(0xFFF7F7F9);
 const _pollBrand = Color(0xFF0571A6);
 
+/// How long a vote takes to settle: bars grow, shares count, the pick lights.
+const _pollMotion = Duration(milliseconds: 380);
+
+/// A share that counts up to its new value instead of jumping to it.
+class _PollPercent extends StatelessWidget {
+  const _PollPercent({required this.value, required this.style});
+
+  final int value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: value.toDouble()),
+    duration: _pollMotion,
+    curve: Curves.easeOutCubic,
+    builder: (context, shown, _) => Text('${shown.round()}%', style: style),
+  );
+}
+
+/// An option that gives under the finger, so a tap is felt before the vote lands.
+class _PollPressable extends StatefulWidget {
+  const _PollPressable({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_PollPressable> createState() => _PollPressableState();
+}
+
+class _PollPressableState extends State<_PollPressable> {
+  bool _down = false;
+
+  void _set(bool down) {
+    if (_down != down) setState(() => _down = down);
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTapDown: (_) => _set(true),
+    onTapCancel: () => _set(false),
+    onTapUp: (_) => _set(false),
+    onTap: widget.onTap,
+    child: AnimatedScale(
+      scale: _down ? 0.97 : 1,
+      duration: const Duration(milliseconds: 110),
+      curve: Curves.easeOut,
+      child: widget.child,
+    ),
+  );
+}
+
 class _PollPostCard extends StatelessWidget {
   const _PollPostCard({
     required this.post,
@@ -80,7 +133,18 @@ class _PollPostCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Align(alignment: Alignment.centerLeft, child: _PollBadge()),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (_showsLeadershipBadge(post))
+                  const _LeadershipBadge(inPoll: true),
+                const _PollBadge(),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           // The design sets the question 318 wide, a little past the card's
           // 314.85 of content, and wraps it there (node 2028:51596).
@@ -137,6 +201,10 @@ class _PollPostCard extends StatelessWidget {
                   count: post.likeCount,
                   label: post.liked ? 'Unlike' : 'Like',
                   onTap: onLike,
+                  // The count lists who liked it, as on every other post.
+                  onCountTap: post.likeCount > 0
+                      ? () => _openPostLikes(context, post)
+                      : null,
                 ),
                 const SizedBox(width: 24),
                 _PollCount(
@@ -270,6 +338,8 @@ class _PollAuthorRow extends StatelessWidget {
                   if (audience.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Container(
+                      // A custom list's name can run to 40 characters.
+                      constraints: const BoxConstraints(maxWidth: 140),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 4,
@@ -281,6 +351,8 @@ class _PollAuthorRow extends StatelessWidget {
                       ),
                       child: Text(
                         audience,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: _soraFont,
                           fontSize: 12,
@@ -396,10 +468,11 @@ class _PollOptionGrid extends StatelessWidget {
         button: true,
         selected: selected,
         label: option.label,
-        child: GestureDetector(
+        child: _PollPressable(
           onTap: () => onAction(optionId: option.id),
-          behavior: HitTestBehavior.opaque,
-          child: Container(
+          child: AnimatedContainer(
+            duration: _pollMotion,
+            curve: Curves.easeOutCubic,
             padding: EdgeInsets.all(selected ? 10.5 : 11),
             decoration: BoxDecoration(
               color: selected ? const Color(0xFFEFF6FF) : Colors.white,
@@ -437,8 +510,8 @@ class _PollOptionGrid extends StatelessWidget {
                 ),
                 if (voted) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    '$pct%',
+                  _PollPercent(
+                    value: pct,
                     style: TextStyle(
                       fontFamily: _soraFont,
                       fontSize: 16,
@@ -501,10 +574,11 @@ class _PollOptionBars extends StatelessWidget {
               final selected = voted && post.selectedPollOptionId == option.id;
               final pct = ((option.votes / total) * 100).round();
               final ink = selected ? _pollBrand : _pollInkSecondary;
-              return GestureDetector(
+              return _PollPressable(
                 onTap: () => onAction(optionId: option.id),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
+                child: AnimatedContainer(
+                  duration: _pollMotion,
+                  curve: Curves.easeOutCubic,
                   height: 48,
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
@@ -518,14 +592,25 @@ class _PollOptionBars extends StatelessWidget {
                   child: Stack(
                     children: [
                       if (voted)
+                        // The bar grows to its share, from nothing on the
+                        // first vote and from where it was after that.
                         Positioned.fill(
-                          child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: (pct / 100).clamp(0.0, 1.0),
-                            child: ColoredBox(
-                              color: selected
-                                  ? const Color(0xF7CCFCFF)
-                                  : _pollBorder,
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(
+                              begin: 0,
+                              end: (pct / 100).clamp(0.0, 1.0),
+                            ),
+                            duration: _pollMotion,
+                            curve: Curves.easeOutCubic,
+                            builder: (context, share, _) => FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: share,
+                              child: AnimatedContainer(
+                                duration: _pollMotion,
+                                color: selected
+                                    ? const Color(0xF7CCFCFF)
+                                    : _pollBorder,
+                              ),
                             ),
                           ),
                         ),
@@ -549,8 +634,8 @@ class _PollOptionBars extends StatelessWidget {
                                 ),
                               ),
                               if (voted)
-                                Text(
-                                  '$pct%',
+                                _PollPercent(
+                                  value: pct,
                                   style: TextStyle(
                                     fontFamily: _soraFont,
                                     fontSize: 16,
@@ -582,6 +667,7 @@ class _PollCount extends StatelessWidget {
     required this.count,
     required this.label,
     required this.onTap,
+    this.onCountTap,
   });
 
   final String icon;
@@ -589,8 +675,53 @@ class _PollCount extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
+  /// Given, the number is its own button (the likes list) and only the icon
+  /// does [onTap].
+  final VoidCallback? onCountTap;
+
   @override
   Widget build(BuildContext context) {
+    final number = Text(
+      '$count',
+      style: const TextStyle(
+        fontFamily: _soraFont,
+        fontSize: 16,
+        height: 24 / 16,
+        fontWeight: FontWeight.w600,
+        color: _pollIcons,
+      ),
+    );
+    final countTap = onCountTap;
+    if (countTap != null) {
+      return Row(
+        children: [
+          Semantics(
+            button: true,
+            label: label,
+            child: GestureDetector(
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: SvgPicture.asset(icon, width: 21.987, height: 21.987),
+              ),
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: 'See who liked this',
+            child: GestureDetector(
+              onTap: countTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: number,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Semantics(
       button: true,
       label: label,
@@ -601,16 +732,7 @@ class _PollCount extends StatelessWidget {
           children: [
             SvgPicture.asset(icon, width: 21.987, height: 21.987),
             const SizedBox(width: 8),
-            Text(
-              '$count',
-              style: const TextStyle(
-                fontFamily: _soraFont,
-                fontSize: 16,
-                height: 24 / 16,
-                fontWeight: FontWeight.w600,
-                color: _pollIcons,
-              ),
-            ),
+            number,
           ],
         ),
       ),

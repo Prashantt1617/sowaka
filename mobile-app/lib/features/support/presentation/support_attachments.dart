@@ -109,7 +109,6 @@ class SupportFileRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontFamily: 'Sora',
                 color: Color(0xFF111827),
                 fontSize: 12,
                 height: 16 / 12,

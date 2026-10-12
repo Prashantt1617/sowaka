@@ -22,7 +22,8 @@ class AppHomeHeader extends StatelessWidget {
   final VoidCallback? onQuickCreate;
 
   /// The hairline under the header. Off where a top bar sits straight under
-  /// it with no line between them (the Support desk, node 2896:32383).
+  /// it with no line between them (the Support desk, node 2896:32383; the
+  /// Team tab's My Team / Requests / Feedback bar).
   final bool divider;
 
   @override

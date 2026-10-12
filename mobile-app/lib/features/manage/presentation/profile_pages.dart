@@ -1140,6 +1140,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
           label: 'Email',
           value: user.email,
         ),
+        // In the order a colleague's profile shows them.
+        if (_nonEmpty(user.employeeId) case final id?)
+          _WorkDetailRow(
+            iconAsset: 'assets/icons/profile_employee_id.svg',
+            label: 'Employee ID',
+            value: id,
+          ),
         if (_nonEmpty(user.joiningDate) != null)
           _WorkDetailRow(
             iconAsset: 'assets/icons/profile_joining_date.svg',

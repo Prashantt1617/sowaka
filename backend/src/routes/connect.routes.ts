@@ -6,6 +6,7 @@ import {
   connectFeed,
   connectLinkPreview,
   connectPost,
+  connectPostLikes,
   createPost,
   deletePost,
   listBlockedPeople,
@@ -18,6 +19,13 @@ import {
   unblockPerson,
   updatePost,
 } from '../controllers/connect.controller';
+import {
+  getAudienceLists,
+  getAudiencePeople,
+  patchAudienceList,
+  postAudienceList,
+  removeAudienceList,
+} from '../controllers/audience-list.controller';
 import { uploadConnectPostMedia } from '../middleware/connect-media-upload.middleware';
 import { requireAuth } from '../middleware/auth.middleware';
 import { playerGame, playerSubmitScore } from '../controllers/game.controller';
@@ -28,6 +36,8 @@ connectRouter.get('/feed', connectFeed);
 // Composer preview: resolve a link's artwork before the post is created.
 connectRouter.get('/link-preview', connectLinkPreview);
 connectRouter.get('/posts/:postId', connectPost);
+// The likes list: who liked a post, latest first.
+connectRouter.get('/posts/:postId/likes', connectPostLikes);
 connectRouter.get('/games/:gameId', playerGame);
 connectRouter.post('/games/:gameId/scores', playerSubmitScore);
 connectRouter.post('/posts', uploadConnectPostMedia, createPost);
@@ -46,5 +56,12 @@ connectRouter.post('/posts/:postId/captions/vote', voteCaption);
 connectRouter.get('/blocks', listBlockedPeople);
 connectRouter.post('/blocks', blockPerson);
 connectRouter.delete('/blocks/:userId', unblockPerson);
+// Custom audience lists: the viewer's own saved shortcuts of people a post
+// can be sent to, and the company directory the list picker opens with.
+connectRouter.get('/audience-lists', getAudienceLists);
+connectRouter.get('/audience-lists/people', getAudiencePeople);
+connectRouter.post('/audience-lists', postAudienceList);
+connectRouter.patch('/audience-lists/:listId', patchAudienceList);
+connectRouter.delete('/audience-lists/:listId', removeAudienceList);
 connectRouter.patch('/posts/:postId', uploadConnectPostMedia, updatePost);
 connectRouter.delete('/posts/:postId', deletePost);

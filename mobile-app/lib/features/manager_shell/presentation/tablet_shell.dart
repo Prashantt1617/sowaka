@@ -142,7 +142,7 @@ class _NavigationRail extends StatelessWidget {
   /// renders underneath whatever is on top.
   void _select(BuildContext context, ManagerTab tab) {
     appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-    bloc.add(ChangeManagerTab(tab));
+    bloc.add(ChangeManagerTab(tab, fresh: true));
   }
 }
 

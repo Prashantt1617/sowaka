@@ -8,6 +8,7 @@ import {
   getConnectFeed,
   parsePostTypeList,
   getConnectPost,
+  getConnectPostLikes,
   performConnectAction,
   removeCaptionEntry,
   toggleConnectCommentReaction,
@@ -46,6 +47,16 @@ export async function connectPost(req: Request, res: Response, next: NextFunctio
   try {
     const post = await getConnectPost(requireUserId(req), String(req.params.postId ?? ''));
     res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+/** Who liked a post, latest first, for the likes list. */
+export async function connectPostLikes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const likes = await getConnectPostLikes(requireUserId(req), String(req.params.postId ?? ''));
+    res.status(200).json({ success: true, likes });
   } catch (error) {
     handleConnectError(error, next);
   }

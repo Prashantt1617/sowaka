@@ -5,8 +5,19 @@
  *
  * The two players hear about every change on their own socket channel
  * (`game:challenge`), and by push for the ones that need them: a challenge
- * received; for the challenger, the answer; and the result for whoever
- * finished first. Rules about who may do what are in `game-challenge-rules.ts`.
+ * received; for the challenger, the answer; a challenge withdrawn or called
+ * off; the other waiting in the lobby; and the result for whoever finished
+ * first. Rules about who may do what are in `game-challenge-rules.ts`.
+ *
+ * The lobby: once accepted, both can meet there and start at the same
+ * moment. The app's bridge carries only a challenge's id, so the calls it
+ * already has do the work: reading an accepted challenge the viewer has not
+ * played is being in its lobby (a heartbeat), and accepting it again says
+ * ready, or not ready any more. When both are there and ready, both rounds
+ * get one start (`startAt`), and both pages hear it together.
+ *
+ * One challenge at a time: nobody sends one, or accepts one, while one of
+ * their own is open (`mayTakeAnother`).
  *
  * Points: a finished challenge pays engagement points, scaled and capped by
  * the game's `challengeRewards` (`computeAwards`), into `User.points` with a
@@ -29,25 +40,41 @@ import { requireChallengeGame } from './game-catalog.service';
 import {
   FINISH_GRACE_MS,
   LIVE_MIN_INTERVAL_MS,
+  LOBBY_PRESENCE_MS,
+  acceptMeans,
+  bothReady,
   cappedReason,
   challengeMay,
   challengeRewardsOf,
+  clearingFor,
   computeAwards,
   effectiveStatus,
   expiryMs,
+  inLobby,
   istDayStart,
+  isOwnOpen,
   isParticipant,
   ledgerNote,
+  lobbyArrivalLine,
+  lobbyOpen,
+  lobbyStateOf,
   mayChallenge,
   mayOpenAnother,
+  mayTakeAnother,
+  ONE_OPEN_AT_A_TIME,
   newSeed,
   orgOf,
   otherPlayer,
   outcomeFor,
   parseChallengeScore,
   playedLongEnough,
+  readyToggle,
   resultLine,
+  startAtFor,
+  tellOtherOfArrival,
   type Decision,
+  type LobbyState,
+  type OwnOpen,
   type PaidToday,
 } from './game-challenge-rules';
 import { notifyUsers } from './notification.service';
@@ -77,9 +104,19 @@ const COLLEAGUE_LIMIT = 50;
 const BOARD_SIZE = 10;
 const INACTIVE = ['offboarded', 'terminated'];
 
+/**
+ * The lobby (both players in the challenge at once, readying up for one shared
+ * start) is switched off for now: each player plays their round whenever they
+ * like and the result lands once both have. Off, opening a challenge is just a
+ * read (no heartbeat, no "join now" push), accepting it again changes nothing,
+ * and every view says the lobby is closed. The code stays for turning it back on.
+ */
+const LOBBY_ENABLED = false;
+const lobbyOn = (c: GameChallenge, now: Date) => LOBBY_ENABLED && lobbyOpen(c, now);
+
 function refuse(decision: Decision): never {
   if (decision.ok) throw new Error('refuse() called with an allowed decision');
-  throw new GameChallengeError(decision.status, decision.message);
+  throw new GameChallengeError(decision.status, decision.message, decision.details);
 }
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
@@ -112,10 +149,31 @@ export interface ChallengeView {
   myAward: AwardView | null;
   /** What the other player earned. */
   theirAward: AwardView | null;
+  /**
+   * Who took it back before an answer, or called it off once accepted; null
+   * otherwise. Its status reads 'declined' either way, as apps from before
+   * these existed expect; these say which it really was.
+   */
+  withdrawnBy: string | null;
+  cancelledBy: string | null;
+  lobby: LobbyView;
   createdAt: Date;
   acceptedAt: Date | null;
   closedAt: Date | null;
   expiresAt: Date;
+}
+
+/** Where both players stand in the challenge's lobby, for a page that starts their rounds together. */
+export interface LobbyView {
+  /** Whether they can still start together: accepted, not started yet, and neither has played. */
+  open: boolean;
+  /** 'away' whenever the lobby is not open. */
+  me: LobbyState;
+  them: LobbyState;
+  /** When both rounds start, once both were ready; it stays set after. */
+  startAt: Date | null;
+  /** The server's clock as this view was made, for a page to count down to `startAt` by. */
+  serverNow: Date;
 }
 
 export interface AwardView {
@@ -157,6 +215,7 @@ export function toView(c: GameChallenge, viewerId: string, now = new Date()): Ch
   const status = effectiveStatus(c, now);
   const finished = status === 'finished';
   const outcome = finished ? outcomeFor(c, viewerId) : null;
+  const open = lobbyOn(c, now);
   return {
     id: c.id,
     gameKey: c.gameKey,
@@ -168,6 +227,15 @@ export function toView(c: GameChallenge, viewerId: string, now = new Date()): Ch
     outcome,
     myAward: finished ? awardView(c, viewerId) : null,
     theirAward: finished ? awardView(c, otherPlayer(c, viewerId)) : null,
+    withdrawnBy: c.withdrawnBy ?? null,
+    cancelledBy: c.cancelledBy ?? null,
+    lobby: {
+      open,
+      me: open ? lobbyStateOf(c, viewerId, now) : 'away',
+      them: open ? lobbyStateOf(c, otherPlayer(c, viewerId), now) : 'away',
+      startAt: c.startAt ?? null,
+      serverNow: now,
+    },
     createdAt: c.createdAt,
     acceptedAt: c.acceptedAt ?? null,
     closedAt: c.closedAt ?? null,
@@ -175,11 +243,11 @@ export function toView(c: GameChallenge, viewerId: string, now = new Date()): Ch
   };
 }
 
-/** Each player gets their own view of the change. */
-function broadcast(c: GameChallenge, kind: string) {
+/** Each player gets their own view of the change, with `extra` beside it. */
+function broadcast(c: GameChallenge, kind: string, extra: Record<string, unknown> = {}) {
   const now = new Date();
   for (const userId of [c.challengerUserId, c.opponentUserId]) {
-    emitGameChallenge(userId, { kind, challengeId: c.id, gameKey: c.gameKey, challenge: toView(c, userId, now) });
+    emitGameChallenge(userId, { kind, challengeId: c.id, gameKey: c.gameKey, challenge: toView(c, userId, now), ...extra });
   }
 }
 
@@ -271,7 +339,7 @@ export async function createChallenge(viewer: ChallengeViewer, body: { gameKey?:
 
   const now = new Date();
   const open = { status: { $in: OPEN_CHALLENGE_STATUSES }, expiresAt: { $gt: now } };
-  const [outgoing, incomingForOpponent, between] = await Promise.all([
+  const [outgoing, incomingForOpponent, between, own] = await Promise.all([
     gameChallenges().countDocuments({ challengerUserId: viewer.userId, ...open }),
     gameChallenges().countDocuments({ opponentUserId, status: 'pending', expiresAt: { $gt: now } }),
     gameChallenges().findOne(
@@ -285,10 +353,12 @@ export async function createChallenge(viewer: ChallengeViewer, body: { gameKey?:
       },
       { projection: { _id: 0, id: 1 } },
     ),
+    // Only looked up while one-at-a-time is on.
+    ONE_OPEN_AT_A_TIME ? ownOpenOf(viewer, now) : Promise.resolve(null),
   ]);
-  const room = mayOpenAnother({ outgoing, incomingForOpponent, betweenThem: Boolean(between) });
+  const room = mayOpenAnother({ outgoing, incomingForOpponent, betweenThem: Boolean(between), own });
   if (!room.ok) {
-    throw new GameChallengeError(room.status, room.message, between ? { challengeId: between.id } : undefined);
+    throw new GameChallengeError(room.status, room.message, room.details ?? (between ? { challengeId: between.id } : undefined));
   }
 
   const challenge: GameChallenge = {
@@ -319,8 +389,44 @@ export async function createChallenge(viewer: ChallengeViewer, body: { gameKey?:
   return toView(challenge, viewer.userId, now);
 }
 
+/**
+ * The viewer's own open challenge (`isOwnOpen`), other than `exceptId`: one
+ * they sent still waiting for an answer, or one accepted they have not
+ * played. At their company only: one left behind elsewhere is not theirs to clear.
+ */
+async function ownOpenOf(viewer: ChallengeViewer, now: Date, exceptId?: string): Promise<OwnOpen | null> {
+  const me = viewer.userId;
+  const rows = await gameChallenges()
+    .find(
+      {
+        org: orgOf(viewer),
+        ...(exceptId ? { id: { $ne: exceptId } } : {}),
+        expiresAt: { $gt: now },
+        $or: [
+          { challengerUserId: me, status: 'pending' },
+          { challengerUserId: me, status: 'accepted', [`scores.${me}`]: { $exists: false } },
+          { opponentUserId: me, status: 'accepted', [`scores.${me}`]: { $exists: false } },
+        ],
+      } as Filter<GameChallenge>,
+      { projection: { _id: 0 } },
+    )
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .toArray();
+  const own = rows.find((row) => isOwnOpen(row, me, now));
+  if (!own) return null;
+  return { challengeId: own.id, withName: own.challengerUserId === me ? own.opponentName : own.challengerName };
+}
+
 async function answer(viewer: ChallengeViewer, id: string, verdict: 'accepted' | 'declined') {
   const pending = await loadFor(viewer, id, verdict === 'accepted' ? 'accept' : 'decline');
+  if (verdict === 'accepted') {
+    // One at a time (when on): a challenge waiting on them can wait, not be taken on, while one of theirs is open.
+    if (ONE_OPEN_AT_A_TIME) {
+      const room = mayTakeAnother(await ownOpenOf(viewer, new Date(), id));
+      if (!room.ok) refuse(room);
+    }
+  }
   // A game since taken off the company's list can still be declined, not played.
   const game = await requireChallengeGame(viewer, pending.gameKey).catch((error) => {
     if (verdict === 'accepted') throw error;
@@ -355,13 +461,225 @@ async function answer(viewer: ChallengeViewer, id: string, verdict: 'accepted' |
   return toView(c, viewer.userId, now);
 }
 
-export const acceptChallenge = (viewer: ChallengeViewer, id: string) => answer(viewer, id, 'accepted');
-export const declineChallenge = (viewer: ChallengeViewer, id: string) => answer(viewer, id, 'declined');
+/**
+ * Accept: answers a pending challenge, as it always has. On one already
+ * accepted it says ready, or not ready any more, in its lobby (`toggleReady`).
+ */
+export async function acceptChallenge(viewer: ChallengeViewer, id: string) {
+  const c = await loadFor(viewer, id, 'view');
+  if (acceptMeans(c, new Date()) === 'ready') {
+    return LOBBY_ENABLED ? toggleReady(viewer, c) : toView(c, viewer.userId);
+  }
+  return answer(viewer, id, 'accepted');
+}
+
+/**
+ * Decline, the one way to get rid of a challenge; what it does depends on
+ * who asks and when (`clearingFor`). The one challenged declines; the
+ * challenger withdraws; once accepted, either calls it off while neither has
+ * played; once it is over, either clears it from their own list.
+ */
+export async function declineChallenge(viewer: ChallengeViewer, id: string) {
+  const c = await load(id);
+  if (!playsIn(c, viewer)) throw new GameChallengeError(404, 'Challenge not found');
+  const now = new Date();
+  const clearing = clearingFor(c, viewer.userId, now);
+  if (!clearing.ok) refuse(clearing);
+  switch (clearing.action) {
+    case 'decline':
+      return answer(viewer, id, 'declined');
+    case 'withdraw':
+    case 'call_off':
+      return closeEarly(viewer, c, clearing.action, now);
+    case 'hide':
+      return hide(viewer, c, now);
+  }
+}
+
+/**
+ * Withdrawn by the challenger before an answer, or called off once accepted
+ * while neither has played. Status 'declined' either way, for apps that
+ * predate this; `withdrawnBy` or `cancelledBy` says which, and who. Only
+ * from the state the decision saw: an answer or a final landing first wins.
+ */
+async function closeEarly(viewer: ChallengeViewer, c: GameChallenge, how: 'withdraw' | 'call_off', now: Date) {
+  const me = viewer.userId;
+  const still: Filter<GameChallenge> =
+    how === 'withdraw'
+      ? { id: c.id, challengerUserId: me, status: 'pending', expiresAt: { $gt: now } }
+      : {
+          id: c.id,
+          status: 'accepted',
+          expiresAt: { $gt: new Date(now.getTime() - FINISH_GRACE_MS) },
+          [`scores.${c.challengerUserId}`]: { $exists: false },
+          [`scores.${c.opponentUserId}`]: { $exists: false },
+        };
+  const closed = await gameChallenges().findOneAndUpdate(
+    still,
+    { $set: { status: 'declined', [how === 'withdraw' ? 'withdrawnBy' : 'cancelledBy']: me, closedAt: now, updatedAt: now } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!closed) {
+    // Answered, played or expired in the meantime: say what it is now.
+    const latest = await load(c.id);
+    const again = clearingFor(latest, me, new Date());
+    if (!again.ok) refuse(again);
+    refuse({
+      ok: false,
+      status: 409,
+      message: again.action === 'call_off' ? 'They have just accepted it. You can still call it off.' : 'This challenge has just changed. Try again.',
+    });
+  }
+  const withdrawn = how === 'withdraw';
+  broadcast(closed, withdrawn ? 'withdrawn' : 'cancelled');
+  const mine = firstName(me === closed.challengerUserId ? closed.challengerName : closed.opponentName);
+  const gameName = await gameNameOf(closed.gameKey);
+  push(
+    otherPlayer(closed, me),
+    withdrawn ? 'game_challenge_withdrawn' : 'game_challenge_cancelled',
+    withdrawn ? `${mine} withdrew their challenge` : `${mine} called off your challenge`,
+    withdrawn ? `${gameName}: nothing to answer now.` : `${gameName}: no result and no points.`,
+    closed,
+  );
+  return toView(closed, me, now);
+}
+
+/** Off the viewer's own list, and nobody else's: nothing to tell anyone. */
+async function hide(viewer: ChallengeViewer, c: GameChallenge, now: Date) {
+  const hidden = await gameChallenges().findOneAndUpdate(
+    { id: c.id },
+    { $addToSet: { hiddenBy: viewer.userId } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  return toView(hidden ?? c, viewer.userId, now);
+}
+
+// ---------------------------------------------------------------- the lobby
+
+/** Still a lobby to change: accepted, before its deadline, not started, and neither has played. */
+function lobbyStill(c: GameChallenge, now: Date): Filter<GameChallenge> {
+  return {
+    id: c.id,
+    status: 'accepted',
+    expiresAt: { $gt: now },
+    startAt: { $exists: false },
+    [`scores.${c.challengerUserId}`]: { $exists: false },
+    [`scores.${c.opponentUserId}`]: { $exists: false },
+  };
+}
+
+/**
+ * Reading an accepted challenge the viewer has not played is being in its
+ * lobby: each read is a heartbeat. Coming in after being away is news for
+ * the other player (a 'lobby' event, and once, a push), and starts them not
+ * ready, whatever they said before they left.
+ */
+async function joinLobby(c: GameChallenge, userId: string, now: Date): Promise<GameChallenge> {
+  if (!lobbyOn(c, now)) return c;
+  if (inLobby(c, userId, now)) {
+    // Still here: the heartbeat only, nothing the other needs to hear.
+    const kept = await gameChallenges().findOneAndUpdate(
+      lobbyStill(c, now),
+      { $set: { [`seen.${userId}`]: now } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    return kept ?? load(c.id);
+  }
+  const away = new Date(now.getTime() - LOBBY_PRESENCE_MS);
+  const arrived = await gameChallenges().findOneAndUpdate(
+    { ...lobbyStill(c, now), $or: [{ [`seen.${userId}`]: { $exists: false } }, { [`seen.${userId}`]: { $lte: away } }] },
+    { $set: { [`seen.${userId}`]: now }, $unset: { [`ready.${userId}`]: '' } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  // Another read came in first, or the lobby closed: the challenge as it is now.
+  if (!arrived) return load(c.id);
+  broadcast(arrived, 'lobby');
+  await tellOfArrival(arrived, userId, now);
+  return arrived;
+}
+
+/** The push to the other player that someone is waiting in the lobby: once, claimed before it goes. */
+async function tellOfArrival(c: GameChallenge, userId: string, now: Date) {
+  if (!tellOtherOfArrival(c, userId, now)) return;
+  // Just accepted: the challenger has had "accepted your challenge" this minute, which says as much.
+  if (userId === c.opponentUserId && c.acceptedAt && now.getTime() - new Date(c.acceptedAt).getTime() < LOBBY_PRESENCE_MS) return;
+  const claim = await gameChallenges().updateOne(
+    { id: c.id, [`lobbyPushed.${userId}`]: { $exists: false } },
+    { $set: { [`lobbyPushed.${userId}`]: now } },
+  );
+  if (claim.modifiedCount === 0) return;
+  push(
+    otherPlayer(c, userId),
+    'game_challenge_lobby',
+    lobbyArrivalLine(c, userId, await gameNameOf(c.gameKey)),
+    'Join now and you both start at the same moment.',
+    c,
+  );
+}
+
+/**
+ * Ready, or not ready any more, in an accepted challenge's lobby; saying it
+ * is being there too (a heartbeat). Each change is made only from the state
+ * it was decided on, so a tap never flips a state it did not see. The moment
+ * both are there and ready, both rounds get one start, `START_DELAY_MS`
+ * ahead, and both pages hear it at once ('start', with the server's clock).
+ */
+async function toggleReady(viewer: ChallengeViewer, loaded: GameChallenge): Promise<ChallengeView> {
+  const me = viewer.userId;
+  let c = loaded;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const now = new Date();
+    const decision = challengeMay('ready', me, c, now);
+    if (!decision.ok) refuse(decision);
+    const wasAway = !inLobby(c, me, now);
+    const toggle = readyToggle(c, me, now);
+    const asRead: Filter<GameChallenge> = c.ready?.[me]
+      ? { [`ready.${me}`]: c.ready[me] }
+      : { [`ready.${me}`]: { $exists: false } };
+    const changed = await gameChallenges().findOneAndUpdate(
+      { ...lobbyStill(c, now), ...asRead },
+      // Not ready is no heartbeat: it is what a page sends as it leaves, and the leaver should drop out within the minute.
+      toggle === 'ready'
+        ? { $set: { [`ready.${me}`]: now, [`seen.${me}`]: now } }
+        : { $unset: { [`ready.${me}`]: '' } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (!changed) {
+      c = await load(c.id);
+      continue;
+    }
+    // Each write returns every write before it, so of two players readying at once the later one sees both.
+    if (toggle === 'ready' && bothReady(changed, now)) {
+      const started = await gameChallenges().findOneAndUpdate(
+        {
+          ...lobbyStill(changed, now),
+          [`ready.${changed.challengerUserId}`]: { $exists: true },
+          [`ready.${changed.opponentUserId}`]: { $exists: true },
+          [`seen.${changed.challengerUserId}`]: { $gt: new Date(now.getTime() - LOBBY_PRESENCE_MS) },
+          [`seen.${changed.opponentUserId}`]: { $gt: new Date(now.getTime() - LOBBY_PRESENCE_MS) },
+        },
+        { $set: { startAt: startAtFor(now), updatedAt: now } },
+        { returnDocument: 'after', projection: { _id: 0 } },
+      );
+      if (started) {
+        broadcast(started, 'start', { startAt: started.startAt, serverNow: new Date() });
+        return toView(started, me);
+      }
+    }
+    broadcast(changed, 'lobby');
+    if (wasAway) await tellOfArrival(changed, me, now);
+    return toView(changed, me, now);
+  }
+  throw new GameChallengeError(409, 'This challenge just changed. Try again.');
+}
 
 // ---------------------------------------------------------------- reading
 
+/** One challenge; reading an accepted one the viewer has not played keeps them in its lobby (`joinLobby`). */
 export async function getChallenge(viewer: ChallengeViewer, id: string) {
-  return toView(await loadFor(viewer, id, 'view'), viewer.userId);
+  const now = new Date();
+  const c = await joinLobby(await loadFor(viewer, id, 'view'), viewer.userId, now);
+  return toView(c, viewer.userId, now);
 }
 
 /** The viewer's challenges, for one game when given: waiting on them, waiting on the other, in play, and the latest results. */
@@ -372,6 +690,8 @@ export async function listMyChallenges(viewer: ChallengeViewer, gameKey: unknown
       {
         org: orgOf(viewer),
         $or: [{ challengerUserId: viewer.userId }, { opponentUserId: viewer.userId }],
+        // Not the ones they cleared.
+        hiddenBy: { $ne: viewer.userId },
         ...(typeof gameKey === 'string' && gameKey ? { gameKey } : {}),
       },
       { projection: { _id: 0 } },

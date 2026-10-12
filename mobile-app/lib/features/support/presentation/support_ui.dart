@@ -14,11 +14,16 @@ class SupportShell {
     required this.profileAction,
     required this.onNotifications,
     this.realtime,
+    this.bottomNav,
   });
 
   final SupportApiService api;
   final Widget profileAction;
   final VoidCallback onNotifications;
+
+  /// The app's tabs, under every page of the desk as under Leave and
+  /// Overtime. Picking one leaves the desk first.
+  final Widget? bottomNav;
 
   /// Shared by the desk and the thread opened from it. Null until the desk
   /// has made one (or a test supplied it).
@@ -29,10 +34,12 @@ class SupportShell {
     profileAction: profileAction,
     onNotifications: onNotifications,
     realtime: realtime,
+    bottomNav: bottomNav,
   );
 }
 
-/// The Support desk's palette and type, all Sora as in the Figma frames.
+/// The Support desk's palette and type: the app's own font at the sizes the
+/// Leave and Overtime pages use, so the desk reads as one of them.
 abstract final class SupportStyle {
   static const ink = Color(0xFF222222);
   static const inkStrong = Color(0xFF111827);
@@ -47,27 +54,24 @@ abstract final class SupportStyle {
   static const bubbleTheirs = Color(0xFFE5E7EB);
   static const time = Color(0xFF6A7282);
 
+  /// The top bar's title, as "Leave" and "Overtime" are set.
   static const title = TextStyle(
-    fontFamily: 'Sora',
-    color: ink,
-    fontSize: 16,
-    height: 24 / 16,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.16,
+    color: Color(0xFF2A2420),
+    fontSize: 19,
+    fontWeight: FontWeight.w800,
   );
 
+  /// The pill in the top bar, as "Apply Leave" is set.
   static const button = TextStyle(
-    fontFamily: 'Sora',
     color: Colors.white,
     fontSize: 12,
-    height: 16 / 12,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.16,
+    fontWeight: FontWeight.w700,
   );
 }
 
-/// A page of the Support desk: the app header, a top bar with the back
-/// button, a title and an optional action, then the page itself.
+/// A page of the Support desk, laid out as Leave and Overtime are: the app
+/// header, a top bar with the back button, a title and an optional action,
+/// the page itself, and the app's tabs under it.
 class SupportScaffold extends StatelessWidget {
   const SupportScaffold({
     super.key,
@@ -77,7 +81,6 @@ class SupportScaffold extends StatelessWidget {
     this.trailing,
     this.footer,
     this.background = SupportStyle.page,
-    this.compactBar = false,
     this.onBack,
     this.confirmLeave,
   });
@@ -88,9 +91,6 @@ class SupportScaffold extends StatelessWidget {
   final Widget? trailing;
   final Widget? footer;
   final Color background;
-
-  /// The chat's top bar sits tight under the header (node 3459:62206).
-  final bool compactBar;
   final VoidCallback? onBack;
 
   /// Set while the page holds something unsent: the avatar then asks this
@@ -102,12 +102,18 @@ class SupportScaffold extends StatelessWidget {
     final confirm = confirmLeave;
     void leaveDesk() =>
         Navigator.of(context).popUntil((route) => route.isFirst);
+    // The tabs step aside for the keyboard, as they do in the shell. While
+    // they show they hold the home-indicator inset, so the footer above them
+    // does not pad for it again.
+    final nav = MediaQuery.viewInsetsOf(context).bottom > 0
+        ? null
+        : shell.bottomNav;
+    final footer = this.footer;
     return Scaffold(
       backgroundColor: background,
       body: Column(
         children: [
           AppHomeHeader(
-            divider: false,
             // Opening the profile from here leaves the desk: the profile
             // opens under it, so the desk's pages step aside first. A
             // listener rather than a tap handler, so the avatar's own tap
@@ -130,9 +136,7 @@ class SupportScaffold extends StatelessWidget {
             onNotifications: shell.onNotifications,
           ),
           Container(
-            padding: compactBar
-                ? const EdgeInsets.fromLTRB(20, 0, 20, 8)
-                : const EdgeInsets.fromLTRB(20, 11, 21, 11),
+            padding: const EdgeInsets.fromLTRB(16, 8, 18, 12),
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
@@ -156,7 +160,15 @@ class SupportScaffold extends StatelessWidget {
             ),
           ),
           Expanded(child: body),
-          ?footer,
+          if (footer != null)
+            nav == null
+                ? footer
+                : MediaQuery.removePadding(
+                    context: context,
+                    removeBottom: true,
+                    child: footer,
+                  ),
+          ?nav,
         ],
       ),
     );
@@ -175,18 +187,18 @@ class SupportBackButton extends StatelessWidget {
       label: 'Back',
       child: Material(
         color: SupportStyle.page,
-        shape: const CircleBorder(),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
-          customBorder: const CircleBorder(),
+          borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             child: Center(
               child: SvgPicture.asset(
-                'assets/icons/chevron_left_small.svg',
-                width: 18,
-                height: 18,
+                'assets/icons/chevron_back.svg',
+                width: 20,
+                height: 20,
               ),
             ),
           ),
@@ -211,10 +223,10 @@ class SupportPillButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: SupportStyle.brand,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(label, style: SupportStyle.button),
@@ -266,10 +278,8 @@ class SupportStatusChip extends StatelessWidget {
       child: Text(
         labelFor(ticket),
         style: TextStyle(
-          fontFamily: 'Sora',
           color: color,
-          fontSize: 10,
-          height: 15 / 10,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
       ),

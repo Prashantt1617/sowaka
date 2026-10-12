@@ -47,8 +47,9 @@ class ConnectState {
   /// comment finishing meanwhile never takes the placeholder away.
   final int publishing;
 
-  /// Who the post on its way goes to, 'everyone' or 'my_team', for the
-  /// placeholder card. Null when nothing is being published.
+  /// Who the post on its way goes to, for the placeholder card: 'everyone',
+  /// 'my_team', or 'list:' and the list's name. Null when nothing is being
+  /// published.
   final String? publishingTo;
 
   factory ConnectState.initial() {
@@ -115,6 +116,10 @@ class ConnectBloc {
 
   Stream<ConnectState> get stream => _controller.stream;
   ConnectState get state => _state;
+
+  /// The service the feed talks to, shared with the composer's audience
+  /// lists so both reach the same server.
+  ConnectApiService get api => _api;
 
   /// Five posts a page: the first page is on screen before the rest is
   /// asked for, and the rest comes as the reader scrolls.
@@ -298,7 +303,10 @@ class ConnectBloc {
   /// Updated in place when loaded, put at the top when not, and kept there
   /// through a load or refresh that does not bring it (see [_withEnsured]).
   /// False if it cannot be had — deleted, or not visible to this viewer.
-  Future<bool> ensurePost(String postId) async {
+  ///
+  /// [keepOnTop] false puts a post not loaded on top for now only: the next
+  /// load or refresh settles the feed back to its own order.
+  Future<bool> ensurePost(String postId, {bool keepOnTop = true}) async {
     final loaded = _state.posts.any((post) => post.id == postId);
     try {
       final post = await _api.fetchPost(postId);
@@ -310,7 +318,7 @@ class ConnectBloc {
       } else {
         posts.insert(0, post);
       }
-      _ensured.add(postId);
+      if (keepOnTop) _ensured.add(postId);
       _emit(_state.copyWith(posts: posts));
       return true;
     } catch (_) {
@@ -347,6 +355,25 @@ class ConnectBloc {
     }
   }
 
+  /// Loads older pages until [postId] is in the feed, for opening a post
+  /// where it really sits rather than moving it to the top: at most
+  /// [maxPages], stopping at the end of the feed or on a failed page. True
+  /// once it is there.
+  Future<bool> loadUntil(String postId, {int maxPages = 20}) async {
+    bool has() => _state.posts.any((post) => post.id == postId);
+    for (var page = 0; page < maxPages && !has(); page++) {
+      if (_controller.isClosed) return false;
+      // A page already on its way: wait for it rather than skip it.
+      if (_state.loadingMore) {
+        await stream.firstWhere((state) => !state.loadingMore);
+        continue;
+      }
+      if (!_state.hasMore || _state.loadMoreFailed) break;
+      await loadMore();
+    }
+    return has();
+  }
+
   /// Another go at the page that failed.
   Future<void> retryLoadMore() async {
     _emit(_state.copyWith(loadMoreFailed: false));
@@ -356,6 +383,10 @@ class ConnectBloc {
   /// A like shows at once: the heart fills and the count moves before the
   /// request leaves the device. The server's copy of the post replaces the
   /// guess when it arrives; if the request fails, the guess is undone.
+  /// Who liked a post, latest first. Read fresh each time; never cached.
+  Future<List<ConnectAuthor>> fetchPostLikes(String postId) =>
+      _api.fetchPostLikes(postId);
+
   Future<void> toggleReaction(String postId) async {
     await _mutateOptimistically(
       postId,
@@ -444,7 +475,17 @@ class ConnectBloc {
     );
   }
 
+  /// The latest pick per poll while a vote is on its way, and the polls with
+  /// one travelling.
+  final _latestPollPick = <String, String>{};
+  final _votingPolls = <String>{};
+
   Future<void> performAction(String postId, {String? optionId}) async {
+    final post = _state.posts.where((item) => item.id == postId).firstOrNull;
+    if (optionId != null && post?.type == ConnectPostType.survey) {
+      await _votePoll(postId, optionId);
+      return;
+    }
     await _mutatePost(
       postId,
       () => _api.performAction(postId, optionId: optionId),
@@ -473,8 +514,55 @@ class ConnectBloc {
     await _mutatePost(postId, () => _api.deleteCaption(postId));
   }
 
+  /// Where each contest's vote is meant to end up while votes are on their
+  /// way (null: on nothing), and the contests with one travelling.
+  final _latestContestVote = <String, String?>{};
+  final _votingContests = <String>{};
+
+  /// A contest vote shows at once, the way a like does: the entry fills and
+  /// its count and points move before anything leaves the device. Tapping the
+  /// entry already voted for takes the vote back. Votes go one at a time; a
+  /// change of mind while one travels is sent when it lands, toward where the
+  /// viewer last left it, and only that final answer is shown. If sending
+  /// fails, the post is read again and shown as the server has it — or put
+  /// back as it was, if even that cannot be had.
   Future<void> voteCaption(String postId, String entryId) async {
-    await _mutatePost(postId, () => _api.voteCaption(postId, entryId));
+    final index = _state.posts.indexWhere((post) => post.id == postId);
+    if (index < 0) return;
+    final shown = _state.posts[index];
+    final wanted = shown.myContestVote == entryId ? null : entryId;
+    _emit(_state.copyWith(
+      posts: [..._state.posts]..[index] = shown.withContestVote(wanted),
+      clearMessage: true,
+    ));
+    _latestContestVote[postId] = wanted;
+    if (!_votingContests.add(postId)) return;
+    try {
+      // The server's vote as last known: the feed's copy until it answers.
+      var onServer = shown.myContestVote;
+      ConnectPost? reply;
+      for (var step = 0; step < 4 && onServer != _latestContestVote[postId]; step++) {
+        final target = _latestContestVote[postId] ?? onServer!;
+        reply = await _api.voteCaption(postId, target);
+        if (_controller.isClosed) return;
+        onServer = reply.myContestVote;
+      }
+      if (reply != null) _emit(_state.copyWith(posts: _replacePost(reply)));
+    } catch (error) {
+      if (_controller.isClosed) return;
+      ConnectPost? truth;
+      try {
+        truth = await _api.fetchPost(postId);
+      } catch (_) {}
+      if (_controller.isClosed) return;
+      final posts = truth != null
+          ? _replacePost(truth)
+          : _state.posts.map((post) => post.id == postId ? shown : post).toList();
+      _emit(_state.copyWith(posts: posts, message: error.toString()));
+    } finally {
+      _votingContests.remove(postId);
+      _latestContestVote.remove(postId);
+    }
   }
 
   Future<bool> createPost(ConnectPostDraft draft) async =>
@@ -486,7 +574,9 @@ class ConnectBloc {
     _emit(
       _state.copyWith(
         publishing: _state.publishing + 1,
-        publishingTo: '${draft.body['sendTo'] ?? 'everyone'}',
+        publishingTo: draft.body['sendTo'] == 'list'
+            ? 'list:${draft.audienceLabel ?? 'Private'}'
+            : '${draft.body['sendTo'] ?? 'everyone'}',
         clearMessage: true,
       ),
     );
@@ -613,6 +703,48 @@ class ConnectBloc {
 
   void clearMessage() {
     _emit(_state.copyWith(clearMessage: true));
+  }
+
+  /// A poll vote shows at once, the way a like does: every tap moves the pick
+  /// and the bars before anything leaves the device. Votes go one at a time;
+  /// a pick made while one travels is sent when it lands, and only the reply
+  /// to the latest pick is shown, so quick changes of mind never end on an
+  /// older answer. If sending fails, the post is read again and shown as the
+  /// server has it — or put back as it was, if even that cannot be had.
+  Future<void> _votePoll(String postId, String optionId) async {
+    final index = _state.posts.indexWhere((post) => post.id == postId);
+    if (index < 0) return;
+    final before = _state.posts[index];
+    _emit(_state.copyWith(
+      posts: [..._state.posts]..[index] = before.withPollVote(optionId),
+      clearMessage: true,
+    ));
+    _latestPollPick[postId] = optionId;
+    if (!_votingPolls.add(postId)) return;
+    try {
+      String? sent;
+      ConnectPost? reply;
+      while (_latestPollPick[postId] != sent) {
+        sent = _latestPollPick[postId];
+        reply = await _api.performAction(postId, optionId: sent);
+        if (_controller.isClosed) return;
+      }
+      _emit(_state.copyWith(posts: _replacePost(reply!)));
+    } catch (error) {
+      if (_controller.isClosed) return;
+      ConnectPost? truth;
+      try {
+        truth = await _api.fetchPost(postId);
+      } catch (_) {}
+      if (_controller.isClosed) return;
+      final posts = truth != null
+          ? _replacePost(truth)
+          : _state.posts.map((post) => post.id == postId ? before : post).toList();
+      _emit(_state.copyWith(posts: posts, message: error.toString()));
+    } finally {
+      _votingPolls.remove(postId);
+      _latestPollPick.remove(postId);
+    }
   }
 
   /// Applies `guess` to the post straight away, without marking it busy, then

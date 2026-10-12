@@ -19,6 +19,7 @@ import { RecognitionNomination } from '../models/recognition.model';
 import { OvertimeRequest } from '../models/overtime.model';
 import { ReimbursementClaim } from '../models/reimbursement.model';
 import { ConnectPost } from '../models/connect.model';
+import { AudienceList } from '../models/audience-list.model';
 import { Game, GameScore } from '../models/game.model';
 import { GameCatalogEntry } from '../models/game-catalog.model';
 import { GameChallenge } from '../models/game-challenge.model';
@@ -43,8 +44,9 @@ import { ConnectBlock, ContentReport } from '../models/moderation.model';
 import { TalkSession } from '../models/talk.model';
 import { GardenNote } from '../models/garden.model';
 import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
-import { SupportEvent, SupportMessage, SupportTicket } from '../models/support.model';
+import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '../models/support.model';
 import { PolicyDocument } from '../models/policy-document.model';
+import { AppPage } from '../models/app-page.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -125,6 +127,11 @@ export function connectMedia(): Collection<{
   createdAt: Date;
 }> {
   return getDb().collection('connect_media');
+}
+
+/** Connect: each person's saved audience lists ("custom lists"); see AudienceList. */
+export function audienceLists(): Collection<AudienceList> {
+  return getDb().collection<AudienceList>('audience_lists');
 }
 
 export function contentReports(): Collection<ContentReport> {
@@ -303,6 +310,16 @@ export function supportCounters(): Collection<{ org: string; seq: number }> {
   return getDb().collection<{ org: string; seq: number }>('support_counters');
 }
 
+/** Support desk: a company's own ticket types; none means the defaults. */
+export function supportTopics(): Collection<SupportTopicList> {
+  return getDb().collection<SupportTopicList>('support_topics');
+}
+
+/** Pages the app shows inside its own tabs (the Games tab's home), one per key; see AppPage. */
+export function appPages(): Collection<AppPage> {
+  return getDb().collection<AppPage>('app_pages');
+}
+
 async function ensureIndexes(database: Db): Promise<void> {
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
@@ -340,6 +357,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One piece of writing per person per key; a letter has its own key.
   await writings.createIndex({ userId: 1, key: 1 }, { unique: true });
   await database.collection('care_content').createIndex({ id: 1 }, { unique: true });
+  await database.collection('app_pages').createIndex({ key: 1 }, { unique: true });
   // One quiz of each kind per person; a partner finds it by its link.
   const pairs = database.collection<PairQuiz>('care_pair_quizzes');
   await pairs.createIndex({ userId: 1, kind: 1 }, { unique: true });
@@ -354,6 +372,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await supportTicketsCollection.createIndex({ id: 1 }, { unique: true });
   await supportTicketsCollection.createIndex({ org: 1, ticketNo: 1 }, { unique: true });
   await database.collection('support_counters').createIndex({ org: 1 }, { unique: true });
+  await database.collection('support_topics').createIndex({ org: 1 }, { unique: true });
   // A head's New / Assigned / All lists.
   await supportTicketsCollection.createIndex({ org: 1, status: 1, lastMessageAt: -1 });
   // Each desk, and the sweep that returns a departed assignee's tickets.
@@ -418,6 +437,13 @@ async function ensureIndexes(database: Db): Promise<void> {
   await connectCollection.createIndex({ systemKey: 1 }, { unique: true, sparse: true });
   await connectCollection.createIndex({ org: 1, publishedAt: -1 });
   await connectCollection.createIndex({ org: 1, 'audience.department': 1, publishedAt: -1 });
+  // A list post is read by the people snapshotted onto it.
+  await connectCollection.createIndex({ org: 1, 'audience.userIds': 1, publishedAt: -1 });
+
+  // One owner's lists by id, and one name per owner whatever its case.
+  const audienceListsCollection = database.collection<AudienceList>('audience_lists');
+  await audienceListsCollection.createIndex({ id: 1 }, { unique: true });
+  await audienceListsCollection.createIndex({ ownerUserId: 1, nameKey: 1 }, { unique: true });
 
   const reportsCollection = database.collection<ContentReport>('content_reports');
   await reportsCollection.createIndex({ id: 1 }, { unique: true });

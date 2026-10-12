@@ -33,7 +33,7 @@ class GamesHome {
       total: _int(json['total']),
       banner: banner is Map ? ScoreBanner.fromJson(Map<String, dynamic>.from(banner), photo) : null,
       liveContests: list(json['liveContests'], (row) => LiveContest.tryParse(row, photo)),
-      liveRelay: relay is Map ? LiveRelay.tryParse(Map<String, dynamic>.from(relay)) : null,
+      liveRelay: relay is Map ? LiveRelay.tryParse(Map<String, dynamic>.from(relay), photo) : null,
       challenges: list(json['challenges'], (row) => HomeChallenge.tryParse(row, photo)),
       yourGames: list(json['yourGames'], PlayedGame.tryParse),
       games: parseGameCatalog(json),
@@ -118,6 +118,28 @@ class ContestFace {
   final String? photoUrl;
 }
 
+List<ContestFace> _faces(Object? raw, String? Function(Object?) photo) => [
+  if (raw is List)
+    for (final row in raw)
+      if (row is Map)
+        ContestFace(
+          name: _string(row['name']),
+          initials: _string(row['initials']),
+          photoUrl: photo(row['photoUrl']),
+        ),
+];
+
+/// One entry a live contest's picture shows in turn: a caption's words, a
+/// photo, or the colleague a Most Likely entry named.
+class ContestPreview {
+  const ContestPreview({required this.name, this.text, this.imageUrl, this.photoUrl});
+
+  final String name;
+  final String? text;
+  final String? imageUrl;
+  final String? photoUrl;
+}
+
 /// A Connect contest in the viewer's feed that is still taking entries.
 class LiveContest {
   const LiveContest({
@@ -129,9 +151,12 @@ class LiveContest {
     required this.authorName,
     this.authorUserId,
     this.authorPhotoUrl,
+    this.official = false,
     this.entries = 0,
     this.entrants = const [],
     this.entered = false,
+    this.previews = const [],
+    this.imageUrl,
   });
 
   static LiveContest? tryParse(Map<String, dynamic> json, String? Function(Object?) photo) {
@@ -142,6 +167,7 @@ class LiveContest {
         ? Map<String, dynamic>.from(json['author'] as Map)
         : const <String, dynamic>{};
     final entrants = json['entrants'];
+    final previews = json['previews'];
     return LiveContest(
       id: id,
       kind: kind,
@@ -151,18 +177,23 @@ class LiveContest {
       authorName: _string(author['name']),
       authorUserId: _stringOrNull(author['userId']),
       authorPhotoUrl: photo(author['photoUrl']),
+      official: json['official'] == true,
       entries: _int(json['entries']),
-      entrants: [
-        if (entrants is List)
-          for (final row in entrants)
+      entrants: _faces(entrants, photo),
+      entered: json['entered'] == true,
+      // Absent on a server from before them: the card keeps its illustration.
+      previews: [
+        if (previews is List)
+          for (final row in previews)
             if (row is Map)
-              ContestFace(
+              ContestPreview(
                 name: _string(row['name']),
-                initials: _string(row['initials']),
+                text: _stringOrNull(row['text']),
+                imageUrl: photo(row['imageUrl']),
                 photoUrl: photo(row['photoUrl']),
               ),
       ],
-      entered: json['entered'] == true,
+      imageUrl: photo(json['imageUrl']),
     );
   }
 
@@ -179,9 +210,19 @@ class LiveContest {
   final String authorName;
   final String? authorUserId;
   final String? authorPhotoUrl;
+
+  /// Published by HR: the card speaks as the company, "Sowaka created this
+  /// contest", with its mark rather than a colleague's face.
+  final bool official;
   final int entries;
   final List<ContestFace> entrants;
   final bool entered;
+
+  /// The latest entries, newest first; empty until the first one.
+  final List<ContestPreview> previews;
+
+  /// A caption contest's picture, the one being captioned.
+  final String? imageUrl;
 }
 
 /// The company's Hint Relay, while it is on or still to come.
@@ -195,9 +236,10 @@ class LiveRelay {
     this.players = 0,
     this.teams = 0,
     this.teamName,
+    this.faces = const [],
   });
 
-  static LiveRelay? tryParse(Map<String, dynamic> json) {
+  static LiveRelay? tryParse(Map<String, dynamic> json, [String? Function(Object?)? photo]) {
     final id = _string(json['eventId']);
     if (id.isEmpty) return null;
     final phase = switch (json['phase']) {
@@ -216,6 +258,8 @@ class LiveRelay {
       players: _int(json['players']),
       teams: _int(json['teams']),
       teamName: team.isEmpty ? null : team,
+      // Absent on a server from before them: the card shows its players icon.
+      faces: _faces(json['faces'], photo ?? _stringOrNull),
     );
   }
 
@@ -229,6 +273,9 @@ class LiveRelay {
   final int players;
   final int teams;
   final String? teamName;
+
+  /// A few of the players, the viewer's own team first.
+  final List<ContestFace> faces;
 }
 
 enum RelayPhaseNow { live, lobby, upcoming }
@@ -244,6 +291,8 @@ class HomeChallenge {
     required this.fromFirstName,
     this.fromPhotoUrl,
     this.beat,
+    this.sentByMe = false,
+    this.expiresAt,
   });
 
   static HomeChallenge? tryParse(Map<String, dynamic> json, String? Function(Object?) photo) {
@@ -264,6 +313,8 @@ class HomeChallenge {
       fromFirstName: first.isEmpty ? name.split(' ').first : first,
       fromPhotoUrl: photo(from['photoUrl']),
       beat: _intOrNull(json['beat']),
+      sentByMe: json['sentByMe'] == true,
+      expiresAt: DateTime.tryParse(_string(json['expiresAt']))?.toLocal(),
     );
   }
 
@@ -280,6 +331,12 @@ class HomeChallenge {
 
   /// What to beat: their round once played, else their best in the game.
   final int? beat;
+
+  /// The viewer sent it (only ever true of one accepted and theirs to play).
+  final bool sentByMe;
+
+  /// When it runs out, for the card's "Challenge ends in" clock.
+  final DateTime? expiresAt;
 }
 
 /// A catalog game the viewer has a score in.

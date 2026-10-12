@@ -2,7 +2,8 @@
 // with them. Two desks on one tab: a Support head sees every ticket and decides
 // who works it (Assign to…, Keep it); support staff see only the tickets
 // assigned to them and can reply, resolve or send one back to the head.
-// Nobody gets the tab without a Support role (People › Accesses).
+// Nobody gets the tab without a Support role (People › Accesses). A Support
+// head or a dashboard admin also edits the company's ticket types here.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
@@ -18,7 +19,9 @@ import {
   getSupportTicket,
   listSupportAssignees,
   listSupportTickets,
+  listSupportTopics,
   resolveSupportTicket,
+  saveSupportTopics,
   sendBackSupportTicket,
   sendSupportMessage,
 } from '../../services/support';
@@ -31,12 +34,13 @@ import type {
   SupportRole,
   SupportStatus,
   SupportTicket,
+  SupportTopic,
   SupportView,
 } from '../../services/support';
 import type { Pill as PillTone } from '../theme';
 import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
 import { IconChevronDown, IconClose, IconFile } from '../icons';
-import { ConfirmResolveDialog, SendBackDialog } from './SupportDialogs';
+import { ConfirmResolveDialog, SendBackDialog, TicketTypesDialog } from './SupportDialogs';
 
 // —— Shared bits ————————————————————————————————————————————————————————————
 
@@ -97,12 +101,13 @@ function RequesterAvatar({ ticket, size = 38 }: { ticket: SupportTicket; size?: 
 export function SupportDesk() {
   const { user } = useAuth();
   const [role, setRole] = useState<SupportRole | null>(user?.supportRole ?? null);
+  const [canEditTopics, setCanEditTopics] = useState(user?.supportRole === 'head' || user?.dashboardAdmin === true);
   const [checked, setChecked] = useState(false);
   // The session can be a little stale; the server has the last word.
   useEffect(() => {
     let live = true;
     getSupportMe()
-      .then((r) => { if (live) setRole(r.role); })
+      .then((r) => { if (live) { setRole(r.role); setCanEditTopics(r.canEditTopics === true); } })
       .catch(() => undefined)
       .finally(() => { if (live) setChecked(true); });
     return () => { live = false; };
@@ -112,11 +117,71 @@ export function SupportDesk() {
       <Card>
         <div style={{ padding: 48, textAlign: 'center', color: '#717171', fontSize: 16, fontWeight: 600 }}>
           {checked ? 'You don’t have a Support role. A dashboard admin can give you one in People › Accesses.' : 'Loading…'}
+          {/* A dashboard admin without a role still owns the ticket types. */}
+          {checked && canEditTopics && <div style={{ marginTop: 16 }}><TicketTypesButton /></div>}
         </div>
       </Card>
     );
   }
-  return <Desk key={role} role={role} meId={user?.id ?? ''} />;
+  return <Desk key={role} role={role} meId={user?.id ?? ''} canEditTopics={canEditTopics} />;
+}
+
+/**
+ * The company's ticket types: what the app offers when an employee raises a
+ * ticket, read for the topic filter. `null` until loaded (or if it failed).
+ */
+function useSupportTopics() {
+  const [topics, setTopics] = useState<SupportTopic[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    listSupportTopics().then((r) => { if (live) setTopics(r.topics); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+  return [topics, setTopics] as const;
+}
+
+/** Opens the ticket types editor; `onSaved` hears the list as saved. */
+function TicketTypesButton({ topics: known, onSaved }: { topics?: SupportTopic[] | null; onSaved?: (topics: SupportTopic[]) => void }) {
+  const { flash } = useStore();
+  const [open, setOpen] = useState<SupportTopic[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Read fresh on opening: someone else may have changed them since.
+  const start = async () => {
+    setLoading(true);
+    try {
+      setError('');
+      setOpen((await listSupportTopics()).topics);
+    } catch (e) {
+      if (known) setOpen(known);
+      else flash(errText(e, 'Could not load the ticket types'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  const save = async (topics: { key?: string; label: string }[]) => {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await saveSupportTopics(topics);
+      setOpen(null);
+      onSaved?.(r.topics);
+      flash('Ticket types saved. The app offers them from now on.');
+    } catch (e) {
+      setError(errText(e, 'Could not save the ticket types. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button type="button" disabled={loading} onClick={() => void start()} style={ghostBtn}>Ticket types</button>
+      {open && <TicketTypesDialog topics={open} busy={busy} error={error} onClose={() => setOpen(null)} onSave={(t) => void save(t)} />}
+    </>
+  );
 }
 
 type Detail = { ticket: SupportTicket; messages: SupportMessage[]; events: SupportEvent[] };
@@ -134,8 +199,9 @@ const EMPTY_TEXT: Record<SupportView, string> = {
   all: 'No tickets yet. They appear when employees raise one from the app.',
 };
 
-function Desk({ role, meId }: { role: SupportRole; meId: string }) {
+function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; canEditTopics: boolean }) {
   const { flash } = useStore();
+  const [types, setTypes] = useSupportTopics();
   const isHead = role === 'head';
   const [view, setView] = useState<SupportView>(isHead ? 'new' : 'mine');
   const [tickets, setTickets] = useState<SupportTicket[] | null>(null);
@@ -292,16 +358,33 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
   // Leaving the tab frees whatever previews are still held.
   useEffect(() => () => { for (const list of Object.values(pendingRef.current)) list.forEach(revokePreviews); }, []);
 
-  const topics = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of tickets ?? []) m.set(t.topic, t.topicLabel);
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [tickets]);
+  // The company's types in their order, each matching its tickets by key
+  // (so old tickets of a renamed type are there too); then every other name
+  // tickets still carry — a type since renamed or removed — matched by name.
+  const topicOptions = useMemo(() => {
+    if (!types) {
+      const m = new Map<string, string>();
+      for (const t of tickets ?? []) m.set(t.topic, t.topicLabel);
+      return { current: [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])), earlier: [] as [string, string][] };
+    }
+    const named = new Map(types.map((t) => [t.key, t.label]));
+    const earlier = new Map<string, string>();
+    for (const t of tickets ?? []) if (named.get(t.topic) !== t.topicLabel) earlier.set(`label:${t.topicLabel}`, t.topicLabel);
+    return {
+      current: types.map((t): [string, string] => [t.key, t.label]),
+      earlier: [...earlier.entries()].sort((a, b) => a[1].localeCompare(b[1])),
+    };
+  }, [types, tickets]);
+  // A type that has gone from both lists filters nothing: back to Any.
+  useEffect(() => {
+    if (topic !== 'any' && tickets && types && ![...topicOptions.current, ...topicOptions.earlier].some(([v]) => v === topic)) setTopic('any');
+  }, [topic, tickets, types, topicOptions]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const byName = topic.startsWith('label:') ? topic.slice('label:'.length) : null;
     return (tickets ?? [])
-      .filter((t) => topic === 'any' || t.topic === topic)
+      .filter((t) => topic === 'any' || (byName !== null ? t.topicLabel === byName : t.topic === topic))
       .filter((t) => status === 'any' || t.status === status)
       .filter((t) => !needle
         || t.requester.name.toLowerCase().includes(needle)
@@ -324,7 +407,12 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
         <SearchInput value={q} onChange={setQ} placeholder="Search tickets…" width={250} />
         <SelectBox value={topic} onChange={setTopic}>
           <option value="any">Topic: Any</option>
-          {topics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          {topicOptions.current.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          {topicOptions.earlier.length > 0 && (
+            <optgroup label="Earlier types">
+              {topicOptions.earlier.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </optgroup>
+          )}
         </SelectBox>
         {view !== 'new' && (
           <SelectBox value={status} onChange={(v) => setStatus(v as StatusFilter)}>
@@ -334,8 +422,11 @@ function Desk({ role, meId }: { role: SupportRole; meId: string }) {
             <option value="resolved">Resolved</option>
           </SelectBox>
         )}
-        <div style={{ marginLeft: 'auto', fontSize: 13.5, color: '#9197A2', fontWeight: 600 }}>
-          {isHead ? 'Support head' : 'Support staff · only tickets assigned to you'}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13.5, color: '#9197A2', fontWeight: 600 }}>
+            {isHead ? 'Support head' : 'Support staff · only tickets assigned to you'}
+          </span>
+          {canEditTopics && <TicketTypesButton topics={types} onSaved={setTypes} />}
         </div>
       </div>
 

@@ -188,18 +188,20 @@ bool _contestClosed(ConnectPost post) {
   return closesAt != null && !contestClock().isBefore(closesAt);
 }
 
-/// The countdown a contest card shows under its name: "END IN: 02:14" —
-/// hours and minutes left, so one closing in two days reads "END IN: 48:00" —
-/// and "Ended" once [closesAt] has passed. Empty when there is no closing
-/// time. The minutes are whole ones gone by, as a clock shows them: with 30
-/// seconds left it reads "END IN: 00:00".
+/// The countdown a contest card shows under its name: "END IN: 02:14:05" —
+/// hours, minutes and seconds left, so one closing in two days reads
+/// "END IN: 48:00:00" — and "Ended" once [closesAt] has passed. Empty when
+/// there is no closing time. The seconds are whole ones gone by, as a clock
+/// shows them: with half a second left it reads "END IN: 00:00:00".
 String contestCountdownLabel(DateTime? closesAt, DateTime now) {
   if (closesAt == null) return '';
   final left = closesAt.difference(now);
   if (left <= Duration.zero) return 'Ended';
-  final hours = left.inHours.toString().padLeft(2, '0');
-  final minutes = (left.inMinutes % 60).toString().padLeft(2, '0');
-  return 'END IN: $hours:$minutes';
+  String two(int value) => value.toString().padLeft(2, '0');
+  final hours = two(left.inHours);
+  final minutes = two(left.inMinutes % 60);
+  final seconds = two(left.inSeconds % 60);
+  return 'END IN: $hours:$minutes:$seconds';
 }
 
 int _pointsPerVote(ConnectPost post) =>
@@ -466,6 +468,8 @@ class _EngagementTitle extends StatelessWidget {
         fontSize: 24,
         height: 28 / 24,
         fontWeight: FontWeight.w700,
+        // Flat, as the design sets it, not the Material body text's 0.25.
+        letterSpacing: 0,
         color: color,
       ),
     );
@@ -527,40 +531,60 @@ class _LivePill extends StatelessWidget {
   }
 }
 
-/// "END IN: 02:14" and the live pill, side by side (node 3684:41630).
+/// "END IN: 02:14:05" and the live pill, side by side (node 3684:41630).
 class _CountdownRow extends StatelessWidget {
   const _CountdownRow({
     required this.closesAt,
     required this.closed,
+    required this.ticking,
     required this.onEnded,
   });
 
   final DateTime? closesAt;
   final bool closed;
+  final bool ticking;
   final VoidCallback onEnded;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _ContestCountdown(closesAt: closesAt, onEnded: onEnded),
-        ),
-        const SizedBox(width: 8),
-        _LivePill(closed: closed),
-      ],
+    return Padding(
+      // The row is 305.792 wide in the 308 body, so the pill stands 2.2 in
+      // from the body's right edge rather than on it.
+      padding: const EdgeInsets.only(right: 308 - 305.792),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ContestCountdown(
+              closesAt: closesAt,
+              ticking: ticking,
+              onEnded: onEnded,
+            ),
+          ),
+          const SizedBox(width: 8),
+          _LivePill(closed: closed),
+        ],
+      ),
     );
   }
 }
 
-/// The countdown itself, ticking down a minute at a time. It wakes only when
-/// the minute it shows changes, and tells the card once the contest ends so
-/// the way in closes with it — the server refuses entries and votes from
-/// then on.
+/// The countdown itself, ticking down a second at a time. It wakes on each
+/// whole second while the card can be seen ([ticking]), and tells the card
+/// once the contest ends so the way in closes with it — the server refuses
+/// entries and votes from then on.
 class _ContestCountdown extends StatefulWidget {
-  const _ContestCountdown({required this.closesAt, required this.onEnded});
+  const _ContestCountdown({
+    required this.closesAt,
+    required this.ticking,
+    required this.onEnded,
+  });
 
   final DateTime? closesAt;
+
+  /// False while the card is off screen or the app is in the background:
+  /// nobody is reading it then, so it does not wake. The label is worked out
+  /// from the clock whenever it is drawn, so it is right again on return.
+  final bool ticking;
   final VoidCallback onEnded;
 
   @override
@@ -579,7 +603,9 @@ class _ContestCountdownState extends State<_ContestCountdown> {
   @override
   void didUpdateWidget(_ContestCountdown old) {
     super.didUpdateWidget(old);
-    if (old.closesAt != widget.closesAt) _schedule();
+    if (old.closesAt != widget.closesAt || old.ticking != widget.ticking) {
+      _schedule();
+    }
   }
 
   @override
@@ -592,12 +618,12 @@ class _ContestCountdownState extends State<_ContestCountdown> {
     _tick?.cancel();
     _tick = null;
     final closesAt = widget.closesAt;
-    if (closesAt == null) return;
+    if (closesAt == null || !widget.ticking) return;
     final left = closesAt.difference(contestClock());
     if (left <= Duration.zero) return;
-    // Just past the moment the shown minute rolls over — or the close itself.
+    // Just past the moment the shown second rolls over — or the close itself.
     final untilNext = Duration(
-      microseconds: left.inMicroseconds % Duration.microsecondsPerMinute,
+      microseconds: left.inMicroseconds % Duration.microsecondsPerSecond,
     );
     _tick = Timer(untilNext + const Duration(milliseconds: 1), _onTick);
   }
@@ -624,8 +650,31 @@ class _ContestCountdownState extends State<_ContestCountdown> {
         fontSize: 11,
         height: 16.5 / 11,
         fontWeight: FontWeight.w600,
+        // Set flat (node 3684:41632). Left unset it would pick up the
+        // Material body text's 0.25 and run 3 wider than the design.
+        letterSpacing: 0,
         color: _EngagementColors.inkSecondary,
       ),
+    );
+  }
+}
+
+/// A line of text in the box the design's frames give it. Figma lays a text
+/// out on its line height rounded up to the whole pixel — a 16.2 line takes
+/// 17, a 19.5 one 20 — and what follows sits by that box, so without it a
+/// card runs a pixel or two shorter than the design for each such line. The
+/// words keep the design's own line height, at the top of the box.
+class _FigmaLine extends StatelessWidget {
+  const _FigmaLine({required this.lineHeight, required this.child});
+
+  final double lineHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: lineHeight.ceilToDouble()),
+      child: child,
     );
   }
 }
@@ -673,14 +722,18 @@ class _EngagementPager extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
-          '${page + 1} of $count',
-          style: TextStyle(
-            fontFamily: _soraFont,
-            fontSize: 13,
-            height: 19.5 / 13,
-            fontWeight: FontWeight.w400,
-            color: labelColor,
+        _FigmaLine(
+          lineHeight: 19.5,
+          child: Text(
+            '${page + 1} of $count',
+            style: TextStyle(
+              fontFamily: _soraFont,
+              fontSize: 13,
+              height: 19.5 / 13,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0,
+              color: labelColor,
+            ),
           ),
         ),
       ],
@@ -783,18 +836,31 @@ class _ViewEntriesLink extends StatelessWidget {
           horizontal: 16,
           vertical: verticalPadding,
         ),
-        child: const Text(
-          'View Entries',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: _soraFont,
-            fontSize: 16,
-            height: 16.2 / 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.16,
-            color: _EngagementColors.ink,
-            decoration: TextDecoration.underline,
-            decorationColor: _EngagementColors.ink,
+        // The design underlines from the font's own metrics, 2.6 under the
+        // baseline: the foot of the line's 17 box. Flutter's underline hugs
+        // the baseline, so the rule is drawn as the box's bottom edge.
+        child: const Center(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: _EngagementColors.ink, width: 1),
+              ),
+            ),
+            child: _FigmaLine(
+              lineHeight: 16.2,
+              child: Text(
+                'View Entries',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 16,
+                  height: 16.2 / 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.16,
+                  color: _EngagementColors.ink,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1043,7 +1109,8 @@ Widget _burstSticker({
 );
 
 /// An animated GIF sticker, decoded at the size it is shown rather than at
-/// the size it was exported.
+/// the size it was exported. Stretched to the box, as the design's image is
+/// (it sets both sides and no fit), rather than cropped to it.
 Widget _gifSticker(String asset, double width, double height) => Builder(
   builder: (context) {
     final ratio = MediaQuery.devicePixelRatioOf(context);
@@ -1051,7 +1118,7 @@ Widget _gifSticker(String asset, double width, double height) => Builder(
       asset,
       width: width,
       height: height,
-      fit: BoxFit.cover,
+      fit: BoxFit.fill,
       cacheWidth: (width * ratio).round(),
     );
   },
@@ -1112,29 +1179,53 @@ class _CommentBubbleSticker extends StatelessWidget {
   }
 }
 
+/// The length of one round of a contest sticker's motion: Figma's timeline
+/// for the photo and tag cards runs 2 s and loops.
+const Duration _stickerLoop = Duration(seconds: 2);
+
 /// The yellow camera on the photo contest's picture (node 3684:42130): the
-/// doodle drawn 51.3 by 45.4, turned 12.18 degrees in its 59.5 by 55.2 box.
+/// doodle drawn 50.9 by 45.2, turned 12.18 degrees in its 59 by 55 box.
+/// It pops on each round of [loop]: from 1.2 times its size back to its own
+/// over the first quarter, easing out, then holding. At rest (the loop's
+/// end) it is its own size.
 class _CameraSticker extends StatelessWidget {
-  const _CameraSticker();
+  const _CameraSticker({required this.loop});
+
+  final Animation<double> loop;
+
+  static final _pop = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween<double>(
+        begin: 1.2,
+        end: 1,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 25,
+    ),
+    TweenSequenceItem(tween: ConstantTween<double>(1), weight: 75),
+  ]);
 
   @override
   Widget build(BuildContext context) {
-    return _Sticker(
-      boxWidth: 59.47,
-      boxHeight: 55.2,
-      degrees: 12.18,
-      child: SizedBox(
-        width: 51.29,
-        height: 45.38,
-        // The art runs past that frame by its stroke (2.43% either side,
-        // 2.76% above and 2.73% below).
-        child: OverflowBox(
-          maxWidth: 53.78,
-          maxHeight: 47.87,
-          child: SvgPicture.asset(
-            '$_engagementIcons/camera_doodle.svg',
-            width: 53.78,
-            height: 47.87,
+    // Scaled about the middle of the box, which is the camera's own middle.
+    return ScaleTransition(
+      scale: loop.drive(_pop),
+      child: _Sticker(
+        boxWidth: 59.04,
+        boxHeight: 54.95,
+        degrees: 12.18,
+        child: SizedBox(
+          width: 50.92,
+          height: 45.17,
+          // The art runs past that frame by its stroke (2.43% either side,
+          // 2.76% above and 2.73% below).
+          child: OverflowBox(
+            maxWidth: 53.39,
+            maxHeight: 47.65,
+            child: SvgPicture.asset(
+              '$_engagementIcons/camera_doodle.svg',
+              width: 53.39,
+              height: 47.65,
+            ),
           ),
         ),
       ),
@@ -1144,9 +1235,15 @@ class _CameraSticker extends StatelessWidget {
 
 /// The little dark figure on the Most Likely card (nodes 3684:42458-42459,
 /// 3687:42462): a round head with two white eyes on a half-round body, 41
-/// by 40. Each shape's art runs past its frame by half its stroke.
+/// by 40. Each shape's art runs past its frame by half its stroke. The eyes
+/// blink on each round of [loop]: gone at its start, easing back in over the
+/// whole round. At rest (the loop's end) they are open.
 class _GhostSticker extends StatelessWidget {
-  const _GhostSticker();
+  const _GhostSticker({required this.loop});
+
+  final Animation<double> loop;
+
+  static final _open = CurveTween(curve: Curves.easeOut);
 
   @override
   Widget build(BuildContext context) {
@@ -1175,16 +1272,27 @@ class _GhostSticker extends StatelessWidget {
                 height: 24.3148,
               ),
             ),
-            for (final left in const [12.0, 21.0])
-              Positioned(
-                left: left,
-                top: 7,
-                child: SvgPicture.asset(
-                  '$_engagementIcons/ghost_eye.svg',
-                  width: 8,
-                  height: 7,
+            // Both eyes on the one fade, as the two keyframe tracks match.
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: loop.drive(_open),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final left in const [12.0, 21.0])
+                      Positioned(
+                        left: left,
+                        top: 7,
+                        child: SvgPicture.asset(
+                          '$_engagementIcons/ghost_eye.svg',
+                          width: 8,
+                          height: 7,
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -1216,6 +1324,9 @@ class _EngagementClosedNote extends StatelessWidget {
   }
 }
 
+/// The outline of the white card inside a photo or tag contest.
+const double _innerCardBorder = 1.129;
+
 /// The white card inside a photo or tag contest — "Team's snap", "Who's been
 /// tagged" (node 3103:48155).
 class _EngagementInnerCard extends StatelessWidget {
@@ -1232,22 +1343,28 @@ class _EngagementInnerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _EngagementColors.border, width: 1.129),
+        border: Border.all(
+          color: _EngagementColors.border,
+          width: _innerCardBorder,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontFamily: _soraFont,
-                fontSize: 12,
-                height: 16.2 / 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.16,
-                color: _EngagementColors.ink,
+            child: _FigmaLine(
+              lineHeight: 16.2,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 12,
+                  height: 16.2 / 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.16,
+                  color: _EngagementColors.ink,
+                ),
               ),
             ),
           ),
@@ -1389,6 +1506,7 @@ class _EngagementBody extends StatefulWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+
   /// Sends the entry; false when it did not go.
   final Future<bool> Function(
     String text,
@@ -1403,11 +1521,46 @@ class _EngagementBody extends StatefulWidget {
   State<_EngagementBody> createState() => _EngagementBodyState();
 }
 
-class _EngagementBodyState extends State<_EngagementBody> {
+class _EngagementBodyState extends State<_EngagementBody>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _answer = TextEditingController();
   final _answerFocus = FocusNode();
   final _pages = PageController();
   int _page = 0;
+
+  /// The sticker's motion on a photo or tag card — the camera's pop, the
+  /// ghost's blink — as one controller for the card, run round its 2 s
+  /// loop. Null on a caption card, whose moving part is its GIF. Held at 1,
+  /// the end of the round, which is the sticker's rest pose.
+  AnimationController? _loop;
+
+  /// Moves the carousel on a page every [_autoScrollEvery]: one timer for
+  /// the card, and only while it can be seen.
+  Timer? _autoScroll;
+  static const _autoScrollEvery = Duration(seconds: 2);
+
+  /// Fingers on the carousel. While there are any it stays where they put
+  /// it.
+  int _touches = 0;
+
+  // Whether the card can be seen. Its motion, its carousel and its clock
+  // run only while it is in the feed's viewport, its tab is the one showing,
+  // nothing covers its page (TickerMode) and the app is in front.
+  bool _inViewport = false;
+  bool _inForeground = true;
+  bool _tickersOn = true;
+  bool _tabShowing = true;
+
+  /// The phone asks for less motion: stickers hold their rest pose and the
+  /// carousel waits for a swipe.
+  bool _reduceMotion = false;
+
+  /// The feed's scroll, watched to tell when the card comes into view.
+  ScrollPosition? _feedScroll;
+  bool _viewportCheckQueued = false;
+
+  bool get _seen => _inViewport && _inForeground && _tickersOn && _tabShowing;
+  bool get _moving => _seen && !_reduceMotion;
 
   /// The lime button was tapped: the answer box replaces it.
   bool _answering = false;
@@ -1435,6 +1588,7 @@ class _EngagementBodyState extends State<_EngagementBody> {
   Widget _countdownRow() => _CountdownRow(
     closesAt: _closesAtOf(_post),
     closed: _closed,
+    ticking: _seen,
     onEnded: () {
       if (!mounted) return;
       setState(() {
@@ -1458,6 +1612,35 @@ class _EngagementBodyState extends State<_EngagementBody> {
     _answerFocus.addListener(() {
       if (_isTag) setState(_syncPortal);
     });
+    if (_isPhoto || _isTag) {
+      _loop = AnimationController(
+        vsync: this,
+        duration: _stickerLoop,
+        value: 1,
+      );
+    }
+    WidgetsBinding.instance.addObserver(this);
+    _PinchToZoom.active.addListener(_syncAutoScroll);
+    _inForeground = switch (WidgetsBinding.instance.lifecycleState) {
+      null || AppLifecycleState.resumed => true,
+      _ => false,
+    };
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickersOn = TickerMode.valuesOf(context).enabled;
+    // False while another tab of the shell's IndexedStack is showing.
+    _tabShowing = Visibility.of(context);
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final scroll = Scrollable.maybeOf(context)?.position;
+    if (scroll != _feedScroll) {
+      _feedScroll?.removeListener(_queueViewportCheck);
+      _feedScroll = scroll?..addListener(_queueViewportCheck);
+    }
+    _queueViewportCheck();
+    _syncMotion();
   }
 
   @override
@@ -1466,14 +1649,140 @@ class _EngagementBodyState extends State<_EngagementBody> {
     // The carousel shrinks when an entry comes down; keep the page in range.
     final count = _pageCount;
     if (count > 0 && _page >= count) _page = count - 1;
+    // A second entry gives the carousel somewhere to go; losing it stops it.
+    _syncAutoScroll();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final inForeground = state == AppLifecycleState.resumed;
+    if (inForeground == _inForeground) return;
+    setState(() => _inForeground = inForeground);
+    _syncMotion();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _PinchToZoom.active.removeListener(_syncAutoScroll);
+    _feedScroll?.removeListener(_queueViewportCheck);
+    _autoScroll?.cancel();
+    _loop?.dispose();
     _answer.dispose();
     _answerFocus.dispose();
     _pages.dispose();
     super.dispose();
+  }
+
+  /// Looks again where the card sits, after the frame the scroll moved it in
+  /// has been laid out. Several scroll ticks in one frame make one look.
+  void _queueViewportCheck() {
+    if (_viewportCheckQueued) return;
+    _viewportCheckQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _viewportCheckQueued = false;
+      if (mounted) _checkViewport();
+    });
+  }
+
+  /// Whether any of the card is inside the feed's viewport. The feed builds
+  /// cards a little past either edge, so being built is not being seen.
+  void _checkViewport() {
+    final card = context.findRenderObject();
+    if (card is! RenderBox || !card.attached || !card.hasSize) return;
+    var inViewport = true;
+    final port = _feedScroll?.context.storageContext.findRenderObject();
+    if (port is RenderBox && port.attached && port.hasSize) {
+      final cardRect = card.localToGlobal(Offset.zero) & card.size;
+      final portRect = port.localToGlobal(Offset.zero) & port.size;
+      inViewport = cardRect.overlaps(portRect);
+    }
+    if (inViewport == _inViewport) return;
+    setState(() => _inViewport = inViewport);
+    _syncMotion();
+  }
+
+  /// Starts or stops what moves by itself to match whether the card can be
+  /// seen. The sticker starts its round afresh each time the card comes into
+  /// view, and holds its rest pose when it cannot move.
+  void _syncMotion() {
+    final loop = _loop;
+    if (loop != null) {
+      if (_moving) {
+        if (!loop.isAnimating) {
+          loop
+            ..value = 0
+            ..repeat();
+        }
+      } else if (loop.isAnimating || loop.value != 1) {
+        loop
+          ..stop()
+          ..value = 1;
+      }
+    }
+    _syncAutoScroll();
+  }
+
+  void _syncAutoScroll() {
+    // A pinch anywhere — on this card's picture or another post's photo —
+    // holds the carousel where it is until the fingers let go.
+    final wanted =
+        _moving &&
+        _touches == 0 &&
+        !_PinchToZoom.active.value &&
+        _pageCount > 1;
+    if (!wanted) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
+    _autoScroll ??= Timer.periodic(_autoScrollEvery, (_) => _nextPage());
+  }
+
+  /// One page on, and from the last back round to the first.
+  void _nextPage() {
+    final count = _pageCount;
+    if (!_pages.hasClients || count < 2) return;
+    final current = (_pages.page ?? _page.toDouble()).round();
+    _pages.animateToPage(
+      (current + 1) % count,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  /// A finger down holds the carousel; the last one up starts the two
+  /// seconds over from the page it was left on.
+  void _touchCarousel(int change) {
+    _touches = math.max(0, _touches + change);
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    _syncAutoScroll();
+  }
+
+  /// The entries' carousel — captions, snaps, or a page of nominees — with
+  /// the touch that holds its auto-scroll.
+  Widget _carousel({
+    required int itemCount,
+    required IndexedWidgetBuilder itemBuilder,
+  }) {
+    return Listener(
+      onPointerDown: (_) => _touchCarousel(1),
+      onPointerUp: (_) => _touchCarousel(-1),
+      onPointerCancel: (_) => _touchCarousel(-1),
+      // Held still while a picture is pinched, so two fingers zoom it
+      // rather than turning the page.
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _PinchToZoom.active,
+        builder: (context, pinching, _) => PageView.builder(
+          physics: pinching ? const NeverScrollableScrollPhysics() : null,
+          controller: _pages,
+          itemCount: itemCount,
+          onPageChanged: (index) => setState(() => _page = index),
+          itemBuilder: itemBuilder,
+        ),
+      ),
+    );
   }
 
   /// The typed name, without the '@' the design shows in front of it.
@@ -1656,7 +1965,9 @@ class _EngagementBodyState extends State<_EngagementBody> {
       final task = _bodyString(_post, 'task');
       return [
         Padding(
-          padding: const EdgeInsets.only(top: 4),
+          // The line is set 306 wide (node 3684:42031), so it wraps 2 short
+          // of the body's edge.
+          padding: const EdgeInsets.only(top: 4, right: 308 - 306),
           child: Text(
             task.isNotEmpty
                 ? task
@@ -1689,18 +2000,22 @@ class _EngagementBodyState extends State<_EngagementBody> {
       return [
         _EngagementTitle(title.isEmpty ? 'Most Likely' : title),
         Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            question.isNotEmpty
-                ? question
-                : 'Nominate the teammate who fits this tag',
-            style: const TextStyle(
-              fontFamily: _soraFont,
-              fontSize: 12,
-              height: 16.2 / 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.16,
-              color: _EngagementColors.inkSecondary,
+          // Set 306 wide, like the photo contest's task (node 3684:42351).
+          padding: const EdgeInsets.only(top: 4, right: 308 - 306),
+          child: _FigmaLine(
+            lineHeight: 16.2,
+            child: Text(
+              question.isNotEmpty
+                  ? question
+                  : 'Nominate the teammate who fits this tag',
+              style: const TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 12,
+                height: 16.2 / 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.16,
+                color: _EngagementColors.inkSecondary,
+              ),
             ),
           ),
         ),
@@ -1761,7 +2076,9 @@ class _EngagementBodyState extends State<_EngagementBody> {
           Positioned(
             left: photoLeft,
             top: 0,
-            child: _TiltedPhoto(url: mediaUrl),
+            // Two fingers lift the picture out to zoom it, as a photo post
+            // does; one finger leaves it be.
+            child: _PinchToZoom(child: _TiltedPhoto(url: mediaUrl)),
           ),
           if (entries.isNotEmpty) ...[
             Positioned(
@@ -1770,10 +2087,8 @@ class _EngagementBodyState extends State<_EngagementBody> {
               top: bubbleTop,
               // The bubble's hard shadow hangs 4 below it.
               height: 80 + 4,
-              child: PageView.builder(
-                controller: _pages,
+              child: _carousel(
                 itemCount: entries.length,
-                onPageChanged: (index) => setState(() => _page = index),
                 itemBuilder: (context, index) => Align(
                   alignment: Alignment.topLeft,
                   child: _captionBubble(entries[index]),
@@ -1798,7 +2113,10 @@ class _EngagementBodyState extends State<_EngagementBody> {
             child: _BurstAt(),
           ),
           // The chat bubble that pops up over the picture's corner
-          // (node 3684:41709).
+          // (node 3684:41709): the design's Lottie, which the app plays as
+          // the same animation exported to a GIF. The GIF opens on an empty
+          // frame before the bubbles pop in, so where it cannot play — less
+          // motion asked for — the bubbles are shown as they settle instead.
           Positioned(
             left: photoLeft + 203.28,
             top: -41.35,
@@ -1816,11 +2134,23 @@ class _EngagementBodyState extends State<_EngagementBody> {
                     maxHeight: 122.32,
                     child: Transform.translate(
                       offset: const Offset(-4.8, -4.67),
-                      child: _gifSticker(
-                        '$_engagementIcons/message_bubble.gif',
-                        120.32,
-                        122.32,
-                      ),
+                      child: _reduceMotion
+                          ? Image.asset(
+                              '$_engagementIcons/message_bubble_still.png',
+                              width: 120.32,
+                              height: 122.32,
+                              fit: BoxFit.fill,
+                            )
+                          // Paused, holding its frame, while the card
+                          // cannot be seen.
+                          : TickerMode(
+                              enabled: _seen,
+                              child: _gifSticker(
+                                '$_engagementIcons/message_bubble.gif',
+                                120.32,
+                                122.32,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -1906,8 +2236,11 @@ class _EngagementBodyState extends State<_EngagementBody> {
                   noun: 'caption',
                 )
               : null,
+          // The caption takes the 252 left of the row after the face; the
+          // 249.583 bubble sits in the middle of it, and the words keep to
+          // the caption's own 40 and 20 insets (node 3684:41645).
           child: SizedBox(
-            width: 249.583,
+            width: 252,
             height: 80,
             child: Stack(
               clipBehavior: Clip.none,
@@ -1916,7 +2249,7 @@ class _EngagementBodyState extends State<_EngagementBody> {
                 // follows the bubble's outline, tail and all, rather than its
                 // bounding box.
                 Positioned(
-                  left: 0,
+                  left: (252 - 249.583) / 2,
                   top: 4,
                   child: SvgPicture.asset(
                     '$_engagementIcons/caption_bubble.svg',
@@ -1928,48 +2261,60 @@ class _EngagementBodyState extends State<_EngagementBody> {
                     ),
                   ),
                 ),
-                SvgPicture.asset(
-                  '$_engagementIcons/caption_bubble.svg',
-                  width: 249.583,
-                  height: 80,
+                Positioned(
+                  left: (252 - 249.583) / 2,
+                  top: 0,
+                  child: SvgPicture.asset(
+                    '$_engagementIcons/caption_bubble.svg',
+                    width: 249.583,
+                    height: 80,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(40, 12, 20, 12),
                   child: Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (entry.isMine) ...[
-                              const Text(
-                                'YOU',
-                                style: TextStyle(
-                                  fontFamily: _soraFont,
-                                  fontSize: 10,
-                                  height: 16.2 / 10,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.16,
-                                  color: _EngagementColors.you,
+                        // Set 150 wide (node 3684:41651), and narrower only
+                        // where a long vote count needs the room.
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: SizedBox(
+                            width: 150,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (entry.isMine) ...[
+                                  const Text(
+                                    'YOU',
+                                    style: TextStyle(
+                                      fontFamily: _soraFont,
+                                      fontSize: 10,
+                                      height: 16.2 / 10,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: -0.16,
+                                      color: _EngagementColors.you,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                ],
+                                Text(
+                                  '“${entry.text}',
+                                  maxLines: entry.isMine ? 2 : 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: _soraFont,
+                                    fontSize: 12,
+                                    height: 16.2 / 12,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.16,
+                                    color: _EngagementColors.ink,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                            ],
-                            Text(
-                              '“${entry.text}',
-                              maxLines: entry.isMine ? 2 : 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: _soraFont,
-                                fontSize: 12,
-                                height: 16.2 / 12,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.16,
-                                color: _EngagementColors.ink,
-                              ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -2031,10 +2376,8 @@ class _EngagementBodyState extends State<_EngagementBody> {
           ? const _EmptySnap()
           : SizedBox(
               height: 201 + 13 + 32,
-              child: PageView.builder(
-                controller: _pages,
+              child: _carousel(
                 itemCount: entries.length,
-                onPageChanged: (index) => setState(() => _page = index),
                 itemBuilder: (context, index) => _snapPage(entries[index]),
               ),
             ),
@@ -2044,16 +2387,24 @@ class _EngagementBodyState extends State<_EngagementBody> {
         clipBehavior: Clip.none,
         children: [
           card,
-          // The violet scribble at the card's corner (node 3684:42058).
+          // The violet scribble at the card's corner (node 3684:42058). The
+          // design places both stickers from inside the card's 1.129
+          // outline, not from its outer edge.
           Positioned(
-            left: 241.87,
-            top: -0.48,
+            left: _innerCardBorder + 241.87,
+            top: _innerCardBorder - 0.48,
             child: _burstSticker(violet: true, degrees: 7.11),
           ),
           // The yellow camera at the photo's lower corner, hanging past the
-          // card's edge (node 3684:42130). Held from the card's foot, so it
-          // stays on the picture's corner whatever the card holds.
-          const Positioned(left: 263.8, bottom: 46.76, child: _CameraSticker()),
+          // card's edge (node 3684:42130): 85.39% + 0.8 across the card's
+          // 305.7 inside and 15.56% - 0.78 up its 304 (the design's
+          // percentages). Held from the card's foot, so it stays on the
+          // picture's corner whatever the card holds.
+          Positioned(
+            left: _innerCardBorder + 261.87,
+            bottom: _innerCardBorder + 46.52,
+            child: _CameraSticker(loop: _loop!),
+          ),
         ],
       ),
       if (entries.isNotEmpty)
@@ -2112,19 +2463,23 @@ class _EngagementBodyState extends State<_EngagementBody> {
     return Column(
       children: [
         Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 272,
-              height: 201,
-              child: (entry.photoUrl ?? '').isEmpty
-                  ? const ColoredBox(color: Color(0xFFF2F2F5))
-                  : Image(
-                      image: _remoteImage(entry.photoUrl!),
-                      fit: BoxFit.cover,
-                      // Filled across and held at the top, as the design crops it.
-                      alignment: Alignment.topCenter,
-                    ),
+          // Two fingers lift the photo out to zoom it; one finger still
+          // swipes the carousel.
+          child: _PinchToZoom(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 272,
+                height: 201,
+                child: (entry.photoUrl ?? '').isEmpty
+                    ? const ColoredBox(color: Color(0xFFF2F2F5))
+                    : Image(
+                        image: _remoteImage(entry.photoUrl!),
+                        fit: BoxFit.cover,
+                        // Filled across and held at the top, as the design crops it.
+                        alignment: Alignment.topCenter,
+                      ),
+              ),
             ),
           ),
         ),
@@ -2215,10 +2570,8 @@ class _EngagementBodyState extends State<_EngagementBody> {
           else
             SizedBox(
               height: listHeight(shownRows),
-              child: PageView.builder(
-                controller: _pages,
+              child: _carousel(
                 itemCount: pages,
-                onPageChanged: (index) => setState(() => _page = index),
                 itemBuilder: (context, index) {
                   final rows = board.skip(index * 3).take(3).toList();
                   return Padding(
@@ -2259,7 +2612,11 @@ class _EngagementBodyState extends State<_EngagementBody> {
           // all nominations" (nodes 3684:42458-42459). Held from the card's
           // foot, so it rides up with it when there are fewer than three
           // rows.
-          const Positioned(left: 244, bottom: 5.45, child: _GhostSticker()),
+          Positioned(
+            left: 244,
+            bottom: 5.45,
+            child: _GhostSticker(loop: _loop!),
+          ),
           // The white scribble burst at the card's lower-left, cut by the
           // contest card's edge (node 3687:42559).
           Positioned(
@@ -2576,23 +2933,45 @@ class _TagBar extends StatelessWidget {
   final Color color;
   final int maxPoints;
 
+  /// The bar's outline, inside which the fill is drawn.
+  static const double _border = 1.114;
+
   @override
   Widget build(BuildContext context) {
-    // The design's bars run from a fifth of the width for nobody to about
-    // half for the leader (141.67 of 273 for 110 points, 94.44 for 50).
+    // Measured against the top score: the leader's bar is full and every
+    // other is its share of the leader's (20 of 20 full, 10 of 20 half), so a
+    // tie reads as two full bars. Drawn from the points, not the rank.
     final share = maxPoints == 0 ? 0.0 : row.points / maxPoints;
-    final fraction = (0.2 + 0.32 * share).clamp(0.0, 1.0);
+    final fraction = share.clamp(0.0, 1.0);
+    final points = '${row.points}pt';
+    const pointsStyle = TextStyle(
+      fontFamily: _soraFont,
+      fontSize: 16,
+      height: 24 / 16,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0,
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
+        final width = constraints.maxWidth - 2 * _border;
         final fill = width * fraction;
+        final pointsWidth = (TextPainter(
+          text: TextSpan(text: points, style: pointsStyle),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout()).width;
+        // The face rides the end of the fill, but never into the points.
+        final pointsStart = width - 10.75 - pointsWidth;
+        final faceLeft = fill.clamp(0.0, math.max(0.0, pointsStart - 8 - 33)).toDouble();
+        // Once the fill runs under the points they turn white to stay read.
+        final pointsOnFill = fill >= pointsStart;
         return Container(
           height: 47.996,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color, width: 1.114),
+            border: Border.all(color: color, width: _border),
           ),
           child: Stack(
             children: [
@@ -2604,7 +2983,7 @@ class _TagBar extends StatelessWidget {
                 child: ColoredBox(color: color),
               ),
               Positioned(
-                left: fill,
+                left: faceLeft,
                 top: 5.42,
                 child: _PersonTap(
                   userId: row.userId,
@@ -2616,19 +2995,18 @@ class _TagBar extends StatelessWidget {
                   ),
                 ),
               ),
+              // The points sit in a 273 row that starts 0.24 short of the
+              // bar's inside, so its 12 of padding ends 10.75 in from the
+              // inside's right edge (node 3684:42371).
               Positioned(
-                right: 12,
+                right: 10.75,
                 top: 0,
                 bottom: 0,
                 child: Center(
                   child: Text(
-                    '${row.points}pt',
-                    style: TextStyle(
-                      fontFamily: _soraFont,
-                      fontSize: 16,
-                      height: 24 / 16,
-                      fontWeight: FontWeight.w700,
-                      color: color,
+                    points,
+                    style: pointsStyle.copyWith(
+                      color: pointsOnFill ? Colors.white : color,
                     ),
                   ),
                 ),

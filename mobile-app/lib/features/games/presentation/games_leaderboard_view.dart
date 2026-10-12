@@ -214,7 +214,9 @@ class _PeriodToggle extends StatelessWidget {
 }
 
 /// The top three on a podium (node 3628:33503): third, first raised in the
-/// middle, second — with their photos.
+/// middle, second — with their photos. Its 1pt edge is drawn inside, over
+/// its padding, as Figma draws a stroke: the places start 18pt down and 12pt
+/// in from the surface's outside.
 class _PointsPodium extends StatelessWidget {
   const _PointsPodium({required this.top});
 
@@ -231,10 +233,13 @@ class _PointsPodium extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFC3EBFE),
         borderRadius: BorderRadius.circular(18),
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFEBEBEB)),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(18),
         child: Stack(
           children: [
             // The rays behind it, at the design's 18%.

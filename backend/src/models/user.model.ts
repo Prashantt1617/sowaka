@@ -94,6 +94,11 @@ export interface User {
   role?: 'manager' | 'employee';
   // Leadership have no manager and do not raise approval-gated requests.
   isLeadership?: boolean;
+  /**
+   * May start a contest in Connect (caption, photo story, Most Likely).
+   * Granted per person; absent means no. Entering and voting need nothing.
+   */
+  canCreateContests?: boolean;
   // Grants access to the HR dashboard (org-wide view + request overrides).
   // Independent of the reporting role — a manager/employee may or may not have it.
   dashboardAccess?: boolean;

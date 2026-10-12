@@ -11,6 +11,7 @@ class AuthUser {
     this.location,
     this.state,
     this.designation,
+    this.employeeId,
     this.employmentType,
     this.department,
     this.teamDescription,
@@ -20,6 +21,7 @@ class AuthUser {
     this.recognition,
     this.enabledTabs = const [],
     this.enabledGames,
+    this.canCreateContests = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -40,6 +42,7 @@ class AuthUser {
       location: _optionalString(json['location']),
       state: _optionalString(json['state']),
       designation: _optionalString(json['designation']),
+      employeeId: _optionalString(json['employeeId']),
       employmentType: _optionalString(json['employmentType']),
       department: _optionalString(json['department']),
       teamDescription: _optionalString(json['teamDescription']),
@@ -58,6 +61,7 @@ class AuthUser {
       enabledGames: json['enabledGames'] is List
           ? [for (final value in json['enabledGames'] as List) '$value']
           : null,
+      canCreateContests: json['canCreateContests'] == true,
     );
   }
 
@@ -76,6 +80,7 @@ class AuthUser {
   final String? location;
   final String? state;
   final String? designation;
+  final String? employeeId;
   final String? employmentType;
   final String? department;
   final String? teamDescription;
@@ -93,6 +98,10 @@ class AuthUser {
   /// server that predates the list: then the Games tab alone decides.
   final List<String>? enabledGames;
 
+  /// May start a contest (caption, photo, Most Likely) from the composer.
+  /// Granted per person by the server, which refuses a contest without it.
+  final bool canCreateContests;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -105,6 +114,7 @@ class AuthUser {
     'location': location,
     'state': state,
     'designation': designation,
+    'employeeId': employeeId,
     'employmentType': employmentType,
     'department': department,
     'teamDescription': teamDescription,
@@ -114,6 +124,7 @@ class AuthUser {
     'recognition': recognition?.toJson(),
     'enabledTabs': enabledTabs,
     if (enabledGames != null) 'enabledGames': enabledGames,
+    'canCreateContests': canCreateContests,
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -128,6 +139,7 @@ class AuthUser {
     location: location,
     state: state,
     designation: designation,
+    employeeId: employeeId,
     employmentType: employmentType,
     department: department,
     teamDescription: teamDescription,
@@ -137,6 +149,7 @@ class AuthUser {
     recognition: recognition,
     enabledTabs: enabledTabs,
     enabledGames: enabledGames,
+    canCreateContests: canCreateContests,
   );
 }
 

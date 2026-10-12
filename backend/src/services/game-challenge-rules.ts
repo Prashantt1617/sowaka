@@ -15,6 +15,13 @@ import type {
 
 /** Challenges a person may have out at once (waiting for an answer, or not yet played). */
 export const MAX_OPEN_OUTGOING = 5;
+
+/**
+ * One challenge at a time (`mayTakeAnother`) is switched off: a player may
+ * have several open at once, up to MAX_OPEN_OUTGOING sent, and withdraws an
+ * old one when they like. The rule stays for turning back on.
+ */
+export const ONE_OPEN_AT_A_TIME = false;
 /** Unanswered challenges anyone may be sent, so nobody can be flooded. */
 export const MAX_PENDING_INCOMING = 10;
 /** A live score update closer than this to the previous one is dropped. */
@@ -101,10 +108,13 @@ export function istDayStart(now: Date): Date {
 
 // ---------------------------------------------------------------- who may
 
-export type Decision = { ok: true } | { ok: false; status: number; message: string };
+/** A refusal can carry `details` for the page, such as the challenge it is about. */
+export type Refusal = { ok: false; status: number; message: string; details?: Record<string, unknown> };
+export type Decision = { ok: true } | Refusal;
 
 const ok: Decision = { ok: true };
-const no = (status: number, message: string): Decision => ({ ok: false, status, message });
+const no = (status: number, message: string, details?: Record<string, unknown>): Refusal =>
+  details ? { ok: false, status, message, details } : { ok: false, status, message };
 
 /** Someone a person could challenge: the fields the rule reads. */
 export interface ChallengeCandidate {
@@ -132,6 +142,41 @@ export function mayChallenge(viewer: ChallengeCandidate, opponent: ChallengeCand
   return ok;
 }
 
+/**
+ * A challenge still on a player's plate: one they sent that waits for an
+ * answer, or one accepted that they have not played. Challenges sent to them
+ * and not yet answered are not: those can arrive and wait whatever they have on.
+ */
+export function isOwnOpen(
+  c: Pick<GameChallenge, 'challengerUserId' | 'opponentUserId' | 'status' | 'expiresAt' | 'scores'>,
+  userId: string,
+  now: Date,
+): boolean {
+  const status = effectiveStatus(c, now);
+  if (status === 'pending') return c.challengerUserId === userId;
+  if (status === 'accepted') return isParticipant(c, userId) && !c.scores?.[userId];
+  return false;
+}
+
+/** The player's own open challenge, as the service found it: which, and who it is with. */
+export interface OwnOpen {
+  challengeId: string;
+  withName: string;
+}
+
+/**
+ * One challenge at a time: nobody sends another, or accepts one sent to them,
+ * while one of their own is open. The refusal names the challenge, so the
+ * page can offer to open it.
+ */
+export function mayTakeAnother(own: OwnOpen | null | undefined): Decision {
+  if (!own) return ok;
+  return no(409, `Finish or clear your challenge with ${firstNameOf(own.withName)} first`, {
+    challengeId: own.challengeId,
+    reason: 'one_open',
+  });
+}
+
 /** What is already open around a new challenge, as the service counted it. */
 export interface OpenCounts {
   /** The challenger's own open challenges (pending or accepted, any game). */
@@ -140,10 +185,14 @@ export interface OpenCounts {
   incomingForOpponent: number;
   /** An open challenge between these two, either way round, for this game. */
   betweenThem: boolean;
+  /** The challenger's own open challenge (`isOwnOpen`), if they have one. */
+  own?: OwnOpen | null;
 }
 
 export function mayOpenAnother(counts: OpenCounts): Decision {
   if (counts.betweenThem) return no(409, 'You already have a challenge open with them');
+  const one = ONE_OPEN_AT_A_TIME ? mayTakeAnother(counts.own) : ok;
+  if (!one.ok) return one;
   if (counts.outgoing >= MAX_OPEN_OUTGOING) {
     return no(429, `You have ${MAX_OPEN_OUTGOING} challenges open. Finish one before sending another.`);
   }
@@ -176,7 +225,11 @@ export function isExpired(c: Pick<GameChallenge, 'status' | 'expiresAt'>, now: D
   return effectiveStatus(c, now) === 'expired';
 }
 
-export type ChallengeAction = 'view' | 'accept' | 'decline' | 'live' | 'finish';
+/**
+ * 'accept' and 'decline' answer a pending challenge; 'ready' is saying ready,
+ * or not ready, in an accepted one's lobby.
+ */
+export type ChallengeAction = 'view' | 'accept' | 'decline' | 'ready' | 'live' | 'finish';
 
 /**
  * Whether `userId` may do `action` to the challenge as of `now`. Anyone not
@@ -193,6 +246,17 @@ export function challengeMay(action: ChallengeAction, userId: string, c: GameCha
       if (userId !== c.opponentUserId) return no(403, 'Only the person challenged can answer it');
       if (status !== 'pending') return no(409, status === 'declined' ? 'This challenge was declined' : 'This challenge has already been answered');
       return ok;
+    case 'ready': {
+      if (status === 'pending') return no(409, 'This challenge has not been accepted yet');
+      if (status !== 'accepted') return no(409, 'This challenge is over');
+      if (c.scores?.[userId]) return no(409, 'You have already played this challenge');
+      // Nobody to start with: the other has played. The page falls back to a round on their own.
+      const other = otherPlayer(c, userId);
+      if (c.scores?.[other]) return no(409, `${namesFrom(c, other)} has already played. Play your round when you're ready.`);
+      if (c.startAt) return no(409, 'This challenge has already started');
+      if (c.expiresAt.getTime() <= now.getTime()) return no(409, 'Too late to start together. Play your round now.');
+      return ok;
+    }
     case 'live':
     case 'finish':
       if (status === 'pending') return no(409, 'This challenge has not been accepted yet');
@@ -200,6 +264,118 @@ export function challengeMay(action: ChallengeAction, userId: string, c: GameCha
       if (c.scores?.[userId]) return no(409, 'You have already played this challenge');
       return ok;
   }
+}
+
+/**
+ * What accepting means: answering a challenge still pending, or once it is
+ * accepted, saying ready (or not ready any more) in its lobby. The app's
+ * bridge carries nothing but the challenge's id, so one call does both.
+ */
+export function acceptMeans(c: Pick<GameChallenge, 'status' | 'expiresAt'>, now: Date): 'answer' | 'ready' {
+  return effectiveStatus(c, now) === 'accepted' ? 'ready' : 'answer';
+}
+
+// ---------------------------------------------------------------- clearing
+
+/**
+ * The one way to get rid of a challenge (the page's Decline), and what it
+ * does depends on who and when:
+ *   - 'decline': the one challenged, before answering;
+ *   - 'withdraw': the challenger, before an answer;
+ *   - 'call_off': either player once accepted, while neither has played;
+ *   - 'hide': either player, once it is over: off their own list only.
+ */
+export type ClearAction = 'decline' | 'withdraw' | 'call_off' | 'hide';
+export type ClearDecision = { ok: true; action: ClearAction } | Refusal;
+
+export function clearingFor(c: GameChallenge, userId: string, now: Date): ClearDecision {
+  if (!isParticipant(c, userId)) return no(404, 'Challenge not found');
+  switch (effectiveStatus(c, now)) {
+    case 'pending':
+      return { ok: true, action: userId === c.opponentUserId ? 'decline' : 'withdraw' };
+    case 'accepted': {
+      // A final posted means a result is on its way: calling it off then would dodge a loss.
+      if (c.scores?.[userId]) return no(409, "You've already played your round, so it can't be called off");
+      const other = otherPlayer(c, userId);
+      if (c.scores?.[other]) {
+        return no(409, `${namesFrom(c, other)} has already played, so it can't be called off. Play your round to finish it.`);
+      }
+      return { ok: true, action: 'call_off' };
+    }
+    default:
+      return { ok: true, action: 'hide' };
+  }
+}
+
+/** Whether `userId` has cleared the challenge from their own list. */
+export const hiddenFor = (c: Pick<GameChallenge, 'hiddenBy'>, userId: string) => (c.hiddenBy ?? []).includes(userId);
+
+// ---------------------------------------------------------------- the lobby
+
+/**
+ * How long a heartbeat keeps someone in the lobby. The page sends one about
+ * every 20 s while it shows the lobby, so a closed page drops out within a minute.
+ */
+export const LOBBY_PRESENCE_MS = 60_000;
+/** From both being ready to both rounds starting: time for the start to reach both phones and count down 3-2-1. */
+export const START_DELAY_MS = 4_000;
+
+/** Where a player is: not in the lobby, in it, or in it and ready. */
+export type LobbyState = 'away' | 'joined' | 'ready';
+
+/**
+ * Whether the two can still start together: accepted, not started yet,
+ * neither has played, and before its deadline. The finish grace past the
+ * deadline is for a round already under way, not for starting one.
+ */
+export function lobbyOpen(c: GameChallenge, now: Date): boolean {
+  return c.status === 'accepted' && c.expiresAt.getTime() > now.getTime() && !c.startAt
+    && !c.scores?.[c.challengerUserId] && !c.scores?.[c.opponentUserId];
+}
+
+/** Whether `userId`'s last heartbeat is recent enough to count them as in the lobby. */
+export function inLobby(c: Pick<GameChallenge, 'seen'>, userId: string, now: Date): boolean {
+  const seen = c.seen?.[userId];
+  return seen !== undefined && now.getTime() - new Date(seen).getTime() < LOBBY_PRESENCE_MS;
+}
+
+/** A ready only counts while its player is in the lobby. */
+export function lobbyStateOf(c: Pick<GameChallenge, 'seen' | 'ready'>, userId: string, now: Date): LobbyState {
+  if (!inLobby(c, userId, now)) return 'away';
+  return c.ready?.[userId] ? 'ready' : 'joined';
+}
+
+/** What a ready call does: says ready, or takes a ready back. */
+export function readyToggle(c: Pick<GameChallenge, 'seen' | 'ready'>, userId: string, now: Date): 'ready' | 'unready' {
+  return lobbyStateOf(c, userId, now) === 'ready' ? 'unready' : 'ready';
+}
+
+/** Whether both are in the lobby and ready, so both rounds can be given a start. */
+export function bothReady(c: GameChallenge, now: Date): boolean {
+  return lobbyOpen(c, now)
+    && lobbyStateOf(c, c.challengerUserId, now) === 'ready'
+    && lobbyStateOf(c, c.opponentUserId, now) === 'ready';
+}
+
+/** When both rounds start, given both were ready at `now`. */
+export const startAtFor = (now: Date) => new Date(now.getTime() + START_DELAY_MS);
+
+/**
+ * Whether `userId` coming into the lobby should be pushed to the other
+ * player: only the first time they come, and not when the other is already
+ * there to see it happen.
+ */
+export function tellOtherOfArrival(c: GameChallenge, userId: string, now: Date): boolean {
+  return !c.lobbyPushed?.[userId] && !inLobby(c, otherPlayer(c, userId), now);
+}
+
+/** The push for that: "Kritik is waiting in the Odd One Out lobby". */
+export function lobbyArrivalLine(
+  c: Pick<GameChallenge, 'challengerUserId' | 'challengerName' | 'opponentName'>,
+  userId: string,
+  gameName: string,
+): string {
+  return `${namesFrom(c, userId)} is waiting in the ${gameName} lobby`;
 }
 
 // ---------------------------------------------------------------- result and reward
@@ -278,8 +454,9 @@ export interface PaidToday {
  *     scored under `minLoserShare` of it), divided by `perPoints`, rounded, at
  *     least 1 and at most `maxPerMatch`. Nothing once they have had
  *     `dailyWinCap` rewarded wins today, or `samePairPerDay` over this opponent.
- *   - The loser, and both players on a draw: `participation`, until they have
- *     had `dailyWinCap` participation awards today.
+ *   - The loser, and both players on a draw: their own score divided by
+ *     `perPoints`, rounded, at most `maxPerMatch`, until they have had
+ *     `dailyWinCap` such awards today. (`participation` is no longer used.)
  *
  * Null until both have played. A capped award is kept, at zero, with why.
  */
@@ -290,12 +467,17 @@ export function computeAwards(
 ): { reward: GameChallengeAward | null; awards: GameChallengeAward[] } | null {
   const result = resultOf(c);
   if (!result) return null;
+  // The loser, and both players on a draw, earn their own score scaled as a
+  // win is — not the flat `participation` award they used to (Tanvi, 12 Oct
+  // 2026: "even if I lose I get my scored points / 100"). Results already in
+  // keep what they were paid; only challenges finishing from now on pay this.
   const participation = (userId: string): GameChallengeAward => {
-    if (rules.participation <= 0) return { userId, kind: 'participation', points: 0, capped: null };
+    const points = Math.min(rules.maxPerMatch, Math.round((c.scores[userId]?.score ?? 0) / rules.perPoints));
+    if (points <= 0) return { userId, kind: 'participation', points: 0, capped: null };
     if ((paid.participation[userId] ?? 0) >= rules.dailyWinCap) {
       return { userId, kind: 'participation', points: 0, capped: 'daily_limit' };
     }
-    return { userId, kind: 'participation', points: rules.participation, capped: null };
+    return { userId, kind: 'participation', points, capped: null };
   };
   if (result.draw) {
     return { reward: null, awards: [participation(c.challengerUserId), participation(c.opponentUserId)] };
