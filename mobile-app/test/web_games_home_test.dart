@@ -32,10 +32,11 @@ const _pageHtml = '<!doctype html><html><head><title>Games</title></head><body>G
 
 /// The tab's WebView, as a test sees it: what was loaded, what was run.
 class _FakeSurface implements HomePageSurface {
-  _FakeSurface(this.onMessage, this.onLoaded);
+  _FakeSurface(this.onMessage, this.onLoaded, this.onGone);
 
   final void Function(String message) onMessage;
   final VoidCallback onLoaded;
+  final VoidCallback onGone;
   final loads = <String>[];
   final baseUrls = <String>[];
   final scripts = <String>[];
@@ -103,13 +104,13 @@ class _FakeNativeState extends State<_FakeNative> {
 }
 
 class _Harness {
-  _Harness(http.Response Function(http.Request request) answer) {
+  _Harness(FutureOr<http.Response> Function(http.Request request) answer) {
     service = GamesApiService(
       session: _session,
       baseUrl: _base,
       client: MockClient((request) async {
         requests.add(request.url.path);
-        return answer(request);
+        return await answer(request);
       }),
     );
   }
@@ -134,8 +135,8 @@ class _Harness {
         visible: visible,
         resets: resets,
         challengeEvents: challengeEvents.stream,
-        surfaceFactory: ({required onMessage, required onLoaded}) {
-          final surface = _FakeSurface(onMessage, onLoaded);
+        surfaceFactory: ({required onMessage, required onLoaded, required onGone}) {
+          final surface = _FakeSurface(onMessage, onLoaded, onGone);
           surfaces.add(surface);
           return surface;
         },
@@ -240,14 +241,19 @@ void main() {
       final second = _Harness(_page);
       await tester.pumpWidget(second.build(visible: false));
       await _settle(tester);
-      // Built with every other tab, but the page (which reads its data as it
-      // starts) is not loaded, and the server is not asked.
-      expect(second.surface.loads, isEmpty);
+      // Built with every other tab, but no WebView is made (an app start
+      // never pays for one), nothing is loaded and the server is not asked:
+      // only the tab's dotted ground.
+      expect(second.surfaces, isEmpty);
+      expect(find.byKey(const Key('web-page')), findsNothing);
+      expect(find.byKey(const Key('native-home')), findsNothing);
       expect(second.requests, isEmpty);
 
       await tester.pumpWidget(second.build(visible: true));
       await _settle(tester);
+      expect(second.surfaces, hasLength(1));
       expect(second.surface.loads, hasLength(1));
+      expect(find.byKey(const Key('web-page')), findsOneWidget);
     });
 
     testWidgets('not looked at, nothing is asked of the server', (tester) async {
@@ -406,6 +412,146 @@ void main() {
       final script = harness.surface.scripts.last;
       expect(script, contains('"kind":"challenge"'));
       expect(script, contains('"id":"ch-9"'));
+    });
+  });
+
+  group('when things go wrong', () {
+    List<String> replies(_Harness harness) => [
+      for (final script in harness.surface.scripts)
+        if (script.contains('__reply')) script,
+    ];
+
+    testWidgets('the page thrown away (iOS ends its process) is loaded again while looked at', (tester) async {
+      final harness = _Harness(_page);
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+      expect(harness.surface.loads, hasLength(1));
+
+      harness.surface.onGone();
+      await _settle(tester);
+      expect(harness.surface.loads, hasLength(2));
+      expect(harness.surfaces, hasLength(1));
+    });
+
+    testWidgets('thrown away while not looked at: loaded again on the next show', (tester) async {
+      final harness = _Harness(_page);
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+      await tester.pumpWidget(harness.build(visible: false));
+      await _settle(tester);
+
+      harness.surface.onGone();
+      await _settle(tester);
+      expect(harness.surface.loads, hasLength(1));
+
+      await tester.pumpWidget(harness.build(visible: true));
+      await _settle(tester);
+      expect(harness.surface.loads, hasLength(2));
+    });
+
+    testWidgets('a call with no answer is refused after 15 s, so the page can offer Try again', (tester) async {
+      final harness = _Harness((request) {
+        if (request.url.path == '/app-pages/games-home') return _page(request);
+        return Completer<http.Response>().future; // never answers
+      });
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+
+      harness.surface.onMessage(jsonEncode({'id': 'h1', 'type': 'home', 'data': {}}));
+      harness.surface.onMessage(jsonEncode({'id': 'h2', 'type': 'leaderboard', 'data': {'period': 'week'}}));
+      harness.surface.onMessage(jsonEncode({'id': 'h3', 'type': 'acceptChallenge', 'data': {'id': 'ch-1'}}));
+      await tester.pump(const Duration(seconds: 14));
+      expect(replies(harness), isEmpty);
+
+      await tester.pump(const Duration(seconds: 2));
+      await _settle(tester);
+      final answered = replies(harness);
+      expect(answered, hasLength(3));
+      for (final id in ['h1', 'h2', 'h3']) {
+        final reply = answered.singleWhere((r) => r.contains('"$id"'));
+        expect(reply, contains('"$id", false'));
+        expect(reply, contains('took too long'));
+      }
+    });
+
+    testWidgets('offline, home() is the home last kept, marked stale', (tester) async {
+      var online = true;
+      final harness = _Harness((request) {
+        if (request.url.path == '/app-pages/games-home') return _page(request);
+        if (!online) throw http.ClientException('offline');
+        return _json({
+          'success': true,
+          'points': 120,
+          'challenges': [
+            {'id': 'ch-1', 'gameKey': 'odd-one-out', 'from': {'name': 'Aarav', 'photoUrl': '/media/aarav.jpg'}},
+          ],
+          'games': <dynamic>[],
+        });
+      });
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+      harness.surface.onMessage(jsonEncode({'id': 'h1', 'type': 'home', 'data': {}}));
+      await _settle(tester);
+      expect(replies(harness).single, isNot(contains('"stale"')));
+
+      online = false;
+      harness.surface.onMessage(jsonEncode({'id': 'h2', 'type': 'home', 'data': {}}));
+      await _settle(tester);
+      final reply = replies(harness).last;
+      expect(reply, contains('"h2", true'));
+      expect(reply, contains('"stale":true'));
+      expect(reply, contains('"points":120'));
+      expect(reply, contains('"photoUrl":"$_base/media/aarav.jpg"'));
+    });
+
+    testWidgets('offline with nothing kept, home() is refused', (tester) async {
+      final harness = _Harness((request) {
+        if (request.url.path == '/app-pages/games-home') return _page(request);
+        throw http.ClientException('offline');
+      });
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+      harness.surface.onMessage(jsonEncode({'id': 'h1', 'type': 'home', 'data': {}}));
+      await _settle(tester);
+      expect(replies(harness).single, contains('"h1", false'));
+    });
+
+    testWidgets("an answer meant for a page since loaded again is dropped", (tester) async {
+      final slow = Completer<http.Response>();
+      final harness = _Harness((request) {
+        if (request.url.path == '/app-pages/games-home') return _page(request);
+        return slow.future;
+      });
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+
+      harness.surface.onMessage(jsonEncode({'id': 'h1', 'type': 'home', 'data': {}}));
+      await _settle(tester);
+      harness.surface.onGone(); // a new load while the answer is on its way
+      await _settle(tester);
+      slow.complete(_json({'success': true, 'points': 1, 'games': <dynamic>[]}));
+      await _settle(tester);
+
+      expect(harness.surface.loads, hasLength(2));
+      expect(replies(harness), isEmpty);
+    });
+
+    testWidgets('each load gives its calls ids of their own', (tester) async {
+      final harness = _Harness(_page);
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+      harness.surface.onGone();
+      await _settle(tester);
+
+      final loads = harness.surface.loads;
+      String loadIdOf(String html) => RegExp(r'load = "([^"]+)"').firstMatch(html)!.group(1)!;
+      expect(loads, hasLength(2));
+      expect(loads.first, contains("var id = 'h' + load + '.' + (++seq);"));
+      expect(loadIdOf(loads.first), isNot(loadIdOf(loads.last)));
+    });
+
+    test('clearing the web data at sign-out never throws, even without a WebView', () async {
+      await clearGamesWebData();
     });
   });
 

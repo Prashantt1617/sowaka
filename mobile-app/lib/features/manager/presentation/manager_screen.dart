@@ -459,12 +459,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
         onTap: _openProfile,
         size: 30,
       ),
-      bottomNav: _BottomTabs(
-        state: _bloc.state,
-        bloc: _bloc,
-        onBeforeChange: () =>
-            Navigator.of(context).popUntil((route) => route.isFirst),
-      ),
+      // The shell's tabs under the desk; a pick comes back to the shell
+      // first, once anything unsent is let go.
+      tabs: visibleTabs(_session.user.enabledTabs),
+      selectedTab: _bloc.state.tab,
+      onSelectTab: (tab) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _bloc.add(ChangeManagerTab(tab, fresh: true));
+      },
     );
   }
 
@@ -583,6 +585,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // Nothing of theirs is left behind for whoever signs in next.
     forgetHelpHome();
     forgetGames();
+    // What the web pages kept on the phone (the Games home, Odd One Out's
+    // local storage, keyed by name rather than by person): cleared, so the
+    // next account does not inherit it. Bounded, like the rest.
+    await clearGamesWebData().timeout(const Duration(seconds: 3), onTimeout: () {});
     forgetPolicies();
     await AuthSessionStore().clear();
     if (!mounted) return;

@@ -17,6 +17,7 @@ import '../bloc/connect_bloc.dart';
 import '../data/audience_lists.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
+import '../data/connect_socket_service.dart';
 import 'audience_lists_ui.dart';
 import 'feed_video.dart';
 import 'game_play_screen.dart';
@@ -48,10 +49,44 @@ part 'post_likes_sheet.dart';
 class ConnectComposerController {
   _ConnectFeedScreenState? _state;
 
+  /// A feed's bloc kept alive between one feed and the next while a post of
+  /// its is still going up: a Connect tab picked afresh rebuilds the feed,
+  /// and the publish must not go down with the old one.
+  ConnectBloc? _parked;
+  StreamSubscription<ConnectState>? _parkedWatch;
+
   void _attach(_ConnectFeedScreenState state) => _state = state;
 
   void _detach(_ConnectFeedScreenState state) {
     if (identical(_state, state)) _state = null;
+  }
+
+  /// Whether a post is on its way up from the feed now.
+  bool get isPublishing => (_state?._bloc.state.publishing ?? 0) > 0;
+
+  void _park(ConnectBloc bloc) {
+    _dropParked();
+    _parked = bloc;
+    // Finished with no feed to show it: let it go.
+    _parkedWatch = bloc.stream.listen((state) {
+      if (state.publishing == 0) _dropParked();
+    });
+  }
+
+  /// The parked bloc, for the next feed to carry on with; null when none.
+  ConnectBloc? _adopt() {
+    final bloc = _parked;
+    _parkedWatch?.cancel();
+    _parkedWatch = null;
+    _parked = null;
+    return bloc;
+  }
+
+  void _dropParked() {
+    _parkedWatch?.cancel();
+    _parkedWatch = null;
+    _parked?.dispose();
+    _parked = null;
   }
 
   void openComposer() => _state?._openPostTypePicker();
@@ -74,6 +109,8 @@ class ConnectFeedScreen extends StatefulWidget {
     this.composerController,
     this.onOpenPerson,
     this.bloc,
+    this.api,
+    this.socket,
   });
 
   final AuthSession session;
@@ -85,6 +122,13 @@ class ConnectFeedScreen extends StatefulWidget {
   /// than the network. Null everywhere else, and the screen makes its own.
   final ConnectBloc? bloc;
 
+  /// For tests that want the screen to own its bloc, as it does in the app,
+  /// but on a fake server and no live socket.
+  @visibleForTesting
+  final ConnectApiService? api;
+  @visibleForTesting
+  final ConnectSocketService? socket;
+
   /// Opens a person's profile — an author, a commenter, an entrant, someone
   /// tagged — supplied by the shell, which owns the
   /// team data and the profile route.
@@ -95,7 +139,11 @@ class ConnectFeedScreen extends StatefulWidget {
 }
 
 class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
-  late final ConnectBloc _bloc;
+  late ConnectBloc _bloc;
+
+  /// The bloc has been handed to the controller for the feed replacing this
+  /// one: this one no longer owns it.
+  bool _handedOver = false;
 
   /// False when a test supplied the bloc: it owns it, and loading or
   /// disposing here would fight the test.
@@ -131,9 +179,14 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     super.initState();
     final supplied = widget.bloc;
     _ownsBloc = supplied == null;
-    _bloc = supplied ?? ConnectBloc(session: widget.session);
+    // A post still going up from the feed this one replaces carries on here.
+    final adopted = supplied == null ? widget.composerController?._adopt() : null;
+    _bloc =
+        supplied ??
+        adopted ??
+        ConnectBloc(session: widget.session, api: widget.api, socket: widget.socket);
     if (_ownsBloc) {
-      _bloc.load();
+      if (adopted == null) _bloc.load();
       _loadTaggablePeople();
     }
     widget.composerController?._attach(this);
@@ -165,10 +218,38 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     }
   }
 
+  /// Taken out of the tree — a Connect tab picked afresh is about to build
+  /// the feed again, before this one is disposed — with a post still going
+  /// up: the bloc is parked for the next feed to carry on with.
+  @override
+  void deactivate() {
+    final controller = widget.composerController;
+    if (_ownsBloc && !_handedOver && controller != null && _bloc.state.publishing > 0) {
+      controller._park(_bloc);
+      _handedOver = true;
+    }
+    super.deactivate();
+  }
+
+  /// Back in the tree after all: the bloc comes back, or a fresh one is made.
+  @override
+  void activate() {
+    super.activate();
+    if (!_handedOver) return;
+    _handedOver = false;
+    final back = widget.composerController?._adopt();
+    if (back != null) {
+      _bloc = back;
+    } else {
+      _bloc = ConnectBloc(session: widget.session, api: widget.api, socket: widget.socket);
+      _bloc.load();
+    }
+  }
+
   @override
   void dispose() {
     widget.composerController?._detach(this);
-    if (_ownsBloc) _bloc.dispose();
+    if (_ownsBloc && !_handedOver) _bloc.dispose();
     _feedScroll.dispose();
     super.dispose();
   }
@@ -907,15 +988,12 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
               // its top (node 3752:27075), not edge to edge.
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-                child: _DoubleTapToLike(
-                  enabled: true,
-                  onLike: _doubleTapLike(post),
-                  child: _VideoPostMedia(
-                    post: post,
-                    canManage: widget.canManage,
-                    onEdit: widget.onEdit,
-                    onDelete: widget.onDelete,
-                  ),
+                child: _VideoPostMedia(
+                  post: post,
+                  canManage: widget.canManage,
+                  onEdit: widget.onEdit,
+                  onDelete: widget.onDelete,
+                  onDoubleTapLike: _doubleTapLike(post),
                 ),
               ),
               // What the author wrote goes under the video, the author row
@@ -1558,12 +1636,17 @@ class _VideoPostMedia extends StatelessWidget {
     required this.canManage,
     required this.onEdit,
     required this.onDelete,
+    this.onDoubleTapLike,
   });
 
   final ConnectPost post;
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+
+  /// Likes the post on a double-tap of the video itself; the author row,
+  /// the menu and the buttons over it take their own taps.
+  final VoidCallback? onDoubleTapLike;
 
   @override
   Widget build(BuildContext context) {
@@ -1584,6 +1667,11 @@ class _VideoPostMedia extends StatelessWidget {
         borderRadius: radius,
         child: FeedVideo(
           url: _bodyString(post, 'mediaUrl'),
+          surfaceWrapper: (surface) => _DoubleTapToLike(
+            enabled: true,
+            onLike: onDoubleTapLike,
+            child: surface,
+          ),
           header: (context, closeButton) => _VideoPostHeader(
             post: post,
             canManage: canManage,
@@ -4776,9 +4864,9 @@ class _QuickPostPage extends StatefulWidget {
   /// Admins get the extra Announcement type in the chip row.
   final bool isAdmin;
 
-  /// Whether the chip row starts with Contest: only for someone allowed to
-  /// start one (`AuthUser.canCreateContests`). Otherwise the chip is not
-  /// there at all.
+  /// Whether the chip row offers Contest (after Media and Poll): only for
+  /// someone allowed to start one (`AuthUser.canCreateContests`). Otherwise
+  /// the chip is not there at all.
   final bool offersContest;
 
   @override
@@ -4942,7 +5030,23 @@ class _QuickPostPageState extends State<_QuickPostPage> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(_QuickPostResult.switchType(type, _audience));
+    // Kudos and recommendations go to everyone, and an announcement to the
+    // whole company: a Team or list chosen here does not carry over to them.
+    final audience = switch (type) {
+      ConnectPostType.kudos ||
+      ConnectPostType.recommendation ||
+      ConnectPostType.hrAnnouncement => const PublicAudience(),
+      _ => _audience,
+    };
+    if (_audience is! PublicAudience) {
+      final note = switch (type) {
+        ConnectPostType.kudos => 'Kudos go to everyone',
+        ConnectPostType.recommendation => 'Recommendations go to everyone',
+        _ => null,
+      };
+      if (note != null) showAppToast(context, note);
+    }
+    Navigator.of(context).pop(_QuickPostResult.switchType(type, audience));
   }
 
   void _submit() {
@@ -5201,7 +5305,9 @@ class _QuickPostPageState extends State<_QuickPostPage> {
             alignment: Alignment.centerLeft,
             child: InkWell(
             key: const ValueKey('composer-audience'),
-            onTap: _pickAudience,
+            // A contest goes to the whole company: the chip waits while one
+            // is on the page.
+            onTap: _contest == null ? _pickAudience : null,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -5211,12 +5317,14 @@ class _QuickPostPageState extends State<_QuickPostPage> {
                   // "Public", "Team", or the list's name (node 3809:76071).
                   Flexible(
                     child: Text(
-                      audienceChoiceLabel(_audience),
+                      _contest == null ? audienceChoiceLabel(_audience) : 'Public',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: _soraFont,
-                        color: Color(0xFF484848),
+                        color: _contest == null
+                            ? const Color(0xFF484848)
+                            : const Color(0xFF9197A2),
                         fontSize: 16,
                         height: 22 / 16,
                         fontWeight: FontWeight.w400,
@@ -5580,7 +5688,11 @@ Future<AudienceChoice> _chooseAudience(
   final result = chosen ?? current;
   if (result case ListAudience(:final list) when lists.lists != null) {
     final kept = lists.listById(list.id);
-    return kept == null ? const PublicAudience() : ListAudience(kept);
+    if (kept != null) return ListAudience(kept);
+    // The list it was going to is gone, so it goes to everyone — said, not
+    // just done.
+    if (context.mounted) showAppToast(context, 'Audience set to Public');
+    return const PublicAudience();
   }
   return result;
 }

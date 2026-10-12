@@ -14,9 +14,7 @@ import '../../attendance/presentation/slide_to_punch.dart';
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
-import '../../manager_shell/presentation/app_bottom_nav.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
-import '../../manager_shell/presentation/tablet_shell.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
 import '../../policies/presentation/policy_body_view.dart';
@@ -43,6 +41,11 @@ class QuickActionsController extends ChangeNotifier {
 
   void _attach(_QuickActionsScreenState state) {
     _state = state;
+    // A fresh tab starts on its home, so what Back may do has changed; told
+    // after the frame, since this runs from the new screen's initState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (identical(_state, state)) notifyListeners();
+    });
   }
 
   void _detach(_QuickActionsScreenState state) {
@@ -1047,7 +1050,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         session: widget.bloc.session,
                         profileAction: widget.profileAction,
                         onNotifications: widget.onNotifications,
-                        bottomNav: _PushedTabs(bloc: widget.bloc),
+                        // The shell's tabs under the desk; a pick comes back
+                        // to the shell first, once anything unsent is let go.
+                        tabs: visibleTabs(
+                          widget.bloc.session.user.enabledTabs,
+                        ),
+                        selectedTab: widget.bloc.state.tab,
+                        onSelectTab: (tab) {
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
+                          widget.bloc.add(ChangeManagerTab(tab, fresh: true));
+                        },
                       ),
                       imageAsset: 'assets/icons/support_headset.png',
                     ),
@@ -5611,28 +5624,6 @@ class _SheetPrimaryButton extends StatelessWidget {
 
 /// One punch row on the correction sheet: a wide box showing the time and a
 /// narrow AM/PM box, matching the paired fields in the design.
-/// The shell's tabs under a page pushed over it, as the profile pages have
-/// them: picking one comes back to the shell first.
-class _PushedTabs extends StatelessWidget {
-  const _PushedTabs({required this.bloc});
-
-  final ManagerBloc bloc;
-
-  @override
-  Widget build(BuildContext context) {
-    // On a tablet the rail is the navigation.
-    if (isTabletLayout(context)) return const SizedBox.shrink();
-    return AppBottomNav(
-      tabs: visibleTabs(bloc.session.user.enabledTabs),
-      selected: bloc.state.tab,
-      onSelect: (tab) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        bloc.add(ChangeManagerTab(tab, fresh: true));
-      },
-    );
-  }
-}
-
 class _HubScaffold extends StatelessWidget {
   const _HubScaffold({
     super.key,

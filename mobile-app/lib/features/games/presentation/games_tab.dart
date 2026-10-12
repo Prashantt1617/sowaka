@@ -86,7 +86,8 @@ Future<bool> openGameChallenge(
 /// own header — the shared app header is not drawn on this tab.
 ///
 /// Games open here, as anywhere else. A live contest opens on its Entries
-/// page over this tab, and Back comes back here; the Hint Relay opens its
+/// page over this tab — an entry is added there too, without leaving the
+/// tab — and Back comes back here; the Hint Relay opens its
 /// post in Connect. Contests are not set up here: they are made from
 /// Connect's Posts only.
 ///

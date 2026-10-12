@@ -106,8 +106,6 @@ class ContestComposerPage extends StatefulWidget {
     super.key,
     this.existing,
     this.draft,
-    this.initialFormat,
-    this.publish,
   });
 
   /// A contest already in the feed, being edited.
@@ -115,17 +113,6 @@ class ContestComposerPage extends StatefulWidget {
 
   /// A draft from earlier in this composer session ("Edit" on its preview).
   final ContestDraft? draft;
-
-  /// The format chosen before the screen opened — on the Games tab. The
-  /// screen opens on it without the format pills or Done (frame 3677:40066):
-  /// Go live is the one way out.
-  final ContestFormat? initialFormat;
-
-  /// Puts the contest up from this screen when Go live is pressed, and says
-  /// whether it went up; the screen closes, handing back the draft, only if
-  /// it did. Without it Go live hands the draft straight back, for the
-  /// Connect composer to post.
-  final Future<bool> Function(ContestDraft draft)? publish;
 
   @override
   State<ContestComposerPage> createState() => _ContestComposerPageState();
@@ -143,16 +130,8 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
   /// label), carried through untouched.
   Map<String, dynamic> _carried = const {};
 
-  /// Go live was pressed and the contest is on its way up.
-  bool _publishing = false;
-
   bool get _editing => widget.existing != null;
 
-  /// Opened from the Games tab with the format already picked there.
-  bool get _formatPicked =>
-      widget.initialFormat != null &&
-      widget.existing == null &&
-      widget.draft == null;
 
   @override
   void initState() {
@@ -181,7 +160,7 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
       _photoPath = draft.photoPath;
       _existingMediaUrl = draft.existingMediaUrl;
     } else {
-      _format = widget.initialFormat ?? ContestFormat.caption;
+      _format = ContestFormat.caption;
       _title.text = _format.defaultTitle;
     }
     for (final controller in [_title, _task]) {
@@ -267,7 +246,7 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
   }
 
   Future<void> _finish({required bool goLive}) async {
-    if (!_canPost || _publishing) return;
+    if (!_canPost) return;
     final title = _title.text.trim();
     final body = <String, dynamic>{
       ..._carried,
@@ -284,28 +263,14 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
       existingMediaUrl: _existingMediaUrl,
       goLive: goLive,
     );
-    final publish = widget.publish;
-    if (publish != null && goLive && !_editing) {
-      setState(() => _publishing = true);
-      final published = await publish(draft);
-      if (!mounted) return;
-      if (!published) {
-        // Why it failed has been said; what was typed stays for another go.
-        setState(() => _publishing = false);
-        return;
-      }
-    }
-    if (!mounted) return;
     Navigator.of(context).pop(draft);
   }
 
   @override
   Widget build(BuildContext context) {
     final ready = _canPost;
-    // Nobody leaves while the contest is on its way up: it would go live
-    // all the same, behind them.
     return PopScope(
-      canPop: !_publishing,
+      canPop: true,
       child: Scaffold(
         backgroundColor: _composerSurface,
         body: SafeArea(
@@ -314,19 +279,15 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
             children: [
               _ContestHeader(
                 title: 'Contest',
-                onBack: () {
-                  if (!_publishing) Navigator.of(context).pop();
-                },
-                // From the Games tab there is no composer to come back to, so
-                // there is no Done (frame 3677:40066).
-                actionLabel: _formatPicked ? null : 'Done',
+                onBack: () => Navigator.of(context).pop(),
+                actionLabel: 'Done',
                 onAction: ready ? () => _finish(goLive: false) : null,
               ),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                   children: [
-                    if (!_formatPicked) ...[
+                    ...[
                       const _ComposerFieldLabel('SELECT THE CONTEST'),
                       const SizedBox(height: 8),
                       Wrap(
@@ -386,11 +347,9 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
                 padding: const EdgeInsets.fromLTRB(20, 32, 20, 40),
                 child: Semantics(
                   button: true,
-                  enabled: ready && !_publishing,
+                  enabled: ready,
                   child: GestureDetector(
-                    onTap: ready && !_publishing
-                        ? () => _finish(goLive: true)
-                        : null,
+                    onTap: ready ? () => _finish(goLive: true) : null,
                     behavior: HitTestBehavior.opaque,
                     child: Container(
                       // The label's 16.2 and 16 either side, spinner or not.
@@ -399,21 +358,10 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
                       decoration: BoxDecoration(
                         // Muted until the contest has what it needs
                         // (#96B7C7, Brand/Primary-Pressed).
-                        color: ready && !_publishing
-                            ? _composerBrand
-                            : _composerMuted,
+                        color: ready ? _composerBrand : _composerMuted,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: _publishing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text(
+                      child: Text(
                               _editing ? 'Save' : 'Go live',
                               style: const TextStyle(
                                 fontFamily: _soraFont,

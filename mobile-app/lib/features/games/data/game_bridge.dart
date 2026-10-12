@@ -8,6 +8,8 @@ const String gameBridgeChannel = 'SowakaGame';
 /// What a web game sees as `window.Sowaka`:
 ///
 ///   Sowaka.native          true: running inside the Sowaka app
+///   Sowaka.userId          the signed-in person's id, a string, so a page
+///                          keeps its saves and caches per account
 ///   Sowaka.playerName()    the player's name, at once
 ///   Sowaka.submitScore(n)  a Promise of the board after it; the app posts
 ///                          the score under the player's own session
@@ -39,9 +41,14 @@ const String gameBridgeChannel = 'SowakaGame';
 /// browser) has no `window.Sowaka` and is expected to keep its scores itself.
 /// A `sowaka-ready` event fires when the bridge arrives, for a page that
 /// started before it.
-String gameBridgeScript({required String playerName, String? startChallengeId}) {
+String gameBridgeScript({
+  required String playerName,
+  required String userId,
+  String? startChallengeId,
+}) {
   // Inside a <script> element: '<' is escaped so a value can never close it.
   final name = _scriptJson(playerName);
+  final id = _scriptJson(userId);
   final startId = _scriptJson(startChallengeId);
   return '''
 (function () {
@@ -62,7 +69,8 @@ String gameBridgeScript({required String playerName, String? startChallengeId}) 
   function text(value) { return value == null ? null : String(value); }
   var S = window.Sowaka || {};
   S.native = true;
-  S.version = 2;
+  S.version = 3;
+  S.userId = $id;
   S.playerName = function () { return $name; };
   S.submitScore = function (score) { return call('submitScore', { score: Number(score) }); };
   S.leaderboard = function () { return call('leaderboard'); };

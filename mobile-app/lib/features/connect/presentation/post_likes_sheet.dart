@@ -54,15 +54,31 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
   /// The post's likes as last read, to tell when they change.
   ({int count, bool liked})? _seen;
 
+  /// The post as last seen, and whether a reaction is on its way to the
+  /// server: the list is read again when the server's copy lands, or the
+  /// read made on the tap could be one like short.
+  ConnectPost? _seenPost;
+  bool _awaitingServer = false;
+
   @override
   void initState() {
     super.initState();
     _seen = _likeStateIn(widget.bloc.state);
+    _seenPost = _postIn(widget.bloc.state);
     _changes = widget.bloc.stream.listen((state) {
+      final post = _postIn(state);
       final now = _likeStateIn(state);
-      if (now == null || now == _seen) return;
-      _seen = now;
-      _load();
+      if (post == null || now == null || identical(post, _seenPost)) return;
+      _seenPost = post;
+      if (now != _seen) {
+        // The tap's own guess shows first; the server's answer follows.
+        _seen = now;
+        _awaitingServer = true;
+        _load();
+      } else if (_awaitingServer) {
+        _awaitingServer = false;
+        _load();
+      }
     });
     _load();
   }
@@ -73,8 +89,11 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
     super.dispose();
   }
 
+  ConnectPost? _postIn(ConnectState state) =>
+      state.posts.where((item) => item.id == widget.postId).firstOrNull;
+
   ({int count, bool liked})? _likeStateIn(ConnectState state) {
-    final post = state.posts.where((item) => item.id == widget.postId).firstOrNull;
+    final post = _postIn(state);
     return post == null ? null : (count: post.likeCount, liked: post.liked);
   }
 

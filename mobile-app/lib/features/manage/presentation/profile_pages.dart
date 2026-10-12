@@ -2,11 +2,12 @@ part of '../../manager/presentation/manager_screen.dart';
 
 // ── Which tabs a profile has, and who sees them ──────────────────────────────
 
-/// The profile's tabs, in the order the design lays them out (node 3074:45389).
+/// The profile's tabs, in the order they are laid out: who the person is
+/// first, then their requests, then the rest.
 enum ProfileTab {
+  workDetail('Work detail'),
   request('Request'),
   attendance('Attendance'),
-  workDetail('Work detail'),
   orgChart('Org chart'),
   grow('Grow'),
   rank('Rank'),
@@ -26,8 +27,8 @@ enum ProfileTab {
 /// server reads a colleague's month for anyone in the same company
 /// (`getTeamMemberAttendance`).
 const colleagueProfileTabs = [
-  ProfileTab.attendance,
   ProfileTab.workDetail,
+  ProfileTab.attendance,
   ProfileTab.orgChart,
   ProfileTab.rank,
 ];
@@ -47,9 +48,9 @@ List<ProfileTab> memberProfileTabs({
 }) {
   if (!inViewerChain) return colleagueProfileTabs;
   return [
+    ProfileTab.workDetail,
     if (viewerCanManage) ProfileTab.request,
     ProfileTab.attendance,
-    ProfileTab.workDetail,
     ProfileTab.orgChart,
     ProfileTab.grow,
     ProfileTab.rank,
@@ -64,9 +65,9 @@ List<ProfileTab> ownProfileTabs({
   required bool hasManager,
   required bool showsHelp,
 }) => [
+  ProfileTab.workDetail,
   ProfileTab.request,
   ProfileTab.attendance,
-  ProfileTab.workDetail,
   ProfileTab.orgChart,
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,

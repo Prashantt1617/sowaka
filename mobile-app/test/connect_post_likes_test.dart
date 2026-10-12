@@ -1,6 +1,7 @@
 // Tapping a post's like count lists who liked it, as Instagram does: a sheet
 // with their faces, names and departments, and each row opening that
 // person's profile. The heart beside the count still likes the post.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,9 @@ class _Server {
   Map<String, dynamic>? post;
   List<Map<String, Object>> likes;
   bool failLikes = false;
+
+  /// Holds the reaction's answer until completed.
+  Completer<void>? holdReaction;
   final likeReads = <Uri>[];
   final reactions = <Uri>[];
 
@@ -93,6 +97,7 @@ class _Server {
     }
     if (path.endsWith('/connect/posts/p1/reaction')) {
       reactions.add(request.url);
+      if (holdReaction case final hold?) await hold.future;
       final current = post ?? _post();
       final liked = !(current['liked'] as bool? ?? false);
       post = {
@@ -165,7 +170,11 @@ void main() {
     expect(find.text('Likes'), findsOneWidget);
     // No search box; the department under each name, not the designation.
     expect(find.text('Search'), findsNothing);
-    expect(find.byType(TextField), findsOneWidget, reason: 'only the comment box');
+    expect(
+      find.byType(TextField),
+      findsOneWidget,
+      reason: 'only the comment box',
+    );
     expect(find.text('Riya Sharma'), findsOneWidget);
     expect(find.text('Product'), findsOneWidget);
     expect(find.text('Product Manager'), findsNothing);
@@ -274,6 +283,40 @@ void main() {
     await _settle(tester);
 
     expect(server.likeReads.length, greaterThanOrEqualTo(2));
+    expect(find.text('Viewer'), findsOneWidget);
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('the list is read again once the server has the like', (
+    tester,
+  ) async {
+    final server = _Server()..holdReaction = Completer<void>();
+    final (_, bloc) = await _pumpFeed(tester, server);
+    await tester.tap(_count);
+    await _settle(tester);
+    expect(server.likeReads, hasLength(1));
+
+    // The tap's own guess: read once, before the server has it.
+    final liked = bloc.toggleReaction('p1');
+    await _settle(tester);
+    expect(server.likeReads, hasLength(2));
+
+    // The server's copy lands: read again, now with the viewer on it.
+    server.likes = const [
+      {
+        'userId': 'viewer',
+        'name': 'Viewer',
+        'initials': 'V',
+        'designation': '',
+        'avatarColor': '#BE5A36',
+      },
+      _riya,
+      _kabir,
+    ];
+    server.holdReaction!.complete();
+    await liked;
+    await _settle(tester);
+    expect(server.likeReads, hasLength(3));
     expect(find.text('Viewer'), findsOneWidget);
     await _tearDown(tester, bloc);
   });

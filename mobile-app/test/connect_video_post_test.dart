@@ -429,10 +429,11 @@ void main() {
 
   testWidgets('a double-tap on the video likes the post', (tester) async {
     final (requests, bloc) = await _pumpFeed(tester, _videoPost('8'));
-    final video = find.byType(FeedVideo);
-    await tester.tap(video);
+    // On the picture, clear of the play button in the middle.
+    final spot = tester.getCenter(find.byType(FeedVideo)) + const Offset(0, 160);
+    await tester.tapAt(spot);
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.tap(video);
+    await tester.tapAt(spot);
     await tester.pump(const Duration(milliseconds: 400));
     expect(
       requests.where(
@@ -440,6 +441,33 @@ void main() {
       ),
       isNotEmpty,
     );
+    await tester.pump(const Duration(seconds: 1));
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('a double-tap on the menu or the sound button is not a like', (
+    tester,
+  ) async {
+    final (requests, bloc) = await _pumpFeed(tester, _videoPost('13'));
+    bool liked() => requests.any(
+      (r) => r.method == 'POST' && r.url.path.endsWith('/posts/13/reaction'),
+    );
+    final sound = find.byKey(const ValueKey('feed-video-sound'));
+    await tester.tap(sound);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(sound);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(liked(), isFalse);
+
+    final menu = find.descendant(
+      of: find.byType(FeedVideo),
+      matching: find.byWidgetPredicate((widget) => widget is PopupMenuButton),
+    );
+    await tester.tap(menu);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(menu, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(liked(), isFalse);
     await tester.pump(const Duration(seconds: 1));
     await _tearDown(tester, bloc);
   });

@@ -62,6 +62,10 @@ String? _lastCatalogFor;
 GamesHome? _lastHome;
 String? _lastHomeFor;
 
+/// The last Games home fetched, as the server sent it: what the web home is
+/// shown when the server cannot be reached ([GamesApiService.homeJson]).
+Map<String, dynamic>? _lastHomeJson;
+
 /// The Games home last fetched for [userId], when that is who is asking.
 GamesHome? gamesHomeFor(String userId) => _lastHomeFor == userId ? _lastHome : null;
 
@@ -92,6 +96,7 @@ void forgetGames() {
   _lastCatalogFor = null;
   _lastHome = null;
   _lastHomeFor = null;
+  _lastHomeJson = null;
   _pages.clear();
   _appPages.clear();
 }
@@ -211,13 +216,29 @@ class GamesApiService {
   /// `GET /games/home` as the server sends it, with every picture's address
   /// made whole, for the web home. Kept as [home] keeps its own, so the
   /// native tab and a game opened offline find it too.
-  Future<Map<String, dynamic>> homeJson() async {
+  ///
+  /// With no answer (offline, or none within [timeout]) it is the home last
+  /// kept, in memory or on the phone, marked `stale: true` so the page reads
+  /// it again at the next chance; with nothing kept, the failure. A refusal
+  /// from the server is never covered up.
+  Future<Map<String, dynamic>> homeJson({Duration? timeout}) async {
     final startedAt = DateTime.now();
-    final json = await _request('GET', '/games/home');
+    Map<String, dynamic> json;
+    try {
+      final asked = _request('GET', '/games/home');
+      json = await (timeout == null ? asked : asked.timeout(timeout));
+    } on GamesApiException {
+      rethrow;
+    } catch (_) {
+      final kept = await keptHomeJson();
+      if (kept == null) rethrow;
+      return {...kept, 'stale': true};
+    }
     try {
       final home = GamesHome.fromJson(json, absolute: absoluteUrl);
       _lastHome = home;
       _lastHomeFor = session.user.id;
+      _lastHomeJson = json;
       _lastCatalog = home.games;
       _lastCatalogFor = session.user.id;
       unawaited(DashboardCache.write(_homeCacheKey, {'home': json}, startedAt: startedAt));
@@ -229,6 +250,15 @@ class GamesApiService {
     } catch (_) {
       // The page reads it as it came; the native copy just is not kept.
     }
+    return Map<String, dynamic>.from(absoluteUrls(json) as Map);
+  }
+
+  /// The home last fetched for this person as the server sent it, with
+  /// pictures made whole: from memory, else from the phone. Null when none.
+  Future<Map<String, dynamic>?> keptHomeJson() async {
+    Map<String, dynamic>? json = _lastHomeFor == session.user.id ? _lastHomeJson : null;
+    json ??= (await DashboardCache.read(_homeCacheKey))?['home'];
+    if (json == null) return null;
     return Map<String, dynamic>.from(absoluteUrls(json) as Map);
   }
 
@@ -264,6 +294,7 @@ class GamesApiService {
     final home = GamesHome.fromJson(json, absolute: absoluteUrl);
     _lastHome = home;
     _lastHomeFor = session.user.id;
+    _lastHomeJson = json;
     _lastCatalog = home.games;
     _lastCatalogFor = session.user.id;
     unawaited(DashboardCache.write(_homeCacheKey, {'home': json}, startedAt: startedAt));

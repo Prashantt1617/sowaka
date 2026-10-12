@@ -7,7 +7,6 @@ part of 'connect_feed_screen.dart';
 
 const _pollInk = Color(0xFF222222);
 const _pollInkSecondary = Color(0xFF484848);
-const _pollInkTertiary = Color(0xFF717171);
 const _pollIcons = Color(0xFF9197A2);
 const _pollBorder = Color(0xFFEBEBEB);
 const _pollSurface = Color(0xFFF7F7F9);
@@ -16,19 +15,55 @@ const _pollBrand = Color(0xFF0571A6);
 /// How long a vote takes to settle: bars grow, shares count, the pick lights.
 const _pollMotion = Duration(milliseconds: 380);
 
-/// A share that counts up to its new value instead of jumping to it.
+/// A number that counts up to its new value instead of jumping to it: a share, or a vote count.
 class _PollPercent extends StatelessWidget {
-  const _PollPercent({required this.value, required this.style});
+  const _PollPercent({
+    required this.value,
+    required this.style,
+    this.votes = false,
+  });
 
   final int value;
   final TextStyle style;
+
+  /// Shown as "3 votes" instead of "3%".
+  final bool votes;
 
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
     tween: Tween(begin: 0, end: value.toDouble()),
     duration: _pollMotion,
     curve: Curves.easeOutCubic,
-    builder: (context, shown, _) => Text('${shown.round()}%', style: style),
+    builder: (context, shown, _) {
+      final n = shown.round();
+      return Text(
+        votes ? '$n vote${value == 1 ? '' : 's'}' : '$n%',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    },
+  );
+}
+
+/// How many votes an option has, set small and muted under its share.
+class _PollOptionVotes extends StatelessWidget {
+  const _PollOptionVotes({required this.votes});
+
+  final int votes;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    '$votes vote${votes == 1 ? '' : 's'}',
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(
+      fontFamily: _soraFont,
+      fontSize: 12,
+      height: 18 / 12,
+      fontWeight: FontWeight.w500,
+      color: _pollIcons,
+    ),
   );
 }
 
@@ -56,7 +91,12 @@ class _PollPressableState extends State<_PollPressable> {
     onTapDown: (_) => _set(true),
     onTapCancel: () => _set(false),
     onTapUp: (_) => _set(false),
-    onTap: widget.onTap,
+    // Two fingers lifting the picture out to zoom are not a vote, even when
+    // the first of them lands and lifts within a tap.
+    onTap: () {
+      if (_PinchToZoom.active.value) return;
+      widget.onTap();
+    },
     child: AnimatedScale(
       scale: _down ? 0.97 : 1,
       duration: const Duration(milliseconds: 110),
@@ -103,7 +143,6 @@ class _PollPostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final options = post.pollOptions;
     final withImages = options.any((o) => (o.imageUrl ?? '').isNotEmpty);
-    final comments = _latestComments(post.comments);
     return Container(
       padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
@@ -170,48 +209,20 @@ class _PollPostCard extends StatelessWidget {
                 : _PollOptionBars(post: post, onAction: onAction),
           ),
           const SizedBox(height: 12),
+          // A poll takes votes only: no likes or comments under it.
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '${post.totalVotes} total vote${post.totalVotes == 1 ? '' : 's'}',
-              style: const TextStyle(
-                fontFamily: _soraFont,
-                fontSize: 14,
-                height: 21 / 14,
-                fontWeight: FontWeight.w500,
-                color: _pollIcons,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // ActionBar (node 2028:51629).
-          Container(
-            padding: const EdgeInsets.only(top: 18.114),
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(color: Color(0x66EBEBEB), width: 1.114),
-              ),
-            ),
             child: Row(
               children: [
-                _PollCount(
-                  icon: post.liked
-                      ? 'assets/icons/connect_icon_heart_filled.svg'
-                      : 'assets/icons/connect_icon_heart_outline.svg',
-                  count: post.likeCount,
-                  label: post.liked ? 'Unlike' : 'Like',
-                  onTap: onLike,
-                  // The count lists who liked it, as on every other post.
-                  onCountTap: post.likeCount > 0
-                      ? () => _openPostLikes(context, post)
-                      : null,
-                ),
-                const SizedBox(width: 24),
-                _PollCount(
-                  icon: 'assets/icons/connect_icon_comment.svg',
-                  count: post.commentCount,
-                  label: 'Comments',
-                  onTap: onOpenComments,
+                Text(
+                  '${post.totalVotes} total vote${post.totalVotes == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 14,
+                    height: 21 / 14,
+                    fontWeight: FontWeight.w500,
+                    color: _pollIcons,
+                  ),
                 ),
                 const Spacer(),
                 if (busy)
@@ -223,44 +234,6 @@ class _PollPostCard extends StatelessWidget {
                       color: _pollBrand,
                     ),
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // PostComments (node 2028:51640): the two latest, oldest of the pair
-          // first, then the box.
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final comment in comments) ...[
-                  _PollCommentPreview(
-                    comment: comment,
-                    onOpenThread: onOpenComments,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (mentions case final tags?)
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: commentController,
-                    builder: (context, _, _) {
-                      final scope = _FeedScope.of(context);
-                      return _MentionSuggestions(
-                        people: tags.matches(
-                          scope?.people ?? const [],
-                          viewerUserId: scope?.viewerUserId ?? '',
-                        ),
-                        onPick: tags.pick,
-                      );
-                    },
-                  ),
-                _PollCommentInput(
-                  controller: commentController,
-                  onSend: onComment,
-                  viewerInitials: viewerInitials,
-                  viewerPhotoUrl: viewerPhotoUrl,
-                ),
               ],
             ),
           ),
@@ -457,12 +430,10 @@ class _PollOptionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final options = post.pollOptions;
-    final total = post.totalVotes == 0 ? 1 : post.totalVotes;
     final voted = post.selectedPollOptionId != null;
     Widget tile(ConnectPollOption option) {
       final selected = voted && post.selectedPollOptionId == option.id;
       final ink = selected ? _pollBrand : _pollInkSecondary;
-      final pct = ((option.votes / total) * 100).round();
       final image = option.imageUrl ?? '';
       return Semantics(
         button: true,
@@ -489,10 +460,18 @@ class _PollOptionGrid extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: SizedBox(
+                    key: ValueKey('poll-option-image-${option.id}'),
                     height: 88,
                     child: image.isEmpty
                         ? const ColoredBox(color: _pollSurface)
-                        : Image(image: _remoteImage(image), fit: BoxFit.cover),
+                        // Two fingers lift the picture out to zoom, as a
+                        // photo post's does. One finger's tap still votes.
+                        : _PinchToZoom(
+                            child: Image(
+                              image: _remoteImage(image),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -510,8 +489,10 @@ class _PollOptionGrid extends StatelessWidget {
                 ),
                 if (voted) ...[
                   const SizedBox(height: 4),
+                  // A picture option counts votes, not a share of them.
                   _PollPercent(
-                    value: pct,
+                    value: option.votes,
+                    votes: true,
                     style: TextStyle(
                       fontFamily: _soraFont,
                       fontSize: 16,
@@ -602,16 +583,17 @@ class _PollOptionBars extends StatelessWidget {
                             ),
                             duration: _pollMotion,
                             curve: Curves.easeOutCubic,
-                            builder: (context, share, _) => FractionallySizedBox(
-                              alignment: Alignment.centerLeft,
-                              widthFactor: share,
-                              child: AnimatedContainer(
-                                duration: _pollMotion,
-                                color: selected
-                                    ? const Color(0xF7CCFCFF)
-                                    : _pollBorder,
-                              ),
-                            ),
+                            builder: (context, share, _) =>
+                                FractionallySizedBox(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: share,
+                                  child: AnimatedContainer(
+                                    duration: _pollMotion,
+                                    color: selected
+                                        ? const Color(0xF7CCFCFF)
+                                        : _pollBorder,
+                                  ),
+                                ),
                           ),
                         ),
                       Positioned.fill(
@@ -633,7 +615,9 @@ class _PollOptionBars extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (voted)
+                              if (voted) ...[
+                                _PollOptionVotes(votes: option.votes),
+                                const SizedBox(width: 8),
                                 _PollPercent(
                                   value: pct,
                                   style: TextStyle(
@@ -644,6 +628,7 @@ class _PollOptionBars extends StatelessWidget {
                                     color: ink,
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                         ),
@@ -655,313 +640,6 @@ class _PollOptionBars extends StatelessWidget {
             },
           ),
         ],
-      ],
-    );
-  }
-}
-
-/// A heart or speech bubble with its count (node 2028:51630).
-class _PollCount extends StatelessWidget {
-  const _PollCount({
-    required this.icon,
-    required this.count,
-    required this.label,
-    required this.onTap,
-    this.onCountTap,
-  });
-
-  final String icon;
-  final int count;
-  final String label;
-  final VoidCallback onTap;
-
-  /// Given, the number is its own button (the likes list) and only the icon
-  /// does [onTap].
-  final VoidCallback? onCountTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final number = Text(
-      '$count',
-      style: const TextStyle(
-        fontFamily: _soraFont,
-        fontSize: 16,
-        height: 24 / 16,
-        fontWeight: FontWeight.w600,
-        color: _pollIcons,
-      ),
-    );
-    final countTap = onCountTap;
-    if (countTap != null) {
-      return Row(
-        children: [
-          Semantics(
-            button: true,
-            label: label,
-            child: GestureDetector(
-              onTap: onTap,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: SvgPicture.asset(icon, width: 21.987, height: 21.987),
-              ),
-            ),
-          ),
-          Semantics(
-            button: true,
-            label: 'See who liked this',
-            child: GestureDetector(
-              onTap: countTap,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: number,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Row(
-          children: [
-            SvgPicture.asset(icon, width: 21.987, height: 21.987),
-            const SizedBox(width: 8),
-            number,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One of the two comment previews under the poll (node 2028:51641). The
-/// commenter's face and name open their profile; the rest opens the thread.
-class _PollCommentPreview extends StatelessWidget {
-  const _PollCommentPreview({
-    required this.comment,
-    required this.onOpenThread,
-  });
-
-  final ConnectComment comment;
-  final VoidCallback onOpenThread;
-
-  @override
-  Widget build(BuildContext context) {
-    final photo = comment.photoUrl ?? '';
-    final initial = _initials(comment.name).characters.first;
-    return GestureDetector(
-      onTap: onOpenThread,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PersonTap(
-            userId: comment.userId,
-            child: _GradientInitialAvatar(
-              initial: initial,
-              colors: _gradientFor(comment.id),
-              photoUrl: photo,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Flexible(
-                      child: _PersonTap(
-                        userId: comment.userId,
-                        child: Text(
-                          comment.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: _soraFont,
-                            fontSize: 13,
-                            height: 19.5 / 13,
-                            fontWeight: FontWeight.w600,
-                            color: _pollInk,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _relativeTime(comment.createdAt),
-                      style: const TextStyle(
-                        fontFamily: _soraFont,
-                        fontSize: 11,
-                        height: 16.5 / 11,
-                        fontWeight: FontWeight.w400,
-                        color: _pollInkTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: _commentBody(
-                    comment,
-                    style: _commentStyle,
-                    plain: Text(comment.text, style: _commentStyle),
-                    onOpenPerson: _FeedScope.of(context)?.onOpenPerson,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A 32px round face on a gradient (node 2028:51642).
-class _GradientInitialAvatar extends StatelessWidget {
-  const _GradientInitialAvatar({
-    required this.initial,
-    required this.colors,
-    this.photoUrl = '',
-  });
-
-  final String initial;
-  final List<Color> colors;
-  final String photoUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final letter = Text(
-      initial,
-      style: const TextStyle(
-        fontFamily: _soraFont,
-        fontSize: 11.2,
-        height: 16.8 / 11.2,
-        fontWeight: FontWeight.w700,
-        color: Colors.white,
-      ),
-    );
-    return Container(
-      width: 31.997,
-      height: 31.997,
-      alignment: Alignment.center,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-      ),
-      child: photoUrl.isEmpty
-          ? letter
-          : Image(
-              image: _remoteImage(photoUrl),
-              width: 31.997,
-              height: 31.997,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => letter,
-            ),
-    );
-  }
-}
-
-/// The comment box (node 352:1331): the viewer's face and a pill field with
-/// the paper plane.
-class _PollCommentInput extends StatelessWidget {
-  const _PollCommentInput({
-    required this.controller,
-    required this.onSend,
-    required this.viewerInitials,
-    required this.viewerPhotoUrl,
-  });
-
-  final TextEditingController controller;
-  final VoidCallback onSend;
-  final String viewerInitials;
-  final String viewerPhotoUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _GradientInitialAvatar(
-          initial: viewerInitials.isEmpty
-              ? '?'
-              : viewerInitials.characters.first,
-          colors: const [Color(0xFFFF5A5F), Color(0xFFFF8C8F)],
-          photoUrl: viewerPhotoUrl,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _pollSurface,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: _pollBorder, width: 1.114),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 3,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onSend(),
-                    style: const TextStyle(
-                      fontFamily: _soraFont,
-                      fontSize: 13,
-                      color: _pollInk,
-                    ),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      hintText: 'Write a comment...',
-                      hintStyle: TextStyle(
-                        fontFamily: _soraFont,
-                        fontSize: 13,
-                        color: _pollInkTertiary,
-                      ),
-                    ),
-                  ),
-                ),
-                Semantics(
-                  button: true,
-                  label: 'Send comment',
-                  child: GestureDetector(
-                    onTap: onSend,
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: SvgPicture.asset(
-                        '$_engagementIcons/send.svg',
-                        width: 19.985,
-                        height: 19.985,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1010,11 +688,3 @@ class _RenderOverhang extends RenderShiftedBox {
     size = constraints.constrain(Size(constraints.maxWidth, child.size.height));
   }
 }
-
-const _commentStyle = TextStyle(
-  fontFamily: _soraFont,
-  fontSize: 13,
-  height: 18 / 13,
-  fontWeight: FontWeight.w400,
-  color: _pollInkSecondary,
-);

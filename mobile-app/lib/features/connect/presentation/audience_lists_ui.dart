@@ -337,49 +337,35 @@ class _AudienceSheetState extends State<_AudienceSheet> {
   }
 
   Future<void> _create() async {
-    final draft = await _openPicker(context, loadPeople: widget.loadPeople);
-    if (draft == null || !mounted) return;
-    setState(() => _busy = true);
-    try {
-      final saved = await widget.createList(draft);
-      if (mounted) Navigator.of(context).pop(ListAudience(saved));
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _busy = false);
-      showAppToast(
-        context,
-        _message(error, "That list couldn't be saved. Try again."),
-      );
-    }
-  }
-
-  Future<void> _edit(AudienceListSummary list) async {
+    AudienceListSummary? saved;
+    // Saved from inside the picker, so a failed save keeps the selection.
     final draft = await _openPicker(
       context,
       loadPeople: widget.loadPeople,
+      save: (draft) async => saved = await widget.createList(draft),
+    );
+    if (draft == null || saved == null || !mounted) return;
+    Navigator.of(context).pop(ListAudience(saved!));
+  }
+
+  Future<void> _edit(AudienceListSummary list) async {
+    AudienceListSummary? saved;
+    final draft = await _openPicker(
+      context,
+      loadPeople: widget.loadPeople,
+      save: (draft) async => saved = await widget.updateList(list.id, draft),
       initialName: list.name,
       initialSelected: list.memberIds,
     );
-    if (draft == null || !mounted) return;
-    setState(() => _busy = true);
-    try {
-      final saved = await widget.updateList(list.id, draft);
-      if (_isCurrent(ListAudience(list))) {
-        widget.outcome
-          ..current = ListAudience(saved)
-          ..changedCurrent = ListAudience(saved);
-      }
-      await _reload();
-    } catch (error) {
-      if (mounted) {
-        showAppToast(
-          context,
-          _message(error, "That list couldn't be saved. Try again."),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    if (draft == null || saved == null || !mounted) return;
+    if (_isCurrent(ListAudience(list))) {
+      widget.outcome
+        ..current = ListAudience(saved!)
+        ..changedCurrent = ListAudience(saved!);
     }
+    setState(() => _busy = true);
+    await _reload();
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _delete(AudienceListSummary list) async {
@@ -424,6 +410,8 @@ class _AudienceSheetState extends State<_AudienceSheet> {
         widget.outcome
           ..current = const PublicAudience()
           ..changedCurrent = const PublicAudience();
+        // The post was going to it: it goes to everyone now, and that is said.
+        if (mounted) showAppToast(context, 'Audience set to Public');
       }
       await _reload();
     } catch (error) {
@@ -767,9 +755,16 @@ String _message(Object error, String fallback) {
 
 // -------------------------------------------------------------------- picker
 
+/// The most people a list can hold — the server's own limit.
+const int maxAudienceListMembers = 500;
+
+/// Opens the picker; [save] puts the list up from inside it, so a save that
+/// fails leaves the picker open with everything still ticked. Hands back the
+/// draft once saved (or, with no [save], once reviewed).
 Future<AudienceListDraft?> _openPicker(
   BuildContext context, {
   required Future<List<AudiencePerson>> Function() loadPeople,
+  Future<void> Function(AudienceListDraft draft)? save,
   String initialName = '',
   List<String> initialSelected = const [],
 }) {
@@ -777,6 +772,7 @@ Future<AudienceListDraft?> _openPicker(
     MaterialPageRoute(
       builder: (_) => AudienceListPicker(
         loadPeople: loadPeople,
+        save: save,
         initialName: initialName,
         initialSelected: initialSelected,
         editing: initialSelected.isNotEmpty || initialName.isNotEmpty,
@@ -792,12 +788,17 @@ class AudienceListPicker extends StatefulWidget {
   const AudienceListPicker({
     super.key,
     required this.loadPeople,
+    this.save,
     this.initialName = '',
     this.initialSelected = const [],
     this.editing = false,
   });
 
   final Future<List<AudiencePerson>> Function() loadPeople;
+
+  /// Saves the list from the review sheet. Failing, it throws, and the
+  /// picker stays open with the selection as it was.
+  final Future<void> Function(AudienceListDraft draft)? save;
   final String initialName;
   final List<String> initialSelected;
   final bool editing;
@@ -815,9 +816,13 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
   /// Ticked, in the order they were ticked.
   late final List<String> _selected = [...widget.initialSelected];
 
-  /// Search terms that have already ticked their one match, so a later untick
-  /// sticks while the same words stay in the box.
-  final Set<String> _autoPicked = {};
+  /// Search terms that have ticked their one match, and who: a term typed
+  /// away again unticks them, unless they were ticked by hand since.
+  final Map<String, String> _autoPicked = {};
+
+  /// Ticked by hand, so a search term going away leaves them ticked.
+  final Set<String> _handPicked = {};
+  bool _saving = false;
 
   @override
   void initState() {
@@ -854,6 +859,23 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
       .where((term) => term.isNotEmpty)
       .toList();
 
+  /// The terms followed by a comma: finished, rather than still being typed.
+  List<String> get _completedTerms {
+    final parts = _search.text.split(',');
+    return parts
+        .take(parts.length - 1)
+        .map((term) => term.trim().toLowerCase())
+        .where((term) => term.isNotEmpty)
+        .toList();
+  }
+
+  /// A term that names a whole team or city is a filter, not a person.
+  bool _isFilter(String term, List<AudiencePerson> people) => people.any(
+    (person) =>
+        person.department.toLowerCase() == term ||
+        person.city.toLowerCase() == term,
+  );
+
   bool _matches(AudiencePerson person, String term) =>
       person.name.toLowerCase().contains(term) ||
       person.designation.toLowerCase().contains(term) ||
@@ -873,21 +895,36 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
 
   void _searchChanged() {
     final people = _people;
-    if (people != null && _search.text.contains(',')) {
-      for (final term in _terms) {
-        if (_autoPicked.contains(term)) continue;
+    if (people != null) {
+      final completed = _completedTerms;
+      // A term typed away again lets its pick go, unless ticked by hand.
+      for (final term in [..._autoPicked.keys]) {
+        if (completed.contains(term)) continue;
+        final id = _autoPicked.remove(term)!;
+        if (!_handPicked.contains(id)) _selected.remove(id);
+      }
+      for (final term in completed) {
+        if (_autoPicked.containsKey(term) || _isFilter(term, people)) continue;
         final byName = people
             .where((person) => person.name.toLowerCase().contains(term))
             .toList();
-        if (byName.length == 1) {
-          _autoPicked.add(term);
-          if (!_selected.contains(byName.single.id)) {
-            _selected.add(byName.single.id);
-          }
+        if (byName.length == 1 && _selected.length < maxAudienceListMembers) {
+          final id = byName.single.id;
+          _autoPicked[term] = id;
+          if (!_selected.contains(id)) _selected.add(id);
         }
       }
     }
     setState(() {});
+  }
+
+  bool _room(int adding) {
+    if (_selected.length + adding <= maxAudienceListMembers) return true;
+    showAppToast(
+      context,
+      'A list can have up to $maxAudienceListMembers people.',
+    );
+    return false;
   }
 
   /// "Team 3D", "City Gurugram": a term that names a whole team or city.
@@ -911,22 +948,34 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
     return chips;
   }
 
-  void _toggle(AudiencePerson person) => setState(() {
-    if (!_selected.remove(person.id)) _selected.add(person.id);
-  });
+  void _toggle(AudiencePerson person) {
+    if (_selected.remove(person.id)) {
+      _handPicked.remove(person.id);
+    } else {
+      if (!_room(1)) return;
+      _selected.add(person.id);
+      _handPicked.add(person.id);
+    }
+    setState(() {});
+  }
 
-  void _toggleAll(List<AudiencePerson> shown) => setState(() {
+  void _toggleAll(List<AudiencePerson> shown) {
     final all =
         shown.isNotEmpty &&
         shown.every((person) => _selected.contains(person.id));
     if (all) {
       _selected.removeWhere((id) => shown.any((person) => person.id == id));
+      _handPicked.removeWhere((id) => shown.any((person) => person.id == id));
     } else {
-      for (final person in shown) {
-        if (!_selected.contains(person.id)) _selected.add(person.id);
+      final missing = shown.where((p) => !_selected.contains(p.id)).toList();
+      if (!_room(missing.length)) return;
+      for (final person in missing) {
+        _selected.add(person.id);
+        _handPicked.add(person.id);
       }
     }
-  });
+    setState(() {});
+  }
 
   List<AudiencePerson> get _selectedPeople {
     final byId = {
@@ -951,14 +1000,28 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
         onRemove: (person) => setState(() => _selected.remove(person.id)),
       ),
     );
-    if (done == true && mounted) {
-      Navigator.of(context).pop(
-        AudienceListDraft(
-          name: _name.text.trim(),
-          memberIds: _selectedPeople.map((p) => p.id).toList(),
-        ),
-      );
+    if (done != true || !mounted) return;
+    final draft = AudienceListDraft(
+      name: _name.text.trim(),
+      memberIds: _selectedPeople.map((p) => p.id).toList(),
+    );
+    final save = widget.save;
+    if (save != null) {
+      setState(() => _saving = true);
+      try {
+        await save(draft);
+      } catch (error) {
+        // The picker stays, everything still ticked, for another go.
+        if (!mounted) return;
+        setState(() => _saving = false);
+        showAppToast(
+          context,
+          _message(error, "That list couldn't be saved. Try again."),
+        );
+        return;
+      }
     }
+    if (mounted) Navigator.of(context).pop(draft);
   }
 
   @override
@@ -1168,7 +1231,30 @@ class _AudienceListPickerState extends State<AudienceListPicker> {
                     ),
                     child: selectedPeople.isEmpty
                         ? const SizedBox.shrink()
-                        : _SelectionBar(people: selectedPeople, onTap: _review),
+                        : Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // While the list is being saved the bar waits,
+                              // with a spinner on it.
+                              AbsorbPointer(
+                                absorbing: _saving,
+                                child: _SelectionBar(
+                                  people: selectedPeople,
+                                  onTap: _review,
+                                ),
+                              ),
+                              if (_saving)
+                                const SizedBox(
+                                  key: ValueKey('audience-saving'),
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                            ],
+                          ),
                   ),
                 ),
               ],

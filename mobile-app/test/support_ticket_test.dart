@@ -11,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:mobile_app/features/manager/data/manager_models.dart';
 import 'package:mobile_app/features/shared/network_status.dart';
+import 'package:mobile_app/features/support/presentation/support_ui.dart';
 import 'package:mobile_app/features/support/data/support_api_service.dart';
 import 'package:mobile_app/features/support/data/support_models.dart';
 import 'package:mobile_app/features/support/presentation/support_ticket_screen.dart';
@@ -391,6 +393,76 @@ void main() {
     server.complete();
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'the tabs under the desk ask before leaving with a reply unsent',
+    (tester) async {
+      final server = Completer<void>();
+      final client = MockClient((request) async {
+        if (request.method == 'POST') {
+          await server.future;
+          return supportOk({
+            'message': supportMessageJson('m9', 'employee', 'Still there?'),
+          });
+        }
+        return supportOk({
+          'ticket': supportTicketJson('t1'),
+          'messages': _messages().take(3).toList(),
+          'events': [],
+        });
+      });
+      supportTall(tester);
+      final picked = <ManagerTab>[];
+      final shell = SupportShell(
+        api: SupportApiService(
+          session: supportSession,
+          baseUrl: 'https://example.test',
+          client: client,
+        ),
+        profileAction: const SizedBox(width: 30, height: 30),
+        onNotifications: () {},
+        realtime: FakeSupportRealtime(),
+        tabs: const [ManagerTab.connect, ManagerTab.quick],
+        selectedTab: ManagerTab.quick,
+        onSelectTab: picked.add,
+      );
+      await tester.pumpWidget(
+        supportApp(SupportTicketScreen(shell: shell, ticketId: 't1')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('support-tabs')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('support-composer')),
+        'Still there?',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('support-send')));
+      await tester.pump();
+
+      // A tab asks; staying picks nothing.
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('support-leave-unsent')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Stay'));
+      await tester.pumpAndSettle();
+      expect(picked, isEmpty);
+      expect(find.byType(SupportTicketScreen), findsOneWidget);
+
+      // Leaving picks the tab.
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Leave'));
+      await tester.pumpAndSettle();
+      expect(picked, [ManagerTab.connect]);
+
+      server.complete();
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('a resolved ticket is read only and asks for a new ticket', (
     tester,

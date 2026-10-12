@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../manager/data/manager_models.dart';
+import '../../manager_shell/presentation/app_bottom_nav.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../manager_shell/presentation/tablet_shell.dart' show isTabletLayout;
 import '../data/support_api_service.dart';
 import '../data/support_models.dart';
 import '../data/support_socket_service.dart';
@@ -14,16 +17,24 @@ class SupportShell {
     required this.profileAction,
     required this.onNotifications,
     this.realtime,
-    this.bottomNav,
+    this.tabs = const [],
+    this.selectedTab,
+    this.onSelectTab,
   });
 
   final SupportApiService api;
   final Widget profileAction;
   final VoidCallback onNotifications;
 
-  /// The app's tabs, under every page of the desk as under Leave and
-  /// Overtime. Picking one leaves the desk first.
-  final Widget? bottomNav;
+  /// The app's tabs, drawn under every page of the desk as under Leave and
+  /// Overtime, with [selectedTab] lit. None when [onSelectTab] is null.
+  final List<ManagerTab> tabs;
+  final ManagerTab? selectedTab;
+
+  /// Picks one of the tabs; the caller leaves the desk for it. A page holding
+  /// something unsent asks first (`SupportScaffold.confirmLeave`), and this
+  /// runs only once the person says to leave.
+  final ValueChanged<ManagerTab>? onSelectTab;
 
   /// Shared by the desk and the thread opened from it. Null until the desk
   /// has made one (or a test supplied it).
@@ -34,7 +45,9 @@ class SupportShell {
     profileAction: profileAction,
     onNotifications: onNotifications,
     realtime: realtime,
-    bottomNav: bottomNav,
+    tabs: tabs,
+    selectedTab: selectedTab,
+    onSelectTab: onSelectTab,
   );
 }
 
@@ -93,8 +106,8 @@ class SupportScaffold extends StatelessWidget {
   final Color background;
   final VoidCallback? onBack;
 
-  /// Set while the page holds something unsent: the avatar then asks this
-  /// before it leaves the desk, and leaves only on true.
+  /// Set while the page holds something unsent: the avatar and the tabs
+  /// then ask this before they leave the desk, and leave only on true.
   final Future<bool> Function()? confirmLeave;
 
   @override
@@ -102,12 +115,29 @@ class SupportScaffold extends StatelessWidget {
     final confirm = confirmLeave;
     void leaveDesk() =>
         Navigator.of(context).popUntil((route) => route.isFirst);
-    // The tabs step aside for the keyboard, as they do in the shell. While
-    // they show they hold the home-indicator inset, so the footer above them
-    // does not pad for it again.
-    final nav = MediaQuery.viewInsetsOf(context).bottom > 0
+    // The tabs step aside for the keyboard, as they do in the shell, and for
+    // the rail on a tablet. While they show they hold the home-indicator
+    // inset, so the footer above them does not pad for it again.
+    final select = shell.onSelectTab;
+    final selected = shell.selectedTab;
+    final nav =
+        select == null ||
+            selected == null ||
+            shell.tabs.isEmpty ||
+            isTabletLayout(context) ||
+            MediaQuery.viewInsetsOf(context).bottom > 0
         ? null
-        : shell.bottomNav;
+        : AppBottomNav(
+            key: const ValueKey('support-tabs'),
+            tabs: shell.tabs,
+            selected: selected,
+            // A tab leaves the desk as the avatar does: past an unsent
+            // message only once the person has said to.
+            onSelect: (tab) async {
+              if (confirm != null && !await confirm()) return;
+              select(tab);
+            },
+          );
     final footer = this.footer;
     return Scaffold(
       backgroundColor: background,

@@ -182,6 +182,7 @@ class _WebGameScreenState extends State<WebGameScreen> {
 
   String _bridgeScript() => gameBridgeScript(
     playerName: widget.session!.user.name,
+    userId: widget.session!.user.id,
     startChallengeId: widget.challengeId,
   );
 

@@ -29,6 +29,8 @@ const String homePageChannel = 'SowakaHome';
 ///
 /// Calls that answer go out over [homePageChannel] as `{id, type, data}` and
 /// are settled by `Sowaka.__reply(id, ok, payload)`, as a game's bridge does;
+/// each id carries [loadId], the page load it was asked in, so an answer
+/// meant for a page since replaced can never settle a call in the new one;
 /// a refusal rejects with an Error carrying the server's `message` and its
 /// `status`. Fire-and-forget calls go out with no id and get no answer.
 /// `sowaka-ready` fires on window once `window.Sowaka` exists. The app tells
@@ -39,16 +41,17 @@ String homePageBridgeScript({
   required String userId,
   String org = '',
   List<String> nativeGames = const [],
+  String loadId = '',
 }) => '''
 (function () {
   if (window.Sowaka && window.Sowaka.native) return;
-  var pending = {}, seq = 0;
+  var pending = {}, seq = 0, load = ${_scriptJson(loadId)};
   function send(message) {
     $homePageChannel.postMessage(JSON.stringify(message));
   }
   function call(type, data) {
     return new Promise(function (resolve, reject) {
-      var id = 'h' + (++seq);
+      var id = 'h' + load + '.' + (++seq);
       pending[id] = { resolve: resolve, reject: reject };
       try {
         send({ id: id, type: type, data: data || {} });

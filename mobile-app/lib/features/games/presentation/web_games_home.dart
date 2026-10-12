@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,12 +28,29 @@ abstract class HomePageSurface {
 }
 
 /// Makes the tab's one surface. [onMessage] hears the page's bridge channel;
-/// [onLoaded] is called each time a page has finished loading.
+/// [onLoaded] is called each time a page has finished loading, and [onGone]
+/// when the page has been thrown away under the tab (iOS ends a WebView's
+/// content process to free memory) and must be loaded again.
 typedef HomePageSurfaceFactory =
     HomePageSurface Function({
       required void Function(String message) onMessage,
       required VoidCallback onLoaded,
+      required VoidCallback onGone,
     });
+
+/// Clears what web pages kept on this phone: their local storage (Odd One
+/// Out's `oddone.v1` and its caches, kept by player name) and the web cache.
+/// For sign-out, so the next account on the phone starts clean; the pages'
+/// own keying by person is a later change. Never in the way: without a
+/// WebView (a test) or on any failure it does nothing.
+Future<void> clearGamesWebData() async {
+  if (WebViewPlatform.instance == null) return;
+  try {
+    final controller = WebViewController();
+    await controller.clearLocalStorage();
+    await controller.clearCache();
+  } catch (_) {}
+}
 
 /// Opens a game by its key; on [challengeId] when one is being taken up.
 /// Completes when the game is closed.
@@ -74,6 +92,7 @@ class WebGamesHome extends StatefulWidget {
     this.bundledThumbnails = const {},
     this.nativeGames = const [],
     this.decideWithin = const Duration(seconds: 5),
+    this.callTimeout = const Duration(seconds: 15),
   });
 
   final AuthSession session;
@@ -115,6 +134,11 @@ class WebGamesHome extends StatefulWidget {
 
   /// How long a first-ever look waits for the server before the native tab.
   final Duration decideWithin;
+
+  /// How long the page's home, leaderboard and accept calls may take before
+  /// they are refused, so the page's own Try again comes up rather than a
+  /// spinner for ever.
+  final Duration callTimeout;
 
   @override
   State<WebGamesHome> createState() => _WebGamesHomeState();
@@ -159,6 +183,10 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
 
   /// Whether the tab was looked at when last brought in line ([_sync]).
   bool _looked = false;
+
+  /// Page loads so far: an answer is only handed to the load it was asked in.
+  int _loads = 0;
+  final _random = math.Random();
 
   /// What the page was last told: looked at, or not.
   bool _shown = false;
@@ -288,6 +316,15 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
     _send({'kind': _shown ? 'visible' : 'hidden'});
   }
 
+  /// The page was thrown away under the tab: loaded again now when the tab is
+  /// looked at, else the next time it is ([_sync] loads what is missing).
+  void _onGone() {
+    if (!mounted) return;
+    _loaded = null;
+    _shown = false;
+    if (_lookedAt) _loadTarget();
+  }
+
   void _waitForAnswer() {
     if (_decideTimer != null) return;
     _decideTimer = Timer(widget.decideWithin, () {
@@ -352,17 +389,14 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
     _sync();
   }
 
-  /// Shows [page] in the tab's one surface, made the first time it is needed.
-  /// Loaded once the tab has been looked at: a page reads its data as it
-  /// starts, and nothing is asked of the server for a tab never opened.
+  /// Shows [page] in the tab's one surface. The surface (a WebView) is made,
+  /// and the page loaded, once the tab is first looked at: a page reads its
+  /// data as it starts, nothing is asked of the server for a tab never
+  /// opened, and an app start never pays for a WebView it does not show.
   void _useWeb(AppPage page) {
     _decideTimer?.cancel();
     _decideTimer = null;
     _mode = _Mode.web;
-    _surface ??= (widget.surfaceFactory ?? WebViewHomeSurface.new)(
-      onMessage: _onMessage,
-      onLoaded: _onLoaded,
-    );
     _target = page;
     if (_everLooked) _loadTarget();
   }
@@ -372,12 +406,21 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
   bool _everLooked = false;
 
   void _loadTarget() {
-    final surface = _surface;
     final page = _target;
-    if (surface == null || page == null || _mode != _Mode.web) return;
+    if (page == null || _mode != _Mode.web) return;
+    var surface = _surface;
+    if (surface == null) {
+      surface = _surface = (widget.surfaceFactory ?? WebViewHomeSurface.new)(
+        onMessage: _onMessage,
+        onLoaded: _onLoaded,
+        onGone: _onGone,
+      );
+      if (mounted) setState(() {});
+    }
     if (_loaded != null && _loaded!.version == page.version && _loaded!.html == page.html) return;
     _loaded = page;
     _shown = false;
+    _loads += 1;
     unawaited(
       surface.load(
         injectHomeBridge(
@@ -387,6 +430,7 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
             userId: widget.session.user.id,
             org: widget.session.user.org ?? '',
             nativeGames: widget.nativeGames,
+            loadId: '$_loads${_random.nextInt(1 << 30).toRadixString(36)}',
           ),
         ),
         baseUrl: '${_service.baseUrl}/app-pages/$gamesHomePageKey',
@@ -427,8 +471,10 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
   }
 
   Future<void> _onMessage(String raw) async {
+    final load = _loads;
     final reply = await _bridge.handle(raw);
-    if (reply == null || !mounted) return;
+    // Asked by a page since replaced: nobody is waiting for it.
+    if (reply == null || !mounted || load != _loads) return;
     try {
       await _surface?.run(reply);
     } catch (_) {
@@ -446,10 +492,28 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
     }
   }
 
+  /// [call], refused with a message the page shows (with its Try again)
+  /// when it has not answered in time.
+  Future<T> _inTime<T>(Future<T> Function() call) async {
+    try {
+      return await call().timeout(widget.callTimeout);
+    } on TimeoutException {
+      throw const GamesApiException(
+        'Sowaka took too long to answer. Check your connection and try again.',
+      );
+    }
+  }
+
   HomePageActions _actions() => HomePageActions(
-    home: () async => _withBundledThumbnails(await _service.homeJson()),
-    leaderboard: _service.pointsLeaderboardJson,
-    acceptChallenge: _service.acceptChallenge,
+    // The home has its own limit inside, so a slow answer falls back to the
+    // home last kept; the outer one only turns a timeout into a refusal.
+    home: () => _inTime(
+      () async => _withBundledThumbnails(
+        await _service.homeJson(timeout: widget.callTimeout - const Duration(milliseconds: 500)),
+      ),
+    ),
+    leaderboard: (period) => _inTime(() => _service.pointsLeaderboardJson(period)),
+    acceptChallenge: (id) => _inTime(() => _service.acceptChallenge(id)),
     openGame: (key, challengeId) {
       if (!mounted) return;
       unawaited(_over(() => widget.onOpenGame(context, key, challengeId)));
@@ -539,14 +603,17 @@ class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver
             : const SizedBox.expand(),
       ),
       // The top inset is the app's; the page fills the rest, down to the bar.
+      // Until the tab is first looked at there is no WebView, only its ground.
       _Mode.web => GamesDotBackground(
-        child: SafeArea(
-          bottom: false,
-          child: KeyedSubtree(
-            key: const ValueKey('games-web-home'),
-            child: _surface!.build(context),
-          ),
-        ),
+        child: _surface == null
+            ? const SizedBox.expand()
+            : SafeArea(
+                bottom: false,
+                child: KeyedSubtree(
+                  key: const ValueKey('games-web-home'),
+                  child: _surface!.build(context),
+                ),
+              ),
       ),
     };
   }
@@ -559,6 +626,7 @@ class WebViewHomeSurface implements HomePageSurface {
   WebViewHomeSurface({
     required void Function(String message) onMessage,
     required VoidCallback onLoaded,
+    required VoidCallback onGone,
   }) {
     final PlatformWebViewControllerCreationParams params;
     if (WebViewPlatform.instance is WebKitWebViewPlatform) {
@@ -581,6 +649,13 @@ class WebViewHomeSurface implements HomePageSurface {
         NavigationDelegate(
           onNavigationRequest: _onNavigationRequest,
           onPageFinished: (_) => onLoaded(),
+          // iOS ends the content process to free memory, mostly while the
+          // app is in the background; the WebView is then blank until it is
+          // loaded again. (Android's renderer going away is not reported by
+          // webview_flutter_android 4.12, which has no onRenderProcessGone.)
+          onWebResourceError: (error) {
+            if (error.errorType == WebResourceErrorType.webContentProcessTerminated) onGone();
+          },
         ),
       );
     final platform = controller.platform;

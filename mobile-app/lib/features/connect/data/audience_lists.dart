@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../../auth/data/auth_models.dart';
 import '../presentation/audience_lists_ui.dart';
 import 'connect_api_service.dart';
@@ -16,18 +18,15 @@ import 'connect_api_service.dart';
 class AudienceListsStore {
   AudienceListsStore({required this.session, required this.api});
 
-  /// The store for this session, made once. A new sign-in, or a different
-  /// API (a test's fake server), starts a fresh one.
+  /// The store for this session, made once and kept by the session's token:
+  /// a Connect tab opened afresh keeps the directory it already has. A new
+  /// sign-in starts a fresh one.
   factory AudienceListsStore.forSession(
     AuthSession session, {
     ConnectApiService? api,
   }) {
     final kept = _current;
-    if (kept != null &&
-        kept.session.token == session.token &&
-        (api == null || identical(kept.api, api))) {
-      return kept;
-    }
+    if (kept != null && kept.session.token == session.token) return kept;
     return _current = AudienceListsStore(
       session: session,
       api: api ?? ConnectApiService(session: session),
@@ -35,6 +34,11 @@ class AudienceListsStore {
   }
 
   static AudienceListsStore? _current;
+
+  /// Drops the kept store, so the next [forSession] starts afresh. For tests,
+  /// which share one token across fake servers.
+  @visibleForTesting
+  static void forget() => _current = null;
 
   final AuthSession session;
   final ConnectApiService api;
@@ -95,7 +99,9 @@ class AudienceListsStore {
       name: draft.name,
       memberUserIds: draft.memberIds,
     );
-    _lists = _sorted([...?_lists, list]);
+    // Only a list already loaded is kept current; one never loaded (the
+    // read failed) stays unloaded, so the next open reads it whole.
+    if (_lists case final lists?) _lists = _sorted([...lists, list]);
     return list;
   }
 
@@ -105,19 +111,23 @@ class AudienceListsStore {
       name: draft.name,
       memberUserIds: draft.memberIds,
     );
-    _lists = _sorted([
-      for (final existing in _lists ?? const <AudienceListSummary>[])
-        if (existing.id == id) list else existing,
-    ]);
+    if (_lists case final lists?) {
+      _lists = _sorted([
+        for (final existing in lists)
+          if (existing.id == id) list else existing,
+      ]);
+    }
     return list;
   }
 
   Future<void> delete(String id) async {
     await api.deleteAudienceList(id);
-    _lists = [
-      for (final existing in _lists ?? const <AudienceListSummary>[])
-        if (existing.id != id) existing,
-    ];
+    if (_lists case final lists?) {
+      _lists = [
+        for (final existing in lists)
+          if (existing.id != id) existing,
+      ];
+    }
   }
 
   static int _byName(AudiencePerson a, AudiencePerson b) {
