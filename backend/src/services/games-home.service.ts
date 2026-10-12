@@ -42,7 +42,7 @@ import {
 import { rankByPoints, type Contender, type RankedEntry } from './leaderboard';
 import { pointEvents } from './points-ledger.service';
 import { rosterFor } from './profile.service';
-import { resolveProfilePhoto } from './s3-connect-media.service';
+import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
 const CONTEST_KIND: Record<string, 'caption' | 'photo' | 'mostLikely'> = {
@@ -53,6 +53,8 @@ const CONTEST_KIND: Record<string, 'caption' | 'photo' | 'mostLikely'> = {
 const MAX_LIVE_CONTESTS = 10;
 const MAX_CHALLENGES = 5;
 const ENTRANT_FACES = 3;
+/** Entries a live contest's picture cycles through. */
+const PREVIEW_ENTRIES = 6;
 const PLAYING_FACES = 3;
 
 type PhotoFields = Pick<User, 'userId' | 'name' | 'profilePhotoKey' | 'profilePhotoUrl'>;
@@ -202,6 +204,14 @@ export interface LiveContest {
   entrants: { name: string; initials: string; photoUrl: string | null }[];
   /** The viewer has an entry in already. */
   entered: boolean;
+  /**
+   * The latest few entries, newest first, for the card's picture to cycle
+   * through in place of its illustration: a caption's words, a photo, or the
+   * colleague a Most Likely entry named. Empty until the first entry.
+   */
+  previews: { name: string; text: string | null; imageUrl: string | null; photoUrl: string | null }[];
+  /** A caption contest's picture, the one being captioned; null for the rest. */
+  imageUrl: string | null;
 }
 
 /** Teams the viewer belongs to, as the feed scopes a "Team" post. */
@@ -261,11 +271,46 @@ async function liveContestsFor(viewer: User, blockedList: Promise<string[]>, now
     ...entriesOf(post)
       .slice(-ENTRANT_FACES)
       .map((entry) => entry.userId),
+    ...entriesOf(post)
+      .slice(-PREVIEW_ENTRIES)
+      .flatMap((entry) => [entry.userId, entry.taggedUserId ?? '']),
   ]);
   const people = await peopleById(faces);
   const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
-  return live.map(({ post, closesAt }) => {
+  const previewsOf = async (post: ConnectPost) =>
+    Promise.all(
+      entriesOf(post)
+        .slice(-PREVIEW_ENTRIES)
+        .reverse()
+        .map(async (entry) => {
+          const tagged = entry.taggedUserId ? people.get(entry.taggedUserId) : undefined;
+          return {
+            // Most Likely shows who was named; the rest, who entered.
+            name: entry.taggedUserId ? (tagged?.name ?? entry.taggedName ?? entry.name) : entry.name,
+            text: entry.taggedUserId ? null : text(entry.text) || null,
+            imageUrl: entry.photoObjectKey
+              ? ((await presignConnectMedia(entry.photoObjectKey).catch(() => undefined)) ?? null)
+              : null,
+            photoUrl: entry.taggedUserId
+              ? (tagged?.photoUrl ?? null)
+              : (people.get(entry.userId)?.photoUrl ?? null),
+          };
+        }),
+    );
+  const previews = await Promise.all(live.map(({ post }) => previewsOf(post)));
+  const pictures = await Promise.all(
+    live.map(async ({ post }) => {
+      if (post.type !== 'caption_challenge') return null;
+      // The list is the source of truth; the single key is what older posts carry.
+      const keys = post.body.mediaObjectKeys;
+      const key = Array.isArray(keys) && typeof keys[0] === 'string' ? keys[0] : post.body.mediaObjectKey;
+      if (typeof key !== 'string' || !key) return null;
+      return (await presignConnectMedia(key).catch(() => undefined)) ?? null;
+    }),
+  );
+
+  return live.map(({ post, closesAt }, index) => {
     const entries = entriesOf(post);
     const authorId = post.author.userId ?? null;
     return {
@@ -291,6 +336,8 @@ async function liveContestsFor(viewer: User, blockedList: Promise<string[]>, now
           photoUrl: people.get(entry.userId)?.photoUrl ?? null,
         })),
       entered: entries.some((entry) => entry.userId === viewer.userId),
+      previews: previews[index],
+      imageUrl: pictures[index],
     };
   });
 }
@@ -368,6 +415,8 @@ async function challengesFor(viewer: User, catalog: Promise<PublicGame[]>, now: 
       {
         org: viewer.org,
         expiresAt: { $gt: now },
+        // Not the ones they cleared from their list.
+        hiddenBy: { $ne: me },
         $or: [
           { opponentUserId: me, status: 'pending' },
           {

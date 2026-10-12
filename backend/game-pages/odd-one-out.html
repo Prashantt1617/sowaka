@@ -130,7 +130,8 @@ button.crow{cursor:pointer}
 .crow.hot{border-color:var(--gold)}
 .crow p{margin:0;font-size:.88rem;color:var(--ink);max-width:none;line-height:1.25;min-width:0}
 .crow p small{display:block;color:var(--muted);font-size:.75rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.crow .bt{display:flex;gap:6px}
+.crow .bt{display:flex;gap:6px;align-items:center}
+div.crow.tap{cursor:pointer}
 .crow .pts{font-family:var(--display);font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
 .crow .pts.zero{color:var(--muted)}
 .mini{font:inherit;font-size:.8rem;font-weight:800;min-height:36px;padding:0 12px;border-radius:12px;border:2px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
@@ -161,6 +162,27 @@ button.crow{cursor:pointer}
 .lrow{display:grid;grid-template-columns:1fr;gap:6px}
 .lrow label{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .lrow input{font:inherit;font-weight:600;min-height:46px;padding:0 12px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+/* The menu: the player's best and the company's top list first, then Play and the challenges, then how to play. */
+.top{display:flex;flex-direction:column;gap:8px;width:100%;text-align:left;padding:12px;border-radius:20px;background:var(--panel);border:2px solid var(--line)}
+.mybest{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.mybest small{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.mybest b{font-family:var(--display);font-weight:800;font-size:2.1rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums}
+.mybest span{font-size:.85rem;color:var(--muted);font-weight:700}
+.how{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:6px}
+.how .demo{width:min(34cqw,140px);gap:6px}
+.how .demo span{font-size:1.3rem;border-radius:10px}
+.how h2{font-size:1.35rem}
+/* The lobby: both players and where they are, a big Ready, and the ways out. */
+.lobby{display:flex;flex-direction:column;gap:6px}
+.lp{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:14px;background:var(--panel2)}
+.lp b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lp em{font-style:normal;font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:4px 9px;border-radius:999px;border:2px solid var(--line);white-space:nowrap}
+.lp em.joined{color:var(--ink);border-color:var(--ink)}
+.lp em.ready{color:var(--accent-ink);background:var(--good);border-color:var(--good)}
+.btn.go.unready{background:transparent;color:var(--ink);border-color:var(--line);box-shadow:0 5px 0 var(--line)}
+.links{display:flex;justify-content:center;gap:18px;flex-wrap:wrap}
+.links .link{padding:2px 0}
+.shim{height:52px;border-radius:14px;background:linear-gradient(90deg,var(--panel2) 0%,var(--line) 50%,var(--panel2) 100%);background-size:200% 100%;opacity:.6}
 #fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:10}
 .flash{position:fixed;inset:0;background:var(--gold);opacity:0;pointer-events:none;z-index:7}
 @media (min-width:700px){.card{margin-block:auto}}
@@ -173,11 +195,12 @@ button.crow{cursor:pointer}
 @keyframes tickbeat{0%{transform:translate(-50%,-50%) scale(1.5);opacity:.6}100%{transform:translate(-50%,-50%) scale(1);opacity:.3}}
 @keyframes flashk{0%{opacity:.5}100%{opacity:0}}
 @keyframes hint{50%{transform:scale(1.12)}}
+@keyframes shim{0%{background-position:100% 0}100%{background-position:-100% 0}}
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b,.bank b.bump{animation:bump .3s} .clock.low{animation:beat .5s infinite}
   .grid.in .cell{animation:pop .16s cubic-bezier(.2,1.6,.4,1) both} .cell.ok{animation:okpop .22s ease-in forwards} .cell.no{animation:shake .3s}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
-  .ticker.beat{animation:tickbeat .9s ease-out} .demo span.odd{animation:hint 1s ease-in-out infinite}
+  .ticker.beat{animation:tickbeat .9s ease-out} .demo span.odd{animation:hint 1s ease-in-out infinite} .shim{animation:shim 1.2s linear infinite}
 }
 @media (prefers-reduced-motion:reduce){.toast{opacity:1}}
 </style>
@@ -188,12 +211,12 @@ button.crow{cursor:pointer}
     <h1>Odd One Out</h1>
     <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button></div>
   </header>
-  <div class="hud">
+  <div class="hud" id="hud">
     <div class="clock" id="clock" role="timer" aria-label="Seconds left"><span id="secs">45</span></div>
     <div class="scorebox"><small>Score</small><span class="score" id="score">0</span></div>
     <div class="combo" id="combo"><b id="cx">×1</b><small id="streak">streak 0</small></div>
   </div>
-  <div>
+  <div id="goalbox">
     <div class="goalrow"><span id="glabel">Fill the bar</span><span id="gnext"></span></div>
     <div class="goal"><div class="fill" id="gfill"></div><span class="st" id="st1">★</span><span class="st" id="st2">★</span><span class="st" id="st3">★</span></div>
   </div>
@@ -251,13 +274,18 @@ const store=()=>{try{localStorage.setItem('oddone.v1',JSON.stringify(save));}cat
      Sowaka.challenge(userId)           -> the new challenge
      Sowaka.challenges()                -> {incoming, outgoing, active, recent}: lists of challenges
      Sowaka.getChallenge(id)            -> one challenge
-     Sowaka.acceptChallenge(id) / declineChallenge(id) -> the challenge after it
+     Sowaka.acceptChallenge(id)         -> the challenge after it: answers a pending one; on an accepted one, says ready (or not ready) in its lobby
+     Sowaka.declineChallenge(id)        -> the challenge after it: declines, withdraws (the challenger), calls off an accepted one neither has
+                                           played, or clears a finished one from your own list, whichever fits
      Sowaka.reportLive(score, id)       -> the score mid-round, passed to the other player
      Sowaka.finishChallenge(id, score)  -> the challenge once this player's final is in
      Sowaka.startChallengeId            -> the challenge a tapped notification opened the game for, or null
    A challenge, as each player sees it: {id, seed (once accepted), status: pending|accepted|declined|expired|finished, role: challenger|opponent,
-     me/them: {userId, name, score|null, live|null, liveAt}, outcome: won|lost|draw|null, myAward/theirAward: {kind, points, onlyOwnScore, reason}|null, expiresAt}.
-   The app calls window.onSowakaChallenge(evt) for each change: {kind: created|accepted|declined|scored|finished|expired, challengeId, challenge},
+     me/them: {userId, name, score|null, live|null, liveAt}, outcome: won|lost|draw|null, myAward/theirAward: {kind, points, onlyOwnScore, reason}|null, expiresAt,
+     withdrawnBy/cancelledBy: userId|null (a 'declined' one that was really withdrawn or called off),
+     lobby: {open, me/them: away|joined|ready, startAt|null, serverNow}} — no `lobby` from a server older than it, and then each player starts on their own.
+   The app calls window.onSowakaChallenge(evt) for each change: {kind: created|accepted|declined|withdrawn|cancelled|scored|finished|expired|lobby, challengeId, challenge},
+     {kind:'start', challengeId, challenge, startAt, serverNow} when both are ready in the lobby,
      {kind:'live', challengeId, userId, score} for the other player's score mid-round, or {kind:'resync'} after a reconnection.
    In a plain browser there is no bridge: scores stay on this device, in localStorage, the board is your own, and there are no challenges. */
 const LOCAL_TOP=10;
@@ -265,7 +293,7 @@ const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
 let board=null; /* the last board seen, for the best line under the grid */
 function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
   const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
-  return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',shared:true}; }
+  return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
 function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
   return {rows:list.map((x,i)=>({rank:i+1,name:'You',score:x.s,me:x.t===at})),me:null,title:'Your best on this device',shared:false}; }
 function keepLocal(s){ const t=Date.now(); save.scores=save.scores.concat({s,t}).sort((a,b)=>b.s-a.s||a.t-b.t).slice(0,LOCAL_TOP); store(); return t; }
@@ -277,8 +305,15 @@ const Board={
     return Promise.resolve().then(()=>b.submitScore(s)).then(shapeBoard).catch(()=>Object.assign(localBoard(t),{offline:true})); },
   fetch(){ const b=bridge(); if(!b)return Promise.resolve(localBoard(-1)); return Promise.resolve().then(()=>b.leaderboard()).then(shapeBoard); },
 };
-function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();} renderTop(); }
-function refreshBoard(){ if(bridge())Board.fetch().then(seeBoard).catch(()=>{}); }
+/* A small cache on the device, one per player: the last leaderboard and colleague list, so the menu and the picker open with names at once. */
+function cacheKey(k){ let h=7; for(const ch of Board.name()||'?')h=(h*31+ch.codePointAt(0))>>>0; return 'oddone.'+k+'.'+h.toString(36); }
+function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem(cacheKey(k))||'null'); return v&&typeof v==='object'?v:null; }catch(e){ return null; } }
+function cachePut(k,v){ try{ localStorage.setItem(cacheKey(k),JSON.stringify(v)); }catch(e){} }
+function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();}
+  if(!b.offline)cachePut('board',{rows:b.rows,me:b.me,title:b.title,company:b.company}); renderTop(); }
+function refreshBoard(){ if(!bridge())return;
+  if(!board){ const kept=cacheGet('board'); if(kept&&Array.isArray(kept.rows)){ board=Object.assign({me:null,title:'Leaderboard',company:''},kept,{shared:true}); renderTop(); } }
+  Board.fetch().then(seeBoard).catch(()=>{}); }
 /* The board, drawn into box: the top `limit` and, when the player is further down, their own row under it. */
 function drawBoard(box,b,limit){
   box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
@@ -360,7 +395,14 @@ const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className
 function toast(text,cls,xy){ const t=el('span','toast'+(cls?' '+cls:''),text); if(xy){ const r=$('toasts').getBoundingClientRect(); t.style.left=Math.max(84,Math.min(r.width-84,xy[0]-r.left))+'px'; t.style.top=Math.max(-10,xy[1]-r.top-40)+'px'; } $('toasts').appendChild(t); setTimeout(()=>t.remove(),1050); }
 
 /* ---------- render ---------- */
-function renderTop(){ sndLabel(); $('best').textContent=save.best?'Your best: '+fmtn(save.best)+(board&&board.me?' · #'+board.me.rank+' here':''):''; }
+/* The best line under the grid while playing, and on the menu the top card: the player's best, where it stands, and the company's top list. */
+function renderTop(){ sndLabel(); $('best').textContent=mode!=='idle'&&save.best?'Your best: '+fmtn(save.best)+(board&&board.me?' · #'+board.me.rank+' here':''):'';
+  const mb=$('mybest'); if(mb){ mb.textContent=save.best?fmtn(save.best):'—';
+    $('myrank').textContent=board&&board.me?'#'+board.me.rank+(board.company?' at '+board.company:' here'):(save.best?'':'Play a round to set one'); }
+  const box=$('toplb'); if(box){ const b=board||(bridge()?null:localBoard(-1));
+    if(b)drawBoard(box,b,5); else if(!box.childElementCount)box.appendChild(el('p','wait','Loading the leaderboard…')); } }
+function topCard(){ const t=el('div','top'), mb=el('div','mybest'), best=el('b'), rank=el('span'), lb=el('div','lb');
+  best.id='mybest'; rank.id='myrank'; lb.id='toplb'; mb.append(el('small','','Your best'),best,rank); t.append(mb,lb); return t; }
 function renderHud(instant){
   const left=mode==='play'?Math.max(0,endAt-now()):ROUND; $('secs').textContent=Math.ceil(left);
   $('clock').style.setProperty('--pct',Math.min(100,left/ROUND*100)+'%'); $('clock').classList.toggle('low',mode==='play'&&left<=10);
@@ -384,23 +426,36 @@ function showGrid(){
     b.addEventListener('pointerdown',e=>{e.preventDefault();tap(i,b);}); b.addEventListener('click',e=>{if(e.detail===0)tap(i,b);}); g.appendChild(b); }
   shownAt=now(); locked=false;
 }
+/* The menu: the top card first, then Play and the challenges, then how to play. The clock and the score bar wait for a round. */
 function menu(){
-  mode='idle'; duel=null; const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; $('grid').hidden=true;
+  mode='idle'; duel=null; const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; $('grid').hidden=true; $('hud').hidden=true; $('goalbox').hidden=true;
   const d=el('div','demo'); for(let i=0;i<9;i++){ const s=el('span',i===5?'odd':'',i===5?'🙃':'🙂'); d.appendChild(s); }
   const m=el('div','menu'); const go=el('button','btn go','Play'); go.type='button'; go.onclick=()=>start(null); m.append(go);
   if(canChallenge()){ const du=el('button','btn','Challenge a colleague'); du.type='button'; du.id='chbtn'; du.onclick=()=>{sfx.ui();openPicker();}; m.append(du); }
   const inbox=el('div','inbox'); inbox.id='inbox'; inbox.hidden=true;
-  c.append(d,el('h2','','Tap the one that is different'),el('p','','45 seconds. The grids get bigger and sneakier. A wrong tap costs a second and your streak.'),m,inbox);
+  const how=el('div','how'); how.append(d,el('h2','','Tap the one that is different'),el('p','','45 seconds. The grids get bigger and sneakier. A wrong tap costs a second and your streak.'));
+  c.append(topCard(),m,inbox,how);
   $('grid').innerHTML=''; $('ticker').hidden=true; renderHud(true); renderGoal(); renderRival(); renderTop(); renderInbox();
 }
-/* opp: the challenge being played ({id, name, theirFinal, theirLive, theirLiveAt}), or null for a round on your own. */
-function start(opp,sd){
+/* opp: the challenge being played ({id, name, theirFinal, theirLive, theirLiveAt}), or null for a round on your own.
+   atMs: for a round started with the other player, when it begins on this phone's clock (Date.now()), counted down to; 0 to begin at once. */
+function start(opp,sd,atMs){
   if(mode==='count'||mode==='play')return; clearInterval(timer); clearInterval(countTimer); closeSheet();
   seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; streak=0; bestStreak=0; miss=0; cleared=0; lastSec=-1; starsNow=0; locked=true;
   duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal,theirLive:+opp.theirLive||0,theirLiveAt:opp.theirLiveAt||0,lead:0}:null;
   liveSent=-1;
   document.documentElement.style.setProperty('--h',HUES[0]); $('grid').innerHTML=''; renderHud(true); renderGoal(); renderRival();
-  mode='count'; const c=$('cover'); c.hidden=false; c.className='cover'; $('grid').hidden=false; let k=3;
+  mode='count'; $('hud').hidden=false; $('goalbox').hidden=false; renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; $('grid').hidden=false; let k=3;
+  if(atMs===0){ begin(); return; }
+  if(atMs){
+    /* Together: 3-2-1 by the clock, so both phones reach 0 at the server's start. */
+    let shownK=null; const step=()=>{ const left=atMs-Date.now();
+      if(left<=0){ clearInterval(countTimer); countTimer=null; begin(); return; }
+      const n=Math.ceil(left/1000); if(n===shownK)return; shownK=n; c.innerHTML='';
+      if(n>3)c.append(el('h2','','Get ready'),el('p','','You and '+(duel?duel.first:'them')+' start together.'));
+      else { c.appendChild(el('div','n',String(n))); sfx.count(); buzz(20); } };
+    step(); if(mode==='count')countTimer=setInterval(step,50); return;
+  }
   const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();buzz(20);};
   show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
 }
@@ -453,13 +508,16 @@ function endRound(){
   const title=newBest&&save.rounds>1?'New best!':['Good eyes!','Sharp!','Eagle eyes!','Unreal!'][stars], first=Board.first();
   setTimeout(()=>results(first?title.replace(/!$/,', '+first+'!'):title,stars,rows,total,pending),reduce()?100:900);
 }
+/* Which sheet is on screen: each one opened gets the next number. Opening any other sheet over the lobby leaves it. */
+let sheetSeq=0;
 function openSheet(title,body,acts){
+  sheetSeq++; if(LB&&!LB.drawing)leaveLobby();
   $('sh').textContent=title; const sb=$('sb'); sb.innerHTML=''; body.forEach(x=>{ if(x)sb.appendChild(x); });
   const sa=$('sa'); sa.innerHTML=''; sa.className='acts'+(acts.length===1?' one':'');
   acts.forEach(a=>{const b=el('button','btn'+(a[2]?' primary':''),a[0]);b.type='button';b.onclick=()=>{sfx.ui();a[1]();};sa.appendChild(b);});
   $('sheet').hidden=false; if(sa.lastChild)sa.lastChild.focus({preventScroll:true});
 }
-function closeSheet(){ $('sheet').hidden=true; CH.waiting=null; CH.result=null; }
+function closeSheet(){ $('sheet').hidden=true; CH.waiting=null; CH.result=null; CH.showing=null; if(LB)leaveLobby(); }
 /* Closing a challenge sheet after a round goes back to the menu, not to the finished board. */
 function dismiss(){ closeSheet(); if(mode==='over')menu(); else renderInbox(); }
 /* Stars stamped in and the score counted up: the end of a round. */
@@ -482,49 +540,67 @@ function results(title,stars,rows,total,pending){
 /* ---------- challenges ----------
    Real colleagues, through the bridge. Both play the server's seed, so the same boards; scores go back and forth live while both play, and the
    result shows once both have finished. What it pays (engagement points, scaled and capped) is the server's to say. */
-const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,celebrated:{},opened:false};
+const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,showing:null,celebrated:{},opened:false,accepting:false,sending:false,listSeq:-1};
 const KINDS=['incoming','outgoing','active','recent'];
 function canChallenge(){ const b=bridge(); return !!(b&&['challenge','challenges','getChallenge','acceptChallenge','declineChallenge','finishChallenge','colleagues'].every(k=>typeof b[k]==='function')); }
 function ask(method,...args){ const b=bridge(); if(!b||typeof b[method]!=='function')return Promise.reject(new Error('Challenges need the Sowaka app.'));
   return Promise.resolve().then(()=>b[method](...args)); }
 const errText=e=>(e&&e.message)||'Something went wrong. Try again.';
 const firstOf=n=>String(n||'').trim().split(/\s+/)[0]||'them';
+/* A server that knows the lobby also knows withdrawing, calling off and clearing; an older one sends no `lobby`, and none of those are offered. */
+const lobbyServer=v=>!!(v&&v.lobby&&typeof v.lobby==='object');
+const isOver=v=>v.status==='finished'||v.status==='declined'||v.status==='expired';
 function findCh(id){ for(const k of KINDS){ const v=CH[k].find(x=>x.id===id); if(v)return v; } return null; }
 /* Files a challenge under the list it now belongs in. */
 function upsert(v){ if(!v||!v.id)return v; KINDS.forEach(k=>{CH[k]=CH[k].filter(x=>x.id!==v.id);});
   const k=v.status==='pending'?(v.role==='opponent'?'incoming':'outgoing'):v.status==='accepted'?'active':'recent';
   if(k==='recent')CH.recent=[v].concat(CH.recent).slice(0,10); else CH[k].unshift(v); return v; }
+function forget(id){ KINDS.forEach(k=>{CH[k]=CH[k].filter(x=>x.id!==id);}); }
+/* The player's own open challenge: one they sent still waiting, or one accepted they have not played. One at a time. */
+const ownOpen=()=>CH.outgoing[0]||CH.active.find(v=>v.me&&v.me.score==null)||null;
 function refreshChallenges(){ if(!canChallenge())return Promise.resolve();
-  return ask('challenges').then(r=>{ r=r||{}; KINDS.forEach(k=>{CH[k]=Array.isArray(r[k])?r[k]:[];}); renderInbox(); }).catch(()=>{}); }
+  return ask('challenges').then(r=>{ r=r||{}; KINDS.forEach(k=>{CH[k]=Array.isArray(r[k])?r[k]:[];}); renderInbox(); refreshOpenList(); }).catch(()=>{}); }
 function avatar(name,photo){ const a=el('span','av'); let h=0; for(const ch of String(name||'?'))h=(h*31+ch.codePointAt(0))%360; a.style.setProperty('--ah',h);
   const parts=String(name||'?').trim().split(/\s+/); a.textContent=((parts[0]||'?')[0]+(parts.length>1?parts[parts.length-1][0]:'')).toUpperCase();
   if(photo){ const img=new Image(); img.alt=''; img.onload=()=>{a.textContent='';a.appendChild(img);}; img.src=photo; } a.setAttribute('aria-hidden','true'); return a; }
 function mini(label,fn,yes){ const b=el('button','mini'+(yes?' yes':''),label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; }
+function linkRow(items){ const r=el('div','links'); items.forEach(([label,fn])=>{ const b=el('button','link',label); b.type='button'; b.onclick=()=>{sfx.ui();fn();}; r.append(b); }); return r; }
 function leftText(v){ const ms=Date.parse(v.expiresAt)-Date.now(); if(!(ms>0))return 'Expired'; const h=Math.floor(ms/3600000); return h>=1?'Expires in '+h+' h':'Expires in '+Math.max(1,Math.round(ms/60000))+' min'; }
 const liveRecent=p=>!!(p&&p.liveAt&&p.score==null&&Date.now()-Date.parse(p.liveAt)<10000);
+const inLobbyNow=v=>!!(v&&v.lobby&&v.lobby.open&&v.lobby.them&&v.lobby.them!=='away');
+/* A 'declined' challenge, as it really ended: declined, withdrawn or called off. */
+function declinedLine(v){ const n=firstOf(v.them.name), me=v.me&&v.me.userId;
+  if(v.withdrawnBy)return v.withdrawnBy===me?'You withdrew your challenge to '+n:n+' withdrew their challenge';
+  if(v.cancelledBy)return v.cancelledBy===me?'You called off the challenge with '+n:n+' called off the challenge';
+  return v.role==='challenger'?n+' declined':'You declined '+n; }
+const declinedTitle=v=>v.withdrawnBy?'Withdrawn':v.cancelledBy?'Called off':(v.role==='challenger'?firstOf(v.them.name)+' declined':'You declined');
 /* One line of the inbox: a challenge waiting for this player. */
 function chRow(kind,v){
-  const r=el('div','crow'+(kind==='in'?' hot':'')), p=el('p'), bt=el('div','bt'), n=v.them.name;
+  const r=el('div','crow'+(kind==='in'||inLobbyNow(v)?' hot':'')), p=el('p'), bt=el('div','bt'), n=v.them.name;
   r.append(avatar(n));
   if(kind==='in'){ p.append(el('b','',n),document.createTextNode(' challenged you'),el('small','',leftText(v)));
     bt.append(mini('Decline',b=>{b.disabled=true;decline(v.id);}),mini('Accept',b=>{b.disabled=true;accept(v.id);},true)); }
-  else { p.append(document.createTextNode('Your turn vs '),el('b','',firstOf(n)),el('small','',v.them.score!=null?firstOf(n)+' scored '+fmtn(v.them.score):'Same boards for both of you'));
+  else { p.append(document.createTextNode('Your turn vs '),el('b','',firstOf(n)),el('small','',v.them.score!=null?firstOf(n)+' scored '+fmtn(v.them.score)
+      :inLobbyNow(v)?firstOf(n)+' is in the lobby':'Same boards for both of you'));
     bt.append(mini('Play',()=>openChallenge(v.id),true)); }
   r.append(p,bt); return r; }
-/* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge. */
+/* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge; its button withdraws or clears it. */
 function infoRow(v){
-  const b=el('button','crow'), p=el('p'), n=firstOf(v.them.name); b.type='button'; b.append(avatar(v.them.name));
+  const r=el('div','crow tap'), p=el('p'), bt=el('div','bt'), n=firstOf(v.them.name); r.tabIndex=0; r.setAttribute('role','button'); r.append(avatar(v.them.name));
   let line, sub='', pts=null;
   if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=leftText(v); }
   else if(v.status==='accepted'){ line='Waiting for '+n+' to play'; sub='You scored '+fmtn(v.me.score); }
   else if(v.status==='finished'){ line=v.outcome==='won'?'You beat '+n:v.outcome==='lost'?n+' beat you':'Tied with '+n; sub=fmtn(v.me.score)+' – '+fmtn(v.them.score);
     pts=v.myAward?v.myAward.points:0;
     if(!pts&&v.myAward&&v.myAward.reason)sub+=' · '+v.myAward.reason; }
-  else if(v.status==='declined'){ line=v.role==='challenger'?n+' declined':'You declined '+n; }
+  else if(v.status==='declined'){ line=declinedLine(v); }
   else { line='Expired with '+n; sub='Nobody wins an expired challenge'; }
-  p.append(document.createTextNode(line),el('small','',sub)); b.append(p);
-  b.append(pts==null?el('span',''):el('span','pts'+(pts>0?'':' zero'),pts>0?'+'+pts+' pts':'No pts'));
-  b.onclick=()=>{sfx.ui();openChallenge(v.id);}; return b; }
+  p.append(document.createTextNode(line),el('small','',sub));
+  if(pts!=null)bt.append(el('span','pts'+(pts>0?'':' zero'),pts>0?'+'+pts+' pts':'No pts'));
+  if(lobbyServer(v)&&v.status==='pending')bt.append(mini('Withdraw',()=>askWithdraw(v)));
+  if(lobbyServer(v)&&isOver(v))bt.append(mini('Clear',b=>{b.disabled=true;clearCh(v.id);}));
+  r.append(p,bt);
+  const go=()=>{sfx.ui();openChallenge(v.id);}; r.onclick=go; r.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} }; return r; }
 function renderInbox(){
   const box=$('inbox'); if(!box)return; box.innerHTML='';
   if(!canChallenge()||mode!=='idle'){box.hidden=true;return;}
@@ -534,7 +610,8 @@ function renderInbox(){
   box.hidden=false; const head=el('div','lbh'); head.append(el('span','',mine.length?'Challenges for you':'Your challenges'));
   const more=el('button','link','See all'); more.type='button'; more.onclick=()=>{sfx.ui();openList();}; head.append(more); box.append(head);
   mine.slice(0,3).forEach(([k,v])=>box.append(chRow(k,v)));
-  if(!mine.length&&others)box.append(el('p','wait','Waiting on '+others+' colleague'+(others===1?'':'s')+'.'));
+  if(!mine.length&&CH.outgoing.length)CH.outgoing.slice(0,2).forEach(v=>box.append(infoRow(v)));
+  else if(!mine.length&&others)box.append(el('p','wait','Waiting on '+others+' colleague'+(others===1?'':'s')+'.'));
   else if(!mine.length&&CH.recent[0])box.append(infoRow(CH.recent[0]));
 }
 function openList(){
@@ -543,55 +620,191 @@ function openList(){
   sec('Waiting on them',[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)],infoRow);
   sec('Results',CH.recent,infoRow);
   if(!body.length)body.push(el('p','note','No challenges yet. Pick a colleague and play the same boards.'));
-  openSheet('Challenges',body,[['Close',dismiss,false],['New challenge',openPicker,true]]);
+  openSheet('Challenges',body,[['Close',dismiss,false],['New challenge',openPicker,true]]); CH.listSeq=sheetSeq;
 }
+/* The list, drawn again when it is still the sheet on screen. */
+function refreshOpenList(){ if(CH.listSeq===sheetSeq&&!$('sheet').hidden)openList(); }
+
+/* ---------- picking a colleague ----------
+   The whole list is fetched as the page opens and kept on the device, so the sheet opens with names at once and refreshes behind them.
+   Search filters that list as you type; when the list may be cut short (the app asks for 50 at a time), the server is asked too, and
+   anyone it finds is added. A row can be tapped the moment it is drawn, and a refresh never redraws rows that did not change. */
+const PEOPLE={list:null,at:0,loading:null};
+const PEOPLE_PAGE=50;
+function shapePerson(p){ p=p||{}; return {userId:String(p.userId||''),name:String(p.name||'Colleague'),designation:String(p.designation||''),department:String(p.department||''),photoUrl:p.photoUrl?String(p.photoUrl):null}; }
+function peopleKept(){ if(!PEOPLE.list){ const k=cacheGet('people'); if(k&&Array.isArray(k.list)){ PEOPLE.list=k.list.map(shapePerson).filter(p=>p.userId); PEOPLE.at=+k.at||0; } } return PEOPLE.list; }
+function loadPeople(){ if(!canChallenge())return Promise.resolve(null); if(PEOPLE.loading)return PEOPLE.loading;
+  PEOPLE.loading=ask('colleagues','').then(r=>{ const list=((r&&Array.isArray(r.colleagues))?r.colleagues:[]).map(shapePerson).filter(p=>p.userId);
+      PEOPLE.list=list; PEOPLE.at=Date.now(); cachePut('people',{at:PEOPLE.at,list}); return list; })
+    .finally(()=>{ PEOPLE.loading=null; });
+  return PEOPLE.loading; }
+/* People a search found that the list did not have: added to it. */
+function addPeople(found){ const have=new Set((PEOPLE.list||[]).map(p=>p.userId)), extra=found.filter(p=>p.userId&&!have.has(p.userId));
+  if(!extra.length)return false; PEOPLE.list=(PEOPLE.list||[]).concat(extra).sort((a,b)=>a.name.localeCompare(b.name)); cachePut('people',{at:PEOPLE.at,list:PEOPLE.list}); return true; }
+function oneAtATime(v){ const n=firstOf(v.them.name);
+  openSheet('One at a time',[el('p','note','Finish or clear your challenge with '+n+' first.')],[['Close',dismiss,false],['Open it',()=>openChallenge(v.id),true]]); }
 function openPicker(){
+  const own=ownOpen(); if(own&&lobbyServer(own))return oneAtATime(own);
   const input=el('input'); input.type='search'; input.placeholder='Search by name'; input.autocomplete='off'; input.enterKeyHint='search'; input.setAttribute('aria-label','Search colleagues');
   const wrap=el('div','lrow'); wrap.append(input);
-  const list=el('div','people'), msg=el('p','note','Loading colleagues…');
+  const list=el('div','people'), msg=el('p','note',''); msg.hidden=true;
   openSheet('Challenge a colleague',[el('p','note','They get a notification. Once they accept, you both play the same boards for 45 seconds, and the higher score wins.'),wrap,msg,list],[['Cancel',dismiss,false]]);
-  let t=null, seq=0;
-  const load=()=>{ const my=++seq, q=input.value.trim();
-    ask('colleagues',q).then(r=>{ if(my!==seq)return; const people=(r&&Array.isArray(r.colleagues))?r.colleagues:[]; list.innerHTML='';
-      msg.hidden=people.length>0; msg.textContent=q?'Nobody called "'+q+'" here.':'Nobody to challenge yet.';
-      people.forEach(pp=>{ const b=el('button','person'), s=el('span'); b.type='button'; s.append(el('b','',pp.name),el('small','',[pp.designation,pp.department].filter(Boolean).join(' · ')||'Colleague'));
-        b.append(avatar(pp.name,pp.photoUrl),s,el('i','','Challenge')); b.onclick=()=>sendChallenge(pp); list.append(b); }); })
-    .catch(e=>{ if(my===seq){msg.hidden=false;msg.textContent=errText(e);} }); };
-  input.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(load,250);});
-  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){clearTimeout(t);load();} });
-  load();
+  const mine=sheetSeq, here=()=>mine===sheetSeq&&!$('sheet').hidden;
+  const rows=new Map(); let drawn='', searching='', searched=new Set(), t=null, failed='';
+  const rowFor=p=>{ let b=rows.get(p.userId); if(!b){ b=el('button','person'); b.type='button'; b.onclick=()=>sendChallenge(b._p); rows.set(p.userId,b); }
+    const sig=p.name+'|'+p.designation+'|'+p.department+'|'+(p.photoUrl||'');
+    if(b._sig!==sig){ b._sig=sig; const s=el('span'); s.append(el('b','',p.name),el('small','',[p.designation,p.department].filter(Boolean).join(' · ')||'Colleague'));
+      b.replaceChildren(avatar(p.name,p.photoUrl),s,el('i','','Challenge')); }
+    b._p=p; return b; };
+  const draw=()=>{ if(!here())return; const q=input.value.trim(), ql=q.toLowerCase(), all=PEOPLE.list;
+    if(!all){ if(failed){ list.replaceChildren(); msg.hidden=false; msg.textContent=failed; return; }
+      if(!list.querySelector('.shim'))list.replaceChildren(...[0,1,2,3].map(()=>el('div','shim'))); msg.hidden=true; return; }
+    const people=ql?all.filter(p=>p.name.toLowerCase().includes(ql)):all, ids=people.map(p=>p.userId).join(',');
+    if(ids!==drawn){ drawn=ids; list.replaceChildren(...people.map(rowFor)); } else people.forEach(rowFor);
+    msg.hidden=people.length>0; msg.textContent=!q?'Nobody to challenge yet.':searching===q?'Looking for "'+q+'"…':'Nobody called "'+q+'" here.'; };
+  const search=()=>{ const q=input.value.trim(); if(!q||searched.has(q.toLowerCase())||!PEOPLE.list||PEOPLE.list.length<PEOPLE_PAGE)return;
+    searching=q; draw();
+    ask('colleagues',q).then(r=>{ searched.add(q.toLowerCase()); addPeople(((r&&Array.isArray(r.colleagues))?r.colleagues:[]).map(shapePerson)); })
+      .catch(()=>{}).finally(()=>{ if(searching===q)searching=''; draw(); }); };
+  input.addEventListener('input',()=>{ draw(); clearTimeout(t); t=setTimeout(search,300); });
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ clearTimeout(t); search(); } });
+  peopleKept(); draw();
+  if(!PEOPLE.list||PEOPLE.loading||Date.now()-PEOPLE.at>60000)
+    loadPeople().then(()=>draw()).catch(e=>{ if(!PEOPLE.list){ failed=errText(e); draw(); } });
 }
-function sendChallenge(p){ sfx.horn(); openSheet('Challenging '+firstOf(p.name)+'…',[el('p','note','Sending…')],[['Cancel',dismiss,false]]);
-  ask('challenge',p.userId).then(v=>{ upsert(v); waitFor(v); renderInbox(); }).catch(challengeRefused); }
-function challengeRefused(e){ const id=e&&e.details&&e.details.challengeId; if(id){ openChallenge(id); return; }
+function sendChallenge(p){ if(CH.sending||!p)return; CH.sending=true; sfx.horn(); openSheet('Challenging '+firstOf(p.name)+'…',[el('p','note','Sending…')],[['Cancel',dismiss,false]]);
+  ask('challenge',p.userId).then(v=>{ upsert(v); waitFor(v); renderInbox(); }).catch(challengeRefused).finally(()=>{ CH.sending=false; }); }
+function challengeRefused(e){ const d=(e&&e.details)||{}, id=d.challengeId;
+  if(id&&d.reason==='one_open'){ sfx.no(); openSheet('One at a time',[el('p','note',errText(e)+'.')],[['Close',dismiss,false],['Open it',()=>openChallenge(String(id)),true]]); return; }
+  if(id){ openChallenge(id); return; }
   sfx.no(); openSheet("Couldn't send it",[el('p','note',errText(e))],[['Back',openPicker,false],['Close',dismiss,true]]); }
-/* The challenger's wait. Still here when they accept, and both rounds start together. */
+/* The challenger's wait. Still here when they accept, and both go to the lobby (or, with an older server, both rounds start). */
 function waitFor(v){ const n=firstOf(v.them.name);
-  openSheet('Waiting for '+n,[el('p','note','Challenge sent. Stay on this screen and you both start the moment '+n+' accepts, or close it and come back when you get the notification.'),el('p','note',leftText(v)+' if '+n+" doesn't answer.")],
-    [['Close',dismiss,true]]);
-  CH.waiting=v.id; }
+  openSheet('Waiting for '+n,[el('p','note','Challenge sent. Stay on this screen and you go straight to the lobby when '+n+' accepts, or close it and come back when you get the notification.'),el('p','note',leftText(v)+' if '+n+" doesn't answer.")],
+    lobbyServer(v)?[['Withdraw',()=>askWithdraw(v),false],['Close',dismiss,true]]:[['Close',dismiss,true]]);
+  CH.waiting=v.id; showing(v.id); }
 function openChallenge(id){
   openSheet('Challenge',[el('p','note','Loading…')],[['Close',dismiss,false]]);
   return ask('getChallenge',id).then(v=>{ upsert(v); renderInbox(); showChallenge(v); })
     .catch(e=>{ const known=findCh(id); if(known)showChallenge(known); else openSheet('Challenge',[el('p','note',errText(e))],[['Close',dismiss,true]]); }); }
+/* Which challenge the sheet on screen is about, for an event that changes it. */
+function showing(id){ CH.showing={id,seq:sheetSeq}; }
+const isShowing=id=>!!(CH.showing&&CH.showing.id===id&&CH.showing.seq===sheetSeq&&!$('sheet').hidden);
 function showChallenge(v){ const n=firstOf(v.them.name);
-  if(v.status==='pending'&&v.role==='opponent')
-    return openSheet(v.them.name+' challenged you',[el('p','note','Same boards for both of you, 45 seconds. The higher score wins, and the result shows once you have both played.'),el('p','note',leftText(v)+'.')],
+  if(LB&&LB.id===v.id)return lobbyView(v);
+  if(v.status==='pending'&&v.role==='opponent'){
+    openSheet(v.them.name+' challenged you',[el('p','note','Same boards for both of you, 45 seconds. The higher score wins, and the result shows once you have both played.'),el('p','note',leftText(v)+'.')],
       [['Decline',()=>decline(v.id),false],['Accept and play',()=>accept(v.id),true]]);
+    return showing(v.id); }
   if(v.status==='pending')return waitFor(v);
   if(v.status==='accepted'&&v.me.score==null){
-    const line=v.them.score!=null?n+' scored '+fmtn(v.them.score)+'. Beat it.':liveRecent(v.them)?n+' is playing right now.':n+" hasn't played yet. You can go first.";
-    return openSheet('You vs '+n,[el('p','note',line),el('p','note','Same boards for both of you, 45 seconds. The result shows once you have both played.')],[['Not now',dismiss,false],['Play',()=>startChallenge(v),true]]); }
+    if(v.lobby&&v.lobby.startAt)return synced(v,localStart(v.lobby.startAt,v.lobby.serverNow));
+    if(v.lobby&&v.lobby.open)return enterLobby(v);
+    return soloSheet(v); }
   return showResult(v,null);
 }
-function accept(id){ ask('acceptChallenge',id).then(v=>{ upsert(v); closeSheet(); startChallenge(v); })
-  .catch(e=>{ sfx.no(); openSheet("Couldn't accept it",[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},true]]); }); }
-function decline(id){ ask('declineChallenge',id).then(v=>{ upsert(v); if(!$('sheet').hidden&&!CH.result)dismiss(); else renderInbox(); })
+/* A round on your own against the other player's score: how every challenge was played before the lobby, and still is once one of you has played. */
+function soloSheet(v,extra){ const n=firstOf(v.them.name);
+  const line=v.them.score!=null?n+' scored '+fmtn(v.them.score)+'. Beat it.':liveRecent(v.them)?n+' is playing right now.':n+" hasn't played yet. You can go first.";
+  const body=[el('p','note',line),el('p','note','Same boards for both of you, 45 seconds. The result shows once you have both played.')];
+  if(extra)body.unshift(el('p','note',extra));
+  if(lobbyServer(v)&&v.them.score==null)body.push(linkRow([['Call it off',()=>askCallOff(v)]]));
+  openSheet('You vs '+n,body,[['Not now',dismiss,false],['Play',()=>startChallenge(v),true]]); showing(v.id); }
+function accept(id){ if(CH.accepting)return; CH.accepting=true;
+  ask('acceptChallenge',id).then(v=>{ upsert(v); if(lobbyServer(v)&&v.status==='accepted')openChallenge(v.id); else { closeSheet(); startChallenge(v); } })
+    .catch(e=>{ sfx.no(); const other=e&&e.details&&e.details.challengeId, close=()=>{dismiss();refreshChallenges();};
+      openSheet("Couldn't accept it",[el('p','note',errText(e)+(other?'.':''))],other?[['Close',close,false],['Open it',()=>openChallenge(String(other)),true]]:[['Close',close,true]]); })
+    .finally(()=>{ CH.accepting=false; }); }
+function decline(id){ ask('declineChallenge',id).then(v=>{ upsert(v); if(!$('sheet').hidden&&!CH.result)dismiss(); else renderInbox(); refreshOpenList(); })
   .catch(e=>{ openSheet("Couldn't decline it",[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},true]]); }); }
-function startChallenge(v){ if(mode==='count'||mode==='play')return; if(v.seed==null)return openChallenge(v.id);
-  sfx.horn(); start({id:v.id,name:v.them.name,theirFinal:v.them.score,theirLive:v.them.live,theirLiveAt:liveRecent(v.them)?Date.parse(v.them.liveAt):0},v.seed); }
+/* Taking back a challenge nobody has answered, or calling off an accepted one neither has played: the server's decline does both, and tells the other player. */
+function askWithdraw(v){ const n=firstOf(v.them.name);
+  openSheet('Withdraw it?',[el('p','note','Your challenge to '+n+' is taken back, and '+n+' is told.')],[['Keep it',()=>openChallenge(v.id),false],['Withdraw',()=>endEarly(v,'withdraw'),true]]); }
+function askCallOff(v){ const n=firstOf(v.them.name);
+  openSheet('Call it off?',[el('p','note','The challenge with '+n+' ends with no result and no points, and '+n+' is told.')],[['Keep it',()=>openChallenge(v.id),false],['Call it off',()=>endEarly(v,'call_off'),true]]); }
+function endEarly(v,how){ const n=firstOf(v.them.name), word=how==='withdraw'?'withdraw':'call off';
+  openSheet(how==='withdraw'?'Withdrawing…':'Calling it off…',[el('p','note','One moment…')],[['Close',dismiss,false]]);
+  ask('declineChallenge',v.id).then(nv=>{ upsert(nv); renderInbox();
+      openSheet(declinedTitle(nv),[el('p','note',declinedLine(nv)+'. No result and no points.')],[['Close',dismiss,false],['Challenge someone',openPicker,true]]); })
+    .catch(e=>{ sfx.no(); openSheet("Couldn't "+word+' it',[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},false],['Open it',()=>openChallenge(v.id),true]]); }); }
+/* Off this player's own list; nobody else's changes and nobody is told. */
+function clearCh(id){ ask('declineChallenge',id).then(()=>{ forget(id); if(CH.result&&CH.result.id===id)dismiss(); else { renderInbox(); refreshOpenList(); } })
+  .catch(e=>{ sfx.no(); openSheet("Couldn't clear it",[el('p','note',errText(e))],[['Close',()=>{dismiss();refreshChallenges();},true]]); }); }
+function startChallenge(v,atMs){ if(mode==='count'||mode==='play')return; if(v.seed==null)return openChallenge(v.id);
+  sfx.horn(); start({id:v.id,name:v.them.name,theirFinal:v.them.score,theirLive:v.them.live,theirLiveAt:liveRecent(v.them)?Date.parse(v.them.liveAt):0},v.seed,atMs); }
 function rematch(v){ openSheet('Challenging '+firstOf(v.them.name)+'…',[el('p','note','Sending…')],[['Cancel',dismiss,false]]);
   ask('challenge',v.them.userId).then(nv=>{ upsert(nv); waitFor(nv); renderInbox(); }).catch(challengeRefused); }
+
+/* ---------- the lobby ----------
+   An accepted challenge neither has played: both come here, each taps Ready, and the server gives both rounds one start a few seconds ahead,
+   so both play the same boards at the same moment, with each other's score live. The app's bridge carries only a challenge's id, so the
+   calls it has do the work: reading the challenge (getChallenge) is being here, repeated as a heartbeat (a minute without one and the server
+   counts you gone), and accepting it again (acceptChallenge) says ready, or takes it back. Leaving takes a ready back. Either player can
+   still play on their own instead, as before. A server from before the lobby sends no `lobby`, and the page never shows one. */
+let LB=null;
+const BEAT_MS=20000, BEAT_READY_MS=6000, LATE_JOIN_MS=20000;
+function enterLobby(v){
+  if(LB&&LB.id===v.id)return lobbyView(v);
+  if(LB)leaveLobby();
+  LB={id:v.id,v,busy:false,beat:null,theirLive:0,refs:null,seq:-1,drawing:false};
+  drawLobby(); scheduleBeat(); }
+/* The lobby's sheet, built once and then kept up to date in place, so a tap never lands on a button being replaced. */
+function drawLobby(){ if(!LB)return; const v=LB.v, n=firstOf(v.them.name), lb=v.lobby||{}, me=lb.me||'joined', them=lb.them||'away';
+  if(!LB.refs||LB.seq!==sheetSeq||$('sheet').hidden){
+    const side=(name,photo)=>{ const r=el('div','lp'), s=el('em'); r.append(avatar(name,photo),el('b','',name),s); return [r,s]; };
+    const [mr,ms]=side(Board.name()||'You'), [tr,ts]=side(v.them.name), box=el('div','lobby'), status=el('p','note'), go=el('button','btn go','Ready');
+    mr.querySelector('b').textContent='You'; go.type='button'; go.onclick=()=>{sfx.ui();tapReady();}; box.append(mr,tr);
+    LB.drawing=true;
+    openSheet('You vs '+n,[box,status,go,el('p','note','Same boards, same moment: the round starts for both of you when you are both ready.'),
+      linkRow([['Play now without '+n,playAlone],['Call it off',()=>askCallOff(LB?LB.v:v)]])],[['Leave',()=>{leaveLobby();dismiss();},false]]);
+    LB.drawing=false; LB.seq=sheetSeq; LB.refs={ms,ts,status,go};
+  }
+  const R=LB.refs, label={away:'Not here yet',joined:'In the lobby',ready:'Ready'};
+  R.ms.textContent=label[me]||label.joined; R.ms.className=me==='away'?'joined':me; R.ts.textContent=label[them]||label.away; R.ts.className=them;
+  R.go.textContent=me==='ready'?'Not ready':'Ready'; R.go.classList.toggle('unready',me==='ready'); R.go.setAttribute('aria-pressed',me==='ready'?'true':'false'); R.go.style.opacity=LB.busy?'.7':'';
+  R.status.textContent=Date.now()-LB.theirLive<10000?n+' is playing on their own. You can play yours when you like.'
+    :them==='away'?'Waiting for '+n+'…':them==='ready'?(me==='ready'?n+' is ready. Starting…':n+' is ready. Tap Ready to start.')
+    :me==='ready'?'Waiting for '+n+' to tap Ready…':n+' is here. Tap Ready when you are.'; }
+/* A fresh view of the challenge while in the lobby: the start, the lobby closing (called off, played, expired), or who is where. */
+function lobbyView(v,startAt,serverNow){ upsert(v); if(!LB||LB.id!==v.id)return; LB.v=v; const lb=v.lobby;
+  if(v.status==='accepted'&&v.me.score==null&&lb&&lb.startAt)return synced(v,localStart(startAt||lb.startAt,serverNow||lb.serverNow));
+  if(v.status!=='accepted'||!lb||!lb.open||v.me.score!=null){ exitLobby(); return showChallenge(v); }
+  drawLobby(); }
+function scheduleBeat(){ if(!LB)return; clearTimeout(LB.beat); const id=LB.id, ms=LB.v.lobby&&LB.v.lobby.me==='ready'?BEAT_READY_MS:BEAT_MS; LB.beat=setTimeout(()=>beat(id),ms); }
+/* The heartbeat: reading the challenge keeps this player in the lobby, and brings back anything an event missed. */
+function beat(id){ if(!LB||LB.id!==id)return;
+  ask('getChallenge',id).then(v=>{ if(LB&&LB.id===id)lobbyView(v); }).catch(()=>{}).then(()=>{ if(LB&&LB.id===id)scheduleBeat(); }); }
+function tapReady(){ if(!LB||LB.busy)return; const id=LB.id; LB.busy=true; drawLobby();
+  ask('acceptChallenge',id).then(v=>{
+      if(!LB||LB.id!==id){ upsert(v); if(v&&v.lobby&&v.lobby.me==='ready')ask('acceptChallenge',id).catch(()=>{}); return; } /* left while it was on its way */
+      LB.busy=false; lobbyView(v); scheduleBeat(); })
+    .catch(e=>{ if(!LB||LB.id!==id)return; LB.busy=false; const st=e&&+e.status;
+      /* Refused: the other has played, it has started or run out, or the server is older than the lobby. Play on your own, as before. */
+      if(st===409||st===410||/already answered/i.test(errText(e)))return lobbyFallback(id,errText(e));
+      drawLobby(); LB.refs.status.textContent=errText(e); }); }
+function lobbyFallback(id,msg){
+  ask('getChallenge',id).then(v=>{ upsert(v);
+      /* Only a ready that crossed another change stays: tap again. */
+      if(/just changed/i.test(msg)&&LB&&LB.id===id&&v.status==='accepted'&&v.me.score==null&&v.lobby&&v.lobby.open&&!v.lobby.startAt){ lobbyView(v); if(LB&&LB.refs)LB.refs.status.textContent=msg; return; }
+      if(LB&&LB.id!==id)return; exitLobby();
+      if(v.status==='accepted'&&v.me.score==null){ if(v.lobby&&v.lobby.startAt)return synced(v,localStart(v.lobby.startAt,v.lobby.serverNow)); return soloSheet(v,msg+(/\.$/.test(msg)?'':'.')); }
+      showChallenge(v); })
+    .catch(()=>{ const v=LB&&LB.id===id?LB.v:findCh(id); if(LB&&LB.id===id)exitLobby(); if(v)soloSheet(v,msg); }); }
+/* Out of the lobby: a ready taken back, so nobody starts without you. The heartbeat stops, and the server counts you gone within a minute. */
+function leaveLobby(){ if(!LB)return; const id=LB.id, ready=!!(LB.v.lobby&&LB.v.lobby.me==='ready')&&!LB.busy; exitLobby(); /* a ready on its way is taken back as it lands (tapReady) */
+  if(ready)ask('acceptChallenge',id).then(v=>{ upsert(v); if(v&&v.lobby&&v.lobby.me==='ready'&&!(LB&&LB.id===id))ask('acceptChallenge',id).catch(()=>{}); }).catch(()=>{}); }
+function exitLobby(){ if(!LB)return; clearTimeout(LB.beat); LB=null; }
+function playAlone(){ if(!LB)return; const v=LB.v; leaveLobby(); closeSheet(); startChallenge(v); }
+/* The server's startAt on this phone's clock (Date.now()), set by how far that clock is from the server's as the start arrives. */
+const localStart=(startAt,serverNow)=>Date.parse(startAt)-((Date.parse(serverNow)||Date.now())-Date.now());
+/* Both rounds start at `at`: counted down to it. A start that arrives late begins at once; one long gone is a round on your own. */
+function synced(v,at){ const late=Date.now()-at;
+  if(LB&&LB.id===v.id)exitLobby(); upsert(v);
+  if(mode==='count'||mode==='play')return;
+  if(!(at>0)||late>LATE_JOIN_MS)return soloSheet(v,'You missed the start. Play your round now; the higher score still wins.');
+  closeSheet(); startChallenge(v,late>=0?0:at);
+  if(late>2000)toast('You are '+Math.round(late/1000)+' s late','feed'); }
+
 /* The score mid-round, to the other player: at most every 600 ms, and always the latest. */
 let liveT=null, liveLast=0, liveSent=-1;
 function liveSend(force){ if(!duel||mode!=='play')return; const due=600-(Date.now()-liveLast);
@@ -626,12 +839,13 @@ function showResult(v,played){
   CH.result={id:v.id,view:v,played,error:prev?prev.error:null};
   const n=firstOf(v.them.name), done=v.status==='finished';
   const title=done?(v.outcome==='won'?'You beat '+n+'!':v.outcome==='lost'?n+' wins this one':'A tie with '+n)
-    :v.status==='expired'?'This challenge expired':v.status==='declined'?(v.role==='challenger'?n+' declined':'You declined')
+    :v.status==='expired'?'This challenge expired':v.status==='declined'?declinedTitle(v)
     :v.me&&v.me.score!=null?'Waiting for '+n:'You vs '+n;
   const body=[];
   let st=null, big=null;
   if(played){ st=starsEl(played.animate?0:played.stars); big=el('div','bigscore',played.animate?'0':fmtn(played.score)); body.push(st,big); }
   body.push(vsBlock(v)); body.push(prizeLine(v));
+  if(v.status==='declined'&&(v.withdrawnBy||v.cancelledBy))body.push(el('p','note',declinedLine(v)+'. No result and no points.'));
   if(played)body.push(statsList(played.rows,played.total));
   if(done&&v.myAward&&v.myAward.kind==='win'&&v.myAward.onlyOwnScore&&v.myAward.points>0)body.push(el('p','note',n+"'s score was too low to add to yours, so only your own counted toward points."));
   if(done&&v.outcome==='lost'&&v.theirAward&&v.theirAward.points>0)body.push(el('p','note',n+' won '+v.theirAward.points+' point'+(v.theirAward.points===1?'':'s')+'.'));
@@ -639,7 +853,8 @@ function showResult(v,played){
   if(!done&&v.status==='accepted'&&v.me&&v.me.score!=null)body.push(el('p','note','You both played the same boards. '+n+"'s score shows here the moment they finish, and you get a notification if you have left."));
   if(CH.result.error)body.push(el('p','note',CH.result.error));
   if(played){ played.box=played.box||boardBox(played.pending); body.push(played.box); }
-  const over=done||v.status==='expired'||v.status==='declined';
+  const over=isOver(v);
+  if(!played&&over&&lobbyServer(v))body.push(linkRow([['Clear from my list',()=>clearCh(v.id)]]));
   const acts=over?[['Menu',()=>{closeSheet();menu();},false],['Rematch',()=>rematch(v),true]]
     :[['Menu',()=>{closeSheet();menu();},false],['Play solo',()=>start(null),true]];
   if(!played&&over)acts[0]=['Close',dismiss,false];
@@ -654,21 +869,39 @@ function liveIntoResult(v,sc){ if(!v||!v.them||v.them.score!=null)return; v.them
 /* What the app passes on from the server, as it happens. */
 function onChallengeEvent(evt){
   if(!evt||typeof evt!=='object')return;
-  if(evt.kind==='resync'){ refreshChallenges(); return; }
+  if(evt.kind==='resync'){ refreshChallenges(); if(LB)beat(LB.id); return; }
   const id=evt.challengeId;
   if(evt.kind==='live'){ const sc=+evt.score||0, v=findCh(id);
     if(duel&&duel.id===id&&duel.theirFinal==null){ duel.theirLive=sc; duel.theirLiveAt=Date.now(); renderRival(); }
     if(v&&v.them&&v.them.userId===evt.userId&&v.them.score==null){ v.them.live=sc; v.them.liveAt=new Date().toISOString(); }
     if(CH.result&&CH.result.id===id)liveIntoResult(CH.result.view,sc);
+    if(LB&&LB.id===id&&LB.v.them&&LB.v.them.userId===evt.userId){ LB.theirLive=Date.now(); drawLobby(); }
     return; }
-  const v=evt.challenge; if(!v||!v.id)return; upsert(v); const n=firstOf(v.them.name), busy=mode==='play'||mode==='count';
+  const v=evt.challenge; if(!v||!v.id)return; const before=findCh(id); upsert(v); const n=firstOf(v.them.name), busy=mode==='play'||mode==='count';
+  if(LB&&LB.id===id){
+    if(evt.kind==='cancelled'){ exitLobby(); sfx.no(); openSheet(n+' called it off',[el('p','note','No result and no points.')],[['Close',dismiss,false],['Challenge someone',openPicker,true]]); renderInbox(); return; }
+    lobbyView(v,evt.startAt,evt.serverNow); renderInbox(); return; }
   switch(evt.kind){
     case 'created': if(v.role==='opponent'&&!busy){ sfx.horn(); toast(n+' challenged you','feed'); } break;
     case 'accepted':
-      if(CH.waiting===id){ closeSheet(); startChallenge(v); return; }
+      if(CH.waiting===id){ CH.waiting=null; if(lobbyServer(v)){ openChallenge(id); return; } closeSheet(); startChallenge(v); return; }
       if(v.role==='challenger'&&!busy)toast(n+' accepted. Your turn!','feed'); break;
     case 'declined':
       if(CH.waiting===id){ sfx.no(); openSheet(n+' declined',[el('p','note','Maybe another time. Challenge someone else, or play a round on your own.')],[['Challenge someone',openPicker,false],['Play solo',()=>start(null),true]]); return; }
+      break;
+    case 'withdrawn':
+      if(isShowing(id)){ sfx.no(); openSheet(n+' withdrew it',[el('p','note','The challenge is off. Nothing to answer.')],[['Close',dismiss,true]]); renderInbox(); return; }
+      if(!busy)toast(n+' withdrew their challenge','feed'); break;
+    case 'cancelled':
+      if(isShowing(id)){ sfx.no(); openSheet(n+' called it off',[el('p','note','No result and no points.')],[['Close',dismiss,false],['Challenge someone',openPicker,true]]); renderInbox(); return; }
+      toast(n+' called off the challenge','feed'); break;
+    case 'lobby':
+      if(!busy&&v.me&&v.me.score==null&&inLobbyNow(v)&&!(before&&inLobbyNow(before))){ sfx.horn(); toast(n+' is in the lobby','feed'); }
+      break;
+    case 'start':
+      /* Both were ready, but this page had left the lobby: offer the round, which starts late or on its own. */
+      if(!busy&&v.status==='accepted'&&v.me.score==null){ const at=localStart(evt.startAt||(v.lobby&&v.lobby.startAt),evt.serverNow||(v.lobby&&v.lobby.serverNow));
+        openSheet('Starting now',[el('p','note',n+' is ready and your round together is starting.')],[['Not now',dismiss,false],['Play',()=>synced(v,at),true]]); showing(id); return; }
       break;
     case 'scored': if(duel&&duel.id===id&&v.them.score!=null){ duel.theirFinal=v.them.score; renderRival(); toast(n+' finished on '+fmtn(v.them.score),'feed'); } break;
     case 'expired':
@@ -676,14 +909,17 @@ function onChallengeEvent(evt){
       break;
   }
   if(CH.result&&CH.result.id===id)showResult(v,CH.result.played);
-  renderInbox();
+  renderInbox(); refreshOpenList();
 }
 window.onSowakaChallenge=evt=>{ try{ onChallengeEvent(evt); }catch(e){} };
-/* With the bridge: the lists, a final that never landed, and the challenge a tapped notification opened the game for. */
-function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn'))menu(); refreshChallenges();
+/* With the bridge: the lists, the colleagues (fetched now so the picker opens at once), a final that never landed, and the challenge a tapped notification opened the game for. */
+function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn'))menu(); refreshChallenges(); peopleKept(); loadPeople().catch(()=>{});
   if(save.pendingFinish&&save.pendingFinish.id)sendFinish(save.pendingFinish.id,save.pendingFinish.score);
   const want=bridge().startChallengeId; if(want&&!CH.opened){ CH.opened=true; openChallenge(String(want)); } }
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='idle')refreshChallenges(); });
+/* Away from the screen with a ready given: taken back, so the round never starts without you. Back again: a heartbeat at once. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ if(LB&&LB.v.lobby&&LB.v.lobby.me==='ready'&&!LB.busy)tapReady(); return; }
+  if(LB)beat(LB.id); else if(mode==='idle'){ refreshChallenges(); refreshBoard(); } });
 /* ---------- input ---------- */
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.go();} };
 $('reset').onclick=()=>{ if(!resetArmed){resetArmed=true;$('reset').textContent='Tap again to wipe your bank';setTimeout(()=>{resetArmed=false;$('reset').textContent='Start over';},3000);return;}

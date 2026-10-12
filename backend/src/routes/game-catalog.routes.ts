@@ -39,7 +39,10 @@ gamesRouter.get('/leaderboard', pointsLeaderboardHandler);
 /**
  * Colleague challenges: the same boards for two people at one company, and
  * their scores compared. Before the `/:key` routes, which they would
- * otherwise match. Only the two players can read or play one.
+ * otherwise match. Only the two players can read or play one. The app's
+ * bridge sends nothing but the id, so: reading an accepted one is a lobby
+ * heartbeat, accepting an accepted one says ready (or not), and declining is
+ * whichever fits (decline, withdraw, call off, or clear from your own list).
  */
 gamesRouter.get('/challenges', listHandler);
 gamesRouter.post('/challenges', createHandler);

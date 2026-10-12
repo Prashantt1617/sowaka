@@ -714,12 +714,19 @@ export async function performConnectAction(
       { id: postId },
       { $set: { [`pollVotes.${viewerUserId}`]: optionId, updatedAt: now } },
     );
+    const updated = await connectPosts().findOne({ id: postId });
+    // Open feeds hear about the vote first; the push follows in the
+    // background, so it can never arrive before the vote shows, nor hold up
+    // the voter's response — the order likes and comments keep.
+    announceChange(post, 'updated', viewerUserId);
     // Changing a vote is not a new voter, so it announces nothing.
     if (!hadVoted) {
-      const viewer = await users().findOne({ userId: viewerUserId });
-      const fresh = await connectPosts().findOne({ id: postId });
-      if (viewer) await notifyPollVoted(fresh ?? post, viewer);
+      inBackground('poll vote notification', async () => {
+        const viewer = await users().findOne({ userId: viewerUserId });
+        if (viewer) await notifyPollVoted(updated ?? post, viewer);
+      });
     }
+    return viewPost(updated ?? post, viewerUserId);
   } else {
     const existing = post.actionBy?.[viewerUserId];
     if (existing) {

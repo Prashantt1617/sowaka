@@ -1,7 +1,8 @@
 /**
  * Checks game challenges' rules: the same seed gives both players the same
- * boards, who wins, who may do what, when a challenge runs out, and what a
- * result pays in engagement points under every cap.
+ * boards, who wins, who may do what, how a challenge is cleared, one open
+ * challenge at a time, the lobby that starts both rounds together, when a
+ * challenge runs out, and what a result pays in engagement points under every cap.
  *
  * No database: the rules live in `services/game-challenge-rules.ts`, which is
  * pure, and the boards are the game page's own code, read out of
@@ -16,20 +17,35 @@ import type { PointEvent } from '../models/points.model';
 import {
   DEFAULT_CHALLENGE_REWARDS,
   FINISH_GRACE_MS,
+  LOBBY_PRESENCE_MS,
   MAX_OPEN_OUTGOING,
   MAX_PENDING_INCOMING,
   SEED_MAX,
   SEED_MIN,
+  START_DELAY_MS,
+  acceptMeans,
+  bothReady,
   cappedReason,
   challengeMay,
   challengeRewardsOf,
+  clearingFor,
   computeAwards,
   effectiveStatus,
+  hiddenFor,
+  inLobby,
+  isOwnOpen,
   istDayStart,
   ledgerNote,
+  lobbyArrivalLine,
+  lobbyOpen,
+  lobbyStateOf,
   mayChallenge,
+  mayTakeAnother,
   playedLongEnough,
   mayOpenAnother,
+  readyToggle,
+  startAtFor,
+  tellOtherOfArrival,
   newSeed,
   outcomeFor,
   parseChallengeScore,
@@ -131,7 +147,7 @@ console.log('who may do what');
   const pending = challenge({ status: 'pending' });
   const accepted = challenge();
   const status = (d: ReturnType<typeof challengeMay>) => (d.ok ? 'ok' : String(d.status));
-  for (const action of ['view', 'accept', 'decline', 'live', 'finish'] as const) {
+  for (const action of ['view', 'accept', 'decline', 'ready', 'live', 'finish'] as const) {
     check(`an outsider cannot ${action}, and it reads as not found`, status(challengeMay(action, 'u-outsider', accepted, at)) === '404'
       && status(challengeMay(action, 'u-outsider', pending, at)) === '404');
   }
@@ -147,6 +163,109 @@ console.log('who may do what');
     && status(challengeMay('live', 'u-kritik', half, at)) === '409' && challengeMay('finish', 'u-priya', half, at).ok);
   check('nothing is played on a finished, declined or expired one', ['finished', 'declined', 'expired'].every((s) =>
     !challengeMay('finish', 'u-priya', challenge({ status: s as GameChallenge['status'] }), at).ok));
+}
+
+console.log('clearing a challenge');
+{
+  const action = (d: ReturnType<typeof clearingFor>) => (d.ok ? d.action : String(d.status));
+  const pending = challenge({ status: 'pending' });
+  check('the one challenged declines it', action(clearingFor(pending, 'u-priya', at)) === 'decline');
+  check('the challenger withdraws it', action(clearingFor(pending, 'u-kritik', at)) === 'withdraw');
+  const accepted = challenge();
+  check('once accepted, either calls it off while neither has played', action(clearingFor(accepted, 'u-kritik', at)) === 'call_off'
+    && action(clearingFor(accepted, 'u-priya', at)) === 'call_off');
+  const mid = challenge({ live: { 'u-kritik': { score: 300, at } }, started: { 'u-kritik': at } });
+  check('a round under way with no final yet can still be called off', action(clearingFor(mid, 'u-priya', at)) === 'call_off');
+  const half = challenge({ scores: { 'u-kritik': { score: 900, finishedAt: at } } });
+  const mine = clearingFor(half, 'u-kritik', at);
+  const theirs = clearingFor(half, 'u-priya', at);
+  check('not once you have played: nobody dodges a loss', !mine.ok && mine.status === 409 && /already played/.test(mine.message));
+  check('not once they have played, and it says who', !theirs.ok && theirs.status === 409 && theirs.message.startsWith('Kritik has already played'),
+    theirs.ok ? '' : theirs.message);
+  for (const status of ['finished', 'declined', 'expired'] as const) {
+    check(`a ${status} one is cleared from your own list, by either`, action(clearingFor(challenge({ status }), 'u-kritik', at)) === 'hide'
+      && action(clearingFor(challenge({ status }), 'u-priya', at)) === 'hide');
+  }
+  check('a pending one past its time is expired, so cleared', action(clearingFor(challenge({ status: 'pending', expiresAt: hours(1) }), 'u-kritik', hours(2))) === 'hide');
+  check('an accepted one past its grace is expired, so cleared', action(clearingFor(challenge({ expiresAt: hours(1) }), 'u-priya', hours(2))) === 'hide');
+  check('an outsider clears nothing, and it reads as not found', action(clearingFor(accepted, 'u-outsider', at)) === '404');
+  check('cleared is per person', hiddenFor(challenge({ hiddenBy: ['u-priya'] }), 'u-priya') && !hiddenFor(challenge({ hiddenBy: ['u-priya'] }), 'u-kritik')
+    && !hiddenFor(challenge(), 'u-priya'));
+}
+
+console.log('one open challenge at a time');
+{
+  const pending = challenge({ status: 'pending' });
+  check('one you sent and is unanswered is yours', isOwnOpen(pending, 'u-kritik', at));
+  check('one sent to you and unanswered is not: it can arrive and wait', !isOwnOpen(pending, 'u-priya', at));
+  check('an accepted one you have not played is, for both', isOwnOpen(challenge(), 'u-kritik', at) && isOwnOpen(challenge(), 'u-priya', at));
+  const half = challenge({ scores: { 'u-kritik': { score: 900, finishedAt: at } } });
+  check('not once you have played it; still for the one who has not', !isOwnOpen(half, 'u-kritik', at) && isOwnOpen(half, 'u-priya', at));
+  check('not a finished, declined or expired one', ['finished', 'declined', 'expired'].every((s) =>
+    !isOwnOpen(challenge({ status: s as GameChallenge['status'] }), 'u-kritik', at)));
+  check('not one past its time', !isOwnOpen(challenge({ status: 'pending', expiresAt: hours(1) }), 'u-kritik', hours(2)));
+  check('nothing open: go ahead', mayTakeAnother(null).ok && mayTakeAnother(undefined).ok);
+  const busy = mayTakeAnother({ challengeId: 'c9', withName: 'Raghav Menon' });
+  check('one open: refused, naming who it is with', !busy.ok && busy.status === 409 && busy.message === 'Finish or clear your challenge with Raghav first',
+    busy.ok ? '' : busy.message);
+  check('and which challenge, for the page to open', !busy.ok && busy.details?.challengeId === 'c9' && busy.details?.reason === 'one_open');
+  const send = mayOpenAnother({ outgoing: 1, incomingForOpponent: 0, betweenThem: false, own: { challengeId: 'c9', withName: 'Raghav Menon' } });
+  check('sending another is refused the same way', !send.ok && send.status === 409 && send.details?.challengeId === 'c9');
+  const pair = mayOpenAnother({ outgoing: 1, incomingForOpponent: 0, betweenThem: true, own: { challengeId: 'c9', withName: 'Raghav Menon' } });
+  check('one already open with the same person says so first', !pair.ok && pair.message === 'You already have a challenge open with them');
+  check('nothing open still sends', mayOpenAnother({ outgoing: 0, incomingForOpponent: 3, betweenThem: false, own: null }).ok);
+}
+
+console.log('the lobby: both rounds start together');
+{
+  const ago = (ms: number) => new Date(at.getTime() - ms);
+  const status = (d: ReturnType<typeof challengeMay>) => (d.ok ? 'ok' : String(d.status));
+  const lobby = (overrides: Partial<GameChallenge> = {}) => challenge({ acceptedAt: ago(600_000), ...overrides });
+  check('open once accepted, before anyone has played', lobbyOpen(lobby(), at));
+  check('not while pending', !lobbyOpen(lobby({ status: 'pending' }), at));
+  check('not once either has played', !lobbyOpen(lobby({ scores: { 'u-priya': { score: 10, finishedAt: at } } }), at));
+  check('not once started', !lobbyOpen(lobby({ startAt: at }), at));
+  check('not past its deadline, even in the finish grace', !lobbyOpen(lobby({ expiresAt: ago(1000) }), at)
+    && effectiveStatus(lobby({ expiresAt: ago(1000) }), at) === 'accepted');
+  check('a heartbeat keeps you there for a minute', inLobby(lobby({ seen: { 'u-kritik': ago(LOBBY_PRESENCE_MS - 1000) } }), 'u-kritik', at)
+    && !inLobby(lobby({ seen: { 'u-kritik': ago(LOBBY_PRESENCE_MS) } }), 'u-kritik', at) && !inLobby(lobby(), 'u-kritik', at));
+  const states = lobby({ seen: { 'u-kritik': ago(5000), 'u-priya': ago(5000) }, ready: { 'u-kritik': ago(3000) } });
+  check('each in the lobby is joined or ready', lobbyStateOf(states, 'u-kritik', at) === 'ready' && lobbyStateOf(states, 'u-priya', at) === 'joined');
+  const left = lobby({ seen: { 'u-kritik': ago(LOBBY_PRESENCE_MS + 1) }, ready: { 'u-kritik': ago(LOBBY_PRESENCE_MS + 1) } });
+  check('a ready only counts while you are there', lobbyStateOf(left, 'u-kritik', at) === 'away');
+  check('ready says ready; again takes it back', readyToggle(states, 'u-priya', at) === 'ready' && readyToggle(states, 'u-kritik', at) === 'unready');
+  check('a ready left from before you went away counts for nothing: tapping says ready', readyToggle(left, 'u-kritik', at) === 'ready');
+  const both = lobby({ seen: { 'u-kritik': ago(5000), 'u-priya': ago(1000) }, ready: { 'u-kritik': ago(4000), 'u-priya': ago(1000) } });
+  check('both there and ready: start', bothReady(both, at));
+  check('not while one is only joined', !bothReady(states, at));
+  check('not when the other ready has gone stale', !bothReady(lobby({ seen: { 'u-kritik': ago(LOBBY_PRESENCE_MS + 1), 'u-priya': ago(1000) },
+    ready: both.ready }), at));
+  check('not twice: once started the lobby is closed', !bothReady({ ...both, startAt: at }, at));
+  check(`the start is ${START_DELAY_MS / 1000} s ahead`, startAtFor(at).getTime() - at.getTime() === START_DELAY_MS && START_DELAY_MS === 4000);
+  check('accepting answers a pending one, and says ready on an accepted one', acceptMeans(lobby({ status: 'pending' }), at) === 'answer'
+    && acceptMeans(lobby(), at) === 'ready' && acceptMeans(lobby({ status: 'declined' }), at) === 'answer');
+  check('an accepted one past its grace is answered, so refused as expired', acceptMeans(lobby({ expiresAt: hours(-1) }), at) === 'answer'
+    && status(challengeMay('accept', 'u-priya', lobby({ expiresAt: hours(-1) }), at)) === '410');
+  check('either player says ready', challengeMay('ready', 'u-kritik', lobby(), at).ok && challengeMay('ready', 'u-priya', lobby(), at).ok);
+  check('not before it is accepted', status(challengeMay('ready', 'u-priya', lobby({ status: 'pending' }), at)) === '409');
+  const played = lobby({ scores: { 'u-kritik': { score: 900, finishedAt: at } } });
+  check('not once you have played', status(challengeMay('ready', 'u-kritik', played, at)) === '409');
+  const theyPlayed = challengeMay('ready', 'u-priya', played, at);
+  check('not once they have played: nobody to start with', !theyPlayed.ok && theyPlayed.status === 409 && theyPlayed.message.startsWith('Kritik has already played'));
+  check('not once started', status(challengeMay('ready', 'u-priya', lobby({ startAt: at }), at)) === '409');
+  check('not past the deadline', status(challengeMay('ready', 'u-priya', lobby({ expiresAt: ago(1000) }), at)) === '409');
+  check('not on an expired one', status(challengeMay('ready', 'u-priya', lobby({ expiresAt: hours(-1) }), at)) === '410');
+  check('not on a finished or declined one', status(challengeMay('ready', 'u-priya', lobby({ status: 'finished' }), at)) === '409'
+    && status(challengeMay('ready', 'u-priya', lobby({ status: 'declined' }), at)) === '409');
+  check('the other is told the first time you come in', tellOtherOfArrival(lobby(), 'u-kritik', at));
+  check('not when they are there to see it', !tellOtherOfArrival(lobby({ seen: { 'u-priya': ago(2000) } }), 'u-kritik', at));
+  check('and only once', !tellOtherOfArrival(lobby({ lobbyPushed: { 'u-kritik': ago(9_000_000) } }), 'u-kritik', at));
+  check('the push', lobbyArrivalLine(lobby(), 'u-kritik', 'Odd One Out') === 'Kritik is waiting in the Odd One Out lobby'
+    && lobbyArrivalLine(lobby(), 'u-priya', 'Odd One Out') === 'Priya is waiting in the Odd One Out lobby');
+  // The page's first live score, at the start, is when its round began: the finish rule still measures from it.
+  const synced = lobby({ startAt: at, started: { 'u-kritik': at, 'u-priya': new Date(at.getTime() + 150) } });
+  check('a synced round still has to be played out', !playedLongEnough(synced, 'u-priya', DEFAULT_CHALLENGE_REWARDS, new Date(at.getTime() + 20_000)).ok
+    && playedLongEnough(synced, 'u-priya', DEFAULT_CHALLENGE_REWARDS, new Date(at.getTime() + 45_500)).ok);
 }
 
 console.log('expiry');
