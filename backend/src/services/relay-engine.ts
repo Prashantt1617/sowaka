@@ -110,7 +110,8 @@ function normalize(value: string): string {
     .trim();
 }
 
-function editDistance(a: string, b: string): number {
+/** Levenshtein distance. Shared with Scribble's "close" judgement. */
+export function editDistance(a: string, b: string): number {
   const rows = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 0; j <= b.length; j += 1) rows[0][j] = j;
   for (let i = 1; i <= a.length; i += 1) {

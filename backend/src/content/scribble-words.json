@@ -1,0 +1,39 @@
+{
+  "easy": [
+    "apple", "ball", "banana", "bed", "bell", "bird", "boat", "book", "box", "bread",
+    "bus", "cake", "car", "cat", "chair", "clock", "cloud", "cow", "cup", "dog",
+    "door", "duck", "egg", "fish", "flag", "flower", "fork", "frog", "hat", "house",
+    "kite", "key", "ladder", "lamp", "leaf", "lemon", "moon", "mouse", "pencil", "pizza",
+    "rain", "ring", "road", "rope", "sock", "spoon", "star", "sun", "table", "tent",
+    "tree", "truck", "balloon", "bench", "candle", "carrot", "cherry", "comb", "crown", "drum",
+    "fan", "fence", "glasses", "grapes", "hammer", "heart", "ice cream", "jar", "kettle", "ladle",
+    "mango", "mug", "nest", "onion", "pear", "pillow", "plate", "pot", "rainbow", "shoe",
+    "snail", "snake", "snowman", "spider", "swing", "toothbrush", "train", "turtle", "umbrella", "vase",
+    "wheel", "window", "worm", "bucket", "bow", "coconut", "cookie", "crab", "doll", "feather"
+  ],
+  "medium": [
+    "airplane", "anchor", "backpack", "bakery", "basket", "bicycle", "binoculars", "bridge", "broom", "butterfly",
+    "cactus", "camel", "camera", "campfire", "castle", "caterpillar", "cheese", "chimney", "compass", "crayon",
+    "dolphin", "dragonfly", "elephant", "envelope", "fountain", "giraffe", "guitar", "hammock", "helicopter", "hot air balloon",
+    "igloo", "island", "jellyfish", "kangaroo", "lighthouse", "lantern", "mailbox", "mermaid", "microphone", "mountain",
+    "mushroom", "necklace", "octopus", "owl", "paintbrush", "palm tree", "parachute", "parrot", "peacock", "penguin",
+    "piano", "pineapple", "popcorn", "pumpkin", "puzzle", "rocket", "sailboat", "sandcastle", "scarecrow", "scissors",
+    "seahorse", "shark", "skateboard", "sunflower", "suitcase", "teapot", "telescope", "toaster", "tractor", "trampoline",
+    "treasure chest", "trophy", "tunnel", "typewriter", "unicorn", "volcano", "waffle", "watermelon", "whale", "windmill",
+    "zebra", "auto rickshaw", "beehive", "birthday cake", "bookshelf", "cricket bat", "lamp post", "dosa", "flute", "goggles",
+    "hedgehog", "kettle drum", "koala", "laptop", "lollipop", "magnet", "panda", "robot", "saxophone", "squirrel",
+    "stapler", "submarine", "sushi", "tambourine", "tornado", "traffic light", "violin", "wheelbarrow", "slinky", "zipper"
+  ],
+  "hard": [
+    "accordion", "aquarium", "astronaut", "avalanche", "bagpipes", "barbecue", "blender", "bonsai", "boomerang", "bulldozer",
+    "cable car", "canyon", "carousel", "clock tower", "chandelier", "chameleon", "chess board", "cobweb", "conveyor belt", "coral reef",
+    "crane", "crossword", "cuckoo clock", "dandelion", "dartboard", "desert", "dragon", "drawbridge", "earthquake", "escalator",
+    "ferris wheel", "fire truck", "fireworks", "fishing rod", "flamingo", "fog", "footprints", "glacier", "gramophone", "greenhouse",
+    "hourglass", "hummingbird", "iceberg", "jigsaw", "juggler", "kayak", "lawn mower", "lightning", "limousine", "maze",
+    "metronome", "microscope", "monorail", "nutcracker", "observatory", "origami", "ostrich", "oyster", "paddle boat", "gazebo",
+    "periscope", "photo frame", "pinwheel", "platypus", "pogo stick", "porcupine", "pretzel", "pyramid", "quicksand", "rickshaw",
+    "roller coaster", "rowing boat", "safari", "satellite", "scaffolding", "scuba diver", "seesaw", "shadow", "skyscraper", "sleigh",
+    "snorkel", "spaceship", "sphinx", "stalactite", "stilts", "sundial", "surfboard", "swamp", "tandem bicycle", "tightrope",
+    "time machine", "toothpaste", "treehouse", "tug of war", "tuk tuk", "vending machine", "waterfall", "whirlpool", "wind chime", "zeppelin"
+  ]
+}

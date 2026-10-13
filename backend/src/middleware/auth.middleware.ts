@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { authSessions, users } from '../config/db';
 import { hashSessionToken } from '../services/auth.service';
+import { redactTicket } from '../services/scribble-ticket.service';
 import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
 
@@ -66,7 +67,8 @@ function logAuthRejection(req: Request, reason: string, userId?: string): void {
   logger.warn('Authentication rejected', {
     requestId: req.requestId,
     method: req.method,
-    path: req.originalUrl,
+    // A Scribble hop URL carries a credential in its query string.
+    path: redactTicket(req.originalUrl),
     statusCode: 401,
     userId,
     reason,

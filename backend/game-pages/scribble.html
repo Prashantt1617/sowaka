@@ -547,8 +547,18 @@ if(T.room&&code(T.room))S.startRoomCode=code(T.room);
    tools for the edge cases). Nothing here talks to a server. */
 (function(){
 /* The live build found a ticket from the server (live.js): the real rooms are in play, and nothing here runs. */
-if(window.__scribbleLive)return;
 const MODE='app';
+if(window.__scribbleLive)return;
+/* Inside the app with no ticket, the game server is not there yet (the backend has not been deployed): a plain screen says so,
+   rather than a pretend game with simulated colleagues. The browser preview keeps the simulation. */
+if(MODE==='app'&&!window.__SCRIBBLE&&typeof window.io==='function'){ /* the live build only: the simulated in-app build has no socket client */
+  const show=()=>{ const o=document.createElement('div'); o.id='pv-wait'; o.setAttribute('role','status');
+    o.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;text-align:center;background:var(--bg,#0F1530);color:var(--ink,#fff);font-family:inherit';
+    const h=document.createElement('div'); h.textContent='Scribble is almost here'; h.style.cssText='font-weight:800;font-size:1.6rem;line-height:1.1';
+    const t=document.createElement('p'); t.textContent='It needs the next server update. Check back soon.'; t.style.cssText='margin:0;max-width:28ch;color:var(--muted,#aab);font-size:1rem;line-height:1.4';
+    o.append(h,t); document.body.append(o); };
+  if(document.body)show(); else document.addEventListener('DOMContentLoaded',show);
+  return; }
 if(MODE==='browser'){ try{ Object.keys(localStorage).filter(k=>k.startsWith('scribble')).forEach(k=>localStorage.removeItem(k)); }catch(e){} document.documentElement.classList.add('app'); }
 let ME={userId:'u-tanvi',name:'Tanvi Shah',photoUrl:null};
 const PEOPLE=[['Ananya Rao','Product Designer','Design'],['Arjun Das','Backend Engineer','Engineering'],['Isha Menon','HR Partner','People'],['Kabir Shah','Sales Lead','Sales'],

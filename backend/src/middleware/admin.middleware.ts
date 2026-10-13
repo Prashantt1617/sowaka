@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import { tabsForRequest } from '../models/dashboard-tabs';
+import { redactTicket } from '../services/scribble-ticket.service';
 
 /** Whether this person may open every tab: an admin, or nobody ever limited them. */
 export function hasAllDashboardTabs(user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } | undefined): boolean {
@@ -59,7 +60,7 @@ function requestContext(req: Request, statusCode: number) {
   return {
     requestId: req.requestId,
     method: req.method,
-    path: req.originalUrl,
+    path: redactTicket(req.originalUrl),
     statusCode,
   };
 }

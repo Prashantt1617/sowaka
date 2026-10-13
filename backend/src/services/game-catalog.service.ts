@@ -1,5 +1,8 @@
+import { readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { MongoServerError } from 'mongodb';
 import { companies, gameCatalog, gameScores } from '../config/db';
+import { env } from '../config/env';
 import { Company } from '../models/company.model';
 import {
   DEFAULT_ENABLED_GAMES,
@@ -142,8 +145,21 @@ async function requireGame(viewer: GameViewer, key: string, withHtml = false): P
   return { ...entry, org: viewer.org };
 }
 
-/** A web game's page, for the app to load into its own screen. */
+/**
+ * A web game's page, for the app to load into its own screen. With
+ * `GAME_PAGE_DIR` on a developer's machine, the file `<dir>/<key>.html` when
+ * there is one, as version "dev"; the game must still be on the company's list.
+ */
 export async function pageFor(viewer: GameViewer, key: string): Promise<{ html: string; version: string }> {
+  if (env.gamePageDir && GAME_KEY_PATTERN.test(key)) {
+    await requireGame(viewer, key);
+    try {
+      const html = await readFile(join(resolve(env.gamePageDir), `${key}.html`), 'utf8');
+      if (html.length > 0) return { html, version: 'dev' };
+    } catch {
+      /* no file for this key: the catalog's copy */
+    }
+  }
   const entry = await requireGame(viewer, key, true);
   if (entry.kind !== 'web' || typeof entry.html !== 'string' || entry.html.length === 0) {
     throw new GameCatalogError(404, 'This game has no page here');
@@ -284,6 +300,21 @@ export async function submitScore(viewer: GameViewer, key: string, raw: unknown)
   const score = parseScore(raw, Math.min(scoring.max ?? SCORE_CEILING, SCORE_CEILING));
   const improved = await keepBest(key, entry.org, viewer, score, scoring.higherIsBetter !== false);
   return { score, improved, ...(await boardFor(key, entry.org, viewer.userId, scoring)) };
+}
+
+/**
+ * Records a score the server itself computed (Scribble's final scores), for a
+ * game that keeps a board; nothing when it keeps none. Capped at the game's
+ * own ceiling like a submitted score, and the person's best is what stays.
+ */
+export async function recordServerScore(org: string, key: string, player: GameViewer, score: number): Promise<void> {
+  if (!GAME_KEY_PATTERN.test(key) || !org) return;
+  const entry = await gameCatalog().findOne({ key, active: true }, { projection: { _id: 0, scoring: 1 } });
+  if (!entry?.scoring) return;
+  const max = Math.min(entry.scoring.max ?? SCORE_CEILING, SCORE_CEILING);
+  const capped = Math.max(0, Math.min(Math.round(score), max));
+  if (capped <= 0) return;
+  await keepBest(key, org, { ...player, org }, capped, entry.scoring.higherIsBetter !== false);
 }
 
 /** The company's top ten, and the viewer's own best. */

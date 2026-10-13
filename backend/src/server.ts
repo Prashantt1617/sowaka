@@ -6,6 +6,7 @@ import { startConnectScheduler, stopConnectScheduler } from './services/connect-
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notification-scheduler.service';
 import { closeConnectRealtime, initConnectRealtime } from './services/connect-realtime.service';
 import { closeRelayRealtime, initRelayRealtime } from './services/relay-realtime.service';
+import { closeScribbleRealtime, initScribbleRealtime } from './services/scribble-realtime.service';
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
 import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
@@ -33,10 +34,14 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
 
   // The game rides the same socket server, as its own namespace: one upgrade
   // path through the proxy, one way of authenticating a handshake.
-  initRelayRealtime(initConnectRealtime(server));
+  const io = initConnectRealtime(server);
+  initRelayRealtime(io);
+  // Scribble's rooms: the same server and path, a third namespace.
+  initScribbleRealtime(io);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('Shutdown requested', { signal });
+    closeScribbleRealtime();
     closeRelayRealtime();
     closeConnectRealtime();
     server.close();
