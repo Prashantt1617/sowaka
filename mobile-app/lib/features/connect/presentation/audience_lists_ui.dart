@@ -236,6 +236,7 @@ Future<AudienceChoice?> showAudienceSheet(
   required AudienceChoice current,
   required bool showTeam,
   required Future<List<AudienceListSummary>> Function() loadLists,
+  List<AudienceListSummary>? cachedLists,
   required Future<List<AudiencePerson>> Function() loadPeople,
   required Future<AudienceListSummary> Function(AudienceListDraft draft)
   createList,
@@ -257,6 +258,7 @@ Future<AudienceChoice?> showAudienceSheet(
       outcome: outcome,
       showTeam: showTeam,
       loadLists: loadLists,
+      cachedLists: cachedLists,
       loadPeople: loadPeople,
       createList: createList,
       updateList: updateList,
@@ -279,6 +281,7 @@ class _AudienceSheet extends StatefulWidget {
     required this.outcome,
     required this.showTeam,
     required this.loadLists,
+    this.cachedLists,
     required this.loadPeople,
     required this.createList,
     required this.updateList,
@@ -288,6 +291,9 @@ class _AudienceSheet extends StatefulWidget {
   final _SheetOutcome outcome;
   final bool showTeam;
   final Future<List<AudienceListSummary>> Function() loadLists;
+
+  /// The lists already held, shown at once while [loadLists] reads them again.
+  final List<AudienceListSummary>? cachedLists;
   final Future<List<AudiencePerson>> Function() loadPeople;
   final Future<AudienceListSummary> Function(AudienceListDraft draft)
   createList;
@@ -307,21 +313,26 @@ class _AudienceSheetState extends State<_AudienceSheet> {
   @override
   void initState() {
     super.initState();
+    final cached = widget.cachedLists;
+    if (cached != null) _lists = _byName(cached);
     unawaited(_reload());
   }
+
+  static List<AudienceListSummary> _byName(List<AudienceListSummary> lists) =>
+      [...lists]
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
   Future<void> _reload() async {
     try {
       final lists = await widget.loadLists();
       if (!mounted) return;
       setState(() {
-        _lists = [
-          ...lists,
-        ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _lists = _byName(lists);
         _failed = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _failed = true);
+      // Lists already on screen stay; only an empty sheet says it failed.
+      if (mounted && _lists == null) setState(() => _failed = true);
     }
   }
 

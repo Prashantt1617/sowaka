@@ -72,6 +72,20 @@ class AudienceListsStore {
     }();
   }
 
+  /// The viewer's lists read again from the server, so a list made elsewhere
+  /// (on another phone, or for them by an admin) shows the next time the sheet
+  /// opens. If the read fails, the lists already held stand.
+  Future<List<AudienceListSummary>> refreshLists() async {
+    try {
+      final fresh = _sorted(await api.fetchAudienceLists());
+      return _lists = fresh;
+    } catch (_) {
+      final kept = _lists;
+      if (kept != null) return kept;
+      rethrow;
+    }
+  }
+
   /// The whole company, A to Z by name, without the viewer.
   Future<List<AudiencePerson>> loadPeople() {
     final people = _people;

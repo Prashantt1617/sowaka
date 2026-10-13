@@ -5679,7 +5679,10 @@ Future<AudienceChoice> _chooseAudience(
     // Team is a manager's direct reports; it stays on offer to anyone whose
     // post is already going to their team.
     showTeam: viewerIsManager || current is TeamAudience,
-    loadLists: lists.loadLists,
+    // Read again on every open, so a list made elsewhere shows up; the ones
+    // already held show meanwhile.
+    loadLists: lists.refreshLists,
+    cachedLists: lists.lists,
     loadPeople: lists.loadPeople,
     createList: lists.create,
     updateList: lists.update,

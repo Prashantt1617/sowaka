@@ -431,8 +431,32 @@ void main() {
     expect(sent.containsKey('listId'), isFalse);
     expect(sent['sendTo'], isNot('list'));
 
-    // The lists were asked for once for the session, not on every opening.
-    expect(server.count('GET', '/connect/audience-lists'), 1);
+    // Read again on each opening, so lists made elsewhere show up.
+    expect(server.count('GET', '/connect/audience-lists'), 2);
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('a list made elsewhere (by an admin, or on another phone) shows '
+      'the next time the sheet opens, without signing in again', (
+    tester,
+  ) async {
+    final server = _Server();
+    final bloc = await _openComposer(tester, server);
+    await _openSheet(tester);
+    expect(find.text('3D Core'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('audience-public')));
+    await _settle(tester);
+
+    server.lists.add({
+      'id': 'core',
+      'name': '3D Core',
+      'memberUserIds': ['aarav', 'meera'],
+    });
+    await _openSheet(tester);
+    expect(find.text('3D Core'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('audience-list-core')));
+    await _settle(tester);
+    expect(_composerLabel(tester), '3D Core');
     await _tearDown(tester, bloc);
   });
 
