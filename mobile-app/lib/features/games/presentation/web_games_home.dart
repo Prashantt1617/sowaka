@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -57,15 +55,10 @@ Future<void> clearGamesWebData() async {
 /// Opens a game by its key; on [challengeId] when one is being taken up.
 /// Completes when the game is closed.
 typedef OpenGameByKey =
-    Future<void> Function(
-      BuildContext context,
-      String key,
-      String? challengeId,
-    );
+    Future<void> Function(BuildContext context, String key, String? challengeId);
 
 /// Opens a contest's Entries page over the tab; completes when it is closed.
-typedef OpenContestEntries =
-    Future<void> Function(BuildContext context, String postId);
+typedef OpenContestEntries = Future<void> Function(BuildContext context, String postId);
 
 /// The Games tab as the server's web page (`backend/app-pages/games-home.html`),
 /// whenever the page is on for the person's company; the native tab
@@ -167,8 +160,7 @@ class _PendingNative extends _Pending {
   const _PendingNative();
 }
 
-class _WebGamesHomeState extends State<WebGamesHome>
-    with WidgetsBindingObserver {
+class _WebGamesHomeState extends State<WebGamesHome> with WidgetsBindingObserver {
   /// How old the last answer may be before a show asks the server again.
   static const _recheckAfter = Duration(minutes: 10);
 
@@ -208,9 +200,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
-    _challenges = (widget.challengeEvents ?? _challengeNotifications()).listen(
-      _onChallenge,
-    );
+    _challenges = (widget.challengeEvents ?? _challengeNotifications()).listen(_onChallenge);
     unawaited(_start());
   }
 
@@ -249,10 +239,8 @@ class _WebGamesHomeState extends State<WebGamesHome>
     super.dispose();
   }
 
-  Stream<Map<String, dynamic>> _challengeNotifications() =>
-      AppNotificationService.instance.received.where(
-        (data) => data['destination'] == 'game_challenge',
-      );
+  Stream<Map<String, dynamic>> _challengeNotifications() => AppNotificationService.instance.received
+      .where((data) => data['destination'] == 'game_challenge');
 
   /// What the phone kept decides at once; else the tab waits for the server
   /// when it is first looked at.
@@ -377,9 +365,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
         } else {
           _decide(const _PendingNative());
         }
-      } else if (_mode != _Mode.web ||
-          _target?.version != page.version ||
-          _target?.html != page.html) {
+      } else if (_mode != _Mode.web || _target?.version != page.version || _target?.html != page.html) {
         _decide(_PendingPage(page));
       } else {
         _pending = null;
@@ -431,10 +417,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
       );
       if (mounted) setState(() {});
     }
-    if (_loaded != null &&
-        _loaded!.version == page.version &&
-        _loaded!.html == page.html)
-      return;
+    if (_loaded != null && _loaded!.version == page.version && _loaded!.html == page.html) return;
     _loaded = page;
     _shown = false;
     _loads += 1;
@@ -470,8 +453,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
   void _refresh() {
     final last = _refreshedAt;
     final now = DateTime.now();
-    if (last != null && now.difference(last) < const Duration(seconds: 1))
-      return;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) return;
     _refreshedAt = now;
     _send({'kind': 'refresh'});
   }
@@ -527,13 +509,10 @@ class _WebGamesHomeState extends State<WebGamesHome>
     // home last kept; the outer one only turns a timeout into a refusal.
     home: () => _inTime(
       () async => _withBundledThumbnails(
-        await _service.homeJson(
-          timeout: widget.callTimeout - const Duration(milliseconds: 500),
-        ),
+        await _service.homeJson(timeout: widget.callTimeout - const Duration(milliseconds: 500)),
       ),
     ),
-    leaderboard: (period) =>
-        _inTime(() => _service.pointsLeaderboardJson(period)),
+    leaderboard: (period) => _inTime(() => _service.pointsLeaderboardJson(period)),
     acceptChallenge: (id) => _inTime(() => _service.acceptChallenge(id)),
     openGame: (key, challengeId) {
       if (!mounted) return;
@@ -558,9 +537,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
   /// Bundled pictures, as data the page can show; read once per run.
   static final Map<String, String> _bundledData = {};
 
-  Future<Map<String, dynamic>> _withBundledThumbnails(
-    Map<String, dynamic> json,
-  ) async {
+  Future<Map<String, dynamic>> _withBundledThumbnails(Map<String, dynamic> json) async {
     final games = json['games'];
     if (games is! List) return json;
     final out = <dynamic>[];
@@ -598,8 +575,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
           : lower.endsWith('.svg')
           ? 'image/svg+xml'
           : 'image/jpeg';
-      final uri =
-          'data:$type;base64,${base64Encode(bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes))}';
+      final uri = 'data:$type;base64,${base64Encode(bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes))}';
       _bundledData[asset] = uri;
       return uri;
     } catch (_) {
@@ -621,10 +597,7 @@ class _WebGamesHomeState extends State<WebGamesHome>
                 child: SizedBox(
                   width: 26,
                   height: 26,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    color: GamesStyle.night,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2.4, color: GamesStyle.night),
                 ),
               )
             : const SizedBox.expand(),
@@ -681,9 +654,7 @@ class WebViewHomeSurface implements HomePageSurface {
           // loaded again. (Android's renderer going away is not reported by
           // webview_flutter_android 4.12, which has no onRenderProcessGone.)
           onWebResourceError: (error) {
-            if (error.errorType ==
-                WebResourceErrorType.webContentProcessTerminated)
-              onGone();
+            if (error.errorType == WebResourceErrorType.webContentProcessTerminated) onGone();
           },
         ),
       );
@@ -706,14 +677,7 @@ class WebViewHomeSurface implements HomePageSurface {
   Future<void> run(String script) => controller.runJavaScript(script);
 
   @override
-  // The page takes every touch at once, ahead of the tab shell's swipe: see
-  // the game screen for why.
-  Widget build(BuildContext context) => WebViewWidget(
-    controller: controller,
-    gestureRecognizers: const {
-      Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-    },
-  );
+  Widget build(BuildContext context) => WebViewWidget(controller: controller);
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
     final to = Uri.tryParse(request.url);
@@ -722,14 +686,10 @@ class WebViewHomeSurface implements HomePageSurface {
       return NavigationDecision.navigate;
     }
     final home = _home;
-    if (home != null &&
-        to.scheme == home.scheme &&
-        to.host == home.host &&
-        to.path == home.path) {
+    if (home != null && to.scheme == home.scheme && to.host == home.host && to.path == home.path) {
       return NavigationDecision.navigate;
     }
-    if (request.isMainFrame &&
-        const {'https', 'http', 'mailto', 'tel'}.contains(to.scheme)) {
+    if (request.isMainFrame && const {'https', 'http', 'mailto', 'tel'}.contains(to.scheme)) {
       launchUrl(to, mode: LaunchMode.externalApplication);
     }
     return NavigationDecision.prevent;
