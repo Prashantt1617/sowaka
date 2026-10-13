@@ -605,6 +605,52 @@ void main() {
     await _tearDown(tester, bloc);
   });
 
+  testWidgets('the review scrolls when many are picked, and the last one can '
+      'still be taken off', (tester) async {
+    final server = _Server(
+      people: [
+        for (var i = 0; i < 20; i++)
+          _row('p$i', 'Person ${i.toString().padLeft(2, '0')}', 'Artist'),
+      ],
+    );
+    final bloc = await _openComposer(tester, server);
+    await _openSheet(tester);
+    await tester.tap(find.byKey(const ValueKey('audience-create')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('audience-select-all')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('audience-selection-bar')));
+    await _settle(tester);
+    expect(find.text('Review list'), findsOneWidget);
+    expect(find.text('Create list · 20'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'nothing overflows');
+
+    // The last member is below the fold, reached by scrolling the list, and
+    // the save button stays on screen the whole time.
+    final last = find.byKey(const ValueKey('audience-member-p19'));
+    expect(last, findsNothing);
+    await tester.dragUntilVisible(
+      last,
+      find
+          .descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(Scrollable),
+          )
+          .last,
+      const Offset(0, -200),
+    );
+    await _settle(tester);
+    expect(last, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('audience-save')).hitTestable(),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('audience-remove-p19')));
+    await _settle(tester);
+    expect(find.text('Create list · 19'), findsOneWidget);
+    await _tearDown(tester, bloc);
+  });
+
   testWidgets('Select all over the cap ticks nobody and says why', (
     tester,
   ) async {

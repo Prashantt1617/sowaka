@@ -1581,261 +1581,275 @@ class _ReviewSheetState extends State<_ReviewSheet> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _Handle(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 8,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                spacing: 2,
-                                children: [
-                                  Text(
-                                    'Review list',
-                                    style: _A.text(
-                                      15,
-                                      weight: FontWeight.w600,
-                                      height: 22.5,
-                                    ),
-                                  ),
-                                  Text(
-                                    '$count ${count == 1 ? 'person' : 'people'} selected',
-                                    style: _A.text(
-                                      9,
-                                      color: _A.muted,
-                                      height: 13.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            GestureDetector(
-                              key: const ValueKey('audience-review-collapse'),
-                              onTap: () => Navigator.of(context).pop(false),
-                              child: Container(
-                                width: 35.983,
-                                height: 35.983,
-                                decoration: const BoxDecoration(
-                                  color: _A.page,
-                                  shape: BoxShape.circle,
-                                ),
-                                alignment: Alignment.center,
-                                child: SvgPicture.asset(
-                                  '${_A.icons}/audience_collapse.svg',
-                                  width: 16.99,
-                                  height: 16.99,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        spacing: 7,
-                        children: [
-                          Text(
-                            'List name',
-                            style: _A.text(10, color: _A.soft, height: 15),
-                          ),
-                          Container(
-                            height: 41.995,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            alignment: Alignment.centerLeft,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(9),
-                              border: Border.all(color: _A.teal, width: 1.115),
-                            ),
-                            child: TextField(
-                              key: const ValueKey('audience-list-name'),
-                              controller: widget.name,
-                              maxLength: 40,
-                              textCapitalization: TextCapitalization.sentences,
-                              cursorColor: _A.teal,
-                              style: _A.text(13, height: 19.5),
-                              decoration: InputDecoration(
-                                isCollapsed: true,
-                                counterText: '',
-                                filled: false,
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                                hintText: 'Name your list',
-                                hintStyle: _A.text(
-                                  13,
-                                  color: _A.hint,
-                                  height: 19.5,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 7),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Members',
-                                style: _A.text(10, color: _A.soft, height: 15),
-                              ),
-                            ),
-                            GestureDetector(
-                              key: const ValueKey('audience-add-more'),
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => Navigator.of(context).pop(false),
-                              child: Row(
-                                spacing: 3,
-                                children: [
-                                  SvgPicture.asset(
-                                    '${_A.icons}/audience_add_more.svg',
-                                    width: 13.993,
-                                    height: 13.993,
-                                  ),
-                                  Text(
-                                    'Add more people',
-                                    style: _A.text(
-                                      10,
-                                      weight: FontWeight.w600,
-                                      color: _A.tealText,
-                                      height: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Flexible(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            border: Border(top: _hairline, bottom: _hairline),
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            itemCount: _members.length,
-                            itemBuilder: (context, index) {
-                              final person = _members[index];
-                              return Container(
-                                key: ValueKey('audience-member-${person.id}'),
-                                height: 60,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: index == _members.length - 1
-                                      ? null
-                                      : const Border(bottom: _hairline),
-                                ),
-                                child: Row(
-                                  spacing: 10,
+                // Bounded by the sheet, so the members list below takes what
+                // is left and scrolls instead of running past the bottom.
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 8,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  spacing: 2,
                                   children: [
-                                    _Avatar(person: person),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        spacing: 3,
-                                        children: [
-                                          Text(
-                                            person.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: _A.text(
-                                              13,
-                                              weight: FontWeight.w600,
-                                              height: 19.5,
-                                            ),
-                                          ),
-                                          if (person.subtitle.isNotEmpty)
-                                            Text(
-                                              person.subtitle,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: _A.text(
-                                                9,
-                                                color: _A.muted,
-                                                height: 12.6,
-                                              ),
-                                            ),
-                                        ],
+                                    Text(
+                                      'Review list',
+                                      style: _A.text(
+                                        15,
+                                        weight: FontWeight.w600,
+                                        height: 22.5,
                                       ),
                                     ),
-                                    SizedBox(
-                                      width: 31.993,
-                                      height: 31.993,
-                                      child: IconButton(
-                                        key: ValueKey(
-                                          'audience-remove-${person.id}',
-                                        ),
-                                        padding: EdgeInsets.zero,
-                                        onPressed: () => _remove(person),
-                                        icon: SvgPicture.asset(
-                                          '${_A.icons}/audience_remove.svg',
-                                          width: 13.993,
-                                          height: 13.993,
-                                        ),
+                                    Text(
+                                      '$count ${count == 1 ? 'person' : 'people'} selected',
+                                      style: _A.text(
+                                        9,
+                                        color: _A.muted,
+                                        height: 13.5,
                                       ),
                                     ),
                                   ],
                                 ),
-                              );
-                            },
+                              ),
+                              GestureDetector(
+                                key: const ValueKey('audience-review-collapse'),
+                                onTap: () => Navigator.of(context).pop(false),
+                                child: Container(
+                                  width: 35.983,
+                                  height: 35.983,
+                                  decoration: const BoxDecoration(
+                                    color: _A.page,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: SvgPicture.asset(
+                                    '${_A.icons}/audience_collapse.svg',
+                                    width: 16.99,
+                                    height: 16.99,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 6),
-                        child: Text(
-                          'This list will appear under “Who can see this post”.',
-                          textAlign: TextAlign.center,
-                          style: _A.text(10, color: _A.muted, height: 12),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: SizedBox(
-                          height: 48,
-                          child: Material(
-                            color: ready
-                                ? _A.teal
-                                : _A.teal.withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              key: const ValueKey('audience-save'),
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: ready
-                                  ? () => Navigator.of(context).pop(true)
-                                  : null,
-                              child: Center(
-                                child: Text(
-                                  '${widget.editing ? 'Save list' : 'Create list'} · $count',
-                                  style: _A.text(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 7,
+                          children: [
+                            Text(
+                              'List name',
+                              style: _A.text(10, color: _A.soft, height: 15),
+                            ),
+                            Container(
+                              height: 41.995,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              alignment: Alignment.centerLeft,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(9),
+                                border: Border.all(
+                                  color: _A.teal,
+                                  width: 1.115,
+                                ),
+                              ),
+                              child: TextField(
+                                key: const ValueKey('audience-list-name'),
+                                controller: widget.name,
+                                maxLength: 40,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                cursorColor: _A.teal,
+                                style: _A.text(13, height: 19.5),
+                                decoration: InputDecoration(
+                                  isCollapsed: true,
+                                  counterText: '',
+                                  filled: false,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                  hintText: 'Name your list',
+                                  hintStyle: _A.text(
                                     13,
-                                    weight: FontWeight.w600,
-                                    color: Colors.white,
+                                    color: _A.hint,
                                     height: 19.5,
                                   ),
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Members',
+                                  style: _A.text(
+                                    10,
+                                    color: _A.soft,
+                                    height: 15,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                key: const ValueKey('audience-add-more'),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => Navigator.of(context).pop(false),
+                                child: Row(
+                                  spacing: 3,
+                                  children: [
+                                    SvgPicture.asset(
+                                      '${_A.icons}/audience_add_more.svg',
+                                      width: 13.993,
+                                      height: 13.993,
+                                    ),
+                                    Text(
+                                      'Add more people',
+                                      style: _A.text(
+                                        10,
+                                        weight: FontWeight.w600,
+                                        color: _A.tealText,
+                                        height: 15,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
+                        Flexible(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              border: Border(top: _hairline, bottom: _hairline),
+                            ),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: _members.length,
+                              itemBuilder: (context, index) {
+                                final person = _members[index];
+                                return Container(
+                                  key: ValueKey('audience-member-${person.id}'),
+                                  height: 60,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: index == _members.length - 1
+                                        ? null
+                                        : const Border(bottom: _hairline),
+                                  ),
+                                  child: Row(
+                                    spacing: 10,
+                                    children: [
+                                      _Avatar(person: person),
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          spacing: 3,
+                                          children: [
+                                            Text(
+                                              person.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: _A.text(
+                                                13,
+                                                weight: FontWeight.w600,
+                                                height: 19.5,
+                                              ),
+                                            ),
+                                            if (person.subtitle.isNotEmpty)
+                                              Text(
+                                                person.subtitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: _A.text(
+                                                  9,
+                                                  color: _A.muted,
+                                                  height: 12.6,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 31.993,
+                                        height: 31.993,
+                                        child: IconButton(
+                                          key: ValueKey(
+                                            'audience-remove-${person.id}',
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          onPressed: () => _remove(person),
+                                          icon: SvgPicture.asset(
+                                            '${_A.icons}/audience_remove.svg',
+                                            width: 13.993,
+                                            height: 13.993,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 6),
+                          child: Text(
+                            'This list will appear under “Who can see this post”.',
+                            textAlign: TextAlign.center,
+                            style: _A.text(10, color: _A.muted, height: 12),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: SizedBox(
+                            height: 48,
+                            child: Material(
+                              color: ready
+                                  ? _A.teal
+                                  : _A.teal.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                key: const ValueKey('audience-save'),
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: ready
+                                    ? () => Navigator.of(context).pop(true)
+                                    : null,
+                                child: Center(
+                                  child: Text(
+                                    '${widget.editing ? 'Save list' : 'Create list'} · $count',
+                                    style: _A.text(
+                                      13,
+                                      weight: FontWeight.w600,
+                                      color: Colors.white,
+                                      height: 19.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
