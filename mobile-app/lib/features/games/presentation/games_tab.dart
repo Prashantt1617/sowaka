@@ -24,8 +24,9 @@ const List<GameCatalogEntry> _builtInGames = [
   ),
 ];
 
-bool _canOpen(GameCatalogEntry game) =>
-    game.kind == GameKind.native ? _nativeGames.containsKey(game.key) : game.hasWebPage;
+bool _canOpen(GameCatalogEntry game) => game.kind == GameKind.native
+    ? _nativeGames.containsKey(game.key)
+    : game.hasWebPage;
 
 /// Opens a game: a native one at its own screen, a web one at its page,
 /// on [challengeId] when a challenge notification opened it. Completes when
@@ -46,12 +47,17 @@ Future<void> openCatalogGame(
           service: service,
           challengeId: challengeId,
         );
-  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  return Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => screen));
 }
 
 /// The company's game [key], if this app can open it: from a fresh catalog,
 /// else the one last kept (offline). Null when the company does not have it.
-Future<GameCatalogEntry?> findCatalogGame(GamesApiService service, String key) async {
+Future<GameCatalogEntry?> findCatalogGame(
+  GamesApiService service,
+  String key,
+) async {
   bool opens(GameCatalogEntry game) => game.key == key && _canOpen(game);
   try {
     return (await service.catalog()).where(opens).firstOrNull;
@@ -123,17 +129,22 @@ class _GamesTab extends StatelessWidget {
 
   // On the feed's own bloc where the feed has the contest, so a vote cast
   // here is on the feed's card too.
-  Future<void> _openContest(BuildContext context, String postId) => openContestEntries(
-    context,
-    session,
-    postId,
-    feed: connectComposerController,
-    onOpenPerson: (userId) => openPersonProfile(userId),
-  );
+  Future<void> _openContest(BuildContext context, String postId) =>
+      openContestEntries(
+        context,
+        session,
+        postId,
+        feed: connectComposerController,
+        onOpenPerson: (userId) => openPersonProfile(userId),
+      );
 
   /// A game the page asked for by key: the company's, if this app can open
   /// it; on [challengeId] when one is being taken up.
-  Future<void> _openGameByKey(BuildContext context, String key, String? challengeId) async {
+  Future<void> _openGameByKey(
+    BuildContext context,
+    String key,
+    String? challengeId,
+  ) async {
     final service = GamesApiService(session: session);
     // The catalog the page's last home() carried, else asked for now.
     final kept = (await service.catalogFromCache())
@@ -145,7 +156,13 @@ class _GamesTab extends StatelessWidget {
       showAppToast(context, 'That game is not available any more.');
       return;
     }
-    await openCatalogGame(context, session, game, service: service, challengeId: challengeId);
+    await openCatalogGame(
+      context,
+      session,
+      game,
+      service: service,
+      challengeId: challengeId,
+    );
   }
 
   @override

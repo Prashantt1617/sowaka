@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,12 +38,15 @@ import '../data/games_models.dart';
 /// fallback for genuine cross-app sharing.
 class WebGameScreen extends StatefulWidget {
   /// A hosted game opened by its address, without a bridge.
-  const WebGameScreen({super.key, required this.title, required String this.url})
-    : game = null,
-      session = null,
-      service = null,
-      challengeId = null,
-      realtime = null;
+  const WebGameScreen({
+    super.key,
+    required this.title,
+    required String this.url,
+  }) : game = null,
+       session = null,
+       service = null,
+       challengeId = null,
+       realtime = null;
 
   /// A game from the company's catalog.
   WebGameScreen.catalog({
@@ -136,7 +141,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
               await _controller.runJavaScript(_shareBridge);
               // A hosted catalog game gets the bridge now; a page loaded
               // here already has it, and the script leaves it alone.
-              if (game != null) await _controller.runJavaScript(_bridgeScript());
+              if (game != null)
+                await _controller.runJavaScript(_bridgeScript());
             } catch (_) {
               // A page that refuses scripts still plays.
             }
@@ -218,7 +224,9 @@ class _WebGameScreenState extends State<WebGameScreen> {
     } on GamesApiException catch (error) {
       _failed(error.message);
     } catch (_) {
-      _failed('This game could not be opened. Check your connection and try again.');
+      _failed(
+        'This game could not be opened. Check your connection and try again.',
+      );
     }
   }
 
@@ -426,7 +434,11 @@ class _WebGameScreenState extends State<WebGameScreen> {
                 const SizedBox(height: 8),
                 Text(
                   game.description,
-                  style: const TextStyle(color: _inkSoft, fontSize: 14.5, height: 1.4),
+                  style: const TextStyle(
+                    color: _inkSoft,
+                    fontSize: 14.5,
+                    height: 1.4,
+                  ),
                 ),
               ],
               if (game.instructions.isNotEmpty) ...[
@@ -442,7 +454,11 @@ class _WebGameScreenState extends State<WebGameScreen> {
                 const SizedBox(height: 6),
                 Text(
                   game.instructions,
-                  style: const TextStyle(color: _inkSoft, fontSize: 14.5, height: 1.45),
+                  style: const TextStyle(
+                    color: _inkSoft,
+                    fontSize: 14.5,
+                    height: 1.45,
+                  ),
                 ),
               ],
             ],
@@ -456,7 +472,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
   Widget build(BuildContext context) {
     final game = _game;
     final explains =
-        game != null && (game.instructions.isNotEmpty || game.description.isNotEmpty);
+        game != null &&
+        (game.instructions.isNotEmpty || game.description.isNotEmpty);
     return Scaffold(
       backgroundColor: _background,
       appBar: AppBar(
@@ -465,7 +482,9 @@ class _WebGameScreenState extends State<WebGameScreen> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        systemOverlayStyle: _dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        systemOverlayStyle: _dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
         leading: const BackButton(),
         title: Text(
           widget.title,
@@ -499,9 +518,19 @@ class _WebGameScreenState extends State<WebGameScreen> {
         top: false,
         child: Stack(
           children: [
-            WebViewWidget(controller: _controller),
-            if (_error != null)
-              Positioned.fill(child: _errorView(_error!)),
+            // The page takes every touch at once. Left to the gesture arena,
+            // a tap reached the web view only after the shell's swipe and
+            // scroll recognizers gave it up, and one that moved a little
+            // never did: letters and Play needed several taps.
+            WebViewWidget(
+              controller: _controller,
+              gestureRecognizers: const {
+                Factory<OneSequenceGestureRecognizer>(
+                  EagerGestureRecognizer.new,
+                ),
+              },
+            ),
+            if (_error != null) Positioned.fill(child: _errorView(_error!)),
             if (_loading && _error == null)
               Align(
                 alignment: Alignment.topCenter,
@@ -528,7 +557,11 @@ class _WebGameScreenState extends State<WebGameScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.wifi_off_rounded, size: 34, color: _foreground.withValues(alpha: 0.7)),
+            Icon(
+              Icons.wifi_off_rounded,
+              size: 34,
+              color: _foreground.withValues(alpha: 0.7),
+            ),
             const SizedBox(height: 12),
             Text(
               message,
@@ -540,7 +573,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
               icon: Icons.refresh_rounded,
               label: 'Try again',
               background: _game?.accentColor ?? _terra,
-              foreground: (_game?.accentColor ?? _terra).computeLuminance() > 0.5
+              foreground:
+                  (_game?.accentColor ?? _terra).computeLuminance() > 0.5
                   ? _ink
                   : Colors.white,
               onTap: _retry,
@@ -581,7 +615,9 @@ class _SheetButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 15),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: border == null ? null : Border.all(color: border!, width: 1.5),
+            border: border == null
+                ? null
+                : Border.all(color: border!, width: 1.5),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

@@ -42,7 +42,8 @@ String homePageBridgeScript({
   String org = '',
   List<String> nativeGames = const [],
   String loadId = '',
-}) => '''
+}) =>
+    '''
 (function () {
   if (window.Sowaka && window.Sowaka.native) return;
   var pending = {}, seq = 0, load = ${_scriptJson(loadId)};
@@ -123,10 +124,17 @@ String injectHomeBridge(String html, String script) {
   final tag =
       '<meta http-equiv="Content-Security-Policy" content="$homePagePolicy">\n'
       '<script>\n$script</script>\n';
-  final head = RegExp(r'<head(\s[^>]*)?>', caseSensitive: false).firstMatch(html);
+  final head = RegExp(
+    r'<head(\s[^>]*)?>',
+    caseSensitive: false,
+  ).firstMatch(html);
   if (head != null) return html.replaceRange(head.end, head.end, '\n$tag');
-  final doctype = RegExp(r'<!doctype[^>]*>', caseSensitive: false).firstMatch(html);
-  if (doctype != null) return html.replaceRange(doctype.end, doctype.end, '\n$tag');
+  final doctype = RegExp(
+    r'<!doctype[^>]*>',
+    caseSensitive: false,
+  ).firstMatch(html);
+  if (doctype != null)
+    return html.replaceRange(doctype.end, doctype.end, '\n$tag');
   return '$tag$html';
 }
 
@@ -195,22 +203,34 @@ class HomePageBridge {
         case 'home':
           return reply(id, true, await actions.home());
         case 'leaderboard':
-          return reply(id, true, await actions.leaderboard(data['period'] == 'all' ? 'all' : 'week'));
+          return reply(
+            id,
+            true,
+            await actions.leaderboard(data['period'] == 'all' ? 'all' : 'week'),
+          );
         case 'acceptChallenge':
           final target = idOf('id');
-          if (target == null) return reply(id, false, {'message': 'Challenge not found'});
+          if (target == null)
+            return reply(id, false, {'message': 'Challenge not found'});
           return reply(id, true, await actions.acceptChallenge(target));
         default:
           return reply(id, false, {'message': 'Unknown request'});
       }
     } on GamesApiException catch (error) {
-      return reply(id, false, {'message': error.message, 'status': ?error.statusCode});
+      return reply(id, false, {
+        'message': error.message,
+        'status': ?error.statusCode,
+      });
     } catch (_) {
       return reply(id, false, {'message': 'Could not reach Sowaka'});
     }
   }
 
-  void _tell(String type, Map<String, dynamic> data, String? Function(String) idOf) {
+  void _tell(
+    String type,
+    Map<String, dynamic> data,
+    String? Function(String) idOf,
+  ) {
     switch (type) {
       case 'openGame':
         final key = idOf('key');
@@ -227,11 +247,19 @@ class HomePageBridge {
       case 'toast':
         final text = data['text'];
         if (text is String && text.trim().isNotEmpty) {
-          actions.toast(text.trim().length > 200 ? '${text.trim().substring(0, 200)}…' : text.trim());
+          actions.toast(
+            text.trim().length > 200
+                ? '${text.trim().substring(0, 200)}…'
+                : text.trim(),
+          );
         }
       case 'haptic':
         final kind = data['kind'];
-        actions.haptic(kind is String && const {'light', 'medium', 'success'}.contains(kind) ? kind : 'light');
+        actions.haptic(
+          kind is String && const {'light', 'medium', 'success'}.contains(kind)
+              ? kind
+              : 'light',
+        );
     }
   }
 

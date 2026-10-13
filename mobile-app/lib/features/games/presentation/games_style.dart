@@ -97,7 +97,10 @@ abstract final class GamesStyle {
   /// "7,650" — thousands grouped as the design writes them.
   static String count(num value) {
     final digits = value.round().abs().toString();
-    final grouped = digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+    final grouped = digits.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
     return value < 0 ? '-$grouped' : grouped;
   }
 }
@@ -136,10 +139,20 @@ class GameCtaButton extends StatefulWidget {
   final double labelCenter;
 
   /// imgGameCta: `h-[246.58%] left-[-5.18%] top-[-71.92%] w-[109.76%]`.
-  static const _large = (left: -0.0518, top: -0.7192, width: 1.0976, height: 2.4658);
+  static const _large = (
+    left: -0.0518,
+    top: -0.7192,
+    width: 1.0976,
+    height: 2.4658,
+  );
 
   /// imgGameCta1: `h-[386.17%] left-[-86.02%] top-[-142.14%] w-[272%]`.
-  static const _small = (left: -0.8602, top: -1.4214, width: 2.72, height: 3.8617);
+  static const _small = (
+    left: -0.8602,
+    top: -1.4214,
+    width: 2.72,
+    height: 3.8617,
+  );
 
   @override
   State<GameCtaButton> createState() => _GameCtaButtonState();

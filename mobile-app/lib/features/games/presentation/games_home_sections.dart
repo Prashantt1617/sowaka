@@ -15,7 +15,10 @@ class _SectionHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Text(text, style: GamesStyle.lilita(23, color: GamesStyle.night, height: 29)),
+      child: Text(
+        text,
+        style: GamesStyle.lilita(23, color: GamesStyle.night, height: 29),
+      ),
     );
   }
 }
@@ -45,7 +48,12 @@ class _SectionTitle extends StatelessWidget {
           ),
           Text(
             title,
-            style: GamesStyle.lilita(18, color: GamesStyle.night, height: 27, spacing: 0.35),
+            style: GamesStyle.lilita(
+              18,
+              color: GamesStyle.night,
+              height: 27,
+              spacing: 0.35,
+            ),
           ),
         ],
       ),
@@ -54,7 +62,6 @@ class _SectionTitle extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------- banner
-
 
 /// The live cards side by side, the next one peeking in (node 3755:28494):
 /// 362pt cards 8pt apart, 214pt tall over 9pt for their shadow, so on the
@@ -169,10 +176,15 @@ class _LiveCarouselState extends State<_LiveCarousel> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               clipBehavior: Clip.none,
               itemCount: cards.length,
-              separatorBuilder: (_, _) => const SizedBox(width: _LiveCarousel._gap),
+              separatorBuilder: (_, _) =>
+                  const SizedBox(width: _LiveCarousel._gap),
               itemBuilder: (context, index) => Align(
                 alignment: Alignment.topCenter,
-                child: SizedBox(width: width, height: _LiveCarousel._cardHeight, child: cards[index]),
+                child: SizedBox(
+                  width: width,
+                  height: _LiveCarousel._cardHeight,
+                  child: cards[index],
+                ),
               ),
             ),
           );
@@ -238,14 +250,18 @@ class _LiveCardFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     const top = BorderRadius.vertical(top: Radius.circular(_radius));
     // A strip pill: the face or the clock on the strip's own colour.
-    Widget pill(Widget child) =>
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), child: child);
+    Widget pill(Widget child) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: child,
+    );
     final onTap = this.onTap;
     final card = Container(
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(_radius),
-        boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 7))],
+        boxShadow: const [
+          BoxShadow(color: GamesStyle.ink, offset: Offset(0, 7)),
+        ],
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(_radius),
@@ -258,7 +274,10 @@ class _LiveCardFrame extends StatelessWidget {
           // The strip's faint violet edge (rgba(103,90,255,0.2)) shows only
           // along its foot; the card's own edge covers the rest.
           Container(
-            decoration: const BoxDecoration(color: GamesStyle.ink, borderRadius: top),
+            decoration: const BoxDecoration(
+              color: GamesStyle.ink,
+              borderRadius: top,
+            ),
             foregroundDecoration: BoxDecoration(
               borderRadius: top,
               border: Border.all(color: const Color(0x33675AFF), width: 1.114),
@@ -341,7 +360,10 @@ class _LiveCardFrame extends StatelessWidget {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 3),
-                    child: Align(alignment: Alignment.centerLeft, child: footer),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: footer,
+                    ),
                   ),
                 ),
                 if (onTap != null)
@@ -364,7 +386,11 @@ class _LiveCardFrame extends StatelessWidget {
     if (onTap == null) return card;
     return Semantics(
       button: true,
-      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: card),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: card,
+      ),
     );
   }
 }
@@ -373,7 +399,11 @@ class _LiveCardFrame extends StatelessWidget {
 /// a second line) only when it would not fit, and the line about it under
 /// it: up to three lines, as many as the room under the name holds.
 class _LiveTitle extends StatelessWidget {
-  const _LiveTitle({required this.title, required this.description, required this.weight});
+  const _LiveTitle({
+    required this.title,
+    required this.description,
+    required this.weight,
+  });
 
   final String title;
   final String description;
@@ -418,14 +448,23 @@ class _LiveTitle extends StatelessWidget {
                 upper,
                 maxLines: lines,
                 overflow: TextOverflow.ellipsis,
-                style: GamesStyle.lilita(size, color: _titleInk, height: lineHeight),
+                style: GamesStyle.lilita(
+                  size,
+                  color: _titleInk,
+                  height: lineHeight,
+                ),
               ),
               if (description.isNotEmpty)
                 Text(
                   description,
                   maxLines: descriptionLines,
                   overflow: TextOverflow.ellipsis,
-                  style: GamesStyle.sora(14, weight: weight, color: _titleInk, height: 20),
+                  style: GamesStyle.sora(
+                    14,
+                    weight: weight,
+                    color: _titleInk,
+                    height: 20,
+                  ),
                 ),
             ],
           ),
@@ -449,7 +488,12 @@ class _FacePile extends StatelessWidget {
     final extra = total - shown.length;
     final items = <Widget>[
       for (final face in shown)
-        _Face(name: face.name, initials: face.initials, photoUrl: face.photoUrl, size: 24),
+        _Face(
+          name: face.name,
+          initials: face.initials,
+          photoUrl: face.photoUrl,
+          size: 24,
+        ),
       if (extra > 0)
         Container(
           width: 24,
@@ -460,7 +504,10 @@ class _FacePile extends StatelessWidget {
             border: Border.all(color: GamesStyle.ink, width: 1.5),
           ),
           alignment: Alignment.center,
-          child: Text('+$extra', style: GamesStyle.sora(10, color: Colors.white)),
+          child: Text(
+            '+$extra',
+            style: GamesStyle.sora(10, color: Colors.white),
+          ),
         ),
     ];
     if (items.isEmpty) return const SizedBox.shrink();
@@ -469,7 +516,8 @@ class _FacePile extends StatelessWidget {
       height: 24,
       child: Stack(
         children: [
-          for (var i = 0; i < items.length; i++) Positioned(left: i * 16.0, child: items[i]),
+          for (var i = 0; i < items.length; i++)
+            Positioned(left: i * 16.0, child: items[i]),
         ],
       ),
     );
@@ -524,7 +572,8 @@ class _EntryCyclerState extends State<_EntryCycler> {
       _timer = null;
     } else {
       _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _index = (_index + 1) % widget.previews.length);
+        if (mounted)
+          setState(() => _index = (_index + 1) % widget.previews.length);
       });
     }
   }
@@ -559,15 +608,32 @@ class _EntryCyclerState extends State<_EntryCycler> {
               shape: BoxShape.circle,
               color: GamesStyle.cream,
               border: Border.all(color: GamesStyle.ink, width: 2),
-              image: photo == null ? null : DecorationImage(image: CachedNetworkImageProvider(photo), fit: BoxFit.cover),
+              image: photo == null
+                  ? null
+                  : DecorationImage(
+                      image: CachedNetworkImageProvider(photo),
+                      fit: BoxFit.cover,
+                    ),
             ),
             alignment: Alignment.center,
             child: photo == null
-                ? Text(first.isEmpty ? '?' : first[0].toUpperCase(), style: GamesStyle.lilita(20))
+                ? Text(
+                    first.isEmpty ? '?' : first[0].toUpperCase(),
+                    style: GamesStyle.lilita(20),
+                  )
                 : null,
           ),
           const SizedBox(height: 5),
-          Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: GamesStyle.figtree(11, weight: FontWeight.w800, color: GamesStyle.ink)),
+          Text(
+            first,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GamesStyle.figtree(
+              11,
+              weight: FontWeight.w800,
+              color: GamesStyle.ink,
+            ),
+          ),
         ],
       );
     }
@@ -631,13 +697,14 @@ class _EntryCyclerState extends State<_EntryCycler> {
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, animation) => SlideTransition(
-          position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(animation),
+          position: Tween(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(animation),
           child: FadeTransition(opacity: animation, child: child),
         ),
-        layoutBuilder: (current, previous) => Stack(
-          fit: StackFit.expand,
-          children: [...previous, ?current],
-        ),
+        layoutBuilder: (current, previous) =>
+            Stack(fit: StackFit.expand, children: [...previous, ?current]),
         child: KeyedSubtree(key: ValueKey(_index), child: _face(preview)),
       ),
     );
@@ -670,10 +737,14 @@ class _LiveContestCard extends StatelessWidget {
     // Once there are entries, they take the picture's place, one a second. A
     // caption contest shows the picture being captioned behind them, and on
     // its own until the first caption comes in.
-    final picture = contest.kind == ContestKind.caption ? contest.imageUrl : null;
+    final picture = contest.kind == ContestKind.caption
+        ? contest.imageUrl
+        : null;
     final tile = contest.previews.isNotEmpty || picture != null
         ? _IllustrationTile(
-            color: contest.kind == ContestKind.photo ? GamesStyle.pageDot : GamesStyle.purpleArt,
+            color: contest.kind == ContestKind.photo
+                ? GamesStyle.pageDot
+                : GamesStyle.purpleArt,
             fitted: false,
             rocking: contest.kind == ContestKind.photo ? null : motion,
             child: SizedBox(
@@ -687,7 +758,8 @@ class _LiveContestCard extends StatelessWidget {
                       key: const ValueKey('contest-picture'),
                       image: CachedNetworkImageProvider(picture),
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const ColoredBox(color: GamesStyle.purpleArt),
+                      errorBuilder: (_, _, _) =>
+                          const ColoredBox(color: GamesStyle.purpleArt),
                     ),
                   if (contest.previews.isNotEmpty)
                     _EntryCycler(
@@ -702,25 +774,25 @@ class _LiveContestCard extends StatelessWidget {
             ),
           )
         : switch (contest.kind) {
-      ContestKind.caption => _IllustrationTile(
-        color: GamesStyle.purpleArt,
-        padding: 4,
-        rocking: motion,
-        child: _moodyCatArt(),
-      ),
-      // As designed (3690:43101): the tile holds still at 5° while its
-      // camera lands and its sparkle blinks.
-      ContestKind.photo => _IllustrationTile(
-        color: GamesStyle.pageDot,
-        fitted: false,
-        child: _LivePhotoArt(motion: motion),
-      ),
-      ContestKind.mostLikely => _IllustrationTile(
-        color: GamesStyle.purpleArt,
-        padding: 4,
-        rocking: motion,
-        child: _mostLikelyArt(),
-      ),
+            ContestKind.caption => _IllustrationTile(
+              color: GamesStyle.purpleArt,
+              padding: 4,
+              rocking: motion,
+              child: _moodyCatArt(),
+            ),
+            // As designed (3690:43101): the tile holds still at 5° while its
+            // camera lands and its sparkle blinks.
+            ContestKind.photo => _IllustrationTile(
+              color: GamesStyle.pageDot,
+              fitted: false,
+              child: _LivePhotoArt(motion: motion),
+            ),
+            ContestKind.mostLikely => _IllustrationTile(
+              color: GamesStyle.purpleArt,
+              padding: 4,
+              rocking: motion,
+              child: _mostLikelyArt(),
+            ),
           };
     final fallbackQuote = switch (contest.kind) {
       ContestKind.caption => 'Write the funniest caption.',
@@ -744,7 +816,11 @@ class _LiveContestCard extends StatelessWidget {
             : '$first created this contest',
         whoFace: contest.official
             ? const _SowakaFace(size: 26)
-            : _Face(name: contest.authorName, photoUrl: contest.authorPhotoUrl, size: 26),
+            : _Face(
+                name: contest.authorName,
+                photoUrl: contest.authorPhotoUrl,
+                size: 26,
+              ),
         now: now,
         // As the feed's contest card counts down: "END IN: 02:14:20".
         clock: (now) {
@@ -766,7 +842,9 @@ class _LiveContestCard extends StatelessWidget {
             _FacePile(faces: contest.entrants, total: entries),
             Flexible(
               child: Text(
-                entries == 0 ? 'Be the first to enter' : _plural(entries, 'entry', 'entries'),
+                entries == 0
+                    ? 'Be the first to enter'
+                    : _plural(entries, 'entry', 'entries'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GamesStyle.sora(12, color: GamesStyle.ink),
@@ -822,7 +900,8 @@ class _LiveRelayCard extends StatelessWidget {
     final footerText = switch (relay.phase) {
       RelayPhaseNow.live => '${_plural(players, 'player', 'players')} playing',
       RelayPhaseNow.lobby => '${_plural(players, 'player', 'players')} waiting',
-      RelayPhaseNow.upcoming => '${_plural(players, 'player', 'players')} signed up',
+      RelayPhaseNow.upcoming =>
+        '${_plural(players, 'player', 'players')} signed up',
     };
     return Semantics(
       container: true,
@@ -839,7 +918,11 @@ class _LiveRelayCard extends StatelessWidget {
             border: Border.all(color: GamesStyle.ink, width: 1.5),
           ),
           alignment: Alignment.center,
-          child: SvgPicture.asset('${GamesStyle.asset}/tag_team.svg', width: 14, height: 14),
+          child: SvgPicture.asset(
+            '${GamesStyle.asset}/tag_team.svg',
+            width: 14,
+            height: 14,
+          ),
         ),
         now: now,
         clock: clock,
@@ -852,12 +935,18 @@ class _LiveRelayCard extends StatelessWidget {
             child: Align(
               widthFactor: 141 / 172.61,
               heightFactor: 63 / 108.786,
-              child: SizedBox(width: 172.61, height: 108.786, child: _tilesArt('HINT')),
+              child: SizedBox(
+                width: 172.61,
+                height: 108.786,
+                child: _tilesArt('HINT'),
+              ),
             ),
           ),
         ),
         title: relay.title,
-        description: team != null ? '“Your team needs you!”' : '“Many clues. One answer.”',
+        description: team != null
+            ? '“Your team needs you!”'
+            : '“Many clues. One answer.”',
         onTap: onJoin,
         // Some of the players and how many (3755:28598); the players icon in
         // place of their faces from a server from before them.
@@ -868,7 +957,11 @@ class _LiveRelayCard extends StatelessWidget {
                 spacing: relay.faces.isEmpty ? 6 : 8,
                 children: [
                   if (relay.faces.isEmpty)
-                    SvgPicture.asset('${GamesStyle.asset}/players.svg', width: 16, height: 16)
+                    SvgPicture.asset(
+                      '${GamesStyle.asset}/players.svg',
+                      width: 16,
+                      height: 16,
+                    )
                   else
                     _FacePile(faces: relay.faces, total: players),
                   Flexible(
@@ -917,7 +1010,10 @@ class _ChallengeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(color: GamesStyle.night, borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        color: GamesStyle.night,
+        borderRadius: BorderRadius.circular(20),
+      ),
       foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: GamesStyle.nightBorder, width: 1.5),
@@ -941,7 +1037,11 @@ class _ChallengeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 12,
             children: [
-              _Face(name: challenge.fromName, photoUrl: challenge.fromPhotoUrl, size: 34),
+              _Face(
+                name: challenge.fromName,
+                photoUrl: challenge.fromPhotoUrl,
+                size: 34,
+              ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -951,7 +1051,11 @@ class _ChallengeCard extends StatelessWidget {
                       challenge.sentByMe
                           ? 'You challenged ${challenge.fromFirstName}'
                           : '${challenge.fromFirstName} challenged you',
-                      style: GamesStyle.sora(13, color: GamesStyle.cream, height: 16),
+                      style: GamesStyle.sora(
+                        13,
+                        color: GamesStyle.cream,
+                        height: 16,
+                      ),
                     ),
                     if (challenge.expiresAt case final ends?)
                       _Ticking(
@@ -959,9 +1063,15 @@ class _ChallengeCard extends StatelessWidget {
                         now: now,
                         text: (now) {
                           final left = _countdown(ends, now);
-                          return left == null ? 'Challenge ended' : 'Challenge ends in $left';
+                          return left == null
+                              ? 'Challenge ended'
+                              : 'Challenge ends in $left';
                         },
-                        style: GamesStyle.sora(11.5, color: GamesStyle.lilac, height: 15),
+                        style: GamesStyle.sora(
+                          11.5,
+                          color: GamesStyle.lilac,
+                          height: 15,
+                        ),
                       ),
                   ],
                 ),
@@ -1021,7 +1131,12 @@ class _YourGamesCarousel extends StatelessWidget {
 
 /// A game the viewer has played, with their best and rank (node 3605:30389).
 class _GameCardLarge extends StatelessWidget {
-  const _GameCardLarge({super.key, required this.game, required this.played, required this.onPlay});
+  const _GameCardLarge({
+    super.key,
+    required this.game,
+    required this.played,
+    required this.onPlay,
+  });
 
   final GameCatalogEntry game;
   final PlayedGame played;
@@ -1044,7 +1159,9 @@ class _GameCardLarge extends StatelessWidget {
         color: GamesStyle.night,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: GamesStyle.ink2, width: 2.2),
-        boxShadow: const [BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5))],
+        boxShadow: const [
+          BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5)),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15.8),
@@ -1054,7 +1171,9 @@ class _GameCardLarge extends StatelessWidget {
             Container(
               height: 134,
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: GamesStyle.ink2, width: 2.2)),
+                border: Border(
+                  bottom: BorderSide(color: GamesStyle.ink2, width: 2.2),
+                ),
               ),
               child: Stack(
                 fit: StackFit.expand,
@@ -1086,16 +1205,16 @@ class _GameCardLarge extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: game.isWeb
-                          ? const _TypeTag(
-                              label: 'SOLO CHALLENGE',
-                              icon: 'tag_solo.svg',
-                              color: GamesStyle.mint,
-                            )
-                          : const _TypeTag(
-                              label: 'TEAM GAME',
-                              icon: 'tag_team.svg',
-                              color: GamesStyle.blue,
-                            ),
+                            ? const _TypeTag(
+                                label: 'SOLO CHALLENGE',
+                                icon: 'tag_solo.svg',
+                                color: GamesStyle.mint,
+                              )
+                            : const _TypeTag(
+                                label: 'TEAM GAME',
+                                icon: 'tag_team.svg',
+                                color: GamesStyle.blue,
+                              ),
                       ),
                     ),
                   ),
@@ -1107,7 +1226,11 @@ class _GameCardLarge extends StatelessWidget {
                         game.name.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GamesStyle.lilita(19, color: GamesStyle.page, height: 22),
+                        style: GamesStyle.lilita(
+                          19,
+                          color: GamesStyle.page,
+                          height: 22,
+                        ),
                       ),
                     ),
                   ),
@@ -1119,7 +1242,11 @@ class _GameCardLarge extends StatelessWidget {
                         'Best ${GamesStyle.count(played.best)}',
                       ].join(' · '),
                       maxLines: 1,
-                      style: GamesStyle.figtree(9.5, color: const Color(0xFFEBEBEB), height: 12.35),
+                      style: GamesStyle.figtree(
+                        9.5,
+                        color: const Color(0xFFEBEBEB),
+                        height: 12.35,
+                      ),
                     ),
                   ),
                   GameCtaButton(
@@ -1162,20 +1289,30 @@ class _YourRankBadge extends StatelessWidget {
         color: dark ? GamesStyle.ink2 : GamesStyle.page,
         borderRadius: BorderRadius.circular(12),
         border: dark ? null : Border.all(color: GamesStyle.ink2, width: 1.1),
-        boxShadow: const [BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 2))],
+        boxShadow: const [
+          BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 2)),
+        ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(rank == null ? '–' : '#$rank', style: GamesStyle.lilita(22, color: ink, height: 19.8)),
+            child: Text(
+              rank == null ? '–' : '#$rank',
+              style: GamesStyle.lilita(22, color: ink, height: 19.8),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 3),
             child: Text(
               'YOUR RANK',
-              style: GamesStyle.figtree(7, weight: FontWeight.w800, color: ink, height: 10.5),
+              style: GamesStyle.figtree(
+                7,
+                weight: FontWeight.w800,
+                color: ink,
+                height: 10.5,
+              ),
             ),
           ),
         ],
@@ -1185,7 +1322,11 @@ class _YourRankBadge extends StatelessWidget {
 }
 
 class _TypeTag extends StatelessWidget {
-  const _TypeTag({required this.label, required this.icon, required this.color});
+  const _TypeTag({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
 
   final String label;
   final String icon;
@@ -1205,7 +1346,14 @@ class _TypeTag extends StatelessWidget {
         spacing: 4,
         children: [
           SvgPicture.asset('${GamesStyle.asset}/$icon', width: 12, height: 12),
-          Text(label, style: GamesStyle.figtree(8.5, weight: FontWeight.w800, height: 8.5)),
+          Text(
+            label,
+            style: GamesStyle.figtree(
+              8.5,
+              weight: FontWeight.w800,
+              height: 8.5,
+            ),
+          ),
         ],
       ),
     );
@@ -1260,7 +1408,12 @@ class _ExploreSection extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 1, bottom: 8),
                 child: Text(
                   'EXPLORE GAMES',
-                  style: GamesStyle.lilita(18, color: GamesStyle.night, height: 27, spacing: 0.35),
+                  style: GamesStyle.lilita(
+                    18,
+                    color: GamesStyle.night,
+                    height: 27,
+                    spacing: 0.35,
+                  ),
                 ),
               ),
             ),
@@ -1323,7 +1476,8 @@ class _ExploreSection extends StatelessWidget {
           artColor: GamesStyle.blueArt,
           art: art,
           title: 'No team game yet',
-          description: 'When your company runs Hint Relay, your team plays it from here.',
+          description:
+              'When your company runs Hint Relay, your team plays it from here.',
           bottom: const SizedBox(height: 4),
         ),
       ];
@@ -1334,7 +1488,8 @@ class _ExploreSection extends StatelessWidget {
       return switch (event.phase) {
         RelayPhaseNow.live => 'LIVE NOW',
         RelayPhaseNow.lobby => 'LOBBY OPEN',
-        RelayPhaseNow.upcoming => left == null ? 'COMING UP' : 'STARTS IN: $left',
+        RelayPhaseNow.upcoming =>
+          left == null ? 'COMING UP' : 'STARTS IN: $left',
       };
     }
 
@@ -1352,13 +1507,15 @@ class _ExploreSection extends StatelessWidget {
               top: 5.98,
               child: ValueListenableBuilder<DateTime>(
                 valueListenable: now,
-                builder: (context, now, _) => _LiveIndicator(label: status(now)),
+                builder: (context, now, _) =>
+                    _LiveIndicator(label: status(now)),
               ),
             ),
           ],
         ),
         title: event.title,
-        description: 'Crack the clues with your team before the clock runs out.',
+        description:
+            'Crack the clues with your team before the clock runs out.',
         // The design's (3605:31145): a 34pt foot, 5pt under the line about
         // it, with a 26pt row at its bottom: the players, and the 45pt Join
         // key hanging over the row's top and bottom.
@@ -1407,8 +1564,12 @@ class _ExploreSection extends StatelessWidget {
                         maxHeight: 45,
                         child: GameCtaButton(
                           key: const ValueKey('join-relay'),
-                          label: event.phase == RelayPhaseNow.upcoming ? 'View' : 'Join',
-                          onTap: postId == null ? null : () => onJoinRelay(postId),
+                          label: event.phase == RelayPhaseNow.upcoming
+                              ? 'View'
+                              : 'Join',
+                          onTap: postId == null
+                              ? null
+                              : () => onJoinRelay(postId),
                           small: true,
                           width: 55,
                           height: 45,
@@ -1436,7 +1597,11 @@ class _ExploreSection extends StatelessWidget {
           artColor: GamesStyle.mintArt,
           art: Align(
             alignment: Alignment.topLeft,
-            child: SizedBox(width: 172.593, height: 108.786, child: _oddOneOutArt()),
+            child: SizedBox(
+              width: 172.593,
+              height: 108.786,
+              child: _oddOneOutArt(),
+            ),
           ),
           title: 'No games yet',
           description: 'New games your company switches on show up here.',
@@ -1453,7 +1618,11 @@ class _ExploreSection extends StatelessWidget {
           art: game.key == 'odd-one-out'
               ? Align(
                   alignment: Alignment.topLeft,
-                  child: SizedBox(width: 172.593, height: 108.786, child: _oddOneOutArt()),
+                  child: SizedBox(
+                    width: 172.593,
+                    height: 108.786,
+                    child: _oddOneOutArt(),
+                  ),
                 )
               : _GamePicture(
                   game: game,
@@ -1461,7 +1630,9 @@ class _ExploreSection extends StatelessWidget {
                   background: GamesStyle.mintArt,
                 ),
           title: game.name,
-          description: game.tagline.isNotEmpty ? game.tagline : game.description,
+          description: game.tagline.isNotEmpty
+              ? game.tagline
+              : game.description,
           bottom: GameCtaButton(
             key: ValueKey('play-${game.key}'),
             label: 'Play',
@@ -1510,7 +1681,10 @@ class _ExploreChip extends StatelessWidget {
         spacing: 5,
         children: [
           SvgPicture.asset('${GamesStyle.asset}/$icon', width: 14, height: 14),
-          Text(label, style: GamesStyle.figtree(10, weight: FontWeight.w700, height: 15)),
+          Text(
+            label,
+            style: GamesStyle.figtree(10, weight: FontWeight.w700, height: 15),
+          ),
         ],
       ),
     );
@@ -1520,7 +1694,9 @@ class _ExploreChip extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: selected ? Transform.rotate(angle: -3 * math.pi / 180, child: chip) : chip,
+        child: selected
+            ? Transform.rotate(angle: -3 * math.pi / 180, child: chip)
+            : chip,
       ),
     );
   }
@@ -1547,7 +1723,11 @@ class _CardGrid extends StatelessWidget {
             children: [
               Expanded(child: cards[i]),
               const SizedBox(width: 10),
-              Expanded(child: i + 1 < cards.length ? cards[i + 1] : const SizedBox.shrink()),
+              Expanded(
+                child: i + 1 < cards.length
+                    ? cards[i + 1]
+                    : const SizedBox.shrink(),
+              ),
             ],
           ),
         if (cards.length <= 2) const SizedBox(height: _emptyRow),
@@ -1583,7 +1763,9 @@ class _GameCardSmall extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: GamesStyle.ink2, width: 2.2),
-        boxShadow: const [BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5))],
+        boxShadow: const [
+          BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5)),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12.8),
@@ -1594,7 +1776,9 @@ class _GameCardSmall extends StatelessWidget {
               height: 111,
               decoration: BoxDecoration(
                 color: artColor,
-                border: const Border(bottom: BorderSide(color: GamesStyle.ink2, width: 2.2)),
+                border: const Border(
+                  bottom: BorderSide(color: GamesStyle.ink2, width: 2.2),
+                ),
               ),
               child: ClipRect(
                 child: OverflowBox(
@@ -1614,7 +1798,11 @@ class _GameCardSmall extends StatelessWidget {
                     title.toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GamesStyle.lilita(16, color: GamesStyle.ink2, height: 16),
+                    style: GamesStyle.lilita(
+                      16,
+                      color: GamesStyle.ink2,
+                      height: 16,
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.only(top: 5),
@@ -1624,7 +1812,11 @@ class _GameCardSmall extends StatelessWidget {
                         description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: GamesStyle.figtree(9.5, color: GamesStyle.muted, height: 11.875),
+                        style: GamesStyle.figtree(
+                          9.5,
+                          color: GamesStyle.muted,
+                          height: 11.875,
+                        ),
                       ),
                     ),
                   ),
@@ -1650,7 +1842,10 @@ class _LiveIndicator extends StatelessWidget {
     return Container(
       height: 18,
       padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(color: GamesStyle.ink2, borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: GamesStyle.ink2,
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 5,
@@ -1685,7 +1880,11 @@ class _PlayingNowPill extends StatelessWidget {
 
   final PlayingNow playingNow;
 
-  static const _colors = [GamesStyle.blue, Color(0xFFC6F03C), Color(0xFFFF8A3D)];
+  static const _colors = [
+    GamesStyle.blue,
+    Color(0xFFC6F03C),
+    Color(0xFFFF8A3D),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1720,12 +1919,19 @@ class _PlayingNowPill extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: _colors[i % _colors.length],
                             shape: BoxShape.circle,
-                            border: Border.all(color: GamesStyle.ink2, width: 1.1),
+                            border: Border.all(
+                              color: GamesStyle.ink2,
+                              width: 1.1,
+                            ),
                           ),
                           alignment: Alignment.center,
                           child: Text(
                             faces[i].characters.first,
-                            style: GamesStyle.figtree(7, weight: FontWeight.w800, height: 8.75),
+                            style: GamesStyle.figtree(
+                              7,
+                              weight: FontWeight.w800,
+                              height: 8.75,
+                            ),
                           ),
                         ),
                       ),
@@ -1739,7 +1945,11 @@ class _PlayingNowPill extends StatelessWidget {
                     : '${GamesStyle.count(count)} people from your team are playing right now',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GamesStyle.figtree(9.5, color: GamesStyle.secondary, height: 11.875),
+                style: GamesStyle.figtree(
+                  9.5,
+                  color: GamesStyle.secondary,
+                  height: 11.875,
+                ),
               ),
             ),
           ],
@@ -1767,7 +1977,10 @@ class _SowakaFace extends StatelessWidget {
         border: Border.all(color: GamesStyle.ink, width: 1.5),
       ),
       child: ClipOval(
-        child: Image.asset('assets/images/sowaka_logo.png', fit: BoxFit.contain),
+        child: Image.asset(
+          'assets/images/sowaka_logo.png',
+          fit: BoxFit.contain,
+        ),
       ),
     );
   }

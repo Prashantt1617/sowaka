@@ -22,7 +22,11 @@ part 'games_leaderboard_view.dart';
 /// Opens a catalog game; on [challengeId] when it is a challenge being taken
 /// up. Completes when the game is closed again.
 typedef OpenCatalogGame =
-    Future<void> Function(BuildContext context, GameCatalogEntry game, {String? challengeId});
+    Future<void> Function(
+      BuildContext context,
+      GameCatalogEntry game, {
+      String? challengeId,
+    });
 
 /// The Games tab (Figma 3573:61034, and its Leaderboard 3623:31816).
 ///
@@ -97,7 +101,8 @@ class _GamesHomeViewState extends State<GamesHomeView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _stale = Duration(minutes: 2);
 
-  late final GamesApiService _service = widget.service ?? GamesApiService(session: widget.session);
+  late final GamesApiService _service =
+      widget.service ?? GamesApiService(session: widget.session);
 
   /// The pane's 1.5 s loop (Figma's motion on 3573:61034): one clock for
   /// every moving picture on it, so they keep time together as designed.
@@ -196,7 +201,11 @@ class _GamesHomeViewState extends State<GamesHomeView>
   /// tab never keeps the screen drawing. (A game opened over the tab mutes
   /// it too: the route below is not ticked.)
   void _syncMotion() {
-    final run = widget.visible && !_still && _pane == _GamesPane.games && _somethingMoves;
+    final run =
+        widget.visible &&
+        !_still &&
+        _pane == _GamesPane.games &&
+        _somethingMoves;
     if (run && !_motion.isAnimating) {
       _motion.repeat();
     } else if (!run && _motion.isAnimating) {
@@ -211,7 +220,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
     final run = widget.visible && _foreground;
     if (run && _clock == null) {
       _now.value = widget.now();
-      _clock = Timer.periodic(const Duration(seconds: 1), (_) => _now.value = widget.now());
+      _clock = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _now.value = widget.now(),
+      );
     } else if (!run && _clock != null) {
       _clock!.cancel();
       _clock = null;
@@ -228,8 +240,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
       }
     }
     final fetched = _fetchedAt;
-    final stale = fetched == null || DateTime.now().difference(fetched) > _stale;
-    if (_pane == _GamesPane.leaderboard) unawaited(_loadBoard(_period, force: stale));
+    final stale =
+        fetched == null || DateTime.now().difference(fetched) > _stale;
+    if (_pane == _GamesPane.leaderboard)
+      unawaited(_loadBoard(_period, force: stale));
     if (stale) await _refresh();
   }
 
@@ -257,7 +271,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
       }
     } catch (_) {
       if (mounted && _home == null) {
-        setState(() => _error = 'Games could not be loaded. Check your connection and try again.');
+        setState(
+          () => _error =
+              'Games could not be loaded. Check your connection and try again.',
+        );
       }
     } finally {
       _fetching = false;
@@ -288,14 +305,19 @@ class _GamesHomeViewState extends State<GamesHomeView>
       _syncMotion();
     } catch (_) {
       if (mounted && _home == null) {
-        setState(() => _error = 'Games could not be loaded. Check your connection and try again.');
+        setState(
+          () => _error =
+              'Games could not be loaded. Check your connection and try again.',
+        );
       }
     }
   }
 
   Future<void> _loadBoard(PointsPeriod period, {bool force = false}) async {
     if (!mounted) return;
-    if (_boardsLoading.contains(period) || (!force && _boards.containsKey(period))) return;
+    if (_boardsLoading.contains(period) ||
+        (!force && _boards.containsKey(period)))
+      return;
     setState(() {
       _boardsLoading.add(period);
       _boardError = null;
@@ -339,7 +361,8 @@ class _GamesHomeViewState extends State<GamesHomeView>
     unawaited(_loadBoard(period));
   }
 
-  bool _opens(GameCatalogEntry game) => widget.canOpen?.call(game) ?? game.hasWebPage;
+  bool _opens(GameCatalogEntry game) =>
+      widget.canOpen?.call(game) ?? game.hasWebPage;
 
   GameCatalogEntry? _game(String key) =>
       _home?.games.where((game) => game.key == key && _opens(game)).firstOrNull;
@@ -351,7 +374,6 @@ class _GamesHomeViewState extends State<GamesHomeView>
     // Back from a round: a new best, a challenge played, points won.
     if (mounted) unawaited(_refresh());
   }
-
 
   void _openPost(String? postId) {
     if (postId == null || postId.isEmpty) return;
@@ -395,7 +417,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
     } catch (_) {
       if (mounted) {
         setState(() => _accepting = null);
-        showAppToast(context, 'That challenge could not be accepted. Try again.');
+        showAppToast(
+          context,
+          'That challenge could not be accepted. Try again.',
+        );
       }
       return;
     }
@@ -438,7 +463,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
                     viewerId: widget.session.user.id,
                     onPeriod: _choosePeriod,
                     onRefresh: () async {
-                      await Future.wait([_loadBoard(_period, force: true), _refresh()]);
+                      await Future.wait([
+                        _loadBoard(_period, force: true),
+                        _refresh(),
+                      ]);
                     },
                   ),
           ),
@@ -462,7 +490,10 @@ class _GamesHomeViewState extends State<GamesHomeView>
               child: SizedBox(
                 width: 26,
                 height: 26,
-                child: CircularProgressIndicator(strokeWidth: 2.4, color: GamesStyle.night),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: GamesStyle.night,
+                ),
               ),
             ),
           ],
@@ -483,7 +514,11 @@ class _GamesHomeViewState extends State<GamesHomeView>
               onPressed: _refresh,
               child: Text(
                 'Try again',
-                style: GamesStyle.sora(14, weight: FontWeight.w700, color: GamesStyle.night),
+                style: GamesStyle.sora(
+                  14,
+                  weight: FontWeight.w700,
+                  color: GamesStyle.night,
+                ),
               ),
             ),
           ),
@@ -495,7 +530,9 @@ class _GamesHomeViewState extends State<GamesHomeView>
       for (final row in home.yourGames)
         if (_game(row.key) case final game?) (game: game, played: row),
     ];
-    final challenges = home.challenges.where((c) => _game(c.gameKey) != null).toList();
+    final challenges = home.challenges
+        .where((c) => _game(c.gameKey) != null)
+        .toList();
     // Under reduced motion the pictures are handed no loop and hold still.
     final motion = _still ? null : _motion;
     final live = <Widget>[
@@ -552,14 +589,18 @@ class _GamesHomeViewState extends State<GamesHomeView>
               cards: live,
               // Slides on by itself while the pane is looked at and motion is
               // allowed, as the rest of the pane's motion does.
-              autoScroll: widget.visible && !_still && _pane == _GamesPane.games,
+              autoScroll:
+                  widget.visible && !_still && _pane == _GamesPane.games,
             ),
           ],
           const SizedBox(height: 14),
         ],
         if (played.isNotEmpty) ...[
           const _SectionTitle(kicker: 'BACK FOR MORE?', title: 'YOUR GAMES'),
-          _YourGamesCarousel(games: played, onPlay: (game) => unawaited(_openGame(game))),
+          _YourGamesCarousel(
+            games: played,
+            onPlay: (game) => unawaited(_openGame(game)),
+          ),
         ],
         _ExploreSection(
           tab: _explore,
@@ -645,7 +686,11 @@ class _BrandLockup extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   branding.wordmark,
-                  style: GamesStyle.sora(12, weight: FontWeight.w800, color: Colors.white),
+                  style: GamesStyle.sora(
+                    12,
+                    weight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
               )
             : Container(
@@ -676,7 +721,12 @@ class _BrandLockup extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: GamesStyle.yellow,
                         borderRadius: BorderRadius.circular(7),
-                        boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 3))],
+                        boxShadow: const [
+                          BoxShadow(
+                            color: GamesStyle.ink,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
                       ),
                       alignment: Alignment.center,
                       child: Text('GAMES', style: GamesStyle.lilita(15)),
@@ -717,7 +767,12 @@ class _PointsChip extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           '⚡ ${GamesStyle.count(points)}  Pts',
-          style: GamesStyle.lilita(17, color: GamesStyle.cream, height: 22, spacing: -0.16),
+          style: GamesStyle.lilita(
+            17,
+            color: GamesStyle.cream,
+            height: 22,
+            spacing: -0.16,
+          ),
         ),
       ),
     );
@@ -729,7 +784,11 @@ class _PointsChip extends StatelessWidget {
 /// that side is just its label, centred as the Games side is on the other.
 /// Drawn at the design's width and scaled down on a narrower phone.
 class _GamesSwitch extends StatelessWidget {
-  const _GamesSwitch({required this.pane, required this.rank, required this.onPane});
+  const _GamesSwitch({
+    required this.pane,
+    required this.rank,
+    required this.onPane,
+  });
 
   final _GamesPane pane;
 
@@ -763,9 +822,15 @@ class _GamesSwitch extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     spacing: 7,
                     children: [
-                      Text('LEADERBOARD', style: GamesStyle.lilita(18, color: GamesStyle.lilac)),
+                      Text(
+                        'LEADERBOARD',
+                        style: GamesStyle.lilita(18, color: GamesStyle.lilac),
+                      ),
                       if (rank != null)
-                        Transform.rotate(angle: math.pi / 180, child: _RankPill(rank: rank)),
+                        Transform.rotate(
+                          angle: math.pi / 180,
+                          child: _RankPill(rank: rank),
+                        ),
                     ],
                   ),
                 ),
@@ -783,8 +848,14 @@ class _GamesSwitch extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     spacing: 6,
                     children: [
-                      Transform.rotate(angle: -math.pi / 180, child: _gamepad(GamesStyle.lilac)),
-                      Text('GAMES', style: GamesStyle.lilita(18, color: GamesStyle.lilac)),
+                      Transform.rotate(
+                        angle: -math.pi / 180,
+                        child: _gamepad(GamesStyle.lilac),
+                      ),
+                      Text(
+                        'GAMES',
+                        style: GamesStyle.lilita(18, color: GamesStyle.lilac),
+                      ),
                     ],
                   ),
                 ),
@@ -795,7 +866,10 @@ class _GamesSwitch extends StatelessWidget {
                 children: [
                   Text('LEADERBOARD', style: GamesStyle.lilita(20)),
                   if (rank != null)
-                    Transform.rotate(angle: math.pi / 180, child: _RankPill(rank: rank)),
+                    Transform.rotate(
+                      angle: math.pi / 180,
+                      child: _RankPill(rank: rank),
+                    ),
                 ],
               ),
             ],
@@ -814,7 +888,11 @@ class _GamesSwitch extends StatelessWidget {
             : FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: SizedBox(width: _designInner, height: box.maxHeight, child: row),
+                child: SizedBox(
+                  width: _designInner,
+                  height: box.maxHeight,
+                  child: row,
+                ),
               ),
       ),
     );
@@ -851,7 +929,9 @@ class _ActiveTab extends StatelessWidget {
           decoration: BoxDecoration(
             color: GamesStyle.yellow,
             borderRadius: BorderRadius.circular(30),
-            boxShadow: const [BoxShadow(color: GamesStyle.pink, offset: Offset(0, 4))],
+            boxShadow: const [
+              BoxShadow(color: GamesStyle.pink, offset: Offset(0, 4)),
+            ],
           ),
           child: Row(
             mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
@@ -866,7 +946,12 @@ class _ActiveTab extends StatelessWidget {
 }
 
 class _TabTap extends StatelessWidget {
-  const _TabTap({super.key, required this.label, required this.onTap, required this.child});
+  const _TabTap({
+    super.key,
+    required this.label,
+    required this.onTap,
+    required this.child,
+  });
 
   final String label;
   final VoidCallback onTap;
@@ -896,8 +981,14 @@ class _RankPill extends StatelessWidget {
     return Container(
       key: const ValueKey('games-rank'),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: GamesStyle.night, borderRadius: BorderRadius.circular(20)),
-      child: Text('#$rank', style: GamesStyle.lilita(14, color: GamesStyle.yellow)),
+      decoration: BoxDecoration(
+        color: GamesStyle.night,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '#$rank',
+        style: GamesStyle.lilita(14, color: GamesStyle.yellow),
+      ),
     );
   }
 }
@@ -968,10 +1059,15 @@ class _Face extends StatelessWidget {
   ];
 
   static Color colorFor(String seed) =>
-      _palette[seed.codeUnits.fold<int>(0, (sum, unit) => sum + unit) % _palette.length];
+      _palette[seed.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
+          _palette.length];
 
   static String initialsOf(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '?';
     return parts.first.characters.first.toUpperCase();
   }
@@ -985,7 +1081,11 @@ class _Face extends StatelessWidget {
             : initialsOf(name),
         style:
             textStyle ??
-            GamesStyle.figtree(size * 0.36, weight: FontWeight.w800, color: GamesStyle.ink2),
+            GamesStyle.figtree(
+              size * 0.36,
+              weight: FontWeight.w800,
+              color: GamesStyle.ink2,
+            ),
       ),
     );
     final url = photoUrl;
@@ -995,7 +1095,9 @@ class _Face extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: background ?? colorFor(name),
-        border: border > 0 ? Border.all(color: borderColor, width: border) : null,
+        border: border > 0
+            ? Border.all(color: borderColor, width: border)
+            : null,
       ),
       child: ClipOval(
         child: url == null || url.isEmpty
@@ -1026,7 +1128,12 @@ String? _countdown(DateTime at, DateTime now) {
 /// A clock's text, redrawn each time [now] ticks and nothing else with it.
 /// Its digits are all one width, so it does not shuffle as they change.
 class _Ticking extends StatelessWidget {
-  const _Ticking({super.key, required this.now, required this.text, required this.style});
+  const _Ticking({
+    super.key,
+    required this.now,
+    required this.text,
+    required this.style,
+  });
 
   final ValueListenable<DateTime> now;
   final String Function(DateTime now) text;
@@ -1039,7 +1146,9 @@ class _Ticking extends StatelessWidget {
       builder: (context, now, _) => Text(
         text(now),
         maxLines: 1,
-        style: style.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+        style: style.copyWith(
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
       ),
     );
   }

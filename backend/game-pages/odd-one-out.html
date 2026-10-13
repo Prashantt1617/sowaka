@@ -486,7 +486,8 @@ const sfx={
   ahead(){tone(880,0.09,{vol:.12});tone(1175,0.16,{vol:.12,at:.08});},
   behind(){tone(466,0.1,{type:'square',vol:.07});tone(370,0.2,{type:'square',vol:.07,at:.1});}
 };
-function buzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(e){}}
+function buzz(p){ /* The app's haptic (iPhones have no web vibration); the browser's vibrate otherwise. */
+  try{ const S=window.Sowaka; if(S&&S.native&&S.haptic){ S.haptic(Array.isArray(p)?'heavy':p>=30?'medium':'light'); return; } if(navigator.vibrate)navigator.vibrate(p); }catch(e){} }
 
 /* ---------- confetti ---------- */
 const fx=$('fx'), fctx=fx.getContext('2d'); let parts=[], fxOn=false;

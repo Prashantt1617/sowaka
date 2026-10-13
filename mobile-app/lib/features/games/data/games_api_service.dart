@@ -39,7 +39,10 @@ class AppPage {
     final version = json['version'];
     final html = json['html'];
     if (html is! String || html.isEmpty) return null;
-    return AppPage(version: version is String ? version : '$version', html: html);
+    return AppPage(
+      version: version is String ? version : '$version',
+      html: html,
+    );
   }
 }
 
@@ -67,7 +70,8 @@ String? _lastHomeFor;
 Map<String, dynamic>? _lastHomeJson;
 
 /// The Games home last fetched for [userId], when that is who is asking.
-GamesHome? gamesHomeFor(String userId) => _lastHomeFor == userId ? _lastHome : null;
+GamesHome? gamesHomeFor(String userId) =>
+    _lastHomeFor == userId ? _lastHome : null;
 
 /// The last page fetched for each person and game, kept only for when the
 /// server cannot be reached. Every open asks the server first, so a game
@@ -170,7 +174,11 @@ class GamesApiService {
   }
 
   static bool _isPictureKey(String key) =>
-      key.endsWith('Url') || key == 'url' || key == 'thumbnail' || key == 'image' || key == 'photo';
+      key.endsWith('Url') ||
+      key == 'url' ||
+      key == 'thumbnail' ||
+      key == 'image' ||
+      key == 'photo';
 
   String _appPageCacheKey(String key) => 'app-page-$key-${session.user.id}';
 
@@ -197,9 +205,13 @@ class GamesApiService {
     final startedAt = DateTime.now();
     AppPage? page;
     try {
-      final json = await _request('GET', '/app-pages/${Uri.encodeComponent(key)}');
+      final json = await _request(
+        'GET',
+        '/app-pages/${Uri.encodeComponent(key)}',
+      );
       page = AppPage.fromJson(json);
-      if (page == null) throw const GamesApiException('The page could not be read.');
+      if (page == null)
+        throw const GamesApiException('The page could not be read.');
     } on GamesApiException catch (error) {
       if (error.statusCode != 404) rethrow;
       page = null;
@@ -241,7 +253,11 @@ class GamesApiService {
       _lastHomeJson = json;
       _lastCatalog = home.games;
       _lastCatalogFor = session.user.id;
-      unawaited(DashboardCache.write(_homeCacheKey, {'home': json}, startedAt: startedAt));
+      unawaited(
+        DashboardCache.write(_homeCacheKey, {
+          'home': json,
+        }, startedAt: startedAt),
+      );
       unawaited(
         DashboardCache.write(_cacheKey, {
           'catalog': {'games': json['games'] ?? const []},
@@ -256,7 +272,9 @@ class GamesApiService {
   /// The home last fetched for this person as the server sent it, with
   /// pictures made whole: from memory, else from the phone. Null when none.
   Future<Map<String, dynamic>?> keptHomeJson() async {
-    Map<String, dynamic>? json = _lastHomeFor == session.user.id ? _lastHomeJson : null;
+    Map<String, dynamic>? json = _lastHomeFor == session.user.id
+        ? _lastHomeJson
+        : null;
     json ??= (await DashboardCache.read(_homeCacheKey))?['home'];
     if (json == null) return null;
     return Map<String, dynamic>.from(absoluteUrls(json) as Map);
@@ -297,7 +315,9 @@ class GamesApiService {
     _lastHomeJson = json;
     _lastCatalog = home.games;
     _lastCatalogFor = session.user.id;
-    unawaited(DashboardCache.write(_homeCacheKey, {'home': json}, startedAt: startedAt));
+    unawaited(
+      DashboardCache.write(_homeCacheKey, {'home': json}, startedAt: startedAt),
+    );
     unawaited(
       DashboardCache.write(_cacheKey, {
         'catalog': {'games': json['games'] ?? const []},
@@ -324,14 +344,15 @@ class GamesApiService {
 
   /// The company's individuals by engagement points: this week's (since
   /// Monday, India time) or all time.
-  Future<PointsLeaderboard> pointsLeaderboard(PointsPeriod period) async =>
-      PointsLeaderboard.fromJson(
-        await _request(
-          'GET',
-          '/games/leaderboard?period=${period == PointsPeriod.week ? 'week' : 'all'}',
-        ),
-        absolute: absoluteUrl,
-      );
+  Future<PointsLeaderboard> pointsLeaderboard(
+    PointsPeriod period,
+  ) async => PointsLeaderboard.fromJson(
+    await _request(
+      'GET',
+      '/games/leaderboard?period=${period == PointsPeriod.week ? 'week' : 'all'}',
+    ),
+    absolute: absoluteUrl,
+  );
 
   /// The catalog as this person last saw it, without the network. Null when
   /// there is none.
@@ -372,8 +393,9 @@ class GamesApiService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       String? message;
       try {
-        message = (jsonDecode(response.body) as Map<String, dynamic>)['message']
-            as String?;
+        message =
+            (jsonDecode(response.body) as Map<String, dynamic>)['message']
+                as String?;
       } catch (_) {}
       throw GamesApiException(
         message ?? 'This game could not be opened. Try again.',
@@ -382,7 +404,9 @@ class GamesApiService {
     }
     final type = response.headers['content-type'] ?? '';
     if (!type.startsWith('text/html')) {
-      throw const GamesApiException('This game could not be opened. Try again.');
+      throw const GamesApiException(
+        'This game could not be opened. Try again.',
+      );
     }
     final html = utf8.decode(response.bodyBytes, allowMalformed: true);
     _pages[cacheKey] = html;
@@ -401,9 +425,10 @@ class GamesApiService {
   }
 
   /// The company's top ten, and the person's own best.
-  Future<GameLeaderboard> leaderboard(String key) async => GameLeaderboard.fromJson(
-    await _request('GET', '/games/${Uri.encodeComponent(key)}/leaderboard'),
-  );
+  Future<GameLeaderboard> leaderboard(String key) async =>
+      GameLeaderboard.fromJson(
+        await _request('GET', '/games/${Uri.encodeComponent(key)}/leaderboard'),
+      );
 
   // ---------------------------------------------------------------- challenges
   //
@@ -414,7 +439,10 @@ class GamesApiService {
   /// Colleagues who can be challenged: the whole company, bar counsellors
   /// and the person themselves, by name when [query] is given. Photos come
   /// back as whole URLs.
-  Future<Map<String, dynamic>> colleagues(String query, {int limit = 50}) async {
+  Future<Map<String, dynamic>> colleagues(
+    String query, {
+    int limit = 50,
+  }) async {
     final q = query.trim();
     final json = await _request(
       'GET',
@@ -438,19 +466,26 @@ class GamesApiService {
   }
 
   /// Challenges [opponentUserId] to [gameKey]; the new challenge.
-  Future<Map<String, dynamic>> createChallenge(String gameKey, String opponentUserId) async =>
-      _challengeOf(await _request(
-        'POST',
-        '/games/challenges',
-        body: {'gameKey': gameKey, 'opponentUserId': opponentUserId},
-      ));
+  Future<Map<String, dynamic>> createChallenge(
+    String gameKey,
+    String opponentUserId,
+  ) async => _challengeOf(
+    await _request(
+      'POST',
+      '/games/challenges',
+      body: {'gameKey': gameKey, 'opponentUserId': opponentUserId},
+    ),
+  );
 
   /// The person's challenges in [gameKey]: `incoming`, `outgoing`, `active`
   /// and `recent`, each a list.
   Future<Map<String, dynamic>> challenges(String gameKey) async {
     final json = await _request(
       'GET',
-      Uri(path: '/games/challenges', queryParameters: {'game': gameKey}).toString(),
+      Uri(
+        path: '/games/challenges',
+        queryParameters: {'game': gameKey},
+      ).toString(),
     );
     return {
       for (final list in const ['incoming', 'outgoing', 'active', 'recent'])
@@ -458,14 +493,24 @@ class GamesApiService {
     };
   }
 
-  Future<Map<String, dynamic>> challenge(String id) async =>
-      _challengeOf(await _request('GET', '/games/challenges/${Uri.encodeComponent(id)}'));
+  Future<Map<String, dynamic>> challenge(String id) async => _challengeOf(
+    await _request('GET', '/games/challenges/${Uri.encodeComponent(id)}'),
+  );
 
-  Future<Map<String, dynamic>> acceptChallenge(String id) async =>
-      _challengeOf(await _request('POST', '/games/challenges/${Uri.encodeComponent(id)}/accept'));
+  Future<Map<String, dynamic>> acceptChallenge(String id) async => _challengeOf(
+    await _request(
+      'POST',
+      '/games/challenges/${Uri.encodeComponent(id)}/accept',
+    ),
+  );
 
   Future<Map<String, dynamic>> declineChallenge(String id) async =>
-      _challengeOf(await _request('POST', '/games/challenges/${Uri.encodeComponent(id)}/decline'));
+      _challengeOf(
+        await _request(
+          'POST',
+          '/games/challenges/${Uri.encodeComponent(id)}/decline',
+        ),
+      );
 
   /// A score mid-round, for the other player to see at once.
   Future<Map<String, dynamic>> reportLive(String id, num score) => _request(
@@ -476,11 +521,13 @@ class GamesApiService {
 
   /// The person's final score; the challenge after it.
   Future<Map<String, dynamic>> finishChallenge(String id, num score) async =>
-      _challengeOf(await _request(
-        'POST',
-        '/games/challenges/${Uri.encodeComponent(id)}/finish',
-        body: {'score': score},
-      ));
+      _challengeOf(
+        await _request(
+          'POST',
+          '/games/challenges/${Uri.encodeComponent(id)}/finish',
+          body: {'score': score},
+        ),
+      );
 
   static Map<String, dynamic> _challengeOf(Map<String, dynamic> json) {
     final challenge = json['challenge'];
