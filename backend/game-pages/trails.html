@@ -495,6 +495,8 @@ const sfx={
   dot(){tone(note(),0.12,{type:'sine',vol:.2,at:stepAt});tone(note()*1.5,0.24,{type:'sine',vol:.16,at:stepAt+.07});},
   back(){tone(330,0.09,{to:210,vol:.12});},
   bump(){tone(120,0.15,{type:'square',to:70,vol:.12});},
+  /* A refusal: the challenge paths' error sheets open on it. */
+  no(){tone(150,0.12,{type:'square',to:90,vol:.11});tone(110,0.16,{type:'square',to:70,vol:.1,at:.1});},
   order(){tone(196,0.1,{type:'sawtooth',vol:.09});tone(185,0.17,{type:'sawtooth',vol:.09,at:.09});},
   clear(){tone(520,0.3,{type:'sine',to:130,vol:.15});},
   hint(){[0,1,2].forEach(i=>tone(880*Math.pow(1.26,i),0.15,{type:'sine',vol:.13,at:i*.07}));},

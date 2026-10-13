@@ -953,9 +953,26 @@ svg{overflow:visible}
       '<path d="M5 28H29M30 54H54" stroke="#FF5094" stroke-width="5" stroke-linecap="round"/>' +
       num(17, 15, '1') + num(42, 41, '2') + num(67, 67, '3') + '</svg>';
   }
+  /** Word Trip's icon: the game's night-blue wheel of chunky letter keys, a gold trail spelling W-O-R-(D), the keys it has picked gone gold. */
+  function wordTripIcon() {
+    var key = function (x, y, t, picked) {
+      return '<g transform="translate(' + (x - 10) + ' ' + (y - 10) + ')">' +
+        '<rect x="0" y="3" width="20" height="20" rx="6.5" fill="' + (picked ? '#C99A12' : '#D2BC7E') + '" stroke="#160D2C" stroke-width="2.5"/>' +
+        '<rect x="0" y="0" width="20" height="20" rx="6.5" fill="' + (picked ? '#FFD23F' : '#FFF6DE') + '" stroke="#160D2C" stroke-width="2.5"/>' +
+        '<text x="10" y="15.3" font-size="14.8" text-anchor="middle" fill="#2A2140" style="font-family:var(--lil)">' + t + '</text></g>';
+    };
+    var way = 'M16 42L42 16L68 42L42 68';
+    return '<svg viewBox="0 0 84 84" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="42" cy="45" r="38" fill="#160D2C"/>' +
+      '<circle cx="42" cy="42" r="38" fill="#2A2553" stroke="#160D2C" stroke-width="2.5"/>' +
+      '<circle cx="42" cy="42" r="31" fill="none" stroke="#3B3668" stroke-width="2"/>' +
+      '<path d="' + way + '" fill="none" stroke="#160D2C" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="' + way + '" fill="none" stroke="#FFD23F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>' +
+      key(16, 42, 'W', true) + key(42, 16, 'O', true) + key(68, 42, 'R', true) + key(42, 68, 'D', false) + '</svg>';
+  }
   /** The games drawn here: their own icon on the cream tile. */
-  var ICONS = { 'odd-one-out': oddIcon, 'trails': trailsIcon };
-  /** A game's tile: its icon (Odd One Out's, Trails'), else its picture filling the tile over its colour. */
+  var ICONS = { 'odd-one-out': oddIcon, 'trails': trailsIcon, 'word-trip': wordTripIcon };
+  /** A game's tile: its icon (Odd One Out's, Trails', Word Trip's), else its picture filling the tile over its colour. */
   function gameTile(game, o) {
     return ICONS[game.key] ? tile('var(--cream)', fitted(ICONS[game.key](), 5), o)
       : tile(game.accentColor || 'var(--purpleArt)', '<div class="tile-fill">' + gamePicture(game, 'transparent') + '</div>', o);
@@ -1453,13 +1470,18 @@ svg{overflow:visible}
             expiresAt: new Date(now + 23 * H + 58 * M + 44 * S_).toISOString() },
           { id: 'ch-3', gameKey: 'trails', gameName: 'Trails', kind: 'incoming', sentByMe: false,
             from: { userId: 'u-meera', name: 'Meera Iyer', firstName: 'Meera', photoUrl: null }, beat: 980,
-            expiresAt: new Date(now + 21 * H + 12 * M + 5 * S_).toISOString() }
+            expiresAt: new Date(now + 21 * H + 12 * M + 5 * S_).toISOString() },
+          { id: 'ch-4', gameKey: 'word-trip', gameName: 'Word Trip', kind: 'incoming', sentByMe: false,
+            from: { userId: 'u-aarav', name: 'Aarav Mehta', firstName: 'Aarav', photoUrl: null }, beat: 1640,
+            expiresAt: new Date(now + 19 * H + 47 * M + 31 * S_).toISOString() }
         ],
         yourGames: [{ key: 'odd-one-out', best: 1250, achievedAt: new Date(now - 2 * H).toISOString(), rank: 2, players: 9 }],
         games: [{ key: 'odd-one-out', name: 'Odd One Out', tagline: 'Spot the tile that’s different', description: 'Find the odd tile before the clock runs out.',
           instructions: '', kind: 'web', accentColor: '#F5B82E', backgroundColor: '#15122B', order: 1,
           scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v12' },
-          { key: 'word-trip', name: 'Word Trip', tagline: 'Find every word hiding in the letters', description: '', kind: 'web', iconColor: '#FFE08A', order: 2, hasPage: true },
+          { key: 'word-trip', name: 'Word Trip', tagline: 'Find every word hiding in the letters', description: 'Spell as many words as you can from the letter keys before the clock runs out.',
+            instructions: '', kind: 'web', accentColor: '#FAC938', backgroundColor: '#15122B', order: 2,
+            scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' },
           { key: 'trails', name: 'Trails', tagline: 'Draw one line through every square', description: 'Find the one trail through every square before the clock runs out.',
             instructions: '', kind: 'web', accentColor: '#3DDC97', backgroundColor: '#0E1C19', order: 3,
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' }],

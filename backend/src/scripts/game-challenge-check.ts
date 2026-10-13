@@ -6,7 +6,7 @@
  *
  * No database: the rules live in `services/game-challenge-rules.ts`, which is
  * pure, and the boards are the game pages' own code, read out of
- * `game-pages/odd-one-out.html` and `game-pages/trails.html` and run here.
+ * `game-pages/odd-one-out.html`, `game-pages/trails.html` and `game-pages/word-trip.html` and run here.
  * Run with `npx tsx src/scripts/game-challenge-check.ts`.
  */
 import { readFileSync } from 'node:fs';
@@ -168,6 +168,51 @@ console.log('seed: the same trails for both players (Trails)');
   const many = [1, 2, 99, 31337, 500000, SEED_MAX].flatMap((seed) => boards(seed, 22));
   check('so do trails from other seeds, the largest included', many.every(solves));
   check('puzzles are turned, mirrored and reversed: level 1 starts in different places', new Set(many.filter((t) => t.level === 1).map((t) => key(t.dots[0]))).size > 4);
+}
+
+console.log('seed: the same letters for both players (Word Trip)');
+{
+  type Stop = { g: number; len: number; letters: string; words: string[]; rare: string[]; full: string[] };
+  const { block, boards } = seededBoards<Stop>('word-trip.html');
+  check('the page marks the code its stops depend on', Boolean(block));
+  /** The block's own lists, read in a sandbox like the boards (Math.random poisoned there too). */
+  const inBlock = <T>(expr: string) =>
+    runInNewContext(`${block}\n${expr}`, { Math: Object.create(Math, { random: { value: () => { throw new Error('Math.random used'); } } }) }) as T;
+  const WORDS = new Set(inBlock<string>('WORDS').split(' '));
+  const RARE = new Set(inBlock<string>('RARE').split(' '));
+  const STOPS = inBlock<Record<string, string>>('STOPS');
+  const a = boards(4242, 30);
+  check('one seed gives the same 30 stops twice over', JSON.stringify(a) === JSON.stringify(boards(4242, 30)));
+  check('and never reads Math.random', a.length === 30);
+  check('a different seed gives different stops', JSON.stringify(boards(4243, 30)) !== JSON.stringify(a));
+  check('the stops climb: 5 letters, then 6, 6, 7, 7, 7, then 8', a.every((s, g) => s.len === [5, 6, 6, 7, 7, 7][g] || (g >= 6 && s.len === 8)) &&
+    a.every((s, g) => g === 0 || s.len >= a[g - 1].len), a.map((s) => s.len).join(' '));
+  const sorted = (w: string) => [...w].sort().join('');
+  /** Whether a word can be made from the letters, each letter once. */
+  const madeFrom = (w: string, letters: string) => {
+    const have = [...letters];
+    for (const ch of w) { const i = have.indexOf(ch); if (i < 0) return false; have.splice(i, 1); }
+    return true;
+  };
+  /** A fair stop: some common word uses every letter, every word it lists is in the page's lists and can be made from its letters, and the letters
+   * as dealt do not already spell a word. */
+  const solvable = (s: Stop) =>
+    s.letters.length === s.len && s.words.some((w) => w.length === s.len && WORDS.has(w)) &&
+    s.words.every((w) => WORDS.has(w) && w.length >= 3 && madeFrom(w, s.letters)) &&
+    s.rare.every((w) => RARE.has(w) && w.length >= 3 && madeFrom(w, s.letters)) &&
+    s.full.length > 0 && s.full.every((w) => sorted(w) === sorted(s.letters)) && !s.full.includes(s.letters);
+  check('every stop can be finished with a word in the list', a.every(solvable));
+  check('no stop comes twice in a round', new Set(a.map((s) => sorted(s.letters))).size === a.length);
+  const many = [1, 2, 99, 31337, 500000, SEED_MAX].flatMap((seed) => boards(seed, 12));
+  check('so do stops from other seeds, the largest included', many.every(solvable) && many.length === 72);
+  check('the letters are dealt in different orders', new Set(many.filter((s) => s.g === 0).map((s) => s.letters)).size === 6);
+  const bank = Object.entries(STOPS).flatMap(([n, list]) => list.split(' ').map((k) => ({ n: +n, k })));
+  check('every stop in the bank has a common word with all its letters', bank.every(({ n, k }) => k.length === n && [...WORDS].some((w) => w.length === n && sorted(w) === k)),
+    `${bank.length} stops`);
+  check('and plenty of shorter ones (12 or more)', bank.every(({ k }) => [...WORDS].filter((w) => madeFrom(w, k)).length >= 12));
+  const lists = [...WORDS, ...RARE];
+  check('the lists are lowercase words of 3 to 8 letters, each once, common or rare', lists.every((w) => /^[a-z]{3,8}$/.test(w)) && new Set(lists).size === lists.length);
+  check('rude words are not in them', ['sex', 'piss', 'damn', 'crap', 'boob', 'rape', 'slut', 'whore', 'bitch', 'penis'].every((w) => !WORDS.has(w) && !RARE.has(w)));
 }
 
 console.log('winner and draw');
