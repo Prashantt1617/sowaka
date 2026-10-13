@@ -92,7 +92,7 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .chip.full{background:linear-gradient(100deg,#FFB800,#FFF3A6 45%,#FFB800 60%);background-size:220% 100%;box-shadow:0 0 14px -2px var(--gold)}
 .chip.rare{outline:2px solid var(--rare);outline-offset:1px}
 .chip.flash{outline:3px solid var(--ink)}
-.tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:none}
+.tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
 .tray:empty::before{content:"Tap the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
 .tray button{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1;width:38px;height:44px;padding:4px 0 0;border-radius:11px;border:0;
   background:var(--accent);color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep);cursor:pointer;text-transform:uppercase}
@@ -100,17 +100,16 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .tray.gold button{background:var(--gold);box-shadow:0 4px 0 #b88a00}
 .tray.no button{background:var(--bad);box-shadow:0 4px 0 #a83838}
 .tiles{display:flex;flex-direction:column;gap:12px;align-items:center;padding:2px 0 6px;touch-action:none}
-/* touch-action:none on the letters: the web view uses none of these touches for scrolling or zooming, so a second finger
-   landing while the first is still down is a second letter, not the start of a pinch. */
-.tiles .rowt{display:flex;gap:10px}
-.tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.1rem;line-height:1;width:72px;height:64px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
+/* touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
+.tiles .rowt{display:flex;gap:8px}
+.tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.25rem;line-height:1;width:82px;height:70px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
   box-shadow:0 7px 0 var(--tile-edge),0 12px 18px -8px rgba(0,0,0,.6);cursor:pointer;text-transform:uppercase;touch-action:manipulation}
 .tile:active{transform:translateY(5px);box-shadow:0 2px 0 var(--tile-edge)}
 /* A letter in the word has left the rack: its socket stays, empty, so a tap on the letter in the word puts it back where it was. */
 .tile.used,.tile.used:active{background:transparent;color:transparent;border:2px dashed var(--line);box-shadow:none;transform:none;cursor:default}
 /* The gap between letters belongs to the nearer letter: a thumb landing just off a tile still gets it. */
-.tile::before{content:"";position:absolute;inset:-6px -5px}
-@media (max-width:370px){.tile{width:64px;height:58px;font-size:1.9rem}}
+.tile::before{content:"";position:absolute;inset:-8px -4px}
+@media (max-width:370px){.tile{width:70px;height:62px;font-size:2rem}}
 /* Under the letters: Delete, Shuffle and Enter, and a line for what a word did. */
 .keys{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px}
 .keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
@@ -314,6 +313,7 @@ html.app .howto{padding-top:20px}
 @keyframes rise{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}18%{opacity:1;transform:translate(-50%,0) scale(1.1)}100%{opacity:0;transform:translate(-50%,-56px) scale(1)}}
 @keyframes bump{40%{transform:scale(1.18)}}
 @keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes tilein{0%{transform:scale(.88);opacity:0}100%{transform:scale(1);opacity:1}}
 @keyframes okpop{50%{transform:scale(1.25)}100%{transform:scale(0);opacity:0}}
 @keyframes shake{20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
 @keyframes beat{50%{transform:scale(1.08)}}
@@ -329,8 +329,8 @@ html.app .howto{padding-top:20px}
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b{animation:bump .3s} .clock.low{animation:beat .5s infinite}
   .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear infinite} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear infinite}
-  .tray button.new,.demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
-  .tile.in{animation:pop .3s cubic-bezier(.2,1.5,.4,1) both}
+  .demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
+  .tile.in{animation:tilein .18s ease-out both}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
   .ticker.beat{animation:tickbeat .9s ease-out} .shim{animation:shim 1.2s linear infinite}
   .hero .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
@@ -390,7 +390,7 @@ html.app .howto{padding-top:20px}
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const GAME='Word Trip', ROUND=60, ROUND_TEXT='1 minute', STARS=[250,900,2000];
+const GAME='Word Trip', ROUND=60, ROUND_TEXT='1 minute', STARS=[500,1200,2200];
 const bankFor=s=>Math.round(s/20), fmtn=x=>Math.round(x).toLocaleString('en-IN');
 const fmtClock=s=>{ s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
 /* seeded-boards:start
@@ -432,7 +432,10 @@ function boardAt(sd,g){
 /* What a word pays: by its length (a tenth of the prototype's values), half again for a rare one, 50 more for one that uses every letter, all
    times the combo. The combo grows by one for each word within 6 seconds of the last (up to ×5) and drops back to ×1 when that gap passes.
    A word of 5 letters or more adds seconds to the clock (one with every letter, 3 more), up to 30 in a round. */
-const VAL={3:5,4:10,5:20,6:40,7:80,8:120}, FULL=50, COMBO_WINDOW=6, MAXCOMBO=5, TIMEB={5:2,6:3,7:4,8:5}, FULL_TIME=3, MAX_ADDED=30;
+/* Scored like Odd One Out and Trails: a casual minute lands near 500, a good one near 2,000, so a win pays the same
+   challenge points across the games. A word pays by length, half again if rare, 150 more for every letter, times a
+   combo that climbs by one for each word within 8 s of the last, up to ×3. */
+const VAL={3:30,4:50,5:80,6:120,7:170,8:230}, FULL=150, COMBO_WINDOW=8, MAXCOMBO=3, TIMEB={5:2,6:3,7:4,8:5}, FULL_TIME=3, MAX_ADDED=30;
 const worthOf=(w,isRare,isFull,c)=>(Math.round(VAL[w.length]*(isRare?1.5:1))+(isFull?FULL:0))*c;
 const HUES=[45,200,330,150,265,20,180,300,125,225,350,165,285,35,210,320,140,250,5,190];
 const hueFor=g=>HUES[g%HUES.length];
@@ -544,7 +547,10 @@ function wav(f,d,to){ const k=Math.round(f)+'|'+d+'|'+(to||0); if(wavCache[k])re
   w(0,'RIFF'); dv.setUint32(4,36+N,true); w(8,'WAVEfmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true); dv.setUint32(24,sr,true); dv.setUint32(28,sr,true); dv.setUint16(32,1,true); dv.setUint16(34,8,true); w(36,'data'); dv.setUint32(40,N,true);
   let ph=0; for(let i=0;i<N;i++){ const x=i/N, fr=to?f*Math.pow(to/f,x):f; ph+=2*Math.PI*fr/sr; const env=Math.min(1,i/60)*Math.pow(1-x,1.5); buf[44+i]=128+Math.round(110*env*Math.sin(ph)); }
   let s=''; for(let i=0;i<buf.length;i++)s+=String.fromCharCode(buf[i]); return wavCache[k]='data:audio/wav;base64,'+btoa(s); }
-function tagTone(f,d,o){ const go=()=>{ try{ const au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.volume=Math.min(1,(o.vol||0.16)*4); const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
+/* The fallback player, one per note, kept and restarted: building a new <audio> for every key tap stalled the page on iPhones. */
+const tagPool={};
+function tagTone(f,d,o){ const go=()=>{ try{ const k=Math.round(f)+'|'+Math.max(0.08,d)+'|'+(o.to||0); let au=tagPool[k]; if(!au){ au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.preload='auto'; tagPool[k]=au; }
+    au.volume=Math.min(1,(o.vol||0.16)*4); try{au.currentTime=0;}catch(e){} const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
 function tone(f,d,o){ o=o||{}; if(!save.sound)return; if(audioMode==='tag')return tagTone(f,d,o); const a=ac(); if(!a)return tagTone(f,d,o); webTone(a,f,d,o); }
 function sndLabel(){ const b=$('snd'); b.textContent=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on'); b.setAttribute('aria-pressed',save.sound?'true':'false'); }
 function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
@@ -553,7 +559,7 @@ function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
 /* The prototype's sounds: each letter a step up the scale, a word a run up it (higher with the combo). */
 const SC=[0,2,4,7,9,12,14,16,19,21,24], nt=(i,shift)=>261.63*Math.pow(2,(SC[Math.min(i,SC.length-1)]+(shift||0))/12);
 const sfx={
-  tap(i){tone(nt(i),0.11,{vol:.17});tone(nt(i)*2,0.06,{type:'sine',vol:.06});},
+  tap(i){tone(nt(i),0.11,{vol:.17}); if(audioMode!=='tag')tone(nt(i)*2,0.06,{type:'sine',vol:.06});},
   untap(){tone(300,0.07,{to:220,vol:.1});},
   shuffle(){for(let i=0;i<7;i++)tone(nt(Math.floor(Math.random()*8)),0.05,{vol:.08,at:i*.03});},
   word(len,c){const sh=(c-1)*2; for(let i=0;i<len;i++)tone(nt(i,sh),0.14,{vol:.18,at:i*.055}); tone(nt(len,sh)*2,0.3,{type:'sine',vol:.12,at:len*.055});
@@ -664,30 +670,51 @@ function renderTarget(tapped){ const t=$('target'), d=duel, show=!!(d&&d.theirFi
 /* ---------- the stop ---------- */
 function say(m,bad){ const s=$('status'); s.textContent=m; s.classList.toggle('bad',!!bad); }
 const usedIds=()=>new Set(tray.map(t=>t.id));
-/* The letters, in two rows; before and after a round they cannot be tapped. The buttons are built once per stop
-   (and on a shuffle) and only restyled after that: rebuilding the one under the finger on every tap made the phone's
-   web view drop the next taps. One listener on the box takes every tap, so it survives any rebuild. */
+/* ---------- the rack ----------
+   Built once per stop and never rebuilt on a tap: a tap flips one tile's class and appends one letter to the word.
+   Taps are read from the raw touches, every finger on its own, and mapped to the nearest letter by where they land
+   (a touch a little off a tile still gets it), so nothing but one class flip and one append runs before the paint. */
+const rack={tiles:new Map(),rects:null};
 function renderTiles(pop){
-  const box=$('tiles'); box.innerHTML=''; const cut=order.length<=6?3:4;
+  const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const cut=order.length<=6?3:4;
   [order.slice(0,cut),order.slice(cut)].forEach(row=>{ const r=el('div','rowt');
-    row.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.dataset.id=t.id; b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); r.appendChild(b); });
+    row.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.tabIndex=-1; b.dataset.id=String(t.id); b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); rack.tiles.set(String(t.id),b); r.appendChild(b); });
     box.appendChild(r); });
   syncTiles(); }
+function measureRack(){ rack.rects=[]; rack.tiles.forEach((b,id)=>{ const r=b.getBoundingClientRect(); rack.rects.push({id,x:r.left+r.width/2,y:r.top+r.height/2,hw:r.width/2,hh:r.height/2}); }); }
+/* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. */
+function tileAt(x,y){ measureRack(); let best=null,bd=Infinity;
+  for(const r of rack.rects){ const dx=Math.max(0,Math.abs(x-r.x)-r.hw), dy=Math.max(0,Math.abs(y-r.y)-r.hh), d=dx*dx+dy*dy; if(d<bd){bd=d;best=r;} }
+  return best&&bd<=18*18?best.id:null; }
 function syncTiles(){ const used=new Set([...usedIds()].map(String)), live=mode==='play'&&!locked;
-  $('tiles').querySelectorAll('.tile').forEach(b=>{ const on=used.has(b.dataset.id); b.classList.toggle('used',on); b.setAttribute('aria-disabled',String(!live||on)); }); }
-(()=>{ const box=$('tiles');
-  // A button carries its letter's id as text; the letters keep theirs as they were made.
-  const idOf=b=>{ const t=order.find(o=>String(o.id)===b.dataset.id); return t?t.id:null; };
-  /* Inside the app the web view gets its touches late and in a bunch, and under quick taps one of the pointer, touch or
-     click events for a tap can go missing. So all three are listened to and the first to arrive for a tile counts; the
-     rest of that tap find the letter already in the word and do nothing. */
-  const once=(e)=>{ const b=e.target.closest&&e.target.closest('.tile'); if(!b)return; const id=idOf(b); if(id!==null)tapTile(id); };
-  box.addEventListener('pointerdown',e=>{ e.preventDefault(); once(e); });
-  box.addEventListener('touchstart',e=>{ once(e); },{passive:true});
-  box.addEventListener('click',once); })();
-/* The word being made; a tap on a letter in it puts that letter back. */
-function renderTray(cls,added){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML='';
-  tray.forEach((t,j)=>{ const b=el('button',added&&j===tray.length-1?'new':'',t.ch); b.type='button'; b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); b.onclick=()=>removeAt(j); e.appendChild(b); }); }
+  rack.tiles.forEach((b,id)=>{ b.classList.toggle('used',used.has(id)); b.setAttribute('aria-disabled',String(!live||used.has(id))); }); }
+function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b.classList.toggle('used',on); b.setAttribute('aria-disabled',String(on||mode!=='play'||locked)); }
+(()=>{ const box=$('tiles'), tr=$('tray'); let lastTouchAt=0;
+  const idOf=s=>{ const t=order.find(o=>String(o.id)===s); return t?t.id:null; };
+  const hit=(x,y,target)=>{ const s=tileAt(x,y); if(s!==null)return idOf(s); const b=target&&target.closest&&target.closest('.tile'); return b?idOf(b.dataset.id):null; };
+  /* Taps and slides. A finger that lands on a letter adds it the moment it lands; a finger that then slides over other
+     letters adds each one it crosses (a word in one gesture), once it has moved a little, so a wobbling tap adds nothing
+     extra. The end of the touch, a pointer event and the click all add the letter too: a letter already in the word is
+     not added again, so whichever of them the app delivers first wins and the rest do nothing. */
+  const fingers=new Map();
+  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY,slid:false}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } },{passive:true});
+  box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); if(!f)continue;
+      if(!f.slid&&Math.hypot(t.clientX-f.x,t.clientY-f.y)<14)continue; f.slid=true; const s=tileAt(t.clientX,t.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } } },{passive:true});
+  const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); if(f&&!f.slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
+  box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches)fingers.delete(t.identifier); },{passive:true});
+  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch')e.preventDefault(); const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  box.addEventListener('pointermove',e=>{ if(e.pointerType==='touch'||!(e.buttons&1))return; const s=tileAt(e.clientX,e.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } });
+  box.addEventListener('click',e=>{ const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  // The word: a touch on a letter there puts it back, the moment it lands.
+  const trayHit=e=>{ const b=e.target.closest&&e.target.closest('button'); if(b&&b.dataset.j!=null)removeAt(+b.dataset.j); };
+  tr.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); trayHit(e); },{passive:true});
+  tr.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch')return; e.preventDefault(); trayHit(e); });
+  tr.addEventListener('click',e=>{ if(performance.now()-lastTouchAt<700)return; trayHit(e); });
+  ['resize','orientationchange'].forEach(ev=>window.addEventListener(ev,()=>{rack.rects=null;}));
+  window.addEventListener('scroll',()=>{rack.rects=null;},{passive:true}); })();
+/* The word being made. */
+function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
+function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach((t,j)=>e.appendChild(trayLetter(t,j))); }
 function renderWall(){ const n=found.filter(f=>!f.rare).length; $('wstop').textContent='Stop '+(gi+1); $('wcount').textContent=n+' of '+cur.words.length+' words'; }
 function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy; $('enter').disabled=busy; }
 function render(pop){ if(!cur)return; renderTiles(pop); renderTray(); renderWall(); renderKeys(); }
@@ -718,7 +745,7 @@ function start(opp,sd){
   mode='count'; cur=makeStop(0); order=cur.letters.split('').map((ch,id)=>({ch,id})); tray=[]; found=[]; $('wall').innerHTML='';
   document.documentElement.style.setProperty('--h',hueFor(0)); render(); say('');
   renderHud(true); renderGoal(); renderTarget(); playing(true); renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; let k=3;
-  const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();buzz(20);};
+  const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();};
   show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
 }
 function begin(){ mode='play'; $('cover').hidden=true; endAt=now()+ROUND; sfx.go(); showStop(); timer=setInterval(tick,100); tick(); }
@@ -729,10 +756,14 @@ function countUp(){ const e=$('score'); const from=shown, to=score, t0=performan
    The prototype's rules: tap letters (or type them) to build a word in the tray, Enter to play it. Three letters or more, each letter once, and in
    the list (common or rare). A word that uses every letter ends the stop: the next one, with as many letters or more, comes up a moment later. */
 const canPlay=()=>mode==='play'&&!locked&&!!cur;
-function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=order.find(o=>o.id===id); if(!t)return; tray.push(t); say(''); sfx.tap(tray.length-1); buzz(8); syncTiles(); renderTray('',true); renderKeys(); }
+function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=order.find(o=>o.id===id); if(!t)return;
+  tray.push(t); setTileUsed(id,true); const e=$('tray');
+  if(e.className==='tray'&&e.children.length===tray.length-1)e.appendChild(trayLetter(t,tray.length-1)); else renderTray();
+  if($('status').textContent)say(''); renderKeys(); }
+/* A letter tap makes no sound and no buzz: the buzz is for a correct word, and the sounds for words and the clock. */
 function typeLetter(ch){ if(!canPlay())return; const used=usedIds(), t=order.find(o=>o.ch===ch&&!used.has(o.id)); if(t)tapTile(t.id); else sfx.untap(); }
-function removeAt(j){ if(!canPlay())return; tray.splice(j,1); sfx.untap(); syncTiles(); renderTray(); renderKeys(); }
-function del(){ if(!canPlay()||!tray.length)return; tray.pop(); sfx.untap(); syncTiles(); renderTray(); renderKeys(); }
+function removeAt(j){ if(!canPlay()||j<0||j>=tray.length)return; const [t]=tray.splice(j,1); setTileUsed(t.id,false); renderTray(); renderKeys(); }
+function del(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
 function shuffle(){ if(!canPlay())return; for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];} sfx.shuffle(); renderTiles(true); }
 /* The tray shows the word it just played, green (gold for every letter) or red, then empties. */
 let clearT=null;
@@ -745,7 +776,7 @@ function enter(){
   if(found.some(f=>f.w===w)){ sfx.dup(); say('Already found.',true); const c=[...$('wall').children].find(x=>x.dataset.w===w);
     if(c){c.classList.add('flash');c.scrollIntoView({block:'nearest'});setTimeout(()=>c.classList.remove('flash'),600);} flashTray('no'); return; }
   const isRare=!words.has(w)&&rareSet.has(w);
-  if(!words.has(w)&&!isRare){ sfx.no(); buzz([30,40,30]); say('Not in the list.',true); flashTray('no'); return; }
+  if(!words.has(w)&&!isRare){ sfx.no(); say('Not in the list.',true); flashTray('no'); return; }
   const t=now(); if(t<=comboUntil&&total>0){ if(combo<MAXCOMBO){ combo++; sfx.combo(combo); } } else combo=1; comboUntil=t+COMBO_WINDOW; maxCombo=Math.max(maxCombo,combo);
   const len=w.length, isFull=len===order.length, pts=worthOf(w,isRare,isFull,combo), before=score;
   score+=pts; total++; if(isRare)rares++; found.push({w,pts,rare:isRare}); if(!bestWord||len>bestWord.length)bestWord=w; say('');
@@ -767,15 +798,15 @@ function enter(){
 }
 /* Every letter used: on to the next stop after a moment to see it. */
 function nextStop(){ locked=true; fulls++; renderTiles(); renderKeys(); const n0=cur.len;
-  setTimeout(()=>{ if(mode!=='play')return; gi++; if(makeStop(gi).len>n0)sfx.grow(); showStop(); },reduce()?150:900); }
+  setTimeout(()=>{ if(mode!=='play')return; gi++; if(makeStop(gi).len>n0)sfx.grow(); showStop(); },reduce()?150:500); }
 function tick(){
   if(mode!=='play')return; const t=now(), left=endAt-t;
   if(combo>1&&t>comboUntil){ combo=1; sfx.comboLost(); }
-  const s=Math.ceil(left); if(s!==lastSec){lastSec=s; const tk=$('ticker'); if(s<=10&&s>0){sfx.tick(11-s); if(s<=3)buzz(15); tk.hidden=false; tk.textContent=s; tk.classList.remove('beat'); void tk.offsetWidth; tk.classList.add('beat');} else tk.hidden=true;}
+  const s=Math.ceil(left); if(s!==lastSec){lastSec=s; const tk=$('ticker'); if(s<=10&&s>0){sfx.tick(11-s); tk.hidden=false; tk.textContent=s; tk.classList.remove('beat'); void tk.offsetWidth; tk.classList.add('beat');} else tk.hidden=true;}
   renderHud(); if(left<=0)endRound();
 }
 function endRound(){
-  mode='over'; locked=true; clearInterval(timer); timer=null; clearTimeout(clearT); tray=[]; $('ticker').hidden=true; sfx.timeup(); buzz([60,40,160]); renderHud(true); render();
+  mode='over'; locked=true; clearInterval(timer); timer=null; clearTimeout(clearT); tray=[]; $('ticker').hidden=true; sfx.timeup(); renderHud(true); render();
   /* The stop's all-letter word, if it was not found. */
   if(cur&&!found.some(f=>f.w.length===cur.len)){ const w=cur.words.filter(x=>x.length===cur.len)[0]||cur.full[0]; if(w)say('It was '+w.toUpperCase()+'.'); }
   const stars=STARS.filter(t=>score>=t).length, mine=bankFor(score), newBest=score>save.best;
