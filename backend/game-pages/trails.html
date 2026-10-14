@@ -365,7 +365,7 @@ html.app .howto{padding-top:20px}
 html.app{--padt:14px}
 .rank.p2 .pos{background:#D9EFE3;color:#14171B}
 .rank.p3 .pos{background:var(--mint);color:#14171B}
-/* Play now: the level reached, how many of the twenty, and the rules. */
+/* Play now: the best run, out of the twenty trails, and the rules. */
 .lvl{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .lvl b{font-family:var(--display);font-weight:400;font-size:2.1rem;line-height:1;color:var(--ink)}
 .lvl span{font-family:var(--body);font-size:.88rem;color:var(--muted);white-space:nowrap}
@@ -742,8 +742,9 @@ function chGroups(){ return {
   new:CH.incoming.map(v=>['in',v]),
   turn:CH.active.filter(v=>v.me&&v.me.score==null).map(v=>['turn',v]),
   wait:[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)].map(v=>['info',v]) }; }
-function playPanel(){ const p=el('div','playcard'), all=LEVELS.length, done=Math.min(all,save.bestLevels||0), lvl=Math.min(all,done+1);
-  const hd=el('div','lvl'); hd.append(el('b','','Level '+lvl),el('span','',done+' of '+all+' cleared'));
+/* Play now: your best run (the most trails cleared in one round, out of the twenty), its bar, the rules and Play. Every round starts at trail 1. */
+function playPanel(){ const p=el('div','playcard'), all=LEVELS.length, done=Math.min(all,save.bestLevels||0);
+  const hd=el('div','lvl'); hd.append(el('b','','Best run'),el('span','',done+' of '+all+' trails'));
   const bar=el('div','lvlbar'), fill=el('i'); fill.style.width=(done/all*100)+'%'; bar.append(fill);
   const r=el('div','rules'), go=el('button','btn go','Play');
   [['🔢','Join the dots in order'],['🧩','Fill every square'],['⚡','Faster, more points']].forEach(([i,t])=>{ const d=el('div'); d.append(el('i','',i),t); r.append(d); });

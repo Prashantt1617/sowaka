@@ -1052,6 +1052,10 @@ svg{overflow:visible}
     return '<div class="badge"><div class="r">' + (rank == null ? '–' : '#' + rank) + '</div><div class="y">YOUR RANK</div></div>';
   }
   /** ALL GAMES, an app-store style list: the games you have played first (with your rank), the team game, then the rest. */
+  /** What kind of game a row is: played together, or on your own (with challenges for a web game). */
+  var GROUP_GAMES = { scribble: true };
+  function kindLabel(g) { return GROUP_GAMES[g.key] ? 'Group game' : g.kind === 'web' ? 'Solo challenge' : 'Solo game'; }
+
   function gameList(home, played) {
     var rows = [];
     var playedKeys = {};
@@ -1060,7 +1064,7 @@ svg{overflow:visible}
       playedKeys[p.game.key] = true;
       var bits = ['Best ' + count(p.played.best)];
       if (p.played.rank == null && p.played.players > 0) bits.push(plural(p.played.players, 'player', 'players'));
-      rows.push(listRow({ game: p.game, label: p.game.kind === 'web' ? 'Solo challenge' : 'Solo game', sub: bits.join(' · '),
+      rows.push(listRow({ game: p.game, label: kindLabel(p.game), sub: bits.join(' · '),
         rank: p.played.rank, total: p.played.players, btn: play(p.game.key) }));
     });
     var ev = home.liveRelay;
@@ -1071,7 +1075,7 @@ svg{overflow:visible}
     }
     home.games.filter(opens).forEach(function (g) {
       if (playedKeys[g.key]) return;
-      rows.push(listRow({ game: g, label: g.kind === 'web' ? 'Solo challenge' : 'Solo game', sub: g.tagline || g.description || 'New to you', btn: play(g.key) }));
+      rows.push(listRow({ game: g, label: kindLabel(g), sub: g.tagline || g.description || 'New to you', btn: play(g.key) }));
     });
     var pn = home.playingNow;
     var playing = pn.count > 0 ? playingNow(pn) : '<div style="height:20px"></div>';
