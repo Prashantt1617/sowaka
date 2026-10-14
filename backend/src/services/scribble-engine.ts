@@ -216,6 +216,33 @@ export function playerOf(room: ScribbleRoom, userId: string): ScribblePlayer | u
   return room.players.find((p) => p.userId === userId);
 }
 
+// ---------------------------------------------------------------- removals
+
+type KickRecord = ScribbleRoom['kicked'][number];
+/** Who a removal names; a bare string is a removal from before the cool-down. */
+export const kickedId = (k: KickRecord): string => (typeof k === 'string' ? k : k?.userId);
+/** When a removal's cool-down ends, or null for one with no expiry (an old bare id). */
+const kickEnds = (k: KickRecord): number | null => (typeof k === 'string' ? null : k.at + SCRIBBLE.kickCooldownMs);
+const kicksOf = (room: ScribbleRoom): KickRecord[] =>
+  Array.isArray(room.kicked) ? room.kicked.filter((k) => typeof k === 'string' || (!!k && typeof k === 'object')) : [];
+
+/** Removed by the host at some point, however long ago. */
+export const wasKicked = (room: ScribbleRoom, userId: string): boolean => kicksOf(room).some((k) => kickedId(k) === userId);
+
+/** Removed, and still inside the cool-down (an old bare id never runs out). */
+export function stillKicked(room: ScribbleRoom, userId: string, now: number): boolean {
+  return kicksOf(room).some((k) => {
+    if (kickedId(k) !== userId) return false;
+    const ends = kickEnds(k);
+    return ends === null || ends > now;
+  });
+}
+
+/** Ends any removal of this person (the host invited them again). */
+export function forgetKick(room: ScribbleRoom, userId: string): void {
+  room.kicked = kicksOf(room).filter((k) => kickedId(k) !== userId);
+}
+
 /**
  * Whether a pending invite is still worth showing its invitee: the room is
  * still there and still in its lobby, the invite has not run out, and they
@@ -271,6 +298,10 @@ export function viewFor(room: ScribbleRoom, userId: string, now: number): Scribb
       guessed: Object.prototype.hasOwnProperty.call(room.guessed, p.userId),
     })),
     invited: room.invited,
+    removed: kicksOf(room).flatMap((k) => {
+      const until = kickEnds(k);
+      return until === null || until > now ? [{ userId: kickedId(k), until }] : [];
+    }),
     choices: room.status === 'picking' && drawing ? room.choices : null,
     word: showWord ? room.word : null,
     mask: room.status === 'drawing' && room.word ? maskOf(room.word, room.revealed) : null,
@@ -528,7 +559,7 @@ export function removePlayer(room: ScribbleRoom, userId: string, how: 'leave' | 
   const player = playerOf(room, userId);
   if (!player) return [];
   room.players = room.players.filter((p) => p.userId !== userId);
-  if (how === 'kick') room.kicked = room.kicked.filter((k) => k.userId !== userId).concat({ userId, at: now });
+  if (how === 'kick') room.kicked = kicksOf(room).filter((k) => kickedId(k) !== userId).concat({ userId, at: now });
   const effects: Effect[] = [];
   if (how === 'kick' && by) effects.push({ type: 'kicked', userId, by: { userId: by.userId, name: by.name } });
   effects.push({

@@ -45,6 +45,7 @@ import { pointEvents } from './points-ledger.service';
 import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 import { openInvitesFor } from './scribble-room.service';
+import { logger } from '../utils/logger';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
 const CONTEST_KIND: Record<string, 'caption' | 'photo' | 'mostLikely'> = {
@@ -623,7 +624,10 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     relayP,
     challengesFor(viewer, gamesP, now),
     // A fault in the live store must not take the whole home down with it.
-    invitesFor(viewer, gamesP).catch(() => [] as HomeInvite[]),
+    invitesFor(viewer, gamesP).catch((error) => {
+      logger.error('Games home invites failed', { userId: viewer.userId }, error);
+      return [] as HomeInvite[];
+    }),
     Promise.all([gamesP, mineP]).then(([games, mine]) => playedGamesFor(viewer, games, mine)),
     Promise.all([rosterP, relayP]).then(([roster, relay]) => playingNowFor(viewer, roster, relay, now)),
   ]);

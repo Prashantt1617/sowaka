@@ -1049,9 +1049,10 @@ function render(){
 /* ---------- the menu ---------- */
 /* An invite (live, or replayed on connect for one still waiting): one card per room, the newest on top. The card goes when the room is joined,
    when the server says the room is gone or will not have you, or when it is dismissed. */
+const toastedInvites=new Set();
 function addInvite(e){ const code=String(e&&e.code||'').toUpperCase(); if(!CODE_RE.test(code)||(room&&room.code===code))return;
   const from=e.from&&typeof e.from==='object'?e.from:{}; invites=[{code,from}].concat(invites.filter(i=>i.code!==code));
-  if(!room)renderMenu(); else toast(firstOf(from.name)+' invited you to another room','feed'); }
+  if(!room)renderMenu(); else if(!toastedInvites.has(code)){ toastedInvites.add(code); toast(firstOf(from.name)+' invited you to another room','feed'); } }
 function dropInvite(code){ if(!invites.some(i=>i.code===code))return; invites=invites.filter(i=>i.code!==code); if(!room)renderMenu(); }
 function showMenu(){ room=null; phaseKey=''; resetTurn(); feedItems=[]; renderFeed(); render(); renderMenu(); }
 function renderMenu(){
@@ -1136,7 +1137,7 @@ function renderLobby(){
 }
 function copyText(t){ try{ if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(t).then(()=>true,()=>legacyCopy(t)); }catch(e){} return Promise.resolve(legacyCopy(t)); }
 function legacyCopy(t){ try{ const i=el('input'); i.value=t; i.style.position='fixed'; i.style.opacity='0'; document.body.append(i); i.select(); const ok=document.execCommand('copy'); i.remove(); return ok; }catch(e){ return false; } }
-function askKick(p){ openSheet('Remove '+firstOf(p.name)+'?',[el('p','note',firstOf(p.name)+' leaves the room and can’t join it again.')],
+function askKick(p){ openSheet('Remove '+firstOf(p.name)+'?',[el('p','note',firstOf(p.name)+' leaves the room. They can come back in a minute, or when you invite them again.')],
   [['Keep',closeSheet,false],['Remove',b=>{ b.disabled=true; ask('kick',p.userId).then(closeSheet).catch(e=>{ openSheet("Couldn't remove them",[el('p','note',errText(e))],[['OK',closeSheet,true]]); }); },true]]); }
 function leave(){ const inGame=room&&['picking','drawing','reveal'].includes(room.status);
   const go=()=>{ closeSheet(); ask('leave').catch(()=>{}); showMenu(); sfx.leave(); };
@@ -1164,11 +1165,13 @@ function openPicker(){
   const seq=openSheet('Invite colleagues',[el('p','note','They get a notification that opens this room. Up to '+room_left+' more can join.'),wrap,msg,list],[]);
   const draw=()=>{ if(!sheetIs(seq)){ if(pickerDraw===draw)pickerDraw=null; return; } const all=PEOPLE.list; if(!all){ msg.hidden=false; msg.textContent='Loading…'; return; }
     const q=input.value.trim().toLowerCase(), here=new Set((room?room.players:[]).map(p=>p.userId)), invited=new Set((room&&room.invited||[]).map(p=>p.userId));
+    // Removed by the host and still cooling down: only the host may invite them back early.
+    const now=serverNow(), barred=new Set(isHost()?[]:(room&&room.removed||[]).filter(r=>r.until===null||r.until>now).map(r=>r.userId));
     const people=q?all.filter(p=>String(p.name).toLowerCase().includes(q)):all; list.innerHTML='';
-    people.forEach(p=>{ const inRoom=here.has(p.userId), done=inRoom||invited.has(p.userId)||sent.has(p.userId);
+    people.forEach(p=>{ const inRoom=here.has(p.userId), out=!inRoom&&barred.has(p.userId), done=inRoom||out||invited.has(p.userId)||sent.has(p.userId);
       const b=el('button','person'+(inRoom?' done in':done?' done':'')); b.type='button'; const s=el('span');
       s.append(el('b','',p.name),el('small','',[p.designation,p.department].filter(Boolean).join(' · ')||'Colleague'));
-      b.append(avatar(p.name,p.photoUrl),s,el('i','',inRoom?'In room':done?'Invited ✓':'Invite')); b.disabled=done;
+      b.append(avatar(p.name,p.photoUrl),s,el('i','',inRoom?'In room':out?'Removed':done?'Invited ✓':'Invite')); b.disabled=done;
       b.onclick=()=>{ if(sent.has(p.userId))return; sent.add(p.userId); sfx.ui(); draw();
         ask('invite',p.userId).catch(e=>{ sent.delete(p.userId); draw(); toast(errText(e),'feed'); }); };
       list.append(b); });

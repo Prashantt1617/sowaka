@@ -15,6 +15,7 @@ import {
   applyGuess,
   chooseWord,
   firstName,
+  forgetKick,
   inviteOpen,
   makeCode,
   newRoom,
@@ -24,9 +25,11 @@ import {
   resetToLobby,
   standings,
   startGame,
+  stillKicked,
   turnKeyOf,
   viewFingerprint,
   viewFor,
+  wasKicked,
 } from './scribble-engine';
 import {
   appendStrokes,
@@ -317,19 +320,29 @@ export async function hostRoom(seat: Seat): Promise<ScribbleView> {
 const NO_ROOM = 'No room with that code at your company. Check it and try again.';
 
 const KICKED_MESSAGE = 'The host removed you from this room. You can come back in a minute, or at once if the host invites you again.';
-/** Removed, and still inside the cool-down. */
-const stillKicked = (room: ScribbleRoom, userId: string, now: number) =>
-  room.kicked.some((k) => k.userId === userId && k.at + SCRIBBLE.kickCooldownMs > now);
+const REMOVED_MESSAGE = 'The host removed you from this room.';
+const NOT_SEATED = 'You are not in that room any more.';
 
-export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: ScribbleView; strokes: ScribbleOp[] }> {
+/**
+ * A rejoin (the page reconnecting to the room it was in) only ever puts back
+ * someone still seated there: one removed while offline is told so, whatever
+ * the cool-down says, and anyone else gets a 404. The cool-down applies only
+ * to a fresh join by code.
+ */
+const refuseRejoin = (room: ScribbleRoom, userId: string) =>
+  wasKicked(room, userId) ? new ScribbleError(403, REMOVED_MESSAGE) : new ScribbleError(404, NOT_SEATED);
+
+export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?: boolean } = {}): Promise<{ room: ScribbleView; strokes: ScribbleOp[] }> {
+  const rejoin = options.rejoin === true;
   const code = parseCode(rawCode);
   if (!code) throw new ScribbleError(404, NO_ROOM);
   // Only ever looked up in the viewer's own org: another company's code reads
   // the same as one that does not exist.
   const existing = await readRoom(seat.org, code);
   if (!existing) throw new ScribbleError(404, NO_ROOM);
-  if (stillKicked(existing, seat.userId, deps.now())) throw new ScribbleError(403, KICKED_MESSAGE);
   const already = playerOf(existing, seat.userId);
+  if (!already && rejoin) throw refuseRejoin(existing, seat.userId);
+  if (!already && stillKicked(existing, seat.userId, deps.now())) throw new ScribbleError(403, KICKED_MESSAGE);
   if (!already && existing.players.length >= SCRIBBLE.maxPlayers) {
     throw new ScribbleError(409, `That room is full (${SCRIBBLE.maxPlayers} of ${SCRIBBLE.maxPlayers}).`);
   }
@@ -338,8 +351,9 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
 
   const changed = await change(seat.org, code, (room) => {
     const now = deps.now();
-    if (stillKicked(room, seat.userId, now)) throw new ScribbleError(403, KICKED_MESSAGE);
     const mine = playerOf(room, seat.userId);
+    if (!mine && rejoin) throw refuseRejoin(room, seat.userId);
+    if (!mine && stillKicked(room, seat.userId, now)) throw new ScribbleError(403, KICKED_MESSAGE);
     if (mine) {
       mine.online = true;
       mine.offlineAt = null;
@@ -391,6 +405,8 @@ async function findColleague(org: string, userId: string): Promise<Pick<User, 'u
   return users().findOne(filter, { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } });
 }
 
+const HOST_ONLY_REINVITE = 'Only the host can invite someone they removed.';
+
 export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ invited: true }> {
   const room = await requireRoom(seat);
   const userId = String(rawUserId ?? '').trim();
@@ -398,16 +414,19 @@ export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ in
   if (playerOf(room, userId)) return { invited: true };
   if (room.players.length >= SCRIBBLE.maxPlayers) throw new ScribbleError(409, 'The room is full.');
   if (room.invitesSent >= SCRIBBLE.invitesPerGame) throw new ScribbleError(429, 'That is enough invites for one game.');
+  // Only the host can undo their own removal early; anyone may invite them once the cool-down is over.
+  if (room.hostId !== seat.userId && stillKicked(room, userId, deps.now())) throw new ScribbleError(403, HOST_ONLY_REINVITE);
   const colleague = await findColleague(seat.org, userId);
   if (!colleague) throw new ScribbleError(404, "That person isn't a colleague you can invite.");
   const photoUrl = (await resolveProfilePhoto(colleague)) ?? null;
   // Keyed on the pair, not the room: a new room is not a fresh licence to push.
   const push = await claimOnce(`invite:${seat.org}:${seat.userId}:${userId}`, SCRIBBLE.invitePushEveryMs);
   const changed = await change(seat.org, room.code, (r) => {
-    // An invite from the host ends any cool-down from a removal.
-    r.kicked = r.kicked.filter((k) => k.userId !== userId);
     if (!playerOf(r, seat.userId)) throw new ScribbleError(404, 'You are not in a room.');
     if (playerOf(r, userId)) return { result: true, effects: [], write: false };
+    // An invite from the host ends any removal; anyone else's waits out the cool-down.
+    if (r.hostId === seat.userId) forgetKick(r, userId);
+    else if (stillKicked(r, userId, deps.now())) throw new ScribbleError(403, HOST_ONLY_REINVITE);
     if (!r.invited.some((i) => i.userId === userId)) r.invited.push({ userId, name: colleague.name, photoUrl });
     r.invitesSent += 1;
     const effects: Effect[] = [{ type: 'invite', userId, from: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, code: r.code }];

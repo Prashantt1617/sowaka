@@ -224,7 +224,7 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
   };
 
   on('room:host', buckets.host, (seat) => hostRoom(seat));
-  on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code));
+  on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code, { rejoin: p.rejoin === true }));
   on('room:leave', buckets.small, async (seat) => {
     await leaveRoom(seat);
     return {};
