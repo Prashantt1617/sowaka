@@ -19,7 +19,8 @@ import { editDistance } from './relay-engine';
  * true now. The store layer applies it under a compare-and-set, the socket
  * layer sends what comes out, and the check script runs it against a clock
  * it moves by hand. Timings are constants rather than per-room settings: one
- * game for everyone, easy to tune in one place.
+ * game for everyone, easy to tune in one place. The host sets only two things,
+ * in the lobby: how hard the words are and how many rounds.
  */
 
 export const SCRIBBLE = {
@@ -27,7 +28,12 @@ export const SCRIBBLE = {
   kickCooldownMs: 60_000,
   minPlayers: 3,
   maxPlayers: 8,
+  /** Rounds when the host has not chosen; the host may pick from `minRounds` to `maxRounds`. */
   rounds: 2,
+  minRounds: 2,
+  maxRounds: 5,
+  /** Word level when the host has not chosen. */
+  level: 'medium' as ScribbleWordLevel,
   turnMs: 70_000,
   pickMs: 10_000,
   revealMs: 6_000,
@@ -83,13 +89,35 @@ export function parseCode(raw: unknown): string | null {
 export const WORDS: Record<ScribbleWordLevel, string[]> = words as Record<ScribbleWordLevel, string[]>;
 const LEVELS: ScribbleWordLevel[] = ['easy', 'medium', 'hard'];
 
-/** One word of each level, none used in this game yet. */
-export function chooseWords(used: string[], random: Random): ScribbleChoice[] {
+export const isWordLevel = (value: unknown): value is ScribbleWordLevel => LEVELS.includes(value as ScribbleWordLevel);
+
+/** The room's word level, or the default for a room written before the host could choose. */
+export const levelOf = (room: Pick<ScribbleRoom, 'level'>): ScribbleWordLevel => (isWordLevel(room.level) ? room.level : SCRIBBLE.level);
+
+/** The room's number of rounds, held to what the host may choose. */
+export function roundsOf(room: Pick<ScribbleRoom, 'rounds'>): number {
+  const n = room.rounds;
+  return typeof n === 'number' && Number.isInteger(n) && n >= SCRIBBLE.minRounds && n <= SCRIBBLE.maxRounds ? n : SCRIBBLE.rounds;
+}
+
+/**
+ * The drawer's three words. With a level, three different words of that
+ * level; without one, one word of each level. None used in this game yet
+ * while the list has any left.
+ */
+export function chooseWords(used: string[], random: Random, level?: ScribbleWordLevel): ScribbleChoice[] {
   const taken = new Set(used);
-  return LEVELS.map((level) => {
-    const pool = WORDS[level].filter((word) => !taken.has(word));
-    const from = pool.length > 0 ? pool : WORDS[level];
-    return { word: from[Math.floor(random() * from.length) % from.length], level };
+  const pickFrom = (lv: ScribbleWordLevel, also: Set<string>) => {
+    const fresh = WORDS[lv].filter((word) => !taken.has(word) && !also.has(word));
+    const from = fresh.length > 0 ? fresh : WORDS[lv].filter((word) => !also.has(word));
+    return from[Math.floor(random() * from.length) % from.length];
+  };
+  if (!level) return LEVELS.map((lv) => ({ word: pickFrom(lv, new Set()), level: lv }));
+  const picked = new Set<string>();
+  return [0, 1, 2].map(() => {
+    const word = pickFrom(level, picked);
+    picked.add(word);
+    return { word, level };
   });
 }
 
@@ -277,7 +305,8 @@ export function viewFor(room: ScribbleRoom, userId: string, now: number): Scribb
     status: room.status,
     min: SCRIBBLE.minPlayers,
     max: SCRIBBLE.maxPlayers,
-    rounds: SCRIBBLE.rounds,
+    rounds: roundsOf(room),
+    level: levelOf(room),
     round: room.round,
     turn: room.turnIdx + 1,
     turns: room.order.length,
@@ -322,7 +351,8 @@ export function viewFingerprint(view: ScribbleView): string {
 
 /** What a change asks the socket layer to do besides sending everyone their view. */
 export type Effect =
-  | { type: 'feed'; item: ScribbleFeedItem }
+  /** A feed line to the whole room, or only to `to`. */
+  | { type: 'feed'; item: ScribbleFeedItem; to?: string[] }
   | { type: 'close'; userId: string; text: string }
   | { type: 'kicked'; userId: string; by: { userId: string; name: string } }
   | { type: 'invite'; userId: string; from: { userId: string; name: string; photoUrl: string | null }; code: string }
@@ -350,6 +380,8 @@ export function newRoom(code: string, org: string, host: Omit<ScribblePlayer, 's
     invited: [],
     kicked: [],
     invitesSent: 0,
+    level: SCRIBBLE.level,
+    rounds: SCRIBBLE.rounds,
     gameId: null,
     round: 0,
     turnIdx: -1,
@@ -408,11 +440,11 @@ export function beginPick(room: ScribbleRoom, now: number, random: Random): Effe
     room.round += 1;
     room.turnIdx = 0;
     room.order = onlinePlayers(room).map((p) => p.userId);
-    if (room.round > SCRIBBLE.rounds || room.order.length < 2) return finishGame(room, now);
+    if (room.round > roundsOf(room) || room.order.length < 2) return finishGame(room, now);
   }
   if (onlinePlayers(room).length < 2) return finishGame(room, now);
   room.drawerId = room.order[room.turnIdx];
-  room.choices = chooseWords(room.usedWords, random);
+  room.choices = chooseWords(room.usedWords, random, levelOf(room));
   room.word = null;
   room.status = 'picking';
   room.turnStartedAt = now;
@@ -540,6 +572,64 @@ export function applyGuess(
     effects: [{ type: 'feed', item: { kind: 'guess', userId, name: player.name, text: trimmed } }],
     changed: false,
   };
+}
+
+/** Whether this player's line is a guess at the word now: a guesser, mid-turn, who does not have it yet. */
+export function guessing(room: ScribbleRoom, userId: string): boolean {
+  return room.status === 'drawing' && !!room.word && room.drawerId !== userId && !Object.prototype.hasOwnProperty.call(room.guessed, userId);
+}
+
+/**
+ * A chat line: anything typed by someone who is not guessing right now, in
+ * any phase. While a word is being drawn, the drawer and those who have
+ * guessed it may talk, but only among themselves, so the word cannot leak;
+ * otherwise the whole room sees it. A line on the block-list goes nowhere.
+ */
+export function applyChat(
+  room: ScribbleRoom,
+  userId: string,
+  text: string,
+  blocked: (normalized: string) => boolean,
+): { result: GuessResult; effects: Effect[] } {
+  const player = playerOf(room, userId);
+  const trimmed = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, SCRIBBLE.maxGuessChars);
+  if (!player || !trimmed) return { result: { correct: false }, effects: [] };
+  if (blocked(normalizeGuess(trimmed))) return { result: { correct: false, blocked: true }, effects: [] };
+  const item: ScribbleFeedItem = { kind: 'chat', userId, name: player.name, text: trimmed };
+  // The drawer picking a word knows three that nobody else does: a line
+  // that names one (or nearly) stays with the drawer.
+  if (room.status === 'picking' && room.drawerId === userId && (room.choices ?? []).some((c) => guessOutcome(trimmed, c.word) !== 'wrong')) {
+    return { result: { correct: false }, effects: [{ type: 'feed', item: { ...item, private: true }, to: [userId] }] };
+  }
+  if (room.status === 'drawing' && room.word) {
+    const knowers = room.players
+      .map((p) => p.userId)
+      .filter((id) => id === room.drawerId || Object.prototype.hasOwnProperty.call(room.guessed, id));
+    return { result: { correct: false }, effects: [{ type: 'feed', item: { ...item, private: true }, to: knowers }] };
+  }
+  return { result: { correct: false }, effects: [{ type: 'feed', item }] };
+}
+
+/**
+ * The host's lobby settings: a word level and a number of rounds, either or
+ * both. Anything invalid refuses the whole change (null); otherwise returns
+ * whether the room changed.
+ */
+export function applySettings(room: ScribbleRoom, input: { level?: unknown; rounds?: unknown }): boolean | null {
+  const { level, rounds } = input;
+  if (level === undefined && rounds === undefined) return null;
+  if (level !== undefined && !isWordLevel(level)) return null;
+  if (rounds !== undefined && (typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < SCRIBBLE.minRounds || rounds > SCRIBBLE.maxRounds)) return null;
+  let changed = false;
+  if (level !== undefined && room.level !== level) {
+    room.level = level;
+    changed = true;
+  }
+  if (rounds !== undefined && room.rounds !== rounds) {
+    room.rounds = rounds as number;
+    changed = true;
+  }
+  return changed;
 }
 
 /** The longest-present online player, else the longest-present at all. */

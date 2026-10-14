@@ -23,6 +23,7 @@ import {
   openInvitesFor,
   pickWord,
   setScribbleEmitter,
+  settingsRoom,
   startRoom,
   tickScribble,
 } from './scribble-room.service';
@@ -179,7 +180,7 @@ async function welcome(socket: Socket): Promise<Seat | null> {
   // socket as if they had just been sent: the page draws its card from each.
   // Only ever a nicety, so a store fault here does not cost them the room.
   try {
-    for (const invite of await openInvitesFor(org, userId)) socket.emit('room:invite', { from: invite.from, code: invite.code });
+    for (const invite of await openInvitesFor(org, userId)) socket.emit('room:invite', { from: invite.from, code: invite.code, expiresAt: invite.expiresAt });
   } catch (error) {
     logger.error('Scribble invite replay failed', { userId, org }, error);
   }
@@ -234,6 +235,7 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
     await startRoom(seat);
     return {};
   });
+  on('room:settings', buckets.small, (seat, p) => settingsRoom(seat, { level: p.level, rounds: p.rounds }));
   on('room:kick', buckets.small, async (seat, p) => {
     await kickFromRoom(seat, p.userId);
     return {};

@@ -21,7 +21,7 @@
 /* Live build: the page is reloading itself onto a copy that may open its socket (live.js); nothing to show meanwhile. */
 html.hop body{visibility:hidden}
 :root{
-  color-scheme:dark;
+  color-scheme:dark; --padt:max(14px,env(safe-area-inset-top));
   --bg:#0F1530; --panel:#1A2248; --panel2:#232D5A; --line:#35407A; --ink:#F3F4FF; --muted:#A3A9D6; --deep:#070A1A;
   --accent:#FF6F7D; --accent-deep:#B83A4C; --accent-ink:#0F1530; --paper:#FFFBF2;
   --good:#4BE39A; --bad:#FF6B6B; --gold:#FFD23F; --blue:#4C9BFF; --pink:#FF8FD0; --amber:#FFB547;
@@ -29,14 +29,14 @@ html.hop body{visibility:hidden}
   --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 *{box-sizing:border-box}
-html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+html{overflow-x:clip;background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
 body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;
-  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  padding:var(--padt) max(16px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 input{-webkit-user-select:text;user-select:text}
 main.app{max-width:440px;margin-inline:auto;display:flex;flex-direction:column;gap:14px;position:relative}
-html.app body{padding-top:14px}
+html.app{--padt:14px}
 html.app .sheet{padding-top:16px}
 html.app .howto{padding-top:20px}
 
@@ -47,7 +47,10 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 .hright{display:flex;align-items:center;gap:8px}
 .pill{font-family:var(--display);font-weight:400;font-size:.95rem;line-height:1;height:34px;padding:0 14px;border-radius:30px;border:2px solid var(--line);
   background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap}
-.pill.q{width:34px;padding:0;font-size:1.2rem;color:var(--gold)}
+.pill.q{font-family:var(--body);font-weight:600;font-size:.8rem;padding:0 14px}
+.pill.snd{width:34px;padding:0;display:grid;place-items:center;color:var(--gold)}
+.pill.snd svg{width:18px;height:18px;display:block}
+.pill.snd.off{color:var(--muted)}
 .pill:active{transform:translateY(1px)}
 
 /* Buttons, as in the other games. */
@@ -66,40 +69,90 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 .link{font-family:var(--body);font-weight:600;font-size:.84rem;color:var(--muted);background:none;border:0;padding:6px 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer;align-self:center}
 :is(.btn,.pill,.mini,.link,.person,.chip,.sw,.tl,.word,.sx):focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 
-/* The menu: an invite waiting for you, the game card, your numbers. */
-.chc{background:var(--panel);border:2px solid var(--gold);border-radius:20px;padding:12px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 4px 0 var(--deep)}
-.chc .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.chc .lab{font-weight:800;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
-.chc b{font-weight:700;font-size:13.5px;line-height:17px}
-.chc small{font-size:12px;color:var(--muted)}
-.chc .kx{flex:none;width:30px;height:30px}
-.hero{background:var(--panel);border:2px solid var(--line);border-radius:20px;box-shadow:0 5px 0 var(--deep);overflow:hidden;display:flex;flex-direction:column}
-.hero .art{height:138px;background:var(--blue);border-bottom:2px solid var(--line);display:grid;place-items:center;overflow:hidden}
-.hero .art svg{width:min(250px,76%);height:auto;display:block}
-.hero .bd{padding:12px 14px 18px;display:flex;flex-direction:column;gap:10px}
-.tag{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:5px;background:var(--gold);
-  font-weight:800;font-size:.62rem;line-height:1;letter-spacing:.02em;text-transform:uppercase;color:var(--accent-ink)}
-.hero h2{margin:-2px 0 2px;font-family:var(--display);font-weight:400;font-size:1.7rem;line-height:1;text-transform:uppercase}
-.hero .note{margin:0;font-size:.84rem;color:var(--muted)}
-.mine{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 12px 16px;background:var(--panel);border:2px solid var(--line);border-radius:20px;box-shadow:0 4px 0 var(--deep)}
-.stat{min-width:0;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:14px;background:var(--panel2)}
-.stat small{font-weight:800;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.stat b{font-family:var(--display);font-weight:400;font-size:2rem;line-height:1.05;font-variant-numeric:tabular-nums}
-.stat span{font-weight:700;font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat.dark b{color:var(--gold)}
-.mine .btn{grid-column:1/-1;min-height:46px;background:var(--panel2)}
+/* The menu, as in Odd One Out and Trails: the picture across the whole top (warm drawing paper) with the header on it, your rank and best game in
+   one square (once you have played) and the leaderboard; then Play now and Invites (open by default). */
+.top{position:relative;margin:calc(-1*var(--padt)) calc(50% - 50vw) 0;padding:var(--padt) max(16px,env(safe-area-inset-right)) 18px max(16px,env(safe-area-inset-left));
+  background:radial-gradient(110% 85% at 50% 40%,#FFFBF2 0,#FBF0DC 60%,#F4E4C8 100%);border-bottom:3px solid var(--deep);overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:8px}
+.top::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(15,21,48,.07) 2px,transparent 2.5px);background-size:22px 22px;pointer-events:none}
+.top>*{position:relative;width:100%;max-width:440px}
+.top header h1{box-shadow:0 3px 0 var(--deep)}
+.top .pill{background:rgba(15,21,48,.88);border-color:rgba(15,21,48,.15)}
+.top .art{display:grid;place-items:center}
+.top .art svg{width:min(320px,86%);height:auto;display:block;overflow:visible}
+.top .tt{margin:0;text-align:center;font-family:var(--display);font-weight:400;font-size:1.7rem;line-height:1;text-transform:uppercase;color:#0F1530;letter-spacing:.02em}
+.rankbar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch;margin-top:4px;padding:8px;border-radius:20px;background:#0F1530;box-shadow:0 5px 0 rgba(15,21,48,.3)}
+.rankbar.solo{grid-template-columns:1fr;background:none;box-shadow:none;padding:0;margin-top:2px}
+.mystat{display:flex;align-items:center;gap:12px;min-width:0;padding:8px 14px;border-radius:14px;background:var(--panel)}
+.mystat .big{font-family:var(--display);font-size:2.2rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums;flex-shrink:0}
+.mystat .big small{font-size:.55em;margin-right:1px;opacity:.8}
+.mystat .side{min-width:0;display:flex;flex-direction:column;gap:3px}
+.mystat .side span{font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mystat .side b{font-weight:400;font-size:.85rem;white-space:nowrap}
+.mystat .side b em{font-style:normal;font-weight:600;margin-left:2px}
+.lbbtn{font-family:var(--body);font-weight:600;font-size:.78rem;line-height:1;white-space:nowrap;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  padding:6px 14px;border-radius:14px;border:0;background:var(--gold);color:#0F1530;cursor:pointer;box-shadow:0 4px 0 #B88F00}
+.rankbar.solo .lbbtn{flex-direction:row;min-height:44px;font-size:.9rem;gap:8px}
+.lbbtn svg{width:22px;height:22px;flex-shrink:0}
+.lbbtn:active{transform:translateY(3px);box-shadow:0 1px 0 #B88F00}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;border-radius:20px;background:var(--panel);border:2px solid var(--line);margin-top:4px}
+.tab{font-family:var(--body);font-weight:600;font-size:.95rem;line-height:1;min-height:46px;border-radius:14px;border:0;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.tab.on{background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 0 var(--accent-deep)}
+.badge{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:.75rem;display:grid;place-items:center}
+.tab.on .badge{background:var(--accent-ink);color:var(--accent)}
+.panel{display:flex;flex-direction:column;gap:14px}
+.playcard{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:22px;background:var(--panel);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;margin-bottom:2px}
+.rules div{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:.78rem;line-height:1.2;color:var(--muted)}
+.rules i{font-style:normal;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:var(--panel2)}
+.playcard .note{margin:0;font-size:.82rem;color:var(--muted);text-align:center}
+.chlist{display:flex;flex-direction:column;gap:10px}
+.chlist .empty{margin:0;padding:22px 16px;border-radius:18px;border:2px dashed var(--line);text-align:center;font-size:.88rem;color:var(--muted)}
+.chc{background:var(--panel);border:1.5px solid var(--line);border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;box-shadow:0 4px 0 var(--deep)}
+.chc .lab{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600;font-size:11px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+.chc .row{display:flex;gap:12px;align-items:center}
+.chc .tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.chc .tx b{font-weight:400;font-size:14px;line-height:18px}
+.chc .tx small{font-size:11.5px;line-height:15px;color:var(--muted)}
+.chc .dl{font-size:11.5px;color:var(--muted);background:none;border:0;padding:2px 0 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.clock2{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border-radius:999px;background:var(--panel2);color:var(--ink);font-weight:400;font-size:11.5px;letter-spacing:0;
+  text-transform:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock2 svg{width:12px;height:12px}
+.clock2.soon{background:rgba(255,107,107,.18);color:#FF9A9D}
+.btn.send{background:var(--gold);border-color:var(--gold);color:#0F1530;box-shadow:0 4px 0 #B88F00;font-size:1.25rem}
+.btn.send:active{box-shadow:0 1px 0 #B88F00}
+/* The leaderboard: a gap where ranks are skipped, and your own row pinned under the list. */
+.gap{text-align:center;color:var(--muted);font-size:1rem;line-height:.6;padding:2px 0 6px;letter-spacing:.3em;flex-shrink:0}
+.pin{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px 8px 10px;border-radius:14px;background:var(--gold);color:#0F1530;font-size:.88rem}
+.pin .pos{font-style:normal;display:inline-grid;place-items:center;min-width:28px;height:28px;border-radius:999px;background:#0F1530;color:var(--gold);font-family:var(--display);margin-right:8px}
+.pin b{font-family:var(--display);font-weight:400;font-size:1.1rem}
+.lbh{display:flex;justify-content:space-between;gap:10px;font-weight:600;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lbh .of{color:var(--ink)}
+.links{display:flex;justify-content:center}
 
 /* Someone's face: their photo, else their initial on a colour picked by the name. */
 .av{--s:34px;width:var(--s);height:var(--s);border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:calc(var(--s)*.42);line-height:1;
   color:var(--accent-ink);background:hsl(var(--ah,45) 85% 72%);flex-shrink:0;overflow:hidden;position:relative}
 .av img{width:100%;height:100%;object-fit:cover;display:block}
 
-/* The room: its code, the invite button, who is here. */
+/* The room: its code, the invite button, the host's choices, who is here. */
 .roomcard{background:var(--panel);border:2px solid var(--line);border-radius:22px;box-shadow:0 5px 0 var(--deep);padding:14px;display:flex;flex-direction:column;gap:12px}
 .coderow{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .coderow small{display:block;font-weight:800;font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .code{font-family:var(--display);font-size:2.6rem;line-height:1;letter-spacing:.12em;color:var(--gold);font-variant-numeric:tabular-nums}
-.roomcard>.btn{font-size:1.02rem;min-height:48px;padding:6px 10px}
+.ways{display:flex;flex-direction:column;gap:8px}
+.btn.invite{background:var(--gold);border-color:var(--gold);color:#0F1530;box-shadow:0 4px 0 #B88F00;font-size:1.2rem;min-height:54px}
+.btn.invite:active{box-shadow:0 1px 0 #B88F00}
+.btn.invite svg{width:20px;height:20px;flex-shrink:0}
+.ways .hint{margin:-2px 0 2px;text-align:center;font-size:.76rem;color:var(--muted)}
+/* The host's choices, before the start: how hard the words are and how many rounds; everyone else sees what was picked. */
+.setcard{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:20px;background:var(--panel);border:2px solid var(--line)}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.setrow>span{font-size:.88rem;color:var(--muted)}
+.seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--bg);border:1.5px solid var(--line)}
+.seg button{font-family:var(--body);font-weight:600;font-size:.84rem;min-width:44px;min-height:34px;padding:0 10px;border-radius:10px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--gold);color:#0F1530}
+.seg button:disabled:not(.on){cursor:default}
+.setcard .hint{margin:-2px 0 0;font-size:.74rem;color:var(--muted);text-align:right}
 .sect{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:0 2px}
 .sect h3{margin:0;font-family:var(--display);font-weight:400;font-size:1.15rem;letter-spacing:.02em;text-transform:uppercase}
 .sect span{font-weight:800;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -155,9 +208,9 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 /* The board: a sketch card in a frame. Dotted paper with a faint grain, an inner shadow, two strips of tape. The ink is two canvases on a fixed
    1000 × 1000 raster (so a fill comes out the same on every phone): what is done, and on top the stroke being drawn. */
 #game{--chrome:330px}
-#game.drawer{--chrome:410px}
+#game.drawer{--chrome:454px}
 html.app #game{--chrome:300px}
-html.app #game.drawer{--chrome:380px}
+html.app #game.drawer{--chrome:424px}
 .board{position:relative;align-self:center;width:min(100%,calc(100dvh - var(--chrome)));min-width:250px;aspect-ratio:1;padding:9px;border-radius:28px;
   background:linear-gradient(155deg,#2E3A70 0%,#1D2650 55%,#18204A 100%);border:2px solid var(--line);box-shadow:0 6px 0 var(--deep),0 22px 40px -22px rgba(0,0,0,.8);
   transition:border-color .25s,box-shadow .25s}
@@ -226,9 +279,11 @@ html.app .tops{top:12px}
 .sz i{display:block;border-radius:50%;background:var(--c);box-shadow:0 0 0 1px rgba(0,0,0,.18)}
 .sz.on{transform:scale(1.1);box-shadow:0 0 0 2.5px var(--panel),0 0 0 5px var(--gold)}
 .sizes.off{opacity:.35}
-#game.drawer .feed{height:58px}
+#game.drawer .feed{height:48px}
+#game.drawer .say input,#game.drawer .say .btn{min-height:40px}
 
-/* Guesses: the feed and the box. */
+/* The chat: the feed and the box, open to everyone all the time (in the lobby, every turn, the podium). What a guesser types is a guess; what the
+   drawer, or someone who has the word, types mid-turn reaches only the others who have it. */
 .chat{display:flex;flex-direction:column;gap:8px}
 .feed{display:flex;flex-direction:column;gap:3px;height:96px;overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border-radius:16px;background:var(--panel);border:2px solid var(--line);font-size:.86rem}
 .feed p{margin:0;line-height:1.3;overflow-wrap:anywhere}
@@ -237,14 +292,54 @@ html.app .tops{top:12px}
 .feed p.close{color:var(--amber);font-weight:700}
 .feed p.sys{color:var(--muted);font-weight:600;font-size:.8rem}
 .feed p.turn{color:var(--gold);font-weight:800;font-size:.76rem;letter-spacing:.04em;text-transform:uppercase;padding-top:2px}
+.feed p.talk b{color:var(--blue)}
+.feed p.priv{color:#BFF3D9}
+.feed p.priv b{color:var(--good)}
+.feed p.priv i{font-style:normal;font-weight:700;font-size:.7rem;color:var(--good);margin-left:6px;opacity:.8}
+#lobby .chat .feed,#end .chat .feed{height:84px}
 .say{display:grid;grid-template-columns:1fr auto;gap:8px}
 .say input{font-family:var(--body);font-size:1rem;font-weight:600;min-height:48px;padding:0 14px;border-radius:14px;border:2px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0;outline:none}
 .say input:focus{border-color:var(--accent)}
 .say input::placeholder{color:var(--muted)}
 .say input:disabled{opacity:.6}
 .say .btn{min-height:48px;font-size:1.05rem;padding:0 16px}
-.got{min-height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:8px;background:#173D33;border:2px solid var(--good);color:var(--good);font-weight:800;font-size:.9rem}
-.got.dim{background:var(--panel);border-color:var(--line);color:var(--muted)}
+
+/* The keyboard is up mid-game (a phone, the chat box in focus): the screen becomes the visible strip above the keyboard, with the clock and the
+   word's letters on top, the paper and the chat beside or under it, and the box at the bottom, so all of it shows at once. The page sets
+   --vvt/--vvh from the visual viewport and --bs, the paper's side, and picks side by side (kb-side) or stacked (kb-stack), whichever gives
+   the bigger paper. */
+html.kb,html.kb body{overflow:hidden;height:100%}
+html.kb main.app{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100%);max-width:none;margin:0;padding:8px max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left));
+  display:grid;gap:8px;align-content:start;overflow:hidden;z-index:5;background:var(--bg)}
+html.kb.kb-side main.app{grid-template-columns:var(--bs) minmax(0,1fr);grid-template-rows:auto var(--bs) auto}
+html.kb.kb-stack main.app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto var(--bs) minmax(66px,1fr) auto}
+html.kb #strip,html.kb #tools,html.kb .rnd .mini,html.kb .gains,html.kb .over p{display:none!important}
+html.kb .words{gap:5px}
+html.kb .word{min-height:32px;font-size:.95rem;border-radius:10px;box-shadow:0 2px 0 var(--deep)}
+html.kb .word small{display:none}
+html.kb .ghud{grid-column:1/-1;gap:8px}
+html.kb .clock{width:42px;height:42px;box-shadow:none}
+html.kb .clock::before{inset:4px}
+html.kb .clock span{font-size:1.05rem}
+html.kb .wordbox{gap:2px}
+html.kb .wordbox .w{font-size:1.2rem}
+html.kb .blanks i{height:22px;line-height:22px;font-size:1.05rem}
+html.kb .rnd{gap:2px}
+html.kb .rnd b{font-size:1.05rem}
+html.kb .board{width:var(--bs);min-width:0;align-self:start;justify-self:center;padding:5px;border-radius:18px;box-shadow:0 4px 0 var(--deep)}
+html.kb .board::before,html.kb .board::after{display:none}
+html.kb .paper,html.kb .over{border-radius:13px}
+html.kb .over{gap:6px;padding:8px}
+html.kb .over h2{font-size:1.05rem}
+html.kb .over .big{font-size:1.6rem}
+html.kb .over .n{font-size:2.6rem}
+html.kb .over .av{--s:36px!important}
+html.kb .toast{font-size:1.4rem}
+html.kb .chat{display:contents}
+html.kb .feed{height:auto!important;min-height:0;font-size:.8rem;padding:4px 8px;border-radius:12px}
+html.kb.kb-side .feed{height:var(--bs)!important}
+html.kb .say{grid-column:1/-1}
+html.kb .say input,html.kb .say .btn{min-height:44px}
 
 /* The end: the podium, then everyone else. */
 .podium{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;align-items:end;margin-top:6px}
@@ -258,11 +353,11 @@ html.app .tops{top:12px}
 .pod.p1{--c:var(--gold)} .pod.p2{--c:#C9D2F2} .pod.p3{--c:#F0A36B}
 .pod.p1 .blk{height:116px} .pod.p2 .blk{height:84px} .pod.p3 .blk{height:64px}
 .rest{display:flex;flex-direction:column;gap:6px}
-.rank{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);font-weight:600;font-size:.88rem;font-variant-numeric:tabular-nums}
+.rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);font-weight:400;font-size:.88rem;font-variant-numeric:tabular-nums}
 .rank>span{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rank .av{--s:28px}
 .rank b{font-family:var(--display);font-weight:400;font-size:1.05rem;flex-shrink:0}
-.rank.me{outline:2px solid var(--accent);outline-offset:-2px}
+.rank.me{outline:2px solid var(--gold);outline-offset:-2px;background:#2E2C3E}
 .rank .pos{font-style:normal;min-width:24px;text-align:center;font-family:var(--display);color:var(--muted)}
 .prize{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:var(--panel);border:2px solid var(--line);font-weight:700;font-size:.9rem}
 .prize b{font-family:var(--display);font-weight:400;font-size:1.35rem;color:var(--gold)}
@@ -338,7 +433,7 @@ html.app .tops{top:12px}
   .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
   .toast{animation:rise 1.1s ease-out forwards} .clock.low{animation:beat .5s infinite} .over .n,.over .big{animation:pop .4s cubic-bezier(.2,1.6,.4,1)}
   .dots i{animation:blink 1.2s infinite} .dots i:nth-child(2){animation-delay:.2s} .dots i:nth-child(3){animation-delay:.4s}
-  .net i{animation:spin .8s linear infinite} .shake{animation:shake .3s} .hero .art svg{animation:sway 3.2s ease-in-out infinite}
+  .net i{animation:spin .8s linear infinite} .shake{animation:shake .3s} .top .art svg{animation:sway 3.2s ease-in-out infinite}
   .pod .blk{transform-origin:bottom;animation:grow .5s cubic-bezier(.2,1.4,.4,1) both} .pod.p2 .blk{animation-delay:.15s} .pod.p3 .blk{animation-delay:.3s}
   .prow,.chip{transition:opacity .3s,border-color .2s}
   .ti.on{animation:bounce .32s cubic-bezier(.2,1.8,.4,1)} .nib.on{transition:opacity .25s,left .09s linear,top .09s linear}
@@ -353,7 +448,7 @@ html.app .tops{top:12px}
 <main class="app">
   <header id="top">
     <h1>Scribble</h1>
-    <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button><button class="pill q" id="help" type="button" aria-label="How to play">?</button></div>
+    <div class="hright"><button class="pill q" id="help" type="button">How to play</button><button class="pill snd" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button></div>
   </header>
   <section id="menu" style="display:contents"></section>
   <section id="lobby" style="display:contents" hidden></section>
@@ -372,8 +467,7 @@ html.app .tops{top:12px}
     <div class="tools" id="tools" hidden></div>
     <div class="chat" id="chat">
       <div class="feed" id="feed" aria-live="polite"></div>
-      <form class="say" id="say" autocomplete="off"><input id="guess" type="text" maxlength="40" placeholder="Type your guess" enterkeyhint="send" aria-label="Your guess" autocapitalize="off" autocorrect="off" spellcheck="false"><button class="btn go" type="submit">Send</button></form>
-      <div class="got" id="got" hidden></div>
+      <form class="say" id="say" autocomplete="off"><input id="guess" type="text" maxlength="40" placeholder="Say something" enterkeyhint="send" aria-label="Chat" autocapitalize="off" autocorrect="off" spellcheck="false"><button class="btn go" id="send" type="submit">Send</button></form>
     </div>
   </section>
   <section id="end" style="display:contents" hidden></section>
@@ -387,8 +481,8 @@ html.app .tops{top:12px}
       <p class="kick">3 to 8 colleagues · 70 seconds a turn</p>
       <h2 id="howh">How to play</h2>
       <ol class="steps">
-        <li><i>1</i><span><b>Host or join</b>Host a room and invite colleagues, or join with a code the host reads out.</span></li>
-        <li><i>2</i><span><b>Draw your word</b>Everyone draws twice. You get points for each person who guesses it.</span></li>
+        <li><i>1</i><span><b>Host or join</b>Host a room, pick easy, medium or hard words and 2 to 5 rounds, then invite colleagues. Or join with a code.</span></li>
+        <li><i>2</i><span><b>Draw your word</b>Everyone draws once a round. You get points for each person who guesses it.</span></li>
         <li><i>3</i><span><b>Guess fast</b>Type what you think it is. The sooner you get it, the more you score.</span></li>
       </ol>
       <button class="btn go" id="howok" type="button">OK</button>
@@ -491,7 +585,7 @@ sock.on('scribble:close',p=>{ if(p&&p.text!=null)deliver({type:'close',text:Stri
 sock.on('room:kicked',p=>{ room=null; deliver({type:'kicked',by:(p&&p.by)||null}); });
 /* A live invite, and the invites still waiting when the socket connects (replayed as room:invited: one, a list, or {invites}). */
 const invited=p=>{ const list=Array.isArray(p)?p:p&&Array.isArray(p.invites)?p.invites:[p];
-  list.forEach(x=>{ if(x&&typeof x==='object'&&x.code)deliver({type:'invite',from:x.from||{},code:String(x.code)}); }); };
+  list.forEach(x=>{ if(x&&typeof x==='object'&&x.code)deliver({type:'invite',from:x.from||{},code:String(x.code),expiresAt:+x.expiresAt||null}); }); };
 sock.on('room:invite',invited); sock.on('room:invited',invited);
 sock.on('room:ticket',p=>{ if(p&&typeof p.ticket==='string'&&p.ticket)sock.auth.ticket=p.ticket; });
 /* Right after connect for someone offboarded or moved company since the page was fetched (not_allowed), or on a server fault (setup_failed);
@@ -527,7 +621,10 @@ const api={
   kick:userId=>request('room:kick',{userId:String(userId)}),
   pick:i=>request('scribble:pick',{i:+i||0,turn:turnKey()}),
   draw,
+  /* A guess while guessing, else a chat line: the server decides which, and who reads it. */
   guess:text=>request('scribble:guess',{turn:turnKey(),text:String(text||'').slice(0,40)}),
+  /* The host's lobby choices: {level:'easy'|'medium'|'hard'} and/or {rounds:2..5}; answered with the room. */
+  settings:s=>request('room:settings',{level:s&&s.level,rounds:s&&s.rounds}).then(keep),
   again:()=>request('room:again',{}),
 };
 /* On the app's bridge object (the app's script fills in the rest of it, now or once the page has loaded, and keeps room). */
@@ -560,7 +657,9 @@ if(MODE==='app'&&!window.__SCRIBBLE&&typeof window.io==='function'){ /* the live
     o.append(h,t); document.body.append(o); };
   if(document.body)show(); else document.addEventListener('DOMContentLoaded',show);
   return; }
-if(MODE==='browser'){ try{ Object.keys(localStorage).filter(k=>k.startsWith('scribble')).forEach(k=>localStorage.removeItem(k)); }catch(e){} document.documentElement.classList.add('app'); }
+if(MODE==='browser'){ try{ Object.keys(localStorage).filter(k=>k.startsWith('scribble')).forEach(k=>localStorage.removeItem(k));
+    /* A sample player (not for the tests, which start a brand-new one: window.__pvBare) with three games behind them, so the menu shows its rank square. */
+    if(!window.__pvBare)['scribble.v1','scribble.v1.u-tanvi'].forEach(k=>localStorage.setItem(k,JSON.stringify({games:3,wins:1,best:1280,guessed:9,sound:true,seenHowTo:false,counted:[]}))); }catch(e){} document.documentElement.classList.add('app'); }
 let ME={userId:'u-tanvi',name:'Tanvi Shah',photoUrl:null};
 const PEOPLE=[['Ananya Rao','Product Designer','Design'],['Arjun Das','Backend Engineer','Engineering'],['Isha Menon','HR Partner','People'],['Kabir Shah','Sales Lead','Sales'],
  ['Kritik Bansal','Founder','Leadership'],['Meera Iyer','QA Engineer','Engineering'],['Neha Gupta','Marketing Manager','Marketing'],['Priya Nair','Data Analyst','Analytics'],
@@ -580,7 +679,10 @@ const fail=(status,message)=>Promise.reject(Object.assign(new Error(message),{st
 const slow=(v,ms)=>new Promise(r=>setTimeout(()=>r(v),ms||350));
 
 /* ---------- words ---------- */
-const WORDS={easy:['laptop','pizza','kite','lemon','ladder','candle','anchor','balloon','camera','robot'],medium:['rainbow','rocket','guitar','cactus','snowman','teapot','island','penguin'],hard:['giraffe','volcano','bicycle','castle','dragon','lighthouse','hammock']};
+const WORDS={easy:['laptop','pizza','kite','lemon','ladder','candle','anchor','balloon','camera','robot','sun','tree','house','fish','apple','star','cup','car','book','cat','hat','moon'],
+  medium:['rainbow','rocket','guitar','cactus','snowman','teapot','island','penguin','umbrella','scissors','headphones','backpack','pineapple','toothbrush','butterfly','airplane'],
+  hard:['giraffe','volcano','bicycle','castle','dragon','lighthouse','hammock','waterfall','telescope','helicopter','skyscraper','octopus','windmill','submarine','treasure']};
+const LEVELS=['easy','medium','hard'], ROUND_MIN=2, ROUND_MAX=5;
 /* What a colleague draws: doodles in board units, outlines in marker, details in pen, then fills, played back op by op through the same
    stroke format the real drawer sends. Straight edges are cut into short steps (dense) so the smoothing only rounds the corners a little. */
 const PI=Math.PI;
@@ -627,7 +729,7 @@ function dist(a,b){ const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=
 const rooms={};
 const ALPHA='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function newCode(){ let c; do{ c=''; for(let i=0;i<5;i++)c+=ALPHA[Math.floor(Math.random()*ALPHA.length)]; }while(rooms[c]); return c; }
-function makeRoom(code,host){ const r={code,hostId:host.userId,status:'lobby',players:[],invited:[],kicked:new Set(),round:0,turnIdx:-1,order:[],drawerId:null,word:null,choices:null,
+function makeRoom(code,host){ const r={code,hostId:host.userId,status:'lobby',players:[],invited:[],kicked:new Set(),round:0,turnIdx:-1,order:[],drawerId:null,word:null,choices:null,level:'medium',rounds:CFG.rounds,
   endsAt:0,turnStarted:0,guessed:new Map(),revealed:[],drawerGain:0,log:[],last:null,awards:null,gameId:null,timers:[],lobbyTimers:[]}; rooms[code]=r; return r; }
 function addPlayer(r,p,bot){ if(r.players.some(x=>x.userId===p.userId))return; r.players.push({userId:p.userId,name:p.name,photoUrl:p.photoUrl||null,score:0,online:true,bot,joinedAt:now()+(seq++)});
   r.invited=r.invited.filter(i=>i.userId!==p.userId); }
@@ -638,7 +740,7 @@ function maskOf(r){ if(!r.word)return null; return [...r.word].map((ch,i)=>ch===
 /* The room as one player may see it: the word only for the drawer, someone who has guessed it, or once the turn is over. */
 function view(r,uid){ uid=uid||ME.userId; const drawing=r.drawerId===uid, got=r.guessed.has(uid);
   const showWord=r.status==='reveal'||r.status==='over'||(r.status==='drawing'&&(drawing||got));
-  return copy({code:r.code,you:uid,hostId:r.hostId,status:r.status,min:CFG.min,max:CFG.max,rounds:CFG.rounds,round:r.round,turn:r.turnIdx+1,turns:r.order.length,
+  return copy({code:r.code,you:uid,hostId:r.hostId,status:r.status,min:CFG.min,max:CFG.max,rounds:r.rounds,level:r.level,round:r.round,turn:r.turnIdx+1,turns:r.order.length,
     drawerId:r.drawerId,gameId:r.gameId,turnSec:cfg('turnSec'),pickSec:cfg('pickSec'),revealSec:cfg('revealSec'),endsAt:r.endsAt,serverNow:now(),
     players:r.players.map(p=>({userId:p.userId,name:p.name,photoUrl:p.photoUrl,score:p.score,online:p.online,guessed:r.guessed.has(p.userId)})),
     invited:r.invited.map(p=>({userId:p.userId,name:p.name,photoUrl:p.photoUrl})),
@@ -655,15 +757,16 @@ function beginPick(r){
   if(r.turnIdx>=r.order.length){ nextRound(r); return; }
   clearTurn(r); r.drawerId=r.order[r.turnIdx]; const bot=pl(r,r.drawerId).bot;
   if(bot){ const opts=BOT_WORDS.filter(w=>!r.used.has(w)); r.choices=[0,1,2].map(()=>{ const w=pick(opts.length?opts:BOT_WORDS); return {word:w,level:'easy'}; }); }
-  else r.choices=['easy','medium','hard'].map(l=>{ const opts=WORDS[l].filter(w=>!r.used.has(w)); return {word:pick(opts.length?opts:WORDS[l]),level:l}; });
+  else { /* Three different words, all at the level the host chose. */ const list=WORDS[r.level]||WORDS.medium, opts=list.filter(w=>!r.used.has(w)), pool=(opts.length>=3?opts:list).slice();
+    r.choices=[0,1,2].map(()=>({word:pool.splice(Math.floor(Math.random()*pool.length),1)[0],level:r.level})); }
   r.word=null; r.status='picking'; r.endsAt=now()+cfg('pickSec')*1000; r.guessed=new Map(); r.revealed=[]; r.drawerGain=0; r.log=[]; r.last=null;
   push(r,true); if(bot)later(r,()=>choose(r,0),rnd(2200,3200)); }
-function nextRound(r){ r.round++; r.turnIdx=0; if(r.round>CFG.rounds){ finish(r); return; }
+function nextRound(r){ r.round++; r.turnIdx=0; if(r.round>r.rounds){ finish(r); return; }
   const have=new Set(r.order); r.order=r.order.filter(id=>pl(r,id)).concat(r.players.filter(p=>!have.has(p.userId)).map(p=>p.userId)); beginPick(r); }
 function choose(r,i){ if(r.status!=='picking')return; const c=r.choices[i]||r.choices[0]; r.word=c.word; r.used.add(c.word); r.status='drawing'; r.turnStarted=now(); r.endsAt=now()+cfg('turnSec')*1000; push(r); bots(r); }
 function endTurn(r,why){ if(r.status!=='drawing'&&r.status!=='picking')return; clearTurn(r);
   const gains=[...r.guessed].map(([userId,points])=>({userId,points})); if(r.drawerId)gains.push({userId:r.drawerId,points:r.drawerGain});
-  r.last={word:r.word||'',drawerId:r.drawerId,why,gains}; r.status='reveal'; r.endsAt=now()+cfg('revealSec')*1000; push(r); }
+  r.last={word:r.word||'',drawerId:r.drawerId,why,gains}; r.status='reveal'; r.endsAt=now()+cfg('revealSec')*1000; push(r); if(Math.random()<.7)botSay(r,AFTER,rnd(900,2400)); }
 function finish(r){ clearTurn(r); r.status='over'; r.drawerId=null; const sorted=[...r.players].sort((a,b)=>b.score-a.score); const enough=r.players.length>=CFG.min;
   r.awards=sorted.map((p,i)=>({userId:p.userId,points:enough?[15,10,6][i]||3:0,reason:enough?null:'Fewer than 3 players'})); push(r); }
 function allGuessed(r){ const gs=r.players.filter(p=>p.online&&p.userId!==r.drawerId); return gs.length>0&&gs.every(p=>r.guessed.has(p.userId)); }
@@ -671,9 +774,24 @@ function guess(r,uid,text){ if(!r||r.status!=='drawing'||uid===r.drawerId||r.gue
   const t=norm(text), w=norm(r.word), p=pl(r,uid); if(!t||!p)return {correct:false};
   if(t===w||t.split(' ').includes(w)){ const left=Math.max(0,r.endsAt-now())/1000, pts=Math.round(50+250*left/cfg('turnSec'));
     r.guessed.set(uid,pts); p.score+=pts; const d=pl(r,r.drawerId); if(d){ d.score+=50; r.drawerGain+=50; }
-    feed(r,{kind:'correct',userId:uid,name:p.name}); push(r); if(allGuessed(r))later(r,()=>endTurn(r,'all'),700); return {correct:true,points:pts}; }
+    feed(r,{kind:'correct',userId:uid,name:p.name}); push(r); if(allGuessed(r))later(r,()=>endTurn(r,'all'),700);
+    else if(p.bot&&r.drawerId===ME.userId&&Math.random()<.5)later(r,()=>{ if(r.status==='drawing')say(r,uid,pick(TO_DRAWER)); },rnd(600,1500));
+    return {correct:true,points:pts}; }
   if(t.length>=4&&dist(t,w)===1){ if(uid===ME.userId)send({type:'close',text:String(text).slice(0,40)}); return {correct:false,close:true}; }
   feed(r,{kind:'guess',userId:uid,name:p.name,text:String(text).slice(0,40)}); return {correct:false}; }
+/* What anyone types: a guess from someone guessing the word, else chat. Mid-turn, the drawer and those who have the word talk only among themselves. */
+const BLOCK=['asshole','fuck','shit','bitch'];
+function say(r,uid,text){ const p=r&&pl(r,uid); if(!p)return {correct:false};
+  if(r.status==='drawing'&&uid!==r.drawerId&&!r.guessed.has(uid))return guess(r,uid,text);
+  const t=String(text||'').replace(/\s+/g,' ').trim().slice(0,40); if(!t)return {correct:false};
+  if(norm(t).split(' ').some(w=>BLOCK.includes(w)))return {correct:false,blocked:true};
+  const item={kind:'chat',userId:uid,name:p.name,text:t};
+  if(r.status==='drawing'){ const knows=ME.userId===r.drawerId||r.guessed.has(ME.userId); if(knows)feed(r,Object.assign(item,{private:true})); }
+  else feed(r,item);
+  return {correct:false}; }
+/* Colleagues chat a little: hello when they join, a word at the reveal, and to the drawer once they have the word. */
+const HELLOS=['hi all 👋','hello!','ready when you are','let\'s go!'], AFTER=['nice one!','haha','so close 😅','good drawing','gg','that was quick'], TO_DRAWER=['got it, nice drawing','easy one 😄','love the doodle'];
+function botSay(r,lines,ms){ const bots=r.players.filter(p=>p.bot&&p.online); if(!bots.length)return; const b=pick(bots); later(r,()=>{ if(pl(r,b.userId))say(r,b.userId,pick(lines)); },ms,r.status==='lobby'); }
 function removePlayer(r,uid,how){ const p=pl(r,uid); if(!p)return; r.players=r.players.filter(x=>x.userId!==uid);
   if(how==='kick')r.kicked.add(uid);
   feed(r,{kind:'leave',userId:uid,name:p.name,text:how==='kick'?firstOf(p.name)+' was removed':firstOf(p.name)+' left'});
@@ -712,6 +830,7 @@ setInterval(()=>{ const r=mine; if(!r)return; const t=now();
 
 /* Rooms already there: Ananya's, open, and a full one. */
 (function(){ const a=makeRoom('KX7PM',who('Ananya Rao')); addPlayer(a,who('Ananya Rao'),true);
+  const k=makeRoom('M3TRK',who('Kabir Shah')); addPlayer(k,who('Kabir Shah'),true); addPlayer(k,who('Zoya Khan'),true);
   const f=makeRoom('BZ4QW',who('Rahul Mehta')); ['Rahul Mehta','Shiv Patel','Neha Gupta','Yami Kapoor','Isha Menon','Zoya Khan','Kritik Bansal','Priya Nair'].forEach(n=>addPlayer(f,who(n),true)); })();
 
 function leaveCurrent(){ if(!mine)return; const r=mine; mine=null; removePlayer(r,ME.userId,'leave'); }
@@ -731,26 +850,36 @@ const api={
       later(r,()=>{ addPlayer(r,who('Kabir Shah'),true); feed(r,{kind:'join',userId:'u3',name:'Kabir Shah',text:'Kabir joined'}); push(r); },2500,true);
       later(r,()=>{ addPlayer(r,who('Priya Nair'),true); feed(r,{kind:'join',userId:'u7',name:'Priya Nair',text:'Priya joined'}); push(r); },5000,true);
       later(r,()=>{ const h=pl(r,r.hostId); if(r.status==='lobby'&&h&&h.bot&&r.players.length>=CFG.min)startGame(r); },14000,true); }
+    if(r.code==='M3TRK'&&r.status==='lobby'){ r.level='easy'; r.rounds=3; push(r);
+      later(r,()=>say(r,'u3','hey! starting in a sec'),1800,true);
+      later(r,()=>{ const h=pl(r,r.hostId); if(r.status==='lobby'&&h&&h.bot&&r.players.length>=CFG.min)startGame(r); },9000,true); }
     setTimeout(()=>push(r,true),30); return view(r); }); },
   leave(){ leaveCurrent(); return slow({},100); },
   invite(userId){ const r=mine, p=PEOPLE.find(x=>x.userId===userId)||KNOWN.get(userId); if(!r||!p)return fail(404,'Not in a room');
     if(r.players.length>=CFG.max)return fail(409,'The room is full.');
     if(!r.invited.some(x=>x.userId===userId)&&!pl(r,userId))r.invited.push(p); push(r);
     /* Every invited colleague joins a few seconds later, as a simulated player, while there is room. */
-    later(r,()=>{ if(r.players.length>=CFG.max||pl(r,userId))return; addPlayer(r,p,true); feed(r,{kind:'join',userId,name:p.name,text:firstOf(p.name)+' accepted your invite'}); push(r); },rnd(2000,3500),true);
+    later(r,()=>{ if(r.players.length>=CFG.max||pl(r,userId))return; addPlayer(r,p,true); feed(r,{kind:'join',userId,name:p.name,text:firstOf(p.name)+' accepted your invite'}); push(r);
+      if(Math.random()<.5)later(r,()=>{ if(r.status==='lobby'&&pl(r,userId))say(r,userId,pick(HELLOS)); },rnd(800,2000),true); },rnd(2000,3500),true);
     return slow({invited:true},250); },
   start(){ const r=mine; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can start the game.'); if(r.players.filter(p=>p.online).length<CFG.min)return fail(409,'Need '+CFG.min+' players to start.');
     startGame(r); return slow({},120); },
   kick(userId){ const r=mine; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can remove players.'); removePlayer(r,userId,'kick'); return slow({},200); },
   pick(i){ const r=mine; if(!r||r.status!=='picking'||r.drawerId!==ME.userId)return fail(409,'Too late to pick.'); choose(r,+i||0); return slow({},80); },
   draw(ops){ const r=mine; if(r&&meOnline&&r.status==='drawing'&&r.drawerId===ME.userId&&Array.isArray(ops))logOps(r,ops); },
-  guess(text){ if(!meOnline)return fail(0,'Not connected'); return slow(guess(mine,ME.userId,text),60); },
+  guess(text){ if(!meOnline)return fail(0,'Not connected'); return slow(say(mine,ME.userId,text),60); },
+  settings(o){ const r=mine; o=o||{}; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can change the game.'); if(r.status!=='lobby')return fail(409,'The game has already started.');
+    if(o.level!=null&&!LEVELS.includes(o.level))return fail(400,'Choose easy, medium or hard words.');
+    if(o.rounds!=null&&!(Number.isInteger(+o.rounds)&&+o.rounds>=ROUND_MIN&&+o.rounds<=ROUND_MAX))return fail(400,'Choose '+ROUND_MIN+' to '+ROUND_MAX+' rounds.');
+    if(o.level!=null)r.level=o.level; if(o.rounds!=null)r.rounds=+o.rounds; push(r); return slow(view(r),120); },
   again(){ const r=mine; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can start again.'); clearTurn(r); r.status='lobby'; r.round=0; r.turnIdx=-1; r.drawerId=null; r.word=null; r.gameId=null;
     r.players.forEach(p=>{p.score=0;}); push(r,true); return slow({},150); },
 };
-const BOARD=[['Ananya Rao',2480],['Arjun Das',2210],['Kabir Shah',1960],['Priya Nair',1730],['Meera Iyer',1515],['Rahul Mehta',1280],['Shiv Patel',990]];
-function board(){ const rows=BOARD.map(([name,score])=>({name,score,me:false})); if(myBest)rows.push({name:ME.name,score:myBest,me:true}); rows.sort((a,b)=>b.score-a.score); rows.forEach((r,i)=>r.rank=i+1);
-  const me=rows.find(r=>r.me); return {entries:rows,me:me?{rank:me.rank,score:me.score}:null,company:'Sowaka',label:'Scribble'}; }
+/* 123 colleagues by best game; the sample player's 1,280 is #30. As the server sends it: the top 10, the two either side of you, and the total. */
+const FN=['Aarav','Diya','Vivaan','Anika','Reyansh','Saanvi','Advik','Myra','Kiaan','Aadhya','Ishaan','Kavya','Arnav','Riya','Dhruv','Tara','Kabir','Nisha','Rohan','Sara'], LN=['Sharma','Verma','Reddy','Joshi','Pillai','Malhotra','Chopra','Bhat','Sen','Kulkarni'];
+const BOARD=[['Ananya Rao',2480],['Arjun Das',2210],['Kabir Shah',1960]].concat(Array.from({length:120},(_,i)=>[FN[i%20]+' '+LN[(i*7+Math.floor(i/20))%10],Math.round(1900*Math.pow(.9853,i))]));
+function board(){ const rows=BOARD.map(([name,score])=>({name,score,me:false})); if(myBest)rows.push({name:ME.name,score:myBest,me:true}); rows.sort((a,b)=>b.score-a.score||(a.me?-1:1)); rows.forEach((r,i)=>r.rank=i+1);
+  const me=rows.find(r=>r.me); return {entries:rows.filter(r=>r.rank<=10||(me&&Math.abs(r.rank-me.rank)<=2)),total:rows.length,me:me?{rank:me.rank,score:me.score}:null,company:'Sowaka',label:'Scribble'}; }
 const fakeColleagues=q=>{ q=String(q||'').toLowerCase(); return slow({colleagues:copy(PEOPLE.filter(p=>!q||p.name.toLowerCase().includes(q)))},300); };
 /* Puts the simulated rooms on window.Sowaka. In the app, the real bridge stays for the player's name and id and the colleague list (reads only);
    scores and the leaderboard stay here, so nothing reaches the company's boards. Without the app, a stand-in bridge is made. */
@@ -765,6 +894,10 @@ function install(){ let S=window.Sowaka&&window.Sowaka.native?window.Sowaka:null
   S.submitScore=n=>{ myBest=Math.max(myBest,+n||0); return slow(board()); }; S.leaderboard=()=>slow(board());
   return true; }
 if(!install())addEventListener('sowaka-ready',function once(){ if(install())removeEventListener('sowaka-ready',once); });
+/* The browser preview opens with two invites waiting (in the app, these arrive as invite notifications), timed as the server times them. */
+if(MODE==='browser'&&!window.__pvBare){ let myBest0=0; try{ myBest0=+(JSON.parse(localStorage.getItem('scribble.v1')||'{}').best)||0; }catch(e){} if(myBest0)myBest=Math.max(myBest,myBest0);
+  (function sendInvites(){ if(!window.onSowakaRoom)return setTimeout(sendInvites,30); window.onSowakaRoom({type:'invite',from:who('Ananya Rao'),code:'KX7PM',expiresAt:Date.now()+(14*60+20)*1000});
+    window.onSowakaRoom({type:'invite',from:who('Kabir Shah'),code:'M3TRK',expiresAt:Date.now()+42*60e3}); })(); }
 
 /* ---------- the preview's own chrome ---------- */
 const css=document.createElement('style'); css.textContent=`
@@ -777,6 +910,7 @@ const css=document.createElement('style'); css.textContent=`
 .pv-panel p{margin:0;font-weight:500;font-size:12px;color:#5a4300}
 .pv-panel button.pv{text-align:left;padding:8px 10px;border-radius:10px;border:1.5px solid #d9b45a;background:#fff;color:#2A1A00;font:700 13px system-ui,sans-serif;cursor:pointer}
 .pv-panel button.pv:disabled{opacity:.4}
+html.kb .pv-tag,html.kb .pv-tab{display:none}
 .pv-tag{position:fixed;left:8px;bottom:calc(6px + env(safe-area-inset-bottom,0px));z-index:19;padding:5px 9px;border-radius:999px;border:1.5px dashed #FFB547;
   background:rgba(15,21,48,.86);color:#FFB547;font:800 10px/1 system-ui,-apple-system,sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
@@ -873,18 +1007,22 @@ loadSave();
      Sowaka.room.kick(userId)      -> Promise (host only); they cannot join this room again
      Sowaka.room.pick(i)           -> Promise; the drawer picks one of the three words
      Sowaka.room.draw(ops)         -> fire and forget: this turn's strokes, batched (see queueOp)
-     Sowaka.room.guess(text)       -> Promise of {correct, close, points} ({correct:false, blocked:true} for a guess on the server's block-list: not shown to anyone else)
+     Sowaka.room.guess(text)       -> Promise of {correct, close, points} ({correct:false, blocked:true} for a line on the server's block-list: not shown to anyone else).
+                                      Whatever is typed goes this way: a guess from someone guessing the word, a chat line from anyone else, in any phase
+     Sowaka.room.settings(s)       -> Promise of the room (host only, in the lobby): s is {level:'easy'|'medium'|'hard'} and/or {rounds:2..5}
      Sowaka.room.again()           -> Promise (host only, after the podium): everyone back to the room
      Sowaka.startRoomCode          -> the room an invite notification opened the game on, or null
    and the app calls window.onSowakaRoom(evt) for everything that happens:
      {type:'state', room, strokes?}  the room as this player may see it (strokes only on a join or a reconnection)
      {type:'draw', ops}              the drawer's strokes, to everyone else
-     {type:'feed', item}             a guess, a correct guess (never its text), someone joining or leaving
+     {type:'feed', item}             a guess, a chat line (private:true when only those with the word see it), a correct guess (never its text),
+                                     someone joining or leaving
      {type:'close', text}            only to the one who typed it: one letter off
      {type:'kicked', by}             the host removed you
-     {type:'invite', from, code}     a colleague invited you (also replayed for each invite still waiting when the socket connects)
+     {type:'invite', from, code, expiresAt}  a colleague invited you (also replayed for each invite still waiting when the socket connects)
      {type:'connection', online}     the app's socket dropped or came back (a fresh state follows)
      {type:'fatal', message, code}   the connection is over for good (ticket expired or refused, not_allowed, setup_failed): a sheet, then nothing works
+   The room carries the host's choices: level (how hard the drawer's three words are) and rounds.
    A refusal may be a rate limit ({status:429, message}); its message is shown as-is. The room's drawerId is null in the lobby and on the podium,
    and awards is null while no Sowaka points are paid for Scribble.
    The word is never in a guesser's state until they have guessed it or the turn is over: only its blanks (mask, one character per letter). */
@@ -1041,48 +1179,85 @@ function onPhase(was,r){
 }
 function render(){
   const r=room, st=r&&r.status;
-  $('menu').hidden=!!r; $('lobby').hidden=st!=='lobby'; $('game').hidden=!['picking','drawing','reveal'].includes(st); $('end').hidden=st!=='over';
+  if(r)placeHeader(null); $('menu').hidden=!!r; $('lobby').hidden=st!=='lobby'; $('game').hidden=!['picking','drawing','reveal'].includes(st); $('end').hidden=st!=='over';
   $('top').hidden=!$('game').hidden;
   if(st==='lobby')renderLobby(); else if(st==='over')renderEnd(); else if(r)renderGame();
+  /* The chat goes wherever the room is: under the lobby, in the game, under the podium. */
+  placeChat(st==='lobby'?$('lobby'):st==='over'?$('end'):$('game')); kbSync();
 }
+const CHAT=$('chat');
+function placeChat(into){ if(CHAT.parentNode!==into||into.lastChild!==CHAT)into.append(CHAT); }
 
 /* ---------- the menu ---------- */
 /* An invite (live, or replayed on connect for one still waiting): one card per room, the newest on top. The card goes when the room is joined,
    when the server says the room is gone or will not have you, or when it is dismissed. */
 const toastedInvites=new Set();
 function addInvite(e){ const code=String(e&&e.code||'').toUpperCase(); if(!CODE_RE.test(code)||(room&&room.code===code))return;
-  const from=e.from&&typeof e.from==='object'?e.from:{}; invites=[{code,from}].concat(invites.filter(i=>i.code!==code));
+  const from=e.from&&typeof e.from==='object'?e.from:{}, exp=+e.expiresAt||null; invites=[{code,from,expiresAt:exp}].concat(invites.filter(i=>i.code!==code));
   if(!room)renderMenu(); else if(!toastedInvites.has(code)){ toastedInvites.add(code); toast(firstOf(from.name)+' invited you to another room','feed'); } }
 function dropInvite(code){ if(!invites.some(i=>i.code===code))return; invites=invites.filter(i=>i.code!==code); if(!room)renderMenu(); }
-function showMenu(){ room=null; phaseKey=''; resetTurn(); feedItems=[]; renderFeed(); render(); renderMenu(); }
+function showMenu(){ room=null; phaseKey=''; resetTurn(); feedItems=[]; renderFeed(); render(); renderMenu(); loadBoard(); }
+let homeView='join', boardNow=null;
+const TROPHY='<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4Z M7 6H4v1a3 3 0 0 0 3 3 M17 6h3v1a3 3 0 0 1-3 3 M12 13v4 M8 20h8 M9 17h6v3H9z" stroke="#0F1530" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CLK='<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.8" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.4V6l1.7 1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+function hms(ms){ const t=Math.max(0,Math.floor(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), sec=t%60; return (h?h+':'+String(m).padStart(2,'0'):String(m))+':'+String(sec).padStart(2,'0'); }
+/* An invite's clock, on the server's time: the room can last two hours at most. */
+function timerEl(exp){ const t=el('span','clock2'); t.dataset.exp=String(exp); t.innerHTML=CLK; t.append(el('span')); paintTimer(t); return t; }
+function paintTimer(t){ const ms=+t.dataset.exp-serverNow(); t.lastChild.textContent=ms>0?hms(ms)+' left':'Expired'; t.classList.toggle('soon',ms<5*60e3); }
+setInterval(()=>{ document.querySelectorAll('.clock2').forEach(paintTimer); const gone=invites.filter(x=>x.expiresAt&&x.expiresAt<=serverNow()); if(gone.length){ invites=invites.filter(x=>!gone.includes(x)); if(!room)renderMenu(); } },1000);
+/* The header sits on the picture on the menu, and back at the top of the page everywhere else. */
+function placeHeader(into){ const h=$('top'), m=document.querySelector('main.app'); if(into){ if(h.parentNode!==into)into.prepend(h); } else if(h.parentNode!==m)m.prepend(h); }
 function renderMenu(){
-  const m=$('menu'); m.innerHTML='';
-  invites.forEach(iv=>{ const c=el('div','chc'), tx=el('div','tx'), go=el('button','mini yes','Join'), x=el('button','kx'); go.type=x.type='button'; c.dataset.code=iv.code;
-    tx.append(el('span','lab','Invite'),el('b','',firstOf(iv.from.name)+' invited you to Scribble'),el('small','','Room '+iv.code));
-    go.onclick=()=>{ sfx.ui(); joinCode(iv.code,null); }; x.innerHTML=X_ICON; x.setAttribute('aria-label','Dismiss the invite from '+firstOf(iv.from.name)); x.onclick=()=>{ sfx.ui(); dropInvite(iv.code); };
-    c.append(avatar(iv.from.name,iv.from.photoUrl),tx,go,x); m.append(c); });
-  const h=el('section','hero'), art=el('div','art'), bd=el('div','bd'), tag=el('span','tag','3–8 players · 70 s turns');
-  art.innerHTML=ART; const host=el('button','btn go','Host a game'), join=el('button','btn dark','Join with code'); host.type=join.type='button';
-  host.onclick=()=>{ sfx.ui(); if(!firstTime(hostGame))hostGame(); }; join.onclick=()=>{ sfx.ui(); if(!firstTime(()=>openJoin()))openJoin(); };
-  bd.append(tag,el('h2','','Draw it. Guess it.'),host,join);
-  if(deadText()){ host.disabled=join.disabled=true; bd.append(el('p','note',deadText())); }
-  else if(!rooms()){ host.disabled=join.disabled=true; bd.append(el('p','note',liveInfo()?'Connecting…':'Open Scribble in the Sowaka app to play with colleagues.')); }
-  h.append(art,bd); m.append(h);
-  const t=el('div','mine'), a=el('div','stat'), w=el('div','stat dark'), lb=el('button','btn','View leaderboard'); lb.type='button'; lb.onclick=openBoard;
-  a.append(el('small','','Best game'),el('b','',save.best?fmtn(save.best):'—'),el('span','',save.games?'points in one game':'Play a game to get one'));
-  w.append(el('small','','Wins'),el('b','',String(save.wins)),el('span','',save.games?'of '+save.games+' game'+(save.games===1?'':'s'):'No games yet'));
-  t.append(a,w,lb); m.append(t);
+  const m=$('menu'); placeHeader(null); m.innerHTML='';
+  /* The top: header, picture, title, your rank and best game (once you have played), the leaderboard. */
+  const top=el('section','top'), art=el('div','art'); art.innerHTML=ART;
+  const played=save.games>0, b=boardNow, bar=el('div','rankbar'+(played?'':' solo')), lb=el('button','lbbtn'); lb.type='button'; lb.innerHTML=TROPHY; lb.append('Leaderboard'); lb.onclick=openBoard;
+  if(played){ const sq=el('div','mystat'), big=el('div','big'), side=el('div','side'), best=el('b','','Best game '); best.append(el('em','',fmtn(Math.max(save.best,b&&b.me?b.me.score:0))));
+    if(b&&b.me){ big.append(el('small','','#'),String(b.me.rank)); side.append(el('span','',(b.total?'of '+fmtn(b.total)+' ':'')+(b.company?'at '+b.company:'players')),best); sq.append(big,side); }
+    else { side.style.flex='1'; side.append(el('span','',save.wins+' win'+(save.wins===1?'':'s')+' in '+save.games+' game'+(save.games===1?'':'s')),best); sq.append(side); }
+    bar.append(sq); }
+  bar.append(lb); top.append(art,el('h2','tt','Draw it. Guess it.'),bar);
+  /* The tabs: joining (invites, and a code) and starting a room. */
+  const tabs=el('div','tabs');
+  [['join','Join a room'],['start','Start a room']].forEach(([k,label])=>{ const t=el('button','tab'+(homeView===k?' on':''),label); t.type='button'; t.setAttribute('aria-pressed',homeView===k?'true':'false');
+    if(k==='join'&&invites.length)t.append(el('span','badge',String(invites.length))); t.onclick=()=>{ if(homeView===k)return; sfx.ui(); homeView=k; renderMenu(); }; tabs.append(t); });
+  m.append(top,tabs,homeView==='start'?playPanel():invitePanel()); placeHeader(top);
 }
+const hostClick=()=>{ sfx.ui(); if(!firstTime(hostGame))hostGame(); };
+const joinClick=()=>{ sfx.ui(); if(!firstTime(()=>openJoin()))openJoin(); };
+/* Why the buttons are off: the live connection gave up, it is still coming up, or this is not the app. */
+const offNote=()=>deadText()||(liveInfo()?'Connecting…':'Open Scribble in the Sowaka app to play with colleagues.');
+function playPanel(){ const p=el('div','panel'), c=el('div','playcard'), r=el('div','rules');
+  [['✏️','One draws'],['💬','Everyone guesses'],['⏱️','70 s a turn']].forEach(([i,t])=>{ const d=el('div'); d.append(el('i','',i),t); r.append(d); });
+  const host=el('button','btn go','Start a room'); host.type='button'; host.onclick=hostClick;
+  c.append(r,host,el('p','note','You pick the words and the rounds, then invite colleagues. 3 to 8 can play.'));
+  if(deadText()||!rooms()){ host.disabled=true; c.append(el('p','note',offNote())); }
+  p.append(c); return p; }
+function invitePanel(){ const p=el('div','panel'), send=el('button','btn send','Join with a code'), list=el('div','chlist');
+  send.type='button'; send.onclick=joinClick; if(deadText()||!rooms())send.disabled=true;
+  if(!invites.length)list.append(el('p','empty',deadText()||!rooms()?offNote():'No invites right now. Ask a colleague for their room code, or start a room.'));
+  invites.forEach(v=>{ const c=el('div','chc'), lab=el('div','lab'), row=el('div','row'), tx=el('div','tx'), go=el('button','mini yes','Join'), no=el('button','dl','Not now');
+    lab.append(el('span','','Invite')); if(v.expiresAt)lab.append(timerEl(v.expiresAt)); go.type=no.type='button'; c.dataset.code=v.code;
+    tx.append(el('b','',firstOf(v.from.name)+' invited you'),el('small','','Room '+v.code),no);
+    go.onclick=()=>{ sfx.ui(); joinCode(v.code,null); };
+    no.onclick=()=>{ sfx.ui(); dropInvite(v.code); };
+    row.append(avatar(v.from.name,v.from.photoUrl),tx,go); c.append(lab,row); list.append(c); });
+  p.append(send,list); return p; }
+/* The board for the menu's square, fetched as the menu opens. */
+function loadBoard(){ Board.fetch().then(b=>{ if(b&&typeof b==='object'){ boardNow=b; if(!room)renderMenu(); } }).catch(()=>{}); }
 function openBoard(){ sfx.ui(); const box=el('div','lb'); box.append(el('p','note','Loading…')); const seq=openSheet('Leaderboard',[box],[]);
-  Board.fetch().then(b=>{ if(!sheetIs(seq))return; box.innerHTML=''; const rows=(b&&Array.isArray(b.entries))?b.entries:[];
-    box.append(el('p','note',(b&&b.company?'Best game at '+b.company:'Best game')+(b&&b.me?' · you: #'+b.me.rank:'')));
+  Board.fetch().then(b=>{ if(!sheetIs(seq))return; boardNow=b; box.innerHTML=''; const rows=(b&&Array.isArray(b.entries))?b.entries.slice().sort((x,y)=>x.rank-y.rank):[];
+    const h=el('div','lbh'); h.append(el('span','',b&&b.company?'Best game at '+b.company:'Best game')); if(b&&b.total)h.append(el('span','of',fmtn(b.total)+' players')); box.append(h);
     if(!rows.length)box.append(el('p','note','No games yet. Yours will be the first.'));
-    rows.forEach(x=>{ const w=el('div','rank'+(x.me?' me':'')), l=el('span'); l.append(el('i','pos',String(x.rank)),avatar(x.name),document.createTextNode(x.name+(x.me?' (you)':''))); w.append(l,el('b','',fmtn(x.score))); box.append(w); }); })
+    let prev=0, mine=null;
+    rows.forEach(x=>{ if(prev&&x.rank>prev+1)box.append(el('div','gap','•••')); const w=el('div','rank'+(x.me?' me':'')), l=el('span'); l.append(el('i','pos',String(x.rank)),avatar(x.name),document.createTextNode(x.name+(x.me?' (you)':''))); w.append(l,el('b','',fmtn(x.score))); box.append(w); if(x.me)mine=w; prev=x.rank; });
+    if(b&&b.me&&b.me.rank>3){ const pin=el('div','pin'), l=el('span'); l.append(el('i','pos',String(b.me.rank)),'You'+(b.total?' · top '+Math.max(1,Math.ceil(b.me.rank/b.total*100))+'%':'')); pin.append(l,el('b','',fmtn(b.me.score))); box.after(pin); }
+    if(mine)requestAnimationFrame(()=>{ const t=mine.offsetTop-box.offsetTop-box.clientHeight/2; if(t>0)box.scrollTop=t; }); })
     .catch(e=>{ if(sheetIs(seq)){ box.innerHTML=''; box.append(el('p','note',errText(e))); } }); }
 
 /* ---------- hosting and joining ---------- */
 function hostGame(){ if(busy)return; busy=true; openSheet('Making a room…',[el('p','note','One moment…')],[]);
-  ask('host').then(r=>{ closeSheet(); if(r&&r.code)applyState(r); })
+  ask('host').then(r=>{ closeSheet(); if(r&&r.code){ applyState(r); setTimeout(()=>{ if(room&&room.code===r.code&&room.status==='lobby'&&$('sheet').hidden)openPicker(); },350); } })
     .catch(e=>{ sfx.no(); openSheet("Couldn't make a room",[el('p','note',errText(e))],[['OK',closeSheet,true]]); }).finally(()=>{busy=false;}); }
 function openJoin(prefill,err){
   const input=el('input','codein'); input.type='text'; input.maxLength=CODE_LEN; input.placeholder='•••••'; input.autocomplete='off'; input.setAttribute('autocapitalize','characters'); input.spellcheck=false;
@@ -1106,15 +1281,21 @@ function joinCode(code,ui){
 }
 
 /* ---------- the room before the game ---------- */
+/* Rebuilds a section around the chat, which stays where it is: someone typing keeps their keyboard while the room changes. */
+function rebuild(sec){ [...sec.childNodes].forEach(n=>{ if(n!==CHAT)n.remove(); }); return document.createDocumentFragment(); }
+function settle(sec,frag){ sec.insertBefore(frag,CHAT.parentNode===sec?CHAT:null); placeChat(sec); sayMode(); }
 function renderLobby(){
-  const r=room, L=$('lobby'); L.innerHTML='';
+  const r=room, L0=$('lobby'), L=rebuild(L0);
   const card=el('div','roomcard'), cr=el('div','coderow'), left=el('div'), copy=el('button','mini','Copy');
   left.append(el('small','','Room code'),el('div','code',r.code)); copy.type='button';
   copy.onclick=()=>{ copyText(r.code).then(ok=>{ copy.textContent=ok?'Copied ✓':'Copy'; setTimeout(()=>{copy.textContent='Copy';},1500); }); };
   cr.append(left,copy);
   /* Invites are the way in: a notification that opens this room (a code read out still works through Join with code). */
-  const inv=el('button','btn dark','Invite colleagues'); inv.type='button'; inv.onclick=()=>{ sfx.ui(); openPicker(); };
-  card.append(cr,inv); L.append(card);
+  const ways=el('div','ways'), inv=el('button','btn invite'); inv.type='button';
+  inv.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7M19 8v6M16 11h6"/></svg>';
+  inv.append('Invite colleagues'); inv.onclick=()=>{ sfx.ui(); openPicker(); };
+  ways.append(inv,el('p','hint','They get a notification and join in one tap. Or copy the code and send it.')); card.append(cr,ways); L.append(card);
+  const sc=settingsCard(); if(sc)L.append(sc);
   const head=el('div','sect'); head.append(el('h3','','Players'),el('span','',r.players.length+' / '+r.max)); L.append(head);
   const list=el('div','plist');
   r.players.forEach(p=>{ const row=el('div','prow'+(p.userId===r.you?' me':'')+(p.online?'':' off')), tx=el('div');
@@ -1129,12 +1310,32 @@ function renderLobby(){
   if(r.invited&&r.invited.length){ const iv=el('div','invited'); iv.append('Invited'); r.invited.forEach(p=>{ const s=el('span'); s.append(avatar(p.name,p.photoUrl),firstOf(p.name)); iv.append(s); }); L.append(iv); }
   const sb=el('div','startbox'), short=Math.max(0,r.min-r.players.length);
   if(isHost()){ const go=el('button','btn go','Start game'); go.type='button'; go.disabled=short>0; go.onclick=()=>{ go.disabled=true; sfx.ui(); ask('start').catch(e=>{ sfx.no(); go.disabled=false; toast(errText(e),'feed'); }); };
-    sb.append(go,el('p','note',short>0?'Invite at least '+short+(short<r.min-1?' more':'')+' colleague'+(short===1?'':'s')+' to start':r.players.length+' players · 2 rounds · everyone draws twice')); }
+    sb.append(go,el('p','note',short>0?'Invite at least '+short+(short<r.min-1?' more':'')+' colleague'+(short===1?'':'s')+' to start':r.players.length+' players · '+roundsText(r.rounds)+' · everyone draws '+timesText(r.rounds))); }
   else { const w=el('div','wait'), d=el('span','dots'); d.append(el('i'),el('i'),el('i')); w.append('Waiting for '+firstOf(nameOf(r.hostId)),d);
     sb.append(w,el('p','note',short>0?'The game can start once '+r.min+' players are here.':'The host starts the game. Everyone starts together.')); }
   const lv=el('button','link','Leave room'); lv.type='button'; lv.onclick=()=>{ sfx.ui(); leave(); }; sb.append(lv);
-  L.append(sb);
+  L.append(sb); settle(L0,L);
 }
+/* The game's settings: the host picks the difficulty and the rounds before the start; everyone else sees what was picked. A tap is sent at once and
+   shows straight away; the room coming back confirms it, a refusal puts it back. */
+const LEVELS=[['easy','Easy'],['medium','Medium'],['hard','Hard']], ROUNDS=[2,3,4,5];
+const levelName=v=>(LEVELS.find(l=>l[0]===v)||LEVELS[1])[1];
+const roundsText=n=>(n|0)+' round'+((n|0)===1?'':'s');
+const timesText=n=>({1:'once',2:'twice'})[n|0]||(n|0)+' times';
+let pendingSet=null;
+/* Only a server that sends the level knows about settings; an older one gets no card (its games are 2 rounds, one word of each level). */
+function settingsCard(){ const r=room; if(!r||!r.level)return null; const c=el('div','setcard'), host=isHost(), can=host&&!!rooms()&&typeof rooms().settings==='function';
+  const cur={level:pendingSet&&pendingSet.level||r.level||'medium', rounds:pendingSet&&pendingSet.rounds||r.rounds||2};
+  const row=(label,opts,key)=>{ const w=el('div','setrow'), seg=el('div','seg'); seg.setAttribute('role','radiogroup'); seg.setAttribute('aria-label',label); w.append(el('span','',label));
+    opts.forEach(([v,t])=>{ const on=v===cur[key], b=el('button',on?'on':'',t); b.type='button'; b.setAttribute('role','radio'); b.setAttribute('aria-checked',String(on)); b.disabled=!can;
+      b.onclick=()=>{ if(v===cur[key])return; sfx.ui(); pendingSet=Object.assign({},pendingSet||{},{[key]:v}); renderLobby();
+        ask('settings',{[key]:v}).then(x=>{ pendingSet=null; if(x&&x.code)applyState(x); else render(); }).catch(e=>{ pendingSet=null; sfx.no(); toast(errText(e),'feed'); render(); }); };
+      seg.append(b); });
+    w.append(seg); return w; };
+  c.append(row('Difficulty',LEVELS,'level'),row('Rounds',ROUNDS.map(n=>[n,String(n)]),'rounds'));
+  if(!host)c.append(el('p','hint',firstOf(nameOf(r.hostId))+' picks these'));
+  else if(!can)c.append(el('p','hint','Update the Sowaka app to change these'));
+  return c; }
 function copyText(t){ try{ if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(t).then(()=>true,()=>legacyCopy(t)); }catch(e){} return Promise.resolve(legacyCopy(t)); }
 function legacyCopy(t){ try{ const i=el('input'); i.value=t; i.style.position='fixed'; i.style.opacity='0'; document.body.append(i); i.select(); const ok=document.execCommand('copy'); i.remove(); return ok; }catch(e){ return false; } }
 function askKick(p){ openSheet('Remove '+firstOf(p.name)+'?',[el('p','note',firstOf(p.name)+' leaves the room. They can come back in a minute, or when you invite them again.')],
@@ -1144,13 +1345,14 @@ function leave(){ const inGame=room&&['picking','drawing','reveal'].includes(roo
   if(!inGame){ go(); return; }
   openSheet('Leave the game?',[el('p','note','The game goes on without you. Your points in it are lost.')],[['Stay',closeSheet,false],['Leave',go,true]]); }
 $('quit').onclick=()=>{ sfx.ui(); leave(); };
+$('send').addEventListener('pointerdown',e=>{ if(document.activeElement===$('guess'))e.preventDefault(); });
 function removed(by){ room=null; showMenu(); sfx.leave(); openSheet('You were removed',[el('p','note',(by&&by.name?firstOf(by.name):'The host')+' removed you from the room.')],[['OK',closeSheet,true]]); }
 /* The live connection gave up for good (the ticket expired or was refused, the server closed it, or it said no right after connecting:
    not_allowed for someone no longer at the company, setup_failed on a server fault): back to the menu, which says what to do, and a plain sheet. */
 function dead(message,code){ const was=!!room; room=null; showMenu(); $('net').hidden=true; if(was)sfx.leave();
   const title=code==='not_allowed'?'Scribble is not available':code==='setup_failed'?'Scribble could not start':'Scribble disconnected';
   openSheet(title,[el('p','note',String(message||'Close and reopen Scribble.'))],[['OK',closeSheet,true]]); }
-function setOnline(on){ online=on; $('net').hidden=on; if(on)render(); else { $('guess').disabled=true; } }
+function setOnline(on){ online=on; $('net').hidden=on; if(on)render(); else { $('guess').disabled=true; $('send').disabled=true; } }
 
 /* ---------- inviting colleagues (the picker from Odd One Out: the list kept on the device, search filters it as you type) ---------- */
 const PEOPLE={list:null,loading:null}, sent=new Set(); let pickerDraw=null;
@@ -1300,8 +1502,14 @@ function syncTools(){ if(!toolsBuilt)buildTools(); const t=$('tools'), ink=inkOf
 function undo(){ if(!canDraw())return; commitLive(); for(let i=els.length-1;i>=0;i--){ if(els[i].hidden)continue; myOp({t:'u',id:els[i].id}); flushOps(); sfx.ui(); break; } syncTools(); }
 function redo(){ if(!canDraw()||!undone.length)return; myOp({t:'r',id:undone[undone.length-1]}); flushOps(); sfx.ui(); syncTools(); }
 
-/* ---------- guesses ---------- */
+/* ---------- the chat ---------- */
 let feedItems=[];
+/* What the box is for right now: a guess while you are guessing the word; otherwise chat, which mid-turn reaches only those who have the word. */
+function sayMode(){ const r=room, i=$('guess'), d=r&&r.status==='drawing', mePl=me(), guessing=d&&!iDraw()&&!(mePl&&mePl.guessed);
+  /* An older server (its room has no level) takes guesses only and drops anything else, so the box waits for your turn to guess. */
+  const old=!!r&&!r.level&&!guessing;
+  const ph=!r?'Say something':guessing?'Type your guess':old?'Guesses only, for now':d?'Chat with the ones who got it':'Say something';
+  if(i.placeholder!==ph)i.placeholder=ph; i.setAttribute('aria-label',guessing?'Your guess':'Chat'); i.disabled=!online||!!deadText()||old; $('send').disabled=i.disabled; }
 function addFeed(it){ if(!it||typeof it!=='object')return;
   if(it.kind==='host')it=Object.assign({},it,{text:room&&it.userId===room.you?"You're the host now":firstOf(it.name)+' is the host now'});
   feedItems.push(it); if(feedItems.length>60)feedItems.shift(); renderFeed();
@@ -1310,15 +1518,18 @@ function addFeed(it){ if(!it||typeof it!=='object')return;
 function renderFeed(){ const f=$('feed'); f.innerHTML='';
   feedItems.slice(-30).forEach(it=>{ const who=it.userId&&room&&it.userId===room.you?'You':firstOf(it.name);
     if(it.kind==='guess'){ const p=el('p'); p.append(el('b','',who),document.createTextNode(String(it.text||''))); f.append(p); }
+    else if(it.kind==='chat'){ const p=el('p','talk'+(it.private?' priv':'')); p.append(el('b','',who),document.createTextNode(String(it.text||''))); if(it.private)p.append(el('i','','only those with the word')); f.append(p); }
     else if(it.kind==='correct')f.append(el('p','ok','✓ '+(who==='You'?'You guessed it!':who+' guessed it')));
     else if(it.kind==='close')f.append(el('p','close','“'+String(it.text||'')+'” is close!'));
     else if(it.kind==='turn')f.append(el('p','turn',String(it.text||'')));
     else f.append(el('p','sys',String(it.text||''))); });
-  if(!f.childNodes.length)f.append(el('p','sys','Guesses show here.')); f.scrollTop=f.scrollHeight; }
-$('say').addEventListener('submit',e=>{ e.preventDefault(); const i=$('guess'), text=i.value.trim().slice(0,40); if(!text||!room||room.status!=='drawing'||iDraw())return; i.value='';
+  if(!f.childNodes.length)f.append(el('p','sys',room&&!room.level?'Guesses show here.':room&&['picking','drawing','reveal'].includes(room.status)?'Guesses and chat show here.':'Say hello. Everyone in the room reads it.')); f.scrollTop=f.scrollHeight; }
+/* The feed keeps its newest line in sight when its box changes size (the keyboard coming up, the chat moving between screens). */
+if(window.ResizeObserver)new ResizeObserver(()=>{ const f=$('feed'); f.scrollTop=f.scrollHeight; }).observe($('feed'));
+$('say').addEventListener('submit',e=>{ e.preventDefault(); const i=$('guess'), text=i.value.trim().slice(0,40); if(!text||!room)return; i.value='';
   ask('guess',text).then(res=>{ if(res&&res.correct){ save.guessed++; store(); sfx.mine(); buzz([20,30,40]); toast('+'+fmtn(res.points||0)); const [x,y]=centre($('wordbox')); burst(x,y,70,COLS); render(); }
       /* On the server's block-list: nobody else saw it; a plain line says so, only here. */
-      else if(res&&res.blocked)addFeed({kind:'sys',text:'That guess was not sent.'}); })
+      else if(res&&res.blocked)addFeed({kind:'sys',text:'That message was not sent.'}); })
     .catch(err=>toast(errText(err),'feed')); /* a 429 ("Slow down a little and try again.") shows as the line at the top */
   i.focus({preventScroll:true}); });
 
@@ -1342,18 +1553,17 @@ function renderGame(){
   renderOver();
   const drawing=r.status==='drawing';
   $('tools').hidden=!(mine&&drawing); if(mine&&drawing)syncTools();
-  const say=$('say'), got=$('got'); const canGuess=drawing&&!mine&&!guessed;
-  say.hidden=!canGuess; got.hidden=canGuess||(mine&&drawing); $('guess').disabled=!online;
-  if(!canGuess){ got.className='got'+(guessed?'':' dim'); got.textContent=guessed&&drawing?'✓ Guessed it! Waiting for the others':r.status==='picking'?(mine?'Pick a word to draw':'A word is being picked…'):r.status==='reveal'?'Next turn in a moment…':''; }
+  sayMode();
   tickClock();
 }
 /* What sits over the paper: the round's splash, the drawer's three words, someone else picking, the reveal and the scores. */
 function renderOver(){
   const r=room, o=$('over'); o.innerHTML=''; o.className='over'; o.hidden=false;
   if(r.status==='picking'){
-    if(r.turn===1&&Date.now()-phaseAt<1300){ o.append(el('p','','Round'),el('div','n',r.round+'/'+r.rounds)); return; }
-    if(iDraw()&&Array.isArray(r.choices)){ o.append(el('h2','','Your turn! Pick a word')); const ws=el('div','words');
-      r.choices.forEach((w,i)=>{ const b=el('button','word'); b.type='button'; b.append(String(w.word||w)); if(w.level)b.append(el('small','',w.level));
+    /* An older server sends no level: its three words are one of each, so each word says its own. */
+    if(r.turn===1&&Date.now()-phaseAt<1300){ o.append(el('p','','Round'),el('div','n',r.round+'/'+r.rounds)); if(r.level)o.append(el('p','',levelName(r.level)+' words')); return; }
+    if(iDraw()&&Array.isArray(r.choices)){ o.append(el('h2','','Your turn! Pick a word')); if(r.level)o.append(el('p','',levelName(r.level)+' words')); const ws=el('div','words');
+      r.choices.forEach((w,i)=>{ const b=el('button','word'); b.type='button'; b.append(String(w.word||w)); if(!r.level&&w.level)b.append(el('small','',w.level));
         b.onclick=()=>{ [...ws.children].forEach(x=>{x.disabled=true;}); sfx.ui(); ask('pick',i).catch(e=>{ toast(errText(e),'feed'); [...ws.children].forEach(x=>{x.disabled=false;}); }); }; ws.append(b); });
       o.append(ws,el('p','','A word is picked for you when the time runs out.')); return; }
     const d=drawer(); o.append(avatar(d&&d.name,d&&d.photoUrl,64),el('h2','',firstOf(d&&d.name)+' is picking a word')); return; }
@@ -1380,7 +1590,7 @@ function finished(r){ const id=r.gameId; if(!id||save.counted.includes(id))retur
   if(mePl)Board.submit(mePl.score);
   setTimeout(()=>{ if(sorted[0]&&sorted[0].userId===r.you){ sfx.win(); burst(innerWidth/2,innerHeight*.3,140,COLS); } else sfx.reveal(); },250); }
 function renderEnd(){
-  const r=room, E=$('end'); E.innerHTML=''; const sorted=[...r.players].sort((a,b)=>b.score-a.score), top=sorted[0], mePl=me(), place=sorted.findIndex(p=>p.userId===r.you)+1;
+  const r=room, E0=$('end'), E=rebuild(E0); const sorted=[...r.players].sort((a,b)=>b.score-a.score), top=sorted[0], mePl=me(), place=sorted.findIndex(p=>p.userId===r.you)+1;
   const h=el('div','over'); h.style.cssText='position:static;background:none;padding:6px 0 0';
   h.append(el('h2','',top?(top.userId===r.you?'You win, '+firstOf(Board.name()||'you')+'!':firstOf(top.name)+' wins!'):'Game over')); E.append(h);
   const pod=el('div','podium'); [1,0,2].forEach(i=>{ const p=sorted[i]; const c=el('div','pod p'+(i+1)); if(p){ c.append(avatar(p.name,p.photoUrl),el('b','',p.userId===r.you?'You':firstOf(p.name)));
@@ -1392,11 +1602,34 @@ function renderEnd(){
   else acts.append(lv);
   E.append(acts); if(!isHost())E.append(el('p','note',firstOf(nameOf(r.hostId))+' can start another game in this room.'));
   [...E.querySelectorAll('.note')].forEach(n=>{n.style.cssText='margin:0;text-align:center;color:var(--muted);font-weight:600;font-size:.84rem';});
+  settle(E0,E);
 }
 const ordinal=n=>n+(['th','st','nd','rd'][(n%100>10&&n%100<14)?0:n%10<4?n%10:0]||'th');
 
+/* ---------- the keyboard ----------
+   On a phone, the chat box in focus mid-game lays the screen out in the strip the keyboard leaves (see html.kb in the styles). The paper's side
+   is worked out from that strip: the clock row (42), the box (44), the gaps and padding; side by side leaves the chat 128 px or more, stacked at least three lines (66). */
+const touchy=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches)||('ontouchstart' in window);
+let kbFocus=false, kbT=null;
+function kbSync(){ const H=document.documentElement, on=kbFocus&&!$('game').hidden&&touchy();
+  H.classList.toggle('kb',on); if(!on){ H.classList.remove('kb-side','kb-stack'); return; }
+  const vv=window.visualViewport, vh=vv?vv.height:innerHeight, vw=vv?vv.width:innerWidth;
+  H.style.setProperty('--vvh',Math.round(vh)+'px'); H.style.setProperty('--vvt',Math.round(vv?vv.offsetTop:0)+'px');
+  const W=Math.min(vw,innerWidth)-24, avail=vh-16-42-44-16;
+  const side=Math.max(0,Math.min(avail,W-8-128)), stack=Math.max(0,Math.min(W,avail-66-8)), useSide=side>=stack+12;
+  H.classList.toggle('kb-side',useSide); H.classList.toggle('kb-stack',!useSide); H.style.setProperty('--bs',Math.floor(useSide?side:stack)+'px'); }
+$('guess').addEventListener('focus',()=>{ clearTimeout(kbT); kbFocus=true; kbSync(); setTimeout(kbSync,350); });
+$('guess').addEventListener('blur',()=>{ clearTimeout(kbT); kbT=setTimeout(()=>{ kbFocus=false; kbSync(); },120); });
+if(window.visualViewport){ visualViewport.addEventListener('resize',kbSync); visualViewport.addEventListener('scroll',kbSync); }
+addEventListener('resize',kbSync);
+/* The drawer touching the paper with the keyboard up: the keyboard goes first, and the tools come back. */
+lv.addEventListener('pointerdown',e=>{ if(document.documentElement.classList.contains('kb')){ e.preventDefault(); e.stopImmediatePropagation(); $('guess').blur(); } },true);
+
 /* ---------- input and start ---------- */
-function sndLabel(){ const b=$('snd'); b.textContent=save.sound?'Sound on':'Sound off'; b.setAttribute('aria-pressed',String(save.sound)); }
+function sndLabel(){ const b=$('snd'), on=save.sound, label=on?'Sound on':'Sound off';
+  b.innerHTML='<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 7.5h3L10.5 4v12L6 12.5H3z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>'
+    +(on?'<path d="M13.5 7.2a4 4 0 0 1 0 5.6M15.8 5a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>':'<path d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')+'</svg>';
+  b.classList.toggle('off',!on); b.setAttribute('aria-label',label); b.title=label; b.setAttribute('aria-pressed',String(on)); }
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.ui();} };
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape')return; if(!$('howto').hidden){ if(!howThen)$('howok').click(); return; } if(!$('sheet').hidden)(sheetClose||closeSheet)(); });
 ['gesturestart','gesturechange'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
@@ -1405,9 +1638,9 @@ let startedFrom=false;
 /* The notification carries the room code, bare (K7QXP) or as room:K7QXP. */
 function fromInvite(){ const b=bridge(), l=liveInfo(); if(startedFrom||!b||(l&&(l.hopping||l.fatal)))return;
   const code=String(b.startRoomCode||b.startChallengeId||'').trim().replace(/^room:/i,'').toUpperCase(); if(!CODE_RE.test(code))return; startedFrom=true; joinCode(code,null); }
-addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); if(loadSave()){ sndLabel(); } if(!room)renderMenu(); fromInvite(); });
+addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); if(loadSave()){ sndLabel(); } if(!room){ renderMenu(); loadBoard(); } fromInvite(); });
 if(bridge())document.documentElement.classList.add('app');
-sndLabel(); renderMenu(); render(); renderFeed(); fromInvite();
+sndLabel(); renderMenu(); render(); renderFeed(); loadBoard(); fromInvite();
 </script>
 </body>
 </html>

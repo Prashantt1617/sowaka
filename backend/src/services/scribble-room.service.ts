@@ -13,10 +13,13 @@ import {
   GuessResult,
   SCRIBBLE,
   advance,
+  applyChat,
   applyGuess,
+  applySettings,
   chooseWord,
   firstName,
   forgetKick,
+  guessing,
   inviteOpen,
   makeCode,
   newRoom,
@@ -201,7 +204,8 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
   for (const effect of effects) {
     switch (effect.type) {
       case 'feed':
-        emitter?.toRoom(room.org, room.code, 'room:feed', effect.item);
+        if (effect.to) for (const userId of effect.to) emitter?.toUser(userId, 'room:feed', effect.item);
+        else emitter?.toRoom(room.org, room.code, 'room:feed', effect.item);
         break;
       case 'close':
         emitter?.toUser(effect.userId, 'scribble:close', { text: effect.text });
@@ -224,7 +228,7 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
           createdAt: deps.now(),
           expiresAt: room.createdAt + SCRIBBLE.roomMaxMs,
         });
-        emitter?.toUser(effect.userId, 'room:invite', { from: effect.from, code: effect.code });
+        emitter?.toUser(effect.userId, 'room:invite', { from: effect.from, code: effect.code, expiresAt: room.createdAt + SCRIBBLE.roomMaxMs });
         break;
       case 'notify':
         void deps
@@ -510,6 +514,26 @@ export async function startRoom(seat: Seat): Promise<void> {
   for (const userId of changed.result) await clearInvite(seat.org, userId, room.code);
 }
 
+/** The host's choices in the lobby: the word level and the number of rounds. */
+export async function settingsRoom(seat: Seat, raw: { level?: unknown; rounds?: unknown }): Promise<ScribbleView> {
+  const room = await requireRoom(seat);
+  const hostOnly = 'Only the host can change the game.';
+  const tooLate = 'The game has already started.';
+  const invalid = `Choose easy, medium or hard words and ${SCRIBBLE.minRounds} to ${SCRIBBLE.maxRounds} rounds.`;
+  if (room.hostId !== seat.userId) throw new ScribbleError(403, hostOnly);
+  if (room.status !== 'lobby') throw new ScribbleError(409, tooLate);
+  const input = { level: raw.level, rounds: raw.rounds };
+  const changed = await change(seat.org, room.code, (r) => {
+    if (r.hostId !== seat.userId) throw new ScribbleError(403, hostOnly);
+    if (r.status !== 'lobby') throw new ScribbleError(409, tooLate);
+    const moved = applySettings(r, input);
+    if (moved === null) throw new ScribbleError(400, invalid);
+    return { result: true, effects: [], write: moved };
+  });
+  if (!changed) throw new ScribbleError(404, 'That room has closed.');
+  return viewFor(changed.room, seat.userId, deps.now());
+}
+
 export async function kickFromRoom(seat: Seat, rawUserId: unknown): Promise<void> {
   const room = await requireRoom(seat);
   const userId = String(rawUserId ?? '').trim();
@@ -547,13 +571,21 @@ export async function pickWord(seat: Seat, rawIndex: unknown, turn: unknown): Pr
   if (!changed) throw tooLate();
 }
 
+/**
+ * Whatever a player types: a guess while they are guessing a word, else a
+ * chat line (see the engine's `applyChat`: the drawer and those who have the
+ * word talk only among themselves while it is being drawn).
+ */
 export async function guessWord(seat: Seat, rawText: unknown, turn: unknown): Promise<GuessResult> {
   const room = await requireRoom(seat);
-  if (room.status !== 'drawing' || room.drawerId === seat.userId) return { correct: false };
   const text = String(rawText ?? '').slice(0, SCRIBBLE.maxGuessChars);
   const changed = await change(seat.org, room.code, (r) => {
-    const judged = applyGuess(r, seat.userId, text, turn, deps.now(), isBlocked);
-    return { result: judged.result, effects: judged.effects, write: judged.changed };
+    if (guessing(r, seat.userId)) {
+      const judged = applyGuess(r, seat.userId, text, turn, deps.now(), isBlocked);
+      return { result: judged.result, effects: judged.effects, write: judged.changed };
+    }
+    const said = applyChat(r, seat.userId, text, isBlocked);
+    return { result: said.result, effects: said.effects, write: false };
   });
   return changed?.result ?? { correct: false };
 }
