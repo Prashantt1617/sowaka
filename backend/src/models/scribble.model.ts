@@ -62,6 +62,13 @@ export interface ScribbleRoom {
   kicked: Array<{ userId: string; at: number } | string>;
   /** Invites sent in this game, against the per-game cap. */
   invitesSent: number;
+  /**
+   * The host's choices in the lobby: how hard the words are, and how many
+   * rounds. Missing on a room written before they existed; read them only
+   * through the engine's `levelOf` / `roundsOf`.
+   */
+  level?: ScribbleWordLevel;
+  rounds?: number;
   gameId: string | null;
   /** 1-based while a game runs; 0 in the lobby. */
   round: number;
@@ -99,6 +106,8 @@ export interface ScribbleView {
   min: number;
   max: number;
   rounds: number;
+  /** How hard the drawer's three words are; the host sets it, with `rounds`, in the lobby. */
+  level: ScribbleWordLevel;
   round: number;
   turn: number;
   turns: number;
@@ -132,13 +141,15 @@ export interface ScribbleView {
   awards: Array<{ userId: string; points: number; reason: string | null }> | null;
 }
 
-export type ScribbleFeedKind = 'guess' | 'correct' | 'join' | 'leave' | 'host' | 'sys';
+export type ScribbleFeedKind = 'guess' | 'chat' | 'correct' | 'join' | 'leave' | 'host' | 'sys';
 
 export interface ScribbleFeedItem {
   kind: ScribbleFeedKind;
   userId?: string;
   name?: string;
   text?: string;
+  /** A chat line sent only to those who know the word (the drawer and whoever has guessed it). */
+  private?: boolean;
 }
 
 /** A stroke op as the page sends it; see PROTOCOL.md §7. */

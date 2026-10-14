@@ -22,7 +22,7 @@ import { hashSessionToken } from '../services/auth.service';
 import { closeConnectRealtime, initConnectRealtime } from '../services/connect-realtime.service';
 import type { NotificationInput } from '../services/notification.service';
 import { gamesHomeFor } from '../services/games-home.service';
-import { SCRIBBLE, advance, guessOutcome, guessPoints, hintsWanted, maskOf, newRoom, normalizeGuess, stillKicked, validateOp, viewFor, wasKicked } from '../services/scribble-engine';
+import { SCRIBBLE, WORDS, advance, applySettings, chooseWords, guessOutcome, guessPoints, hintsWanted, levelOf, maskOf, newRoom, normalizeGuess, roundsOf, startGame, stillKicked, validateOp, viewFor, wasKicked } from '../services/scribble-engine';
 import { closeScribbleRealtime, initScribbleRealtime } from '../services/scribble-realtime.service';
 import { configureScribble, openInvitesFor, peekRoom, tickScribble } from '../services/scribble-room.service';
 import { clearInvite, mutateRoom, pendingInvitesOf, recordInvite, resetScribbleMemory } from '../services/scribble-store';
@@ -337,7 +337,7 @@ async function runChecks() {
     check('hosting answers with the room view', !!view && view.status === 'lobby' && view.hostId === A0.userId && view.players.length === 1 && view.you === A0.userId);
     const code = view?.code ?? '';
     check('the code is five unambiguous characters', /^[A-HJKMNP-Z2-9]{5}$/.test(code), code);
-    check('the view carries the rules', view?.min === 3 && view?.max === 8 && view?.rounds === 2 && view?.turnSec === 70 && view?.pickSec === 10 && view?.revealSec === 6);
+    check('the view carries the rules, medium words and two rounds by default', view?.min === 3 && view?.max === 8 && view?.rounds === 2 && view?.level === 'medium' && view?.turnSec === 70 && view?.pickSec === 10 && view?.revealSec === 6);
     A.states.push({ room: view });
 
     const wrong = await request(B, 'room:join', { code: 'ZZZZZ' });
@@ -358,6 +358,29 @@ async function runChecks() {
     check('only the host can start', !notHost.ok && notHost.status === 403);
     const notHostKick = await request(B, 'room:kick', { userId: C0.userId });
     check('only the host can remove players', !notHostKick.ok && notHostKick.status === 403);
+
+    console.log('\nsettings and lobby chat');
+    const notHostSettings = await request(B, 'room:settings', { level: 'easy' });
+    check('only the host can change the game', !notHostSettings.ok && notHostSettings.status === 403);
+    for (const bad of [{ rounds: 1 }, { rounds: 6 }, { rounds: 2.5 }, { rounds: '3' }, { level: 'expert' }, { level: 'hard', rounds: 9 }, {}]) {
+      const refusedSetting = await request(A, 'room:settings', bad);
+      check(`a setting outside the choices is refused: ${JSON.stringify(bad)}`, !refusedSetting.ok && refusedSetting.status === 400);
+    }
+    check('and a refused change leaves the room as it was', (await peekRoom(ORG, code))?.level === 'medium' && (await peekRoom(ORG, code))?.rounds === 2);
+    const setFive = await request(A, 'room:settings', { level: 'easy', rounds: 5 });
+    check('the host sets easy words and five rounds, answered with the view', setFive.ok && (setFive.data as unknown as ScribbleView).level === 'easy' && (setFive.data as unknown as ScribbleView).rounds === 5);
+    await waitFor('B sees the settings', () => room(B)?.level === 'easy' && room(B)?.rounds === 5);
+    check('everyone in the lobby is sent them', room(B)?.level === 'easy' && room(B)?.rounds === 5 && room(C)?.rounds === 5);
+    const setHard = await request(A, 'room:settings', { level: 'hard' });
+    const setTwo = await request(A, 'room:settings', { rounds: 2 });
+    await waitFor('B sees hard, two rounds', () => room(B)?.level === 'hard' && room(B)?.rounds === 2);
+    check('either may be changed alone', setHard.ok && setTwo.ok && room(B)?.level === 'hard' && room(B)?.rounds === 2);
+    const lobbyHi = await request(B, 'scribble:guess', { text: 'hi all, ready when you are' });
+    await waitFor('lobby chat', () => A.feeds.some((f) => f.kind === 'chat' && f.text === 'hi all, ready when you are') && C.feeds.some((f) => f.kind === 'chat' && f.text === 'hi all, ready when you are'));
+    check('chat works in the lobby: the whole room reads it', lobbyHi.ok && lobbyHi.data.correct === false && A.feeds.some((f) => f.kind === 'chat' && f.userId === B0.userId && !f.private) && B.feeds.some((f) => f.kind === 'chat' && f.userId === B0.userId));
+    const lobbyRude = await request(C, 'scribble:guess', { text: 'you ASSHOLE' });
+    await wait(100);
+    check('a blocked line goes nowhere in the lobby too', lobbyRude.ok && lobbyRude.data.blocked === true && !A.feeds.some((f) => String(f.text ?? '').toLowerCase().includes('asshole')));
 
     // ------------------------------------------------------------ invites
     console.log('\ninvites');
@@ -438,7 +461,12 @@ async function runChecks() {
     check('the first drawer is the host, first in the order', room(B)?.drawerId === A0.userId && room(B)?.turn === 1 && room(B)?.turns === 3 && room(B)?.round === 1);
     await waitFor('A choices', () => (room(A)?.choices?.length ?? 0) === 3);
     const choices = room(A)?.choices ?? [];
-    check('the drawer gets three words, one of each level', choices.map((c) => c.level).join() === 'easy,medium,hard' && choices.every((c) => c.word.length > 0));
+    check('the drawer gets three different words, all of the level the host chose', choices.length === 3 && choices.every((c) => c.level === 'hard' && WORDS.hard.includes(c.word)) && new Set(choices.map((c) => c.word)).size === 3, JSON.stringify(choices));
+    const pickChat = await request(B, 'scribble:guess', { turn: turnKey(B), text: 'go go go' });
+    await waitFor('picking chat', () => C.feeds.some((f) => f.kind === 'chat' && f.text === 'go go go'));
+    check('while the drawer picks, chat goes to the whole room', pickChat.ok && A.feeds.some((f) => f.kind === 'chat' && f.text === 'go go go' && !f.private));
+    const lateSettings = await request(A, 'room:settings', { rounds: 3 });
+    check('the game cannot be changed once it has started', !lateSettings.ok && lateSettings.status === 409);
     check('guessers get no choices and no word', room(B)?.choices === null && room(B)?.word === null);
     check('the invite list is cleared at the start', (room(A)?.invited ?? []).length === 0);
     check('and the invitees\' pending invites go with it', (await pendingInvitesOf(ORG, D0.userId, clock.now)).length === 0 && (await openInvitesFor(ORG, D0.userId)).length === 0);
@@ -500,7 +528,9 @@ async function runChecks() {
     await waitFor('hindi guess in feed', () => A.feeds.some((f) => f.kind === 'guess' && f.text === 'हाथी'));
     check('a guess in another script is a wrong guess the room reads, not an empty one', hindi.ok && hindi.data.correct === false && A.feeds.some((f) => f.kind === 'guess' && f.text === 'हाथी' && f.userId === C0.userId) && B.feeds.some((f) => f.text === 'हाथी'));
     const drawerGuess = await request(A, 'scribble:guess', { turn: turnKey(A), text: word });
-    check('the drawer cannot guess', drawerGuess.ok && drawerGuess.data.correct === false);
+    await waitFor('drawer line back to the drawer', () => A.feeds.some((f) => f.kind === 'chat' && f.text === word));
+    await wait(100);
+    check('the drawer cannot guess; what they type is chat only for those who have the word, nobody yet', drawerGuess.ok && drawerGuess.data.correct === false && A.feeds.some((f) => f.kind === 'chat' && f.text === word && f.private === true) && !B.feeds.some((f) => f.text === word) && !C2.feeds.some((f) => f.text === word));
     await advanceClock(SCRIBBLE.turnMs / 2);
     await waitFor('hint', () => (room(B)?.mask ?? '').replace(/[_ ]/g, '').length === 1);
     check('at half time one letter shows', (room(B)?.mask ?? '').replace(/[_ ]/g, '').length === 1 && room(A)?.word === word);
@@ -513,7 +543,9 @@ async function runChecks() {
     check('a "correct" feed line never carries the text', A.feeds.some((f) => f.kind === 'correct' && f.userId === B0.userId && f.text === undefined));
     check('no state ever showed a guesser the word before they had it', !B.states.some((s) => s.room?.status === 'drawing' && s.room.drawerId !== B0.userId && !s.room.players.find((p) => p.userId === B0.userId)?.guessed && s.room.word));
     const again = await request(B, 'scribble:guess', { turn: turnKey(B), text: word });
-    check('guessing again scores nothing', again.ok && again.data.correct === false);
+    await waitFor('B private line', () => A.feeds.filter((f) => f.kind === 'chat' && f.text === word && f.userId === B0.userId).length > 0);
+    await wait(100);
+    check('guessing again scores nothing; it is chat for the drawer and B only', again.ok && again.data.correct === false && A.feeds.some((f) => f.kind === 'chat' && f.userId === B0.userId && f.text === word && f.private === true) && B.feeds.some((f) => f.kind === 'chat' && f.userId === B0.userId && f.private === true) && !C2.feeds.some((f) => f.text === word));
     const ratelimited: Ack[] = [];
     for (let i = 0; i < 9; i += 1) ratelimited.push(await request(C2, 'scribble:guess', { turn: turnKey(C2), text: `spam${i}` }));
     check('a burst of guesses is rate limited', ratelimited.some((r) => !r.ok && r.status === 429));
@@ -525,6 +557,9 @@ async function runChecks() {
     await advanceClock(SCRIBBLE.earlyEndMs);
     await waitFor('reveal', () => room(A)?.status === 'reveal');
     const reveal = room(C2);
+    const revealChat = await request(C2, 'scribble:guess', { turn: turnKey(C2), text: 'nice drawing' });
+    await waitFor('reveal chat', () => A.feeds.some((f) => f.kind === 'chat' && f.text === 'nice drawing') && B.feeds.some((f) => f.kind === 'chat' && f.text === 'nice drawing'));
+    check('at the reveal, chat goes to the whole room again', revealChat.ok && A.feeds.some((f) => f.kind === 'chat' && f.text === 'nice drawing' && !f.private));
     check('everyone having it ends the turn early, with the word and the gains', reveal?.status === 'reveal' && reveal.last?.why === 'all' && reveal.last.word === word && reveal.word === word && (reveal.last.gains ?? []).find((g) => g.userId === A0.userId)?.points === 100);
 
     console.log('\ntiming');
@@ -622,6 +657,7 @@ async function runChecks() {
     check('the host leaving passes the role to the longest-present player', room(B)?.hostId === B0.userId && B.feeds.some((f) => f.kind === 'host' && f.userId === B0.userId) && B.feeds.some((f) => f.kind === 'leave' && f.userId === A0.userId));
     const againOk = await request(B, 'room:again');
     await waitFor('lobby again', () => room(C3)?.status === 'lobby');
+    check('play again keeps the host\'s settings', room(C3)?.level === 'hard' && room(C3)?.rounds === 2);
     check('play again returns everyone to the lobby with scores at zero and a clean paper', againOk.ok && room(C3)?.status === 'lobby' && (room(C3)?.players ?? []).every((p) => p.score === 0) && JSON.stringify(C3.states.at(-1)?.strokes) === '[]');
     const kicked = await request(B, 'room:kick', { userId: C0.userId });
     await waitFor('C kicked', () => C3.kicked.length > 0 && (room(B)?.players ?? []).length === 1);
@@ -828,6 +864,37 @@ async function runChecks() {
     check('matching: case and punctuation ignored, whole word inside a phrase, one letter off is close', guessOutcome('Ice-Cream!', 'ice cream') === 'correct' && guessOutcome('a giraffe', 'giraffe') === 'correct' && guessOutcome('giraffes', 'giraffe') === 'close' && guessOutcome('cat', 'car') === 'wrong' && guessOutcome('', 'car') === 'empty');
     check('other scripts keep their letters and marks; punctuation alone is empty', normalizeGuess('हाथी!') === 'हाथी' && normalizeGuess('Café-au-Lait') === 'café au lait' && guessOutcome('हाथी', 'elephant') === 'wrong' && guessOutcome('?!', 'cat') === 'empty');
     check('hints: none before half time, one at half, two at three quarters for five letters, never over half', hintsWanted('kite', 0.49) === 0 && hintsWanted('kite', 0.5) === 1 && hintsWanted('kite', 0.8) === 1 && hintsWanted('rocket', 0.75) === 2 && hintsWanted('cat', 0.9) === 1);
+    {
+      // Rounds: a game with four rounds runs four, the order rebuilt each time; three players draw four times each.
+      const r4 = newRoom('ENGIN', ORG, { userId: 'e1', name: 'E One', photoUrl: null }, 0);
+      for (const id of ['e2', 'e3']) r4.players.push({ userId: id, name: id, photoUrl: null, score: 0, joinedAt: 0, online: true, offlineAt: null });
+      check('settings: four rounds and easy words are taken', applySettings(r4, { rounds: 4, level: 'easy' }) === true && roundsOf(r4) === 4 && levelOf(r4) === 'easy');
+      check('settings: the same again changes nothing; a bad value refuses all', applySettings(r4, { rounds: 4 }) === false && applySettings(r4, { level: 'easy', rounds: 7 }) === null && roundsOf(r4) === 4);
+      let t = 1;
+      startGame(r4, t, Math.random, 'g4');
+      let turns = 0;
+      let maxRound = 0;
+      const levels = new Set<string>();
+      for (let step = 0; step < 200 && r4.status !== 'over'; step += 1) {
+        if (r4.status === 'picking') {
+          turns += 1;
+          maxRound = Math.max(maxRound, r4.round);
+          (r4.choices ?? []).forEach((c) => levels.add(c.level));
+          t += SCRIBBLE.pickMs;
+        } else if (r4.status === 'drawing') t += SCRIBBLE.turnMs;
+        else t += SCRIBBLE.revealMs;
+        advance(r4, t, Math.random);
+      }
+      check('a four-round game: twelve turns for three players, then the podium', r4.status === 'over' && turns === 12 && maxRound === 4, `${r4.status} ${turns} ${maxRound}`);
+      check('every turn offered easy words', levels.size === 1 && levels.has('easy'));
+      const old = newRoom('OLDRM', ORG, { userId: 'o1', name: 'O', photoUrl: null }, 0);
+      delete old.level;
+      delete old.rounds;
+      check('a room written before settings reads as medium and two rounds', levelOf(old) === 'medium' && roundsOf(old) === 2 && viewFor(old, 'o1', 0).rounds === 2 && viewFor(old, 'o1', 0).level === 'medium');
+      const easyAll = chooseWords(WORDS.easy.slice(0, -2), () => 0.5, 'easy');
+      check('with almost every word used, the three are still three different words', new Set(easyAll.map((c) => c.word)).size === 3 && easyAll.every((c) => c.level === 'easy'));
+      check('without a level, one of each, as before', chooseWords([], Math.random).map((c) => c.level).join() === 'easy,medium,hard');
+    }
     check('mask keeps spaces and shows hints', maskOf('ice cream', [0, 5]) === 'i__ _r___');
     check('ops: ranges hold', validateOp({ t: 'b', id: 1, k: 3, c: 1, w: 1, x: 1, y: 1 }) === null && validateOp({ t: 'p', id: 1, pts: [1, 2, 3] }) === null && validateOp({ t: 'p', id: 1, pts: [1000, 0] }) !== null && validateOp({ t: 'c' }) !== null);
 
