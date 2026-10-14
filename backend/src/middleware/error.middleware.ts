@@ -36,6 +36,7 @@ import { GardenError } from '../services/garden.service';
 import { HelpError } from '../services/help.service';
 import { CareError } from '../services/care.service';
 import { SupportError } from '../services/support.service';
+import { redactTicket } from '../services/scribble-ticket.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
   logger.warn('Route not found', requestLogContext(request, 404));
@@ -134,7 +135,7 @@ function requestLogContext(request: Request, statusCode: number) {
   return {
     requestId: request.requestId,
     method: request.method,
-    path: request.originalUrl,
+    path: redactTicket(request.originalUrl),
     statusCode,
     userId: request.auth?.userId,
     ip: request.ip,

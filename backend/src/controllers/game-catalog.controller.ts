@@ -8,6 +8,7 @@ import {
   submitScore,
 } from '../services/game-catalog.service';
 import { gamesHomeFor, parsePeriod, pointsLeaderboardFor } from '../services/games-home.service';
+import { mintTicket, verifyTicket } from '../services/scribble-ticket.service';
 
 function viewerOf(req: Request): GameViewer {
   const user = req.auth?.user;
@@ -45,7 +46,9 @@ export async function catalogHandler(req: Request, res: Response, next: NextFunc
 
 export async function playHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { html, version } = await pageFor(viewerOf(req), keyOf(req));
+    const viewer = viewerOf(req);
+    const key = keyOf(req);
+    const { html, version } = await pageFor(viewer, key);
     res
       .status(200)
       .set({
@@ -56,7 +59,82 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
         'Content-Security-Policy': PAGE_CSP,
         'X-Game-Version': version,
       })
-      .send(html);
+      .send(key === SCRIBBLE_KEY ? withScribbleTicket(html, viewer, true) : html);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ---------------------------------------------------------------- Scribble's tickets
+
+const SCRIBBLE_KEY = 'scribble';
+const TICKET_MARKER = '<!--SCRIBBLE-TICKET-->';
+
+/** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
+const scriptJson = (value: unknown) =>
+  JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
+/**
+ * Puts `window.__SCRIBBLE` into the page where it left a marker for it: the
+ * ticket its socket presents and, on the copy the app loads as a string, a
+ * short-lived hop token for the reload that escapes the app's policy (see
+ * PROTOCOL.md §1–2). A page without the marker (an older build) is unchanged.
+ */
+function withScribbleTicket(html: string, viewer: GameViewer, withHop: boolean): string {
+  if (!html.includes(TICKET_MARKER) || !viewer.org) return html;
+  const subject = { userId: viewer.userId, org: viewer.org, name: viewer.name };
+  const payload: Record<string, string> = { ticket: mintTicket(subject) };
+  if (withHop) payload.hopTicket = mintTicket(subject, { kind: 'hop' });
+  // A function replacer: a `$&` in the ticket is text, not a replacement pattern.
+  const script = `<script>window.__SCRIBBLE=${scriptJson(payload)}</script>`;
+  return html.replace(TICKET_MARKER, () => script);
+}
+
+/** The host the request was made to, as the browser sees it, for the policy. */
+function requestHost(req: Request): string {
+  const forwarded = req.get('x-forwarded-host');
+  const host = (forwarded ?? req.get('host') ?? '').split(',')[0].trim();
+  return /^[A-Za-z0-9.\-[\]:]+$/.test(host) ? host : '';
+}
+
+/**
+ * The copy of Scribble the page reloads itself onto, `GET /play/scribble?ticket=<hop>`,
+ * with no session: the hop token is the credential. The same page, with a
+ * fresh ticket in it, under a policy that lets it reach this server's socket
+ * and nothing else. A bad or stale token gets a plain 401; the page cannot
+ * recover from one and the person closes and reopens Scribble.
+ */
+export async function scribbleHopHandler(req: Request, res: Response, next: NextFunction) {
+  if (keyOf(req) !== SCRIBBLE_KEY || typeof req.query.ticket !== 'string') {
+    next();
+    return;
+  }
+  try {
+    const verdict = verifyTicket(req.query.ticket, 'hop');
+    if (!verdict.ok) {
+      res
+        .status(401)
+        .set({ 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
+        .type('text/plain')
+        .send(verdict.error === 'ticket_expired' ? 'This Scribble link has expired. Close and reopen Scribble.' : 'Close and reopen Scribble.');
+      return;
+    }
+    const viewer: GameViewer = { userId: verdict.ticket.userId, org: verdict.ticket.org, name: verdict.ticket.name };
+    const { html, version } = await pageFor(viewer, SCRIBBLE_KEY);
+    const host = requestHost(req);
+    const sockets = host ? ` https://${host} wss://${host} http://${host} ws://${host}` : '';
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        // The token is in this page's URL: it must not travel on to fonts or images.
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': PAGE_CSP.replace("connect-src 'none'", `connect-src 'self'${sockets}`),
+        'X-Game-Version': version,
+      })
+      .send(withScribbleTicket(html, viewer, false));
   } catch (error) {
     next(error);
   }

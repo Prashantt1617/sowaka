@@ -17,13 +17,18 @@ class GamesHome {
   });
 
   /// [absolute] makes a photo path on the API whole.
-  factory GamesHome.fromJson(Map<String, dynamic> json, {String? Function(Object? url)? absolute}) {
-    String? photo(Object? url) => absolute == null ? _stringOrNull(url) : absolute(url);
-    List<T> list<T>(Object? raw, T? Function(Map<String, dynamic> row) parse) => [
-      if (raw is List)
-        for (final row in raw)
-          if (row is Map) ?parse(Map<String, dynamic>.from(row)),
-    ];
+  factory GamesHome.fromJson(
+    Map<String, dynamic> json, {
+    String? Function(Object? url)? absolute,
+  }) {
+    String? photo(Object? url) =>
+        absolute == null ? _stringOrNull(url) : absolute(url);
+    List<T> list<T>(Object? raw, T? Function(Map<String, dynamic> row) parse) =>
+        [
+          if (raw is List)
+            for (final row in raw)
+              if (row is Map) ?parse(Map<String, dynamic>.from(row)),
+        ];
     final banner = json['banner'];
     final relay = json['liveRelay'];
     final playing = json['playingNow'];
@@ -31,10 +36,20 @@ class GamesHome {
       points: _int(json['points']),
       rank: _intOrNull(json['rank']),
       total: _int(json['total']),
-      banner: banner is Map ? ScoreBanner.fromJson(Map<String, dynamic>.from(banner), photo) : null,
-      liveContests: list(json['liveContests'], (row) => LiveContest.tryParse(row, photo)),
-      liveRelay: relay is Map ? LiveRelay.tryParse(Map<String, dynamic>.from(relay), photo) : null,
-      challenges: list(json['challenges'], (row) => HomeChallenge.tryParse(row, photo)),
+      banner: banner is Map
+          ? ScoreBanner.fromJson(Map<String, dynamic>.from(banner), photo)
+          : null,
+      liveContests: list(
+        json['liveContests'],
+        (row) => LiveContest.tryParse(row, photo),
+      ),
+      liveRelay: relay is Map
+          ? LiveRelay.tryParse(Map<String, dynamic>.from(relay), photo)
+          : null,
+      challenges: list(
+        json['challenges'],
+        (row) => HomeChallenge.tryParse(row, photo),
+      ),
       yourGames: list(json['yourGames'], PlayedGame.tryParse),
       games: parseGameCatalog(json),
       playingNow: playing is Map
@@ -61,7 +76,8 @@ class GamesHome {
 
   /// A home made only of a catalog: for a server from before `/games/home`,
   /// or the catalog kept on the phone while the home is on its way.
-  factory GamesHome.ofCatalog(List<GameCatalogEntry> games) => GamesHome(games: games);
+  factory GamesHome.ofCatalog(List<GameCatalogEntry> games) =>
+      GamesHome(games: games);
 }
 
 /// "Yami just beat your Odd One Out score": the latest time in the last two
@@ -77,7 +93,10 @@ class ScoreBanner {
     this.yourBest = 0,
   });
 
-  factory ScoreBanner.fromJson(Map<String, dynamic> json, String? Function(Object?) photo) {
+  factory ScoreBanner.fromJson(
+    Map<String, dynamic> json,
+    String? Function(Object?) photo,
+  ) {
     final name = _string(json['name']);
     final first = _string(json['firstName']);
     return ScoreBanner(
@@ -111,7 +130,11 @@ ContestKind? _contestKind(Object? raw) => switch (raw) {
 };
 
 class ContestFace {
-  const ContestFace({required this.name, required this.initials, this.photoUrl});
+  const ContestFace({
+    required this.name,
+    required this.initials,
+    this.photoUrl,
+  });
 
   final String name;
   final String initials;
@@ -132,7 +155,12 @@ List<ContestFace> _faces(Object? raw, String? Function(Object?) photo) => [
 /// One entry a live contest's picture shows in turn: a caption's words, a
 /// photo, or the colleague a Most Likely entry named.
 class ContestPreview {
-  const ContestPreview({required this.name, this.text, this.imageUrl, this.photoUrl});
+  const ContestPreview({
+    required this.name,
+    this.text,
+    this.imageUrl,
+    this.photoUrl,
+  });
 
   final String name;
   final String? text;
@@ -159,7 +187,10 @@ class LiveContest {
     this.imageUrl,
   });
 
-  static LiveContest? tryParse(Map<String, dynamic> json, String? Function(Object?) photo) {
+  static LiveContest? tryParse(
+    Map<String, dynamic> json,
+    String? Function(Object?) photo,
+  ) {
     final id = _string(json['id']);
     final kind = _contestKind(json['type']);
     if (id.isEmpty || kind == null) return null;
@@ -239,7 +270,10 @@ class LiveRelay {
     this.faces = const [],
   });
 
-  static LiveRelay? tryParse(Map<String, dynamic> json, [String? Function(Object?)? photo]) {
+  static LiveRelay? tryParse(
+    Map<String, dynamic> json, [
+    String? Function(Object?)? photo,
+  ]) {
     final id = _string(json['eventId']);
     if (id.isEmpty) return null;
     final phase = switch (json['phase']) {
@@ -251,7 +285,9 @@ class LiveRelay {
     final team = _string(json['teamName']);
     return LiveRelay(
       eventId: id,
-      title: _string(json['title']).isEmpty ? 'Hint Relay' : _string(json['title']),
+      title: _string(json['title']).isEmpty
+          ? 'Hint Relay'
+          : _string(json['title']),
       phase: phase,
       startsAt: _date(json['startsAt']),
       postId: post.isEmpty ? null : post,
@@ -295,7 +331,10 @@ class HomeChallenge {
     this.expiresAt,
   });
 
-  static HomeChallenge? tryParse(Map<String, dynamic> json, String? Function(Object?) photo) {
+  static HomeChallenge? tryParse(
+    Map<String, dynamic> json,
+    String? Function(Object?) photo,
+  ) {
     final id = _string(json['id']);
     final key = _string(json['gameKey']);
     if (id.isEmpty || key.isEmpty) return null;
@@ -341,7 +380,12 @@ class HomeChallenge {
 
 /// A catalog game the viewer has a score in.
 class PlayedGame {
-  const PlayedGame({required this.key, required this.best, this.rank, this.players = 0});
+  const PlayedGame({
+    required this.key,
+    required this.best,
+    this.rank,
+    this.players = 0,
+  });
 
   static PlayedGame? tryParse(Map<String, dynamic> json) {
     final key = _string(json['key']);
@@ -371,7 +415,8 @@ class PlayingNow {
       initials: [
         if (people is List)
           for (final row in people)
-            if (row is Map && _string(row['initials']).isNotEmpty) _string(row['initials']),
+            if (row is Map && _string(row['initials']).isNotEmpty)
+              _string(row['initials']),
       ],
     );
   }
@@ -386,7 +431,11 @@ enum PointsPeriod { week, all }
 /// `GET /games/leaderboard?period=`: the company's individuals by engagement
 /// points, and where the viewer stands.
 class PointsLeaderboard {
-  const PointsLeaderboard({required this.period, this.entries = const [], this.me});
+  const PointsLeaderboard({
+    required this.period,
+    this.entries = const [],
+    this.me,
+  });
 
   factory PointsLeaderboard.fromJson(
     Map<String, dynamic> json, {
@@ -399,9 +448,12 @@ class PointsLeaderboard {
       entries: [
         if (rows is List)
           for (final row in rows)
-            if (row is Map) ?PointsEntry.tryParse(Map<String, dynamic>.from(row), absolute),
+            if (row is Map)
+              ?PointsEntry.tryParse(Map<String, dynamic>.from(row), absolute),
       ],
-      me: me is Map ? PointsStanding.fromJson(Map<String, dynamic>.from(me)) : null,
+      me: me is Map
+          ? PointsStanding.fromJson(Map<String, dynamic>.from(me))
+          : null,
     );
   }
 
@@ -421,14 +473,19 @@ class PointsEntry {
     this.moved,
   });
 
-  static PointsEntry? tryParse(Map<String, dynamic> json, String? Function(Object?)? absolute) {
+  static PointsEntry? tryParse(
+    Map<String, dynamic> json,
+    String? Function(Object?)? absolute,
+  ) {
     final id = _string(json['userId']);
     if (id.isEmpty) return null;
     return PointsEntry(
       rank: _int(json['rank']),
       userId: id,
       name: _string(json['name']),
-      photoUrl: absolute == null ? _stringOrNull(json['photoUrl']) : absolute(json['photoUrl']),
+      photoUrl: absolute == null
+          ? _stringOrNull(json['photoUrl'])
+          : absolute(json['photoUrl']),
       points: _int(json['points']),
       department: _string(json['department']),
       moved: _intOrNull(json['moved']),
@@ -498,5 +555,6 @@ int _int(Object? value) => value is num ? value.round() : 0;
 
 int? _intOrNull(Object? value) => value is num ? value.round() : null;
 
-DateTime? _date(Object? value) =>
-    value is String && value.isNotEmpty ? DateTime.tryParse(value)?.toLocal() : null;
+DateTime? _date(Object? value) => value is String && value.isNotEmpty
+    ? DateTime.tryParse(value)?.toLocal()
+    : null;

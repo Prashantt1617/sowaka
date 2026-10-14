@@ -354,12 +354,15 @@ function boardAt(sd,g){
 const HUES=[45,200,330,150,265];
 const MILE={5:'On fire!',10:'Unstoppable!',15:'Machine!',20:'Legend!',30:'Unreal!'};
 let save={bank:0,best:0,rounds:0,sound:true,scores:[],seenHowTo:false}; /* seenHowTo: the how-to-play card was read once (OK), so it never comes up by itself again */
-try{const s=JSON.parse(localStorage.getItem('oddone.v1')||'null'); if(s&&typeof s.bank==='number') save=Object.assign(save,s);}catch(e){}
-if(!Array.isArray(save.scores))save.scores=[];
-const store=()=>{try{localStorage.setItem('oddone.v1',JSON.stringify(save));}catch(e){}};
+/* The save is kept per account in the app, under oddone.v1.<userId>, so the next person to sign in on this phone starts clean; in a plain browser (no
+   bridge) it is oddone.v1. A save from before the app gave the id (a plain oddone.v1) goes to the first account that loads with an id, once, and is then removed. */
+const SAVE_KEY='oddone.v1';
+let saveKey='';
+const store=()=>{try{localStorage.setItem(saveKey,JSON.stringify(save));}catch(e){}};
 
 /* ---------- Sowaka bridge ----------
    In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
+     Sowaka.userId                      -> "u-…": the signed-in person's id, the key of this page's save and caches on the device
      Sowaka.playerName()                -> "Tanvi Shah"
      Sowaka.submitScore(n)              -> Promise of the board after it, posted under the player's own session
      Sowaka.leaderboard()               -> Promise of {entries:[{rank,name,score,me}], me:{rank,score}|null, company, label}
@@ -383,6 +386,15 @@ const store=()=>{try{localStorage.setItem('oddone.v1',JSON.stringify(save));}cat
    In a plain browser there is no bridge: scores stay on this device, in localStorage, the board is your own, and there are no challenges. */
 const LOCAL_TOP=10;
 const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
+const playerId=()=>{ const b=bridge(); const id=b&&b.userId; return id==null?'':String(id).trim(); };
+function readSave(key){ try{ const s=JSON.parse(localStorage.getItem(key)||'null'); return s&&typeof s.bank==='number'?s:null; }catch(e){ return null; } }
+/* Reads the save of whoever is signed in (see SAVE_KEY). True when it is a different save from the one in hand: the bridge arrived after the page had read the plain one. */
+function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(key===saveKey)return false;
+  let s=readSave(key);
+  if(id){ const old=readSave(SAVE_KEY); if(!s&&old)s=old; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+  saveKey=key; save=Object.assign({bank:0,best:0,rounds:0,sound:true,scores:[],seenHowTo:false},s||{}); if(!Array.isArray(save.scores))save.scores=[];
+  if(s&&id)store(); return true; }
+loadSave();
 let board=null; /* the last board seen, for the best line under the grid */
 function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
   const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
@@ -398,8 +410,9 @@ const Board={
     return Promise.resolve().then(()=>b.submitScore(s)).then(shapeBoard).catch(()=>Object.assign(localBoard(t),{offline:true})); },
   fetch(){ const b=bridge(); if(!b)return Promise.resolve(localBoard(-1)); return Promise.resolve().then(()=>b.leaderboard()).then(shapeBoard); },
 };
-/* A small cache on the device, one per player: the last leaderboard and colleague list, so the menu and the picker open with names at once. */
-function cacheKey(k){ let h=7; for(const ch of Board.name()||'?')h=(h*31+ch.codePointAt(0))>>>0; return 'oddone.'+k+'.'+h.toString(36); }
+/* A small cache on the device, one per account: the last leaderboard and colleague list, so the menu and the picker open with names at once.
+   Keyed by the player's id; under an older app, which gives no id, by a hash of their name as before. */
+function cacheKey(k){ const id=playerId(); if(id)return 'oddone.'+k+'.'+id; let h=7; for(const ch of Board.name()||'?')h=(h*31+ch.codePointAt(0))>>>0; return 'oddone.'+k+'.'+h.toString(36); }
 function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem(cacheKey(k))||'null'); return v&&typeof v==='object'?v:null; }catch(e){ return null; } }
 function cachePut(k,v){ try{ localStorage.setItem(cacheKey(k),JSON.stringify(v)); }catch(e){} }
 function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();}
@@ -473,7 +486,8 @@ const sfx={
   ahead(){tone(880,0.09,{vol:.12});tone(1175,0.16,{vol:.12,at:.08});},
   behind(){tone(466,0.1,{type:'square',vol:.07});tone(370,0.2,{type:'square',vol:.07,at:.1});}
 };
-function buzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(e){}}
+function buzz(p){ /* The app's haptic (iPhones have no web vibration); the browser's vibrate otherwise. */
+  try{ const S=window.Sowaka; if(S&&S.native&&S.haptic){ S.haptic(Array.isArray(p)?'heavy':p>=30?'medium':'light'); return; } if(navigator.vibrate)navigator.vibrate(p); }catch(e){} }
 
 /* ---------- confetti ---------- */
 const fx=$('fx'), fctx=fx.getContext('2d'); let parts=[], fxOn=false;
@@ -943,7 +957,7 @@ document.addEventListener('keydown',e=>{ if(e.key!=='Escape')return;
   if(!$('howto').hidden){ if(!howThen)$('howok').click(); return; }
   if(!$('sheet').hidden&&mode!=='over')sheetOutside(); });
 ['gesturestart','gesturechange'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
-addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); refreshBoard(); challengesReady(); });
+addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); if(loadSave()){ sndLabel(); if(mode==='idle')menu(); } refreshBoard(); challengesReady(); });
 menu();
 refreshBoard();
 challengesReady();

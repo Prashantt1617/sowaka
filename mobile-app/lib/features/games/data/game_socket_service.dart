@@ -96,7 +96,9 @@ class GameEventForwarder {
       unawaited(run(challengeEventScript(event)));
     });
     _reconnects = realtime.reconnects.listen((_) {
-      unawaited(run(challengeEventScript({'kind': 'resync', 'gameKey': gameKey})));
+      unawaited(
+        run(challengeEventScript({'kind': 'resync', 'gameKey': gameKey})),
+      );
     });
     realtime.connect();
   }

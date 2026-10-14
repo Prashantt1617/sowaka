@@ -5,6 +5,7 @@ import {
   leaderboardHandler,
   playHandler,
   pointsLeaderboardHandler,
+  scribbleHopHandler,
   submitScoreHandler,
 } from '../controllers/game-catalog.controller';
 import {
@@ -61,5 +62,8 @@ gamesRouter.get('/:key/leaderboard', leaderboardHandler);
  * URL, so it never lands in a log or a history.
  */
 export const playRouter = Router();
+// Scribble's one exception: `?ticket=<hop>` carries its own credential (see
+// scribbleHopHandler). Anything else falls through to the session.
+playRouter.get('/:key', scribbleHopHandler);
 playRouter.use(requireAuth);
 playRouter.get('/:key', playHandler);

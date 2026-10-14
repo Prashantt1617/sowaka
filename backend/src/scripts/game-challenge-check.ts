@@ -5,8 +5,8 @@
  * challenge runs out, and what a result pays in engagement points under every cap.
  *
  * No database: the rules live in `services/game-challenge-rules.ts`, which is
- * pure, and the boards are the game page's own code, read out of
- * `game-pages/odd-one-out.html` and run here.
+ * pure, and the boards are the game pages' own code, read out of
+ * `game-pages/odd-one-out.html`, `game-pages/trails.html` and `game-pages/word-trip.html` and run here.
  * Run with `npx tsx src/scripts/game-challenge-check.ts`.
  */
 import { readFileSync } from 'node:fs';
@@ -81,17 +81,23 @@ const scored = (k: number, p: number, overrides: Partial<GameChallenge> = {}) =>
   challenge({ scores: { 'u-kritik': { score: k, finishedAt: at }, 'u-priya': { score: p, finishedAt: at } }, ...overrides });
 const nothingPaid = (): PaidToday => ({ wins: {}, participation: {}, winsOverOther: {} });
 
-console.log('seed: the same boards for both players');
-{
-  const html = readFileSync(resolve(__dirname, '../../game-pages/odd-one-out.html'), 'utf8');
+/**
+ * A game page's `seeded-boards` block, alone: it defines `boardAt(seed, g)`, board g of a round as a pure function
+ * of the seed. Run in a fresh context each time, with Math.random poisoned: a board must never depend on it.
+ */
+function seededBoards<T>(page: string) {
+  const html = readFileSync(resolve(__dirname, '../../game-pages', page), 'utf8');
   const block = /\/\* seeded-boards:start[\s\S]*?\/\* seeded-boards:end \*\//.exec(html)?.[0];
-  check('the page marks the code its boards depend on', Boolean(block));
-  // The block alone, in a fresh context each time, with Math.random poisoned: a board must never depend on it.
   const sandbox = () => ({ Math: Object.create(Math, { random: { value: () => { throw new Error('Math.random used'); } } }) });
   const boards = (seed: number, count: number) =>
-    runInNewContext(`${block}\nArray.from({ length: ${count} }, (_, g) => boardAt(${seed}, g));`, sandbox()) as {
-      n: number; base: string; odd: string; flip: boolean; at: number;
-    }[];
+    runInNewContext(`${block}\nArray.from({ length: ${count} }, (_, g) => boardAt(${seed}, g));`, sandbox()) as T[];
+  return { block, boards };
+}
+
+console.log('seed: the same boards for both players (Odd One Out)');
+{
+  const { block, boards } = seededBoards<{ n: number; base: string; odd: string; flip: boolean; at: number }>('odd-one-out.html');
+  check('the page marks the code its boards depend on', Boolean(block));
   const a = boards(4242, 40);
   const b = boards(4242, 40);
   check('one seed gives the same 40 boards twice over', JSON.stringify(a) === JSON.stringify(b));
@@ -105,6 +111,108 @@ console.log('seed: the same boards for both players');
   const seeds = Array.from({ length: 500 }, newSeed);
   check('server seeds are whole numbers in the page\'s range', seeds.every((s) => Number.isInteger(s) && s >= SEED_MIN && s <= SEED_MAX));
   check('server seeds vary', new Set(seeds).size > 450);
+}
+
+console.log('seed: the same trails for both players (Trails)');
+{
+  type Cell = [number, number];
+  type Trail = { n: number; level: number; dots: Cell[]; walls: [Cell, Cell][]; path: Cell[] };
+  const { block, boards } = seededBoards<Trail>('trails.html');
+  check('the page marks the code its trails depend on', Boolean(block));
+  const a = boards(4242, 30);
+  check('one seed gives the same 30 trails twice over', JSON.stringify(a) === JSON.stringify(boards(4242, 30)));
+  check('and never reads Math.random', a.length === 30);
+  check('a different seed gives different trails', JSON.stringify(boards(4243, 30)) !== JSON.stringify(a));
+  check('the trails climb the levels, then stay on the hardest', a.slice(0, 20).every((t, g) => t.level === g + 1) && a.slice(20).every((t) => t.level >= 15 && t.n === 7),
+    a.map((t) => t.level).join(' '));
+  check('the boards grow from 4×4 to 7×7', a[0].n === 4 && a[3].n === 5 && a[8].n === 6 && a[14].n === 7);
+  const key = (c: Cell) => `${c[0]},${c[1]}`;
+  const wall = (x: Cell, y: Cell) => [key(x), key(y)].sort().join('|');
+  /** Whether the stored way through is a real solution: every cell once, step by step, never through a wall, the numbers in order, 1 first and the last one last. */
+  const solves = (t: Trail) => {
+    const walls = new Set(t.walls.map(([x, y]) => wall(x, y)));
+    if (t.path.length !== t.n * t.n || new Set(t.path.map(key)).size !== t.n * t.n) return false;
+    if (!t.path.every((c) => c.every((v) => v >= 0 && v < t.n))) return false;
+    for (let i = 1; i < t.path.length; i++) {
+      const [p, q] = [t.path[i - 1], t.path[i]];
+      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) !== 1 || walls.has(wall(p, q))) return false;
+    }
+    const at = t.dots.map((d) => t.path.findIndex((c) => key(c) === key(d)));
+    return at[0] === 0 && at[at.length - 1] === t.path.length - 1 && at.every((x, i) => i === 0 || x > at[i - 1]);
+  };
+  /** How many ways through there are, up to two: a fair trail has exactly one. */
+  const ways = (t: Trail) => {
+    const walls = new Set(t.walls.map(([x, y]) => wall(x, y)));
+    const dotAt = new Map(t.dots.map((d, i) => [key(d), i] as const));
+    const used = new Set<string>();
+    let found = 0;
+    const go = (c: Cell, next: number, len: number) => {
+      if (found > 1) return;
+      const d = dotAt.get(key(c));
+      if (d !== undefined) { if (d !== next) return; next += 1; }
+      if (len === t.n * t.n) { if (d === t.dots.length - 1) found += 1; return; }
+      if (d === t.dots.length - 1) return;
+      used.add(key(c));
+      for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n: Cell = [c[0] + dr, c[1] + dc];
+        if (n[0] < 0 || n[1] < 0 || n[0] >= t.n || n[1] >= t.n || used.has(key(n)) || walls.has(wall(c, n))) continue;
+        go(n, next, len + 1);
+      }
+      used.delete(key(c));
+    };
+    go(t.dots[0], 0, 1);
+    return found;
+  };
+  check('every trail\'s stored way is a real solution', a.every(solves));
+  check('every trail has exactly one way through (turned, mirrored or reversed as it may be)', a.slice(0, 22).every((t) => ways(t) === 1));
+  const many = [1, 2, 99, 31337, 500000, SEED_MAX].flatMap((seed) => boards(seed, 22));
+  check('so do trails from other seeds, the largest included', many.every(solves));
+  check('puzzles are turned, mirrored and reversed: level 1 starts in different places', new Set(many.filter((t) => t.level === 1).map((t) => key(t.dots[0]))).size > 4);
+}
+
+console.log('seed: the same letters for both players (Word Trip)');
+{
+  type Stop = { g: number; len: number; letters: string; words: string[]; rare: string[]; full: string[] };
+  const { block, boards } = seededBoards<Stop>('word-trip.html');
+  check('the page marks the code its stops depend on', Boolean(block));
+  /** The block's own lists, read in a sandbox like the boards (Math.random poisoned there too). */
+  const inBlock = <T>(expr: string) =>
+    runInNewContext(`${block}\n${expr}`, { Math: Object.create(Math, { random: { value: () => { throw new Error('Math.random used'); } } }) }) as T;
+  const WORDS = new Set(inBlock<string>('WORDS').split(' '));
+  const RARE = new Set(inBlock<string>('RARE').split(' '));
+  const STOPS = inBlock<Record<string, string>>('STOPS');
+  const a = boards(4242, 30);
+  check('one seed gives the same 30 stops twice over', JSON.stringify(a) === JSON.stringify(boards(4242, 30)));
+  check('and never reads Math.random', a.length === 30);
+  check('a different seed gives different stops', JSON.stringify(boards(4243, 30)) !== JSON.stringify(a));
+  check('the stops climb: 5 letters, then 6, 6, 7, 7, 7, then 8', a.every((s, g) => s.len === [5, 6, 6, 7, 7, 7][g] || (g >= 6 && s.len === 8)) &&
+    a.every((s, g) => g === 0 || s.len >= a[g - 1].len), a.map((s) => s.len).join(' '));
+  const sorted = (w: string) => [...w].sort().join('');
+  /** Whether a word can be made from the letters, each letter once. */
+  const madeFrom = (w: string, letters: string) => {
+    const have = [...letters];
+    for (const ch of w) { const i = have.indexOf(ch); if (i < 0) return false; have.splice(i, 1); }
+    return true;
+  };
+  /** A fair stop: some common word uses every letter, every word it lists is in the page's lists and can be made from its letters, and the letters
+   * as dealt do not already spell a word. */
+  const solvable = (s: Stop) =>
+    s.letters.length === s.len && s.words.some((w) => w.length === s.len && WORDS.has(w)) &&
+    s.words.every((w) => WORDS.has(w) && w.length >= 3 && madeFrom(w, s.letters)) &&
+    s.rare.every((w) => RARE.has(w) && w.length >= 3 && madeFrom(w, s.letters)) &&
+    s.full.length > 0 && s.full.every((w) => sorted(w) === sorted(s.letters)) && !s.full.includes(s.letters);
+  check('every stop can be finished with a word in the list', a.every(solvable));
+  check('no stop comes twice in a round', new Set(a.map((s) => sorted(s.letters))).size === a.length);
+  const many = [1, 2, 99, 31337, 500000, SEED_MAX].flatMap((seed) => boards(seed, 12));
+  check('so do stops from other seeds, the largest included', many.every(solvable) && many.length === 72);
+  check('the letters are dealt in different orders', new Set(many.filter((s) => s.g === 0).map((s) => s.letters)).size === 6);
+  const bank = Object.entries(STOPS).flatMap(([n, list]) => list.split(' ').map((k) => ({ n: +n, k })));
+  check('every stop in the bank has a common word with all its letters', bank.every(({ n, k }) => k.length === n && [...WORDS].some((w) => w.length === n && sorted(w) === k)),
+    `${bank.length} stops`);
+  check('and plenty of shorter ones (12 or more)', bank.every(({ k }) => [...WORDS].filter((w) => madeFrom(w, k)).length >= 12));
+  const lists = [...WORDS, ...RARE];
+  check('the lists are lowercase words of 3 to 8 letters, each once, common or rare', lists.every((w) => /^[a-z]{3,8}$/.test(w)) && new Set(lists).size === lists.length);
+  check('rude words are not in them', ['sex', 'piss', 'damn', 'crap', 'boob', 'rape', 'slut', 'whore', 'bitch', 'penis'].every((w) => !WORDS.has(w) && !RARE.has(w)));
 }
 
 console.log('winner and draw');

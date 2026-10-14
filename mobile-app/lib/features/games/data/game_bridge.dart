@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/services.dart';
 
 import 'games_api_service.dart';
 
@@ -8,6 +11,8 @@ const String gameBridgeChannel = 'SowakaGame';
 /// What a web game sees as `window.Sowaka`:
 ///
 ///   Sowaka.native          true: running inside the Sowaka app
+///   Sowaka.userId          the signed-in person's id, a string, so a page
+///                          keeps its saves and caches per account
 ///   Sowaka.playerName()    the player's name, at once
 ///   Sowaka.submitScore(n)  a Promise of the board after it; the app posts
 ///                          the score under the player's own session
@@ -39,9 +44,14 @@ const String gameBridgeChannel = 'SowakaGame';
 /// browser) has no `window.Sowaka` and is expected to keep its scores itself.
 /// A `sowaka-ready` event fires when the bridge arrives, for a page that
 /// started before it.
-String gameBridgeScript({required String playerName, String? startChallengeId}) {
+String gameBridgeScript({
+  required String playerName,
+  required String userId,
+  String? startChallengeId,
+}) {
   // Inside a <script> element: '<' is escaped so a value can never close it.
   final name = _scriptJson(playerName);
+  final id = _scriptJson(userId);
   final startId = _scriptJson(startChallengeId);
   return '''
 (function () {
@@ -62,7 +72,8 @@ String gameBridgeScript({required String playerName, String? startChallengeId}) 
   function text(value) { return value == null ? null : String(value); }
   var S = window.Sowaka || {};
   S.native = true;
-  S.version = 2;
+  S.version = 3;
+  S.userId = $id;
   S.playerName = function () { return $name; };
   S.submitScore = function (score) { return call('submitScore', { score: Number(score) }); };
   S.leaderboard = function () { return call('leaderboard'); };
@@ -75,6 +86,10 @@ String gameBridgeScript({required String playerName, String? startChallengeId}) 
   S.reportLive = function (score, id) { return call('reportLive', { score: Number(score), id: text(id) }); };
   S.finishChallenge = function (id, score) { return call('finishChallenge', { id: text(id), score: Number(score) }); };
   S.startChallengeId = $startId;
+  // A tap's feel: 'light' for a key, 'medium' for a hit, 'heavy' for a miss. Fire and forget.
+  S.haptic = function (kind) {
+    try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'h', type: 'haptic', data: { kind: text(kind) || 'light' } })); } catch (e) {}
+  };
   S.__reply = function (id, ok, payload) {
     var p = pending[id];
     if (!p) return;
@@ -121,11 +136,17 @@ String injectGameBridge(String html, String script) {
   final tag =
       '<meta http-equiv="Content-Security-Policy" content="$gamePagePolicy">\n'
       '<script>\n$script</script>\n';
-  final head = RegExp(r'<head(\s[^>]*)?>', caseSensitive: false).firstMatch(html);
+  final head = RegExp(
+    r'<head(\s[^>]*)?>',
+    caseSensitive: false,
+  ).firstMatch(html);
   if (head != null) {
     return html.replaceRange(head.end, head.end, '\n$tag');
   }
-  final doctype = RegExp(r'<!doctype[^>]*>', caseSensitive: false).firstMatch(html);
+  final doctype = RegExp(
+    r'<!doctype[^>]*>',
+    caseSensitive: false,
+  ).firstMatch(html);
   if (doctype != null) {
     return html.replaceRange(doctype.end, doctype.end, '\n$tag');
   }
@@ -182,9 +203,21 @@ class GameBridge {
 
     try {
       switch (message['type']) {
+        case 'haptic':
+          // No answer: the page does not wait for a tap's buzz.
+          switch (data['kind']) {
+            case 'medium':
+              unawaited(HapticFeedback.lightImpact());
+            case 'heavy':
+              unawaited(HapticFeedback.mediumImpact());
+            default:
+              unawaited(HapticFeedback.selectionClick());
+          }
+          return null;
         case 'submitScore':
           final value = score();
-          if (value == null) return reply(id, false, {'message': 'Score is invalid'});
+          if (value == null)
+            return reply(id, false, {'message': 'Score is invalid'});
           final board = await service.submitScore(gameKey, value);
           return reply(id, true, board.toPageJson(company: company));
         case 'leaderboard':
@@ -199,17 +232,24 @@ class GameBridge {
           );
         case 'challenge':
           final userId = data['userId'];
-          if (userId is! String || userId.trim().isEmpty || userId.length > 64) {
+          if (userId is! String ||
+              userId.trim().isEmpty ||
+              userId.length > 64) {
             return reply(id, false, {'message': 'Choose who to challenge'});
           }
-          return reply(id, true, _seen(await service.createChallenge(gameKey, userId.trim())));
+          return reply(
+            id,
+            true,
+            _seen(await service.createChallenge(gameKey, userId.trim())),
+          );
         case 'challenges':
           return reply(id, true, await service.challenges(gameKey));
         case 'getChallenge':
         case 'acceptChallenge':
         case 'declineChallenge':
           final target = challengeId();
-          if (target == null) return reply(id, false, {'message': 'Challenge not found'});
+          if (target == null)
+            return reply(id, false, {'message': 'Challenge not found'});
           final view = switch (message['type']) {
             'acceptChallenge' => await service.acceptChallenge(target),
             'declineChallenge' => await service.declineChallenge(target),
@@ -219,15 +259,25 @@ class GameBridge {
         case 'reportLive':
           final value = score();
           final target = challengeId() ?? activeChallengeId;
-          if (value == null) return reply(id, false, {'message': 'Score is invalid'});
-          if (target == null) return reply(id, false, {'message': 'No challenge is being played'});
+          if (value == null)
+            return reply(id, false, {'message': 'Score is invalid'});
+          if (target == null)
+            return reply(id, false, {
+              'message': 'No challenge is being played',
+            });
           return reply(id, true, await service.reportLive(target, value));
         case 'finishChallenge':
           final value = score();
           final target = challengeId();
-          if (value == null) return reply(id, false, {'message': 'Score is invalid'});
-          if (target == null) return reply(id, false, {'message': 'Challenge not found'});
-          return reply(id, true, _seen(await service.finishChallenge(target, value)));
+          if (value == null)
+            return reply(id, false, {'message': 'Score is invalid'});
+          if (target == null)
+            return reply(id, false, {'message': 'Challenge not found'});
+          return reply(
+            id,
+            true,
+            _seen(await service.finishChallenge(target, value)),
+          );
         default:
           return reply(id, false, {'message': 'Unknown request'});
       }
@@ -245,7 +295,8 @@ class GameBridge {
   /// Notes a challenge that is now in play, so a live score finds it.
   Map<String, dynamic> _seen(Map<String, dynamic> view) {
     final viewId = view['id'];
-    if (view['status'] == 'accepted' && viewId is String) activeChallengeId = viewId;
+    if (view['status'] == 'accepted' && viewId is String)
+      activeChallengeId = viewId;
     return view;
   }
 

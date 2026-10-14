@@ -206,7 +206,7 @@ void main() {
   });
 
   test('the bridge script offers every challenge call and the challenge to open', () {
-    final script = gameBridgeScript(playerName: 'Divya Rao', startChallengeId: 'ch-1');
+    final script = gameBridgeScript(playerName: 'Divya Rao', userId: 'u-2', startChallengeId: 'ch-1');
     for (final name in [
       'colleagues', 'challenge', 'challenges', 'getChallenge', 'acceptChallenge',
       'declineChallenge', 'reportLive', 'finishChallenge',
@@ -214,8 +214,10 @@ void main() {
       expect(script, contains('S.$name = function'), reason: name);
     }
     expect(script, contains('S.startChallengeId = "ch-1";'));
-    expect(gameBridgeScript(playerName: 'x'), contains('S.startChallengeId = null;'));
-    expect(gameBridgeScript(playerName: 'x', startChallengeId: '</script>'), isNot(contains('</script>')));
+    // The player's id goes in ahead of the calls, so a page can key its own storage per account.
+    expect(script.indexOf('S.userId = "u-2";'), lessThan(script.indexOf('S.playerName = function')));
+    expect(gameBridgeScript(playerName: 'x', userId: 'u'), contains('S.startChallengeId = null;'));
+    expect(gameBridgeScript(playerName: 'x', userId: 'u', startChallengeId: '</script>'), isNot(contains('</script>')));
     expect(script, contains('error.details = payload.details'));
   });
 

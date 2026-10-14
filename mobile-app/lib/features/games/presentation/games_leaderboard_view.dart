@@ -57,7 +57,11 @@ class _LeaderboardPane extends StatelessWidget {
                             Text(
                               error!,
                               textAlign: TextAlign.center,
-                              style: GamesStyle.sora(14, color: GamesStyle.secondary, height: 20),
+                              style: GamesStyle.sora(
+                                14,
+                                color: GamesStyle.secondary,
+                                height: 20,
+                              ),
                             ),
                             TextButton(
                               onPressed: onRefresh,
@@ -86,7 +90,9 @@ class _LeaderboardPane extends StatelessWidget {
               else ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: podium.isEmpty ? _EmptyPodium(period: period) : _PointsPodium(top: podium),
+                  child: podium.isEmpty
+                      ? _EmptyPodium(period: period)
+                      : _PointsPodium(top: podium),
                 ),
                 const SizedBox(height: 14),
                 Padding(
@@ -141,7 +147,9 @@ class _LeaderboardHero extends StatelessWidget {
                 style: GamesStyle.lilita(
                   24,
                   color: GamesStyle.night,
-                  shadows: const [Shadow(color: Color(0xFF5884F4), offset: Offset(0, 4))],
+                  shadows: const [
+                    Shadow(color: Color(0xFF5884F4), offset: Offset(0, 4)),
+                  ],
                 ),
               ),
             ),
@@ -183,9 +191,15 @@ class _PeriodToggle extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: () => onPeriod(value),
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 26, vertical: on ? 10 : 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: 26,
+              vertical: on ? 10 : 12,
+            ),
             decoration: on
-                ? BoxDecoration(color: GamesStyle.page, borderRadius: BorderRadius.circular(10))
+                ? BoxDecoration(
+                    color: GamesStyle.page,
+                    borderRadius: BorderRadius.circular(10),
+                  )
                 : null,
             child: Text(
               label,
@@ -204,10 +218,16 @@ class _PeriodToggle extends StatelessWidget {
       width: 263,
       height: 50,
       padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(color: GamesStyle.night, borderRadius: BorderRadius.circular(17)),
+      decoration: BoxDecoration(
+        color: GamesStyle.night,
+        borderRadius: BorderRadius.circular(17),
+      ),
       child: _FitRow(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [segment(PointsPeriod.week, 'This week'), segment(PointsPeriod.all, 'All time')],
+        children: [
+          segment(PointsPeriod.week, 'This week'),
+          segment(PointsPeriod.all, 'All time'),
+        ],
       ),
     );
   }
@@ -222,7 +242,11 @@ class _PointsPodium extends StatelessWidget {
 
   final List<PointsEntry> top;
 
-  static const _placeColor = {1: Color(0xFFFFCC00), 2: Color(0xFF34C759), 3: Color(0xFF0088FF)};
+  static const _placeColor = {
+    1: Color(0xFFFFCC00),
+    2: Color(0xFF34C759),
+    3: Color(0xFF0088FF),
+  };
   static const _barHeight = {1: 116.0, 2: 92.0, 3: 72.0};
 
   @override
@@ -311,9 +335,16 @@ class _PointsPodium extends StatelessWidget {
           height: 32,
           child: first
               ? Container(
-                  decoration: const BoxDecoration(color: Color(0xFFFFF3B8), shape: BoxShape.circle),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFF3B8),
+                    shape: BoxShape.circle,
+                  ),
                   alignment: Alignment.center,
-                  child: Image.asset('${GamesStyle.asset}/trophy.png', width: 18, height: 18),
+                  child: Image.asset(
+                    '${GamesStyle.asset}/trophy.png',
+                    width: 18,
+                    height: 18,
+                  ),
                 )
               : Center(
                   child: Text(
@@ -331,7 +362,11 @@ class _PointsPodium extends StatelessWidget {
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 3),
             boxShadow: const [
-              BoxShadow(color: Color(0x2128345A), blurRadius: 10, offset: Offset(0, 5)),
+              BoxShadow(
+                color: Color(0x2128345A),
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
             ],
           ),
           // The design's rank dot sits under the portrait, which covers it.
@@ -340,7 +375,10 @@ class _PointsPodium extends StatelessWidget {
             photoUrl: entry.photoUrl,
             size: portrait,
             border: 0,
-            textStyle: GamesStyle.lilita(first ? 26 : 20, color: GamesStyle.ink2),
+            textStyle: GamesStyle.lilita(
+              first ? 26 : 20,
+              color: GamesStyle.ink2,
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -390,7 +428,9 @@ class _PointsPodium extends StatelessWidget {
                 style: GamesStyle.sora(
                   10,
                   weight: FontWeight.w600,
-                  color: first ? const Color(0xFF564800) : const Color(0xE8FFFFFF),
+                  color: first
+                      ? const Color(0xFF564800)
+                      : const Color(0xE8FFFFFF),
                   spacing: 0.4,
                 ),
               ),
@@ -423,10 +463,16 @@ class _EmptyPodium extends StatelessWidget {
         children: [
           Text(
             'TOP 3',
-            style: GamesStyle.sora(11, weight: FontWeight.w700, color: GamesStyle.secondary),
+            style: GamesStyle.sora(
+              11,
+              weight: FontWeight.w700,
+              color: GamesStyle.secondary,
+            ),
           ),
           Text(
-            period == PointsPeriod.week ? 'NOBODY ON THE PODIUM YET' : 'THE PODIUM IS EMPTY',
+            period == PointsPeriod.week
+                ? 'NOBODY ON THE PODIUM YET'
+                : 'THE PODIUM IS EMPTY',
             style: GamesStyle.lilita(18, color: GamesStyle.night),
           ),
           Text(
@@ -458,8 +504,13 @@ class _LeaderboardRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: isMe ? GamesStyle.cream2 : GamesStyle.night,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isMe ? GamesStyle.ink2 : GamesStyle.rowBorder, width: 1.1),
-        boxShadow: isMe ? const [BoxShadow(color: GamesStyle.pink2, offset: Offset(0, 3))] : null,
+        border: Border.all(
+          color: isMe ? GamesStyle.ink2 : GamesStyle.rowBorder,
+          width: 1.1,
+        ),
+        boxShadow: isMe
+            ? const [BoxShadow(color: GamesStyle.pink2, offset: Offset(0, 3))]
+            : null,
       ),
       child: Row(
         children: [
@@ -487,7 +538,11 @@ class _LeaderboardRow extends StatelessWidget {
                 border: 1.1,
                 borderColor: GamesStyle.ink2,
                 background: _Face.colorFor(entry.userId),
-                textStyle: GamesStyle.figtree(10, weight: FontWeight.w800, height: 15),
+                textStyle: GamesStyle.figtree(
+                  10,
+                  weight: FontWeight.w800,
+                  height: 15,
+                ),
               ),
             ),
           ),
@@ -520,12 +575,19 @@ class _LeaderboardRow extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: GamesStyle.yellow2,
                           borderRadius: BorderRadius.circular(5),
-                          border: Border.all(color: GamesStyle.ink2, width: 1.1),
+                          border: Border.all(
+                            color: GamesStyle.ink2,
+                            width: 1.1,
+                          ),
                         ),
                         alignment: Alignment.center,
                         child: Text(
                           'YOU',
-                          style: GamesStyle.figtree(8, weight: FontWeight.w700, height: 12),
+                          style: GamesStyle.figtree(
+                            8,
+                            weight: FontWeight.w700,
+                            height: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -550,7 +612,12 @@ class _LeaderboardRow extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 34),
             child: Text(
               GamesStyle.count(entry.points),
-              style: GamesStyle.figtree(13, weight: FontWeight.w700, color: ink, height: 19.5),
+              style: GamesStyle.figtree(
+                13,
+                weight: FontWeight.w700,
+                color: ink,
+                height: 19.5,
+              ),
             ),
           ),
           const SizedBox(width: 5),
@@ -574,7 +641,9 @@ class _LeaderboardRow extends StatelessWidget {
         ],
       ),
     );
-    return isMe ? Transform.rotate(angle: -0.4 * math.pi / 180, child: row) : row;
+    return isMe
+        ? Transform.rotate(angle: -0.4 * math.pi / 180, child: row)
+        : row;
   }
 }
 
@@ -626,7 +695,9 @@ class _StickyRank extends StatelessWidget {
               color: GamesStyle.yellow2,
               borderRadius: BorderRadius.circular(17),
               border: Border.all(color: GamesStyle.ink2, width: 2.2),
-              boxShadow: const [BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5))],
+              boxShadow: const [
+                BoxShadow(color: GamesStyle.ink2, offset: Offset(0, 5)),
+              ],
             ),
             child: Row(
               children: [
@@ -636,7 +707,10 @@ class _StickyRank extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: Transform.rotate(
                       angle: 4 * math.pi / 180,
-                      child: _YourRankBadge(rank: points > 0 ? standing.rank : null, dark: true),
+                      child: _YourRankBadge(
+                        rank: points > 0 ? standing.rank : null,
+                        dark: true,
+                      ),
                     ),
                   ),
                 ),
@@ -651,12 +725,19 @@ class _StickyRank extends StatelessWidget {
                         children: [
                           Text(
                             '${GamesStyle.count(points)} XP',
-                            style: GamesStyle.lilita(20, color: GamesStyle.ink2),
+                            style: GamesStyle.lilita(
+                              20,
+                              color: GamesStyle.ink2,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
                             side,
-                            style: GamesStyle.figtree(9, weight: FontWeight.w800, height: 13.5),
+                            style: GamesStyle.figtree(
+                              9,
+                              weight: FontWeight.w800,
+                              height: 13.5,
+                            ),
                           ),
                         ],
                       ),
@@ -665,7 +746,10 @@ class _StickyRank extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: GamesStyle.cream2,
                           borderRadius: BorderRadius.circular(99),
-                          border: Border.all(color: GamesStyle.ink2, width: 1.1),
+                          border: Border.all(
+                            color: GamesStyle.ink2,
+                            width: 1.1,
+                          ),
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(99),
@@ -683,7 +767,11 @@ class _StickyRank extends StatelessWidget {
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: GamesStyle.figtree(8, weight: FontWeight.w800, height: 12),
+                          style: GamesStyle.figtree(
+                            8,
+                            weight: FontWeight.w800,
+                            height: 12,
+                          ),
                         ),
                       ),
                     ],

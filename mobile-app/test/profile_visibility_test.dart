@@ -128,8 +128,8 @@ void main() {
   group('which tabs a profile has', () {
     test('a colleague: attendance, work detail, org chart and rank', () {
       expect(colleagueProfileTabs, [
-        ProfileTab.attendance,
         ProfileTab.workDetail,
+        ProfileTab.attendance,
         ProfileTab.orgChart,
         ProfileTab.rank,
       ]);
@@ -151,9 +151,9 @@ void main() {
           hasDocuments: true,
         ),
         [
+          ProfileTab.workDetail,
           ProfileTab.request,
           ProfileTab.attendance,
-          ProfileTab.workDetail,
           ProfileTab.orgChart,
           ProfileTab.grow,
           ProfileTab.rank,

@@ -7,6 +7,7 @@ import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { requestContext } from './middleware/request-context.middleware';
 import { router } from './routes';
+import { redactTicket } from './services/scribble-ticket.service';
 
 export const app = express();
 
@@ -33,6 +34,9 @@ app.use(
 app.use(compression());
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
+// A Scribble page reloads itself with a credential in its query string
+// (`/play/scribble?ticket=…`); the access log must not keep it.
+morgan.token('url', (req) => redactTicket((req as Request).originalUrl ?? req.url ?? ''));
 app.use(
   morgan(
     env.nodeEnv === 'production'

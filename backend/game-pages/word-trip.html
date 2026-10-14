@@ -1,0 +1,1179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- A game, not a document: no pinch or double-tap zoom, and the page runs under the notch with its own safe-area padding. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- The app's channels are there from the first byte, so the page knows at once it sits under the app's bar. -->
+<script>if(window.SowakaShare||window.Sowaka)document.documentElement.classList.add('app')</script>
+<meta name="theme-color" content="#15122B">
+<meta name="color-scheme" content="dark">
+<title>Word Trip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+/* One arcade column: clock, score and combo on top, the wall of words found, then the tray and the letters under the thumbs. One dark look on purpose
+   (the prototype's night palette), with Baloo 2 for the big words and Figtree for the rest; each stop repaints the accent in its own hue (--h).
+   Sowaka: this one file is the whole game. The Sowaka app stores it in game_catalog and loads it into its own screen with a bridge (window.Sowaka) for the
+   player's name, the company's leaderboard and colleague challenges; in a plain browser there is no bridge, scores stay on this device and there are no challenges.
+   The shell (menu, sheets, challenges, picker, leaderboard) is the one in game-pages/odd-one-out.html and trails.html, so the games work the same way. */
+[hidden]{display:none!important}
+:root{
+  color-scheme:dark; --h:45;
+  --bg:#15122B; --panel:#211D42; --panel2:#2A2553; --line:#3B3668; --ink:#F6F1FF; --muted:#A9A3CC; --deep:#0B0918;
+  --accent:hsl(var(--h) 95% 60%); --accent-deep:hsl(var(--h) 85% 40%); --accent-ink:#15122B; --tint:hsl(var(--h) 95% 72%);
+  --tile:#FFF6DE; --tile-edge:#D2BC7E; --tile-ink:#2A2140;
+  --good:#4BE39A; --bad:#FF6B6B; --gold:#FFD23F; --blue:#4C9BFF; --pink:#FF6FB5; --rare:#B6F36A;
+  --c3:#39C6C0; --c4:#4C9BFF; --c5:#A77BFF; --c6:#FF6FB5; --c7:#FF9F43; --c8:#FF7A59;
+  --display:"Baloo 2","Trebuchet MS",system-ui,sans-serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --small:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;
+  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+input{-webkit-user-select:text;user-select:text}
+/* main.app, not .app: the html element carries an `app` class of its own inside the Sowaka app. */
+main.app{max-width:440px;margin-inline:auto;display:flex;flex-direction:column;gap:14px;position:relative}
+
+/* The header: the game's name on a tilted badge in the accent, and the sound and how-to chips. */
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px}
+h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;line-height:1;letter-spacing:.01em;white-space:nowrap;color:var(--accent)}
+.hright{display:flex;align-items:center;gap:8px}
+.pill{font-family:var(--body);font-weight:700;font-size:.86rem;line-height:1;height:34px;padding:0 14px;border-radius:30px;border:2px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap}
+.pill.q{width:34px;padding:0;font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--gold)}
+.pill:active{transform:translateY(1px)}
+
+/* The play HUD: the clock, the score, the streak, and the bar to the three stars. */
+.hud{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.clock{--pct:100%;width:66px;height:66px;border-radius:50%;display:grid;place-items:center;position:relative;box-shadow:0 4px 0 var(--deep);
+  background:conic-gradient(var(--accent) var(--pct),var(--panel2) 0)}
+.clock::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--bg)}
+.clock span{position:relative;font-family:var(--display);font-weight:800;font-size:1.45rem;letter-spacing:0;line-height:1;padding-top:3px;color:var(--ink);font-variant-numeric:tabular-nums}
+.clock.low,.clock.hit{--accent:var(--bad)}
+.scorebox{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.scorebox small,.combo small{display:block;font-family:var(--body);font-weight:800;font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);line-height:1.3}
+.score{font-family:var(--display);font-weight:800;font-size:2.7rem;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;display:inline-block;transform-origin:left center}
+.combo{position:relative;overflow:hidden;text-align:center;min-width:84px;padding:7px 10px 8px;border-radius:16px;background:var(--panel);border:2px solid var(--line);box-shadow:0 4px 0 var(--deep);transition:border-color .2s,box-shadow .2s}
+.combo b{display:block;font-family:var(--display);font-weight:800;font-size:1.7rem;line-height:1;padding-top:3px;color:var(--ink)}
+.combo u{position:absolute;left:0;bottom:0;height:4px;width:0;background:var(--gold);text-decoration:none}
+.combo.hot{border-color:var(--gold);box-shadow:0 4px 0 var(--deep),0 0 18px -4px var(--gold)}
+.combo.hot b,.combo.hot small{color:var(--gold)}
+.goalrow{display:flex;justify-content:space-between;gap:10px;font-family:var(--small);font-size:.8rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.goal{position:relative;height:16px;border-radius:999px;background:var(--panel2);margin-top:12px}
+.goal .fill{position:absolute;inset:0 auto 0 0;border-radius:999px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));width:0;transition:width .3s cubic-bezier(.2,1.4,.4,1)}
+.goal .st{position:absolute;top:50%;width:28px;margin:-15px 0 0 -14px;text-align:center;font-size:1.5rem;line-height:28px;color:var(--line);-webkit-text-stroke:1.4px var(--muted);paint-order:stroke fill}
+.goal .st.on{color:var(--gold);-webkit-text-stroke-color:var(--gold);filter:drop-shadow(0 0 6px var(--gold))}
+/* In a challenge the other player has already played: their score, the number to beat. */
+.target{display:flex;align-items:baseline;justify-content:center;gap:8px;padding:8px 16px;border-radius:999px;background:var(--panel);border:2px solid var(--line);box-shadow:0 3px 0 var(--deep);transition:border-color .2s}
+.target span{font-family:var(--body);font-weight:800;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.target b{font-family:var(--display);font-weight:800;font-size:1.35rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums}
+.target small{font-family:var(--small);font-weight:700;font-size:.78rem;color:var(--muted)}
+.target.done{border-color:var(--good)}
+.target.done b{color:var(--good)}
+.target.done b::after{content:" ✓"}
+
+/* The play area: the prototype's wall of found words, the tray the word is built in, and the letters as chunky cream keys, then Delete, Shuffle
+   and Enter under the thumbs. Each stop repaints the accent in its own hue (--h). */
+.stage{position:relative}
+.play{display:flex;flex-direction:column;gap:10px}
+.wallhead{display:flex;justify-content:space-between;gap:10px;padding:0 4px 6px;font-family:var(--small);font-size:.8rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.wallhead b{color:var(--accent);font-weight:800}
+.wall{height:96px;overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border-radius:18px;padding:9px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px;
+  border:1.5px solid var(--line);box-shadow:0 4px 0 var(--deep)}
+.wall:empty::before{content:"Your words go here";margin:auto;font-family:var(--small);font-weight:600;font-size:.88rem;color:var(--muted)}
+.chip{font-family:var(--display);font-weight:800;font-size:1rem;line-height:1;padding:7px 10px 5px;border-radius:10px;color:var(--accent-ink);text-transform:uppercase;letter-spacing:.04em}
+.chip.l3{background:var(--c3)}.chip.l4{background:var(--c4)}.chip.l5{background:var(--c5)}.chip.l6{background:var(--c6)}.chip.l7{background:var(--c7)}.chip.l8{background:var(--c8)}
+.chip.full{background:linear-gradient(100deg,#FFB800,#FFF3A6 45%,#FFB800 60%);background-size:220% 100%;box-shadow:0 0 14px -2px var(--gold)}
+.chip.rare{outline:2px solid var(--rare);outline-offset:1px}
+.chip.flash{outline:3px solid var(--ink)}
+.tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
+.tray:empty::before{content:"Tap the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
+.tray button{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1;width:38px;height:44px;padding:4px 0 0;border-radius:11px;border:0;
+  background:var(--accent);color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep);cursor:pointer;text-transform:uppercase}
+.tray.ok button{background:var(--good);box-shadow:0 4px 0 #1f9a61}
+.tray.gold button{background:var(--gold);box-shadow:0 4px 0 #b88a00}
+.tray.no button{background:var(--bad);box-shadow:0 4px 0 #a83838}
+.tiles{display:flex;flex-direction:column;gap:12px;align-items:center;padding:2px 0 6px;touch-action:none}
+/* touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
+.tiles .rowt{display:flex;gap:8px}
+.tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.25rem;line-height:1;width:82px;height:70px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
+  box-shadow:0 7px 0 var(--tile-edge),0 12px 18px -8px rgba(0,0,0,.6);cursor:pointer;text-transform:uppercase;touch-action:manipulation}
+.tile:active{transform:translateY(5px);box-shadow:0 2px 0 var(--tile-edge)}
+/* A letter in the word has left the rack: its socket stays, empty, so a tap on the letter in the word puts it back where it was. */
+.tile.used,.tile.used:active{background:transparent;color:transparent;border:2px dashed var(--line);box-shadow:none;transform:none;cursor:default}
+/* The gap between letters belongs to the nearer letter: a thumb landing just off a tile still gets it. */
+.tile::before{content:"";position:absolute;inset:-8px -4px}
+@media (max-width:370px){.tile{width:70px;height:62px;font-size:2rem}}
+/* Under the letters: Delete, Shuffle and Enter, and a line for what a word did. */
+.keys{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px}
+.keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
+.keys .btn.go{font-size:1.35rem;min-height:48px}
+.status{margin:-6px 0 0;min-height:1.35em;text-align:center;font-family:var(--small);font-weight:600;font-size:.88rem;line-height:1.35;color:var(--muted);text-wrap:balance}
+.status.bad{color:var(--bad)}
+.btn:focus-visible,.pill:focus-visible,.link:focus-visible,.mini:focus-visible,.person:focus-visible,.crow:focus-visible,.dl:focus-visible,.sx:focus-visible,.tile:focus-visible,.tray button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.clock.plus{--accent:var(--good)}
+.sum{margin:-6px 0 0;text-align:center;font-family:var(--small);font-weight:700;font-size:.86rem;color:var(--muted)}
+.sum b{color:var(--ink);font-weight:800;letter-spacing:.03em}
+/* Over the board while it counts down; on the menu (.m) it is the menu itself. */
+.cover{position:absolute;inset:-6px;border-radius:22px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:12px;z-index:2;color:var(--ink)}
+.cover:not(.m) h2{font-family:var(--display);font-weight:800;font-size:2.2rem;margin:0;line-height:1.05;color:var(--ink);text-wrap:balance}
+.cover:not(.m) p{margin:0;color:var(--muted);max-width:30ch;font-size:.95rem}
+.cover .n{font-family:var(--display);font-weight:800;font-size:8rem;line-height:1;color:var(--accent);text-shadow:0 7px 0 var(--accent-deep)}
+.cover.m{position:static;inset:auto;background:none;border-radius:0;padding:0;align-items:stretch;justify-content:flex-start;gap:14px;text-align:left}
+
+/* Buttons. The plain one: a panel with a line edge. Go: the accent, on its own deeper shade. */
+.btn{font-family:var(--display);font-weight:800;font-size:1.15rem;line-height:1.1;min-height:50px;padding:8px 14px 4px;border-radius:16px;border:2px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;box-shadow:0 4px 0 var(--deep);transition:transform .07s,box-shadow .07s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--deep)}
+.btn.dark{background:var(--panel2)}
+.btn.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-size:1.75rem;min-height:60px;letter-spacing:.01em;box-shadow:0 5px 0 var(--accent-deep)}
+.btn.go:active{transform:translateY(4px);box-shadow:0 1px 0 var(--accent-deep)}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-size:1.25rem;box-shadow:0 4px 0 var(--muted)}
+.btn.primary:active{box-shadow:0 1px 0 var(--muted)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.mini{font-family:var(--body);font-weight:700;font-size:.75rem;min-height:32px;padding:0 10px;border-radius:10px;border:2px solid var(--line);background:transparent;color:var(--ink);
+  cursor:pointer;white-space:nowrap}
+.mini.yes{font-family:var(--display);font-weight:800;font-size:1.15rem;min-height:42px;min-width:98px;padding:0 14px;border-radius:12px;background:var(--accent);border-color:var(--accent);
+  color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep)}
+.mini.yes:active{transform:translateY(3px);box-shadow:0 1px 0 var(--accent-deep)}
+.mini:disabled{opacity:.5}
+.link{font-family:var(--body);font-weight:600;font-size:.82rem;color:var(--muted);background:none;border:0;padding:6px 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.links{display:flex;justify-content:center;gap:18px;flex-wrap:wrap}
+.links .link{padding:2px 0}
+
+/* The menu. Challenges for you first, each on its own card. */
+.foryou{display:flex;flex-direction:column;gap:12px}
+.chc{background:var(--panel);border:2px solid var(--gold);border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;color:var(--ink);text-align:left;box-shadow:0 4px 0 var(--deep)}
+.chc .lab{font-family:var(--body);font-weight:800;font-size:10px;line-height:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+.chc .row{display:flex;gap:12px;align-items:flex-start}
+.chc .tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.chc .tx b{font-family:var(--body);font-weight:600;font-size:13px;line-height:16px;color:var(--ink)}
+.chc .tx small{font-family:var(--body);font-size:11.5px;line-height:15px;color:var(--muted)}
+.chc .bt{flex-shrink:0;padding-bottom:4px}
+.dl{font-family:var(--body);font-weight:600;font-size:11.5px;color:var(--muted);background:none;border:0;padding:2px 0 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.dl:disabled{opacity:.5}
+/* The game: its picture over a panel, with Play. */
+.hero{background:var(--panel);border:2px solid var(--line);border-radius:20px;box-shadow:0 5px 0 var(--deep);overflow:hidden;display:flex;flex-direction:column;text-align:left}
+.hero .art{height:132px;background:#CFC6FF;border-bottom:2px solid var(--line);display:grid;place-items:center;overflow:hidden}
+.hero .art svg{width:auto;height:112px;display:block}
+.hero .bd{padding:12px 14px 18px;display:flex;flex-direction:column;gap:10px}
+.tag{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;padding:3px 7px 3px 5px;border-radius:5px;background:var(--gold);
+  font-family:var(--small);font-weight:800;font-size:.62rem;line-height:1;letter-spacing:.02em;text-transform:uppercase;color:var(--accent-ink)}
+.tag svg{width:12px;height:12px;flex-shrink:0}
+.hero h2{margin:-2px 0 2px;font-family:var(--display);font-weight:800;font-size:1.7rem;line-height:1;color:var(--ink)}
+/* Your best, your rank at the company, and the leaderboard. */
+.mine{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 12px 16px;background:var(--panel);border:2px solid var(--line);border-radius:20px;box-shadow:0 4px 0 var(--deep)}
+.stat{min-width:0;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:14px;background:var(--panel2)}
+.stat small{font-family:var(--body);font-weight:800;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stat b{font-family:var(--display);font-weight:800;font-size:2rem;line-height:1.05;color:var(--ink);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat span{font-family:var(--small);font-weight:700;font-size:.78rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat.dark b{color:var(--gold)}
+.mine .btn{grid-column:1/-1;min-height:46px;background:var(--panel2)}
+/* The rest of the inbox: waiting on them, and results. */
+.inbox{display:flex;flex-direction:column;gap:8px;width:100%;text-align:left}
+.sect{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:0 1px}
+.sect h3{margin:0;font-family:var(--display);font-weight:800;font-size:1.15rem;line-height:1.3;letter-spacing:.02em;color:var(--ink)}
+.sect .link{padding:2px 0;text-decoration:none;font-weight:700;color:var(--accent)}
+.sect.solo{justify-content:center}
+.crow{font:inherit;color:var(--ink);display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:16px;background:var(--panel);
+  border:2px solid var(--line);text-align:left;width:100%}
+div.crow.tap{cursor:pointer}
+.crow p{margin:0;font-family:var(--body);font-size:.84rem;line-height:1.25;color:var(--ink);min-width:0}
+.crow p small{display:block;font-family:var(--small);color:var(--muted);font-size:.75rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.crow .bt{display:flex;gap:6px;align-items:center}
+.crow .pts{font-family:var(--display);font-weight:800;font-size:1.05rem;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
+.crow .pts.zero{color:var(--muted);font-family:var(--small);font-weight:700;font-size:.75rem}
+/* Someone's face: their photo, else their initial on a colour picked by the name. */
+.av{--s:34px;width:var(--s);height:var(--s);border-radius:50%;display:grid;place-items:center;font-family:var(--small);font-weight:800;font-size:calc(var(--s)*.4);line-height:1;
+  color:var(--accent-ink);background:hsl(var(--ah,45) 85% 72%);flex-shrink:0;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* Inside the app the page sits under the app's own bar, which has already cleared the notch: no second top inset. */
+html.app body{padding-top:14px}
+html.app .sheet{padding-top:16px}
+html.app .howto{padding-top:20px}
+
+/* Sheets: a bottom sheet. A tap on the dimmed screen around it, or its ✕, closes it. */
+.sheet{position:fixed;inset:0;background:rgba(8,6,20,.78);display:flex;flex-direction:column;align-items:center;cursor:pointer;
+  padding:max(16px,env(safe-area-inset-top,0px)) 12px calc(14px + env(safe-area-inset-bottom,0px));z-index:9;overflow-y:auto;overscroll-behavior:contain}
+/* Pushed to the bottom when it fits; when it is taller than the screen it starts at the top and the sheet scrolls. */
+.card{background:var(--panel);color:var(--ink);border-radius:26px;padding:10px 18px 20px;width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px;cursor:auto;outline:none;
+  border:1.5px solid var(--line);margin-top:auto;margin-bottom:4px;flex-shrink:0}
+.card::before{content:"";align-self:center;flex-shrink:0;width:44px;height:5px;border-radius:3px;background:var(--line);margin-bottom:-4px}
+.card h2{font-family:var(--display);font-weight:800;font-size:1.8rem;margin:0;line-height:1.05;color:var(--ink);text-wrap:balance}
+.shead{display:flex;align-items:flex-start;gap:12px}
+.shead h2{flex:1;min-width:0}
+.sx{flex-shrink:0;width:36px;height:36px;margin-top:-2px;display:grid;place-items:center;padding:0;border-radius:999px;cursor:pointer;
+  background:var(--panel2);color:var(--ink);border:2px solid var(--line);box-shadow:0 3px 0 var(--deep);-webkit-tap-highlight-color:transparent}
+.sx:active{transform:translateY(2px);box-shadow:0 1px 0 var(--deep)}
+.sx svg{width:14px;height:14px;display:block}
+.card .note{margin:0;font-family:var(--body);font-size:.86rem;line-height:1.4;color:var(--muted)}
+.card .acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-bottom:6px}
+.card .acts.one{grid-template-columns:1fr}
+/* The leaderboard: one list, the whole of it, in its own scroll. */
+.lb{display:flex;flex-direction:column;gap:8px}
+.lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--body);font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
+.lb.full .ranks{max-height:min(64vh,560px)}
+.rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
+  font-family:var(--body);font-size:.88rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.rank>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank b{font-family:var(--display);font-weight:800;font-size:1.05rem;flex-shrink:0}
+.rank.me{outline:2px solid var(--accent);outline-offset:-2px}
+.lb .pos{font-style:normal;display:inline-grid;place-items:center;vertical-align:middle;min-width:28px;height:28px;padding:0 4px;margin-right:8px;border-radius:999px;
+  background:var(--panel);color:var(--muted);font-family:var(--display);font-weight:800;font-size:.85rem;line-height:1}
+.rank.p1 .pos{background:var(--gold);color:var(--accent-ink)}
+.rank.me .pos{background:var(--accent);color:var(--accent-ink)}
+.lb .wait{margin:0;font-family:var(--body);font-size:.85rem;color:var(--muted)}
+.card dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-variant-numeric:tabular-nums}
+.card dt{color:var(--muted)} .card dd{margin:0;text-align:right;font-weight:700}
+/* The end of a round: stars stamped in and the score counted up. */
+.stars{display:flex;justify-content:center;align-items:flex-end;gap:10px;font-size:3.1rem;line-height:1;color:var(--line);margin-top:2px}
+.stars span{-webkit-text-stroke:2px var(--muted);paint-order:stroke fill}
+.stars span:nth-child(2){font-size:1.3em;margin-bottom:8px}
+.stars span.on{color:var(--gold);-webkit-text-stroke-color:var(--gold);filter:drop-shadow(0 0 10px var(--gold))}
+.bigscore{font-family:var(--display);font-weight:800;font-size:3.6rem;text-align:center;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+/* A challenge's result: the two scores side by side, and what it paid. */
+.vs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;text-align:center}
+.vs .side{padding:10px 6px;border-radius:16px;background:var(--panel2);border:2px solid transparent;min-width:0}
+.vs .side.win{border-color:var(--gold);box-shadow:0 0 18px -6px var(--gold)}
+.vs .side small{display:block;font-family:var(--body);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vs .side b{display:block;font-family:var(--display);font-weight:800;font-size:1.8rem;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--ink)}
+.vs .side em{display:block;font-style:normal;font-family:var(--small);font-size:.75rem;color:var(--muted);font-weight:700}
+.vs .side em.on{color:var(--good)}
+.vs .mid{font-family:var(--display);font-weight:800;font-size:1rem;color:var(--muted)}
+.prize{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:var(--panel2);color:var(--ink);
+  font-family:var(--body);font-weight:700;font-size:.9rem}
+.prize span{white-space:nowrap}
+.prize b{font-family:var(--display);font-weight:800;font-size:1.35rem;color:var(--gold);font-variant-numeric:tabular-nums;text-align:right}
+.prize.none b{color:var(--muted);font-family:var(--body);font-size:.84rem;font-weight:600}
+/* Picking a colleague. */
+.lrow{display:grid;grid-template-columns:1fr;gap:6px}
+.lrow input{font-family:var(--body);font-size:.95rem;font-weight:600;min-height:48px;padding:0 14px;border-radius:14px;border:2px solid var(--line);background:var(--bg);color:var(--ink);
+  width:100%;min-width:0;outline:none}
+.lrow input:focus{border-color:var(--accent)}
+.lrow input::placeholder{color:var(--muted)}
+.people{display:flex;flex-direction:column;gap:6px;max-height:min(50vh,400px);overflow-y:auto;overscroll-behavior:contain;padding:2px 0 4px}
+.person{font:inherit;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;text-align:left;padding:9px 10px;border-radius:16px;border:2px solid transparent;
+  background:var(--panel2);color:var(--ink);cursor:pointer;width:100%;flex-shrink:0}
+.person:active{transform:translateY(1px)}
+.person span{min-width:0}
+.person b{display:block;font-family:var(--body);font-weight:700;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person small{display:block;font-family:var(--small);color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person i{font-style:normal;font-family:var(--display);font-weight:800;font-size:1rem;color:var(--accent)}
+.shim{height:56px;flex-shrink:0;border-radius:16px;background:linear-gradient(90deg,var(--panel2) 0%,var(--line) 50%,var(--panel2) 100%);background-size:200% 100%;opacity:.6}
+
+/* How to play: full screen, once before a new player's first round, and from the ?. */
+.howto{position:fixed;inset:0;z-index:12;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:center;background:var(--bg);
+  padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.hin{width:100%;max-width:400px;margin:auto 0;display:flex;flex-direction:column;gap:16px}
+.howart{align-self:center;width:min(80vw,280px);padding:14px 12px 16px;background:var(--panel2);border:2px solid var(--line);border-radius:24px;box-shadow:0 6px 0 var(--deep);transform:rotate(-2deg)}
+.demo{display:flex;flex-direction:column;gap:10px;align-items:center}
+.demo .wall{height:auto;min-height:44px;width:100%;box-shadow:none;padding:7px;justify-content:center}
+.demo .wall:empty::before{content:none}
+.demo .chip{font-size:.9rem;padding:6px 8px 4px}
+.demo .tray{width:100%;height:50px}
+.demo .tray:empty::before{content:none}
+.demo .tray span{display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.25rem;line-height:1;width:30px;height:36px;padding-top:4px;border-radius:9px;
+  background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 0 var(--accent-deep);text-transform:uppercase}
+.demo .tray.ok span{background:var(--good);box-shadow:0 3px 0 #1f9a61}
+.demo .tray.gold span{background:var(--gold);box-shadow:0 3px 0 #b88a00}
+.demo .rowt{display:flex;gap:7px}
+.demo .tile{display:grid;place-items:center;width:42px;height:40px;font-size:1.35rem;border-radius:11px;padding-top:4px;box-shadow:0 5px 0 var(--tile-edge)}
+.howto .kick{margin:4px 0 0;font-family:var(--body);font-weight:600;font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center}
+.howto h2{margin:-12px 0 0;font-family:var(--display);font-weight:800;font-size:2.3rem;line-height:1.1;color:var(--ink);text-align:center}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.steps li{display:flex;gap:12px;align-items:center;padding:11px 14px;background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:0 4px 0 var(--deep)}
+.steps i{font-style:normal;flex-shrink:0;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.15rem;background:var(--gold);color:var(--accent-ink)}
+.steps li:nth-child(2) i{background:var(--blue)} .steps li:nth-child(3) i{background:var(--pink)}
+.steps span{font-family:var(--body);font-size:.86rem;line-height:1.3;color:var(--muted)}
+.steps b{display:block;font-family:var(--display);font-weight:800;font-size:1.1rem;line-height:1.2;color:var(--ink)}
+.howto .btn.go{margin-top:2px}
+
+/* Round feedback: points over the tile, the last ten seconds, the flash and the confetti. */
+.toasts{position:absolute;inset:0;pointer-events:none;z-index:3}
+.toast{position:absolute;left:50%;top:-18px;font-family:var(--display);font-weight:800;font-size:1.6rem;white-space:nowrap;color:var(--ink);transform:translate(-50%,0);
+  text-shadow:0 2px 0 rgba(0,0,0,.55),0 0 6px rgba(0,0,0,.45)}
+.toast.big{font-size:2.5rem;color:var(--gold);top:30%}
+.toast.bad{color:var(--bad)}
+.toast.rare{color:var(--rare)}
+.toast.time{color:var(--good);font-size:1.2rem}
+.toast.feed{font-family:var(--body);font-weight:700;font-size:.82rem;color:var(--ink);background:var(--panel2);border:1.5px solid var(--line);padding:6px 12px;border-radius:999px;top:-44px;text-shadow:none}
+.ticker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:800;font-size:10rem;line-height:1;color:var(--bad);opacity:.3;pointer-events:none;z-index:1}
+.foot{display:flex;justify-content:center;gap:12px;font-family:var(--small);font-weight:700;font-size:.82rem;color:var(--muted);margin-top:4px}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:10}
+.flash{position:fixed;inset:0;background:var(--gold);opacity:0;pointer-events:none;z-index:7}
+@media (min-width:700px){.card{margin-block:auto}}
+@keyframes rise{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}18%{opacity:1;transform:translate(-50%,0) scale(1.1)}100%{opacity:0;transform:translate(-50%,-56px) scale(1)}}
+@keyframes bump{40%{transform:scale(1.18)}}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes tilein{0%{transform:scale(.88);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes okpop{50%{transform:scale(1.25)}100%{transform:scale(0);opacity:0}}
+@keyframes shake{20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+@keyframes beat{50%{transform:scale(1.08)}}
+@keyframes tickbeat{0%{transform:translate(-50%,-50%) scale(1.5);opacity:.6}100%{transform:translate(-50%,-50%) scale(1);opacity:.3}}
+@keyframes flashk{0%{opacity:.5}100%{opacity:0}}
+@keyframes hint{50%{transform:scale(1.12)}}
+@keyframes shim{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes sway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+@keyframes up{0%{transform:translateY(28px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes won{40%{transform:scale(1.025)}}
+@keyframes hop{40%{transform:translateY(-12px) scale(1.1)}}
+@keyframes shine{0%{background-position:120% 0}100%{background-position:-120% 0}}
+@media (prefers-reduced-motion:no-preference){
+  .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b{animation:bump .3s} .clock.low{animation:beat .5s infinite}
+  .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear infinite} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear infinite}
+  .demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
+  .tile.in{animation:tilein .18s ease-out both}
+  .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
+  .ticker.beat{animation:tickbeat .9s ease-out} .shim{animation:shim 1.2s linear infinite}
+  .hero .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
+}
+@media (prefers-reduced-motion:reduce){.toast{opacity:1} .btn,.combo,.goal .fill,.target{transition:none}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>Word Trip</h1>
+    <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button><button class="pill q" id="help" type="button" aria-label="How to play">?</button></div>
+  </header>
+  <div class="hud" id="hud">
+    <div class="clock" id="clock" role="timer" aria-label="Time left"><span id="secs">1:00</span></div>
+    <div class="scorebox"><small>Score</small><span class="score" id="score">0</span></div>
+    <div class="combo" id="combo"><b id="cx">×1</b><small>combo</small><u id="cbar"></u></div>
+  </div>
+  <div id="goalbox">
+    <div class="goalrow"><span id="glabel">Fill the bar</span><span id="gnext"></span></div>
+    <div class="goal"><div class="fill" id="gfill"></div><span class="st" id="st1">★</span><span class="st" id="st2">★</span><span class="st" id="st3">★</span></div>
+  </div>
+  <div class="target" id="target" hidden><span>Beat</span><b id="tscore">0</b><small id="tname"></small></div>
+  <div class="stage">
+    <div class="play" id="playbox">
+      <div><div class="wallhead"><b id="wstop">Stop 1</b><span id="wcount"></span></div><div class="wall" id="wall" aria-live="polite"></div></div>
+      <div class="tray" id="tray"></div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+    <div class="ticker" id="ticker" hidden></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <div class="cover" id="cover"></div>
+  </div>
+  <div class="keys" id="controls">
+    <button class="btn" id="del" type="button">Delete</button>
+    <button class="btn" id="shuf" type="button">Shuffle</button>
+    <button class="btn go" id="enter" type="button">Enter</button>
+  </div>
+  <p class="status" id="status" aria-live="polite"></p>
+  <div class="foot" id="foot" hidden><span id="best"></span></div>
+  <div class="sheet" id="sheet" hidden><div class="card" id="card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sh"><div class="shead"><h2 id="sh"></h2><button class="sx" id="sx" type="button" aria-label="Close"><svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button></div><div id="sb" style="display:contents"></div><div class="acts" id="sa"></div></div></div>
+  <div class="howto" id="howto" hidden role="dialog" aria-modal="true" aria-labelledby="howh">
+    <div class="hin">
+      <div class="howart" aria-hidden="true"><div class="demo" id="howdemo"></div></div>
+      <p class="kick">1 minute · on your own or against a colleague</p>
+      <h2 id="howh">How to play</h2>
+      <ol class="steps">
+        <li><i>1</i><span><b>Make words</b>Tap letters, then Enter.</span></li>
+        <li><i>2</i><span><b>Go long, be quick</b>Long words pay. Fast ones combo.</span></li>
+        <li><i>3</i><span><b>Use every letter</b>That word drives you to the next stop.</span></li>
+      </ol>
+      <button class="btn go" id="howok" type="button">OK</button>
+    </div>
+  </div>
+  <div class="flash" id="flash"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const GAME='Word Trip', ROUND=60, ROUND_TEXT='1 minute', STARS=[500,1200,2200];
+const bankFor=s=>Math.round(s/20), fmtn=x=>Math.round(x).toLocaleString('en-IN');
+const fmtClock=s=>{ s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+/* seeded-boards:start
+   Everything a stop depends on, and nothing else: stop g of a round is a pure function of (seed, g), so two players given one seed get the same
+   letters, in the same order, at every stop, whatever they find. A solo round takes a random seed; a challenge takes the server's. The Sowaka backend's
+   check script (src/scripts/game-challenge-check.ts) runs this block on its own, so keep it free of anything outside it.
+   WORDS: the common words (from ENABLE, the open word-game list, marked common by how often they are used): a stop counts these, and its all-letter
+   word is one of them. RARE: the rest of ENABLE's words that can be made on some stop, accepted as rare finds. Rude words are in neither. Both are
+   lowercase, 3 to 8 letters, space-separated and sorted, and hold only words that can be made on some stop, so the page carries no more than it uses.
+   STOPS: each stop's letters, sorted, by count (5 to 8). Every one makes at least one common word with all its letters, and plenty of shorter ones.
+   A round climbs: stop 1 has 5 letters, stops 2 and 3 have 6, stops 4 to 6 have 7, and every stop after has 8. The stops of one length are taken in
+   an order fixed by the seed, so no stop comes twice in a round. The letters are dealt in an order fixed by the seed and the stop, never spelling a word. */
+const WORDS="able above abuse accent accept accident account accounts ace aces ache aches aching acid acids acne acre acres act acted acting action actions actor actors acts add address adds adept adhere admire admirer adore ads aerial after again against age aged agent agents ages agile ago agree agreed agrees aid aide aides aids aim aimed aims air aired airing airport airs airy aisle akin alarm ale alert alerted alerts alien align aligned alive all alley allow allowed ally almost alone along already also altar alter altered alters alto amen amend amid amp ample amps amuse ancient and anew angel anger angle angled angst anon another answer ant antics ants any anywhere apart ape apes apex appear appears apple applied apron apt arc arch arched archer archers arches arcs are area areas arena argue argued aria arid arise arisen ark arm armed armies armor arms arose arrest arson art article articles artist artists arts ascend ascent ash aside ask asking asleep aspen aspire asset assign assume assure atom atoms attorney aunt aunts auto autos avenge avert awe axe axes axle aye bad bag bait bake baker baking bale ban band bands bang bank banker bans bar bard bare barge bark barking barn base bash bat bath battle bay beak bean bear bearing beat because bed bee beef been bees beg began begin behavior being below belt bend benefit benefits bent berth best bet beta bets beyond bid big bike bile bin bind bins bird birth birthday bit bite bites bits bless blew bliss blow blue blur boar body boil boils bolt bond bone bony bore boss both bother bothers bought bout bow bowel bowl boy brag braid brain brake braking bran brat brave bravo bray break breaking bred bride bridge bring brink broth brother brothers brought brute bud budge budget buds bug bum bums bun buns burn burns bus bush bust but butler bye cab cabs cactus cad cadet cadets cage cages call caller calm calmed cam came camel cameo camera camp camped camper can candies cane canes canine cannot canoe canon cans cant cap cape caps car card cards care cared career careers cares caring carp carpet carried cars cart cartel cartels carton carts case cash casino cast caste caster castle cat cater catered catering cats cause caused cease cedar cell cellar censor cent central cents certain chain chair chairman change changes chant chap chaps char charge charges charm chart charts chase chat chats cheap cheat cheating cheats cheer cheers chest chew chi child children chime chin china chip chips chose cider cigar cinema circa cite cited cites cities citizen citizens citrus city clad claim claimed clam clan clap clash clasp clay clean clear clearly clears client climate clip clips clone close closet clot cloth clothes clue clues coal coast coat coated coats cod code coded codes coil coils coin coined coins cold colon colt colts coma comb combine combined come comes comet comets comment comments compare compared compute computer comrade con cone cones congress cons consider contain contains continue cool cop cope copies cops cord cords core cores corn corny corps corpse corpses corpus cost count counter country counts county coup course courses court courts cove craft crafts cram cramped crane cranes crash crate crates cream crease create created creates creating creation credit creditor creed creep creeps crept crest cried cries cringe crisp crop crops cross crude cruise crush crust cry cub cube cubes cubs cuddle cue cues cup cups cure cured cures curse curses curt cut cute cuts cyst dad dads daily dairy daisy dam dame damp dams dance dances danger dare dared dares daring darn dart darts dash date dates dating daughter dawn day days dead deaf deal dealer dealers dealing deals dealt dean dear dearly death debt debut decimal decision deed deeds deem deep deer defer deity delay deli delta demand demon den denial denied denies denim dense dent deny deport depot design designed despite detail details detain deter devil devoid dew dial diary dice did die died dies diet diets dig digs dill dim dime din dine diner diners dip dips dire direct directly director dirt dirty disc discern disco dish disk display distance dive diver divers dives doe does dog dole doll dollar dollars dolls dome domestic don done dons door doors dope dorsal dose doses dot dots dove doves down drag drain draw drawing drawn draws dread dream dreams dress drew dried drier dries drip drive drives drone drones drop drops drove drown drug dry dub duct ducts dude due duel dues duet dug dune dunes dung duo during dust dusty duties duty dwell dye each eager eagle ear earl early earn earnest earning earns ears earth ease eased easier easily easing east eastern easy eat eaten eater eating eats ebony echo edge edged edges edict edit edition editor edits eels effort efforts ego egos eight eighth either elastic elbow elder elders elect election elf elite elk else elves emit empty enact end ended ending endings ends endure enlarge enlist enrich ensign entail enter enters entice entire entirely entries entry epic era eras erase erased escort estate etching ether ethic ethnic ethos eve even event events ever evil evils exam example expel explain extra eye face faces fact factor factors facts fade fail failed fails fair false fame families fan fans far farce fare fares farm fast faster fat fate fates father fats favor favorite fear feared fears feast feat feats feature features fed federal feds fee feed feel feeling feelings feels fees feet feline fell fellow felt fend fern ferns festival fetus few field fiend fiesta fig figs figure figures file filed files fill filled film films fin find finds fine fined finer fines finest finger finish finished fins fir fire fired fires fish fist fit fits five fives flame flames flap flare flared flat flats flea fleas fled flee fleeing flesh flew flies fling flip float flood flop flora flour flow flowed flower flu fly flyer flyers foam foe foes fog foil fold follow followed food fool fooled for force forced ford fore foreign forest forge forget form formal format formed fort forte forts foster foul fouls four fours free freed freedom frees fresh fret fried friend friends fries fringe frog from frost fry fuel fuels fur fury fuse gain gained gains gal gale galore gals game gamer gap gaps garden garnet gas gasp gate gated gates gather gave gay gays gear geared gears gee gel gem gene genera general genes genie genre gent gents germ get gets ghost giant giants gig gin girl gist give given glad gland glare glee glen glide glue goal goalie goat goats god goes going gold golden gone gong goo goon goons gore gosh got gown gowns grab grace graces grade grain grains gram grams grand granite grant grants grasp grate grated gray grease greasy great greater greatest greats greed green greet greets grew grey grid grief grin grind grip grips grit groan groin gross ground grow growing grown grub guard guise gun guns gust gut guts habit had hail hails hair hairs hairy hale halo halt ham hand handle hands hang hangs happen happens hard hardy hare harm harp hart has haste hat hate hated hates hating hatred hats have hay hays head header heads heal heap heaps hear heard hears heart hearts heat heater heaters heating heats heed heel heels height heights heir held helm hen hens her herb herbs herd herds here herein hero hers herself hey hid hide hides high highest highs hike him himself hind hinder hinge hint hints hip hips hire hired his history hit hits hive hog hogs hoist hole holes holy home hone honest honestly honesty honey hoop hoops hop hops horn hornet hornets horns horse hose hospital host hostel hosting hot hotel hotels hour hours house housing hover how hub hubs hue hug huge hugs huh hung hunt hunter hunters hunts hurt hurts husband hush hut huts hybrid ice iced icon icons icy idea ideal ideals ideas idiot idle idol idols ignore ill impose incest inch incite include included includes income increase indeed indices induce induced induces industry inept infer info ink inlet inn innate inner inquest insect insert inside instead insult inter interest interim intern internal into involve involved inward iodine ion ions iris iron irons island isle isles issue issued itch item items its itself jet jets just kid kids kiln kin kind kinds king kings kit kitchen kite kits knew knit knot know lab lace laced laces lacy lad laden ladies lads lady lag lager laid lair lake lame lament lamp lance land lands lane lanes lantern lap laps lapse large larger largest laser lash last lasted late later latest law lax lay layer layers laying lays lead leader leaders leading leads leaf leafs leak lean leaning leans leap leaps learn learning learns learnt lease leased least leave leaves leaving led lee left leg legion legs lend lends lens lent less lest let lets lever levers lewd liar liars lice lid lids lie lied lies lieu life lift lifts lime limit limited limp line linear lined linen liner lines linger link lion lions lip lips list listed listen lit liter liters litre litres live lived lives load loads loaf loan loans lobe lobes locate located location lodge loft log logs lone long longer loot lord lords lore lose loser losers loses losing loss lost lot lotion lots lotus lousy love loved low lower lucid lump lure lying lyric mace machine mad madden made maid mail mailed mails main mains make maker makers makes male males malice mall malls malt man manage manager mane mania maniac manic mans mantle many map maple maps mar march mare maria marina marine marines marital mark market markets marks married mars mart martial martin mash mask mass mast master mat match matches mate material mates math mats matt matte matter matters may meal meals mean means meant measure measures meat meats medal media medical melt memo men mend mental mention menu menus mere merit merits mesh mess met metal metro mice midst mike mild mile miles mill mind mine mined miner miners mines minister mint minus minute minutes mist mistake moat mob mobs mod mode model models modern modes modest moist mold molds mole mom moment moments moms moral more mortal most moth mother move moved mover mule multiple muse must mute nail nailed nails naive name named names nap nation nations native nature nay near nearest nearing nearly neat neck nectar need needs negative neither neon nest nests net nets network new newer newest news newt nice nicer nicest niche nick niece nigh night nights nine nod node nodes nods noise none nor norm north nose nosed noses not note noted notes notice noticed notices noun novel novice now nuclei numb number numbers nun nurse nut nuts oath obey ocean odd odor off offer offers offs offset ogre oil oiled oils old older olive omen once one ones only onset onto opal open opener opens opera operas oppose opposed opt opted optic optics option options opus oral orange order orders ore organ orient origin original ornate other others otter ought ounce our ours ousted out outcry outer outs outside oven ovens over overs overt owe owed owes owing owl own owned owner owners owns pace paced paces pact pad pads page pages paid pain pains paint paints pair pairs pal pale palm pals pan panel panels pang pans pant pants papa paper papers par parent parents parole parrot parsley part parties parts party pass passing past pasta paste pat patent patents path paths patient patients patio patrol pats pause pave paw pawn paws pay payer payers paying payment pays pea peach peak peaking peaks pear pearl pearls pears peas peat pedal peel peer peers peg pen penal pending pens pep per perch perhaps peril period periods person persona personal persons pest pet peter peters pets pew phase photo photos phrase physical picture pictures pie pier piers pies pig pigs pike pile piled piles pill pilot pilots pin pine pines pink pinned pins pint pints pious pipe pirate pirates pistol piston pit pits pivot place placed places plaid plain plan plane planes planet planned plans plant plants plate platform play played player players playing plays plea plead pleas please plot plots plow plum plume pod pods poem poems poet poets point points poised poison polar pole poles police policies polish politics poor pop pope pops pore pores port portal porter ports pose posed poses position positive possible post postal posted poster posts pot potion pots pour poured pours power powerful powers practice praise pray prays preach present press presume previous prey price prices pride priest prime prior prism private pro probe probes problem problems process prod produce produced product products profile profit program programs project projects prom promise prone prop propose proposed props pros prose proud prove proved proves provide provided provides pseudo psych pull pup pups purchase pure purest purpose purse push put puts quest question quiet quit quite quits quote quotes rabid race raced racer races racing racist rack raft rag rage rags raid raider raids rail railing rails rain rained rains raise raised rake rally ram ramp ramps rams ran ranch rang range ranged ranges rank rant rants rap raps rare rash rat rate rated rates rather rating ratings ratio ration rats rave raw ray rays reach reached reaches react reacted reacting reaction reacts read reading reads ready real realist reality really realm realms realty reap rear reason reasons recall recap recital record records recount rector red redo reds reed reef reefs reel reels refuse refute regain regal region regional regret regular reign rein reins relate related relay relays release released reliant relic relics religion rely remain remains remove removed render renew rent rental rented rents reopen repay repeat repeats repent replay reply report reported reports resale research resent reset resin resist resort respect response rest rests result resume resumes retail retain retina return returned returns reuse rev reveal reveals revel rib rice rich rid ride rider rides ridge rife rifle rift rig right rights rigs rim rims ring rings rink rinse riot riots rip ripe rips rise risen rises risk rite rites road roads roam roar roast rob robe robes rod rode rodeo rods roe role roles roll rolls rope ropes rose roses roster rosy rot rotate rotten rough round rouse route routes row rowing rows rub rubs rude rue rug rugs ruin ruins rule ruler rules rum run rung runs rural ruse rush rust rustic rusty rye sac sacred sad sadly safe safer safety saga sage said sail sailed saint sake sale salon salt salted same sanction sand sane sang sank sap satin satire sauce save saver saw say scale scalp scan scant scar scare scared scarf scarlet scene scent scope score scored scorer scores scorn scout scrap scrape screen script sea seal sealed seam seams search sears seas season seat seats second seconds secret sect section sector security sedan see seed seeding seeing seem seems seen sees seldom self sell seminar senate senator send sending sends senior sense sensor sent separate serial serpent serum serve set sets setting seven sever several sew sewer sewn shade sham shame shape share shared sharing sharp she shear shed sheer sheet shelf shin shine ship shirt shoe shone shoot shooting shop shore short shorten shorter shot shout show showed showing shown shred shun shut shy side sided sides siege sigh sight sign signed signs silent simple sin since sincere sine sing single sings sink sins sip sir sire siren sister sit site sites sits sitter size skate skater ski skid skim skin skip skirt skit slag slain slam slant slap slate slated slave slay sled sleep slice sliced slid slide slides slim slime sling slip slips slit slope slopes slot sloth slur sly small smaller smart smear smell smile snag snail snake snap snaps snare sneak snoop snow snug soap soar sober sobs soda sofa soft softer software soil soils solar sold solder soldier soldiers sole soles solid solids solo solution some son song songs sonic sons soon soothing sore sorely sort sorts sought soul soup soups sour source sources south southern spa space spade span spans spare spared spat spawn speak speaking spear special spectre sped speed spend spending spent spice spicy spider spies spike spin spine spins spire spit spite split spoil spoils spoilt spoon spores sport sports spot spots spouse spout spray spread spree spring sprout spruce spur spy stag stage stain stained stair stairs stake stale stance stand standing star starch stare stared staring stark stars start started starting starts state stated states stating stay steak steal steam steep steer stem step stern stew sting stink stint stir stole stolen stone stony stool stoop stop stopped stops storage store stores stories story stout stove straight strain strait straits strange strap strategy straw stray streak stream street strike string strip stripe stud student students studies studio studs study stun stunt stunts stupid sturdy style sub subject such sue sued suing suit suite suited suites suits sum sums sun sung suns sunset sup super supper support suppose supposed supreme sure surely surf surface surge swan swap swat swear sweat sweet swing sword swore sworn tab table tablet tack taco tacos tag tags tail tailed tails take taker takers takes taking tale tales talk talking tame tan tang tank tanner tap tape taped taper tapes taps tar target targets tart task taste tasted tastes tasting tasty tax taxes tea teach teacher teachers teaches teaching team teams tear tearing tears teas tease tedious tee teen teens tees tell tempo ten tend tender tends tenor tens tense tent tents tenure term terms test tester testing tests than that thaw the thee their them then theory there therein these they thick thigh thighs thin thing things think thinks third thirst this thong thorn thorns those thou though thought thoughts thread three threw throne thrones thug thugs thus thy tick tidal tide tides tidy tie tied tier tiers ties tiger tight tights tile tiles till time timed timer timers times timid tin ting tint tiny tip tips tire tired tires tissue toad toe toes token told tome ton tone toned tones tong tonic tonne tons too tool tools top topic topics topped tops tore torn toss tote tough tour tours tout tow toward towards tower towers town toy toys trace traced traces tracing track trade trades trading tragic trail trails train trains trait traits tramp trance transfer transit trap traps trash travel tray trays tread treason treat treats treaty tree trees trek trend trial trials tried tries trim trio trip trips trot trouble trough troupe truce true trump try tsar tub tube tubes tug tulip tumor tuna tune tuned tunes turf turn turned turner turns twin two type tyrant tyre tyres ugh uncle uncles under undo union unit unite united unites units unity unrest until unto update upper ups upset urge urged urges use used user users uses usher using vain valet van vase vast vat veil vein veins vent vents verb verse version vest vet veto vets via vial vice video videos vile vine vines vintage violence viper virus visa visit vista vital voice void vote voter votes wade wafer wage wager wait wake walk walked wall walled wan wand want wanted war ward wards warn warns wars wary was wasp waste watch watched watching water waters wave way weak weapon weapons wear wearing wears weary weather weave weaver web wed wee weird weld well went were west western wet what whatever wheat when where who whose why wide wider wig wigs win wind wine wing wings wink wins winter wire wired wish wit witch with woes woke woken wolf won wonder wont woo wood woof wool word words wore work worked working worn worse worst wrath wreath writ write wrong wrote yard yarn year years yeast yell yelp yen yes yet yield you your yours yourself zest zinc";
+const RARE="aah aal aas abet abhor abo abri abs aby acari accost aced acetic acetin acetins ached achy acinar acing acme acmes acned acnes acold aconite acorn acred acrid acrider actin actinon actinons actins acyl acyls adder adders adit adits admen ado ados aedes aegis aeon aeonic aeons aerate aerates aerie aeries aerily aero aery aether aethers afield afire afore afreet afreets afrit aft afters aga agar agas agee agene agentive ager agers agin aginner agio agist aglee aglet aglets agly agma agon agone ague aha ahem aider aiders aigret ail ailed aileron ailing ails aimer aimers ain ains aioli airer airest airman airmen airn airns airt airth airths airts ais aisled ait aitch aits aiver ala alae alar alary alate alb alcid alder alders aldol aldols alec alecs alee alef alefs ales alevin alexin algid algin algor alienor alif alifs aligner aline alined aliner aliped alist alit allod allods alls alma alme almes alms alnico aloe aloes aloft aloin alow alp alpine alps als alt altho altos alts alvine ama amah amain ameer ameers amens ament ami amia amice amide amie amies amin amine amines amins amir amirate amirs amis amnia amnic amort amrita amu amus amuser amusers amuses ana anarch anas ancon ands ane anear anele aneling anemic anent anergic anes anga angas angers angler ani anil anile anils anima anime animes anion anions anis anise anoint anoints anole anoles anoretic ansa anta antas ante anted antes anther anti antic anting antings antis antisag antler antre antres anvil aortic aped aper apercu apercus apers apery aphis apices aping apish apishly apod aport apostil appel apres aprons apse apsis apter aptest arb arced arcing arco arcsine arctic arcus areae areal areca areic ares arete aretes arf arfs argent argentic argents argil argle argles argol argon argot argots arguer arider ariel ariels aright aril arils arks arles armer armet armets armlet armors arnica aroint aroynt arpen arpens arpent arpents ars arshin arsine arsis arsons artal artel artels artily artsy arty arum arums arvo aryl aryls asci ascot asdic asea ashed ashen ashing ashy asker aslope asp asper asperate aspic aspis asps assumer aster astern astir atap ataps ate atelic ates athirst atma atone atoner atoners atones atonic atonics atony atop atria atrial atrip att attorn auger aught aures austere ave aver avers averse aves avo awed awee aweing awes awing awl awn awned awns awny awol awry axel axil axile ayes ayin ays bads bah baht bairn baith bal bane banger bani baring bas bate batt baud bauds beau beaus bedim bedu beefs beet beets befit befits begird bel bels ben bendy bene benes bens bents beraking berg berm berms berths beset besom besot beth beths betise betta bevor bey bhut bice bide bider bier biker biles bine bines binge binger bint bints bio biome bios birk bis bise bises blae blat blate bleat blet blip blips blot bluer bluet blurt boa bod bode bodice bog bohea bole boles bolter boned boney bop bops bora borer borers bores borsht bort borts bos bosh bot botel bots bough boule bourg brad brae brank bravi bren brens brie brig brin brine brio brit bro brome bromes bros brose broths brr brugh brulot brume brumes brut buhr bund bunds bur buret burg burgh burl burs burse busmen bute buteo butle buts cacti cade cadent cades cadi cadis cadre cadres cads cafe cafes cager cagers cagier caid caids caiman cain cains caird cairn cairns caliph caliphs calo cames camlet campo cams caned caner caners canid canids cannie canonist canons canso canst canted canter canthi cantic cantle canto canton cantons cantor cantos cants cantus caped caper capers capes caph caphs capo capric caprice carder careen careens carer carers caret carets caried caries carina cark carl carle carles carls carman carn carnet carnie carnies carns carom caromed carotin carped carpi carps carpus carr carrs carse carte carted cartes carting cased casein casern caserne castor cate caters cates cation cations catlin causer caw cawed cawing cay cays cebid ceboid ceca cedars cede ceder cedi cedis cee cees ceil ceils cel cella cels celt celts cenote cense censer censors cental centile cento centos centra cep cepe cepes ceps cerate cerated cerates ceratin cerci cere cered ceres ceria cerias ceric cering cerise cero ceros cerous certes cess cesta cesti cestoi cestoid cesura cete cetes chad chaine cham chams chang changs chape chapes chard chare chared chares charr charrs chars chaser chasm chaste chaster chaw chawed chawing chay chays cheaps cheater cheaters cheder chert cherts chia chias chid chide chider chiel chield childe chile chimar chine chined chirm chis chit ciao ciders cigaret cinder cinders cine cineast cineol cineole cines cion cions cire cires cis cist citer citers citola citole citral citrals citron citrusy clade claps claret clarets claries clary clast clayish clays cleat cleats clerid clime cline clines clipt clod clon cloot clop clops clothe cloths clots clove cloven clued coact coacts coaled coater coati coatis cob coca cocas coda codder codein codeins coden codens coder coders cods coed coedit coedits coeds coempt coft cog cogs coiner coiners cointer coir coirs coital col cola cole colead coled coles colies colin colitis coloni colpitis cols comade comae combe combed comer comp compadre comped compt comte comtes conatus coned conge conger congers conges coni conies conin conine conins conn conns conte contes conto contra conus cony coo coolant coot coped coper copers copes copra copse copses copter copters cor corded corder corders cordite cored corer corers corf coria corm cornea corned cornet corns cornu cornute corrie corse corses corset cortin cory cos coses coset cosh cosie cosied cosier cosine coss costa costar costed coster cot cotan cotans cote coted cotes cots coude coupe couped coups couter coven covin coy crag crags cramp crania crape craped crapes crasher crated crating craton creaser creatin credo credos creesh crepe crepes cress crestal cretic cretin crier cripe cripes cris crista cristae croft crofts crone crones cronies crony crore crores crosse croup croupe croups crouse crud cruds cruet cruets crump crumpet crus cruse cruses cruset crusty ctenoid cud cuddie cuds cued cuprite cuprites cur curd curded curds curet curets curf curfs curie curies curite curites curn curs curst curtesy curtsey curtsy cusp cuss cusser cusso cuter cutes cutesy cutey cuteys cutie cuties cutin cutis cyder cyton dab dabs dace daces dag dags dah dahl dahs dais dak dal dale dales dals dames damper dang dangle dangs dap dapple daps darb darer daric darting dartle dasher dater daters dato datos daub daubs daut daw dawen dawing dawk daws dawt dawts deads deafer deair deairs deans dears dearth deary deash deasil deb debug decal decamp decant decants decare declaim deco decor decors decos decry dee deeding deeps deers dees deet deets defi defis deflea deform deign deigned deigns deil deils deism deist deists del delate dele deles delf delict delimit delis delist dell dels deltas deltic deme demit demits demo demob demonic demos demotic demotics dene denes dens dents denture deontic depots deraign derat derate derats deray dere derm derma dermas derms desalt descant desist despot destain detach detains dev devisor devoir devoirs devon devs dewan dewool dews dey dhal dhow dhows dials dib dicast diced dicer dicers dices dicey dicot dicots dicta dicty dido diel diene dienes dilate dilates dimer dimes dims dinar dindle dined dinero dineros dines ding dinge dinged dinger dinges dingle dings dink dinks dins dint dints diode diol diols dipso dipt direly direr dirge dirl dirls dirts dis discant disci disme disprove diss distal distome disuse dit dita ditas dite dites dits ditsy dived diwan doat doats dobie doby doc docent docs doer doers doest doge doit doits dol dolce doles dols dolt dom domes domic domine doms dong donsie dopa doped doper dopers dopes dopier dor dore dories dork dorm dorp dorper dorps dorr dorrs dors dorsa dorsel dorsels dorser dos doser dosers doss dossel dosser dossier dossil dost dotal dote doter dotes dotier douce dour douse douses doven dow dowel dower downer dows dowse doyen drab dragee dram drams drape drapes drat drats draught dray dreads drear dree drees dreg dreich drek drench drest drib drily drips droit droll drolls droop droops dropt dross droved droves drupe drys dubs duce duces duci dud duels duets dui duit duits dulse dun dunce dunces dunite duns dunt dunts duos dup dupe duped duper dupes dups dura dure dured durn durns duro duroc durocs duros durr durst dusts dyer dyne eagers eagre eagres eanling eared earing earls earths earwig easel eases easter easts eaters eath eau eave eaves ebon ecarte ecartes echard eche eched eches eching echos eclair eclairs eclat eclats ecru ecrus ecu ecus eddies eddo edger edh edhs edicts eel eely eerily eery eff effs efs eft efts egad egal eger egers egest egesta egis egret egrets eide eidos eighths eights eking elain elan eland elans elapid elapse elate elated elater eld eldrich elds elevon elfin elfins elfish elhi elint elints ell ells elm elms eloign eloin els elusory elver elvers elytra eme emerod emes emeu emeus emf emfs emic emir emirs emits emodin empale ems emu emus enactor enacts enate enates enatic encase encash encina ender endow endue eng engild engird engirt engrail engrain engram engross engs enisle ennui enol enolic enols enorm enow enows enrage enrapt enrol enrols ens ensile entera entia entires entoil entrain entrap entraps enure enured envoi envois eolian eon eons eosin eosinic epact eparch eparchs epha ephas epical epics epode epos eposes eraser erases ere erg ergate ergates ergo ergot ergots ergs erica ericas eringo ern erne ernes erns erode eros erose eroses err errant errants erred errs ers erses erst eruct eructs erupt erupts escar escarp eschar escheat escot eses eskar espanol espial espied esprit espy ess ester estival estop estral estray estreat estrin eta etape etapes etas etch etcher etchers etches eth ethers ethnos eths ethyl ethyls etic etna etnas etoile etude etui etuis etyma euro euros evens evert eves evince evite ewe ewer ewers ewes exempla eyas eyen eyer eyne eyra eyras eyre eyrie facer facers fad fader falsie fames fane fanes farces fard fardel fared farer farers farl farle faro faros fart farts fas fasten fatso fauces fave faves fay fays feal fease feaster feater feeing feh fehs feign feigns feint feints feist felid felines felts fem feme fems fen fends fens feod fer feral fere feres feria ferly festal fester fet feta fetal fetas fete fetes fetial fetials fetor fetors fets feu feuar feuars feus fey fiar fiat fiats fib fibs fid fids fie fiendish fiends fil fila filer filet filets fille filo fils finder finders finis fino firn firns firs fished fiver flam flams fleam fleams fleer fleers flees flemish flense flesher fleury fley fleys flied flier fliest flings flit flite flites flits floe floes flota flours floury flue flues fluor fluors flus foal fogie foin fon fop fora foram fores foresaw forme formee fortes fou fouler fovea fowl fowled fowler foy foyer foyers foys frae frap frat frater fraters frats freest fremd frena frets fretsaw frig frigs frise frit fro froe froes frow frows frowst frug frugs frusta fug fugs furies furl furls furs fusee fusel gab gad gadi gadis gads gae gaed gaen gaes gahnite gaily gainer gainly gainst gait gaiter gaits galere gales gam gama gamp gamps gams gan gander gane ganev gaol gaoler gape gapes gapy gar garb garish garnets garni garnish garote garotes garret gars garter garth garths gash gasher gaskin gasps gast gaster gastrin gat gator gators gats gaud gaur gavel gayer gayest ged geds geed gees geest geld gelid gels gelt gelts gen genet geneva genial genic genies genii genip genips genoa genro genros gens gerah gerahs geraniol german gesso gest gestate geste geta getas getter getters gey ghast ghat ghats ghaut ghi ghis gib gibe gibed giber gid gids gie gied gien gies gild gilt gink ginks ginned ginner gins gip gips gird girlie girn girned girns giro giron girsh girt girth girths girts git gits glade glair glaire glaive glares glean gleaner gled glees glens glia glint gloria gluer gnar gnarl gnars gnash gnat gnathic gnats gnaw gnawer gnoses gnu gnus goa goas gob goer goers gofer gonef goner goners gonia gonif goos gor goral gores goring gorp gorps gorse gorses gourd gout gouts gowk graben grad gradin gradine grail grained grama gramp gramps gran grana grannie grans grat grater grates gratin gratine gratins gratis grayest grays gree grees greys gride griefs grig gringo grins grist grith griths grits groat groats grog grot grots grout grue gruel grues guar gude guid gul gular gush gusto gyrase gyrate gyrates gyre gyres haar habu habus hade hades hae haed haeing haem haemic haemin haems haen haeres haes haet haets haft hafter hag hags haled halos halts hame hames hams hance hances hanse hant hao hap haply haps hards hared hares haring harmin harps harts hasp hast hater haters haut haute haver havior haw hawed hawing hayer hearer hearers hearse heave heaver heck hectare hectares heder heft heh hehs heigh heil heils heist helms helo helos helot helots hem hemic hemin hems henry hent hents hep herdic hereat heres herl herls herm hern herns heron herons heros hes hest het heth heths hets hew hewer hewn hews hic hick hider hie hied hies hight hights hila hilt hilts hin hinds hins hinter hisn hist hoar hob hobs hod hods hoe hoed hoer hoers hoes holey holist holp hols holt holts homer hon honer honers hones honeys hong hongs hons hoot hooting hoots hora horst horste horsy hosed hosel hosen hosing hosta hostly hotly hots houser hove howe howes hows hoy hoyle hoyles hoys hued hues huger hun huns hup hurst hwan hydra hydria hyena hyla hylas hyp hyps hyson hyte icecap iceman ices ich ichs iciest ick icones icterus ictus idem ides idled idler idlers idles idlest idly ids idyl idyls ifs ihram ikat ikats ikon ilea ileac ileum ileus ilex ilia ilk ilka illume imaret imbed imid imide imine imines imp impel impels imposer imps impute inane inaner inapt inarch inarm inarms incage incant incants incase incased inched incise incised incites incudes incus incuse incused indie indies indite indol indole indorse indue indued indues inert inertly inerts infers infest ingate ingest ingle ingles ingot ingots ingrate inhere inia inker inks inlay inlets inlier inly inned inns inro ins inseam inset insetter insoul instar instate instep interims inters inti intime intis intone intro iodic iodin iodines iodins iodise ionic ionics ionise ionised iota iotas ipecac irade irades irate irately ire ired ires iring irk irks irone ironed irones isled islet ism isogon isomer istle ither ivies jest jeu joe joes jot jots jube jubes jus jut jute jutes juts kab kae kaes kail kain kains kale kame kames kami kane kanes karn karst kart karts kas kat kats kbar kea keas kebar keg kegs keir keirs ken kench keno kens kent kep kepi kepis keps kerb kerbing kern ketch keto khet khi khis kiang kiangs kibe kier kiers kilt kina kinas kinase kine kines kino kins kip kips kir kirn kirs kismat kismet kist kiter kiters kites kith kithe kiths knap knaps knar knish knits knower koi kor kore kris krone laari lac lacer lacers lacey lacier laciest lacs lade lader laders lades lading ladle lagend lagers lags laic laich laichs laics lain lairing lairs laith laity laked laking lam lama lamed lamer lames lamia lamiae lams lancer lancet lang lank lanner lanose lapin lapis lapped lapser lar lard lards lardy laree larees lares larges largo lari lariat larine laris lars las lase lased laster lat lated laten lath lathi lathis laths lati latices latino latish latria latrine lats latte lattes lav lave laveer laveers laver lavers laves laving lavs lawed layed lea leady leafed leal leaner leant leapt lear lears leary leas leaser leaver leavers lech lectin lection leer leered leers leery lees leet lefts leger leges lehr lehrs lei leis lek leman lenes lenis lenity leno lenos lense lentic lento lentos leone lept lepta lessor letch letup leu leucin leucins leud leuds lev leva levin levo lex ley leys liaise liane liang lib libs licente lich lichen licit lido lidos lief liege lieges lien liens lientery lier lierne liers lieus lieve lifer ligan ligand liger ligroin ligroine lilt lima limas limed limes limpet limps lin linac linage liney ling linga lingier lingo lings lingy linier linn linnet lino linos lins lint linter lints linty liny lipase lipped lira liras lire liri lis lisp lisps lister litas lite litho lithos lits litu liven livest loam loams loaner loaners loath lob lobs loca loch lochs loci loco lode loden lodes loess logan loge logia logier loin loins loner loners longe longed longs loo looed loof loon loons loos loots lop lope loper lopers lopes lops loral loran lorans lores lories loris lorises lorn lory lota lotah lotahs lotas loth loti lotic lotions lotos louis loup loupe lour lours loury louse lout louts lowe lowed lube luce luces lude ludes ludic lues lug luge luger lum lune lunes lunies lunt lunts lurer lures luster lustre lute lutes lyard lyart lyase lycea lye lyes lyrate lyre lyres lyse lytic maar mac maced macer maces mach mache maches machs macle macled macro macs madre madres mads mae maes mag mage mags maile mailer mailes mair mairs maist malar malate malic maltier malts mana manche maned manes mange manger manse mantel marc mares marge marl marlite marls marplot marred marse marses marts mas maser masers masker masse masseur mater maters matey maths matin matres mattes matts max mead meads meany meatal meaty med medial medic medico medicos medics medii meed mel meld melds melic mell mells mels mem memos mems menad meno mensa menta meou merde meres merk merks merl merls mesa mesas mesial mesian mesic meson meta meths metical metis mho mib mica miche micra mid midi mids mien miens mikes mil miler milia mille millet mils milt milted milter mina minae minas mince minced mini minis minster minter minters mintier mints minuet minuets mir mire mired mires miri miriest mirs mis misate miscode misdo mise miseat miser misfile misinter mislie miso misted mister mistier mistune mite miter miters mites mitier mitis mitral mitre mitres moa moas moats moc mocs modi modiste mods mog mogs moire moires mol mola molar molas moles mols molt molts mome momes mon monde monie monied mons monte montes mop mope moped moper mopers mopes mopier mops mor mora morae moras morel morels mores morn mors morse morsel mort mos moste mot mote motes mots moue mucor mucro mull mullet mullite mun muni munis muns mura muras mure mures mus muser musers muses muss mut muter mutes mutine mutines muts myna nab nabe nabs naches nacre nacres nadir nae naevi nag nags nah nailer naira naivete naled nam namer namers nan nance nans naoi naos nape napes nappe nappes naps narc narco narcs nard nares nargile naric narine naris nark nary nasion nastic natch nates natter natty nave navel naw neap neaps nears neater neath neats neb nebs nee neep neeps negate neif neifs neigh neist nema nemas nerd nerds nereis nerol neroli nerols nerts ness nester nestor nether nett netter netters nettier netts netty neum neums neuter neve neves nevi nevoid newts nib nibs nicad nicads niched nicol nidal nide nided nides nidi nidus nieces nieve nighs nil nilgai nils nim nims nines nip nipa nipas nips nisei nisi nit nite niter niters nitery nites nitid niton nitons nitre nitres nitro nits nival nix nixe nob nocent nodi noel noels noes noetic nog nogg nogs noh noil noils noir noirs noised nolo nolos nom nome nomen nomes noms nona nonas nonce nonet noo nopal nopals nope nordic nori noria noris norite normed norths nos nosey nosh nosher nosier nosy nota notal notary notate noter noters nother noticer nous nows nowt nth nub nubs nuclide nuclides numbs nuncio nurd nurds nurser nus nutsy nutted oaf oafs oar oared oaring oars oases oast oat oaten oater oaters oaths oats obe obeah obeli obes obi obia obis oca ocas ocrea octad octal octan octane octanol octans odder ode odea odes odic odist odors ods oes oft ofter ogam ogams ogle ogled ogler ogres ogress ohed ohia ohias ohing ohm oho ohs oilcan oiler oilers oilier oiling oink oke olden oldie oldies olds ole olea oleic olein oleine oleo oles olio olios olla ollas omber ombers ombre ombres omens omer omers omit omits oms onager onagri onanist onery onrush ons onside ontic onus ooh oohing oohs oops oot oots opah opahs opals ope oped openers opes opposer ops opsin opts opuses ora orad orals orang orate orates orb orbs orc orca orcas orcein orceins orcin orcins orcs ordines ordo ordos oread ores orgeat orgeats oriel oriels origan orle orles ornis orra orrice ors ort orts osar oscine ose oses osier osiers osmic ossa ostia otic ottar oud ouds oughts ourie ourself ousel oust ouster outed outers outre outsin ova ovate overdid overed overfat oversup ovine ovines owse owsen oyer oyers oyes pac pacer pacers pacs padi padis padle padre padres paeon paeons pah paik paiks pail pails paise paled paler pales palet paling palish palp palpi palsy paly pam pams pane paned panes pangs panne panned pap papas paps para paras parch parches pard pards pare pared pareo pareos pares paretic pareu pareus pargo pargos paries paris parle parles parley parleys parol paroles parols parr parrs pars parse parsec parsed parson parve pas pase paseo pash paster pastern pastie pastier pastil pate pated paten patens pater paters pates pathos patin patine patines patins patios patois patten pattens pattie patties paty pauser paver pawns pax payed peag peags peal peals pean peans pearly peart pease peats peaty pec pech pechs pecs pectic ped pedes pedro pedros peds peels peen peens pegs peh pehs pein peins peise peised pekan pekans pekin pekins pele peles pelf pelon pelt pend pends penes penial penna penni pennis penster pent peon peones peons pepla pepo pepos peps perdu perea pereon peri peris perm perms perse perses pert perter peruse pervious pes peseta peso pesos pester pesto petal petit petsai petti pews phasic phat phi phial phials phis phot phots pht phyla phylic physic pia pial pian pians pias piaster piastre pic pica pical picas pice picot picots picrate pics piecrust pied pieta pietas pika pikas pikes pilea pilei pileum pilfer pili pilis pilose pilule pily pina pinas pineal pined pineta ping pinged pings pinks pinot pinots pinta pintas pinto pintos piny pion pions pip pipal piped pirn pirns pis pisco pish piso pisos piste pistil pita pitas pith piths pities piton pitons piu pivots pix pixel plaice plaices plaids plait plaits planed planer planers plash plashy plat platen plats pleat pleb plebs pled pleiad plena plew plica plicae plie plied plier plies plisse plower plutei ply plyer plyers plying poh poi pois poise poiser poises poisha pol polars poleis poler polers polices polis politic pols pom pomace pomade pome pomes poms pone pones pons pood poods pooh poohs popes pored porism porose ported portered porters poser posers poseur posh posies posit posse postin potash potions potsie pouf pout pouter pouts pow pows practic prahu prahus pram prams prao praos prase prat prate prates prats prau praus preact precis precut precuts pree preed preen preens prees prep preps presa prese preset presort prest presto pretor pretors preys prided prides pried pries prig prigs prim primes primo primos prims prise prised privet proa proas prods proem proems prof prog progs projet projets prolan prolans prole proles proms prosect prosed proser proses proso pross prost prow prowl prows prude pry pseud pseudos pseuds psi psilotic psis psoae psoai psoralen psst ptisan puce puces pud puds pul pule puler puli pullet pur puree purees purfle puri puris purist purl purs pus puses pusher puss pya pyas pye pyes pyic pyin pyre pyres quiets quin quins quint quinte quintes quints quoin quoins quoit quoits racers rachet rachets racier raciest racon racy rad radome rads rafter rafters rafts raga raged ragee ragees rages ragi ragis ragman ragmen rah raia rakes raki raking rale rales rallye ramate ramee ramees ramet ramets rami ramie ramies ramped ramtil ramus rance rances rand ranee ranees rani ranid ranis ranter ranters raphe raphes rapt raptor rared rares rarest ras rase rased raser rases rasher rasing rasp rasped raspy raster ratal ratch ratches ratel ratels rater raters rath rathe ratine ratlin ratline rato ratos ratted ratten ratting rattish ratton ratty ravel ravels raves rawest rawin raws rax raya rayed rayon reacher reachers readd readds reagin reales realia realign reals ream reams reaps rearm rears reassume reata reatas reave reaves reb rebid rebop rebops rebs rebus rebut rec recane recanes recant recaps recast recept recepts recheat recheats recitals recoin recoins recon recons recoup recs recta rectal recti recto rectos rectum rectus recut recuts redact redan redate redcap redd redds rede redes redfin redfins redia redias redid reding redip redips redly redon redons redos redtop ree reeds reeled rees reest ref refed refel refels refind refinds refit reflow refly refs reft refutes reg regale regear reges regina reginal regius regma regna regnal regrate regs rehab rehear rehears reheat reheats rei reif reifs reink reis relent relet relict relicts reline relist relit reloan reloans rem remail reman remans remap remint remints remit remits rems renail renal rend rends renest renews renig renin rente renter rentes renvoi renvois reoil reoiling reoils reopens rep repast repays repents replan replans replays repo repos reposal repose reposes repot repots repp repps repro repros reps reran rerun reruns res resaid resail resaw resawn resay rescind reseal resealed reseat reseau reseaus resect reseda resee reseed resew resewn resh reshot resid resids resite resod resods resold resorb resow resown respot restage restate ret retag retags retails retape retapes retaste retax retch retches rete reteach retear retest retia retial retie reties retile retinal retine retines retint retints retore retro retros rets retune retuned retuse reuses revels revet revs rewan rewet rewets rewin rewon rex rhea rheas rhetor rhetors rho rhos rhus rhyta ria rial rials riant rias riata riced ricer rices richen rictal rictus ridley rids riel riels rif rifs rile riled riles riley riling rime rimed rimer rimes rimiest rimose rin rind rinds ringed rins rinsed rioted rioter riped ripes ripest rissole rive rived riven rives rivet riyal roamed roams roan roans roars roble robles robs roc rocs rodeos rodless rodmen roes roil roiled roiling roils rolf rolfs rom romp romped romps roms rood roods roose roosed roped roper ropers rosed roset rosets rosiest rosin rosined rota rotas rote rotes roti rotis rotl rots rotte rouble roue rouen rouens roues roup rouped roupet roups rouses roust rout routh rouths routs rove roved roven roves rowed rowel rowen rowens rube rubes ruble ruche ruches rudd ruder rued ruer ruers rues ruga rugae rugal rugate ruing ruly rumen rumens rump rumps rums rune runes runt runts runty rupee rupees ruses rustle rut ruth ruths rutin rutins ruts rya ryas ryes rynd rynds ryot ryots sab sabe sachem sachet sadder sade sades sadhe sadhu sadi sae sag sager sago sags sagy saice saiga sailer sain sained sains sainted saith saker saki sal salep salic sall salmi salol salp salpid salter saltie saltier saltire salve salver samech samek samiel samite samp sanding saned saner sanes sanga sanger sangh saning sans santir santo sapid sapient sapor sapper saps sarape sard sards saree sarees sarge sari sarin saris sark sarod saros sarsen sasin sat satang sate sated sateen satem sates sati satinet sating satis satrap satyr sau sauced saucer sauch saute sawer sawn sax sayer sayid scab scad scag scaler scalier scaly scam scanted scape scarer scarp scarph scart scathe scaup scauper scaur scena scend scends scepter sceptre schema scion sclera scone scones scop scopes scops scorned scorns scot scoter scotia scour scours scouse scrag scree scried scrip scrod scry scuba scud scudi scudo scup scurf scut scuta scute scyphi sealer seamer seamers seance sear searcher seared searer seater sebum sec secant secern secondi secpar secs secund seder sedge seeder seel seeled seeling seep seeps seer seers seg segni segno segnos sego segos segs sei seif seine seined seiner seis seisor seizin sel selfing sels selva seme semes semi semina semipro sempre sen sended sene seneca sengi senhor senile seniti senor senora senoras senores senors sensa sente senti sepal sepia sepic sept septa septic sequin ser sera serac serai serail seral serape seraph sere sered serein serer seres serf serge serif serin serine serosa serous serow sers serums serval servo sesame seta setae setal setoff seton sett setter setts setup sewan sewar sha shad shader shag shairn shalt shaly shapen shaper shard sharer sharn shat shay shea shearer shelty shend shent sheol sherd sherpa shew shh shied shiel shily shim shined shirty shoal shoat shod shoed shoer shog shogun shoo shooing shoon shorn shorty shote shott shouter shri shtik shunt shunter shute sial sib sibs sic sice sidle sidler sidlers sidles sieged sieur sift signee signet sike siker sild silds silo siloed silos silt silted silva silvae sim sima simar simile simp simper singe singed sinh sinkage sinned sinter sipe siped sipes sips sired siree sires sirs sirup sis sistra sitar sitars sitcom sited sith sitten situp situs siver ska skag skat skean skeg skein skep skier skint skite slat slater slatier slaver slayer sleave sleds slicer slider sliders slier slipe slipes slipt slob slobs sloe sloes slog sloid sloids slop sloper slops slue slued sluice sluiced slyer slype smalt smalto smatter smears smerk smit smite smiter smog smolt smote snags snarer snares snarl snaw sneap sned sneds sneer sneers snib snide snider snip snipe sniped snips snit snog snogs snool snoot snore snored snores snort snot snout snub snye soaper soars sob socle socmen sod sodic sods sofar softa soiled sol sola solan solders soldi soled solei soli solicit solider soling solion soliton solon sols soma somber sombre somite sonant sonantic sonar sonars sonde sonder sondes sone sones sonly soot sooth sooting sop soph sopite sopor sopped sops sora soras sorb sorbet sord sordine sords sorel sorels sorer sores sorest sori sorites sorn sorned sorns sorter sortie sorties sorus sos sot soth sotol sots sou sough souped soupier sourly sours sous souse soused souter souther soviet sow sowar sowed sower sowing sown soy spacer spacy spader spae spaed spaeing spahi spail spait spake spale spang spank spar sparely spas spate spay spean spec specs specter speel speer speers speil speils speir spense spew spica spicae spicer spied spiel spiels spier spik spile spiles spilt spilth spinage spinate spined spinet spinto spirea spired spirem spirt spital spited spiv splat splay splice splore spode spodes spoor spoored sporal spore spored sporter spoused sprag sprat sprees sprent sprig sprit sprite sprue spry spud spuds spue spued spues spume spurt squint sri sris stade stager stagey stagy staid staig staled staler stane staned stang staning stannic staph starer stat stater stats stave staw stayer stead stearic steed stein stela stelai stelar stelic steno stere steric sterical sterna sternite stet stets stey stied sties stifle stile stime stingo stinter stipe stiped stirk stirp stirs stoa stoae stoai stob stoic stolon stoma stomal stoner stoney stope stoped stoper stoup stour stoure stow strafe strafer strake strang strath strati strep strew strewn stria striae strobe strop strops stroud strow stroy stub stucco stum stuns stunted stupe stupor sty stye suba subah suber sucre sucres sucrose sudor suds suer suers sues suet suets suety sugh suint suiter sulci sulfo sump sundry sunlit supe supes supped supra sups suq sura surah suras surd surer surety surfy surly sutler sutra sward sware swarf swart sweer swig swop swot syce syli sylph sylphic syn syne synth syph tabid tace taces tach tache taches tachs tad tads tae tael taels tahr tahrs tahsil taiga taigas tailer tailers tain tains taint taints takin tala talar talc talced talcs taler talers tali talion talon tam tamal tamale tamari tamer tamers tames tamest tamis tamp tams tangier tangs tanist tannic tanrec tans tanto tao taos tapa tapas tapers tapir tapirs tapis tardo tardy tare tared tares targe targes taring tarn tarns taro taroc tarocs taros tarot tarp tarps tarre tarres tars tarsi tarted tarting tartish tarts tarty tas tass tasse tasset taster tat tate tater taters tates tats tau taupe taus tav tavs taw tawed tawer tawers tawing taws tawse taxer teak teaks teal teals teared tearer tearily teary teaser ted teds teed teeing teel teeny teff teffs teg tegs tegua teiid teind teinds tel tela telae tele telia telic telium teloi telos tels telson temp tempi tenail tench tenet tenets tenia teniae tenias tenon tenors tenour tenours tenser tensor tenter tenters tentie tentier tenty tenuis tenured tepa tepal tepas tepid terai terais terce terces teredo terga tergal termini tern terne ternes terns terra terrae terras terse tesla testa testae testier testy tet tetany tetra tetrad tetrads tetras tets teugh tew tews texas thae thane thawed thawer thawing theca thecae thegn thein theine thenar thens theres therm thew thicken thine thins thio thiol thiols thir tho thole tholes thongs thous thrave thraw threes thro throb throbs throe throes thru thud thyrsi tiara tic tical ticals tics tigon tigons tike tikes til tilak tilde tildes tiled tiler tilers tils tincal tine tinea tineal tineas tined tineid tines tinge tinges tings tinier tinmen tinner tins tinsel tinter tinters tints tipi tipis tiredly tirl tirled tirls tiro tiros tis tisane tissued titan titans titer titers titre titres toads tocsin tod todies tods toea toed toff toffs tog toga togae togas togs toil toile toils toke toker tola tolan tolas tole toled toles tolu tolus tom tomes toms tonal tondi toner toners toney tongs tonics tonier tonish tonsil tonsure tonus tony toon toons tope toped topee toper topers topes toph tophi tophs topi topis topoi topos topsail toque toques tor tora torah toras torc torcs tores tori toric tories torr torrid tors torse torses torsi tort torte torten torus tory tosh tosser tost tot toter tots toucan toucans toughs touse toused touts tows toyer toyish trad tragi traipse tram tramel trams trans trapes trass trave treadle treads treed treen treens tref trefah treks trenail trepan trepans tress tret trets trews trey treys triac triacs triad triage trice triced triceps trices triene trienes triens trientes trier trig trigs trike trikes trims trinal trine trines triode trios triose trioses tripe tripes triste trite trod trode trois troke tromp trompe trona tronas trone trones trop trope tropes trounce trove trow trows troy troys truces trudge trued truer trues trug tryst tryste tsade tsadi tsarist tsars tsk tsores tsoris tubed tuber tubs tufa tufas tugs tui tuille tuis tule tules tulle tump tun tunas tuner tuners tunic tuns tup tups turbo tureen turfs turners turps tush tut tuts tuyer tuyers twa twae twaes twain twang twas twee tween twier twig twine twiner twofer twofers twos tye tyee tyer tyers tyes tympan tyne tynes tyred tyro tyros udder udo udos ughs ulster umber umbers ump umps unbe unci unco uncos uncoy unction unde undee undid undies undy ungird unhorse unled unlit unmet unrig uns unset unsets unsliced untidy untie untied unties upas updo updos upflow uplit upo upped uppers upreach uprise uprose upstir uptime uptore urare urase urases urate urates urb urbs urd urds urea ureal ureas urease ureases uredo ureic ureter uretic urger uric urn urns ursa ursae uta utas uteri utile uts vagi vagile vail vails vair vale vales valets valine valise valse vane vang var varlet vars vas vats vaw veal vealer vealers vealing veals vee veena veer veers vees veg vegan vegie veils veinal vela velar velars veld veloce vena venae venal vend venge venial ventage vera versal verso vert vespid vesta vestal vials viator vibe vide vie vied vier viers vies vig viga vilest vina vinal vineal vined vino vinos viol viperous vipers vireo vireos vires vis vise vised visor visored vita vitae vitals vive voe voes voided voider voiders voids voile vole voled vomer wad wadi wading wads wae waes wafers waft wafter wafters wafts wag wain wair waked wale waled wane waned wanes waney wanier wans wany wap waps warding ware wares waring wart warts wast waster wat wats waver weal weald wean weaner weans weason wecht weds ween weens weeny weer wees weest weet weets weft wefts weir weka wen wend wens wert wester wether wets wha whang wharve whee wheen whereat wherve whet whey whig whigs whin whins whit wich wigan wight winch winger wino winos wis witan wite woad woads woald woe woeful woful wog wogs wok wold wolfed wolfer wonk wons wooed woofed wooled woolled worsen worset wort worts wos wost wot wots wrang wreathe wren wrens wrest wried wring wry wye wyn xenia xenial yager yagers yagi yah yaird yald yam yamen yang yap yaps yar yare yarest yatter yatters yaw yawn yawner yea yeah yean yearn yeas yeelin yeh yeld yelps yens yenta yente yep yeti yetis yett yetts yew yid yids yin yins yip yips yird yirds yirth yirths yob yod yon yond yore yores yourn youse yule yules yurt yurts zein zeins zin zincite zincites zincs zins zit ziti zitis zits";
+const STOPS={5:"abekr abelt acehp aceht acelp acelr aceps achmr achrs achrt ackrt acort acost adehr adehs adeim adeis adels ademn adert adery adnrw aefrt aegln aeglr aegnt aegrt aegst aehps aehrs aehrt aeirs aekps aekst aelmt aelnp aelnr aelpt aelrt aelry aelst aemns aemnt aemst aerst aersw aersy aertw aertx aesst aestw aestx agnrt ainpt alnps alnpt alpsy amrst anpst aprst aprty below defil deilv deipr deirt deirw delor denot denow dikns ehors ehost eimst eirst enorw enost enpst eorst eorsw eortu eortw eprsu epstu ghotu hostu ilpst inopt oprst opsst",6:"aacemr abeltt accept acdelp acders acdesu aceert aceghr acehrs acelps acfort acinot addemn adeegr adeelr adefil adegnr adehln adehrs adeils adeilt adeirs adeklw adelpy ademrs adentw adeprs adeptu adilns adortw aeelps aeenst aefhrt aefrst aefsty aegint aeglrr aegrtt aehrrt aeilsy aeimnr aeintv aekmrt aellry aelmnt aelnpt aelnry aelpry aelrtv aelstt aemrst aemrtt aenors aenprt aenrsw aenrtu aesstt agikns airstt almost alnpst bdegir bdegtu bdenoy bghotu cdefor cdeirt cdenos ceinot ceiprs ceorst ceorsu defill definr defmor degins deglno dehosw deilst deintu deiopr dekorw delmos demnor denorw denrtu deopst dginru dgnoru dipstu eehirt eenstv efgort efilst eforst eginor ehmort ehnost ehorst ehorty eikrst eilmps eilnst eimntu einors einrtw eirsst elrstu enoprs enorsw eoprsw fioprt ghinst gilnos ginprs hiknst hoopst inopst oprsst",7:"aadelry aaegmnr aaepprs aaginst abceesu abdhnsu acdeehr acdeert acdehtw acdeilm acdeirr acdelot aceehrt acefrsu aceghns aceghrs acehimn acehmst aceilmt aceilps aceilrt aceinnt aceinrt acellry acelnrt acforst acinost adderss adeeflr adeelrs adeelrt adegiln adeginr adeilpp adeilst adeimrr adeinst adellow adelnnp aderstt adginrt adginrw adilpsy adllors adorstw aeeglnr aeegrrt aeehrtw aeelmpx aeelrsv aeenrst aegilnv aeginrw aeglrru aeglrst aegnrst aegorst aehnort aehnpps aehpprs aeikmst aeilnpx aeilrty aeimnrs aeinptt aeiprst aeiprtv aekmrst aellmrs aelprsy aemnpty aemrstt aenopsw aenorss aenorst aenprst aghinrs agiklnt agilnpy aginpss aioprrt airsstt bcejstu belortu bemnrsu bghortu cdeilnu cdeinot cdenoss cdeopru cdeorrs cdoprtu ceeprst cehiknt cehlost ceinost ceiprtu cenortu ceoprss ceorssu cnortuy deefmor deeipst deemorv definrs deiilmt deiinot deioprv deiostu deisstu densttu deoppst eefhlrs eehinrt eemprsu eenprst eenrstw efforst efginor efgirsu efhilms efilopr eghhist eginstt eimnnot eimnstu eimoprs einorsv eiorsst eknortw enrrstu eopprsu eoprrst gginorw ghinosu ghinosw giknorw hiorsty inoopst opprstu",8:"aachimnr aaeeprst aaeilmrt abdhirty abegiknr abehiorv accdeint acceiprt accnostu acdeinst acdemopr aceehrrs aceehrst aceeinrs aceghint aceginrt acehprsu aceilrst aceinort acghintw achilpsy acilnoot acinnost adeeelrs adeghrtu adginnst aeefrstu aeegintv aeegrstt aeehnrwy aeehrtvw aeemrssu aefiilms aefilstv aefiortv aefnrrst aeforstw aegiknps aegilnnr aegilnor aegrstty aeilnnrt aeinpstt aelnoprs aenortty aflmoprt aghirstt agiilnor aginrstt agmoprrs ahilopst bcdeimno beefinst behorrst beilopss belmoprs cddeilnu cddeopru cdehilnr cdeiinos cdeilnsu cdeilrty cdeimost cdeinors cdeiorrt cdoprstu ceeilnot ceeilnov cegnorss ceiilops ceiinstz ceinnotu ceiprstu ceirstuy cejoprst cemmnost cemoprtu ciilopst ddeegins ddeioprv deenrrtu deeoprrt defhiins deflloow deginnps deilnovv deilorss deioprsv denssttu deoopprs deoppssu dinrstuy eefgilns eeilnrty eeinrstt eenoprss eflopruw eflorsuy egiilnor ehlnosty ehnorstu eiimnrst eiiopstv eillmptu einoqstu eioprsuv ghhosttu ghinoost iinoopst ilnoostu"};
+const LEN_AT=[5,6,6,7,7,7];
+function rng(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const LISTS={};
+const listOf=s=>LISTS[s]||(LISTS[s]=s.split(' '));
+/* The words of a list that can be made from these letters, each letter used once. */
+function madeFrom(letters,list){ const have={}; for(const ch of letters)have[ch]=(have[ch]||0)+1;
+  return listOf(list).filter(w=>{ if(w.length>letters.length)return false; const n={}; for(const ch of w){ n[ch]=(n[ch]||0)+1; if(n[ch]>(have[ch]||0))return false; } return true; }); }
+function boardAt(sd,g){
+  const len=g<LEN_AT.length?LEN_AT[g]:8, list=listOf(STOPS[len]), N=list.length;
+  /* The k-th stop of this length in the round: a walk through the list, from a start and with a stride both fixed by the seed; the stride shares no
+     factor with the list's length, so the walk meets every stop once before any comes again. */
+  const k=g<LEN_AT.length?LEN_AT.slice(0,g).filter(x=>x===len).length:g-LEN_AT.length;
+  const r0=rng(sd*7919+len*104729+13), start=Math.floor(r0()*N), gcd=(a,b)=>b?gcd(b,a%b):a;
+  let stride=1+Math.floor(r0()*(N-1)); while(gcd(stride,N)!==1)stride=stride%(N-1)+1;
+  const key=list[(start+k*stride)%N], words=madeFrom(key,WORDS), rare=madeFrom(key,RARE);
+  const full=words.concat(rare).filter(w=>w.length===len).sort();
+  /* Deal the letters: shuffled by the seed and the stop, turned until they no longer spell a word. */
+  const r=rng(sd*15485863+g*32452843+7), t=key.split('');
+  for(let i=t.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); const x=t[i]; t[i]=t[j]; t[j]=x; }
+  for(let turn=0;turn<len&&full.includes(t.join(''));turn++)t.push(t.shift());
+  return {g,len,letters:t.join(''),words,rare,full};
+}
+/* seeded-boards:end */
+/* What a word pays: by its length (a tenth of the prototype's values), half again for a rare one, 50 more for one that uses every letter, all
+   times the combo. The combo grows by one for each word within 6 seconds of the last (up to ×5) and drops back to ×1 when that gap passes.
+   A word of 5 letters or more adds seconds to the clock (one with every letter, 3 more), up to 30 in a round. */
+/* Scored like Odd One Out and Trails: a casual minute lands near 500, a good one near 2,000, so a win pays the same
+   challenge points across the games. A word pays by length, half again if rare, 150 more for every letter, times a
+   combo that climbs by one for each word within 8 s of the last, up to ×3. */
+const VAL={3:30,4:50,5:80,6:120,7:170,8:230}, FULL=150, COMBO_WINDOW=8, MAXCOMBO=3, TIMEB={5:2,6:3,7:4,8:5}, FULL_TIME=3, MAX_ADDED=30;
+const worthOf=(w,isRare,isFull,c)=>(Math.round(VAL[w.length]*(isRare?1.5:1))+(isFull?FULL:0))*c;
+const HUES=[45,200,330,150,265,20,180,300,125,225,350,165,285,35,210,320,140,250,5,190];
+const hueFor=g=>HUES[g%HUES.length];
+const PRAISE={5:'Great!',6:'Amazing!',7:'Brilliant!',8:'Unreal!'};
+let save={bank:0,best:0,rounds:0,sound:true,scores:[],seenHowTo:false}; /* seenHowTo: the how-to-play card was read once (OK), so it never comes up by itself again */
+/* The save is kept per account in the app, under wordtrip.v1.<userId>, so the next person to sign in on this phone starts clean; in a plain browser (no
+   bridge) it is wordtrip.v1. A save made in a plain browser (a plain wordtrip.v1) goes to the first account that loads with an id, once, and is then removed. */
+const SAVE_KEY='wordtrip.v1';
+let saveKey='';
+const store=()=>{try{localStorage.setItem(saveKey,JSON.stringify(save));}catch(e){}};
+
+/* ---------- Sowaka bridge ----------
+   In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
+     Sowaka.userId                      -> "u-…": the signed-in person's id, the key of this page's save and caches on the device
+     Sowaka.playerName()                -> "Tanvi Shah"
+     Sowaka.submitScore(n)              -> Promise of the board after it, posted under the player's own session
+     Sowaka.leaderboard()               -> Promise of {entries:[{rank,name,score,me}], me:{rank,score}|null, company, label}
+   and for colleague challenges (each a Promise; a refusal rejects with .message, .status and sometimes .details):
+     Sowaka.colleagues(query)           -> {colleagues:[{userId,name,designation,department,photoUrl}]}
+     Sowaka.challenge(userId)           -> the new challenge
+     Sowaka.challenges()                -> {incoming, outgoing, active, recent}: lists of challenges
+     Sowaka.getChallenge(id)            -> one challenge
+     Sowaka.acceptChallenge(id)         -> the challenge after it: answers a pending one (on an accepted one it changes nothing)
+     Sowaka.declineChallenge(id)        -> the challenge after it: declines, withdraws (the challenger), calls off an accepted one neither has
+                                           played, or clears a finished one from your own list, whichever fits
+     Sowaka.finishChallenge(id, score)  -> the challenge once this player's final is in
+     Sowaka.startChallengeId            -> the challenge a tapped notification opened the game for, or null
+   A challenge, as each player sees it: {id, seed (once accepted), status: pending|accepted|declined|expired|finished, role: challenger|opponent,
+     me/them: {userId, name, score|null}, outcome: won|lost|draw|null, myAward/theirAward: {kind, points, onlyOwnScore, reason}|null, expiresAt,
+     withdrawnBy/cancelledBy: userId|null (a 'declined' one that was really withdrawn or called off), lobby: {...}}. The lobby itself is off (lobby.open is
+     always false); the page reads `lobby` only as the sign of a server that knows withdrawing, calling off and clearing.
+   Each player plays their round whenever they like, on the same letters (the seed); the result comes once both have played.
+   The app calls window.onSowakaChallenge(evt) for each change: {kind: created|accepted|declined|withdrawn|cancelled|scored|finished|expired, challengeId, challenge},
+     or {kind:'resync'} after a reconnection. Anything else (a lobby or live event from an older server) is ignored.
+   In a plain browser there is no bridge: scores stay on this device, in localStorage, the letters are your own, and there are no challenges. */
+const LOCAL_TOP=10;
+const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
+const playerId=()=>{ const b=bridge(); const id=b&&b.userId; return id==null?'':String(id).trim(); };
+function readSave(key){ try{ const s=JSON.parse(localStorage.getItem(key)||'null'); return s&&typeof s.bank==='number'?s:null; }catch(e){ return null; } }
+/* Reads the save of whoever is signed in (see SAVE_KEY). True when it is a different save from the one in hand: the bridge arrived after the page had read the plain one. */
+function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(key===saveKey)return false;
+  let s=readSave(key);
+  if(id){ const old=readSave(SAVE_KEY); if(!s&&old)s=old; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+  saveKey=key; save=Object.assign({bank:0,best:0,rounds:0,sound:true,scores:[],seenHowTo:false},s||{}); if(!Array.isArray(save.scores))save.scores=[];
+  if(s&&id)store(); return true; }
+loadSave();
+let board=null; /* the last board seen, for the best line under the grid */
+function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
+  const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
+  return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
+function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
+  return {rows:list.map((x,i)=>({rank:i+1,name:'You',score:x.s,me:x.t===at})),me:null,title:'Your best on this device',shared:false}; }
+function keepLocal(s){ const t=Date.now(); save.scores=save.scores.concat({s,t}).sort((a,b)=>b.s-a.s||a.t-b.t).slice(0,LOCAL_TOP); store(); return t; }
+const Board={
+  name(){ const b=bridge(); try{ const n=b&&b.playerName(); if(n)return String(n); }catch(e){} return ''; },
+  first(){ return Board.name().trim().split(/\s+/)[0]||''; },
+  /* Every round is kept on the device too, so a round played offline is not lost to the player. */
+  submit(s){ const t=keepLocal(s), b=bridge(); if(!b)return Promise.resolve(localBoard(t));
+    return Promise.resolve().then(()=>b.submitScore(s)).then(shapeBoard).catch(()=>Object.assign(localBoard(t),{offline:true})); },
+  fetch(){ const b=bridge(); if(!b)return Promise.resolve(localBoard(-1)); return Promise.resolve().then(()=>b.leaderboard()).then(shapeBoard); },
+};
+/* A small cache on the device, one per account: the last leaderboard and colleague list, so the menu and the picker open with names at once.
+   Keyed by the player's id; under an older app, which gives no id, by a hash of their name as before. */
+function cacheKey(k){ const id=playerId(); if(id)return 'wordtrip.'+k+'.'+id; let h=7; for(const ch of Board.name()||'?')h=(h*31+ch.codePointAt(0))>>>0; return 'wordtrip.'+k+'.'+h.toString(36); }
+function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem(cacheKey(k))||'null'); return v&&typeof v==='object'?v:null; }catch(e){ return null; } }
+function cachePut(k,v){ try{ localStorage.setItem(cacheKey(k),JSON.stringify(v)); }catch(e){} }
+function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();}
+  if(!b.offline)cachePut('board',{rows:b.rows,me:b.me,title:b.title,company:b.company}); renderTop(); }
+function refreshBoard(){ if(!bridge())return;
+  if(!board){ const kept=cacheGet('board'); if(kept&&Array.isArray(kept.rows)){ board=Object.assign({me:null,title:'Leaderboard',company:''},kept,{shared:true}); renderTop(); } }
+  Board.fetch().then(seeBoard).catch(()=>{}); }
+/* The leaderboard, drawn into box: one list, the whole of it, in its own scroll, and the player's own row under it when they are further down.
+   In the app it is the company's board and only that (a round that could not reach it says so, and shows no other list); in a plain browser,
+   with no bridge, it is this device's scores. */
+function drawBoard(box,b){
+  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
+  if(b.offline){ box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.')); return; }
+  if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
+  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score))); list.appendChild(w); };
+  b.rows.forEach(r=>row(r,r.me&&b.shared?(r.name+' (you)'):r.name));
+  if(b.me&&b.shared&&!b.rows.some(r=>r.me))row({rank:b.me.rank,score:b.me.score,me:true},(Board.name()||'You')+' (you)');
+  box.appendChild(list);
+}
+function boardBox(pending){ const box=el('div','lb'); box.append(el('div','lbh','Leaderboard'),el('p','wait',bridge()?'Saving your score…':''));
+  pending.then(b=>{seeBoard(b);drawBoard(box,b);}).catch(()=>{box.lastChild.textContent='Could not load the leaderboard.';}); return box; }
+/* The leaderboard sheet: no buttons; a tap outside closes it. */
+function openBoard(){ sfx.ui(); const box=el('div','lb full'); box.appendChild(el('p','wait','Loading…'));
+  openSheet('Leaderboard',[box],[],closeSheet);
+  Board.fetch().then(b=>{seeBoard(b);drawBoard(box,b);}).catch(()=>{box.innerHTML='';box.appendChild(el('p','wait','Could not load the leaderboard. Try again in a moment.'));}); }
+let mode='idle', seed=1, gi=0, cur=null, score=0, shown=0, total=0, fulls=0, rares=0, bestWord='', combo=1, comboUntil=0, maxCombo=1, added=0, endAt=0,
+  timer=null, countTimer=null, lastSec=-1, locked=false, duel=null, starsNow=0;
+/* The stop on screen: its letters as tiles (in the order shown), the tray (tiles tapped, in order), and the words found on it. */
+let order=[], tray=[], found=[], words=new Set(), rareSet=new Set();
+const now=()=>performance.now()/1000;
+const reduce=()=>window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const makeStop=g=>boardAt(seed,g);
+/* ---------- sound ---------- */
+let AC=null, OUT=null, audioMode='web', audioChecked=false, tagBlocked=false;
+function ac(){ if(!save.sound)return null; if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();
+    const comp=AC.createDynamicsCompressor(); OUT=AC.createGain(); OUT.gain.value=2.2; OUT.connect(comp); comp.connect(AC.destination);}catch(e){AC=null;return null;}}
+  if(AC.state!=='running'){try{const p=AC.resume(); if(p&&p.catch)p.catch(()=>{});}catch(e){}} return AC; }
+function webTone(a,f,d,o){ const t=a.currentTime+(o.at||0), os=a.createOscillator(), g=a.createGain();
+  os.type=o.type||'triangle'; os.frequency.setValueAtTime(f,t); if(o.to)os.frequency.exponentialRampToValueAtTime(o.to,t+d);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(o.vol||0.16,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+  os.connect(g); g.connect(OUT); os.start(t); os.stop(t+d+0.03); }
+const wavCache={};
+function wav(f,d,to){ const k=Math.round(f)+'|'+d+'|'+(to||0); if(wavCache[k])return wavCache[k];
+  const sr=11025, N=Math.floor(sr*d), buf=new Uint8Array(44+N), dv=new DataView(buf.buffer); const w=(o,s)=>{for(let i=0;i<s.length;i++)buf[o+i]=s.charCodeAt(i);};
+  w(0,'RIFF'); dv.setUint32(4,36+N,true); w(8,'WAVEfmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true); dv.setUint32(24,sr,true); dv.setUint32(28,sr,true); dv.setUint16(32,1,true); dv.setUint16(34,8,true); w(36,'data'); dv.setUint32(40,N,true);
+  let ph=0; for(let i=0;i<N;i++){ const x=i/N, fr=to?f*Math.pow(to/f,x):f; ph+=2*Math.PI*fr/sr; const env=Math.min(1,i/60)*Math.pow(1-x,1.5); buf[44+i]=128+Math.round(110*env*Math.sin(ph)); }
+  let s=''; for(let i=0;i<buf.length;i++)s+=String.fromCharCode(buf[i]); return wavCache[k]='data:audio/wav;base64,'+btoa(s); }
+/* The fallback player, one per note, kept and restarted: building a new <audio> for every key tap stalled the page on iPhones. */
+const tagPool={};
+function tagTone(f,d,o){ const go=()=>{ try{ const k=Math.round(f)+'|'+Math.max(0.08,d)+'|'+(o.to||0); let au=tagPool[k]; if(!au){ au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.preload='auto'; tagPool[k]=au; }
+    au.volume=Math.min(1,(o.vol||0.16)*4); try{au.currentTime=0;}catch(e){} const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
+function tone(f,d,o){ o=o||{}; if(!save.sound)return; if(audioMode==='tag')return tagTone(f,d,o); const a=ac(); if(!a)return tagTone(f,d,o); webTone(a,f,d,o); }
+function sndLabel(){ const b=$('snd'); b.textContent=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on'); b.setAttribute('aria-pressed',save.sound?'true':'false'); }
+function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
+  setTimeout(()=>{ if(audioChecked)return; audioChecked=true; if(!a||a.state!=='running'){ audioMode='tag'; tagTone(660,0.08,{vol:.12}); } },450); }
+['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,true));
+/* The prototype's sounds: each letter a step up the scale, a word a run up it (higher with the combo). */
+const SC=[0,2,4,7,9,12,14,16,19,21,24], nt=(i,shift)=>261.63*Math.pow(2,(SC[Math.min(i,SC.length-1)]+(shift||0))/12);
+const sfx={
+  tap(i){tone(nt(i),0.11,{vol:.17}); if(audioMode!=='tag')tone(nt(i)*2,0.06,{type:'sine',vol:.06});},
+  untap(){tone(300,0.07,{to:220,vol:.1});},
+  shuffle(){for(let i=0;i<7;i++)tone(nt(Math.floor(Math.random()*8)),0.05,{vol:.08,at:i*.03});},
+  word(len,c){const sh=(c-1)*2; for(let i=0;i<len;i++)tone(nt(i,sh),0.14,{vol:.18,at:i*.055}); tone(nt(len,sh)*2,0.3,{type:'sine',vol:.12,at:len*.055});
+    if(len>=5)[0,4,7].forEach(s=>tone(nt(0,sh+s)*2,0.45,{type:'sine',vol:.07,at:len*.055+.05}));},
+  rare(){[0,1,2,3].forEach(i=>tone(1320*Math.pow(1.19,i),0.12,{type:'sine',vol:.1,at:.25+i*.06}));},
+  full(){[523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,0.22,{vol:.2,at:i*.08}));[523,659,784,1047].forEach(f=>tone(f,1.1,{type:'sine',vol:.1,at:.5}));},
+  no(){tone(150,0.12,{type:'square',to:90,vol:.11});tone(110,0.16,{type:'square',to:70,vol:.1,at:.1});},
+  dup(){tone(392,0.08,{type:'sine',vol:.11});tone(392,0.08,{type:'sine',vol:.11,at:.1});},
+  combo(c){tone(440*Math.pow(1.122,c*2),0.18,{type:'sawtooth',to:880*Math.pow(1.122,c*2),vol:.07,at:.02});},
+  comboLost(){tone(330,0.25,{type:'sine',to:165,vol:.08});},
+  grow(){[392,523,659,784].forEach((f,i)=>tone(f,0.1,{vol:.13,at:.08+i*.05}));},
+  star(k){tone(1047*Math.pow(1.26,k),0.5,{type:'sine',vol:.16});tone(2093*Math.pow(1.26,k),0.6,{type:'sine',vol:.08,at:.04});},
+  tick(k){k=k||1;tone(700+k*70,0.05,{type:'square',vol:.07+k*.008});tone(350+k*35,0.09,{type:'sine',vol:.1,at:.02});},
+  count(){tone(523,0.14,{vol:.18});},
+  go(){tone(784,0.12,{vol:.2});tone(1047,0.3,{vol:.2,at:.1});},
+  timeup(){tone(196,0.9,{type:'sine',to:98,vol:.22});tone(294,0.9,{type:'triangle',to:147,vol:.12});},
+  timeplus(){tone(988,0.08,{type:'sine',vol:.1});tone(1319,0.14,{type:'sine',vol:.1,at:.07});},
+  coin(i){tone(1175+i*40,0.05,{type:'square',vol:.05});},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,0.2,{vol:.2,at:i*.1}));[523,659,784].forEach(f=>tone(f,0.9,{type:'sine',vol:.1,at:.42}));},
+  lose(){[392,330,262,196].forEach((f,i)=>tone(f,0.24,{type:'sawtooth',vol:.08,at:i*.13}));},
+  ui(){tone(700,0.05,{type:'sine',vol:.1});},
+  horn(){tone(294,0.16,{type:'sawtooth',vol:.1});tone(440,0.3,{type:'sawtooth',vol:.1,at:.14});},
+  ahead(){tone(880,0.09,{vol:.12});tone(1175,0.16,{vol:.12,at:.08});}
+};
+function buzz(p){ /* The app's haptic (iPhones have no web vibration); the browser's vibrate otherwise. */
+  try{ const S=window.Sowaka; if(S&&S.native&&S.haptic){ S.haptic(Array.isArray(p)?'heavy':p>=30?'medium':'light'); return; } if(navigator.vibrate)navigator.vibrate(p); }catch(e){} }
+
+/* ---------- confetti ---------- */
+const fx=$('fx'), fctx=fx.getContext('2d'); let parts=[], fxOn=false;
+function fxSize(){fx.width=innerWidth;fx.height=innerHeight;} fxSize(); addEventListener('resize',fxSize);
+function burst(x,y,n,cols){ if(reduce())return; for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2, sp=3+Math.random()*9; parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-5,s:4+Math.random()*6,r:Math.random()*6,vr:(Math.random()-.5)*.5,c:cols[i%cols.length],life:60+Math.random()*30});}
+  if(!fxOn){fxOn=true;requestAnimationFrame(fxLoop);} }
+function fxLoop(){ fctx.clearRect(0,0,fx.width,fx.height); parts=parts.filter(p=>p.life>0);
+  for(const p of parts){p.vy+=0.35;p.x+=p.vx;p.y+=p.vy;p.vx*=.985;p.r+=p.vr;p.life--; fctx.save();fctx.translate(p.x,p.y);fctx.rotate(p.r);fctx.globalAlpha=Math.min(1,p.life/25);fctx.fillStyle=p.c;fctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6);fctx.restore();}
+  if(parts.length)requestAnimationFrame(fxLoop); else {fxOn=false;fctx.clearRect(0,0,fx.width,fx.height);} }
+const COLS=['#39C6C0','#4C9BFF','#A77BFF','#FF6FB5','#FFD23F','#4BE39A','#FFF6DE'];
+function centre(el){const r=el.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];}
+
+const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+function toast(text,cls,xy){ const t=el('span','toast'+(cls?' '+cls:''),text); if(xy){ const r=$('toasts').getBoundingClientRect(); t.style.left=Math.max(84,Math.min(r.width-84,xy[0]-r.left))+'px'; t.style.top=Math.max(-10,xy[1]-r.top-40)+'px'; } $('toasts').appendChild(t); setTimeout(()=>t.remove(),1050); }
+
+/* ---------- render ---------- */
+/* The best line under the grid while playing, and on the menu the player's own card: their best, their rank at the company, and the way to the
+   leaderboard. The ? is there except while a round counts down or runs. */
+function renderTop(){ sndLabel(); const playing=mode==='count'||mode==='play', me=board&&board.me;
+  const line=mode!=='idle'&&save.best?'Your best: '+fmtn(save.best)+(me?' · #'+me.rank+(board.company?' at '+board.company:' here'):''):'';
+  $('best').textContent=line; $('foot').hidden=!line; $('help').hidden=playing;
+  const mb=$('mybest'); if(!mb)return; mb.textContent=save.best?fmtn(save.best):'—';
+  $('myrank').textContent=me?'#'+me.rank:'—';
+  $('myat').textContent=me?(board.company?'at '+board.company:'here'):!bridge()?'On this device':!save.best?'Play a round to get one':board?'Not on the board yet':''; }
+/* The game's picture, as the Games tab draws its tile: four letter keys over the winding road, and the van on it. */
+const ART='<svg viewBox="0 0 220 112" aria-hidden="true">'
+  +'<path d="M-6 92C34 70 62 104 104 86S170 52 226 66" fill="none" stroke="#15122B" stroke-width="26" stroke-linecap="round"/>'
+  +'<path d="M-6 92C34 70 62 104 104 86S170 52 226 66" fill="none" stroke="#FFF6DE" stroke-width="2.5" stroke-dasharray="7 9" opacity=".8"/>'
+  +'<g transform="translate(40 82) rotate(-16)"><path d="M-17 5v-9q0-12 17-12q17 0 17 12v9z" fill="#15122B"/><rect x="-17" y="-6" width="34" height="12" rx="5" fill="#FFD23F"/>'
+  +'<rect x="-7" y="-14" width="14" height="8" rx="2" fill="#BFE9FF"/><circle cx="-10" cy="7" r="4.6" fill="#0c0a18"/><circle cx="10" cy="7" r="4.6" fill="#0c0a18"/></g>'
+  +[['W',22,-6],['O',66,4],['R',110,-4],['D',154,6]].map(([c,x,a])=>'<g transform="translate('+(x+18)+' 34) rotate('+a+')">'
+    +'<rect x="-18" y="-15" width="36" height="36" rx="9" fill="#D2BC7E"/><rect x="-18" y="-19" width="36" height="36" rx="9" fill="#FFF6DE"/>'
+    +'<text x="0" y="9" text-anchor="middle" font-family="Baloo 2,Trebuchet MS,sans-serif" font-weight="800" font-size="26" fill="#2A2140">'+c+'</text></g>').join('')
+  +'</svg>';
+const BOLT='<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6.49 1 3 6.99h3l-.5 4 3.5-6h-3l.5-4Z" fill="none" stroke="#150C2E" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+/* The game card: its picture, Play, and (with the app's bridge) Challenge a colleague. */
+function heroCard(){ const h=el('section','hero'), art=el('div','art'), bd=el('div','bd'), tag=el('span','tag'), go=el('button','btn go','Play');
+  art.innerHTML=ART; tag.innerHTML=BOLT; tag.append(ROUND_TEXT); go.type='button'; go.onclick=()=>start(null);
+  bd.append(tag,el('h2','','Find the words'),go);
+  if(canChallenge()){ const du=el('button','btn dark','Challenge a colleague'); du.type='button'; du.id='chbtn'; du.onclick=()=>{sfx.ui();openPicker();}; bd.append(du); }
+  h.append(art,bd); return h; }
+/* Your best and your rank at the company, then the leaderboard. */
+function mineCard(){ const t=el('div','mine'), a=el('div','stat'), r=el('div','stat dark'), best=el('b'), rank=el('b'), at=el('span'), lb=el('button','btn','View leaderboard');
+  best.id='mybest'; rank.id='myrank'; at.id='myat'; a.append(el('small','','Your best'),best); r.append(el('small','','Your rank'),rank,at);
+  lb.type='button'; lb.onclick=openBoard; t.append(a,r,lb); return t; }
+/* How to play: one full-screen card, the same wherever it opens. It comes up by itself once, in front of a new player's first round (on their own or
+   a challenge's; that round starts on OK), and any time from the ?, where OK just closes it. */
+let howThen=null;
+const needsHowTo=()=>save.rounds===0&&!save.seenHowTo;
+function showHowTo(then){ const o=$('howto'); if(!o.hidden&&howThen&&!then)return; howThen=then||null; o.hidden=false; o.scrollTop=0; howDemo(true); $('howok').focus({preventScroll:true}); }
+function hideHowTo(){ $('howto').hidden=true; howThen=null; howDemo(false); }
+/* How to play's picture: a stop that plays itself. ART, then STARE with every letter (drawn whole, and still, under reduced motion). */
+let demoTimer=null;
+function howDemo(on){ clearInterval(demoTimer); demoTimer=null; const box=$('howdemo'); box.innerHTML=''; if(!on)return;
+  const letters='rates'.split(''), wall=el('div','wall'), tr=el('div','tray'), row=el('div','rowt');
+  box.append(wall,tr,row); let used=[], cls='';
+  const draw=()=>{ row.innerHTML=''; letters.forEach((ch,k)=>row.appendChild(el('span','tile'+(used.includes(k)?' used':''),ch)));
+    tr.className='tray'+(cls?' '+cls:''); tr.innerHTML=''; used.forEach(k=>tr.appendChild(el('span','',letters[k]))); };
+  const chip=(w,c)=>{ const x=el('span','chip new '+c,w); wall.insertBefore(x,wall.firstChild); };
+  if(reduce()){ chip('art','l3'); chip('stare','full'); used=[2,3,4,0,1]; cls='gold'; draw(); return; }
+  const script=[['tap',1],['tap',0],['tap',3],['ok','art','l3'],['tap',2],['tap',3],['tap',1],['tap',0],['tap',4],['ok','stare','full gold'],['wait'],['wait'],['reset']];
+  let i=0; draw();
+  demoTimer=setInterval(()=>{ const s=script[i++%script.length];
+    if(s[0]==='tap'){ used.push(s[1]); cls=''; draw(); }
+    else if(s[0]==='ok'){ const c=s[2].split(' '); cls=c[1]||'ok'; draw(); chip(s[1],c[0]); setTimeout(()=>{ used=[]; cls=''; draw(); },420); }
+    else if(s[0]==='reset'){ wall.innerHTML=''; used=[]; cls=''; draw(); } },560); }
+/* The clock, the score, and the combo: ×1 to ×5, with a bar that runs down to the moment it drops. */
+function renderHud(instant){
+  const left=mode==='play'?Math.max(0,endAt-now()):mode==='over'?0:ROUND; $('secs').textContent=fmtClock(left); $('clock').setAttribute('aria-label',fmtClock(left)+' left');
+  $('clock').style.setProperty('--pct',Math.min(100,left/ROUND*100)+'%'); $('clock').classList.toggle('low',mode==='play'&&left<=10);
+  if(instant){shown=score;$('score').textContent=fmtn(score);}
+  $('cx').textContent='×'+combo; $('combo').classList.toggle('hot',mode==='play'&&combo>1);
+  const cb=mode==='play'&&combo>1?Math.max(0,(comboUntil-now())/COMBO_WINDOW):0; $('cbar').style.width=(cb*100)+'%';
+}
+function renderGoal(){ const max=STARS[2]*1.08; $('gfill').style.width=Math.min(100,score/max*100)+'%';
+  STARS.forEach((t,i)=>{const e=$('st'+(i+1)); e.style.left=(t/max*100)+'%'; e.classList.toggle('on',score>=t);});
+  const nxt=STARS.find(t=>score<t); $('glabel').textContent=mode==='play'||mode==='over'?total+(total===1?' word':' words'):'Fill the bar'; $('gnext').textContent=nxt?fmtn(nxt-score)+' to next star':'All three stars!'; }
+/* In a challenge the other player has already played: their score, the number to beat (a sound as you pass it). Nothing about them otherwise. */
+function renderTarget(tapped){ const t=$('target'), d=duel, show=!!(d&&d.theirFinal!=null); t.hidden=!show; if(!show)return;
+  const passed=score>d.theirFinal; if(passed&&tapped&&!t.classList.contains('done'))setTimeout(sfx.ahead,250);
+  $('tscore').textContent=fmtn(d.theirFinal); $('tname').textContent=d.first+"'s score"; t.classList.toggle('done',passed); }
+/* ---------- the stop ---------- */
+function say(m,bad){ const s=$('status'); s.textContent=m; s.classList.toggle('bad',!!bad); }
+const usedIds=()=>new Set(tray.map(t=>t.id));
+/* ---------- the rack ----------
+   Built once per stop and never rebuilt on a tap: a tap flips one tile's class and appends one letter to the word.
+   Taps are read from the raw touches, every finger on its own, and mapped to the nearest letter by where they land
+   (a touch a little off a tile still gets it), so nothing but one class flip and one append runs before the paint. */
+const rack={tiles:new Map(),rects:null};
+function renderTiles(pop){
+  const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const cut=order.length<=6?3:4;
+  [order.slice(0,cut),order.slice(cut)].forEach(row=>{ const r=el('div','rowt');
+    row.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.tabIndex=-1; b.dataset.id=String(t.id); b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); rack.tiles.set(String(t.id),b); r.appendChild(b); });
+    box.appendChild(r); });
+  syncTiles(); }
+function measureRack(){ rack.rects=[]; rack.tiles.forEach((b,id)=>{ const r=b.getBoundingClientRect(); rack.rects.push({id,x:r.left+r.width/2,y:r.top+r.height/2,hw:r.width/2,hh:r.height/2}); }); }
+/* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. */
+function tileAt(x,y){ measureRack(); let best=null,bd=Infinity;
+  for(const r of rack.rects){ const dx=Math.max(0,Math.abs(x-r.x)-r.hw), dy=Math.max(0,Math.abs(y-r.y)-r.hh), d=dx*dx+dy*dy; if(d<bd){bd=d;best=r;} }
+  return best&&bd<=18*18?best.id:null; }
+function syncTiles(){ const used=new Set([...usedIds()].map(String)), live=mode==='play'&&!locked;
+  rack.tiles.forEach((b,id)=>{ b.classList.toggle('used',used.has(id)); b.setAttribute('aria-disabled',String(!live||used.has(id))); }); }
+function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b.classList.toggle('used',on); b.setAttribute('aria-disabled',String(on||mode!=='play'||locked)); }
+(()=>{ const box=$('tiles'), tr=$('tray'); let lastTouchAt=0;
+  const idOf=s=>{ const t=order.find(o=>String(o.id)===s); return t?t.id:null; };
+  const hit=(x,y,target)=>{ const s=tileAt(x,y); if(s!==null)return idOf(s); const b=target&&target.closest&&target.closest('.tile'); return b?idOf(b.dataset.id):null; };
+  /* Taps and slides. A finger that lands on a letter adds it the moment it lands; a finger that then slides over other
+     letters adds each one it crosses (a word in one gesture), once it has moved a little, so a wobbling tap adds nothing
+     extra. The end of the touch, a pointer event and the click all add the letter too: a letter already in the word is
+     not added again, so whichever of them the app delivers first wins and the rest do nothing. */
+  const fingers=new Map();
+  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY,slid:false}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } },{passive:true});
+  box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); if(!f)continue;
+      if(!f.slid&&Math.hypot(t.clientX-f.x,t.clientY-f.y)<14)continue; f.slid=true; const s=tileAt(t.clientX,t.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } } },{passive:true});
+  const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); if(f&&!f.slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
+  box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches)fingers.delete(t.identifier); },{passive:true});
+  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch')e.preventDefault(); const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  box.addEventListener('pointermove',e=>{ if(e.pointerType==='touch'||!(e.buttons&1))return; const s=tileAt(e.clientX,e.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } });
+  box.addEventListener('click',e=>{ const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  // The word: a touch on a letter there puts it back, the moment it lands.
+  const trayHit=e=>{ const b=e.target.closest&&e.target.closest('button'); if(b&&b.dataset.j!=null)removeAt(+b.dataset.j); };
+  tr.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); trayHit(e); },{passive:true});
+  tr.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch')return; e.preventDefault(); trayHit(e); });
+  tr.addEventListener('click',e=>{ if(performance.now()-lastTouchAt<700)return; trayHit(e); });
+  ['resize','orientationchange'].forEach(ev=>window.addEventListener(ev,()=>{rack.rects=null;}));
+  window.addEventListener('scroll',()=>{rack.rects=null;},{passive:true}); })();
+/* The word being made. */
+function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
+function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach((t,j)=>e.appendChild(trayLetter(t,j))); }
+function renderWall(){ const n=found.filter(f=>!f.rare).length; $('wstop').textContent='Stop '+(gi+1); $('wcount').textContent=n+' of '+cur.words.length+' words'; }
+function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy; $('enter').disabled=busy; }
+function render(pop){ if(!cur)return; renderTiles(pop); renderTray(); renderWall(); renderKeys(); }
+/* The next stop of the round, in its own hue. */
+function showStop(){
+  cur=makeStop(gi); order=cur.letters.split('').map((ch,id)=>({ch,id})); tray=[]; found=[]; words=new Set(cur.words); rareSet=new Set(cur.rare);
+  document.documentElement.style.setProperty('--h',hueFor(gi)); $('wall').innerHTML=''; locked=false; render(true); say(gi===0?'':cur.len+' letters.');
+}
+/* The menu: the challenges waiting on the player first, then the rest of their challenges, then the game and Play, then their best and rank.
+   The clock, the score bar and the letters wait for a round. */
+function playing(on){ ['hud','goalbox','playbox','controls','status'].forEach(id=>{$(id).hidden=!on;}); }
+function menu(){
+  mode='idle'; duel=null; locked=false; const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; playing(false);
+  document.documentElement.style.setProperty('--h',HUES[0]);
+  const foryou=el('div','foryou'), inbox=el('div','inbox'); foryou.id='foryou'; inbox.id='inbox'; foryou.hidden=true; inbox.hidden=true;
+  c.append(foryou,inbox,heroCard(),mineCard());
+  $('ticker').hidden=true; renderHud(true); renderGoal(); renderTarget(); renderTop(); renderInbox();
+}
+/* opp: the challenge being played ({id, name, theirFinal}), or null for a round on your own. sd: its seed, the stops both players get. */
+function start(opp,sd){
+  if(mode==='count'||mode==='play')return;
+  /* A new player's first round, on their own or a challenge's: how to play first, and this round once they tap OK. */
+  if(needsHowTo()){ showHowTo(()=>start(opp,sd)); return; }
+  hideHowTo(); clearInterval(timer); clearInterval(countTimer); closeSheet();
+  seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; total=0; fulls=0; rares=0; bestWord=''; combo=1; comboUntil=0; maxCombo=1; added=0;
+  lastSec=-1; starsNow=0; locked=true;
+  duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null;
+  mode='count'; cur=makeStop(0); order=cur.letters.split('').map((ch,id)=>({ch,id})); tray=[]; found=[]; $('wall').innerHTML='';
+  document.documentElement.style.setProperty('--h',hueFor(0)); render(); say('');
+  renderHud(true); renderGoal(); renderTarget(); playing(true); renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; let k=3;
+  const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();};
+  show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
+}
+function begin(){ mode='play'; $('cover').hidden=true; endAt=now()+ROUND; sfx.go(); showStop(); timer=setInterval(tick,100); tick(); }
+function countUp(){ const e=$('score'); const from=shown, to=score, t0=performance.now(), dur=260; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump');
+  const step=()=>{const k=Math.min(1,(performance.now()-t0)/dur); shown=from+(to-from)*k; e.textContent=fmtn(shown); if(k<1&&score===to)requestAnimationFrame(step); else {shown=score;e.textContent=fmtn(score);} }; requestAnimationFrame(step); }
+
+/* ---------- play ----------
+   The prototype's rules: tap letters (or type them) to build a word in the tray, Enter to play it. Three letters or more, each letter once, and in
+   the list (common or rare). A word that uses every letter ends the stop: the next one, with as many letters or more, comes up a moment later. */
+const canPlay=()=>mode==='play'&&!locked&&!!cur;
+function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=order.find(o=>o.id===id); if(!t)return;
+  tray.push(t); setTileUsed(id,true); const e=$('tray');
+  if(e.className==='tray'&&e.children.length===tray.length-1)e.appendChild(trayLetter(t,tray.length-1)); else renderTray();
+  if($('status').textContent)say(''); renderKeys(); }
+/* A letter tap makes no sound and no buzz: the buzz is for a correct word, and the sounds for words and the clock. */
+function typeLetter(ch){ if(!canPlay())return; const used=usedIds(), t=order.find(o=>o.ch===ch&&!used.has(o.id)); if(t)tapTile(t.id); else sfx.untap(); }
+function removeAt(j){ if(!canPlay()||j<0||j>=tray.length)return; const [t]=tray.splice(j,1); setTileUsed(t.id,false); renderTray(); renderKeys(); }
+function del(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
+function shuffle(){ if(!canPlay())return; for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];} sfx.shuffle(); renderTiles(true); }
+/* The tray shows the word it just played, green (gold for every letter) or red, then empties. */
+let clearT=null;
+function flashTray(cls,ms){ const letters=tray.slice(); tray=[]; syncTiles(); renderKeys(); const e=$('tray'); e.className='tray '+cls; e.innerHTML='';
+  letters.forEach(t=>{const b=el('button','',t.ch);b.type='button';b.tabIndex=-1;e.appendChild(b);});
+  clearTimeout(clearT); clearT=setTimeout(()=>{ if(!tray.length)renderTray(); },ms||380); }
+function enter(){
+  if(!canPlay())return; const w=tray.map(t=>t.ch).join('');
+  if(w.length<3){ sfx.no(); say(w.length?'Three letters or more.':'Tap some letters.',true); if(w.length)flashTray('no'); return; }
+  if(found.some(f=>f.w===w)){ sfx.dup(); say('Already found.',true); const c=[...$('wall').children].find(x=>x.dataset.w===w);
+    if(c){c.classList.add('flash');c.scrollIntoView({block:'nearest'});setTimeout(()=>c.classList.remove('flash'),600);} flashTray('no'); return; }
+  const isRare=!words.has(w)&&rareSet.has(w);
+  if(!words.has(w)&&!isRare){ sfx.no(); say('Not in the list.',true); flashTray('no'); return; }
+  const t=now(); if(t<=comboUntil&&total>0){ if(combo<MAXCOMBO){ combo++; sfx.combo(combo); } } else combo=1; comboUntil=t+COMBO_WINDOW; maxCombo=Math.max(maxCombo,combo);
+  const len=w.length, isFull=len===order.length, pts=worthOf(w,isRare,isFull,combo), before=score;
+  score+=pts; total++; if(isRare)rares++; found.push({w,pts,rare:isRare}); if(!bestWord||len>bestWord.length)bestWord=w; say('');
+  const tb=Math.min(MAX_ADDED-added,(TIMEB[len]||0)+(isFull?FULL_TIME:0)); if(tb>0){ endAt+=tb; added+=tb;
+    setTimeout(()=>{ if(mode!=='play')return; toast('+'+tb+' s','time',centre($('clock'))); sfx.timeplus(); const c=$('clock'); c.classList.add('plus'); setTimeout(()=>c.classList.remove('plus'),450); },350); }
+  if(isFull){ sfx.full(); buzz([40,30,40,30,120]); const f=$('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
+  else { sfx.word(len,combo); buzz(len>=5?[20,20,40]:15); }
+  if(isRare)sfx.rare();
+  flashTray(isFull?'gold':'ok',isFull?700:420);
+  const xy=centre($('tray')); burst(xy[0],xy[1],isFull?140:[0,0,0,12,20,36,60,90,120][len]+(combo-1)*6,COLS);
+  toast('+'+fmtn(pts)+(combo>1?'  ×'+combo:''),'',[xy[0],xy[1]-14]);
+  if(isFull)setTimeout(()=>toast('All '+len+' letters!','big'),160); else if(isRare)setTimeout(()=>toast('Rare find!','rare',[xy[0],xy[1]-60]),160);
+  else if(PRAISE[len])setTimeout(()=>toast(PRAISE[len],'',[xy[0],xy[1]-60]),160);
+  const chip=el('span','chip new l'+len+(isRare?' rare':'')+(isFull?' full':''),w); chip.dataset.w=w; const wall=$('wall'); wall.insertBefore(chip,wall.firstChild); wall.scrollTop=0;
+  STARS.forEach((th,k)=>{ if(before<th&&score>=th){ starsNow=k+1; setTimeout(()=>{sfx.star(k);const [sx,sy]=centre($('st'+(k+1)));burst(sx,sy,50,['#FFD23F','#FFF3A6','#FFB800']);},420+k*200); } });
+  countUp(); const cb=$('combo'); cb.classList.remove('bump'); void cb.offsetWidth; cb.classList.add('bump'); if(duel)renderTarget(true);
+  renderHud(); renderGoal(); renderWall();
+  if(isFull)nextStop();
+}
+/* Every letter used: on to the next stop after a moment to see it. */
+function nextStop(){ locked=true; fulls++; renderTiles(); renderKeys(); const n0=cur.len;
+  setTimeout(()=>{ if(mode!=='play')return; gi++; if(makeStop(gi).len>n0)sfx.grow(); showStop(); },reduce()?150:500); }
+function tick(){
+  if(mode!=='play')return; const t=now(), left=endAt-t;
+  if(combo>1&&t>comboUntil){ combo=1; sfx.comboLost(); }
+  const s=Math.ceil(left); if(s!==lastSec){lastSec=s; const tk=$('ticker'); if(s<=10&&s>0){sfx.tick(11-s); tk.hidden=false; tk.textContent=s; tk.classList.remove('beat'); void tk.offsetWidth; tk.classList.add('beat');} else tk.hidden=true;}
+  renderHud(); if(left<=0)endRound();
+}
+function endRound(){
+  mode='over'; locked=true; clearInterval(timer); timer=null; clearTimeout(clearT); tray=[]; $('ticker').hidden=true; sfx.timeup(); renderHud(true); render();
+  /* The stop's all-letter word, if it was not found. */
+  if(cur&&!found.some(f=>f.w.length===cur.len)){ const w=cur.words.filter(x=>x.length===cur.len)[0]||cur.full[0]; if(w)say('It was '+w.toUpperCase()+'.'); }
+  const stars=STARS.filter(t=>score>=t).length, mine=bankFor(score), newBest=score>save.best;
+  const rows=[['Words',total],['Stops',fulls],['Longest combo','×'+maxCombo]], total_=null;
+  if(newBest)save.best=score; save.bank+=mine; save.rounds++; store(); renderTop();
+  const pending=Board.submit(score);
+  if(duel){
+    /* A challenge round: the final goes to the server (kept on the device until it lands). The card says who is still to play, or shows the result. */
+    const d=duel;
+    save.pendingFinish={id:d.id,score}; store();
+    const played={stars,rows,total:total_,pending,score,newBest,animate:true};
+    const mineNow=findCh(d.id), base=mineNow||{id:d.id,status:'accepted',role:'challenger',me:{name:Board.name()||'You'},
+      them:{name:d.name,score:d.theirFinal},outcome:null,myAward:null,theirAward:null};
+    if(!base.me||base.me.score==null)base.me=Object.assign({},base.me,{score});
+    sendFinish(d.id,score);
+    setTimeout(()=>{ if(mode==='over')showResult(findCh(d.id)||base,played); },reduce()?100:1200);
+    return;
+  }
+  const title=newBest&&save.rounds>1?'New best!':['Nice try!','Good trip!','Great trip!','What a trip!'][stars], first=Board.first();
+  setTimeout(()=>results(first?title.replace(/!$/,', '+first+'!'):title,stars,pending,newBest),reduce()?100:1200);
+}
+/* Under the score at the end of a round: how many words, and the longest. */
+function sumLine(){ const p=el('p','sum',total+(total===1?' word':' words')); if(bestWord){ p.append(' · best '); p.append(el('b','',bestWord.toUpperCase())); } return p; }
+/* Which sheet is on screen: each one opened gets the next number.
+   A sheet has no Close or Cancel: a tap on the dimmed screen around it closes it and does what those did, onClose (dismiss() unless given). */
+let sheetSeq=0, sheetClose=null, sheetAt=0;
+function openSheet(title,body,acts,onClose){
+  sheetSeq++; sheetClose=onClose||dismiss; sheetAt=performance.now();
+  $('sh').textContent=title; const sb=$('sb'); sb.innerHTML=''; body.forEach(x=>{ if(x)sb.appendChild(x); });
+  const sa=$('sa'); sa.innerHTML=''; sa.className='acts'+(acts.length===1?' one':''); sa.hidden=!acts.length;
+  acts.forEach(a=>{const b=el('button','btn'+(a[2]?' primary':''),a[0]);b.type='button';b.onclick=()=>{sfx.ui();a[1]();};sa.appendChild(b);});
+  $('sheet').hidden=false; if(sa.lastChild)sa.lastChild.focus({preventScroll:true}); else $('card').focus({preventScroll:true});
+}
+function closeSheet(){ $('sheet').hidden=true; CH.waiting=null; CH.result=null; CH.showing=null; }
+/* A tap outside the sheet. Never while a round counts down or runs, and never in the first half second of a sheet (a tap left over from the round
+   just ended). */
+function sheetOutside(){
+  if($('sheet').hidden||mode==='count'||mode==='play'||performance.now()-sheetAt<500)return;
+  sfx.ui(); (sheetClose||dismiss)(); }
+/* The sheet's ✕: what a tap outside does, without the half-second wait, since nobody hits it by accident. */
+function sheetX(){
+  if($('sheet').hidden||mode==='count'||mode==='play')return;
+  sfx.ui(); (sheetClose||dismiss)(); }
+/* Closing a challenge sheet after a round goes back to the menu, not to the finished board. */
+function dismiss(){ closeSheet(); if(mode==='over')menu(); else renderInbox(); }
+/* Stars stamped in and the score counted up: the end of a round. */
+function animateScore(st,big,target,stars,won){
+  const t0=performance.now(), dur=reduce()?1:800; let lastTick=0;
+  const step=()=>{const k=Math.min(1,(performance.now()-t0)/dur); big.textContent=fmtn(target*k); const tk=Math.floor(k*14); if(tk!==lastTick){lastTick=tk;sfx.coin(tk);} if(k<1)requestAnimationFrame(step); else stamp(0);};
+  const stamp=i=>{ if(i>=stars){ if(won===true){sfx.win();const [x,y]=centre(big);burst(x,y,90+stars*30,COLS);} else if(won===false)sfx.lose(); return; } st.children[i].classList.add('on'); sfx.star(i); buzz(30); setTimeout(()=>stamp(i+1),reduce()?1:350); };
+  requestAnimationFrame(step);
+}
+function starsEl(lit){ const st=el('div','stars'); for(let i=0;i<3;i++)st.appendChild(el('span',i<lit?'on':'', '★')); return st; }
+function statsList(rows,total){ const dl=el('dl'); const add=(k,v,cls)=>{const w=el('div',cls||'');w.style.display='contents';w.append(el('dt','',k),el('dd','',String(v)));dl.appendChild(w);};
+  rows.forEach(r=>add(r[0],r[1])); if(total)add(total[0],total[1],'total'); return dl; }
+/* The end of a solo round: the stars and the score. The leaderboard shows only for a new high score; the score is saved to it either way. */
+function results(title,stars,pending,newBest){
+  if(mode!=='over')return;
+  const st=starsEl(0), big=el('div','bigscore','0');
+  openSheet(title,[st,big,sumLine(),newBest?boardBox(pending):null],[['Menu',()=>{closeSheet();menu();},false],['Play again',()=>start(null),true]]);
+  animateScore(st,big,score,stars,true);
+}
+
+/* ---------- challenges ----------
+   Real colleagues, through the bridge. Both play the server's seed, so the same letters, each whenever they like; the result shows once both
+   have played. What it pays (engagement points, scaled and capped) is the server's to say. */
+const CH={incoming:[],outgoing:[],active:[],recent:[],waiting:null,result:null,showing:null,celebrated:{},opened:false,accepting:false,sending:false,listSeq:-1};
+const KINDS=['incoming','outgoing','active','recent'];
+function canChallenge(){ const b=bridge(); return !!(b&&['challenge','challenges','getChallenge','acceptChallenge','declineChallenge','finishChallenge','colleagues'].every(k=>typeof b[k]==='function')); }
+function ask(method,...args){ const b=bridge(); if(!b||typeof b[method]!=='function')return Promise.reject(new Error('Challenges need the Sowaka app.'));
+  return Promise.resolve().then(()=>b[method](...args)); }
+const errText=e=>(e&&e.message)||'Something went wrong. Try again.';
+const firstOf=n=>String(n||'').trim().split(/\s+/)[0]||'them';
+/* A server that knows withdrawing, calling off and clearing sends a `lobby` with each challenge (the lobby itself is off); an older one sends none,
+   and none of those are offered. */
+const lobbyServer=v=>!!(v&&v.lobby&&typeof v.lobby==='object');
+const isOver=v=>v.status==='finished'||v.status==='declined'||v.status==='expired';
+function findCh(id){ for(const k of KINDS){ const v=CH[k].find(x=>x.id===id); if(v)return v; } return null; }
+/* Files a challenge under the list it now belongs in. */
+function upsert(v){ if(!v||!v.id)return v; KINDS.forEach(k=>{CH[k]=CH[k].filter(x=>x.id!==v.id);});
+  const k=v.status==='pending'?(v.role==='opponent'?'incoming':'outgoing'):v.status==='accepted'?'active':'recent';
+  if(k==='recent')CH.recent=[v].concat(CH.recent).slice(0,10); else CH[k].unshift(v); return v; }
+function forget(id){ KINDS.forEach(k=>{CH[k]=CH[k].filter(x=>x.id!==id);}); }
+function refreshChallenges(){ if(!canChallenge())return Promise.resolve();
+  return ask('challenges').then(r=>{ r=r||{}; KINDS.forEach(k=>{CH[k]=Array.isArray(r[k])?r[k]:[];}); renderInbox(); refreshOpenList(); }).catch(()=>{}); }
+/* Someone's face: their photo, else the first letter of their name on a colour picked by the name. */
+function avatar(name,photo){ const a=el('span','av'), s=String(name||'?'); let h=0; for(const ch of s)h=(h*31+ch.codePointAt(0))%360; a.style.setProperty('--ah',h);
+  a.textContent=([...(s.trim().split(/\s+/)[0]||'?')][0]||'?').toUpperCase();
+  if(photo){ const img=new Image(); img.alt=''; img.onload=()=>{a.textContent='';a.appendChild(img);}; img.src=photo; } a.setAttribute('aria-hidden','true'); return a; }
+function mini(label,fn,yes){ const b=el('button','mini'+(yes?' yes':''),label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; }
+function linkRow(items){ const r=el('div','links'); items.forEach(([label,fn])=>{ const b=el('button','link',label); b.type='button'; b.onclick=()=>{sfx.ui();fn();}; r.append(b); }); return r; }
+function leftText(v){ const ms=Date.parse(v.expiresAt)-Date.now(); if(!(ms>0))return 'Expired'; const h=Math.floor(ms/3600000); return h>=1?'Expires in '+h+' h':'Expires in '+Math.max(1,Math.round(ms/60000))+' min'; }
+/* A 'declined' challenge, as it really ended: declined, withdrawn or called off. */
+function declinedLine(v){ const n=firstOf(v.them.name), me=v.me&&v.me.userId;
+  if(v.withdrawnBy)return v.withdrawnBy===me?'You withdrew your challenge to '+n:n+' withdrew their challenge';
+  if(v.cancelledBy)return v.cancelledBy===me?'You called off the challenge with '+n:n+' called off the challenge';
+  return v.role==='challenger'?n+' declined':'You declined '+n; }
+const declinedTitle=v=>v.withdrawnBy?'Withdrawn':v.cancelledBy?'Called off':(v.role==='challenger'?firstOf(v.them.name)+' declined':'You declined');
+/* A challenge waiting on this player, as a card: "New challenge" with Accept (and Decline), or "Your turn" with Play, which starts the round at once,
+   on the challenge's letters (and Call it off, while neither has played). */
+function chRow(kind,v){
+  const r=el('div','chc'), row=el('div','row'), tx=el('div','tx'), bt=el('div','bt'), n=v.them.name, f=firstOf(n);
+  const small=(label,fn)=>{ const b=el('button','dl',label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; };
+  r.append(el('div','lab',kind==='in'?'New challenge':'Your turn'));
+  if(kind==='in'){ tx.append(el('b','',f+' challenged you to '+GAME),el('small','','Same letters, '+ROUND_TEXT+'. '+leftText(v)+'.'),small('Decline',b=>{b.disabled=true;decline(v.id);}));
+    bt.append(mini('Accept',b=>{b.disabled=true;accept(v.id,false);},true)); }
+  else { tx.append(el('b','','You vs '+f+' in '+GAME),el('small','',v.them.score!=null?f+' scored '+fmtn(v.them.score)+'. Beat it.':'Same letters for both of you. Play whenever you like.'));
+    if(lobbyServer(v)&&v.them.score==null)tx.append(small('Call it off',()=>askCallOff(v)));
+    bt.append(mini('Play',()=>startChallenge(v),true)); }
+  row.append(avatar(n),tx,bt); r.append(row); return r; }
+/* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge; its button withdraws or clears it. */
+function infoRow(v){
+  const r=el('div','crow tap'), p=el('p'), bt=el('div','bt'), n=firstOf(v.them.name); r.tabIndex=0; r.setAttribute('role','button'); r.append(avatar(v.them.name));
+  let line, sub='', pts=null;
+  if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=leftText(v); }
+  else if(v.status==='accepted'){ line='Waiting for '+n+' to play'; sub='You scored '+fmtn(v.me.score); }
+  else if(v.status==='finished'){ line=v.outcome==='won'?'You beat '+n:v.outcome==='lost'?n+' beat you':'Tied with '+n; sub=fmtn(v.me.score)+' – '+fmtn(v.them.score);
+    pts=v.myAward?v.myAward.points:0;
+    if(!pts&&v.myAward&&v.myAward.reason)sub+=' · '+v.myAward.reason; }
+  else if(v.status==='declined'){ line=declinedLine(v); }
+  else { line='Expired with '+n; sub='Nobody wins an expired challenge'; }
+  p.append(document.createTextNode(line),el('small','',sub));
+  if(pts!=null)bt.append(el('span','pts'+(pts>0?'':' zero'),pts>0?'+'+pts+' pts':'No pts'));
+  if(lobbyServer(v)&&v.status==='pending')bt.append(mini('Withdraw',()=>askWithdraw(v)));
+  if(lobbyServer(v)&&isOver(v))bt.append(mini('Clear',b=>{b.disabled=true;clearCh(v.id);}));
+  r.append(p,bt);
+  const go=()=>{sfx.ui();openChallenge(v.id);}; r.onclick=go; r.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} }; return r; }
+/* The menu's challenges: every one still in play on top (those waiting on this player first), and a link to the history of those that are over. */
+function renderInbox(){
+  const fy=$('foryou'), box=$('inbox'); if(!fy||!box)return; fy.innerHTML=''; box.innerHTML='';
+  if(!canChallenge()||mode!=='idle'){fy.hidden=true;box.hidden=true;return;}
+  // Everything still in play sits on top: first what waits on this player, then what waits on the other one.
+  const mine=[...CH.incoming.map(v=>['in',v]),...CH.active.filter(v=>v.me&&v.me.score==null).map(v=>['turn',v])];
+  const theirs=[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)];
+  fy.hidden=!mine.length&&!theirs.length; mine.forEach(([k,v])=>fy.append(chRow(k,v))); theirs.forEach(v=>fy.append(infoRow(v)));
+  // What is over is history, a link away.
+  box.hidden=!CH.recent.length; if(box.hidden)return;
+  const head=el('div','sect solo'), more=el('button','link','View history'); more.type='button'; more.onclick=()=>{sfx.ui();openList();};
+  head.append(more); box.append(head);
+}
+/* History: only challenges that are over. The ones still in play are on the menu, above. */
+function openList(){
+  const body=[];
+  if(CH.recent.length){ const b=el('div','inbox'); CH.recent.forEach(v=>b.append(infoRow(v))); body.push(b); }
+  else body.push(el('p','note','Nothing here yet. Finished challenges show here.'));
+  openSheet('History',body,[]); CH.listSeq=sheetSeq;
+}
+/* The list, drawn again when it is still the sheet on screen. */
+function refreshOpenList(){ if(CH.listSeq===sheetSeq&&!$('sheet').hidden)openList(); }
+
+/* ---------- picking a colleague ----------
+   The whole list is fetched as the page opens and kept on the device, so the sheet opens with names at once and refreshes behind them.
+   Search filters that list as you type; when the list may be cut short (the app asks for 50 at a time), the server is asked too, and
+   anyone it finds is added. A row can be tapped the moment it is drawn, and a refresh never redraws rows that did not change. */
+const PEOPLE={list:null,at:0,loading:null};
+const PEOPLE_PAGE=50;
+function shapePerson(p){ p=p||{}; return {userId:String(p.userId||''),name:String(p.name||'Colleague'),designation:String(p.designation||''),department:String(p.department||''),photoUrl:p.photoUrl?String(p.photoUrl):null}; }
+function peopleKept(){ if(!PEOPLE.list){ const k=cacheGet('people'); if(k&&Array.isArray(k.list)){ PEOPLE.list=k.list.map(shapePerson).filter(p=>p.userId); PEOPLE.at=+k.at||0; } } return PEOPLE.list; }
+function loadPeople(){ if(!canChallenge())return Promise.resolve(null); if(PEOPLE.loading)return PEOPLE.loading;
+  PEOPLE.loading=ask('colleagues','').then(r=>{ const list=((r&&Array.isArray(r.colleagues))?r.colleagues:[]).map(shapePerson).filter(p=>p.userId);
+      PEOPLE.list=list; PEOPLE.at=Date.now(); cachePut('people',{at:PEOPLE.at,list}); return list; })
+    .finally(()=>{ PEOPLE.loading=null; });
+  return PEOPLE.loading; }
+/* People a search found that the list did not have: added to it. */
+function addPeople(found){ const have=new Set((PEOPLE.list||[]).map(p=>p.userId)), extra=found.filter(p=>p.userId&&!have.has(p.userId));
+  if(!extra.length)return false; PEOPLE.list=(PEOPLE.list||[]).concat(extra).sort((a,b)=>a.name.localeCompare(b.name)); cachePut('people',{at:PEOPLE.at,list:PEOPLE.list}); return true; }
+function openPicker(){
+  // Several challenges may be open at once: no one-at-a-time check here.
+  const input=el('input'); input.type='search'; input.placeholder='Search by name'; input.autocomplete='off'; input.enterKeyHint='search'; input.setAttribute('aria-label','Search colleagues');
+  const wrap=el('div','lrow'); wrap.append(input);
+  const list=el('div','people'), msg=el('p','note',''); msg.hidden=true;
+  openSheet('Challenge a colleague',[wrap,msg,list],[]);
+  const mine=sheetSeq, here=()=>mine===sheetSeq&&!$('sheet').hidden;
+  const rows=new Map(); let drawn='', searching='', searched=new Set(), t=null, failed='';
+  const rowFor=p=>{ let b=rows.get(p.userId); if(!b){ b=el('button','person'); b.type='button'; b.onclick=()=>sendChallenge(b._p); rows.set(p.userId,b); }
+    const sig=p.name+'|'+p.designation+'|'+p.department+'|'+(p.photoUrl||'');
+    if(b._sig!==sig){ b._sig=sig; const s=el('span'); s.append(el('b','',p.name),el('small','',[p.designation,p.department].filter(Boolean).join(' · ')||'Colleague'));
+      b.replaceChildren(avatar(p.name,p.photoUrl),s,el('i','','Challenge')); }
+    b._p=p; return b; };
+  const draw=()=>{ if(!here())return; const q=input.value.trim(), ql=q.toLowerCase(), all=PEOPLE.list;
+    if(!all){ if(failed){ list.replaceChildren(); msg.hidden=false; msg.textContent=failed; return; }
+      if(!list.querySelector('.shim'))list.replaceChildren(...[0,1,2,3].map(()=>el('div','shim'))); msg.hidden=true; return; }
+    const people=ql?all.filter(p=>p.name.toLowerCase().includes(ql)):all, ids=people.map(p=>p.userId).join(',');
+    if(ids!==drawn){ drawn=ids; list.replaceChildren(...people.map(rowFor)); } else people.forEach(rowFor);
+    msg.hidden=people.length>0; msg.textContent=!q?'Nobody to challenge yet.':searching===q?'Looking for "'+q+'"…':'Nobody called "'+q+'" here.'; };
+  const search=()=>{ const q=input.value.trim(); if(!q||searched.has(q.toLowerCase())||!PEOPLE.list||PEOPLE.list.length<PEOPLE_PAGE)return;
+    searching=q; draw();
+    ask('colleagues',q).then(r=>{ searched.add(q.toLowerCase()); addPeople(((r&&Array.isArray(r.colleagues))?r.colleagues:[]).map(shapePerson)); })
+      .catch(()=>{}).finally(()=>{ if(searching===q)searching=''; draw(); }); };
+  input.addEventListener('input',()=>{ draw(); clearTimeout(t); t=setTimeout(search,300); });
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ clearTimeout(t); search(); } });
+  peopleKept(); draw();
+  if(!PEOPLE.list||PEOPLE.loading||Date.now()-PEOPLE.at>60000)
+    loadPeople().then(()=>draw()).catch(e=>{ if(!PEOPLE.list){ failed=errText(e); draw(); } });
+}
+function sendChallenge(p){ if(CH.sending||!p)return; CH.sending=true; sfx.horn(); openSheet('Challenging '+firstOf(p.name)+'…',[el('p','note','Sending…')],[]);
+  ask('challenge',p.userId).then(v=>{ upsert(v); waitFor(v); renderInbox(); }).catch(challengeRefused).finally(()=>{ CH.sending=false; }); }
+function challengeRefused(e){ const d=(e&&e.details)||{}, id=d.challengeId;
+  if(id&&d.reason==='one_open'){ sfx.no(); openSheet('One at a time',[el('p','note',errText(e)+'.')],[['Open it',()=>openChallenge(String(id)),true]]); return; }
+  if(id){ openChallenge(id); return; }
+  sfx.no(); openSheet("Couldn't send it",[el('p','note',errText(e))],[['Back',openPicker,false]]); }
+/* The challenger's wait for an answer. Still on screen when they accept, it opens the challenge, ready to play. */
+function waitFor(v){ const n=firstOf(v.them.name);
+  openSheet('Waiting for '+n,[el('p','note','Challenge sent. Once '+n+' accepts, you each play your round whenever you like, and the result shows when you have both played.'),el('p','note',leftText(v)+' if '+n+" doesn't answer.")],
+    lobbyServer(v)?[['Withdraw',()=>askWithdraw(v),false]]:[]);
+  CH.waiting=v.id; showing(v.id); }
+function openChallenge(id){
+  openSheet('Challenge',[el('p','note','Loading…')],[]);
+  return ask('getChallenge',id).then(v=>{ upsert(v); renderInbox(); showChallenge(v); })
+    .catch(e=>{ const known=findCh(id); if(known)showChallenge(known); else openSheet('Challenge',[el('p','note',errText(e))],[]); }); }
+/* Which challenge the sheet on screen is about, for an event that changes it. */
+function showing(id){ CH.showing={id,seq:sheetSeq}; }
+const isShowing=id=>!!(CH.showing&&CH.showing.id===id&&CH.showing.seq===sheetSeq&&!$('sheet').hidden);
+function showChallenge(v){ const n=firstOf(v.them.name);
+  if(v.status==='pending'&&v.role==='opponent'){
+    openSheet(v.them.name+' challenged you',[el('p','note','Same letters for both of you, '+ROUND_TEXT+'. The higher score wins, and the result shows once you have both played.'),el('p','note',leftText(v)+'.')],
+      [['Decline',()=>decline(v.id),false],['Accept and play',()=>accept(v.id,true),true]]);
+    return showing(v.id); }
+  if(v.status==='pending')return waitFor(v);
+  if(v.status==='accepted'&&v.me.score==null)return soloSheet(v);
+  return showResult(v,null);
+}
+/* An accepted challenge this player has not played: their round, on the challenge's letters, against the other's score if it is in. */
+function soloSheet(v,extra){ const n=firstOf(v.them.name);
+  const line=v.them.score!=null?n+' scored '+fmtn(v.them.score)+'. Beat it.':n+" hasn't played yet. You can go first.";
+  const body=[el('p','note',line),el('p','note','Same letters for both of you, '+ROUND_TEXT+'. The result shows once you have both played.')];
+  if(extra)body.unshift(el('p','note',extra));
+  if(lobbyServer(v)&&v.them.score==null)body.push(linkRow([['Call it off',()=>askCallOff(v)]]));
+  openSheet('You vs '+n,body,[['Play',()=>startChallenge(v),true]]); showing(v.id); }
+/* Accepting: from its card the challenge turns into "Your turn" on the menu; from its sheet ("Accept and play") the round starts at once. */
+function accept(id,play){ if(CH.accepting)return; CH.accepting=true;
+  ask('acceptChallenge',id).then(v=>{ upsert(v); closeSheet(); if(play&&v.status==='accepted')startChallenge(v); else renderInbox(); })
+    .catch(e=>{ sfx.no(); const other=e&&e.details&&e.details.challengeId, close=()=>{dismiss();refreshChallenges();};
+      openSheet("Couldn't accept it",[el('p','note',errText(e)+(other?'.':''))],other?[['Open it',()=>openChallenge(String(other)),true]]:[],close); })
+    .finally(()=>{ CH.accepting=false; }); }
+function decline(id){ ask('declineChallenge',id).then(v=>{ upsert(v); if(!$('sheet').hidden&&!CH.result)dismiss(); else renderInbox(); refreshOpenList(); })
+  .catch(e=>{ openSheet("Couldn't decline it",[el('p','note',errText(e))],[],()=>{dismiss();refreshChallenges();}); }); }
+/* Taking back a challenge nobody has answered, or calling off an accepted one neither has played: the server's decline does both, and tells the other player. */
+function askWithdraw(v){ const n=firstOf(v.them.name);
+  openSheet('Withdraw it?',[el('p','note','Your challenge to '+n+' is taken back, and '+n+' is told.')],[['Keep it',()=>openChallenge(v.id),false],['Withdraw',()=>endEarly(v,'withdraw'),true]]); }
+function askCallOff(v){ const n=firstOf(v.them.name);
+  openSheet('Call it off?',[el('p','note','The challenge with '+n+' ends with no result and no points, and '+n+' is told.')],[['Keep it',()=>openChallenge(v.id),false],['Call it off',()=>endEarly(v,'call_off'),true]]); }
+function endEarly(v,how){ const n=firstOf(v.them.name), word=how==='withdraw'?'withdraw':'call off';
+  openSheet(how==='withdraw'?'Withdrawing…':'Calling it off…',[el('p','note','One moment…')],[]);
+  ask('declineChallenge',v.id).then(nv=>{ upsert(nv); renderInbox();
+      openSheet(declinedTitle(nv),[el('p','note',declinedLine(nv)+'. No result and no points.')],[['Challenge someone',openPicker,true]]); })
+    .catch(e=>{ sfx.no(); openSheet("Couldn't "+word+' it',[el('p','note',errText(e))],[['Open it',()=>openChallenge(v.id),true]],()=>{dismiss();refreshChallenges();}); }); }
+/* Off this player's own list; nobody else's changes and nobody is told. */
+function clearCh(id){ ask('declineChallenge',id).then(()=>{ forget(id); if(CH.result&&CH.result.id===id)dismiss(); else { renderInbox(); refreshOpenList(); } })
+  .catch(e=>{ sfx.no(); openSheet("Couldn't clear it",[el('p','note',errText(e))],[],()=>{dismiss();refreshChallenges();}); }); }
+function startChallenge(v){ if(mode==='count'||mode==='play')return; if(v.seed==null)return openChallenge(v.id);
+  sfx.horn(); start({id:v.id,name:v.them.name,theirFinal:v.them.score},v.seed); }
+function rematch(v){ openSheet('Challenging '+firstOf(v.them.name)+'…',[el('p','note','Sending…')],[]);
+  ask('challenge',v.them.userId).then(nv=>{ upsert(nv); waitFor(nv); renderInbox(); }).catch(challengeRefused); }
+
+/* The final score, retried until the server has it; kept on the device in case the page closes first. */
+function sendFinish(id,sc,attempt){ attempt=attempt||0;
+  const drop=()=>{ if(save.pendingFinish&&save.pendingFinish.id===id){ delete save.pendingFinish; store(); } };
+  ask('finishChallenge',id,sc).then(v=>{ drop(); upsert(v); if(CH.result&&CH.result.id===id)showResult(v,CH.result.played); renderInbox(); })
+    .catch(e=>{ const st=e&&+e.status;
+      if(st>=400&&st<500&&st!==429){ drop(); if(CH.result&&CH.result.id===id){ CH.result.error=errText(e); showResult(CH.result.view,CH.result.played); } return; }
+      if(attempt<4)setTimeout(()=>sendFinish(id,sc,attempt+1),1500*(attempt+1));
+      else if(CH.result&&CH.result.id===id){ CH.result.error="Couldn't send your score yet. It goes the next time you open the game."; showResult(CH.result.view,CH.result.played); } }); }
+function vsBlock(v){
+  const w=el('div','vs'), side=(p,label,win)=>{ const s=el('div','side'+(win?' win':''));
+    s.append(el('small','',label),el('b','',p.score!=null?fmtn(p.score):'—'),el('em','',p.score!=null?(v.status==='finished'?'final':'played'):'not played yet')); return s; };
+  w.append(side(v.me||{},'You',v.outcome==='won'),el('span','mid','vs'),side(v.them||{},firstOf(v.them.name),v.outcome==='lost')); return w; }
+/* What the challenge paid this player, or why nothing. */
+function prizeLine(v){ const box=el('div','prize'), a=v.myAward, line=(l,r)=>box.append(el('span','',l),el('b','',r));
+  if(v.status==='finished'){
+    if(a&&a.points>0)line(a.kind==='win'?'You won':'For playing','+'+fmtn(a.points)+' point'+(a.points===1?'':'s'));
+    else { box.classList.add('none'); line('No points',a&&a.reason?a.reason:'this time'); } }
+  else if(v.status==='expired'){ box.classList.add('none'); line('No points','It expired before you both played'); }
+  else if(v.status==='declined')return null;
+  else { box.classList.add('none'); line('Points','once you have both played'); }
+  return box; }
+/* The challenge's card: who is still to play, or the result with both scores and the points. With `played` it is the end of this player's round too:
+   stars, the score, and the leaderboard on a new best. Drawn again on every change. */
+function showResult(v,played){
+  const prev=CH.result&&CH.result.id===v.id?CH.result:null;
+  CH.result={id:v.id,view:v,played,error:prev?prev.error:null};
+  const n=firstOf(v.them.name), done=v.status==='finished';
+  const title=done?(v.outcome==='won'?'You beat '+n+'!':v.outcome==='lost'?n+' wins this one':'A tie with '+n)
+    :v.status==='expired'?'This challenge expired':v.status==='declined'?declinedTitle(v)
+    :v.me&&v.me.score!=null?'Waiting for '+n+' to play':'You vs '+n;
+  const body=[];
+  let st=null, big=null;
+  if(played){ st=starsEl(played.animate?0:played.stars); big=el('div','bigscore',played.animate?'0':fmtn(played.score)); body.push(st,big,sumLine()); }
+  body.push(vsBlock(v)); body.push(prizeLine(v));
+  if(v.status==='declined'&&(v.withdrawnBy||v.cancelledBy))body.push(el('p','note',declinedLine(v)+'. No result and no points.'));
+  if(done&&v.myAward&&v.myAward.kind==='win'&&v.myAward.onlyOwnScore&&v.myAward.points>0)body.push(el('p','note',n+"'s score was too low to add to yours, so only your own counted toward points."));
+  if(done&&v.outcome==='lost'&&v.theirAward&&v.theirAward.points>0)body.push(el('p','note',n+' won '+v.theirAward.points+' point'+(v.theirAward.points===1?'':'s')+'.'));
+  if(done&&v.myAward&&v.myAward.points>0)body.push(el('p','note','Points go to your Sowaka rank.'));
+  if(!done&&v.status==='accepted'&&v.me&&v.me.score!=null)body.push(el('p','note','You scored '+fmtn(v.me.score)+'. '+n+" plays the same letters; the result shows here when they do, and you get a notification if you have left."));
+  if(CH.result.error)body.push(el('p','note',CH.result.error));
+  if(played&&played.newBest){ played.box=played.box||boardBox(played.pending); body.push(played.box); }
+  const over=isOver(v);
+  if(!played&&over&&lobbyServer(v))body.push(linkRow([['Clear from my list',()=>clearCh(v.id)]]));
+  const acts=over?[['Menu',()=>{closeSheet();menu();},false],['Rematch',()=>rematch(v),true]]
+    :[['Menu',()=>{closeSheet();menu();},false],['Play solo',()=>start(null),true]];
+  if(!played&&over)acts.shift();
+  openSheet(title,body,acts);
+  const celebrate=done&&!CH.celebrated[v.id]; if(celebrate)CH.celebrated[v.id]=true;
+  const won=celebrate?v.outcome!=='lost':null;
+  if(played&&played.animate){ played.animate=false; animateScore(st,big,played.score,played.stars,celebrate?(v.outcome==='lost'?false:true):null); }
+  else if(celebrate){ if(won){ sfx.win(); const [x,y]=centre($('sh')); burst(x,y,120,COLS); } else sfx.lose(); }
+}
+/* What the app passes on from the server, as it happens. */
+function onChallengeEvent(evt){
+  if(!evt||typeof evt!=='object')return;
+  if(evt.kind==='resync'){ refreshChallenges(); return; }
+  const id=evt.challengeId;
+  const v=evt.challenge; if(!v||!v.id)return; upsert(v); const n=firstOf(v.them.name), busy=mode==='play'||mode==='count';
+  switch(evt.kind){
+    case 'created': if(v.role==='opponent'&&!busy){ sfx.horn(); toast(n+' challenged you','feed'); } break;
+    case 'accepted':
+      if(CH.waiting===id){ CH.waiting=null; openChallenge(id); return; }
+      if(v.role==='challenger'&&!busy)toast(n+' accepted. Your turn!','feed'); break;
+    case 'declined':
+      if(CH.waiting===id){ sfx.no(); openSheet(n+' declined',[el('p','note','Maybe another time. Challenge someone else, or play a round on your own.')],[['Challenge someone',openPicker,false],['Play solo',()=>start(null),true]]); return; }
+      break;
+    case 'withdrawn':
+      if(isShowing(id)){ sfx.no(); openSheet(n+' withdrew it',[el('p','note','The challenge is off. Nothing to answer.')],[]); renderInbox(); return; }
+      if(!busy)toast(n+' withdrew their challenge','feed'); break;
+    case 'cancelled':
+      if(isShowing(id)){ sfx.no(); openSheet(n+' called it off',[el('p','note','No result and no points.')],[['Challenge someone',openPicker,true]]); renderInbox(); return; }
+      toast(n+' called off the challenge','feed'); break;
+    case 'scored': if(duel&&duel.id===id&&v.them.score!=null){ duel.theirFinal=v.them.score; renderTarget(); toast(n+' finished on '+fmtn(v.them.score),'feed'); } break;
+    case 'finished':
+      /* Both have played. On the menu, the result comes up; a card already showing this challenge is redrawn below. */
+      if(v.status==='finished'&&mode==='idle'&&$('sheet').hidden&&!(CH.result&&CH.result.id===id)){ showResult(v,null); renderInbox(); refreshOpenList(); return; }
+      break;
+    case 'expired':
+      if(CH.waiting===id){ openSheet('No answer from '+n,[el('p','note','The challenge expired. Nobody wins an expired challenge.')],[['Challenge someone',openPicker,true]]); return; }
+      break;
+  }
+  if(CH.result&&CH.result.id===id)showResult(v,CH.result.played);
+  renderInbox(); refreshOpenList();
+}
+window.onSowakaChallenge=evt=>{ try{ onChallengeEvent(evt); }catch(e){} };
+/* With the bridge: the lists, the colleagues (fetched now so the picker opens at once), a final that never landed, and the challenge a tapped notification opened the game for. */
+function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn'))menu(); refreshChallenges(); peopleKept(); loadPeople().catch(()=>{});
+  if(save.pendingFinish&&save.pendingFinish.id)sendFinish(save.pendingFinish.id,save.pendingFinish.score);
+  const want=bridge().startChallengeId; if(want&&!CH.opened){ CH.opened=true; openChallenge(String(want)); } }
+/* Back on the screen, on the menu: the lists and the board again, for anything that changed meanwhile. */
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='idle'){ refreshChallenges(); refreshBoard(); } });
+/* ---------- input ---------- */
+$('del').onclick=()=>del();
+$('shuf').onclick=()=>shuffle();
+$('enter').onclick=()=>enter();
+/* A keyboard plays too: letters, Enter, Backspace, and Space to shuffle. */
+document.addEventListener('keydown',e=>{ if(mode!=='play'||!$('sheet').hidden||!$('howto').hidden||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.key==='Enter'){ e.preventDefault(); enter(); } else if(e.key==='Backspace'){ e.preventDefault(); del(); } else if(e.key===' '){ e.preventDefault(); shuffle(); }
+  else if(/^[a-zA-Z]$/.test(e.key))typeLetter(e.key.toLowerCase()); });
+$('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.go();} };
+$('help').onclick=()=>{ sfx.ui(); showHowTo(null); };
+$('howok').onclick=()=>{ sfx.ui(); save.seenHowTo=true; store(); const then=howThen; hideHowTo(); if(then)then(); };
+$('sheet').addEventListener('click',e=>{ if(e.target===e.currentTarget)sheetOutside(); });
+$('sx').addEventListener('click',e=>{ e.stopPropagation(); sheetX(); });
+document.addEventListener('keydown',e=>{ if(e.key!=='Escape')return;
+  if(!$('howto').hidden){ if(!howThen)$('howok').click(); return; }
+  if(!$('sheet').hidden&&mode!=='over')sheetOutside(); });
+['gesturestart','gesturechange'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); if(loadSave()){ sndLabel(); if(mode==='idle')menu(); } refreshBoard(); challengesReady(); });
+menu();
+refreshBoard();
+challengesReady();
+</script>
+</body>
+</html>

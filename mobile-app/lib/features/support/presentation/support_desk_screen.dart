@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_models.dart';
+import '../../manager/data/manager_models.dart';
 import '../data/support_api_service.dart';
 import '../data/support_models.dart';
 import '../data/support_socket_service.dart';
@@ -19,7 +20,9 @@ Future<void> openSupportDesk(
   required AuthSession session,
   required Widget profileAction,
   required VoidCallback onNotifications,
-  Widget? bottomNav,
+  List<ManagerTab> tabs = const [],
+  ManagerTab? selectedTab,
+  ValueChanged<ManagerTab>? onSelectTab,
   String? ticketId,
 }) {
   return Navigator.of(context).push(
@@ -29,7 +32,9 @@ Future<void> openSupportDesk(
           api: SupportApiService(session: session),
           profileAction: profileAction,
           onNotifications: onNotifications,
-          bottomNav: bottomNav,
+          tabs: tabs,
+          selectedTab: selectedTab,
+          onSelectTab: onSelectTab,
         ),
         realtimeFactory:
             SupportDeskScreen.testRealtime ??

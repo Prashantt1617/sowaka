@@ -133,9 +133,11 @@ void main() {
 
     await tester.tap(find.text('Haider'));
     await tester.pumpAndSettle(const Duration(seconds: 1));
-    // A report's profile opens on its Request tab: what is waiting on the
-    // viewer.
+    // A report's profile opens on Work detail; Request comes next, with
+    // what is waiting on the viewer.
     expect(find.text('Request'), findsOneWidget);
+    await tester.tap(find.text('Request'));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
     await tester.dragUntilVisible(
       find.text('Approve').first,
       find.byType(Scrollable).last,

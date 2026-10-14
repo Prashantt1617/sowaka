@@ -21,13 +21,15 @@ import '../../shared/network_status.dart';
 /// posted it over the top of the video on a shade that keeps it legible, and
 /// the sound toggle in the bottom corner, in the feed and full screen alike.
 class FeedVideo extends StatefulWidget {
-  const FeedVideo({super.key, required String this.url, this.header}) : filePath = null;
+  const FeedVideo({super.key, required String this.url, this.header, this.surfaceWrapper})
+      : filePath = null;
 
   /// A file on this phone: the composer's preview of what is about to go up.
   const FeedVideo.file({super.key, required String path})
       : url = null,
         filePath = path,
-        header = null;
+        header = null,
+        surfaceWrapper = null;
 
   /// The API's `/media/...` path, or a whole URL.
   final String? url;
@@ -36,6 +38,12 @@ class FeedVideo extends StatefulWidget {
   /// The author row laid over the top of the video. Null keeps the plain
   /// player, as the composer shows it.
   final FeedVideoHeaderBuilder? header;
+
+  /// Wraps the picture itself — not the author row, the menu or the buttons
+  /// over it — so the feed can take a double-tap on the video alone.
+  final Widget Function(Widget surface)? surfaceWrapper;
+
+  Widget _wrap(Widget surface) => surfaceWrapper?.call(surface) ?? surface;
 
   @override
   State<FeedVideo> createState() => _FeedVideoState();
@@ -194,8 +202,7 @@ class _FeedVideoState extends State<FeedVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _TopShade(),
-        child,
+        widget._wrap(Stack(fit: StackFit.expand, children: [const _TopShade(), child])),
         Positioned(
           left: _chromeSide,
           top: _chromeTop,
@@ -256,17 +263,24 @@ class _FeedVideoState extends State<FeedVideo> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              ClipRect(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: value.size.width,
-                    height: value.size.height,
-                    child: VideoPlayer(controller),
-                  ),
+              widget._wrap(
+                Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRect(
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: value.size.width,
+                          height: value.size.height,
+                          child: VideoPlayer(controller),
+                        ),
+                      ),
+                    ),
+                    if (header != null) const _TopShade(),
+                  ],
                 ),
               ),
-              if (header != null) const _TopShade(),
               if (!value.isPlaying)
                 Center(
                   child: value.isBuffering && _wantsPlay

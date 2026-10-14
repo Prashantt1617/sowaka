@@ -160,7 +160,9 @@ void main() {
     await _tearDown(tester, bloc);
   });
 
-  testWidgets('the poll card opens its author and commenters', (tester) async {
+  testWidgets('the poll card opens its author, and shows no comments', (
+    tester,
+  ) async {
     final (opened, bloc) = await _pumpFeed(
       tester,
       _post(
@@ -177,8 +179,9 @@ void main() {
       ),
     );
     await tester.tap(find.text('Author 2'));
-    await tester.tap(find.text('James Lee'));
-    expect(opened, ['author-2', 'james']);
+    expect(opened, ['author-2']);
+    // A poll takes votes only: its comments are not shown under it.
+    expect(find.text('James Lee'), findsNothing);
     await _tearDown(tester, bloc);
   });
 

@@ -6,7 +6,14 @@ part of 'games_home.dart';
 
 /// One vector piece of a picture, at its place in design points.
 class _ArtPiece {
-  const _ArtPiece(this.file, this.left, this.top, this.width, this.height, {this.turns = 0});
+  const _ArtPiece(
+    this.file,
+    this.left,
+    this.top,
+    this.width,
+    this.height, {
+    this.turns = 0,
+  });
 
   final String file;
   final double left;
@@ -59,7 +66,10 @@ class _ComposedArt extends StatelessWidget {
                 height: piece.height,
                 child: Transform.rotate(
                   angle: piece.turns * math.pi / 180,
-                  child: SvgPicture.asset('${GamesStyle.asset}/${piece.file}', fit: BoxFit.fill),
+                  child: SvgPicture.asset(
+                    '${GamesStyle.asset}/${piece.file}',
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ),
             for (final letter in letters)
@@ -87,8 +97,11 @@ class _ComposedArt extends StatelessWidget {
 }
 
 /// Caption This: the moody cat sticker (node 3605:31597).
-Widget _moodyCatArt() =>
-    SvgPicture.asset('${GamesStyle.asset}/art_moody_cat.svg', width: 128.5, height: 112);
+Widget _moodyCatArt() => SvgPicture.asset(
+  '${GamesStyle.asset}/art_moody_cat.svg',
+  width: 128.5,
+  height: 112,
+);
 
 /// Best Photo on its live card (node 3690:43102, "Photo with overlapping
 /// camera"): the photo tipped back, the camera over its corner, a sparkle
@@ -114,7 +127,11 @@ class _LivePhotoArt extends StatelessWidget {
       alignment: Alignment.center,
       transform: Matrix4.rotationZ(turn * math.pi / 180)
         ..multiply(Matrix4.skewX(skew * math.pi / 180)),
-      child: SvgPicture.asset('${GamesStyle.asset}/$file', width: width, height: height),
+      child: SvgPicture.asset(
+        '${GamesStyle.asset}/$file',
+        width: width,
+        height: height,
+      ),
     );
     if (wrap != null) child = wrap(child);
     return Positioned(
@@ -237,7 +254,10 @@ class _GamePicture extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (game.key == 'odd-one-out') {
-      return ColoredBox(color: background ?? GamesStyle.mintArt, child: _oddOneOutArt());
+      return ColoredBox(
+        color: background ?? GamesStyle.mintArt,
+        child: _oddOneOutArt(),
+      );
     }
     final accent = game.accentColor ?? GamesStyle.purple;
     final placeholder = Container(
@@ -313,7 +333,9 @@ class _IllustrationTile extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(_radius),
         border: Border.all(color: GamesStyle.ink, width: _stroke),
-        boxShadow: const [BoxShadow(color: GamesStyle.ink, offset: Offset(0, 5))],
+        boxShadow: const [
+          BoxShadow(color: GamesStyle.ink, offset: Offset(0, 5)),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_radius - _stroke),
@@ -335,7 +357,9 @@ class _IllustrationTile extends StatelessWidget {
     return SizedBox(
       width: 97.5,
       height: 97.5,
-      child: Center(child: _Rocking(motion: rocking, child: tile)),
+      child: Center(
+        child: _Rocking(motion: rocking, child: tile),
+      ),
     );
   }
 }
@@ -350,11 +374,17 @@ class _IllustrationTile extends StatelessWidget {
 /// then back to +5°. In turns, as RotationTransition takes them.
 final _rock = TweenSequence<double>([
   TweenSequenceItem(
-    tween: Tween(begin: 5 / 360, end: -10 / 360).chain(CurveTween(curve: Curves.easeOut)),
+    tween: Tween(
+      begin: 5 / 360,
+      end: -10 / 360,
+    ).chain(CurveTween(curve: Curves.easeOut)),
     weight: 50,
   ),
   TweenSequenceItem(
-    tween: Tween(begin: -10 / 360, end: 5 / 360).chain(CurveTween(curve: Curves.easeOut)),
+    tween: Tween(
+      begin: -10 / 360,
+      end: 5 / 360,
+    ).chain(CurveTween(curve: Curves.easeOut)),
     weight: 50,
   ),
 ]);
@@ -390,7 +420,8 @@ class _Rocking extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final motion = this.motion;
-    if (motion == null) return Transform.rotate(angle: 5 * math.pi / 180, child: child);
+    if (motion == null)
+      return Transform.rotate(angle: 5 * math.pi / 180, child: child);
     return RotationTransition(turns: _rock.animate(motion), child: child);
   }
 }

@@ -156,8 +156,9 @@ void main() {
   });
 
   test('the bridge goes in ahead of the page and a name cannot break out of it', () {
-    final script = gameBridgeScript(playerName: 'Tanvi </script><b>');
+    final script = gameBridgeScript(playerName: 'Tanvi </script><b>', userId: 'u-2</script>');
     expect(script, contains(r'"Tanvi \u003c/script>\u003cb>"'));
+    expect(script, contains(r'S.userId = "u-2\u003c/script>";'));
     expect(script, isNot(contains('</script>')));
     expect(script, contains('SowakaGame.postMessage'));
 

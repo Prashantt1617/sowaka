@@ -13,7 +13,9 @@ class GameScoring {
     final label = json['label'];
     return GameScoring(
       higherIsBetter: json['higherIsBetter'] != false,
-      label: label is String && label.trim().isNotEmpty ? label.trim() : 'points',
+      label: label is String && label.trim().isNotEmpty
+          ? label.trim()
+          : 'points',
     );
   }
 
@@ -124,9 +126,7 @@ class GameCatalogEntry {
 List<GameCatalogEntry> parseGameCatalog(Map<String, dynamic> json) {
   final rows = json['games'];
   if (rows is! List) return const [];
-  return [
-    for (final row in rows) ?GameCatalogEntry.tryParse(row),
-  ];
+  return [for (final row in rows) ?GameCatalogEntry.tryParse(row)];
 }
 
 String _string(Object? value) => value is String ? value : '';
@@ -246,7 +246,8 @@ class GameLeaderboard {
     return GameLeaderboard(
       entries: [
         for (final row in (json['leaderboard'] as List<dynamic>? ?? const []))
-          if (row is Map) GameLeaderEntry.fromJson(Map<String, dynamic>.from(row)),
+          if (row is Map)
+            GameLeaderEntry.fromJson(Map<String, dynamic>.from(row)),
       ],
       myRank: me is Map ? (me['rank'] as num?)?.toInt() : null,
       myBest: me is Map ? me['score'] as num? : null,

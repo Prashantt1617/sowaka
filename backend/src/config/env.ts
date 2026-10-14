@@ -174,6 +174,20 @@ export const env = {
    * anywhere else.
    */
   appPageDir: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? (process.env.APP_PAGE_DIR ?? '').trim() : '',
+  /**
+   * The same for game pages (`GET /play/:key`): a folder of `<key>.html`
+   * served instead of the catalog's copy, as version "dev", on a developer's
+   * machine only. For trying a game page in the simulator, or a live Scribble
+   * build against a local backend, without uploading it to the catalog.
+   */
+  gamePageDir: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? (process.env.GAME_PAGE_DIR ?? '').trim() : '',
+  /**
+   * Signs the tickets a Scribble page carries (see `scribble-ticket.service`).
+   * Unset, a key is derived from the Mongo connection string so every instance
+   * agrees without configuration; set it in production all the same, so the
+   * database credentials and the game's signing key are not one secret.
+   */
+  scribbleTicketSecret: (process.env.SCRIBBLE_TICKET_SECRET ?? '').trim(),
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
     clientId: process.env.ZOOM_CLIENT_ID ?? '',
@@ -212,4 +226,9 @@ if (process.env.OTP_DEV_BYPASS === 'true' && !env.otpDevBypass) {
 if ((process.env.APP_PAGE_DIR ?? '').trim() && !env.appPageDir) {
   // eslint-disable-next-line no-console
   console.warn(`[app-pages] APP_PAGE_DIR is set on a ${env.nodeEnv} host and has been ignored; pages come from the database.`);
+}
+
+if ((process.env.GAME_PAGE_DIR ?? '').trim() && !env.gamePageDir) {
+  // eslint-disable-next-line no-console
+  console.warn(`[game-pages] GAME_PAGE_DIR is set on a ${env.nodeEnv} host and has been ignored; pages come from the catalog.`);
 }
