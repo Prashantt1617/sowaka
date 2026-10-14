@@ -5,6 +5,7 @@ import {
   ScribbleOp,
   ScribblePlayer,
   ScribbleRoom,
+  ScribbleStatus,
   ScribbleTurnEnd,
   ScribbleView,
   ScribbleWordLevel,
@@ -213,6 +214,22 @@ export function turnKeyOf(room: ScribbleRoom): string | null {
 
 export function playerOf(room: ScribbleRoom, userId: string): ScribblePlayer | undefined {
   return room.players.find((p) => p.userId === userId);
+}
+
+/**
+ * Whether a pending invite is still worth showing its invitee: the room is
+ * still there and still in its lobby, the invite has not run out, and they
+ * are not already sitting in it. Judged on the game's clock.
+ */
+export function inviteOpen(
+  invite: { expiresAt: number },
+  room: { status: ScribbleStatus; players: Array<{ userId: string }> } | null,
+  userId: string,
+  now: number,
+): boolean {
+  if (!room || room.status !== 'lobby') return false;
+  if (invite.expiresAt <= now) return false;
+  return !room.players.some((p) => p.userId === userId);
 }
 
 const inPlay = (room: ScribbleRoom) => room.status === 'picking' || room.status === 'drawing' || room.status === 'reveal';

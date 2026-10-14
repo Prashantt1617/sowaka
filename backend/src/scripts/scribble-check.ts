@@ -20,10 +20,11 @@ import type { User } from '../models/user.model';
 import { hashSessionToken } from '../services/auth.service';
 import { closeConnectRealtime, initConnectRealtime } from '../services/connect-realtime.service';
 import type { NotificationInput } from '../services/notification.service';
+import { gamesHomeFor } from '../services/games-home.service';
 import { SCRIBBLE, advance, guessOutcome, guessPoints, hintsWanted, maskOf, newRoom, normalizeGuess, validateOp } from '../services/scribble-engine';
 import { closeScribbleRealtime, initScribbleRealtime } from '../services/scribble-realtime.service';
-import { configureScribble, peekRoom, tickScribble } from '../services/scribble-room.service';
-import { resetScribbleMemory } from '../services/scribble-store';
+import { configureScribble, openInvitesFor, peekRoom, tickScribble } from '../services/scribble-room.service';
+import { pendingInvitesOf, recordInvite, resetScribbleMemory } from '../services/scribble-store';
 import { HOP_TTL_MS, TICKET_TTL_MS, mintTicket, redactTicket, verifyTicket } from '../services/scribble-ticket.service';
 
 const args = process.argv.slice(2);
@@ -384,6 +385,49 @@ async function runChecks() {
     const outside = await request(D, 'room:invite', { userId: C0.userId });
     check('you must be in a room to invite', !outside.ok && outside.status === 404);
 
+    // ------------------------------------------------------------ pending invites
+    console.log('\npending invites');
+    /** The invitee's raw records, as the store holds them. */
+    const pendingOf = (userId: string) => pendingInvitesOf(ORG, userId, clock.now);
+    const kept = await pendingOf(D0.userId);
+    const lobbyRoom = await peekRoom(ORG, code);
+    check('the invite is kept for the invitee: one record for the room, naming the latest inviter', kept.length === 1 && kept[0].code === code && kept[0].org === ORG && kept[0].inviter.userId === B0.userId && kept[0].inviter.name === B0.name, JSON.stringify(kept));
+    check('it lives as long as the room can', kept[0]?.expiresAt === (lobbyRoom?.createdAt ?? 0) + SCRIBBLE.roomMaxMs && kept[0]?.createdAt === clock.now);
+    const openD = await openInvitesFor(ORG, D0.userId);
+    check('and reads as open while the lobby stands, with who is in it', openD.length === 1 && openD[0].code === code && openD[0].from.userId === B0.userId && openD[0].from.name === B0.name && openD[0].players === 3 && openD[0].expiresAt === kept[0]?.expiresAt, JSON.stringify(openD));
+    const D2 = await open(D0);
+    await waitFor('D2 replay', () => D2.invites.length > 0);
+    await wait(100);
+    check('a fresh socket for the invitee is sent the invite again, once', D2.invites.length === 1 && D2.invites[0]?.code === code && D2.invites[0]?.from.userId === B0.userId && D2.invites[0]?.from.name === B0.name, JSON.stringify(D2.invites));
+    const C4 = await open(C0);
+    await waitFor('C4 state', () => C4.states.length > 0);
+    await wait(100);
+    check('someone with no invite is sent nothing', C4.invites.length === 0);
+    C4.socket.close();
+    const homeD = await gamesHomeFor(D0.userId);
+    const card = homeD.invites[0];
+    check('the Games home lists it as an invite card', homeD.invites.length === 1 && card?.gameKey === 'scribble' && card?.code === code && card?.from.userId === B0.userId && card?.from.name === B0.name && card?.from.photoUrl === null && card?.players === 3, JSON.stringify(homeD.invites));
+    check('with the room\'s two-hour limit as its expiry', card?.expiresAt instanceof Date && card.expiresAt.getTime() === kept[0]?.expiresAt);
+    check('and the rest of the home as before', Array.isArray(homeD.challenges) && Array.isArray(homeD.games) && homeD.games.some((g) => g.key === 'scribble'));
+    check('the Games home of someone not invited has an empty list', (await gamesHomeFor(C0.userId)).invites.length === 0);
+    const dJoined = await request(D2, 'room:join', { code });
+    await waitFor('A sees D', () => (player(A, D0.userId) ?? null) !== null);
+    check('joining the room answers the invite', dJoined.ok && (await pendingOf(D0.userId)).length === 0 && !(room(A)?.invited ?? []).some((i) => i.userId === D0.userId));
+    check('and the Games home no longer shows it', (await gamesHomeFor(D0.userId)).invites.length === 0);
+    const inRoom = await request(A, 'room:invite', { userId: D0.userId });
+    check('inviting someone already in the room keeps no record', inRoom.ok && (await pendingOf(D0.userId)).length === 0);
+    // A record that somehow survived the join (two instances, say) goes with a removal.
+    await recordInvite(D0.userId, { org: ORG, code, inviter: { userId: A0.userId, name: A0.name }, createdAt: clock.now, expiresAt: clock.now + SCRIBBLE.roomMaxMs });
+    const dKicked = await request(A, 'room:kick', { userId: D0.userId });
+    await waitFor('D kicked', () => D2.kicked.length > 0 && (player(A, D0.userId) ?? null) === null);
+    check('removing the invitee clears their invite', dKicked.ok && (await pendingOf(D0.userId)).length === 0);
+    const dReinvited = await request(A, 'room:invite', { userId: D0.userId });
+    await waitFor('D reinvited', () => D2.invites.length >= 2);
+    const restored = await openInvitesFor(ORG, D0.userId);
+    check('a fresh invite from the host puts it back', dReinvited.ok && restored.length === 1 && restored[0].code === code && restored[0].from.userId === A0.userId);
+    D2.socket.close();
+    await wait(100);
+
     // ------------------------------------------------------------ a turn
     console.log('\na turn');
     pushes.length = 0;
@@ -396,6 +440,7 @@ async function runChecks() {
     check('the drawer gets three words, one of each level', choices.map((c) => c.level).join() === 'easy,medium,hard' && choices.every((c) => c.word.length > 0));
     check('guessers get no choices and no word', room(B)?.choices === null && room(B)?.word === null);
     check('the invite list is cleared at the start', (room(A)?.invited ?? []).length === 0);
+    check('and the invitees\' pending invites go with it', (await pendingInvitesOf(ORG, D0.userId, clock.now)).length === 0 && (await openInvitesFor(ORG, D0.userId)).length === 0);
     const stalePick = await request(B, 'scribble:pick', { i: 0, turn: turnKey(B) });
     check('a guesser cannot pick', !stalePick.ok && stalePick.status === 409);
     const picked = await request(A, 'scribble:pick', { i: 1, turn: turnKey(A) });
@@ -545,8 +590,12 @@ async function runChecks() {
     await playUntil(A, () => room(A)?.status === 'over', pickers);
     check('the game ends after two rounds', room(A)?.status === 'over' && room(B)?.status === 'over' && room(C3)?.status === 'over', room(A)?.status);
     check('the podium carries everyone\'s scores and no drawer', (room(A)?.players ?? []).length === 3 && room(A)?.drawerId === null && player(A, B0.userId)?.score === 475 && player(A, C0.userId)?.score === 175 && player(A, A0.userId)?.score === 150);
-    await wait(500);
-    const boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    // Written in the background, several round trips to the database away.
+    let boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    for (let tries = 0; boards.length < 3 && tries < 40; tries += 1) {
+      await wait(100);
+      boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    }
     check('the final scores went to the game\'s board, by the server', boards.length === 3 && boards.find((b) => b.userId === B0.userId)?.score === 475 && boards.find((b) => b.userId === A0.userId)?.score === 150, JSON.stringify(boards.map((b) => [b.userId, b.score])));
     const notOverAgain = await request(B, 'room:again');
     check('only the host can play again', !notOverAgain.ok && notOverAgain.status === 403);
@@ -580,17 +629,23 @@ async function runChecks() {
     await request(C3, 'room:leave');
     await waitFor('C left again', () => (room(B)?.players ?? []).length === 1);
     const heardByC = C3.feeds.length;
+    const dLines = (kind: string) => B.feeds.filter((f) => f.kind === kind && f.userId === D0.userId).length;
+    const [dJoins, dLeaves] = [dLines('join'), dLines('leave')];
     await request(D, 'room:join', { code });
-    await waitFor('B hears D join', () => B.feeds.some((f) => f.kind === 'join' && f.userId === D0.userId));
+    await waitFor('B hears D join', () => dLines('join') > dJoins);
     await request(D, 'room:leave');
-    await waitFor('B hears D leave', () => B.feeds.some((f) => f.kind === 'leave' && f.userId === D0.userId));
+    await waitFor('B hears D leave', () => dLines('leave') > dLeaves);
     check("a removed player's sockets are out of the room's channel: the feed no longer reaches them", C3.feeds.length === heardByC);
+    await request(B, 'room:invite', { userId: D0.userId });
+    await request(B, 'room:invite', { userId: C0.userId });
+    check('invites into the idle lobby are pending', (await pendingInvitesOf(ORG, D0.userId, clock.now)).some((i) => i.code === code) && (await pendingInvitesOf(ORG, C0.userId, clock.now)).some((i) => i.code === code));
     B.socket.close();
     await wait(200);
     await advanceClock(SCRIBBLE.lobbyIdleMs - 1000);
     check('an empty lobby is kept for ten minutes', (await peekRoom(ORG, code)) !== null);
     await advanceClock(1000);
     check('then deleted', (await peekRoom(ORG, code)) === null);
+    check('and every invite into it with it', (await pendingInvitesOf(ORG, D0.userId, clock.now)).length === 0 && (await pendingInvitesOf(ORG, C0.userId, clock.now)).length === 0);
     const afterwards = await request(A, 'room:join', { code });
     check('and its code is gone', !afterwards.ok && afterwards.status === 404);
 

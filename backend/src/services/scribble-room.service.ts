@@ -15,6 +15,7 @@ import {
   applyGuess,
   chooseWord,
   firstName,
+  inviteOpen,
   makeCode,
   newRoom,
   parseCode,
@@ -31,6 +32,7 @@ import {
   appendStrokes,
   claimOnce,
   claimWithin,
+  clearInvite,
   clearSeatIf,
   clearStrokes,
   createRoom,
@@ -39,8 +41,10 @@ import {
   leaseRoom,
   liveRooms,
   mutateRoom,
+  pendingInvitesOf,
   readRoom,
   readStrokes,
+  recordInvite,
   releaseRoom,
   seatOf,
   setSeat,
@@ -163,8 +167,19 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
         emitter?.seat(effect.userId, room.org, room.code, false);
         lastSent.delete(effect.userId);
         await clearSeatIf(room.org, effect.userId, room.code);
+        // A fresh invite from the host puts the card back.
+        await clearInvite(room.org, effect.userId, room.code);
         break;
       case 'invite':
+        // Kept until answered, so the Games tab and a later socket can show
+        // it; a second invite to the same room refreshes the one record.
+        await recordInvite(effect.userId, {
+          org: room.org,
+          code: effect.code,
+          inviter: { userId: effect.from.userId, name: effect.from.name },
+          createdAt: deps.now(),
+          expiresAt: room.createdAt + SCRIBBLE.roomMaxMs,
+        });
         emitter?.toUser(effect.userId, 'room:invite', { from: effect.from, code: effect.code });
         break;
       case 'notify':
@@ -194,6 +209,10 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
           emitter?.seat(userId, room.org, room.code, false);
           lastSent.delete(userId);
           emitter?.toUser(userId, 'room:state', { room: null });
+        }
+        // Nobody is left with a card for a room that is gone.
+        for (const userId of new Set([...effect.players, ...room.invited.map((i) => i.userId)])) {
+          await clearInvite(room.org, userId, room.code);
         }
         break;
       }
@@ -342,6 +361,8 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
   if (!changed) throw new ScribbleError(404, NO_ROOM);
   await setSeat(seat.org, seat.userId, code);
   emitter?.seat(seat.userId, seat.org, code, true);
+  // In the room now: the invite that brought them is answered.
+  await clearInvite(seat.org, seat.userId, code);
   return { room: viewFor(changed.room, seat.userId, deps.now()), strokes: await readStrokes(seat.org, code) };
 }
 
@@ -405,9 +426,13 @@ export async function startRoom(seat: Seat): Promise<void> {
     if (r.status !== 'lobby') throw new ScribbleError(409, 'The game has already started.');
     const online = r.players.filter((p) => p.online).length;
     if (online < SCRIBBLE.minPlayers) throw new ScribbleError(409, `Need ${SCRIBBLE.minPlayers} players to start.`);
-    return { result: true, effects: startGame(r, deps.now(), deps.random, randomUUID().slice(0, 8)), write: true };
+    // The engine empties the invite list as the game starts; remembered here
+    // so the invitees' pending cards go with it.
+    const invitees = r.invited.map((i) => i.userId);
+    return { result: invitees, effects: startGame(r, deps.now(), deps.random, randomUUID().slice(0, 8)), write: true };
   });
   if (!changed) throw new ScribbleError(404, 'That room has closed.');
+  for (const userId of changed.result) await clearInvite(seat.org, userId, room.code);
 }
 
 export async function kickFromRoom(seat: Seat, rawUserId: unknown): Promise<void> {
@@ -469,6 +494,44 @@ export async function drawingContext(seat: Seat): Promise<{ org: string; code: s
 /** Appends validated ops to the turn's log; the socket layer fans them out. */
 export async function logStrokes(org: string, code: string, ops: ScribbleOp[]): Promise<void> {
   await appendStrokes(org, code, ops);
+}
+
+// ---------------------------------------------------------------- pending invites
+
+/** An invite still worth answering, as the Games tab and a fresh socket show it. */
+export interface OpenInvite {
+  code: string;
+  from: { userId: string; name: string; photoUrl: string | null };
+  /** In the room now. */
+  players: number;
+  createdAt: number;
+  expiresAt: number;
+}
+
+/**
+ * The invites waiting on this person whose room is still in its lobby, oldest
+ * first. A record whose room has gone, started, or run out is dropped as it
+ * is met, so the list is never stale for more than one read.
+ */
+export async function openInvitesFor(org: string, userId: string): Promise<OpenInvite[]> {
+  const now = deps.now();
+  const open: OpenInvite[] = [];
+  for (const invite of await pendingInvitesOf(org, userId, now)) {
+    const room = await readRoom(org, invite.code);
+    if (!inviteOpen(invite, room, userId, now)) {
+      await clearInvite(org, userId, invite.code);
+      continue;
+    }
+    const inviter = playerOf(room!, invite.inviter.userId);
+    open.push({
+      code: invite.code,
+      from: { userId: invite.inviter.userId, name: inviter?.name ?? invite.inviter.name, photoUrl: inviter?.photoUrl ?? null },
+      players: room!.players.length,
+      createdAt: invite.createdAt,
+      expiresAt: invite.expiresAt,
+    });
+  }
+  return open;
 }
 
 // ---------------------------------------------------------------- presence

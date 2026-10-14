@@ -25,6 +25,7 @@ const MAX_LOG_OPS = 8000;
 const roomKey = (org: string, code: string) => `scribble:room:${org}:${code}`;
 const strokesKey = (org: string, code: string) => `scribble:strokes:${org}:${code}`;
 const seatKey = (org: string, userId: string) => `scribble:seat:${org}:${userId}`;
+const invitesKey = (org: string, userId: string) => `scribble:invites:${org}:${userId}`;
 const lockKey = (org: string, code: string) => `scribble:lock:${org}:${code}`;
 const onceKey = (name: string) => `scribble:once:${name}`;
 const LIVE_KEY = 'scribble:live';
@@ -32,6 +33,8 @@ const LIVE_KEY = 'scribble:live';
 const memoryRooms = new Map<string, string>();
 const memoryStrokes = new Map<string, string[]>();
 const memorySeats = new Map<string, string>();
+/** Per invitee key, the pending invites by room code. */
+const memoryInvites = new Map<string, Map<string, PendingInvite>>();
 const memoryOnce = new Map<string, number>();
 const memoryLive = new Set<string>();
 /** Serialises in-process mutations of one room, which is all the CAS memory needs. */
@@ -328,6 +331,81 @@ export async function clearSeatIf(org: string, userId: string, code: string): Pr
   if ((await seatOf(org, userId)) === code) await setSeat(org, userId, null);
 }
 
+// ---------------------------------------------------------------- pending invites
+
+/**
+ * An invite that has not been answered: what the Games tab and a later
+ * Scribble socket show the invitee, since the push itself is gone the moment
+ * it is dismissed. Kept per invitee, one record per room code; it lives as
+ * long as the room can (two hours) and is dropped when the invitee joins or
+ * is removed, when the game starts, or when the room is deleted.
+ */
+export interface PendingInvite {
+  org: string;
+  code: string;
+  inviter: { userId: string; name: string };
+  /** Epoch ms, the game's clock. */
+  createdAt: number;
+  expiresAt: number;
+}
+
+/** Writes or refreshes the invitee's record for this room. */
+export async function recordInvite(userId: string, invite: PendingInvite): Promise<void> {
+  const key = invitesKey(invite.org, userId);
+  const client = redis();
+  if (client) {
+    try {
+      // The hash outlives its longest record: no record lives past a room's two hours.
+      await client.multi().hset(key, invite.code, JSON.stringify(invite)).expire(key, ROOM_TTL_SECONDS).exec();
+      return;
+    } catch (error) {
+      logger.error('Scribble invite record failed', { org: invite.org, code: invite.code, userId }, error);
+    }
+  }
+  const held = memoryInvites.get(key) ?? new Map<string, PendingInvite>();
+  held.set(invite.code, invite);
+  memoryInvites.set(key, held);
+}
+
+/** The invitee's pending invites that have not expired by `now`; expired ones are dropped as they are met. */
+export async function pendingInvitesOf(org: string, userId: string, now: number): Promise<PendingInvite[]> {
+  const key = invitesKey(org, userId);
+  let records: PendingInvite[] = [];
+  const client = redis();
+  let fromRedis = false;
+  if (client) {
+    try {
+      records = Object.values(await client.hgetall(key)).map((raw) => JSON.parse(raw) as PendingInvite);
+      fromRedis = true;
+    } catch (error) {
+      logger.error('Scribble invites read failed', { org, userId }, error);
+    }
+  }
+  if (!fromRedis) records = [...(memoryInvites.get(key)?.values() ?? [])];
+  const kept: PendingInvite[] = [];
+  for (const record of records) {
+    if (record.expiresAt > now) kept.push(record);
+    else await clearInvite(org, userId, record.code);
+  }
+  return kept.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export async function clearInvite(org: string, userId: string, code: string): Promise<void> {
+  const key = invitesKey(org, userId);
+  const client = redis();
+  if (client) {
+    try {
+      await client.hdel(key, code);
+    } catch (error) {
+      logger.error('Scribble invite clear failed', { org, code, userId }, error);
+    }
+  }
+  const held = memoryInvites.get(key);
+  if (!held) return;
+  held.delete(code);
+  if (held.size === 0) memoryInvites.delete(key);
+}
+
 // ---------------------------------------------------------------- once
 
 /** True the first time `name` is claimed within `ttlMs`; false while the claim holds. */
@@ -386,6 +464,7 @@ export function resetScribbleMemory(): void {
   memoryRooms.clear();
   memoryStrokes.clear();
   memorySeats.clear();
+  memoryInvites.clear();
   memoryOnce.clear();
   memoryCounts.clear();
   memoryLive.clear();
