@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<title>Odd One Out</title>
 <!-- A game, not a document: no pinch or double-tap zoom, and the page runs under the notch with its own safe-area padding. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <!-- The app's channels are there from the first byte, so the page knows at once it sits under the app's bar. -->
 <script>if(window.SowakaShare||window.Sowaka)document.documentElement.classList.add('app')</script>
-<meta name="theme-color" content="#15122B">
+<meta name="theme-color" content="#F7DCE7">
 <meta name="color-scheme" content="dark">
-<title>Odd One Out</title>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Lilita+One&family=Sora:wght@400;600;700;800&display=swap">
@@ -19,18 +20,18 @@
    player's name, the company's leaderboard and colleague challenges; in a plain browser there is no bridge, scores stay on this device and there are no challenges. */
 [hidden]{display:none!important}
 :root{
-  color-scheme:dark; --h:45;
-  --bg:#15122B; --panel:#211D42; --panel2:#2A2553; --line:#3B3668; --ink:#F6F1FF; --muted:#A9A3CC; --deep:#0D0B1D;
-  --accent:hsl(var(--h) 95% 60%); --accent-deep:hsl(var(--h) 85% 40%); --accent-ink:#15122B;
-  --good:#4BE39A; --bad:#FF6B6B; --gold:#FFD23F; --blue:#4C9BFF; --pink:#FF6FB5;
+  color-scheme:dark; --h:45; --padt:max(14px,env(safe-area-inset-top));
+  --bg:#1A1420; --panel:#251D2C; --panel2:#2F2637; --line:#43384D; --ink:#FBF6F8; --muted:#B5A9B9; --deep:#0E0A12;
+  --accent:hsl(var(--h) 95% 60%); --accent-deep:hsl(var(--h) 85% 40%); --accent-ink:#1E0A26;
+  --good:#4BE39A; --bad:#FF5A5F; --gold:#FFD23F; --blue:#C9B8E8; --pink:#F2A7C3;
   --display:"Lilita One","Arial Rounded MT Bold","Trebuchet MS",system-ui,sans-serif;
   --body:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
   --small:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 *{box-sizing:border-box}
-html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+html{overflow-x:clip;background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
 body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;
-  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  padding:var(--padt) max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 input{-webkit-user-select:text;user-select:text}
@@ -44,7 +45,10 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 .hright{display:flex;align-items:center;gap:8px}
 .pill{font-family:var(--display);font-weight:400;font-size:.95rem;line-height:1;height:34px;padding:0 14px;border-radius:30px;border:2px solid var(--line);
   background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap}
-.pill.q{width:34px;padding:0;font-size:1.2rem;color:var(--gold)}
+.pill.q{font-family:var(--body);font-weight:600;font-size:.8rem;padding:0 14px}
+.pill.snd{width:34px;padding:0;display:grid;place-items:center;color:var(--gold)}
+.pill.snd svg{width:18px;height:18px;display:block}
+.pill.snd.off{color:var(--muted)}
 .pill:active{transform:translateY(1px)}
 
 /* The play HUD: the clock, the score, the streak, and the bar to the three stars. */
@@ -117,15 +121,84 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 
 /* The menu. Challenges for you first, each on its own card. */
 .foryou{display:flex;flex-direction:column;gap:12px}
-.chc{background:var(--panel);border:2px solid var(--gold);border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;color:var(--ink);text-align:left;box-shadow:0 4px 0 var(--deep)}
-.chc .lab{font-family:var(--body);font-weight:800;font-size:10px;line-height:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+.chc{background:var(--panel);border:1.5px solid var(--line);border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;color:var(--ink);text-align:left;box-shadow:0 4px 0 var(--deep)}
+.chc .lab{display:flex;justify-content:space-between;align-items:center;gap:8px;font-family:var(--body);font-weight:600;font-size:11px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold)}
+.chc.turn .lab{color:var(--pink)}
 .chc .row{display:flex;gap:12px;align-items:flex-start}
 .chc .tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.chc .tx b{font-family:var(--body);font-weight:600;font-size:13px;line-height:16px;color:var(--ink)}
+.chc .tx b{font-family:var(--body);font-weight:400;font-size:14px;line-height:16px;color:var(--ink)}
 .chc .tx small{font-family:var(--body);font-size:11.5px;line-height:15px;color:var(--muted)}
 .chc .bt{flex-shrink:0;padding-bottom:4px}
-.dl{font-family:var(--body);font-weight:600;font-size:11.5px;color:var(--muted);background:none;border:0;padding:2px 0 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.dl{font-family:var(--body);font-weight:400;font-size:11.5px;color:var(--muted);background:none;border:0;padding:2px 0 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .dl:disabled{opacity:.5}
+/* Home: the game's picture across the whole top of the page, under the header, with your rank and the leaderboard in it. */
+.top{position:relative;margin:calc(-1*var(--padt)) calc(50% - 50vw) 0;padding:var(--padt) max(16px,env(safe-area-inset-right)) 18px max(16px,env(safe-area-inset-left));
+  background:radial-gradient(110% 85% at 50% 40%,#FCEAF1 0,#F7DCE7 60%,#F0CFDC 100%);border-bottom:3px solid var(--deep);overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;gap:8px}
+.top::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(30,10,38,.07) 2px,transparent 2.5px);background-size:22px 22px;pointer-events:none}
+.top>*{position:relative;width:100%;max-width:440px}
+.top header h1{background:var(--gold);color:#1E0A26;box-shadow:0 3px 0 var(--deep)}
+.top .pill{background:rgba(30,10,38,.85);border-color:rgba(30,10,38,.2)}
+.top .art{display:grid;place-items:center}
+.top .art svg{width:min(300px,82%);height:auto;display:block;overflow:visible}
+.top .tt{margin:0;text-align:center;font-family:var(--display);font-weight:400;font-size:1.7rem;line-height:1;text-transform:uppercase;color:#1E0A26;letter-spacing:.02em}
+.rankbar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch;margin-top:4px;padding:8px;border-radius:20px;background:#1E0A26;box-shadow:0 5px 0 rgba(30,10,38,.35)}
+.rankbar.solo{grid-template-columns:1fr;background:none;box-shadow:none;padding:0;margin-top:2px}
+.rankbar.solo .lbbtn{flex-direction:row;width:auto;min-height:44px;font-size:.9rem;gap:8px}
+.mystat{display:flex;align-items:center;gap:12px;min-width:0;padding:8px 14px;border-radius:14px;background:var(--panel)}
+.mystat .big{font-family:var(--display);font-weight:400;font-size:2.2rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums;flex-shrink:0}
+.mystat .big small{font-size:.55em;margin-right:1px;opacity:.8}
+.mystat .side{min-width:0;display:flex;flex-direction:column;gap:3px}
+.mystat .side span{font-family:var(--body);font-weight:400;font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mystat .side b{font-family:var(--body);font-weight:400;font-size:.85rem;color:var(--ink);white-space:nowrap}
+.mystat .side b em{font-style:normal;font-weight:600;color:var(--ink);margin-left:2px}
+.lbbtn{font-family:var(--body);font-weight:600;font-size:.78rem;line-height:1;white-space:nowrap;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  padding:6px 14px;border-radius:14px;border:0;background:var(--gold);color:#1E0A26;cursor:pointer;box-shadow:0 4px 0 #B88F00}
+.lbbtn svg{width:22px;height:22px;flex-shrink:0}
+.lbbtn:active{transform:translateY(3px);box-shadow:0 1px 0 #B88F00}
+/* The two tabs under the picture: Play now and Challenges (open by default). */
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;border-radius:20px;background:var(--panel);border:2px solid var(--line);margin-top:4px}
+.tabs.one{grid-template-columns:1fr}
+.tab{position:relative;font-family:var(--body);font-weight:600;font-size:.95rem;line-height:1;min-height:46px;border-radius:14px;border:0;background:transparent;color:var(--muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.tab.on{background:var(--gold);color:#1E0A26;box-shadow:0 3px 0 #B88F00}
+.tab.on.pk{background:var(--gold);color:#1E0A26;box-shadow:0 3px 0 #B88F00}
+.badge{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--pink);color:#1E0A26;font-family:var(--body);font-weight:600;font-size:.75rem;display:grid;place-items:center}
+.tab.on .badge{background:#1E0A26;color:var(--gold)}
+.tab.on.pk .badge{background:#1E0A26;color:var(--gold)}
+.panel{display:flex;flex-direction:column;gap:14px}
+/* Play now: the round in one card. */
+.playcard{display:flex;flex-direction:column;align-items:stretch;gap:14px;padding:16px;border-radius:22px;background:var(--panel);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.rules div{display:flex;flex-direction:column;align-items:center;gap:6px;font-family:var(--body);font-weight:400;font-size:.78rem;line-height:1.2;color:var(--muted)}
+.rules i{font-style:normal;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:var(--panel2)}
+.playcard .btn.go{background:var(--gold);border-color:var(--gold);box-shadow:0 5px 0 #B88F00;font-size:2rem;min-height:68px}
+/* Challenges: three cards on top (new, your turn, waiting), then those challenges, then Challenge a colleague. */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{--tc:var(--gold);font:inherit;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px 10px 12px 12px;border-radius:18px;cursor:pointer;text-align:left;
+  background:var(--panel);border:2px solid var(--line);color:var(--ink);box-shadow:0 4px 0 var(--deep);transition:transform .07s,box-shadow .07s,border-color .15s,background .15s}
+.tile .ti{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:var(--tc);color:#1E0A26;font-size:.95rem}
+.tile b{font-family:var(--display);font-weight:400;font-size:2.1rem;line-height:.95;font-variant-numeric:tabular-nums}
+.tile span{font-family:var(--body);font-weight:800;font-size:.64rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);line-height:1.2}
+.tile.t2{--tc:var(--pink)} .tile.t3{--tc:var(--blue)}
+.tile.on{border-color:var(--tc);background:var(--panel2);box-shadow:0 4px 0 var(--deep),0 0 20px -6px var(--tc)}
+.tile.on span{color:var(--tc)}
+.tile:active{transform:translateY(3px);box-shadow:0 1px 0 var(--deep)}
+.chlist{display:flex;flex-direction:column;gap:10px}
+.clock2{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border-radius:999px;background:var(--panel2);color:var(--ink);font-family:var(--body);font-weight:400;
+  font-size:11.5px;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock2 svg{width:12px;height:12px;flex-shrink:0}
+.clock2.soon{background:rgba(255,90,95,.18);color:#FF9A9D}
+.sub{margin:4px 1px -2px;font-family:var(--body);font-weight:400;font-size:.8rem;color:var(--muted)}
+.chlist .empty{margin:0;padding:22px 16px;border-radius:18px;border:2px dashed var(--line);text-align:center;font-family:var(--body);font-size:.88rem;color:var(--muted)}
+.btn.send{background:var(--gold);border-color:var(--gold);color:#1E0A26;box-shadow:0 4px 0 #B88F00;font-size:1.25rem}
+.btn.send:active{box-shadow:0 1px 0 #B88F00}
+/* Leaderboard: a gap where ranks are skipped, and your own row pinned under the list. */
+.gap{text-align:center;color:var(--muted);font-family:var(--display);font-size:1.2rem;line-height:.6;padding:2px 0 6px;letter-spacing:.3em;flex-shrink:0}
+.pin{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:14px;background:var(--gold);color:#1E0A26;font-family:var(--body);font-weight:400;font-size:.88rem}
+.pin .pos{background:#1E0A26!important;color:var(--gold)!important;margin-right:8px}
+.pin b{font-family:var(--display);font-weight:400;font-size:1.1rem}
+.lbh .of{color:var(--ink)}
 /* The game: its picture over a panel, with Play. */
 .hero{background:var(--panel);border:2px solid var(--line);border-radius:20px;box-shadow:0 5px 0 var(--deep);overflow:hidden;display:flex;flex-direction:column;text-align:left}
 .hero .art{height:132px;background:var(--good);border-bottom:2px solid var(--line);display:grid;place-items:center;overflow:hidden}
@@ -150,10 +223,10 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;
 .sect .link{padding:2px 0;text-decoration:none;font-weight:700;color:var(--accent)}
 .sect.solo{justify-content:center}
 .crow{font:inherit;color:var(--ink);display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:16px;background:var(--panel);
-  border:2px solid var(--line);text-align:left;width:100%}
+  border:1.5px solid var(--line);text-align:left;width:100%}
 div.crow.tap{cursor:pointer}
 .crow p{margin:0;font-family:var(--body);font-size:.84rem;line-height:1.25;color:var(--ink);min-width:0}
-.crow p small{display:block;font-family:var(--small);color:var(--muted);font-size:.75rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.crow p small{display:block;font-family:var(--body);color:var(--muted);font-size:.75rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .crow .bt{display:flex;gap:6px;align-items:center}
 .crow .pts{font-family:var(--display);font-size:1.05rem;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
 .crow .pts.zero{color:var(--muted);font-family:var(--small);font-weight:700;font-size:.75rem}
@@ -163,7 +236,7 @@ div.crow.tap{cursor:pointer}
 .av img{width:100%;height:100%;object-fit:cover;display:block}
 
 /* Inside the app the page sits under the app's own bar, which has already cleared the notch: no second top inset. */
-html.app body{padding-top:14px}
+html.app{--padt:14px}
 html.app .sheet{padding-top:16px}
 html.app .howto{padding-top:20px}
 
@@ -190,14 +263,15 @@ html.app .howto{padding-top:20px}
 .ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
 .lb.full .ranks{max-height:min(64vh,560px)}
 .rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
-  font-family:var(--body);font-size:.88rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+  font-family:var(--body);font-size:.88rem;font-weight:400;font-variant-numeric:tabular-nums;color:var(--ink)}
 .rank>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank b{font-family:var(--display);font-weight:400;font-size:1.05rem;flex-shrink:0}
-.rank.me{outline:2px solid var(--accent);outline-offset:-2px}
+.rank.me{outline:2px solid var(--gold);outline-offset:-2px;background:#3A3020}
 .lb .pos{font-style:normal;display:inline-grid;place-items:center;vertical-align:middle;min-width:28px;height:28px;padding:0 4px;margin-right:8px;border-radius:999px;
   background:var(--panel);color:var(--muted);font-family:var(--display);font-size:.85rem;line-height:1}
 .rank.p1 .pos{background:var(--gold);color:var(--accent-ink)}
-.rank.me .pos{background:var(--accent);color:var(--accent-ink)}
+.rank.me .pos{background:var(--gold);color:#1E0A26}
+.rank.p2 .pos{background:#F2D7E9;color:#1E0A26} .rank.p3 .pos{background:var(--pink);color:#1E0A26}
 .lb .wait{margin:0;font-family:var(--body);font-size:.85rem;color:var(--muted)}
 .card dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-variant-numeric:tabular-nums}
 .card dt{color:var(--muted)} .card dd{margin:0;text-align:right;font-weight:700}
@@ -284,16 +358,16 @@ html.app .howto{padding-top:20px}
   .grid.in .cell{animation:pop .16s cubic-bezier(.2,1.6,.4,1) both} .cell.ok{animation:okpop .22s ease-in forwards} .cell.no{animation:shake .3s}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
   .ticker.beat{animation:tickbeat .9s ease-out} .demo span.odd{animation:hint 1s ease-in-out infinite} .shim{animation:shim 1.2s linear infinite}
-  .hero .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
+  .top .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
 }
 @media (prefers-reduced-motion:reduce){.toast{opacity:1} .btn,.combo,.goal .fill,.target{transition:none}}
 </style>
 </head>
 <body>
-<main class="app">
-  <header>
+<main class="app" id="app">
+  <header id="hdr">
     <h1>Odd One Out</h1>
-    <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button><button class="pill q" id="help" type="button" aria-label="How to play">?</button></div>
+    <div class="hright"><button class="pill q" id="help" type="button">How to play</button><button class="pill snd" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button></div>
   </header>
   <div class="hud" id="hud">
     <div class="clock" id="clock" role="timer" aria-label="Seconds left"><span id="secs">45</span></div>
@@ -351,7 +425,7 @@ function boardAt(sd,g){
   return {n,base,odd,flip,at:Math.floor(r()*n*n)};
 }
 /* seeded-boards:end */
-const HUES=[45,200,330,150,265];
+const HUES=[45,40,48,38,44];
 const MILE={5:'On fire!',10:'Unstoppable!',15:'Machine!',20:'Legend!',30:'Unreal!'};
 let save={bank:0,best:0,rounds:0,sound:true,scores:[],seenHowTo:false}; /* seenHowTo: the how-to-play card was read once (OK), so it never comes up by itself again */
 /* The save is kept per account in the app, under oddone.v1.<userId>, so the next person to sign in on this phone starts clean; in a plain browser (no
@@ -362,10 +436,11 @@ const store=()=>{try{localStorage.setItem(saveKey,JSON.stringify(save));}catch(e
 
 /* ---------- Sowaka bridge ----------
    In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
-     Sowaka.userId                      -> "u-…": the signed-in person's id, the key of this page's save and caches on the device
      Sowaka.playerName()                -> "Tanvi Shah"
      Sowaka.submitScore(n)              -> Promise of the board after it, posted under the player's own session
      Sowaka.leaderboard()               -> Promise of {entries:[{rank,name,score,me}], me:{rank,score}|null, company, label}
+                                           entries: the top 10 plus the two ranks either side of the player (the page draws ⋯ between them);
+                                           total: how many players are on the board
    and for colleague challenges (each a Promise; a refusal rejects with .message, .status and sometimes .details):
      Sowaka.colleagues(query)           -> {colleagues:[{userId,name,designation,department,photoUrl}]}
      Sowaka.challenge(userId)           -> the new challenge
@@ -398,7 +473,7 @@ loadSave();
 let board=null; /* the last board seen, for the best line under the grid */
 function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
   const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
-  return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
+  return {rows,me,total:+r.total||0,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
 function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
   return {rows:list.map((x,i)=>({rank:i+1,name:'You',score:x.s,me:x.t===at})),me:null,title:'Your best on this device',shared:false}; }
 function keepLocal(s){ const t=Date.now(); save.scores=save.scores.concat({s,t}).sort((a,b)=>b.s-a.s||a.t-b.t).slice(0,LOCAL_TOP); store(); return t; }
@@ -410,13 +485,12 @@ const Board={
     return Promise.resolve().then(()=>b.submitScore(s)).then(shapeBoard).catch(()=>Object.assign(localBoard(t),{offline:true})); },
   fetch(){ const b=bridge(); if(!b)return Promise.resolve(localBoard(-1)); return Promise.resolve().then(()=>b.leaderboard()).then(shapeBoard); },
 };
-/* A small cache on the device, one per account: the last leaderboard and colleague list, so the menu and the picker open with names at once.
-   Keyed by the player's id; under an older app, which gives no id, by a hash of their name as before. */
+/* A small cache on the device, one per player: the last leaderboard and colleague list, so the menu and the picker open with names at once. */
 function cacheKey(k){ const id=playerId(); if(id)return 'oddone.'+k+'.'+id; let h=7; for(const ch of Board.name()||'?')h=(h*31+ch.codePointAt(0))>>>0; return 'oddone.'+k+'.'+h.toString(36); }
 function cacheGet(k){ try{ const v=JSON.parse(localStorage.getItem(cacheKey(k))||'null'); return v&&typeof v==='object'?v:null; }catch(e){ return null; } }
 function cachePut(k,v){ try{ localStorage.setItem(cacheKey(k),JSON.stringify(v)); }catch(e){} }
 function seeBoard(b){ if(!b||!b.shared)return; board=b; if(b.me&&b.me.score>save.best){save.best=b.me.score;store();}
-  if(!b.offline)cachePut('board',{rows:b.rows,me:b.me,title:b.title,company:b.company}); renderTop(); }
+  if(!b.offline)cachePut('board',{rows:b.rows,me:b.me,total:b.total,title:b.title,company:b.company}); renderTop(); }
 function refreshBoard(){ if(!bridge())return;
   if(!board){ const kept=cacheGet('board'); if(kept&&Array.isArray(kept.rows)){ board=Object.assign({me:null,title:'Leaderboard',company:''},kept,{shared:true}); renderTop(); } }
   Board.fetch().then(seeBoard).catch(()=>{}); }
@@ -424,13 +498,19 @@ function refreshBoard(){ if(!bridge())return;
    In the app it is the company's board and only that (a round that could not reach it says so, and shows no other list); in a plain browser,
    with no bridge, it is this device's scores. */
 function drawBoard(box,b){
-  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
+  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); if(b.total&&b.shared)h.append(el('span','of',fmtn(b.total)+' players')); box.appendChild(h);
   if(b.offline){ box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.')); return; }
   if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
-  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score))); list.appendChild(w); };
-  b.rows.forEach(r=>row(r,r.me&&b.shared?(r.name+' (you)'):r.name));
-  if(b.me&&b.shared&&!b.rows.some(r=>r.me))row({rank:b.me.rank,score:b.me.score,me:true},(Board.name()||'You')+' (you)');
+  const list=el('div','ranks'), you=(Board.name()||'You')+' (you)';
+  const row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score))); list.appendChild(w); return w; };
+  /* Ranks come sorted: the top, then a gap wherever ranks are skipped (with 100+ players, the top 10, ⋯, then the two either side of you). */
+  const rows=b.rows.slice().sort((x,y)=>x.rank-y.rank); let prev=0, mine=null;
+  rows.forEach(r=>{ if(prev&&r.rank>prev+1)list.appendChild(el('div','gap','•••')); const w=row(r,r.me&&b.shared?you:r.name); if(r.me)mine=w; prev=r.rank; });
+  if(b.me&&b.shared&&!rows.some(r=>r.me)){ if(prev&&b.me.rank>prev+1)list.appendChild(el('div','gap','•••')); mine=row({rank:b.me.rank,score:b.me.score,me:true},you); }
   box.appendChild(list);
+  /* Your own row, always in view under the list, once you are below the top 3. */
+  if(b.me&&b.shared&&b.me.rank>3){ const pin=el('div','pin'), l=el('span'); l.append(el('i','pos',String(b.me.rank)),document.createTextNode('You'+(b.total?' · top '+Math.max(1,Math.ceil(b.me.rank/b.total*100))+'%':''))); pin.append(l,el('b','',fmtn(b.me.score))); box.appendChild(pin); }
+  if(mine)requestAnimationFrame(()=>{ const top=mine.offsetTop-list.offsetTop-list.clientHeight/2+mine.clientHeight/2; if(top>0)list.scrollTop=top; });
 }
 function boardBox(pending){ const box=el('div','lb'); box.append(el('div','lbh','Leaderboard'),el('p','wait',bridge()?'Saving your score…':''));
   pending.then(b=>{seeBoard(b);drawBoard(box,b);}).catch(()=>{box.lastChild.textContent='Could not load the leaderboard.';}); return box; }
@@ -460,7 +540,10 @@ function wav(f,d,to){ const k=Math.round(f)+'|'+d+'|'+(to||0); if(wavCache[k])re
   let s=''; for(let i=0;i<buf.length;i++)s+=String.fromCharCode(buf[i]); return wavCache[k]='data:audio/wav;base64,'+btoa(s); }
 function tagTone(f,d,o){ const go=()=>{ try{ const au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.volume=Math.min(1,(o.vol||0.16)*4); const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
 function tone(f,d,o){ o=o||{}; if(!save.sound)return; if(audioMode==='tag')return tagTone(f,d,o); const a=ac(); if(!a)return tagTone(f,d,o); webTone(a,f,d,o); }
-function sndLabel(){ const b=$('snd'); b.textContent=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on'); b.setAttribute('aria-pressed',save.sound?'true':'false'); }
+const SPK='<path d="M3 7.5h3L10.5 4v12L6 12.5H3z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>';
+function sndLabel(){ const b=$('snd'), on=save.sound&&!tagBlocked, label=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on');
+  b.innerHTML='<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">'+SPK+(on?'<path d="M13.5 7.2a4 4 0 0 1 0 5.6M15.8 5a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>':'<path d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')+'</svg>';
+  b.classList.toggle('off',!on); b.setAttribute('aria-label',label); b.title=label; b.setAttribute('aria-pressed',save.sound?'true':'false'); }
 function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
   setTimeout(()=>{ if(audioChecked)return; audioChecked=true; if(!a||a.state!=='running'){ audioMode='tag'; tagTone(660,0.08,{vol:.12}); } },450); }
 ['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,true));
@@ -497,7 +580,7 @@ function burst(x,y,n,cols){ if(reduce())return; for(let i=0;i<n;i++){const a=Mat
 function fxLoop(){ fctx.clearRect(0,0,fx.width,fx.height); parts=parts.filter(p=>p.life>0);
   for(const p of parts){p.vy+=0.35;p.x+=p.vx;p.y+=p.vy;p.vx*=.985;p.r+=p.vr;p.life--; fctx.save();fctx.translate(p.x,p.y);fctx.rotate(p.r);fctx.globalAlpha=Math.min(1,p.life/25);fctx.fillStyle=p.c;fctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6);fctx.restore();}
   if(parts.length)requestAnimationFrame(fxLoop); else {fxOn=false;fctx.clearRect(0,0,fx.width,fx.height);} }
-const COLS=['#39C6C0','#4C9BFF','#A77BFF','#FF6FB5','#FFD23F','#4BE39A','#FFF6DE'];
+const COLS=['#FFD23F','#FFE98A','#F2A7C3','#FFFFFF','#FFC531','#F7CFDD','#FFF6DE'];
 function centre(el){const r=el.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];}
 
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
@@ -509,27 +592,53 @@ function toast(text,cls,xy){ const t=el('span','toast'+(cls?' '+cls:''),text); i
 function renderTop(){ sndLabel(); const playing=mode==='count'||mode==='play', me=board&&board.me;
   const line=mode!=='idle'&&save.best?'Your best: '+fmtn(save.best)+(me?' · #'+me.rank+(board.company?' at '+board.company:' here'):''):'';
   $('best').textContent=line; $('foot').hidden=!line; $('help').hidden=playing;
-  const mb=$('mybest'); if(!mb)return; mb.textContent=save.best?fmtn(save.best):'—';
-  $('myrank').textContent=me?'#'+me.rank:'—';
-  $('myat').textContent=me?(board.company?'at '+board.company:'here'):!bridge()?'On this device':!save.best?'Play a round to get one':board?'Not on the board yet':''; }
-/* The game's picture as the Games tab draws it (games_art.dart): a happy face, a sad one, and a card. */
-const ART='<svg viewBox="20 16 136 86" aria-hidden="true"><g stroke="#150C2E" stroke-width="4.31" stroke-linecap="round" stroke-linejoin="round">'
-  +'<circle cx="55.37" cy="52.24" r="28.05" fill="#FFC531"/><circle cx="107.87" cy="52.24" r="28.05" fill="#FFF6E5"/>'
-  +'<circle cx="46.73" cy="47.2" r="2.16" fill="#150C2E"/><circle cx="63.29" cy="47.2" r="2.16" fill="#150C2E"/>'
-  +'<path fill="none" transform="translate(40.99 45.05)" d="M2.16 14.38C10.31 21.57 18.22 21.57 25.89 14.38M58.97 2.16H60.41M74.07 2.16H75.51M58.25 18.7C64.48 13.9 70.95 13.9 77.67 18.7"/>'
-  +'<rect x="124.66" y="68.1" width="23.01" height="25.89" rx="5.03" fill="#FFD23F" transform="rotate(8 136.16 81.04)"/></g>'
-  +'<text x="136.16" y="86.2" text-anchor="middle" transform="rotate(8 136.16 81.04)" font-family="Lilita One,sans-serif" font-size="14" fill="#150C2E">?</text></svg>';
+  const sq=$('mystat'); if(!sq)return; const played=save.best>0||!!me; sq.hidden=!played; $('rankbar').classList.toggle('solo',!played); sq.innerHTML='';
+  if(!played)return;
+  const big=el('div','big'), side=el('div','side'), best=el('b');
+  if(me){ big.append(el('small','','#'),String(me.rank)); side.append(el('span','',(board.total?'of '+fmtn(board.total)+' ':'')+(board.company?'at '+board.company:'players')));
+    side.append(Object.assign(best,{textContent:'Your best '})); best.append(el('em','',fmtn(Math.max(save.best,me.score)))); }
+  else { big.textContent=fmtn(save.best); side.append(el('span','',bridge()?'Your best · not ranked yet':'Your best on this device')); }
+  if(me)sq.append(big,side); else { sq.append(side,big); side.style.flex='1'; } }
+/* The game's picture: a board of the same face, and the one that is different, popped out with a tap on it. */
+const ART=(()=>{ const D='#1E0A26', face=(x,y,f)=>'<circle cx="'+x+'" cy="'+y+'" r="15" fill="'+f+'" stroke="'+D+'" stroke-width="3"/>'
+    +'<circle cx="'+(x-5.5)+'" cy="'+(y-3)+'" r="2.3" fill="'+D+'"/><circle cx="'+(x+5.5)+'" cy="'+(y-3)+'" r="2.3" fill="'+D+'"/>'
+    +'<path d="M'+(x-7)+' '+(y+4)+'Q'+x+' '+(y+10.5)+' '+(x+7)+' '+(y+4)+'" fill="none" stroke="'+D+'" stroke-width="3" stroke-linecap="round"/>';
+  let g='';
+  for(let i=0;i<9;i++){ if(i===5)continue; const x=43+(i%3)*54, y=8+Math.floor(i/3)*54;
+    g+='<rect x="'+x+'" y="'+(y+4)+'" width="46" height="46" rx="13" fill="'+D+'" opacity=".35"/><rect x="'+x+'" y="'+y+'" width="46" height="46" rx="13" fill="'+D+'"/>'+face(x+23,y+23,'#FFD23F'); }
+  const ox=174, oy=85;
+  const odd='<g transform="rotate(9 '+ox+' '+oy+') translate('+ox+' '+oy+') scale(1.22) translate('+(-ox)+' '+(-oy)+')">'
+    +'<rect x="151" y="66" width="46" height="46" rx="13" fill="'+D+'" opacity=".4"/>'
+    +'<rect x="151" y="62" width="46" height="46" rx="13" fill="#FFFFFF" stroke="'+D+'" stroke-width="3"/>'
+    +'<circle cx="174" cy="85" r="15" fill="#F48FB8" stroke="'+D+'" stroke-width="3"/>'
+    +'<path d="M165.5 81.5h6" stroke="'+D+'" stroke-width="3" stroke-linecap="round"/><circle cx="179.5" cy="82" r="2.3" fill="'+D+'"/>'
+    +'<path d="M166 88Q174 97 182 88Z" fill="'+D+'" stroke="'+D+'" stroke-width="2.5" stroke-linejoin="round"/></g>';
+  const spark=(x,y,r)=>'<path d="M'+x+' '+(y-r)+'Q'+x+' '+y+' '+(x+r)+' '+y+'Q'+x+' '+y+' '+x+' '+(y+r)+'Q'+x+' '+y+' '+(x-r)+' '+y+'Q'+x+' '+y+' '+x+' '+(y-r)+'Z" fill="#FFD23F" stroke="'+D+'" stroke-width="2" stroke-linejoin="round"/>';
+  const rays='<g stroke="#E58FB3" stroke-width="4" stroke-linecap="round"><path d="M216 66l8-6M218 90h11M214 116l8 6"/></g>';
+  const hand='<g transform="translate(186 104) rotate(-18)"><path d="M0 0c0-5 7-5 7 0v14c1-3 7-3 7 1 1-3 7-3 7 1 1-3 7-2 7 2v12c0 9-6 15-15 15h-3c-6 0-10-3-13-8L-9 26c-2-4 3-7 6-4l3 3Z" fill="#FFF3FA" stroke="'+D+'" stroke-width="3" stroke-linejoin="round"/></g>';
+  return '<svg viewBox="20 -8 230 186" aria-hidden="true">'+g+rays+odd+spark(28,40,9)+spark(232,30,7)+spark(30,150,7)+hand+'</svg>'; })();
 const BOLT='<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6.49 1 3 6.99h3l-.5 4 3.5-6h-3l.5-4Z" fill="none" stroke="#150C2E" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-/* The game card: its picture, Play, and (with the app's bridge) Challenge a colleague. */
-function heroCard(){ const h=el('section','hero'), art=el('div','art'), bd=el('div','bd'), tag=el('span','tag'), go=el('button','btn go','Play');
-  art.innerHTML=ART; tag.innerHTML=BOLT; tag.append('45 seconds'); go.type='button'; go.onclick=()=>start(null);
-  bd.append(tag,el('h2','','Spot the odd one'),go);
-  if(canChallenge()){ const du=el('button','btn dark','Challenge a colleague'); du.type='button'; du.id='chbtn'; du.onclick=()=>{sfx.ui();openPicker();}; bd.append(du); }
-  h.append(art,bd); return h; }
-/* Your best and your rank at the company, then the leaderboard. */
-function mineCard(){ const t=el('div','mine'), a=el('div','stat'), r=el('div','stat dark'), best=el('b'), rank=el('b'), at=el('span'), lb=el('button','btn','View leaderboard');
-  best.id='mybest'; rank.id='myrank'; at.id='myat'; a.append(el('small','','Your best'),best); r.append(el('small','','Your rank'),rank,at);
-  lb.type='button'; lb.onclick=openBoard; t.append(a,r,lb); return t; }
+/* Home's top: the header, the game's picture across the page, then your rank and best in one square (once you have played) and the leaderboard. */
+const TROPHY='<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4Z M7 6H4v1a3 3 0 0 0 3 3 M17 6h3v1a3 3 0 0 1-3 3 M12 13v4 M8 20h8 M9 17h6v3H9z" stroke="#1E0A26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function topCard(){ const t=el('section','top'), art=el('div','art');
+  art.innerHTML=ART;
+  const bar=el('div','rankbar'), sq=el('div','mystat'), lb=el('button','lbbtn'); bar.id='rankbar'; sq.id='mystat';
+  lb.type='button'; lb.innerHTML=TROPHY; lb.append('Leaderboard'); lb.onclick=openBoard; bar.append(sq,lb);
+  t.append(art,el('h2','tt','Spot the odd one'),bar); return t; }
+/* The two tabs, Play now and Challenges; Challenges is open by default. Without the app's bridge there are no challenges, only Play now. */
+function tabsCard(){ const o=el('div','tabs'), mk=(k,label,pk)=>{ const b=el('button','tab'+(pk?' pk':'')+(homeView===k?' on':''),label); b.type='button';
+    b.setAttribute('aria-pressed',homeView===k?'true':'false'); b.onclick=()=>{ if(homeView===k)return; sfx.ui(); homeView=k; menu(); }; return b; };
+  o.append(mk('play','Play now',false));
+  if(canChallenge()){ const ch=mk('challenges','Challenges',true); ch.id='chbtn'; o.append(ch); } else o.classList.add('one');
+  return o; }
+function playPanel(){ const p=el('div','playcard'), r=el('div','rules'), go=el('button','btn go','Play');
+  [['👀','Find the one that is different'],['⚡','Be quick, keep a streak'],['⏱️','45 seconds']].forEach(([i,t])=>{ const d=el('div'); d.append(el('i','',i),t); r.append(d); });
+  go.type='button'; go.onclick=()=>start(null); p.append(r,go); return p; }
+/* Challenges: three cards on top, the challenges under the one picked, then a colleague to challenge. */
+function chPanel(){ const box=el('div','panel'), list=el('div','chlist'); list.id='chlist';
+  const send=el('button','btn send','Challenge a colleague'); send.type='button'; send.onclick=()=>{sfx.ui();openPicker();};
+  const more=el('div','links'), hist=el('button','link','View history'); hist.type='button'; hist.id='histlink'; hist.onclick=()=>{sfx.ui();openList();}; more.append(hist);
+  box.append(send,list,more); return box; }
 /* How to play: one full-screen card, the same wherever it opens. It comes up by itself once, in front of a new player's first round (on their own or
    a challenge's; that round starts on OK), and any time from the ?, where OK just closes it. */
 let howThen=null;
@@ -555,12 +664,14 @@ function showGrid(){
     b.addEventListener('pointerdown',e=>{e.preventDefault();tap(i,b);}); b.addEventListener('click',e=>{if(e.detail===0)tap(i,b);}); g.appendChild(b); }
   shownAt=now(); locked=false;
 }
-/* The menu: the challenges waiting on the player first, then the rest of their challenges, then the game and Play, then their best and rank.
+/* The menu: the picture across the top with your rank and the leaderboard, then the Play now and Challenges tabs (Challenges open by default).
    The clock and the score bar wait for a round. */
+let homeView=null;
+function placeHeader(into){ const h=$('hdr'); if(into){ if(h.parentNode!==into)into.prepend(h); } else if(h.parentNode!==$('app'))$('app').prepend(h); }
 function menu(){
-  mode='idle'; duel=null; const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; $('grid').hidden=true; $('hud').hidden=true; $('goalbox').hidden=true;
-  const foryou=el('div','foryou'), inbox=el('div','inbox'); foryou.id='foryou'; inbox.id='inbox'; foryou.hidden=true; inbox.hidden=true;
-  c.append(foryou,inbox,heroCard(),mineCard());
+  mode='idle'; duel=null; placeHeader(null); const c=$('cover'); c.hidden=false; c.innerHTML=''; c.className='cover m'; $('grid').hidden=true; $('hud').hidden=true; $('goalbox').hidden=true;
+  if(!homeView||(homeView==='challenges'&&!canChallenge()))homeView=canChallenge()?'challenges':'play';
+  const t=topCard(); c.append(t,tabsCard(),homeView==='play'?playPanel():chPanel()); placeHeader(t);
   $('grid').innerHTML=''; $('ticker').hidden=true; renderHud(true); renderGoal(); renderTarget(); renderTop(); renderInbox();
 }
 /* opp: the challenge being played ({id, name, theirFinal}), or null for a round on your own. sd: its seed, the boards both players get. */
@@ -572,7 +683,7 @@ function start(opp,sd){
   seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; streak=0; bestStreak=0; miss=0; cleared=0; lastSec=-1; starsNow=0; locked=true;
   duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null;
   document.documentElement.style.setProperty('--h',HUES[0]); $('grid').innerHTML=''; renderHud(true); renderGoal(); renderTarget();
-  mode='count'; $('hud').hidden=false; $('goalbox').hidden=false; renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; $('grid').hidden=false; let k=3;
+  placeHeader(null); mode='count'; $('hud').hidden=false; $('goalbox').hidden=false; renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; $('grid').hidden=false; let k=3;
   const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();buzz(20);};
   show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
 }
@@ -692,6 +803,12 @@ function avatar(name,photo){ const a=el('span','av'), s=String(name||'?'); let h
   if(photo){ const img=new Image(); img.alt=''; img.onload=()=>{a.textContent='';a.appendChild(img);}; img.src=photo; } a.setAttribute('aria-hidden','true'); return a; }
 function mini(label,fn,yes){ const b=el('button','mini'+(yes?' yes':''),label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; }
 function linkRow(items){ const r=el('div','links'); items.forEach(([label,fn])=>{ const b=el('button','link',label); b.type='button'; b.onclick=()=>{sfx.ui();fn();}; r.append(b); }); return r; }
+/* A live countdown to when a challenge runs out: h:mm:ss, ticking every second; red in the last hour. */
+const CLOCK='<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.8" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.4V6l1.7 1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+function hms(ms){ const t=Math.max(0,Math.floor(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), sec=t%60; return (h?h+':'+String(m).padStart(2,'0'):String(m))+':'+String(sec).padStart(2,'0'); }
+function timerEl(v){ const t=el('span','clock2'); t.dataset.exp=String(Date.parse(v.expiresAt)||0); t.innerHTML=CLOCK; t.append(el('b')); paintTimer(t); return t; }
+function paintTimer(t){ const ms=+t.dataset.exp-Date.now(), b=t.lastChild; b.style.fontWeight='400'; b.textContent=ms>0?hms(ms)+' left':'Expired'; t.classList.toggle('soon',ms<3600e3); }
+setInterval(()=>document.querySelectorAll('.clock2').forEach(paintTimer),1000);
 function leftText(v){ const ms=Date.parse(v.expiresAt)-Date.now(); if(!(ms>0))return 'Expired'; const h=Math.floor(ms/3600000); return h>=1?'Expires in '+h+' h':'Expires in '+Math.max(1,Math.round(ms/60000))+' min'; }
 /* A 'declined' challenge, as it really ended: declined, withdrawn or called off. */
 function declinedLine(v){ const n=firstOf(v.them.name), me=v.me&&v.me.userId;
@@ -704,10 +821,10 @@ const declinedTitle=v=>v.withdrawnBy?'Withdrawn':v.cancelledBy?'Called off':(v.r
 function chRow(kind,v){
   const r=el('div','chc'), row=el('div','row'), tx=el('div','tx'), bt=el('div','bt'), n=v.them.name, f=firstOf(n);
   const small=(label,fn)=>{ const b=el('button','dl',label); b.type='button'; b.onclick=e=>{e.stopPropagation();sfx.ui();fn(b);}; return b; };
-  r.append(el('div','lab',kind==='in'?'New challenge':'Your turn'));
-  if(kind==='in'){ tx.append(el('b','',f+' challenged you to Odd One Out'),el('small','','Same boards, 45 seconds. '+leftText(v)+'.'),small('Decline',b=>{b.disabled=true;decline(v.id);}));
+  const lab=el('div','lab'); lab.append(el('span','',kind==='in'?'New challenge':'Your turn')); if(v.expiresAt)lab.append(timerEl(v)); r.append(lab); if(kind!=='in')r.classList.add('turn');
+  if(kind==='in'){ tx.append(el('b','',f+' challenged you'),small('Decline',b=>{b.disabled=true;decline(v.id);}));
     bt.append(mini('Accept',b=>{b.disabled=true;accept(v.id,false);},true)); }
-  else { tx.append(el('b','','You vs '+f+' in Odd One Out'),el('small','',v.them.score!=null?f+' scored '+fmtn(v.them.score)+'. Beat it.':'Same boards for both of you. Play whenever you like.'));
+  else { tx.append(el('b','','You vs '+f),el('small','',v.them.score!=null?f+' scored '+fmtn(v.them.score)+'. Beat it.':'Your round is waiting.'));
     if(lobbyServer(v)&&v.them.score==null)tx.append(small('Call it off',()=>askCallOff(v)));
     bt.append(mini('Play',()=>startChallenge(v),true)); }
   row.append(avatar(n),tx,bt); r.append(row); return r; }
@@ -715,31 +832,34 @@ function chRow(kind,v){
 function infoRow(v){
   const r=el('div','crow tap'), p=el('p'), bt=el('div','bt'), n=firstOf(v.them.name); r.tabIndex=0; r.setAttribute('role','button'); r.append(avatar(v.them.name));
   let line, sub='', pts=null;
-  if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=leftText(v); }
+  if(v.status==='pending'){ line='Waiting for '+n+' to accept'; sub=null; }
   else if(v.status==='accepted'){ line='Waiting for '+n+' to play'; sub='You scored '+fmtn(v.me.score); }
   else if(v.status==='finished'){ line=v.outcome==='won'?'You beat '+n:v.outcome==='lost'?n+' beat you':'Tied with '+n; sub=fmtn(v.me.score)+' – '+fmtn(v.them.score);
     pts=v.myAward?v.myAward.points:0;
     if(!pts&&v.myAward&&v.myAward.reason)sub+=' · '+v.myAward.reason; }
   else if(v.status==='declined'){ line=declinedLine(v); }
   else { line='Expired with '+n; sub='Nobody wins an expired challenge'; }
-  p.append(document.createTextNode(line),el('small','',sub));
+  p.append(document.createTextNode(line)); if(sub===null){ const sm=el('small'); sm.append(timerEl(v)); sm.style.marginTop='4px'; p.append(sm); } else p.append(el('small','',sub));
   if(pts!=null)bt.append(el('span','pts'+(pts>0?'':' zero'),pts>0?'+'+pts+' pts':'No pts'));
   if(lobbyServer(v)&&v.status==='pending')bt.append(mini('Withdraw',()=>askWithdraw(v)));
   if(lobbyServer(v)&&isOver(v))bt.append(mini('Clear',b=>{b.disabled=true;clearCh(v.id);}));
   r.append(p,bt);
   const go=()=>{sfx.ui();openChallenge(v.id);}; r.onclick=go; r.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} }; return r; }
-/* The menu's challenges: every one still in play on top (those waiting on this player first), and a link to the history of those that are over. */
+/* The challenges. On home, the count on the Challenges button; on the challenges screen, the three cards and the list under the one picked:
+   New (to accept), Your turn (to play), Waiting (on the other player). */
+function chGroups(){ return {
+  new:CH.incoming.map(v=>['in',v]),
+  turn:CH.active.filter(v=>v.me&&v.me.score==null).map(v=>['turn',v]),
+  wait:[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)].map(v=>['info',v]) }; }
 function renderInbox(){
-  const fy=$('foryou'), box=$('inbox'); if(!fy||!box)return; fy.innerHTML=''; box.innerHTML='';
-  if(!canChallenge()||mode!=='idle'){fy.hidden=true;box.hidden=true;return;}
-  // Everything still in play sits on top: first what waits on this player, then what waits on the other one.
-  const mine=[...CH.incoming.map(v=>['in',v]),...CH.active.filter(v=>v.me&&v.me.score==null).map(v=>['turn',v])];
-  const theirs=[...CH.outgoing,...CH.active.filter(v=>v.me&&v.me.score!=null)];
-  fy.hidden=!mine.length&&!theirs.length; mine.forEach(([k,v])=>fy.append(chRow(k,v))); theirs.forEach(v=>fy.append(infoRow(v)));
-  // What is over is history, a link away.
-  box.hidden=!CH.recent.length; if(box.hidden)return;
-  const head=el('div','sect solo'), more=el('button','link','View history'); more.type='button'; more.onclick=()=>{sfx.ui();openList();};
-  head.append(more); box.append(head);
+  if(mode!=='idle')return; const g=chGroups(), waiting=g.new.length+g.turn.length;
+  const btn=$('chbtn'); if(btn){ const old=btn.querySelector('.badge'); if(old)old.remove(); if(waiting)btn.append(el('span','badge',String(waiting))); }
+  const list=$('chlist'); if(!list)return; list.innerHTML='';
+  /* Everything still in play, in one list: new ones first, then your turn, then waiting on them. */
+  const all=[...g.new,...g.turn,...g.wait];
+  if(!all.length)list.append(el('p','empty','No challenges right now. Send one to a colleague.'));
+  all.forEach(([k,v])=>list.append(k==='info'?infoRow(v):chRow(k,v)));
+  const h=$('histlink'); if(h)h.parentNode.hidden=!CH.recent.length;
 }
 /* History: only challenges that are over. The ones still in play are on the menu, above. */
 function openList(){
@@ -942,7 +1062,7 @@ function onChallengeEvent(evt){
 }
 window.onSowakaChallenge=evt=>{ try{ onChallengeEvent(evt); }catch(e){} };
 /* With the bridge: the lists, the colleagues (fetched now so the picker opens at once), a final that never landed, and the challenge a tapped notification opened the game for. */
-function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn'))menu(); refreshChallenges(); peopleKept(); loadPeople().catch(()=>{});
+function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chbtn')){ if(homeView==='play'&&!$('chlist'))homeView=null; menu(); } refreshChallenges(); peopleKept(); loadPeople().catch(()=>{});
   if(save.pendingFinish&&save.pendingFinish.id)sendFinish(save.pendingFinish.id,save.pendingFinish.score);
   const want=bridge().startChallengeId; if(want&&!CH.opened){ CH.opened=true; openChallenge(String(want)); } }
 /* Back on the screen, on the menu: the lists and the board again, for anything that changed meanwhile. */
