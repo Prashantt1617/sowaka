@@ -9,6 +9,7 @@
  * and only for the sowaka org (nothing is written):
  *   npx tsx src/scripts/scribble-check.ts --mint <userId|email> [--ttl <ms>]
  */
+import { pointEvents } from '../services/points-ledger.service';
 import { randomUUID } from 'node:crypto';
 import { io as connect, type Socket as ClientSocket } from 'socket.io-client';
 import { app } from '../app';
@@ -586,6 +587,8 @@ async function runChecks() {
     C3 = await open(C0);
     await waitFor('C back again', () => player(A, C0.userId)?.online === true);
 
+    const pointsBefore = new Map<string, number>();
+    for (const id of [A0.userId, B0.userId, C0.userId]) pointsBefore.set(id, (await users().findOne({ userId: id }, { projection: { _id: 0, points: 1 } }))?.points ?? 0);
     const pickers = new Map([[A0.userId, A], [B0.userId, B], [C0.userId, C3]]);
     await playUntil(A, () => room(A)?.status === 'over', pickers);
     check('the game ends after two rounds', room(A)?.status === 'over' && room(B)?.status === 'over' && room(C3)?.status === 'over', room(A)?.status);
@@ -597,6 +600,19 @@ async function runChecks() {
       boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
     }
     check('the final scores went to the game\'s board, by the server', boards.length === 3 && boards.find((b) => b.userId === B0.userId)?.score === 475 && boards.find((b) => b.userId === A0.userId)?.score === 150, JSON.stringify(boards.map((b) => [b.userId, b.score])));
+    // Engagement points: each player their own score ÷ 100, once per game, with a history row.
+    const paidTo = async (id: string) => (await users().findOne({ userId: id }, { projection: { _id: 0, points: 1 } }))?.points ?? 0;
+    let ledger = await pointEvents().find({ org: ORG, gameKey: 'scribble' }).toArray();
+    for (let tries = 0; ledger.length < 3 && tries < 40; tries += 1) {
+      await wait(100);
+      ledger = await pointEvents().find({ org: ORG, gameKey: 'scribble' }).toArray();
+    }
+    const want = (score: number) => Math.min(25, Math.round(score / 100));
+    check('every player is paid their own score ÷ 100 in engagement points',
+      (await paidTo(B0.userId)) === pointsBefore.get(B0.userId)! + want(475) && (await paidTo(A0.userId)) === pointsBefore.get(A0.userId)! + want(150) && (await paidTo(C0.userId)) === pointsBefore.get(C0.userId)! + want(175),
+      JSON.stringify([await paidTo(A0.userId), await paidTo(B0.userId), await paidTo(C0.userId)]));
+    check('each has a history row for the game, saying their place', ledger.length === 3 && ledger.every((r) => r.source === 'game_challenge' && r.reason === 'game' && /Scribble · .* of 3/.test(r.note ?? '')), JSON.stringify(ledger.map((r) => [r.delta, r.note])));
+    check('a score over 2,500 pays at most 25', want(9000) === 25 && want(40) === 0);
     const notOverAgain = await request(B, 'room:again');
     check('only the host can play again', !notOverAgain.ok && notOverAgain.status === 403);
 

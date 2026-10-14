@@ -5,6 +5,7 @@ import { users } from '../config/db';
 import { ScribbleOp, ScribblePlayer, ScribbleRoom, ScribbleView } from '../models/scribble.model';
 import type { User } from '../models/user.model';
 import { recordServerScore } from './game-catalog.service';
+import { recordPointChanges } from './points-ledger.service';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
@@ -94,6 +95,45 @@ export interface ScribbleDeps {
   random: () => number;
   notify: (userIds: string[], input: NotificationInput) => Promise<void>;
   recordScore: (org: string, player: { userId: string; name: string }, score: number) => Promise<void>;
+  /** Engagement points for one player's finished game (profile rank and the Games leaderboard). */
+  awardPoints: (award: ScribbleAward) => Promise<void>;
+}
+
+export interface ScribbleAward {
+  org: string;
+  userId: string;
+  points: number;
+  gameId: string;
+  score: number;
+  place: number;
+  players: number;
+}
+
+/** What a finished game pays each player: their own score ÷ 100, rounded, at most this many. */
+export const SCRIBBLE_POINTS_PER_SCORE = 100;
+export const SCRIBBLE_POINTS_MAX = 25;
+export const scribblePointsFor = (score: number): number =>
+  Math.max(0, Math.min(SCRIBBLE_POINTS_MAX, Math.round(score / SCRIBBLE_POINTS_PER_SCORE)));
+
+const ordinal = (n: number) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+
+async function payPoints(award: ScribbleAward): Promise<void> {
+  if (award.points > 0) await users().updateOne({ userId: award.userId, org: award.org }, { $inc: { points: award.points } });
+  // Every finished game goes in the player's history, one that paid nothing too.
+  recordPointChanges(
+    [{
+      userId: award.userId,
+      org: award.org,
+      delta: award.points,
+      source: 'game_challenge' as const,
+      reason: 'game' as const,
+      refId: award.gameId,
+      note: `Scribble · ${award.score.toLocaleString('en-IN')} points · ${ordinal(award.place)} of ${award.players}`,
+      gameKey: 'scribble',
+      title: 'Scribble',
+    }],
+    { keepZero: true },
+  );
 }
 
 const deps: ScribbleDeps = {
@@ -101,6 +141,7 @@ const deps: ScribbleDeps = {
   random: Math.random,
   notify: notifyUsers,
   recordScore: (org, player, score) => recordServerScore(org, 'scribble', { ...player, org }, score),
+  awardPoints: payPoints,
 };
 
 let emitter: ScribbleEmitter | null = null;
@@ -226,14 +267,29 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
   return { deleted, strokesFor };
 }
 
-/** The final scores go to the game's own leaderboard; the page never submits them. */
+/**
+ * The final scores go to the game's own leaderboard (the page never submits
+ * them), and each player is paid engagement points for their own score, once
+ * per game however many instances see it finish.
+ */
 function recordScores(room: ScribbleRoom): void {
-  for (const row of standings(room)) {
+  const rows = standings(room);
+  for (const row of rows) {
     if (row.score <= 0) continue;
     void deps
       .recordScore(room.org, { userId: row.userId, name: row.name }, row.score)
       .catch((error) => logger.error('Scribble score record failed', { org: room.org, code: room.code, userId: row.userId }, error));
   }
+  const gameId = room.gameId;
+  if (!gameId || rows.length < SCRIBBLE.minPlayers) return;
+  void (async () => {
+    if (!(await claimOnce(`points:${room.org}:${gameId}`, 7 * 24 * 60 * 60 * 1000))) return;
+    for (const row of rows) {
+      await deps
+        .awardPoints({ org: room.org, userId: row.userId, points: scribblePointsFor(row.score), gameId, score: row.score, place: row.place, players: rows.length })
+        .catch((error) => logger.error('Scribble points failed', { org: room.org, gameId, userId: row.userId }, error));
+    }
+  })();
 }
 
 /**
