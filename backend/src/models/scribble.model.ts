@@ -54,7 +54,8 @@ export interface ScribbleRoom {
   players: ScribblePlayer[];
   invited: ScribbleInvitee[];
   /** Removed by the host; a rejoin is refused. */
-  kicked: string[];
+  /** Removed by the host, and when: they may come back after a short cool-down, or at once on a fresh invite. */
+  kicked: { userId: string; at: number }[];
   /** Invites sent in this game, against the per-game cap. */
   invitesSent: number;
   gameId: string | null;

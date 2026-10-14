@@ -22,6 +22,8 @@ import { editDistance } from './relay-engine';
  */
 
 export const SCRIBBLE = {
+  /** How long a removed player waits before the code lets them back in; a fresh invite lets them in at once. */
+  kickCooldownMs: 60_000,
   minPlayers: 3,
   maxPlayers: 8,
   rounds: 2,
@@ -509,7 +511,7 @@ export function removePlayer(room: ScribbleRoom, userId: string, how: 'leave' | 
   const player = playerOf(room, userId);
   if (!player) return [];
   room.players = room.players.filter((p) => p.userId !== userId);
-  if (how === 'kick' && !room.kicked.includes(userId)) room.kicked.push(userId);
+  if (how === 'kick') room.kicked = room.kicked.filter((k) => k.userId !== userId).concat({ userId, at: now });
   const effects: Effect[] = [];
   if (how === 'kick' && by) effects.push({ type: 'kicked', userId, by: { userId: by.userId, name: by.name } });
   effects.push({

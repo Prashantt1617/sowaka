@@ -297,6 +297,11 @@ export async function hostRoom(seat: Seat): Promise<ScribbleView> {
 
 const NO_ROOM = 'No room with that code at your company. Check it and try again.';
 
+const KICKED_MESSAGE = 'The host removed you from this room. You can come back in a minute, or at once if the host invites you again.';
+/** Removed, and still inside the cool-down. */
+const stillKicked = (room: ScribbleRoom, userId: string, now: number) =>
+  room.kicked.some((k) => k.userId === userId && k.at + SCRIBBLE.kickCooldownMs > now);
+
 export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: ScribbleView; strokes: ScribbleOp[] }> {
   const code = parseCode(rawCode);
   if (!code) throw new ScribbleError(404, NO_ROOM);
@@ -304,7 +309,7 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
   // the same as one that does not exist.
   const existing = await readRoom(seat.org, code);
   if (!existing) throw new ScribbleError(404, NO_ROOM);
-  if (existing.kicked.includes(seat.userId)) throw new ScribbleError(403, 'The host removed you from this room.');
+  if (stillKicked(existing, seat.userId, deps.now())) throw new ScribbleError(403, KICKED_MESSAGE);
   const already = playerOf(existing, seat.userId);
   if (!already && existing.players.length >= SCRIBBLE.maxPlayers) {
     throw new ScribbleError(409, `That room is full (${SCRIBBLE.maxPlayers} of ${SCRIBBLE.maxPlayers}).`);
@@ -314,7 +319,7 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
 
   const changed = await change(seat.org, code, (room) => {
     const now = deps.now();
-    if (room.kicked.includes(seat.userId)) throw new ScribbleError(403, 'The host removed you from this room.');
+    if (stillKicked(room, seat.userId, now)) throw new ScribbleError(403, KICKED_MESSAGE);
     const mine = playerOf(room, seat.userId);
     if (mine) {
       mine.online = true;
@@ -378,6 +383,8 @@ export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ in
   // Keyed on the pair, not the room: a new room is not a fresh licence to push.
   const push = await claimOnce(`invite:${seat.org}:${seat.userId}:${userId}`, SCRIBBLE.invitePushEveryMs);
   const changed = await change(seat.org, room.code, (r) => {
+    // An invite from the host ends any cool-down from a removal.
+    r.kicked = r.kicked.filter((k) => k.userId !== userId);
     if (!playerOf(r, seat.userId)) throw new ScribbleError(404, 'You are not in a room.');
     if (playerOf(r, userId)) return { result: true, effects: [], write: false };
     if (!r.invited.some((i) => i.userId === userId)) r.invited.push({ userId, name: colleague.name, photoUrl });
