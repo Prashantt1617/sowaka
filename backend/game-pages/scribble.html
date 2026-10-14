@@ -1186,7 +1186,8 @@ function render(){
   placeChat(st==='lobby'?$('lobby'):st==='over'?$('end'):$('game')); kbSync();
 }
 const CHAT=$('chat');
-function placeChat(into){ if(CHAT.parentNode!==into||into.lastChild!==CHAT)into.append(CHAT); }
+/* Moved only when the room moves to another screen; within a screen it stays put, so someone typing keeps their keyboard. */
+function placeChat(into){ if(CHAT.parentNode!==into)into.append(CHAT); }
 
 /* ---------- the menu ---------- */
 /* An invite (live, or replayed on connect for one still waiting): one card per room, the newest on top. The card goes when the room is joined,
@@ -1281,9 +1282,10 @@ function joinCode(code,ui){
 }
 
 /* ---------- the room before the game ---------- */
-/* Rebuilds a section around the chat, which stays where it is: someone typing keeps their keyboard while the room changes. */
+/* Rebuilds a section around the chat, which stays where it is: someone typing keeps their keyboard while the room changes.
+   `frag` goes above the chat, `after` (if any) below it. */
 function rebuild(sec){ [...sec.childNodes].forEach(n=>{ if(n!==CHAT)n.remove(); }); return document.createDocumentFragment(); }
-function settle(sec,frag){ sec.insertBefore(frag,CHAT.parentNode===sec?CHAT:null); placeChat(sec); sayMode(); }
+function settle(sec,frag,after){ placeChat(sec); sec.insertBefore(frag,CHAT); if(after)sec.append(after); sayMode(); }
 function renderLobby(){
   const r=room, L0=$('lobby'), L=rebuild(L0);
   const card=el('div','roomcard'), cr=el('div','coderow'), left=el('div'), copy=el('button','mini','Copy');
@@ -1296,7 +1298,10 @@ function renderLobby(){
   inv.append('Invite colleagues'); inv.onclick=()=>{ sfx.ui(); openPicker(); };
   ways.append(inv,el('p','hint','They get a notification and join in one tap. Or copy the code and send it.')); card.append(cr,ways); L.append(card);
   const sc=settingsCard(); if(sc)L.append(sc);
-  const head=el('div','sect'); head.append(el('h3','','Players'),el('span','',r.players.length+' / '+r.max)); L.append(head);
+  /* The chat comes next, above who is here, so it is seen without scrolling. */
+  const ch=el('div','sect'); ch.append(el('h3','','Chat')); L.append(ch);
+  const P=document.createDocumentFragment();
+  const head=el('div','sect'); head.append(el('h3','','Players'),el('span','',r.players.length+' / '+r.max)); P.append(head);
   const list=el('div','plist');
   r.players.forEach(p=>{ const row=el('div','prow'+(p.userId===r.you?' me':'')+(p.online?'':' off')), tx=el('div');
     const sub=p.userId===r.hostId?'👑 Host':!p.online?'Reconnecting…':p.userId===r.you?'You':'Ready';
@@ -1306,15 +1311,15 @@ function renderLobby(){
     else row.append(el('span'));
     list.append(row); });
   for(let i=r.players.length;i<r.min;i++){ const row=el('div','prow empty'); row.append(avatar('?',null,38),document.createTextNode('Waiting for a player')); list.append(row); }
-  L.append(list);
-  if(r.invited&&r.invited.length){ const iv=el('div','invited'); iv.append('Invited'); r.invited.forEach(p=>{ const s=el('span'); s.append(avatar(p.name,p.photoUrl),firstOf(p.name)); iv.append(s); }); L.append(iv); }
+  P.append(list);
+  if(r.invited&&r.invited.length){ const iv=el('div','invited'); iv.append('Invited'); r.invited.forEach(p=>{ const s=el('span'); s.append(avatar(p.name,p.photoUrl),firstOf(p.name)); iv.append(s); }); P.append(iv); }
   const sb=el('div','startbox'), short=Math.max(0,r.min-r.players.length);
   if(isHost()){ const go=el('button','btn go','Start game'); go.type='button'; go.disabled=short>0; go.onclick=()=>{ go.disabled=true; sfx.ui(); ask('start').catch(e=>{ sfx.no(); go.disabled=false; toast(errText(e),'feed'); }); };
     sb.append(go,el('p','note',short>0?'Invite at least '+short+(short<r.min-1?' more':'')+' colleague'+(short===1?'':'s')+' to start':r.players.length+' players · '+roundsText(r.rounds)+' · everyone draws '+timesText(r.rounds))); }
   else { const w=el('div','wait'), d=el('span','dots'); d.append(el('i'),el('i'),el('i')); w.append('Waiting for '+firstOf(nameOf(r.hostId)),d);
     sb.append(w,el('p','note',short>0?'The game can start once '+r.min+' players are here.':'The host starts the game. Everyone starts together.')); }
   const lv=el('button','link','Leave room'); lv.type='button'; lv.onclick=()=>{ sfx.ui(); leave(); }; sb.append(lv);
-  L.append(sb); settle(L0,L);
+  P.append(sb); settle(L0,L,P);
 }
 /* The game's settings: the host picks the difficulty and the rounds before the start; everyone else sees what was picked. A tap is sent at once and
    shows straight away; the room coming back confirms it, a refusal puts it back. */
