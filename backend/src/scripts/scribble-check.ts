@@ -20,10 +20,11 @@ import type { User } from '../models/user.model';
 import { hashSessionToken } from '../services/auth.service';
 import { closeConnectRealtime, initConnectRealtime } from '../services/connect-realtime.service';
 import type { NotificationInput } from '../services/notification.service';
-import { SCRIBBLE, advance, guessOutcome, guessPoints, hintsWanted, maskOf, newRoom, normalizeGuess, validateOp } from '../services/scribble-engine';
+import { gamesHomeFor } from '../services/games-home.service';
+import { SCRIBBLE, advance, guessOutcome, guessPoints, hintsWanted, maskOf, newRoom, normalizeGuess, stillKicked, validateOp, viewFor, wasKicked } from '../services/scribble-engine';
 import { closeScribbleRealtime, initScribbleRealtime } from '../services/scribble-realtime.service';
-import { configureScribble, peekRoom, tickScribble } from '../services/scribble-room.service';
-import { resetScribbleMemory } from '../services/scribble-store';
+import { configureScribble, openInvitesFor, peekRoom, tickScribble } from '../services/scribble-room.service';
+import { clearInvite, mutateRoom, pendingInvitesOf, recordInvite, resetScribbleMemory } from '../services/scribble-store';
 import { HOP_TTL_MS, TICKET_TTL_MS, mintTicket, redactTicket, verifyTicket } from '../services/scribble-ticket.service';
 
 const args = process.argv.slice(2);
@@ -384,6 +385,49 @@ async function runChecks() {
     const outside = await request(D, 'room:invite', { userId: C0.userId });
     check('you must be in a room to invite', !outside.ok && outside.status === 404);
 
+    // ------------------------------------------------------------ pending invites
+    console.log('\npending invites');
+    /** The invitee's raw records, as the store holds them. */
+    const pendingOf = (userId: string) => pendingInvitesOf(ORG, userId, clock.now);
+    const kept = await pendingOf(D0.userId);
+    const lobbyRoom = await peekRoom(ORG, code);
+    check('the invite is kept for the invitee: one record for the room, naming the latest inviter', kept.length === 1 && kept[0].code === code && kept[0].org === ORG && kept[0].inviter.userId === B0.userId && kept[0].inviter.name === B0.name, JSON.stringify(kept));
+    check('it lives as long as the room can', kept[0]?.expiresAt === (lobbyRoom?.createdAt ?? 0) + SCRIBBLE.roomMaxMs && kept[0]?.createdAt === clock.now);
+    const openD = await openInvitesFor(ORG, D0.userId);
+    check('and reads as open while the lobby stands, with who is in it', openD.length === 1 && openD[0].code === code && openD[0].from.userId === B0.userId && openD[0].from.name === B0.name && openD[0].players === 3 && openD[0].expiresAt === kept[0]?.expiresAt, JSON.stringify(openD));
+    const D2 = await open(D0);
+    await waitFor('D2 replay', () => D2.invites.length > 0);
+    await wait(100);
+    check('a fresh socket for the invitee is sent the invite again, once', D2.invites.length === 1 && D2.invites[0]?.code === code && D2.invites[0]?.from.userId === B0.userId && D2.invites[0]?.from.name === B0.name, JSON.stringify(D2.invites));
+    const C4 = await open(C0);
+    await waitFor('C4 state', () => C4.states.length > 0);
+    await wait(100);
+    check('someone with no invite is sent nothing', C4.invites.length === 0);
+    C4.socket.close();
+    const homeD = await gamesHomeFor(D0.userId);
+    const card = homeD.invites[0];
+    check('the Games home lists it as an invite card', homeD.invites.length === 1 && card?.gameKey === 'scribble' && card?.code === code && card?.from.userId === B0.userId && card?.from.name === B0.name && card?.from.photoUrl === null && card?.players === 3, JSON.stringify(homeD.invites));
+    check('with the room\'s two-hour limit as its expiry', card?.expiresAt instanceof Date && card.expiresAt.getTime() === kept[0]?.expiresAt);
+    check('and the rest of the home as before', Array.isArray(homeD.challenges) && Array.isArray(homeD.games) && homeD.games.some((g) => g.key === 'scribble'));
+    check('the Games home of someone not invited has an empty list', (await gamesHomeFor(C0.userId)).invites.length === 0);
+    const dJoined = await request(D2, 'room:join', { code });
+    await waitFor('A sees D', () => (player(A, D0.userId) ?? null) !== null);
+    check('joining the room answers the invite', dJoined.ok && (await pendingOf(D0.userId)).length === 0 && !(room(A)?.invited ?? []).some((i) => i.userId === D0.userId));
+    check('and the Games home no longer shows it', (await gamesHomeFor(D0.userId)).invites.length === 0);
+    const inRoom = await request(A, 'room:invite', { userId: D0.userId });
+    check('inviting someone already in the room keeps no record', inRoom.ok && (await pendingOf(D0.userId)).length === 0);
+    // A record that somehow survived the join (two instances, say) goes with a removal.
+    await recordInvite(D0.userId, { org: ORG, code, inviter: { userId: A0.userId, name: A0.name }, createdAt: clock.now, expiresAt: clock.now + SCRIBBLE.roomMaxMs });
+    const dKicked = await request(A, 'room:kick', { userId: D0.userId });
+    await waitFor('D kicked', () => D2.kicked.length > 0 && (player(A, D0.userId) ?? null) === null);
+    check('removing the invitee clears their invite', dKicked.ok && (await pendingOf(D0.userId)).length === 0);
+    const dReinvited = await request(A, 'room:invite', { userId: D0.userId });
+    await waitFor('D reinvited', () => D2.invites.length >= 2);
+    const restored = await openInvitesFor(ORG, D0.userId);
+    check('a fresh invite from the host puts it back', dReinvited.ok && restored.length === 1 && restored[0].code === code && restored[0].from.userId === A0.userId);
+    D2.socket.close();
+    await wait(100);
+
     // ------------------------------------------------------------ a turn
     console.log('\na turn');
     pushes.length = 0;
@@ -396,6 +440,7 @@ async function runChecks() {
     check('the drawer gets three words, one of each level', choices.map((c) => c.level).join() === 'easy,medium,hard' && choices.every((c) => c.word.length > 0));
     check('guessers get no choices and no word', room(B)?.choices === null && room(B)?.word === null);
     check('the invite list is cleared at the start', (room(A)?.invited ?? []).length === 0);
+    check('and the invitees\' pending invites go with it', (await pendingInvitesOf(ORG, D0.userId, clock.now)).length === 0 && (await openInvitesFor(ORG, D0.userId)).length === 0);
     const stalePick = await request(B, 'scribble:pick', { i: 0, turn: turnKey(B) });
     check('a guesser cannot pick', !stalePick.ok && stalePick.status === 409);
     const picked = await request(A, 'scribble:pick', { i: 1, turn: turnKey(A) });
@@ -545,8 +590,12 @@ async function runChecks() {
     await playUntil(A, () => room(A)?.status === 'over', pickers);
     check('the game ends after two rounds', room(A)?.status === 'over' && room(B)?.status === 'over' && room(C3)?.status === 'over', room(A)?.status);
     check('the podium carries everyone\'s scores and no drawer', (room(A)?.players ?? []).length === 3 && room(A)?.drawerId === null && player(A, B0.userId)?.score === 475 && player(A, C0.userId)?.score === 175 && player(A, A0.userId)?.score === 150);
-    await wait(500);
-    const boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    // Written in the background, several round trips to the database away.
+    let boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    for (let tries = 0; boards.length < 3 && tries < 40; tries += 1) {
+      await wait(100);
+      boards = await gameScores().find({ gameId: 'catalog:scribble', org: ORG }).toArray();
+    }
     check('the final scores went to the game\'s board, by the server', boards.length === 3 && boards.find((b) => b.userId === B0.userId)?.score === 475 && boards.find((b) => b.userId === A0.userId)?.score === 150, JSON.stringify(boards.map((b) => [b.userId, b.score])));
     const notOverAgain = await request(B, 'room:again');
     check('only the host can play again', !notOverAgain.ok && notOverAgain.status === 403);
@@ -562,21 +611,116 @@ async function runChecks() {
     await waitFor('C kicked', () => C3.kicked.length > 0 && (room(B)?.players ?? []).length === 1);
     check('the host removes a player, who is told by whom', kicked.ok && (C3.kicked[0] as { by: { userId: string } }).by.userId === B0.userId && (room(B)?.players ?? []).length === 1);
     const refused = await request(C3, 'room:join', { code });
-    check('a removed player cannot rejoin', !refused.ok && refused.status === 403 && /removed/.test(refused.message));
+    check('a removed player cannot rejoin at once', !refused.ok && refused.status === 403 && /removed/.test(refused.message));
     const kickGone = await request(B, 'room:kick', { userId: C0.userId });
     check('removing them again is a 404', !kickGone.ok && kickGone.status === 404);
+    clock.now += 61_000;
+    const afterCooldown = await request(C3, 'room:join', { code });
+    await waitFor('C back after the cool-down', () => (room(B)?.players ?? []).some((p) => p.userId === C0.userId));
+    check('after a minute the code lets them back in', afterCooldown.ok && (room(B)?.players ?? []).some((p) => p.userId === C0.userId));
+    const kickedTwice = await request(B, 'room:kick', { userId: C0.userId });
+    await waitFor('C kicked again', () => kickedTwice.ok && (room(B)?.players ?? []).length === 1);
+    const refusedTwice = await request(C3, 'room:join', { code });
+    check('removed again, refused again', !refusedTwice.ok && refusedTwice.status === 403);
+    const reinvited = await request(B, 'room:invite', { userId: C0.userId });
+    const backByInvite = await request(C3, 'room:join', { code });
+    await waitFor('C back by invite', () => (room(B)?.players ?? []).some((p) => p.userId === C0.userId));
+    check('a fresh invite from the host lets them straight back in', reinvited.ok && backByInvite.ok);
+    await request(C3, 'room:leave');
+    await waitFor('C left again', () => (room(B)?.players ?? []).length === 1);
     const heardByC = C3.feeds.length;
+    const dLines = (kind: string) => B.feeds.filter((f) => f.kind === kind && f.userId === D0.userId).length;
+    const [dJoins, dLeaves] = [dLines('join'), dLines('leave')];
     await request(D, 'room:join', { code });
-    await waitFor('B hears D join', () => B.feeds.some((f) => f.kind === 'join' && f.userId === D0.userId));
+    await waitFor('B hears D join', () => dLines('join') > dJoins);
     await request(D, 'room:leave');
-    await waitFor('B hears D leave', () => B.feeds.some((f) => f.kind === 'leave' && f.userId === D0.userId));
+    await waitFor('B hears D leave', () => dLines('leave') > dLeaves);
     check("a removed player's sockets are out of the room's channel: the feed no longer reaches them", C3.feeds.length === heardByC);
+    console.log('\nremoved while offline, invites from a non-host, old removals');
+    const cIn = await request(C3, 'room:join', { code });
+    await waitFor('C in again', () => player(B, C0.userId)?.online === true);
+    C3.socket.close();
+    await waitFor('C offline', () => player(B, C0.userId)?.online === false);
+    const offKick = await request(B, 'room:kick', { userId: C0.userId });
+    await waitFor('C removed while offline', () => cIn.ok && offKick.ok && !player(B, C0.userId));
+    clock.now += SCRIBBLE.kickCooldownMs + 1000;
+    const C5 = await open(C0);
+    await wait(150);
+    const offRejoin = await request(C5, 'room:join', { code, rejoin: true });
+    check('removed while offline: the reconnect\'s rejoin after the cool-down is refused as removed', !offRejoin.ok && offRejoin.status === 403 && offRejoin.message === 'The host removed you from this room.', JSON.stringify(offRejoin));
+    check('and it does not seat them', !player(B, C0.userId) && !(await peekRoom(ORG, code))?.players.some((p) => p.userId === C0.userId) && !C5.states.some((st) => st.room?.code === code));
+    const neverSeated = await request(D, 'room:join', { code, rejoin: true });
+    check('a rejoin from someone not seated and never removed is a 404', !neverSeated.ok && neverSeated.status === 404);
+    const freshAfter = await request(C5, 'room:join', { code });
+    await waitFor('C back by code', () => !!player(B, C0.userId));
+    check('a fresh join by code after the cool-down still works', freshAfter.ok && !!player(B, C0.userId));
+
+    // A second colleague, so the pushes later on (keyed per inviter → invitee pair) are untouched.
+    const F0 = players[5];
+    const F = await open(F0);
+    const fIn = await request(F, 'room:join', { code });
+    await waitFor('F in', () => fIn.ok && !!player(B, F0.userId));
+    const fOut = await request(B, 'room:kick', { userId: F0.userId });
+    await waitFor('F out', () => fOut.ok && !player(B, F0.userId) && !player(C5, F0.userId));
+    const kickAt = clock.now;
+    check('everyone\'s view lists the removed player until the cool-down ends', (room(C5)?.removed ?? []).some((r) => r.userId === F0.userId && r.until === kickAt + SCRIBBLE.kickCooldownMs), JSON.stringify(room(C5)?.removed));
+    const pushesBefore = pushes.length;
+    const nonHostInvite = await request(C5, 'room:invite', { userId: F0.userId });
+    check('a non-host cannot invite someone the host removed, in the cool-down', !nonHostInvite.ok && nonHostInvite.status === 403 && nonHostInvite.message === 'Only the host can invite someone they removed.', JSON.stringify(nonHostInvite));
+    const stillOut = await peekRoom(ORG, code);
+    check('and it leaves the removal in place: no record, no push, the code still refuses them', (stillOut?.kicked ?? []).some((k) => typeof k !== 'string' && k.userId === F0.userId && k.at === kickAt) && !(stillOut?.invited ?? []).some((i) => i.userId === F0.userId) && (await pendingInvitesOf(ORG, F0.userId, clock.now)).length === 0 && pushes.length === pushesBefore);
+    const fRefused = await request(F, 'room:join', { code });
+    check('so a join by code is still refused', !fRefused.ok && fRefused.status === 403);
+    const hostInvite = await request(B, 'room:invite', { userId: F0.userId });
+    await waitFor('C5 sees the removal end', () => !(room(C5)?.removed ?? []).some((r) => r.userId === F0.userId));
+    const cleared = await peekRoom(ORG, code);
+    check('the host\'s invite clears the removal', hostInvite.ok && !(cleared?.kicked ?? []).some((k) => (typeof k === 'string' ? k : k.userId) === F0.userId) && !(room(C5)?.removed ?? []).some((r) => r.userId === F0.userId));
+    const fBack = await request(F, 'room:join', { code });
+    await waitFor('F back by the host\'s invite', () => fBack.ok && !!player(B, F0.userId));
+    check('and lets them straight back in', fBack.ok);
+    const fOutAgain = await request(B, 'room:kick', { userId: F0.userId });
+    await waitFor('F out again', () => fOutAgain.ok && !player(B, F0.userId));
+    clock.now += SCRIBBLE.kickCooldownMs + 1000;
+    const lateRoom = await peekRoom(ORG, code);
+    check('past the cool-down the view no longer lists them', !!lateRoom && !viewFor(lateRoom, C0.userId, clock.now).removed.some((r) => r.userId === F0.userId));
+    const nonHostLate = await request(C5, 'room:invite', { userId: F0.userId });
+    check('then a non-host may invite them, and the removal stays on record', nonHostLate.ok && wasKicked((await peekRoom(ORG, code))!, F0.userId));
+    await clearInvite(ORG, F0.userId, code);
+
+    // A room written before the cool-down holds bare ids: removed, with no expiry.
+    await mutateRoom(ORG, code, (r) => {
+      r.kicked = [F0.userId];
+      return true;
+    });
+    clock.now += 5 * 60_000;
+    const legacyJoin = await request(F, 'room:join', { code });
+    check('an old bare-id removal refuses a join by code, however long after', !legacyJoin.ok && legacyJoin.status === 403);
+    const legacyRejoin = await request(F, 'room:join', { code, rejoin: true });
+    check('and a rejoin', !legacyRejoin.ok && legacyRejoin.status === 403);
+    const legacyNonHost = await request(C5, 'room:invite', { userId: F0.userId });
+    check('and a non-host\'s invite', !legacyNonHost.ok && legacyNonHost.status === 403);
+    const legacyRoom = await peekRoom(ORG, code);
+    check('the view lists it with no end', !!legacyRoom && viewFor(legacyRoom, C0.userId, clock.now).removed.some((r) => r.userId === F0.userId && r.until === null) && stillKicked(legacyRoom, F0.userId, clock.now + 1e9) && !stillKicked(legacyRoom, C0.userId, clock.now));
+    const legacyHost = await request(B, 'room:invite', { userId: F0.userId });
+    const legacyJoined = await request(F, 'room:join', { code });
+    await waitFor('F in past an old removal', () => legacyJoined.ok && !!player(B, F0.userId));
+    check('the host\'s invite clears an old removal too', legacyHost.ok && legacyJoined.ok && !wasKicked((await peekRoom(ORG, code))!, F0.userId));
+    await request(F, 'room:leave');
+    await request(C5, 'room:leave');
+    await waitFor('only B left', () => (room(B)?.players ?? []).length === 1);
+    C5.socket.close();
+    F.socket.close();
+
+    await request(B, 'room:invite', { userId: D0.userId });
+    await request(B, 'room:invite', { userId: C0.userId });
+    check('invites into the idle lobby are pending', (await pendingInvitesOf(ORG, D0.userId, clock.now)).some((i) => i.code === code) && (await pendingInvitesOf(ORG, C0.userId, clock.now)).some((i) => i.code === code));
     B.socket.close();
     await wait(200);
     await advanceClock(SCRIBBLE.lobbyIdleMs - 1000);
     check('an empty lobby is kept for ten minutes', (await peekRoom(ORG, code)) !== null);
     await advanceClock(1000);
     check('then deleted', (await peekRoom(ORG, code)) === null);
+    check('and every invite into it with it', (await pendingInvitesOf(ORG, D0.userId, clock.now)).length === 0 && (await pendingInvitesOf(ORG, C0.userId, clock.now)).length === 0);
     const afterwards = await request(A, 'room:join', { code });
     check('and its code is gone', !afterwards.ok && afterwards.status === 404);
 

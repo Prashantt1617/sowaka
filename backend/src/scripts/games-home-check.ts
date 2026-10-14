@@ -18,6 +18,7 @@ import {
   pointsBefore,
 } from '../services/games-home-rules';
 import { rankByPoints } from '../services/leaderboard';
+import { inviteOpen } from '../services/scribble-engine';
 
 let failures = 0;
 
@@ -93,6 +94,16 @@ check('five minutes ago counts', playedRecently(new Date(now.getTime() - 5 * 60_
 check('twenty minutes ago does not', !playedRecently(new Date(now.getTime() - 20 * 60_000), now));
 check('nothing does not', !playedRecently(undefined, now));
 check('initials', initialsOf('Ananya Bisht') === 'AB' && initialsOf('Raghav') === 'R' && initialsOf('  ') === '?');
+
+console.log('scribble invites');
+const tick = now.getTime();
+const lobby = { status: 'lobby' as const, players: [{ userId: 'host' }, { userId: 'karan' }] };
+const invite = { expiresAt: tick + 60_000 };
+check('a lobby still standing, in time, not yet joined: shown', inviteOpen(invite, lobby, 'me', tick));
+check('once the invitee is in the room: not', !inviteOpen(invite, { ...lobby, players: [...lobby.players, { userId: 'me' }] }, 'me', tick));
+check('a game under way or over: not', !inviteOpen(invite, { ...lobby, status: 'drawing' }, 'me', tick) && !inviteOpen(invite, { ...lobby, status: 'over' }, 'me', tick));
+check('a room that has gone: not', !inviteOpen(invite, null, 'me', tick));
+check('run out: not', !inviteOpen({ expiresAt: tick }, lobby, 'me', tick) && inviteOpen({ expiresAt: tick + 1 }, lobby, 'me', tick));
 
 if (failures > 0) {
   console.log(`\n${failures} failed`);

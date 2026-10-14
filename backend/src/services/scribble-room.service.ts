@@ -15,6 +15,8 @@ import {
   applyGuess,
   chooseWord,
   firstName,
+  forgetKick,
+  inviteOpen,
   makeCode,
   newRoom,
   parseCode,
@@ -23,14 +25,17 @@ import {
   resetToLobby,
   standings,
   startGame,
+  stillKicked,
   turnKeyOf,
   viewFingerprint,
   viewFor,
+  wasKicked,
 } from './scribble-engine';
 import {
   appendStrokes,
   claimOnce,
   claimWithin,
+  clearInvite,
   clearSeatIf,
   clearStrokes,
   createRoom,
@@ -39,8 +44,10 @@ import {
   leaseRoom,
   liveRooms,
   mutateRoom,
+  pendingInvitesOf,
   readRoom,
   readStrokes,
+  recordInvite,
   releaseRoom,
   seatOf,
   setSeat,
@@ -163,8 +170,19 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
         emitter?.seat(effect.userId, room.org, room.code, false);
         lastSent.delete(effect.userId);
         await clearSeatIf(room.org, effect.userId, room.code);
+        // A fresh invite from the host puts the card back.
+        await clearInvite(room.org, effect.userId, room.code);
         break;
       case 'invite':
+        // Kept until answered, so the Games tab and a later socket can show
+        // it; a second invite to the same room refreshes the one record.
+        await recordInvite(effect.userId, {
+          org: room.org,
+          code: effect.code,
+          inviter: { userId: effect.from.userId, name: effect.from.name },
+          createdAt: deps.now(),
+          expiresAt: room.createdAt + SCRIBBLE.roomMaxMs,
+        });
         emitter?.toUser(effect.userId, 'room:invite', { from: effect.from, code: effect.code });
         break;
       case 'notify':
@@ -194,6 +212,10 @@ async function applyEffects(room: ScribbleRoom, effects: Effect[]): Promise<{ de
           emitter?.seat(userId, room.org, room.code, false);
           lastSent.delete(userId);
           emitter?.toUser(userId, 'room:state', { room: null });
+        }
+        // Nobody is left with a card for a room that is gone.
+        for (const userId of new Set([...effect.players, ...room.invited.map((i) => i.userId)])) {
+          await clearInvite(room.org, userId, room.code);
         }
         break;
       }
@@ -297,15 +319,30 @@ export async function hostRoom(seat: Seat): Promise<ScribbleView> {
 
 const NO_ROOM = 'No room with that code at your company. Check it and try again.';
 
-export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: ScribbleView; strokes: ScribbleOp[] }> {
+const KICKED_MESSAGE = 'The host removed you from this room. You can come back in a minute, or at once if the host invites you again.';
+const REMOVED_MESSAGE = 'The host removed you from this room.';
+const NOT_SEATED = 'You are not in that room any more.';
+
+/**
+ * A rejoin (the page reconnecting to the room it was in) only ever puts back
+ * someone still seated there: one removed while offline is told so, whatever
+ * the cool-down says, and anyone else gets a 404. The cool-down applies only
+ * to a fresh join by code.
+ */
+const refuseRejoin = (room: ScribbleRoom, userId: string) =>
+  wasKicked(room, userId) ? new ScribbleError(403, REMOVED_MESSAGE) : new ScribbleError(404, NOT_SEATED);
+
+export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?: boolean } = {}): Promise<{ room: ScribbleView; strokes: ScribbleOp[] }> {
+  const rejoin = options.rejoin === true;
   const code = parseCode(rawCode);
   if (!code) throw new ScribbleError(404, NO_ROOM);
   // Only ever looked up in the viewer's own org: another company's code reads
   // the same as one that does not exist.
   const existing = await readRoom(seat.org, code);
   if (!existing) throw new ScribbleError(404, NO_ROOM);
-  if (existing.kicked.includes(seat.userId)) throw new ScribbleError(403, 'The host removed you from this room.');
   const already = playerOf(existing, seat.userId);
+  if (!already && rejoin) throw refuseRejoin(existing, seat.userId);
+  if (!already && stillKicked(existing, seat.userId, deps.now())) throw new ScribbleError(403, KICKED_MESSAGE);
   if (!already && existing.players.length >= SCRIBBLE.maxPlayers) {
     throw new ScribbleError(409, `That room is full (${SCRIBBLE.maxPlayers} of ${SCRIBBLE.maxPlayers}).`);
   }
@@ -314,8 +351,9 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
 
   const changed = await change(seat.org, code, (room) => {
     const now = deps.now();
-    if (room.kicked.includes(seat.userId)) throw new ScribbleError(403, 'The host removed you from this room.');
     const mine = playerOf(room, seat.userId);
+    if (!mine && rejoin) throw refuseRejoin(room, seat.userId);
+    if (!mine && stillKicked(room, seat.userId, now)) throw new ScribbleError(403, KICKED_MESSAGE);
     if (mine) {
       mine.online = true;
       mine.offlineAt = null;
@@ -337,6 +375,8 @@ export async function joinRoom(seat: Seat, rawCode: unknown): Promise<{ room: Sc
   if (!changed) throw new ScribbleError(404, NO_ROOM);
   await setSeat(seat.org, seat.userId, code);
   emitter?.seat(seat.userId, seat.org, code, true);
+  // In the room now: the invite that brought them is answered.
+  await clearInvite(seat.org, seat.userId, code);
   return { room: viewFor(changed.room, seat.userId, deps.now()), strokes: await readStrokes(seat.org, code) };
 }
 
@@ -365,6 +405,8 @@ async function findColleague(org: string, userId: string): Promise<Pick<User, 'u
   return users().findOne(filter, { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } });
 }
 
+const HOST_ONLY_REINVITE = 'Only the host can invite someone they removed.';
+
 export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ invited: true }> {
   const room = await requireRoom(seat);
   const userId = String(rawUserId ?? '').trim();
@@ -372,6 +414,8 @@ export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ in
   if (playerOf(room, userId)) return { invited: true };
   if (room.players.length >= SCRIBBLE.maxPlayers) throw new ScribbleError(409, 'The room is full.');
   if (room.invitesSent >= SCRIBBLE.invitesPerGame) throw new ScribbleError(429, 'That is enough invites for one game.');
+  // Only the host can undo their own removal early; anyone may invite them once the cool-down is over.
+  if (room.hostId !== seat.userId && stillKicked(room, userId, deps.now())) throw new ScribbleError(403, HOST_ONLY_REINVITE);
   const colleague = await findColleague(seat.org, userId);
   if (!colleague) throw new ScribbleError(404, "That person isn't a colleague you can invite.");
   const photoUrl = (await resolveProfilePhoto(colleague)) ?? null;
@@ -380,6 +424,9 @@ export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ in
   const changed = await change(seat.org, room.code, (r) => {
     if (!playerOf(r, seat.userId)) throw new ScribbleError(404, 'You are not in a room.');
     if (playerOf(r, userId)) return { result: true, effects: [], write: false };
+    // An invite from the host ends any removal; anyone else's waits out the cool-down.
+    if (r.hostId === seat.userId) forgetKick(r, userId);
+    else if (stillKicked(r, userId, deps.now())) throw new ScribbleError(403, HOST_ONLY_REINVITE);
     if (!r.invited.some((i) => i.userId === userId)) r.invited.push({ userId, name: colleague.name, photoUrl });
     r.invitesSent += 1;
     const effects: Effect[] = [{ type: 'invite', userId, from: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, code: r.code }];
@@ -398,9 +445,13 @@ export async function startRoom(seat: Seat): Promise<void> {
     if (r.status !== 'lobby') throw new ScribbleError(409, 'The game has already started.');
     const online = r.players.filter((p) => p.online).length;
     if (online < SCRIBBLE.minPlayers) throw new ScribbleError(409, `Need ${SCRIBBLE.minPlayers} players to start.`);
-    return { result: true, effects: startGame(r, deps.now(), deps.random, randomUUID().slice(0, 8)), write: true };
+    // The engine empties the invite list as the game starts; remembered here
+    // so the invitees' pending cards go with it.
+    const invitees = r.invited.map((i) => i.userId);
+    return { result: invitees, effects: startGame(r, deps.now(), deps.random, randomUUID().slice(0, 8)), write: true };
   });
   if (!changed) throw new ScribbleError(404, 'That room has closed.');
+  for (const userId of changed.result) await clearInvite(seat.org, userId, room.code);
 }
 
 export async function kickFromRoom(seat: Seat, rawUserId: unknown): Promise<void> {
@@ -462,6 +513,44 @@ export async function drawingContext(seat: Seat): Promise<{ org: string; code: s
 /** Appends validated ops to the turn's log; the socket layer fans them out. */
 export async function logStrokes(org: string, code: string, ops: ScribbleOp[]): Promise<void> {
   await appendStrokes(org, code, ops);
+}
+
+// ---------------------------------------------------------------- pending invites
+
+/** An invite still worth answering, as the Games tab and a fresh socket show it. */
+export interface OpenInvite {
+  code: string;
+  from: { userId: string; name: string; photoUrl: string | null };
+  /** In the room now. */
+  players: number;
+  createdAt: number;
+  expiresAt: number;
+}
+
+/**
+ * The invites waiting on this person whose room is still in its lobby, oldest
+ * first. A record whose room has gone, started, or run out is dropped as it
+ * is met, so the list is never stale for more than one read.
+ */
+export async function openInvitesFor(org: string, userId: string): Promise<OpenInvite[]> {
+  const now = deps.now();
+  const open: OpenInvite[] = [];
+  for (const invite of await pendingInvitesOf(org, userId, now)) {
+    const room = await readRoom(org, invite.code);
+    if (!inviteOpen(invite, room, userId, now)) {
+      await clearInvite(org, userId, invite.code);
+      continue;
+    }
+    const inviter = playerOf(room!, invite.inviter.userId);
+    open.push({
+      code: invite.code,
+      from: { userId: invite.inviter.userId, name: inviter?.name ?? invite.inviter.name, photoUrl: inviter?.photoUrl ?? null },
+      players: room!.players.length,
+      createdAt: invite.createdAt,
+      expiresAt: invite.expiresAt,
+    });
+  }
+  return open;
 }
 
 // ---------------------------------------------------------------- presence

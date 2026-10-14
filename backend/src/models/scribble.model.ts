@@ -53,8 +53,13 @@ export interface ScribbleRoom {
   updatedAt: number;
   players: ScribblePlayer[];
   invited: ScribbleInvitee[];
-  /** Removed by the host; a rejoin is refused. */
-  kicked: string[];
+  /**
+   * Removed by the host, and when: they may come back by code after a short
+   * cool-down, or at once on a fresh invite from the host. A bare user id is a
+   * removal written before the cool-down existed: removed with no expiry.
+   * Read it only through the engine's `kickedId` / `stillKicked` / `wasKicked`.
+   */
+  kicked: Array<{ userId: string; at: number } | string>;
   /** Invites sent in this game, against the per-game cap. */
   invitesSent: number;
   gameId: string | null;
@@ -114,6 +119,12 @@ export interface ScribbleView {
     guessed: boolean;
   }>;
   invited: ScribbleInvitee[];
+  /**
+   * Removed by the host and still inside the cool-down: `until` is when it
+   * ends on the server's clock, null for never (only the host's invite lets
+   * them back). The page keeps them out of a non-host's invite picker.
+   */
+  removed: Array<{ userId: string; until: number | null }>;
   choices: ScribbleChoice[] | null;
   word: string | null;
   mask: string | null;

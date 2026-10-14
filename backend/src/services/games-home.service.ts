@@ -44,6 +44,8 @@ import { rankByPoints, type Contender, type RankedEntry } from './leaderboard';
 import { pointEvents } from './points-ledger.service';
 import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
+import { openInvitesFor } from './scribble-room.service';
+import { logger } from '../utils/logger';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
 const CONTEST_KIND: Record<string, 'caption' | 'photo' | 'mostLikely'> = {
@@ -476,6 +478,36 @@ async function challengesFor(viewer: User, catalog: Promise<PublicGame[]>, now: 
   });
 }
 
+export interface HomeInvite {
+  gameKey: 'scribble';
+  /** The room's code; the page joins with it (`startChallengeId` is `room:<code>`). */
+  code: string;
+  from: { userId: string; name: string; photoUrl: string | null };
+  /** In the room now. */
+  players: number;
+  expiresAt: Date;
+}
+
+/**
+ * Scribble rooms the viewer has been invited to and not yet joined, while
+ * they are still in their lobby. Read straight from Scribble's own store
+ * (nothing about a room is kept in Mongo); the other games' challenges are
+ * `challengesFor`. Only in companies that have Scribble.
+ */
+async function invitesFor(viewer: User, catalog: Promise<PublicGame[]>): Promise<HomeInvite[]> {
+  if (!viewer.org) return [];
+  const games = await catalog;
+  if (!games.some((game) => game.key === 'scribble')) return [];
+  const open = await openInvitesFor(viewer.org, viewer.userId);
+  return open.map((invite) => ({
+    gameKey: 'scribble',
+    code: invite.code,
+    from: invite.from,
+    players: invite.players,
+    expiresAt: new Date(invite.expiresAt),
+  }));
+}
+
 export interface PlayedGame {
   key: string;
   best: number;
@@ -569,8 +601,9 @@ async function playingNowFor(
 
 /**
  * Everything the Games home draws, in one round trip: the viewer's points and
- * rank, a colleague's new best over theirs, what is live, challenges waiting
- * on them, the games they have played, the catalog, and who is playing now.
+ * rank, a colleague's new best over theirs, what is live, challenges and
+ * Scribble invites waiting on them, the games they have played, the catalog,
+ * and who is playing now.
  */
 export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
   const viewer = await requireViewer(viewerUserId);
@@ -581,7 +614,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
   const blockedP = blockedUserIdsFor(viewer.userId);
   const mineP = myScoresFor(viewer);
   const relayP = liveRelayFor(viewer, now).catch(() => null);
-  const [roster, games, banner, liveContests, liveRelay, challenges, yourGames, playingNow] = await Promise.all([
+  const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow] = await Promise.all([
     rosterP,
     gamesP,
     Promise.all([gamesP, mineP, blockedP]).then(([games, mine, blocked]) =>
@@ -590,6 +623,11 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     liveContestsFor(viewer, blockedP, now),
     relayP,
     challengesFor(viewer, gamesP, now),
+    // A fault in the live store must not take the whole home down with it.
+    invitesFor(viewer, gamesP).catch((error) => {
+      logger.error('Games home invites failed', { userId: viewer.userId }, error);
+      return [] as HomeInvite[];
+    }),
     Promise.all([gamesP, mineP]).then(([games, mine]) => playedGamesFor(viewer, games, mine)),
     Promise.all([rosterP, relayP]).then(([roster, relay]) => playingNowFor(viewer, roster, relay, now)),
   ]);
@@ -604,6 +642,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     liveContests,
     liveRelay,
     challenges,
+    invites,
     yourGames,
     games,
     playingNow,

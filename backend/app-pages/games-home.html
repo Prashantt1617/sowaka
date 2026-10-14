@@ -468,6 +468,17 @@ svg{overflow:visible}
           fromPhotoUrl: strOrNull(from.photoUrl), sentByMe: r.sentByMe === true, expiresAt: time(r.expiresAt)
         };
       }),
+      // Room invites (Scribble): a card each, with a Join that opens the game on the room. Absent or empty: nothing.
+      invites: list(json.invites, function (r) {
+        var code = str(r.code), key = str(r.gameKey);
+        if (!code || !key) return null;
+        var from = r.from && typeof r.from === 'object' ? r.from : {};
+        var name = str(from.name);
+        return {
+          gameKey: key, code: code, fromName: name, fromFirstName: str(from.firstName) || name.split(' ')[0], fromUserId: strOrNull(from.userId),
+          fromPhotoUrl: strOrNull(from.photoUrl), players: int(r.players), expiresAt: time(r.expiresAt)
+        };
+      }),
       yourGames: list(json.yourGames, function (r) {
         var key = str(r.key);
         return key ? { key: key, best: int(r.best), rank: intOrNull(r.rank), players: int(r.players) } : null;
@@ -747,7 +758,7 @@ svg{overflow:visible}
   function liveFrame(o) {
     var arrow = o.footRight != null ? o.footRight : o.act ? use('live-card-arrow', 'arw') : '';
     var attrs = o.act ? ' data-act="' + o.act + '" data-id="' + esc(o.id) + '" role="button" tabindex="0"' : '';
-    return '<div class="lc"' + attrs + ' aria-label="' + esc(o.label) + '">' +
+    return '<div class="lc' + (o.cls ? ' ' + o.cls : '') + '"' + attrs + ' aria-label="' + esc(o.label) + '">' +
       '<div class="strip"><div class="who">' + o.face + '<span class="ell">' + esc(o.who) + '</span></div>' + o.clock + '</div>' +
       '<div class="intro">' + o.picture + '<div class="lt"><div class="lt-t">' + esc(o.title.toUpperCase()) + '</div>' +
       (o.description ? '<div class="lt-d">' + esc(o.description) + '</div>' : '') + '</div></div>' +
@@ -903,6 +914,7 @@ svg{overflow:visible}
       return;
     }
     var challenges = home.challenges.filter(function (c) { return gameFor(c.gameKey); });
+    var invites = home.invites.filter(function (v) { return gameFor(v.gameKey); });
     // The challenge cards show the viewer's own face, which comes from the leaderboard: fetch it once.
     if (challenges.length && !S.meTried && viewerFace().name === 'You') { S.meTried = true; setTimeout(function () { loadBoard(S.period); }, 0); }
     var live = [];
@@ -912,11 +924,11 @@ svg{overflow:visible}
 
     var h = '';
     // No score banner (12 Oct 2026): what is live (one card under the other), then the challenges, then a 14pt gap.
-    if (challenges.length || live.length) {
+    if (challenges.length || invites.length || live.length) {
       h += '<div style="height:12px"></div>';
       if (live.length) h += '<div class="live-h"><span class="live-b"><span class="live-d"></span>LIVE</span></div><div class="live" id="live">' + live.join('') + '</div>';
-      if (live.length && challenges.length) h += '<div style="height:14px"></div>';
-      if (challenges.length) h += '<div class="chs">' + challenges.map(challengeCard).join('') + '</div>';
+      if (live.length && (challenges.length || invites.length)) h += '<div style="height:14px"></div>';
+      if (challenges.length || invites.length) h += '<div class="chs">' + challenges.map(challengeCard).concat(invites.map(inviteCard)).join('') + '</div>';
       h += '<div style="height:14px"></div>';
     }
     h += gameList(home, played);
@@ -1005,7 +1017,7 @@ svg{overflow:visible}
     var who = c.sentByMe ? 'You challenged ' + other : other + ' challenged you';
     var me = viewerFace();
     return liveFrame({
-      act: '', id: '', label: who + ', ' + name,
+      cls: 'ch', act: '', id: '', label: who + ', ' + name,
       face: face(c.fromName, c.fromPhotoUrl, 26),
       who: who,
       clock: clock('challenge', c.expiresAt, '', 'clk'),
@@ -1016,6 +1028,24 @@ svg{overflow:visible}
         face(me.name, me.photo, 28, { pos: 'left:0' }) + face(c.fromName, c.fromPhotoUrl, 28, { pos: 'left:16px' }) +
         '</span><span class="ft-t vs ell">You vs ' + esc(other) + '</span></div>',
       footRight: cta(c.incoming ? 'Accept' : 'Play', { act: 'accept', id: c.id, w: 110, h: 46, fs: 15, lc: 0.467, disabled: S.accepting === c.id })
+    });
+  }
+  /** A room invite, in the same frame: who invited you, how long the invite lasts, the game, who is in the room, and Join. */
+  function inviteCard(v) {
+    var game = gameFor(v.gameKey);
+    var name = (game && game.name) || 'Scribble';
+    var who = (v.fromFirstName || 'Someone') + ' invited you to ' + name;
+    return liveFrame({
+      cls: 'inv', act: '', id: '', label: who,
+      face: face(v.fromName, v.fromPhotoUrl, 26),
+      who: who,
+      clock: clock('challenge', v.expiresAt, '', 'clk'),
+      picture: game ? gameTile(game, { rock: true }) : tile('var(--cream)', '', { rock: true }),
+      title: name,
+      description: 'Join the room before the game starts.',
+      footer: '<div class="ft"><span class="pile" style="width:28px">' + face(v.fromName, v.fromPhotoUrl, 28, { pos: 'left:0' }) +
+        '</span><span class="ft-t vs ell">' + esc(count(v.players) + ' in the room') + '</span></div>',
+      footRight: cta('Join', { act: 'join-room', id: v.code, key: v.gameKey, w: 110, h: 46, fs: 15, lc: 0.467 })
     });
   }
   function rankBadge(rank) {
@@ -1254,6 +1284,7 @@ svg{overflow:visible}
         break;
       case 'accept': takeUp(el.getAttribute('data-id')); break;
       case 'play': openGame(el.getAttribute('data-key')); break;
+      case 'join-room': openGame(el.getAttribute('data-key'), 'room:' + el.getAttribute('data-id')); break;
       case 'contest': openContest(el.getAttribute('data-id')); break;
       case 'post': openPost(el.getAttribute('data-id')); break;
       case 'retry': S.error = null; renderGames(); if (!S.bridge && window.Sowaka) useBridge(window.Sowaka); else refresh(); break;
@@ -1475,6 +1506,10 @@ svg{overflow:visible}
             from: { userId: 'u-aarav', name: 'Aarav Mehta', firstName: 'Aarav', photoUrl: null }, beat: 1640,
             expiresAt: new Date(now + 19 * H + 47 * M + 31 * S_).toISOString() }
         ],
+        invites: [
+          { gameKey: 'scribble', code: 'K7QXP', from: { userId: 'u-aarav', name: 'Aarav Mehta', photoUrl: null }, players: 3,
+            expiresAt: new Date(now + 9 * M + 30 * S_).toISOString() }
+        ],
         yourGames: [{ key: 'odd-one-out', best: 1250, achievedAt: new Date(now - 2 * H).toISOString(), rank: 2, players: 9 }],
         games: [{ key: 'odd-one-out', name: 'Odd One Out', tagline: 'Spot the tile that’s different', description: 'Find the odd tile before the clock runs out.',
           instructions: '', kind: 'web', accentColor: '#F5B82E', backgroundColor: '#15122B', order: 1,
@@ -1484,6 +1519,9 @@ svg{overflow:visible}
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' },
           { key: 'trails', name: 'Trails', tagline: 'Draw one line through every square', description: 'Find the one trail through every square before the clock runs out.',
             instructions: '', kind: 'web', accentColor: '#3DDC97', backgroundColor: '#0E1C19', order: 3,
+            scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' },
+          { key: 'scribble', name: 'Scribble', tagline: 'Draw it. Guess it.', description: 'Draw for your colleagues and guess their doodles, live.',
+            instructions: '', kind: 'web', accentColor: '#FF6F7D', backgroundColor: '#0F1530', order: 4,
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' }],
         playingNow: { count: 3, people: [{ name: 'Aarav Mehta', initials: 'AM' }, { name: 'Meera Iyer', initials: 'MI' }, { name: 'Raghav Rao', initials: 'RR' }] }
       };

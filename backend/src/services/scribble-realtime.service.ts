@@ -20,6 +20,7 @@ import {
   logStrokes,
   onConnected,
   onDisconnected,
+  openInvitesFor,
   pickWord,
   setScribbleEmitter,
   startRoom,
@@ -174,6 +175,14 @@ async function welcome(socket: Socket): Promise<Seat | null> {
   logger.info('Scribble socket connected', { userId, org, transport: socket.conn.transport.name });
   forgetSent(userId);
   await onConnected(seat);
+  // The invites that arrived while Scribble was closed, replayed to this
+  // socket as if they had just been sent: the page draws its card from each.
+  // Only ever a nicety, so a store fault here does not cost them the room.
+  try {
+    for (const invite of await openInvitesFor(org, userId)) socket.emit('room:invite', { from: invite.from, code: invite.code });
+  } catch (error) {
+    logger.error('Scribble invite replay failed', { userId, org }, error);
+  }
   return seat;
 }
 
@@ -215,7 +224,7 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
   };
 
   on('room:host', buckets.host, (seat) => hostRoom(seat));
-  on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code));
+  on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code, { rejoin: p.rejoin === true }));
   on('room:leave', buckets.small, async (seat) => {
     await leaveRoom(seat);
     return {};
