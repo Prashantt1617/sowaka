@@ -13,6 +13,8 @@ import { logger } from '../utils/logger';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 
 const sessionKey = (org: string, id: string) => `squad:session:${org}:${id}`;
+/** The session's version, kept beside it: a compare-and-set compares this, not the whole session. */
+const versionKey = (org: string, id: string) => `squad:ver:${org}:${id}`;
 const lockKey = (org: string, id: string) => `squad:lock:${org}:${id}`;
 const LIVE_KEY = 'squad:live';
 
@@ -22,13 +24,37 @@ const memoryQueues = new Map<string, Promise<unknown>>();
 
 const redis = (): Redis | null => (redisReady() ? redisClient() : null);
 
+/** KEYS: session, version. ARGV: expected version, new session, new version, ttl. */
 const CAS_SCRIPT = `
-local current = redis.call('GET', KEYS[1])
-if (current == false and ARGV[1] == '') or current == ARGV[1] then
-  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+if redis.call('GET', KEYS[2]) == ARGV[1] then
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[4])
+  redis.call('SET', KEYS[2], ARGV[3], 'EX', ARGV[4])
   return 1
 end
 return 0`;
+
+/**
+ * The last copy of each session this process read or wrote, by version: a
+ * read first asks Redis for the version (a few bytes), and only fetches the
+ * session itself (tens of KB for a big office) when another instance moved it.
+ */
+const cache = new Map<string, { version: string; raw: string }>();
+
+async function readRaw(client: Redis, org: string, id: string): Promise<{ raw: string; version: string } | null> {
+  const key = sessionKey(org, id);
+  const version = await client.get(versionKey(org, id));
+  if (version === null) {
+    cache.delete(key);
+    return null;
+  }
+  const held = cache.get(key);
+  if (held && held.version === version) return held;
+  const raw = await client.get(key);
+  if (raw === null) return null;
+  const fresh = { raw, version };
+  cache.set(key, fresh);
+  return fresh;
+}
 
 const UNLOCK_SCRIPT = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -48,8 +74,8 @@ export async function readSession(org: string, id: string): Promise<SquadSession
   const client = redis();
   if (client) {
     try {
-      const raw = await client.get(key);
-      return raw ? (JSON.parse(raw) as SquadSession) : null;
+      const held = await readRaw(client, org, id);
+      return held ? (JSON.parse(held.raw) as SquadSession) : null;
     } catch (error) {
       logger.error('Secret Squad session read failed', { org, id }, error);
     }
@@ -68,7 +94,11 @@ export async function createSession(session: SquadSession): Promise<boolean> {
     try {
       const made = await client.set(key, raw, 'EX', SESSION_TTL_SECONDS, 'NX');
       if (made !== 'OK') return false;
-      await client.sadd(LIVE_KEY, live);
+      await client.multi()
+        .set(versionKey(session.org, session.id), String(session.version), 'EX', SESSION_TTL_SECONDS)
+        .sadd(LIVE_KEY, live)
+        .exec();
+      cache.set(key, { raw, version: String(session.version) });
       return true;
     } catch (error) {
       logger.error('Secret Squad session create failed, using memory', { org: session.org, id: session.id }, error);
@@ -90,33 +120,63 @@ export async function mutateSession<T>(
   id: string,
   change: (session: SquadSession) => T | null,
 ): Promise<{ session: SquadSession; result: T } | null> {
-  const key = sessionKey(org, id);
   const client = redis();
-  if (client) {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      let before: string | null;
-      try {
-        before = await client.get(key);
-      } catch (error) {
-        logger.error('Secret Squad session read failed', { org, id }, error);
-        return memoryMutate(org, id, change);
-      }
-      if (!before) return null;
-      const session = JSON.parse(before) as SquadSession;
-      const result = change(session);
-      if (result === null) return null;
-      session.version += 1;
-      try {
-        const written = await client.eval(CAS_SCRIPT, 1, key, before, JSON.stringify(session), String(SESSION_TTL_SECONDS));
-        if (written === 1) return { session, result };
-      } catch (error) {
-        logger.error('Secret Squad session write failed', { org, id }, error);
-        return memoryMutate(org, id, change);
-      }
+  if (!client) return memoryMutate(org, id, change);
+  // One change at a time per session inside this process: a lobby of 150
+  // joining at once would otherwise race itself through the compare-and-set
+  // and run out of retries. Only other instances can then conflict.
+  return queued(sessionKey(org, id), () => redisMutate(client, org, id, change));
+}
+
+const queues = new Map<string, Promise<unknown>>();
+
+function queued<R>(key: string, run: () => Promise<R>): Promise<R> {
+  const previous = queues.get(key) ?? Promise.resolve();
+  const next = previous.then(run, run);
+  const settled = next.catch(() => undefined);
+  queues.set(key, settled);
+  // Forget the tail once nothing is waiting behind it.
+  void settled.then(() => { if (queues.get(key) === settled) queues.delete(key); });
+  return next;
+}
+
+async function redisMutate<T>(
+  client: Redis,
+  org: string,
+  id: string,
+  change: (session: SquadSession) => T | null,
+): Promise<{ session: SquadSession; result: T } | null> {
+  const key = sessionKey(org, id);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    let held: { raw: string; version: string } | null;
+    try {
+      held = await readRaw(client, org, id);
+    } catch (error) {
+      logger.error('Secret Squad session read failed', { org, id }, error);
+      return memoryMutate(org, id, change);
     }
-    throw new SquadStoreConflict();
+    if (!held) return null;
+    const session = JSON.parse(held.raw) as SquadSession;
+    const result = change(session);
+    if (result === null) return null;
+    session.version += 1;
+    const raw = JSON.stringify(session);
+    const version = String(session.version);
+    try {
+      const written = await client.eval(CAS_SCRIPT, 2, key, versionKey(org, id), held.version, raw, version, String(SESSION_TTL_SECONDS));
+      if (written === 1) {
+        cache.set(key, { raw, version });
+        return { session, result };
+      }
+    } catch (error) {
+      logger.error('Secret Squad session write failed', { org, id }, error);
+      return memoryMutate(org, id, change);
+    }
+    // Another instance wrote first: back off a little, randomly, and go again.
+    cache.delete(key);
+    await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 20 * (attempt + 1)));
   }
-  return memoryMutate(org, id, change);
+  throw new SquadStoreConflict();
 }
 
 function memoryMutate<T>(
@@ -145,7 +205,8 @@ export async function deleteSession(org: string, id: string): Promise<void> {
   const client = redis();
   if (client) {
     try {
-      await client.multi().del(sessionKey(org, id)).srem(LIVE_KEY, live).exec();
+      await client.multi().del(sessionKey(org, id)).del(versionKey(org, id)).srem(LIVE_KEY, live).exec();
+      cache.delete(sessionKey(org, id));
       return;
     } catch (error) {
       logger.error('Secret Squad session delete failed', { org, id }, error);
@@ -217,4 +278,6 @@ export function resetSquadMemory(): void {
   memorySessions.clear();
   memoryLive.clear();
   memoryQueues.clear();
+  queues.clear();
+  cache.clear();
 }

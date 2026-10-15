@@ -110,10 +110,25 @@ async function requireSchedule(id: string | undefined): Promise<SquadSchedule> {
   return schedule;
 }
 
+/** When the session should be over: every round's dealing and hunt, and the breaks between. */
+function estimatedEnd(schedule: SquadSchedule): Date {
+  const total = schedule.rounds.reduce((sum, round, i) =>
+    sum + SQUAD.dealMs + round.huntMs + (i < schedule.rounds.length - 1 ? round.breakMs : 0), 0);
+  return new Date(schedule.startsAt.getTime() + total);
+}
+
+/** What an app from before the feed card shows: the post as text, with the web lobby's link. */
+function fallbackText(schedule: SquadSchedule, webUrl: string): string {
+  return `🎮 Secret Squad · ${schedule.office} · ${ist(schedule.startsAt)}\n`
+    + 'Your word is a clue to find your secret squad. The lobby opens a few minutes before; everyone in it plays.\n'
+    + `Play in the Games tab, or here: ${webUrl}`;
+}
+
 async function postCard(schedule: SquadSchedule): Promise<string> {
   const members = await officeMembers(schedule.org, schedule.office);
   if (members.length === 0) fail(`Nobody plays in ${schedule.office} yet: load the office list first.`);
   const company = await companies().findOne({ id: schedule.org }, { projection: { name: 1 } });
+  const webUrl = process.env.SQUAD_WEB_URL ?? 'https://d3lwup4rvo6csf.cloudfront.net/squad';
   const now = new Date();
   const post: ConnectPost = {
     id: randomUUID(),
@@ -138,8 +153,11 @@ async function postCard(schedule: SquadSchedule): Promise<string> {
       startsAt: schedule.startsAt.toISOString(),
       rounds: schedule.rounds.map((round) => ({ squadSize: round.squadSize, huntMs: round.huntMs })),
       gameKey: 'secret-squad',
-      webUrl: process.env.SQUAD_WEB_URL ?? 'https://d3lwup4rvo6csf.cloudfront.net/squad',
+      webUrl,
+      endsAt: estimatedEnd(schedule).toISOString(),
       status: 'scheduled',
+      // Older apps draw an unknown post type as a plain post: this is what they show.
+      text: fallbackText(schedule, webUrl),
     },
     likedBy: [],
     comments: [],
@@ -161,6 +179,8 @@ async function syncCard(schedule: SquadSchedule, status?: string): Promise<void>
       'body.lobbyOpensAt': new Date(schedule.startsAt.getTime() - schedule.lobbyMs).toISOString(),
       'body.startsAt': schedule.startsAt.toISOString(),
       'body.rounds': schedule.rounds.map((round) => ({ squadSize: round.squadSize, huntMs: round.huntMs })),
+      'body.endsAt': estimatedEnd(schedule).toISOString(),
+      'body.text': fallbackText(schedule, process.env.SQUAD_WEB_URL ?? 'https://d3lwup4rvo6csf.cloudfront.net/squad'),
       ...(status ? { 'body.status': status } : {}),
       updatedAt: new Date(),
     },

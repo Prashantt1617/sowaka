@@ -5,7 +5,7 @@
  * is everything that touches a clock, the store, Mongo or a socket.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { getDb, users } from '../config/db';
+import { connectPosts, getDb, users } from '../config/db';
 import type {
   SquadOfficeAssignment,
   SquadPlayer,
@@ -214,14 +214,16 @@ export function pushSession(session: SquadSession): void {
   if (!emitter) return;
   for (const player of session.players) {
     const state = stateOf(session, player, session.office, null);
-    const print = JSON.stringify({ ...state, now: 0 });
+    // What they see, not when: the version and the clock change on every
+    // action anywhere in the office, and must not send an update by themselves.
+    const print = JSON.stringify({ ...state, now: 0, v: 0 });
     const key = `${session.id}:${player.userId}`;
     if (lastSent.get(key) === print) continue;
     lastSent.set(key, print);
     emitter.toUser(player.userId, 'squad:state', state);
   }
   const watchers = stateOf(session, null, session.office, null);
-  const print = JSON.stringify({ ...watchers, now: 0 });
+  const print = JSON.stringify({ ...watchers, now: 0, v: 0 });
   const key = `${session.id}:*`;
   if (lastSent.get(key) !== print) {
     lastSent.set(key, print);
@@ -411,6 +413,15 @@ async function payPoints(session: SquadSession, roundIndex: number, points: Reco
   })));
 }
 
+/** Keeps the feed card's state in step with the session (lobby, playing, over). */
+async function syncCard(session: SquadSession, status: 'lobby' | 'playing' | 'over' | 'cancelled'): Promise<void> {
+  const set: Record<string, unknown> = { 'body.status': status, updatedAt: new Date(deps.now()) };
+  if (status === 'over') set['body.endsAt'] = new Date(deps.now()).toISOString();
+  await connectPosts()
+    .updateOne({ org: session.org, type: 'secret_squad', 'body.sessionId': session.id, 'body.status': { $ne: status } }, { $set: set })
+    .catch((error) => logger.error('Secret Squad card sync failed', { id: session.id }, error));
+}
+
 // --------------------------------------------------------------------- clock
 
 const INSTANCE = randomUUID();
@@ -472,7 +483,11 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
   }
   codeWindows.set(id, codeWindowOf(now));
   pushSession(session);
-  if (result.kind === 'dealt') await notePacksUsed(session);
+  if (result.kind === 'dealt') {
+    await notePacksUsed(session);
+    if (session.roundIndex === 0) await syncCard(session, 'playing');
+  }
+  if (session.status === 'over') await syncCard(session, 'over');
   await afterChange(session);
 }
 
@@ -503,6 +518,7 @@ export async function openDueSessions(): Promise<number> {
     await squadSchedules().updateOne({ id: schedule.id }, { $set: { status: 'opened', updatedAt: new Date(now) } });
     opened += 1;
     pushSession(session);
+    await syncCard(session, 'lobby');
     try {
       const members = await officeMembers(schedule.org, schedule.office);
       const minutes = Math.max(1, Math.round((schedule.startsAt.getTime() - now) / 60_000));

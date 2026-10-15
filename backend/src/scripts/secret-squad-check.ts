@@ -271,7 +271,8 @@ async function liveChecks() {
   clients.push(await open(gurgaon[0], { token }));
   for (const u of gurgaon.slice(1)) clients.push(await open(u, { ticket: ticket(u) }));
   const noida = await open(people[9], { ticket: ticket(people[9]) });
-  await waitFor('everyone gets a first state', () => clients.every((c) => c.states.length > 0) && noida.states.length > 0);
+  // The first state reads the profile, the office and the schedule from Mongo: slow on a remote cluster.
+  await waitFor('everyone gets a first state', () => clients.every((c) => c.states.length > 0) && noida.states.length > 0, 20_000);
   check('a browser token signs in too', clients[0].states.length > 0);
   check('before the lobby: no session, the next one is shown', clients[1].states[0].session === null && Boolean(clients[1].states[0].next));
   check('the office list wins over the profile (player 10 is in Noida)', noida.states[0].office === 'Noida' && noida.states[0].next === null);
