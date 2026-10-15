@@ -33,7 +33,7 @@ this file is the contract between the game page and the server.
 | Dealing | 0:10 to read your word; checks start after it. |
 | Hunt | Per round (default 17:00). |
 | Break | Per round (default 2:00) showing that round's results, then the next round deals. The last round ends with the session results. |
-| Squads | For a round's squad size `s`: `k = max(2, round(n / s))` squads, sizes as even as possible (never more than `s + ceil(s/5)`, never fewer than 2). People from the same department are dealt round-robin so they spread across squads. |
+| Squads | For a round's squad size `s`: `k = max(2, round(n / s))` squads, sizes as even as possible (2 to 24 per squad: themes have 24 words). People from the same department are dealt round-robin so they spread across squads. |
 | Words | Each squad gets one theme with at least as many words as members; each member a different word of it. Whole packs are used together where possible, because a pack's themes are written to mislead each other. Packs used in an org recently are skipped while others remain. Themes carry up to 24 words so squads of 20 work. |
 | Code | Each player shows a 4-digit code that changes every 20 s. Codes never clash inside a round. The current and the previous code are accepted. |
 | Check | A types (or scans) B's code. B is asked to Allow (20 s to answer). Allow → the server compares squads. |

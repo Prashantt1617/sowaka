@@ -11,7 +11,7 @@ export type SquadStatus = 'lobby' | 'dealing' | 'hunt' | 'break' | 'over' | 'can
 
 /** One round's settings, chosen per session. */
 export interface SquadRoundConfig {
-  /** Members per squad the round aims for (2 to 30). */
+  /** Members per squad the round aims for (2 to 24). */
   squadSize: number;
   huntMs: number;
   /** The results break after it; ignored after the last round. */

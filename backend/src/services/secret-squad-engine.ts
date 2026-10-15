@@ -22,7 +22,8 @@ export const SQUAD = {
   awayMs: 60_000,
   minPlayers: 4,
   minSquadSize: 2,
-  maxSquadSize: 30,
+  // Every theme has 24 words: a bigger squad could not each get a different one.
+  maxSquadSize: 24,
   /** A finished session stays readable this long, for late results screens. */
   keepAfterMs: 2 * 60 * 60_000,
   defaults: {
