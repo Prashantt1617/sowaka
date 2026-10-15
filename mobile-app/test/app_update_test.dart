@@ -30,7 +30,10 @@ Widget _app(AppUpdateService service) => MaterialApp(
 );
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    AppUpdateGate.optional.value = null;
+  });
 
   testWidgets('nothing shows when no update is asked for', (tester) async {
     await tester.pumpWidget(_app(_FakeService(_status('none'))));
@@ -57,17 +60,27 @@ void main() {
     expect(hits.path.any((entry) => entry.target == appText), isFalse);
   });
 
-  testWidgets('optional closes, and stays closed for that version', (
+  testWidgets('optional shows the strip, which closes for that version', (
     tester,
   ) async {
     final service = _FakeService(_status('optional'));
-    await tester.pumpWidget(_app(service));
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) =>
+            AppUpdateGate(service: service, child: child ?? const SizedBox()),
+        home: const Scaffold(
+          body: Column(children: [AppUpdateStrip(), Text('The app')]),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
+    // A strip in the feed, not a screen over the app.
     expect(find.text('We are better than ever'), findsOneWidget);
     expect(find.text('Update'), findsOneWidget);
+    expect(find.text('Update now'), findsNothing);
+    expect(find.text('The app'), findsOneWidget);
 
-    // Tapping the dimmed app above the sheet closes it.
-    await tester.tapAt(const Offset(20, 20));
+    await tester.tap(find.byIcon(Icons.close_rounded));
     await tester.pumpAndSettle();
     expect(find.text('We are better than ever'), findsNothing);
 
@@ -83,8 +96,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('We are better than ever'), findsOneWidget);
 
-    // Swiping the sheet down closes it too.
-    await tester.drag(find.text('Update'), const Offset(0, 500));
+    // Turned off on the server: the strip goes.
+    service.status = _status('none');
+    AppUpdateGate.recheck();
     await tester.pumpAndSettle();
     expect(find.text('We are better than ever'), findsNothing);
   });

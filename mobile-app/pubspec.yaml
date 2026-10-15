@@ -124,6 +124,10 @@ flutter:
       fonts:
         - asset: assets/fonts/sora/Sora-Variable.ttf
     # The relay game's "+40" pops in the arcade face the design asks for.
+    # The minor-update strip on the home feed is set in Manrope, as designed.
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/manrope/Manrope-Variable.ttf
     - family: PressStart2P
       fonts:
         - asset: assets/fonts/press_start/PressStart2P-Regular.ttf

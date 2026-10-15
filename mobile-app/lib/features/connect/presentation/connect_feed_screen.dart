@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderShiftedBox;
 
+import '../../shared/app_update.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -409,11 +410,18 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             // The composer entry point, now that the nav has no Post tab
             // (node 2002:39114).
             if (index == 0) {
-              return _StartAPostCard(
-                initials: _viewerInitials,
-                color: _viewerColor,
-                photoUrl: _viewerPhotoUrl,
-                onTap: _openPostTypePicker,
+              return Column(
+                children: [
+                  // The minor-update strip, when one is on for this company
+                  // and has not been closed.
+                  const AppUpdateStrip(),
+                  _StartAPostCard(
+                    initials: _viewerInitials,
+                    color: _viewerColor,
+                    photoUrl: _viewerPhotoUrl,
+                    onTap: _openPostTypePicker,
+                  ),
+                ],
               );
             }
             // The post on its way, where it will land (node 663:15998).
