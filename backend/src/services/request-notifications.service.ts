@@ -469,7 +469,7 @@ export async function notifyPunchedOut(
 // ------------------------------------------------------------ schedules
 
 /** Requests this person may act on: pending, not past-dated beyond use, not HR-only for a manager. */
-async function pendingFor(approver: User, now: Date): Promise<{ leave: number; overtime: number; attendance: number; oldest: Date | null }> {
+export async function pendingFor(approver: User, now: Date): Promise<{ leave: number; overtime: number; attendance: number; oldest: Date | null }> {
   const todayKey = istParts(now).dateKey;
   const team = await users()
     .find({ org: approver.org, managerUserId: approver.userId, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } })

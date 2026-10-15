@@ -11,8 +11,9 @@ import {
   notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
 } from '../services/connect-notifications.service';
 import { flushGroupedNotifications } from '../services/notification-groups.service';
-import { sendNewJoinerNotifications } from '../services/notification.service';
-import { notifyLeaveDecided, notifyLeaveSubmitted, sendLeaveNextWeek, sendPendingRequestReminders } from '../services/request-notifications.service';
+import { listNotifications, markAllNotificationsRead, sendNewJoinerNotifications } from '../services/notification.service';
+import { resolveNotifications } from '../services/notification-resolution.service';
+import { notifyLeaveDecided, notifyLeaveSubmitted, notifyPunchedOut, sendLeaveNextWeek, sendPendingRequestReminders } from '../services/request-notifications.service';
 import { msToNextIstHour } from '../services/notification-scheduler.service';
 import { dateRange, tueThuDueFor } from '../services/notification-time';
 
@@ -207,6 +208,40 @@ const user = (id: string) => getDb().collection('users').findOne({ userId: id })
   check('Thursday holiday: not due on Thursday', !(await tueThuDueFor(people[1], '2026-10-22')));
   check('Thursday holiday: due on Friday', await tueThuDueFor(people[1], '2026-10-23'));
   check('Saturday after a Friday reminder: not due', !(await tueThuDueFor(people[1], '2026-10-24')));
+
+  // --- the inbox's "done" rows: resolved once nothing is left to act on
+  const tuesday = new Date('2026-10-20T09:00:00Z');
+  const mgrInbox = async () => resolveNotifications('mgr', await listNotifications('mgr'), tuesday);
+  const reminderOf = (list: Awaited<ReturnType<typeof mgrInbox>>) => list.find((r) => r.scenario === 'pending_requests_reminder');
+  check('pending reminder: unresolved while a leave waits', reminderOf(await mgrInbox())?.resolved === undefined);
+  const asked = await db.collection('leaves').insertOne({ userId: 'b', status: 'pending', type: 'casual', startDate: new Date('2026-10-29'), endDate: new Date('2026-10-29'), createdAt: tuesday } as never);
+  await notifyLeaveSubmitted({ employeeUserId: 'b', requestId: String(asked.insertedId), type: 'casual', startDate: new Date('2026-10-29'), endDate: new Date('2026-10-29'), days: 1, reason: 'errand' });
+  const askOf = (list: Awaited<ReturnType<typeof mgrInbox>>) => list.find((r) => r.scenario === 'leave_requested' && r.data.requestId === String(asked.insertedId));
+  check('leave asked: unresolved while pending', askOf(await mgrInbox())?.resolved === undefined, askOf(await mgrInbox()));
+  await db.collection('leaves').updateMany({ userId: 'b' }, { $set: { status: 'declined' } });
+  const settled = await mgrInbox();
+  check('leave asked: resolved once decided', askOf(settled)?.resolved === true, askOf(settled));
+  check('pending reminder: resolved once nothing waits', reminderOf(settled)?.resolved === true, reminderOf(settled));
+
+  await notifyPunchedOut('a', new Date('2026-10-20T09:00:00Z'), 250, 'half');
+  await db.collection('notifications').insertOne({ id: randomUUID(), userId: 'a', org: ORG, scenario: 'punch_in_reminder', title: 'You haven’t punched in yet', body: '', data: { type: 'punch_in', view: 'mine', dateKey: '2026-10-20' }, pushed: true, createdAt: new Date('2026-10-20T05:00:00Z') } as never);
+  const ashaInbox = async (now: Date) => resolveNotifications('a', await listNotifications('a'), now);
+  const scenarioOf = (list: Awaited<ReturnType<typeof ashaInbox>>, scenario: string) => list.find((r) => r.scenario === scenario);
+  let asha = await ashaInbox(tuesday);
+  check('punch reminder: due until punched in', scenarioOf(asha, 'punch_in_reminder')?.resolved === undefined);
+  check('half day: an alert until fixed', scenarioOf(asha, 'punch_out_half_day')?.resolved === undefined);
+  await db.collection('attendance_records').insertOne({ employeeId: 'E-a', userId: 'a', workDate: '2026-10-20', punchIn: new Date('2026-10-20T05:30:00Z') } as never);
+  await db.collection('attendance_regularizations').insertOne({ userId: 'a', employeeId: 'E-a', managerUserId: 'mgr', workDate: '2026-10-20', status: 'approved', createdAt: tuesday, decidedAt: new Date() } as never);
+  asha = await ashaInbox(tuesday);
+  check('punch reminder: cleared once punched in', scenarioOf(asha, 'punch_in_reminder')?.resolved === true);
+  check('half day: cleared once the day is corrected', scenarioOf(asha, 'punch_out_half_day')?.resolved === true);
+  check('leave approved: never resolved, opening it is what reads it', scenarioOf(asha, 'leave_decided')?.resolved === undefined);
+
+  // --- mark all as read
+  const unreadBefore = await notifications().countDocuments({ userId: 'a', readAt: { $exists: false } });
+  const marked = await markAllNotificationsRead('a');
+  check('mark all as read: every unread row', unreadBefore > 0 && marked.read === unreadBefore && (await notifications().countDocuments({ userId: 'a', readAt: { $exists: false } })) === 0, { unreadBefore, marked });
+  check('mark all as read: nobody else touched', (await notifications().countDocuments({ userId: 'mgr', readAt: { $exists: true } })) === 0);
 
   await db.collection('leaves').insertOne({ userId: 'a', status: 'approved', type: 'casual', startDate: new Date('2026-10-26'), endDate: new Date('2026-10-28') } as never);
   await sendLeaveNextWeek(new Date('2026-10-23T10:30:00Z'));

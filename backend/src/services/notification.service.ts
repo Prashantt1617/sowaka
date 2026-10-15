@@ -103,6 +103,12 @@ export async function markNotificationRead(userId: string, id: string) {
   return { id, read: true };
 }
 
+/** "Mark all as read": everything still unread in this person's inbox. */
+export async function markAllNotificationsRead(userId: string) {
+  const result = await notifications().updateMany({ userId, readAt: { $exists: false } }, { $set: { readAt: new Date() } });
+  return { read: result.modifiedCount };
+}
+
 export interface NotificationEmail {
   subject: string;
   /** `{firstName}` is substituted per recipient. */
