@@ -20,7 +20,8 @@
     "relay:game": "tsx src/scripts/relay-game-check.ts",
     "scribble:check": "tsx src/scripts/scribble-check.ts",
     "notifications:check": "tsx src/scripts/notifications-check.ts",
-    "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts"
+    "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
+    "most-likely:check": "tsx src/scripts/most-likely-taggers-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

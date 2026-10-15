@@ -1406,7 +1406,18 @@ async function viewPost(
       // entry list above already drops the first; doing it here too keeps the
       // board from disagreeing with the card it sits under.
       // Each row also carries when its latest tag came in, for the entries
-      // sheet's "Most recent" order. Only the time — never who tagged them.
+      // sheet's "Most recent" order, and who tagged them ("Tag by" on the
+      // Entries page, Figma 3929:53104 / 3929:53531), latest first. That is
+      // shown to everyone who can see the contest, the person named
+      // included. The tag's push notification still does not say who
+      // ("Someone thinks you're…"); the board is where names are read.
+      const counted = (post.captionEntries ?? []).filter(
+        (entry): entry is ConnectCaptionEntry & { taggedUserId: string } =>
+          Boolean(entry.taggedUserId) &&
+          !blockedUserIds.includes(entry.userId) &&
+          !blockedUserIds.includes(entry.taggedUserId as string),
+      );
+      const taggers = await mostLikelyTaggers(counted.map((entry) => entry.userId));
       const board = new Map<
         string,
         {
@@ -1416,25 +1427,42 @@ async function viewPost(
           designation: string;
           votes: number;
           createdAt?: Date;
+          taggedBy: Array<MostLikelyTagger & { taggedAt?: Date }>;
         }
       >();
-      for (const entry of post.captionEntries ?? []) {
-        if (!entry.taggedUserId) continue;
-        if (blockedUserIds.includes(entry.userId)) continue;
-        if (blockedUserIds.includes(entry.taggedUserId)) continue;
+      for (const entry of counted) {
         const row = board.get(entry.taggedUserId) ?? {
           userId: entry.taggedUserId,
           name: entry.taggedName ?? 'Teammate',
           initials: entry.taggedInitials ?? '?',
           designation: entry.taggedDesignation ?? '',
           votes: 0,
+          taggedBy: [],
         };
         row.votes += 1;
         const taggedAt = entry.createdAt ? new Date(entry.createdAt) : undefined;
         if (taggedAt && (!row.createdAt || taggedAt > row.createdAt)) {
           row.createdAt = taggedAt;
         }
+        // The tagger as they are now; the name stored with the tag stands in
+        // for someone no longer on the roster.
+        row.taggedBy.push({
+          ...(taggers.get(entry.userId) ?? {
+            userId: entry.userId,
+            name: entry.name,
+            initials: entry.initials,
+            designation: '',
+            department: '',
+            location: '',
+          }),
+          taggedAt,
+        });
         board.set(entry.taggedUserId, row);
+      }
+      for (const row of board.values()) {
+        row.taggedBy.sort(
+          (a, b) => (b.taggedAt?.getTime() ?? 0) - (a.taggedAt?.getTime() ?? 0),
+        );
       }
       body.leaderboard = [...board.values()]
         .sort((a, b) => b.votes - a.votes)
@@ -1877,6 +1905,58 @@ function normalizePoints(value: unknown) {
 /** Ids of people tagged in a media post. Deduped and capped; names and photos
  * are resolved per read so a tag never shows a stale name. */
 /** Names and photos for the people tagged in a post, in the order tagged. */
+/** Someone who tagged a colleague in a Most Likely contest, as "Tag by" shows them. */
+interface MostLikelyTagger {
+  userId: string;
+  name: string;
+  initials: string;
+  designation: string;
+  department: string;
+  location: string;
+  photoUrl?: string;
+}
+
+/**
+ * The people behind a Most Likely board's tags, read live in one query so a
+ * renamed colleague or a new photo shows at once. Anyone no longer on the
+ * roster is simply missing from the map.
+ */
+async function mostLikelyTaggers(userIds: string[]): Promise<Map<string, MostLikelyTagger>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Map();
+  const people = await users()
+    .find({ userId: { $in: ids } })
+    .project<{
+      userId: string;
+      name: string;
+      designation?: string;
+      department?: string;
+      location?: string;
+      profilePhotoKey?: string;
+      profilePhotoUrl?: string;
+    }>({
+      _id: 0, userId: 1, name: 1, designation: 1, department: 1, location: 1,
+      profilePhotoKey: 1, profilePhotoUrl: 1,
+    })
+    .toArray();
+  return new Map(
+    await Promise.all(
+      people.map(async (person) => [
+        person.userId,
+        {
+          userId: person.userId,
+          name: person.name,
+          initials: initialsFor(person.name),
+          designation: person.designation ?? '',
+          department: person.department ?? '',
+          location: person.location ?? '',
+          photoUrl: await resolveProfilePhoto(person),
+        },
+      ] as [string, MostLikelyTagger]),
+    ),
+  );
+}
+
 async function resolveTaggedPeople(userIds: string[]) {
   const tagged = await users()
     .find({ userId: { $in: userIds } })
