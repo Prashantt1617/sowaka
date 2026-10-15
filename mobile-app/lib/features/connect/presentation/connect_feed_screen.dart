@@ -27,6 +27,7 @@ import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
+import '../../squad/presentation/secret_squad_post_card.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -465,6 +466,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                 key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: RelayPostCard(post: post, session: widget.session),
+              );
+            }
+            // Secret Squad's session for this office: its own animated card,
+            // drawn whole like the relay's, with the way into the game.
+            if (post.type == ConnectPostType.secretSquad) {
+              return SecretSquadPostCard(
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
+                post: post,
+                session: widget.session,
               );
             }
             return _ConnectPostCard(
@@ -1149,6 +1159,7 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.photoStoryChallenge:
     case ConnectPostType.mostLikely:
     case ConnectPostType.relayGame:
+    case ConnectPostType.secretSquad:
       return false;
   }
 }
@@ -2175,6 +2186,8 @@ class _PostBody extends StatelessWidget {
     return switch (post.type) {
       // Drawn by RelayPostCard before it reaches here; this is never shown.
       ConnectPostType.relayGame => const SizedBox.shrink(),
+      // Drawn by SecretSquadPostCard before it reaches here, as the relay is.
+      ConnectPostType.secretSquad => const SizedBox.shrink(),
       ConnectPostType.leadership => _MediaPostBody(post: post),
       ConnectPostType.recommendation => _RecommendationBody(post: post),
       ConnectPostType.newPost => _TextPostBody(

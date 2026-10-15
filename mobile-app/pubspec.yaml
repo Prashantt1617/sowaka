@@ -144,6 +144,11 @@ flutter:
     - family: Figtree
       fonts:
         - asset: assets/fonts/figtree/Figtree-Variable.ttf
+    # Secret Squad's feed card is set in Lexend, as designed (Google Fonts,
+    # OFL; licence beside it). Variable: weights go on its axis.
+    - family: Lexend
+      fonts:
+        - asset: assets/fonts/lexend/Lexend-Variable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

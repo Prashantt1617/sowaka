@@ -17,6 +17,10 @@ enum ConnectPostType {
 
   /// The relay game's announcement, drawn as its own card with a way in.
   relayGame,
+
+  /// A Secret Squad session's announcement for one office: its own animated
+  /// card, counting down to the lobby, with the way into the game.
+  secretSquad,
 }
 
 class ConnectTeammate {
@@ -146,6 +150,7 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.photoStoryChallenge => 'photo_story_challenge',
     ConnectPostType.mostLikely => 'most_likely',
     ConnectPostType.relayGame => 'relay_game',
+    ConnectPostType.secretSquad => 'secret_squad',
   };
 }
 
@@ -596,6 +601,7 @@ ConnectPostType _parseType(String? value) {
     // Unknown types fall back to leadership, which is how the game's post
     // arrived as an ordinary post with no way into the game.
     'relay_game' => ConnectPostType.relayGame,
+    'secret_squad' => ConnectPostType.secretSquad,
     _ => ConnectPostType.leadership,
   };
 }
