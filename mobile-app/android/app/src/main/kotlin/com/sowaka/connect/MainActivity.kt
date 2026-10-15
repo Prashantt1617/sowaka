@@ -27,6 +27,7 @@ class MainActivity : FlutterActivity() {
     private val aliases = mapOf(
         "AppIconConvrse" to ".LauncherConvrse",
         "AppIconAcmt" to ".LauncherAcmt",
+        "AppIconCde" to ".LauncherCde",
     )
 
     /** The icon asked for, held until the app is in the background. */
