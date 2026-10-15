@@ -7,7 +7,6 @@ import {
   ContentReportStatus,
 } from '../models/moderation.model';
 import { ConnectError, orgForUser, requireVisiblePost } from './connect.service';
-import { notifyUsers } from './notification.service';
 
 /**
  * Reporting a post or a comment, and what HR does with the report afterwards.
@@ -89,8 +88,8 @@ export async function reportConnectContent(
     status: 'open',
     createdAt: new Date(),
   };
+  // No push or inbox entry: reports wait in the dashboard's Connect reports queue.
   await contentReports().insertOne(report);
-  await notifyReviewers(report);
   return { id: report.id, alreadyReported: false };
 }
 
@@ -179,30 +178,6 @@ export async function closeReportsForRemovedPost(postId: string, adminUserId: st
         reviewedByName: admin?.name ?? 'HR',
         reviewNote: 'Content removed',
       },
-    },
-  );
-}
-
-/**
- * Everyone with dashboard access in the reporter's organisation. In-app and
- * push only, deliberately: a report can quote what was said, and that does not
- * belong in an inbox outside the system.
- */
-async function notifyReviewers(report: ContentReport) {
-  const reviewers = await users()
-    .find({ org: report.org, dashboardAccess: true })
-    .project<{ userId: string }>({ userId: 1 })
-    .toArray();
-  const target = report.commentId ? 'comment' : 'post';
-  await notifyUsers(
-    reviewers.map((reviewer) => reviewer.userId).filter((id) => id !== report.reporterUserId),
-    {
-      scenario: 'connect_content_reported',
-      title: `A ${target} was reported`,
-      body: `${report.reporterName} reported ${report.authorName}'s ${target} — ${reportReasonLabel(
-        report.reason,
-      )}. Review it in Connect reports.`,
-      data: { reportId: report.id, postId: report.postId, reason: report.reason },
     },
   );
 }

@@ -14,6 +14,8 @@ export interface AppNotification {
   title: string;
   body: string;
   data: Record<string, string>;
+  /** Whether it also went out as a push; false for inbox-only entries. */
+  pushed?: boolean;
   readAt?: Date;
   createdAt: Date;
 }

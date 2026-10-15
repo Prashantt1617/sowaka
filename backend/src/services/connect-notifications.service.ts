@@ -1,5 +1,11 @@
 /**
- * Feed push notifications.
+ * Feed notifications, as the notification spec lists them (rows 29–56).
+ *
+ * Most feed activity is inbox only. A push goes to someone only when the post
+ * is about them, was shared with a short list they are on, is Must read /
+ * Must watch, is an announcement from HR or leadership, or is a poll from HR,
+ * leadership or their manager. Comments, likes and poll votes on your own post
+ * push at most once every three hours per post (notification-groups).
  *
  * Two rules shape everything here:
  *
@@ -16,10 +22,12 @@
  * set of currently active likers, so an unlike lowers the next notification's
  * count without any separate bookkeeping.
  */
-import { companies, connectPosts, users } from '../config/db';
+import { connectPosts, users } from '../config/db';
 import { ConnectComment, ConnectPost } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers } from './notification.service';
+import { GroupKind, notifyGrouped } from './notification-groups.service';
+import { shortDate } from './notification-time';
 import { logger } from '../utils/logger';
 import { audienceAllows } from './audience-list-rules';
 
@@ -93,17 +101,8 @@ export async function postAudience(post: ConnectPost): Promise<User[]> {
   return roster.filter((u) => audienceAllows(post.audience, u));
 }
 
-type Copy = { title: string; body: string };
-
-/** Their manager, their reports, or a teammate under the same manager and in the same department. */
-export function closeTo(person: User, other: User): boolean {
-  if (other.userId === person.userId) return false;
-  if (person.managerUserId && other.userId === person.managerUserId) return true;
-  if (other.managerUserId && other.managerUserId === person.userId) return true;
-  return Boolean(person.managerUserId)
-    && other.managerUserId === person.managerUserId
-    && (other.department ?? '') === (person.department ?? '');
-}
+/** `push: false` leaves an inbox entry and nothing on the lock screen. */
+type Copy = { title: string; body: string; push?: boolean };
 
 /** First matching rule wins — this is the precedence, written as a list. */
 function pick(rules: Array<Copy | null | undefined | false>): Copy | null {
@@ -133,6 +132,7 @@ async function send(
         title: r.copy!.title,
         body: r.copy!.body,
         data,
+        push: r.copy!.push !== false,
       }),
     ),
   );
@@ -146,98 +146,103 @@ async function send(
 
 // -------------------------------------------------------------- publication
 
+const CONTESTS = new Set(['caption_challenge', 'photo_story_challenge', 'most_likely']);
+
+/** Inbox only: the same entry, no push. */
+const quietly = (copy: Copy): Copy => ({ ...copy, push: false });
+
 /**
  * One publication notification per person in the audience.
  *
- * Precedence: kudos recipient, tagged, must-read/watch, then the author's
- * relationship to the reader. A kudos or tagged reader gets that copy instead
- * of the generic one, never as well.
+ * Birthdays and anniversaries reach the person's manager, their direct
+ * reports and their department, never the person. A contest reaches everyone
+ * it is open to. Anything else pushes only when it is about the reader or
+ * marked as something they must see; the rest is an inbox entry.
  */
 export async function notifyPostPublished(post: ConnectPost): Promise<number> {
+  // Live games push when they start (notifyLiveGameStarted), and a new
+  // joiner's team hears at 10:00 on their first day (sendNewJoinerNotifications).
+  if (post.type === 'live_game' || post.type === 'relay_game' || post.type === 'new_joinee') return 0;
+
   const author = post.author.userId
     ? await users().findOne({ userId: post.author.userId })
     : null;
   const actorName = post.author.name || 'Someone';
   const audience = await postAudience(post);
+  const data = { destination: 'connect_post', postId: post.id, postType: post.type, priority: priorityOf(post) };
+  const scenario = `post_published_${post.type}`;
+
+  const celebrant = celebrantOf(post);
+  if (celebrant) {
+    const person = await users().findOne({ userId: celebrant });
+    const copy = lifecycleCopy(post);
+    const reached = person ? audience.filter((u) => celebrationCircle(person, u)) : [];
+    return send(reached.map((user) => ({ user, copy })), scenario, data, celebrant);
+  }
+
+  if (CONTESTS.has(post.type)) {
+    const closesAt = post.body.closesAt ? new Date(String(post.body.closesAt)) : null;
+    const copy: Copy = {
+      title: `New contest: ${titleOf(post)}`,
+      body: closesAt && !Number.isNaN(closesAt.getTime()) ? `Enter by ${shortDate(closesAt)}` : 'Join in',
+    };
+    return send(audience.map((user) => ({ user, copy })), scenario, data, post.author.userId ?? '');
+  }
+
   const tagged = taggedIn(post);
   const kudos = kudosRecipients(post);
   const priority = priorityOf(post);
   const isPoll = post.type === 'survey';
   const isAnnouncement = post.type === 'hr_announcement' || post.type === 'leadership';
+  const toList = Array.isArray(post.audience.userIds);
   const title = titleOf(post);
-  const celebrant = celebrantOf(post);
-  const lifecycle = celebrant ? await lifecycleCopy(post) : null;
 
-  // A birthday is told to the people around the person, not the whole
-  // company: their manager, anyone who reports to them, and whoever shares
-  // both their manager and their department. The card itself is still in
-  // everyone's feed; only the push is narrowed.
-  const person = post.type === 'birthday' ? audience.find((u) => u.userId === celebrant) : undefined;
-  const reached = person ? audience.filter((u) => closeTo(person, u)) : audience;
-
-  const recipients = reached.map((user) => {
+  const recipients = audience.map((user) => {
     const role = creatorTypeFor(post, author, user);
-    const iAmKudosRecipient = kudos.includes(user.userId);
-    const otherKudos = kudos.filter((id) => id !== user.userId).length;
-    const iAmTagged = tagged.includes(user.userId);
-    const otherTagged = tagged.filter((id) => id !== user.userId).length;
-
     const copy = pick([
-      // The person whose day it is gets no push about their own card. The rest
-      // of the audience is being asked to go and say something.
-      lifecycle ? (user.userId === celebrant ? null : lifecycle) : undefined,
-      // Kudos about me outranks everything, including a tag on the same post.
-      iAmKudosRecipient && {
-        title: otherKudos > 0
-          ? `${actorName} gave kudos to you${others(otherKudos)} 🎉`
-          : `${actorName} gave you kudos 🎉`,
-        body: 'See what they appreciated',
-      },
-      // Kudos about someone else, for the rest of the audience.
-      post.type === 'kudos' && kudos.length > 0 && {
-        title: `${actorName} gave kudos to ${kudosNames(kudos, audience)} 🎉`,
-        body: "See what they're celebrating",
-      },
-      iAmTagged && {
-        title: otherTagged > 0
-          ? `${actorName} tagged you${others(otherTagged)} in a post`
-          : `${actorName} tagged you in a post`,
-        body: 'See what they shared',
-      },
+      kudos.includes(user.userId) && { title: `${actorName} gave you kudos 🎉`, body: firstLine(post) },
+      tagged.includes(user.userId) && { title: `${actorName} tagged you in a post`, body: 'See what they shared' },
+      toList && { title: `${actorName} shared a post with you`, body: title },
       priority === 'must_read' && { title: mustReadTitle(role, actorName), body: title },
       priority === 'must_watch' && { title: mustWatchTitle(role, actorName), body: title },
-      isPoll && pollCopy(role, actorName),
       isAnnouncement && announcementCopy(role, actorName, title),
-      postCopy(role, actorName),
+      isPoll && (role === 'hr' || role === 'founder' || role === 'manager') && pollCopy(role, actorName),
+      // Everything else lands in the inbox and the feed, without a push.
+      post.type === 'kudos' && kudos.length > 0
+        && quietly({ title: `${actorName} gave kudos to ${kudosNames(kudos, audience)} 🎉`, body: firstLine(post) }),
+      isPoll && quietly({ title: `New poll from ${actorName}`, body: 'Cast your vote' }),
+      quietly(postCopy(role, actorName)),
     ]);
     return { user, copy };
   });
 
-  const count = await send(
-    recipients,
-    `post_published_${post.type}`,
-    { destination: 'connect_post', postId: post.id, postType: post.type, priority },
-    post.author.userId ?? '',
-  );
+  const count = await send(recipients, scenario, data, post.author.userId ?? '');
   logger.info('Feed publication notified', { postId: post.id, type: post.type, recipients: count });
   return count;
 }
 
+/** A birthday or anniversary card's push audience: their manager, their reports, their department. */
+export function celebrationCircle(person: User, other: User): boolean {
+  if (other.userId === person.userId) return false;
+  if (person.managerUserId && other.userId === person.managerUserId) return true;
+  if (other.managerUserId === person.userId) return true;
+  return Boolean(person.department) && other.department === person.department;
+}
+
 /** Birthday and work-anniversary cards, which the daily job publishes. */
-async function lifecycleCopy(post: ConnectPost): Promise<Copy> {
+function lifecycleCopy(post: ConnectPost): Copy {
   const name = String(post.body.personName ?? 'A teammate');
   if (post.type === 'anniversary') {
     const years = Number(post.body.years ?? 0);
-    const company = (await companies().findOne({ id: post.org }))?.name ?? 'the company';
-    return {
-      title: `🎉 ${name} completes ${plural(years, 'year')} today`,
-      body: `Celebrate their journey at ${company}`,
-    };
+    return { title: `🎉 ${name} completes ${plural(years, 'year')} today`, body: 'Celebrate their journey' };
   }
-  return {
-    title: `🎂 It's ${name}'s birthday!`,
-    body: 'Drop a wish and make their day',
-  };
+  return { title: `🎂 It's ${name}'s birthday!`, body: 'Drop a wish and make their day' };
+}
+
+/** The first line of a kudos, for the push under "gave you kudos". */
+function firstLine(post: ConnectPost): string {
+  const text = String(post.body.text ?? '').split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+  return text.length > 100 ? `${text.slice(0, 99)}…` : text || 'See what they appreciated';
 }
 
 function kudosNames(ids: string[], audience: User[]): string {
@@ -250,9 +255,8 @@ function postCopy(role: CreatorType, actor: string): Copy {
     case 'hr': return { title: 'New post from HR', body: `See what ${actor} shared` };
     case 'founder': return { title: `${actor} just posted`, body: 'See what your founder shared' };
     case 'manager': return { title: 'Your manager just posted', body: `See what ${actor} shared` };
-    // Sowaka's own posts push only when an admin opts in, with their own copy.
     case 'sowaka': return { title: 'New post', body: `See what ${actor} shared` };
-    default: return { title: 'New post in your team', body: `See what ${actor} posted` };
+    default: return { title: 'New post', body: `See what ${actor} posted` };
   }
 }
 
@@ -260,17 +264,16 @@ function pollCopy(role: CreatorType, actor: string): Copy {
   switch (role) {
     case 'hr': return { title: 'HR wants your opinion', body: 'Cast your vote' };
     case 'founder': return { title: `${actor} wants your take`, body: 'Cast your vote' };
-    case 'manager': return { title: 'Your manager wants your opinion', body: 'Cast your vote' };
-    default: return { title: 'New poll: Have your say', body: `${actor} wants to know what you think` };
+    default: return { title: 'Your manager wants your opinion', body: 'Cast your vote' };
   }
 }
 
+/** HR and leadership announcements push; anyone else's reads as an ordinary post. */
 function announcementCopy(role: CreatorType, actor: string, title: string): Copy {
   switch (role) {
     case 'hr': return { title: 'New announcement from HR', body: title };
     case 'founder': return { title: `An update from ${actor}`, body: title };
-    case 'manager': return { title: 'Update from your manager', body: title };
-    default: return { title: 'Company announcement', body: title };
+    default: return quietly({ title: 'Company announcement', body: title });
   }
 }
 
@@ -292,88 +295,117 @@ function mustWatchTitle(role: CreatorType, actor: string): string {
   }
 }
 
+// ------------------------------------------------------------------- games
+
+/** Row 29: a live game has started, for everyone it is open to except the host. */
+export async function notifyLiveGameStarted(post: ConnectPost, hostName: string): Promise<number> {
+  const audience = await postAudience(post);
+  const copy: Copy = {
+    title: `🎮 Live ${String(post.body.title ?? 'game')} starting now`,
+    body: `${hostName || 'Your company'} is hosting. Join in!`,
+  };
+  return send(
+    audience.map((user) => ({ user, copy })),
+    'live_game_started',
+    { destination: 'connect_post', postId: post.id, postType: post.type },
+    post.author.userId ?? '',
+  );
+}
+
+/** Rows 31–32: every vote on a caption or best-photo entry, to the entry's author. */
+export async function notifyContestVote(post: ConnectPost, entryAuthorUserId: string, voter: User): Promise<number> {
+  if (post.type !== 'caption_challenge' && post.type !== 'photo_story_challenge') return 0;
+  const author = await users().findOne({ userId: entryAuthorUserId });
+  if (!author || !audienceAllows(post.audience, author)) return 0;
+  const what = post.type === 'photo_story_challenge' ? 'photo' : 'caption';
+  return send(
+    [{ user: author, copy: { title: `${voter.name} voted for your ${what}`, body: titleOf(post) } }],
+    'contest_vote',
+    { destination: 'connect_post', postId: post.id, postType: post.type },
+    voter.userId,
+  );
+}
+
+/**
+ * "who is most likely to eat your lunch?" → "eat your lunch". Null when the
+ * question is not phrased that way, so the copy can fall back to quoting it.
+ */
+export function mostLikelyPrompt(question: string): string | null {
+  const match = /^\s*(?:who(?:\s*is|'s|s)?\s+)?(?:most|more)\s+likely\s+(?:to|ot)\s+(.+?)[\s?.!]*$/i.exec(question);
+  return match ? match[1] : null;
+}
+
+/** Row 33: every tag in a Most Likely contest, to the person tagged. Never says who. */
+export async function notifyMostLikelyTag(post: ConnectPost, taggedUserId: string, taggerUserId: string): Promise<number> {
+  const tagged = await users().findOne({ userId: taggedUserId });
+  if (!tagged || !audienceAllows(post.audience, tagged)) return 0;
+  const question = String(post.body.question ?? '').trim();
+  const prompt = mostLikelyPrompt(question);
+  const title = prompt
+    ? `Someone thinks you're most likely to ${prompt} 😄`
+    : `Someone tagged you in “${question || String(post.body.label || post.body.title || 'Most Likely')}” 😄`;
+  return send(
+    [{ user: tagged, copy: { title, body: 'See the results so far' } }],
+    'most_likely_tagged',
+    { destination: 'connect_post', postId: post.id, postType: post.type },
+    taggerUserId,
+  );
+}
+
 // ------------------------------------------------------------ interactions
 
 /** Distinct people who have commented, excluding one id. */
 const commenterIds = (post: ConnectPost, except: string): string[] =>
   [...new Set(post.comments.map((c) => c.userId))].filter((id) => id && id !== except);
 
+/** Gathers one event into a three-hourly push, never failing the action that caused it. */
+async function grouped(
+  recipientUserId: string,
+  kind: GroupKind,
+  post: ConnectPost,
+  actor: User,
+  data: Record<string, string>,
+): Promise<void> {
+  if (!recipientUserId || recipientUserId === actor.userId) return;
+  try {
+    await notifyGrouped({ recipientUserId, kind, entityId: post.id, actorName: actor.name, data });
+  } catch (error) {
+    logger.error('Grouped feed notification failed', { kind, postId: post.id }, error);
+  }
+}
+
 /**
- * A like on a post. Reaches the author, anyone tagged, and anyone who has
- * commented — each with copy naming their relationship to the post, and a
- * cumulative count taken from the live liker set.
+ * A like. The author hears it grouped; people tagged in the post or who
+ * commented on it get an inbox entry only.
  */
 export async function notifyPostLiked(post: ConnectPost, actor: User): Promise<number> {
   const fresh = (await connectPosts().findOne({ id: post.id })) ?? post;
-  const likeCount = (fresh.likedBy ?? []).length;
-  if (likeCount === 0) return 0;
-  const suffix = others(likeCount - 1);
-  const isPoll = fresh.type === 'survey';
-  const tagged = taggedIn(fresh);
+  const data = { destination: 'connect_post', postId: fresh.id, postType: fresh.type };
+  const authorId = fresh.author.userId ?? '';
   const audience = await postAudience(fresh);
+  if (authorId && audience.some((u) => u.userId === authorId)) {
+    await grouped(authorId, 'post_liked', fresh, actor, data);
+  }
+  const tagged = taggedIn(fresh);
   const commenters = commenterIds(fresh, actor.userId);
-
-  const targets = new Set(
-    [fresh.author.userId, ...tagged, ...commenters].filter((id): id is string => Boolean(id)),
-  );
-
-  const recipients = [...targets].map((userId) => {
-    const user = audience.find((u) => u.userId === userId);
-    if (!user) return { user: { userId } as User, copy: null };
-    const copy = pick([
-      // Your own content first, then a tag, then merely having commented.
-      userId === fresh.author.userId && {
-        title: isPoll
-          ? `${actor.name}${suffix} liked your poll`
-          : `${actor.name}${suffix} liked your post`,
-        body: isPoll ? 'See the poll' : likeCount > 1 ? 'See the activity' : 'See the post',
-      },
-      tagged.includes(userId) && {
-        title: `${actor.name}${suffix} liked a post you're tagged in`,
-        body: 'See the post',
-      },
-      commenters.includes(userId) && {
-        title: `${actor.name}${suffix} liked a post you commented on`,
-        body: "See what's happening",
-      },
-    ]);
-    return { user, copy };
-  });
-
-  return send(recipients, 'post_liked', { destination: 'connect_post', postId: fresh.id }, actor.userId);
-}
-
-/** A like on a comment — only its author hears about it. */
-export async function notifyCommentLiked(
-  post: ConnectPost,
-  comment: ConnectComment,
-  actor: User,
-): Promise<number> {
-  const fresh = (await connectPosts().findOne({ id: post.id })) ?? post;
-  const updated = fresh.comments.find((c) => c.id === comment.id);
-  const count = (updated?.likedBy ?? []).length;
-  if (count === 0 || !comment.userId) return 0;
-  const author = await users().findOne({ userId: comment.userId });
-  // Only someone who can still see the post hears about it.
-  if (!author || !audienceAllows(fresh.audience, author)) return 0;
-  return send(
-    [{
-      user: author,
-      copy: {
-        title: `${actor.name}${others(count - 1)} liked your comment`,
-        body: 'See the conversation',
-      },
-    }],
-    'comment_liked',
-    { destination: 'connect_comment', postId: fresh.id, commentId: comment.id },
-    actor.userId,
-  );
+  const recipients = [...new Set([...tagged, ...commenters])]
+    .filter((id) => id !== authorId)
+    .map((userId) => ({
+      user: audience.find((u) => u.userId === userId) ?? ({ userId } as User),
+      copy: audience.some((u) => u.userId === userId)
+        ? quietly(tagged.includes(userId)
+          ? { title: `${actor.name} liked a post you're tagged in`, body: 'See the post' }
+          : { title: `${actor.name} liked a post you commented on`, body: 'See the post' })
+        : null,
+    }));
+  return send(recipients, 'post_liked_inbox', data, actor.userId);
 }
 
 /**
- * A comment or reply. Precedence runs: a direct reply, then an @mention, then
- * kudos you were given or gave, then your own post, then a post you are tagged
- * in, then one you had commented on.
+ * A comment. Precedence: an @mention pushes at once; the person a birthday
+ * or anniversary card is about, the post's author, and earlier commenters
+ * hear it grouped; people tagged in the post get an inbox entry. Earlier
+ * commenters on a birthday or anniversary card hear nothing.
  */
 export async function notifyPostCommented(
   post: ConnectPost,
@@ -382,115 +414,79 @@ export async function notifyPostCommented(
   mentionedUserIds: string[] = [],
 ): Promise<number> {
   const audience = await postAudience(post);
-  const tagged = taggedIn(post);
-  const kudos = kudosRecipients(post);
-  const isPoll = post.type === 'survey';
-  const parent = comment.parentId
-    ? post.comments.find((c) => c.id === comment.parentId)
-    : undefined;
-  const priorCommenters = commenterIds(post, actor.userId);
-  const mentions = mentionedUserIds.filter((id) => id !== actor.userId);
+  const inAudience = (id: string) => audience.some((u) => u.userId === id);
+  const postData = { destination: 'connect_post', postId: post.id, postType: post.type };
+  const commentData = { destination: 'connect_comment', postId: post.id, commentId: comment.id, postType: post.type };
+  const mentions = mentionedUserIds.filter((id) => id !== actor.userId && inAudience(id));
   const celebrant = celebrantOf(post);
+  const authorId = post.author.userId ?? '';
+  const tagged = [...new Set([...taggedIn(post), ...kudosRecipients(post)])];
+  const priorCommenters = commenterIds(post, actor.userId);
+  const handled = new Set<string>([actor.userId, ...mentions]);
 
-  const targets = new Set(
-    [
-      post.author.userId,
-      celebrant,
-      parent?.userId,
-      ...mentions,
-      ...kudos,
-      ...tagged,
-      ...priorCommenters,
-    ].filter((id): id is string => Boolean(id)),
-  );
-
-  const recipients = [...targets].map((userId) => {
-    const user = audience.find((u) => u.userId === userId);
-    if (!user) return { user: { userId } as User, copy: null };
-    const otherMentions = mentions.filter((id) => id !== userId).length;
-    const copy = pick([
-      // A reply that also mentions you is still just a reply.
-      parent?.userId === userId && {
-        title: `${actor.name} replied to your comment`,
-        body: 'See what they said',
-      },
-      // On your own birthday or anniversary card, a comment is a wish — not a
-      // comment on a post that happens to be about you.
-      userId === celebrant && {
-        title: post.type === 'anniversary'
-          ? `${actor.name} congratulated you on your work anniversary 🎉`
-          : `${actor.name} wished you a happy birthday 🎂`,
-        body: 'See what they said',
-      },
-      mentions.includes(userId) && {
-        title: otherMentions > 0
-          ? `${actor.name} mentioned you${others(otherMentions)}`
-          : `${actor.name} mentioned you in a comment`,
-        body: 'See the comment',
-      },
-      // Kudos context beats the generic tagged copy, for giver and receiver.
-      (kudos.includes(userId) || (post.type === 'kudos' && userId === post.author.userId)) && {
-        title: `${actor.name} commented on your kudos`,
-        body: 'See what they said',
-      },
-      userId === post.author.userId && {
-        title: `${actor.name} commented on your ${isPoll ? 'poll' : 'post'}`,
-        body: 'See what they said',
-      },
-      tagged.includes(userId) && {
-        title: `${actor.name} commented on a post you're tagged in`,
-        body: 'Join the conversation',
-      },
-      priorCommenters.includes(userId) && {
-        title: `${actor.name} joined the conversation`,
-        body: 'See their comment',
-      },
-    ]);
-    return { user, copy };
-  });
-
-  return send(
-    recipients,
-    'post_commented',
-    { destination: 'connect_comment', postId: post.id, commentId: comment.id },
+  let sent = await send(
+    mentions.map((userId) => ({
+      user: audience.find((u) => u.userId === userId)!,
+      copy: { title: `${actor.name} mentioned you in a comment`, body: 'See the comment' },
+    })),
+    'comment_mention',
+    commentData,
     actor.userId,
   );
+
+  if (celebrant && !handled.has(celebrant) && inAudience(celebrant)) {
+    handled.add(celebrant);
+    await grouped(celebrant, post.type === 'anniversary' ? 'card_wished_anniversary' : 'card_wished_birthday', post, actor, postData);
+  }
+  if (authorId && !handled.has(authorId) && inAudience(authorId)) {
+    handled.add(authorId);
+    await grouped(authorId, 'post_commented', post, actor, postData);
+  }
+
+  const taggedRecipients = tagged
+    .filter((id) => !handled.has(id) && inAudience(id))
+    .map((userId) => {
+      handled.add(userId);
+      return {
+        user: audience.find((u) => u.userId === userId)!,
+        copy: quietly({ title: `${actor.name} commented on a post you're tagged in`, body: 'See what they said' }),
+      };
+    });
+  sent += await send(taggedRecipients, 'post_commented_inbox', commentData, actor.userId);
+
+  if (!celebrant) {
+    for (const userId of priorCommenters) {
+      if (handled.has(userId) || !inAudience(userId)) continue;
+      handled.add(userId);
+      await grouped(userId, 'post_also_commented', post, actor, postData);
+    }
+  }
+  return sent;
 }
 
 /**
- * A poll vote. The creator hears every vote immediately, and so does anyone who
- * has already voted. A changed vote is not a new voter and sends nothing —
- * that is decided by the caller, which knows whether a prior vote existed.
+ * A first vote on a poll (a changed vote is not a new voter, and the caller
+ * sends nothing for it). The creator hears it grouped; earlier voters get an
+ * inbox entry.
  */
 export async function notifyPollVoted(post: ConnectPost, actor: User): Promise<number> {
   const fresh = (await connectPosts().findOne({ id: post.id })) ?? post;
-  const voters = Object.keys(fresh.pollVotes ?? {});
-  const count = voters.length;
-  if (count === 0) return 0;
-  const suffix = others(count - 1);
+  const data = { destination: 'connect_post', postId: fresh.id, postType: fresh.type };
+  const authorId = fresh.author.userId ?? '';
   const audience = await postAudience(fresh);
-  const priorVoters = voters.filter((id) => id !== actor.userId && id !== fresh.author.userId);
-
-  const recipients = [
-    ...(fresh.author.userId ? [fresh.author.userId] : []),
-    ...priorVoters,
-  ].map((userId) => {
-    const user = audience.find((u) => u.userId === userId);
-    if (!user) return { user: { userId } as User, copy: null };
-    const copy = pick([
-      userId === fresh.author.userId && {
-        title: `${actor.name}${suffix} voted on your poll`,
-        body: 'See how the results are shaping up',
-      },
-      {
-        title: count > 2
-          ? `${actor.name}${others(count - 2)} also voted`
-          : `${actor.name} also voted`,
-        body: 'See how the poll is shaping up',
-      },
-    ]);
-    return { user, copy };
-  });
-
-  return send(recipients, 'poll_voted', { destination: 'connect_post', postId: fresh.id }, actor.userId);
+  if (authorId && audience.some((u) => u.userId === authorId)) {
+    await grouped(authorId, 'poll_voted', fresh, actor, data);
+  }
+  const priorVoters = Object.keys(fresh.pollVotes ?? {}).filter((id) => id !== actor.userId && id !== authorId);
+  return send(
+    priorVoters.map((userId) => ({
+      user: audience.find((u) => u.userId === userId) ?? ({ userId } as User),
+      copy: audience.some((u) => u.userId === userId)
+        ? quietly({ title: `${actor.name} also voted`, body: 'See how the poll is shaping up' })
+        : null,
+    })),
+    'poll_voted_inbox',
+    data,
+    actor.userId,
+  );
 }

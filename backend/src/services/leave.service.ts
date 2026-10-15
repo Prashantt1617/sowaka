@@ -223,6 +223,7 @@ export async function applyForLeave(
 
   await notifyLeaveSubmitted({
     employeeUserId: employee.userId,
+    requestId: String(result.insertedId),
     type,
     startDate,
     endDate,
@@ -618,11 +619,14 @@ export async function decideLeave(
 
   await notifyLeaveDecided({
     employeeUserId: employee.userId,
+    requestId: String(leaveId),
     type: leave.type,
     startDate: leave.startDate,
     endDate: leave.endDate,
+    days: leave.days,
     approved: decision === 'approved',
     comment: input.managerNote?.trim() ?? '',
+    decidedByUserId: managerUserId,
   });
 
   return await toLeaveView(updated, employee);
@@ -698,11 +702,14 @@ export async function adminDecideLeave(
   if (!updated) throw new LeaveError(409, 'Leave request has already been decided');
   await notifyLeaveDecided({
     employeeUserId: employee.userId,
+    requestId: String(leaveId),
     type: leave.type,
     startDate: leave.startDate,
     endDate: leave.endDate,
+    days: leave.days,
     approved: decision === 'approved',
     comment: input.managerNote?.trim() ?? '',
+    decidedByUserId: adminUserId,
   });
   return toLeaveView(updated, employee);
 }

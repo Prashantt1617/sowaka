@@ -3,6 +3,8 @@ import { connectPosts, games, gameScores, users } from '../config/db';
 import { ConnectPost } from '../models/connect.model';
 import { Game } from '../models/game.model';
 import { companyDisplayName } from './company-settings.service';
+import { notifyLiveGameStarted } from './connect-notifications.service';
+import { logger } from '../utils/logger';
 
 export class GameError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -80,7 +82,12 @@ export async function publishGame(adminUserId: string, gameId: string) {
       startsAtLabel: 'PLAY NOW', actionLabel: 'Play now', actionDoneLabel: 'Played', leaderboardEnabled: true },
     likedBy: [], comments: [], actionBy: {}, pollVotes: {}, publishedAt: now, createdAt: now, updatedAt: now,
   };
-  await connectPosts().insertOne(post); return post;
+  await connectPosts().insertOne(post);
+  // Spec row 29: it is playable the moment it is posted, so this is when it goes live.
+  const host = await users().findOne({ userId: adminUserId });
+  notifyLiveGameStarted(post, host?.name ?? post.author.name)
+    .catch((error) => logger.error('Live game notification failed', { postId: post.id }, error));
+  return post;
 }
 
 export async function getGameForPlayer(userId: string, gameId: string) {

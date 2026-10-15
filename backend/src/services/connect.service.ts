@@ -6,7 +6,8 @@ import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
 import { challengePointSource, recordPointChanges } from './points-ledger.service';
 import {
-  notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
+  notifyContestVote, notifyMostLikelyTag, notifyPollVoted, notifyPostCommented, notifyPostLiked,
+  notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { logger } from '../utils/logger';
@@ -519,14 +520,8 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
-  // Feeds first, then the push in the background — see toggleConnectReaction.
+  // A like on a comment notifies nobody.
   announceChange(post, 'updated', viewerUserId);
-  if (!liked) {
-    inBackground('comment like notification', async () => {
-      const viewer = await users().findOne({ userId: viewerUserId });
-      if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
-    });
-  }
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -625,6 +620,7 @@ export async function addCaptionEntry(
     }]);
     const afterTag = await connectPosts().findOne({ id: postId });
     announceChange(post, 'updated', viewerUserId);
+    inBackground('most likely tag notification', () => notifyMostLikelyTag(post, tagged.userId, viewerUserId));
     return viewPost(afterTag ?? post, viewerUserId);
   }
 
@@ -812,6 +808,11 @@ export async function voteOnCaptionEntry(
           }]
         : []),
     ]);
+    // Every vote, not grouped (spec rows 31–32); taking a vote back sends nothing.
+    inBackground('contest vote notification', async () => {
+      const voter = await users().findOne({ userId: viewerUserId });
+      if (voter) await notifyContestVote(post, entry.userId, voter);
+    });
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);

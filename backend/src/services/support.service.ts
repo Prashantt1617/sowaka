@@ -106,6 +106,25 @@ function displayName(original: string): string {
   return clean || 'Attachment';
 }
 
+/** The org's dashboard, where the desk is. */
+const deskLink = (org: string) => `https://${org}.getsowaka.com/dashboard`;
+const ticketRef = (ticket: SupportTicket) => `SUP-${String(ticket.ticketNo ?? 0).padStart(4, '0')}`;
+
+/**
+ * Support staff hear by email only, never a push or an inbox entry (Rules
+ * sheet: "Push only to the requester"). Never the message text: topic and
+ * names only, so nothing private lands in a mailbox preview.
+ */
+async function emailStaff(userIds: string[], ticket: SupportTicket, scenario: string, subject: string, line: string): Promise<void> {
+  await notifySafe(userIds, {
+    scenario, title: subject, body: line,
+    data: { destination: 'support_ticket', ticketId: ticket.id },
+    email: { subject, body: `Hi {firstName},\n\n${line}\n\nTicket ${ticketRef(ticket)} on the desk:\n${deskLink(ticket.org)}` },
+    push: false,
+    inbox: false,
+  });
+}
+
 async function notifySafe(userIds: string[], input: Parameters<typeof notifyUsers>[1]): Promise<void> {
   try {
     await notifyUsers(userIds, input);
@@ -477,12 +496,8 @@ export async function createTicket(
 
   emit(ticket, 'created', true, [actor.userId]);
   void headsOf(org).then((heads) =>
-    notifySafe(heads, {
-      scenario: 'support_ticket_new',
-      title: 'New support ticket',
-      body: `${topic.label} ticket from ${actor.name}`,
-      data: { destination: 'support_ticket', ticketId: id },
-    }),
+    emailStaff(heads, ticket, 'support_ticket_new', `New ${topic.label} ticket from ${actor.name}`,
+      `${actor.name} raised a ${topic.label} ticket.`),
   );
 
   return {
@@ -531,12 +546,9 @@ export async function postEmployeeMessage(actor: Actor, ticketId: string, input:
 
   emit(fresh, 'message', true, [fresh.assigneeUserId, actor.userId]);
   const recipients = fresh.status === 'assigned' && fresh.assigneeUserId ? [fresh.assigneeUserId] : await headsOf(fresh.org);
-  void notifySafe(recipients, {
-    scenario: 'support_employee_reply',
-    title: 'New reply on a support ticket',
-    body: `${actor.name} replied on a ${await labelOf(fresh)} ticket`,
-    data: { destination: 'support_ticket', ticketId: fresh.id },
-  });
+  const replyLabel = await labelOf(fresh);
+  void emailStaff(recipients, fresh, 'support_employee_reply', `${actor.name} replied on a ${replyLabel} ticket`,
+    `${actor.name} replied on their ${replyLabel} ticket.`);
   return { message: await messageForEmployee(message) };
 }
 
@@ -667,10 +679,11 @@ export async function postStaffMessage(actor: Actor, ticketId: string, input: { 
     'employee',
   );
   emit(fresh, 'message', true, [fresh.requesterUserId, fresh.assigneeUserId]);
+  // The requester hears "HR", not the staff member: the desk replies as a team.
   void notifySafe([fresh.requesterUserId], {
     scenario: 'support_reply',
-    title: 'HR team replied',
-    body: `New reply on your ${await labelOf(fresh)} ticket`,
+    title: `HR replied on your ${await labelOf(fresh)} ticket`,
+    body: 'Tap to read the reply',
     data: { destination: 'support_ticket', ticketId: fresh.id },
   });
   const [requester, names] = await Promise.all([requesterOf(fresh), namesOf([viewer.userId])]);
@@ -727,13 +740,9 @@ async function assignTo(ticket: SupportTicket, viewer: StaffViewer, targetUserId
   });
   emit(fresh, 'assigned', true, [targetUserId, previous, fresh.requesterUserId]);
   if (targetUserId !== viewer.userId) {
-    const name = await requesterName(fresh);
-    void notifySafe([targetUserId], {
-      scenario: 'support_ticket_assigned',
-      title: 'Support ticket assigned to you',
-      body: `${await labelOf(fresh)} ticket from ${name}`,
-      data: { destination: 'support_ticket', ticketId: fresh.id },
-    });
+    const [name, label, names] = await Promise.all([requesterName(fresh), labelOf(fresh), namesOf([viewer.userId])]);
+    void emailStaff([targetUserId], fresh, 'support_ticket_assigned', `${label} ticket assigned to you`,
+      `From ${name} · assigned by ${names.get(viewer.userId) ?? 'a Support head'}.`);
   }
   return fresh;
 }
@@ -777,12 +786,8 @@ export async function sendBackTicket(actor: Actor, ticketId: string, input: { no
   emit(fresh, 'sent_back', true, [viewer.userId]);
   const [names, label] = await Promise.all([namesOf([viewer.userId]), labelOf(fresh)]);
   void headsOf(fresh.org).then((heads) =>
-    notifySafe(heads, {
-      scenario: 'support_ticket_sent_back',
-      title: 'Support ticket sent back',
-      body: `${names.get(viewer.userId) ?? 'Support staff'} sent back a ${label} ticket`,
-      data: { destination: 'support_ticket', ticketId: fresh.id },
-    }),
+    emailStaff(heads, fresh, 'support_ticket_sent_back', `${label} ticket back in the queue`,
+      `${names.get(viewer.userId) ?? 'Support staff'} sent it back.`),
   );
   return { ticket: await staffTicketView(fresh) };
 }
@@ -796,8 +801,8 @@ export async function resolveTicket(actor: Actor, ticketId: string) {
   emit(fresh, 'resolved', true, [fresh.requesterUserId, fresh.assigneeUserId]);
   void notifySafe([fresh.requesterUserId], {
     scenario: 'support_resolved',
-    title: 'Ticket resolved',
-    body: `Your ${await labelOf(fresh)} ticket was marked as resolved`,
+    title: `Your ${await labelOf(fresh)} ticket is resolved ✓`,
+    body: 'Tap to see the final reply',
     data: { destination: 'support_ticket', ticketId: fresh.id },
   });
   return { ticket: await staffTicketView(fresh) };
@@ -875,4 +880,58 @@ export async function returnTicketsFromInactiveAssignees(org: string): Promise<n
     logger.error('Support sweep failed', { org }, error);
     return 0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Reminders
+// ---------------------------------------------------------------------------
+
+/**
+ * Spec row 23 — Tuesday and Thursday at 14:00 IST (the next working day after
+ * a holiday at their location): an email to each Support head and assignee
+ * with tickets needing them. Heads count the unassigned queue and their own;
+ * staff count the tickets assigned to them that wait on a reply.
+ */
+export async function sendOpenTicketReminders(now = new Date()): Promise<number> {
+  const { istParts, dayLabel, tueThuDueFor } = await import('./notification-time');
+  const todayKey = istParts(now).dateKey;
+  const live = await supportTickets()
+    .find({ status: { $in: ['open', 'assigned'] } }, { projection: { _id: 0 } })
+    .toArray();
+  if (!live.length) return 0;
+  const orgs = [...new Set(live.map((t) => t.org))];
+  let sent = 0;
+  for (const org of orgs) {
+    const tickets = live.filter((t) => t.org === org);
+    const staff = await users()
+      .find(
+        { org, supportRole: { $in: ['head', 'staff'] }, dashboardAccess: true, lifecycleStatus: { $nin: INACTIVE } } as never,
+        { projection: { _id: 0 } },
+      )
+      .toArray();
+    for (const person of staff) {
+      const unassigned = person.supportRole === 'head' ? tickets.filter((t) => t.status === 'open') : [];
+      const waiting = tickets.filter((t) => t.status === 'assigned' && t.assigneeUserId === person.userId && t.unreadForStaff > 0);
+      const counted = [...unassigned, ...waiting];
+      if (!counted.length) continue;
+      if (!(await tueThuDueFor(person, todayKey))) continue;
+      const oldest = counted.reduce((min, t) => (t.createdAt < min ? t.createdAt : min), counted[0].createdAt);
+      const parts = [
+        person.supportRole === 'head' ? `${unassigned.length} unassigned` : '',
+        `${waiting.length} waiting on your reply`,
+        `oldest from ${dayLabel(oldest)}`,
+      ].filter(Boolean);
+      const subject = `${counted.length} support ${counted.length === 1 ? 'ticket needs' : 'tickets need'} attention`;
+      await notifySafe([person.userId], {
+        scenario: 'support_open_reminder', title: subject, body: parts.join(' · '),
+        data: { destination: 'support_desk', dateKey: todayKey },
+        email: { subject, body: `Hi {firstName},\n\n${parts.join(' · ')}.\n\nThe desk:\n${deskLink(org)}` },
+        push: false,
+        inbox: false,
+      });
+      sent += 1;
+    }
+  }
+  logger.info('Support open-ticket reminders sent', { dateKey: todayKey, recipients: sent });
+  return sent;
 }

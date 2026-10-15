@@ -127,17 +127,10 @@ async function hrEmails(org: string): Promise<string[]> {
   return hr.map((u) => u.email).filter(Boolean);
 }
 
-/** Email addressed to the manager, read by their manager and HR too. */
-async function mailManager(manager: User, mail: Mail, copyOthers: boolean): Promise<void> {
-  const org = manager.org ?? '';
-  const theirManager = copyOthers && manager.managerUserId
-    ? await users().findOne({ userId: manager.managerUserId })
-    : null;
-  const cc = copyOthers
-    ? [...(theirManager?.email ? [theirManager.email] : []), ...(await hrEmails(org))]
-    : [];
+/** Email to the manager alone: nobody else is copied (Rules sheet, "Email copy"). */
+async function mailManager(manager: User, mail: Mail, _copyOthers: boolean): Promise<void> {
   const first = manager.name?.trim().split(/\s+/).at(0) || 'there';
-  await sendNotificationEmail(manager.email, mail.subject, mail.body.replaceAll('{firstName}', first), cc);
+  await sendNotificationEmail(manager.email, mail.subject, mail.body.replaceAll('{firstName}', first));
 }
 
 /** Once per manager per cycle: the daily run re-derives everything, so it checks what was sent. */
@@ -145,21 +138,38 @@ async function alreadySent(userId: string, scenario: string, period: string): Pr
   return Boolean(await notifications().findOne({ userId, scenario, 'data.period': period }));
 }
 
-// ---------------------------------------------------------------- 1 and 2
+// -------------------------------------------------------------- the messages
 
-/**
- * The day a cycle opens: one message to every manager with reports, saying
- * how many reviews the cycle asks of them. Run daily; only the opening day
- * sends, and never twice for the same cycle.
- */
-export async function sendCycleOpenNotices(org: string, now = new Date()): Promise<number> {
+/** The cycle's last day: the day before the next one starts (31 Oct, not 1 Nov). */
+function lastDayOf(end: Date): Date {
+  return new Date(end.getTime() - 86_400_000);
+}
+
+/** "31 Oct". */
+const dayMonth = (date: Date) =>
+  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date);
+
+/** "October" from a `YYYY-MM` cycle key. */
+const monthOf = (period: string) => cycleName(period).split(' ')[0];
+
+const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+
+/** The cycle `now` falls in, its first day and its last day, as `YYYY-MM-DD`. */
+async function cycleOf(org: string, now: Date) {
   const startDay = await cycleStartDayFor(org);
   const period = periodFor(now, startDay);
   const { start, end } = cycleWindow(period, startDay);
-  if (start.toISOString().slice(0, 10) !== now.toISOString().slice(0, 10)) return 0;
+  return { period, start, last: lastDayOf(end), today: isoDay(now) };
+}
 
-  const cycle = cycleName(period);
-  const closes = longDate(end);
+/**
+ * Row 24 — the cycle's first day, 10:00 IST: every manager with reports,
+ * once per cycle. The email goes to the manager only.
+ */
+export async function sendCycleOpenNotices(org: string, now = new Date()): Promise<number> {
+  const { period, start, last, today } = await cycleOf(org, now);
+  if (isoDay(start) !== today) return 0;
+  const month = monthOf(period);
   let sent = 0;
   for (const manager of await managersOf(org)) {
     if (await alreadySent(manager.userId, 'feedback_cycle_open', period)) continue;
@@ -167,12 +177,12 @@ export async function sendCycleOpenNotices(org: string, now = new Date()): Promi
     if (reports.length === 0) continue;
     await notifyUsers([manager.userId], {
       scenario: 'feedback_cycle_open',
-      title: `${cycle.split(' ')[0]} feedback cycle is open`,
-      body: `${progressLine(done.length, reports.length)} · closes ${closes}`,
+      title: `${month} feedback is open`,
+      body: `Share feedback for your ${reports.length} team ${reports.length === 1 ? 'member' : 'members'} by ${dayMonth(last)}`,
       data: { destination: 'grow_feedback', period },
     });
     await mailManager(manager, cycleOpenEmail({
-      cycle, closes, done: done.length, total: reports.length, pending: pending.map((p) => p.name),
+      cycle: cycleName(period), closes: longDate(last), done: done.length, total: reports.length, pending: pending.map((p) => p.name),
     }), false);
     sent += 1;
   }
@@ -181,42 +191,51 @@ export async function sendCycleOpenNotices(org: string, now = new Date()): Promi
 }
 
 /**
- * Five days before a cycle closes: one message to every manager with anything
- * still pending, with the done-versus-pending count. The days remaining are
- * computed from the cycle's own end date, so moving the org's start day
- * moves this with it. Never twice for the same cycle.
+ * Row 25 — every Friday at 10:00 IST while the cycle is open: managers with
+ * anything pending. Not in the cycle's first week, and not on its first or
+ * last day (those days have their own message).
  */
-export async function sendCycleClosingNotices(
-  org: string,
-  now = new Date(),
-  daysBefore = 5,
-): Promise<number> {
-  const startDay = await cycleStartDayFor(org);
-  const period = periodFor(now, startDay);
-  const { end } = cycleWindow(period, startDay);
-  const left = daysUntil(end, now);
-  if (left !== daysBefore) return 0;
-
-  const cycle = cycleName(period);
-  const closes = longDate(end);
+export async function sendWeeklyFeedbackReminders(org: string, now = new Date()): Promise<number> {
+  const { period, start, last, today } = await cycleOf(org, now);
+  const weekday = new Date(`${today}T00:00:00.000Z`).getUTCDay();
+  if (weekday !== 5) return 0;
+  if (today === isoDay(start) || today === isoDay(last)) return 0;
+  if ((new Date(`${today}T00:00:00.000Z`).getTime() - start.getTime()) / 86_400_000 < 7) return 0;
+  const month = monthOf(period);
   let sent = 0;
   for (const manager of await managersOf(org)) {
-    if (await alreadySent(manager.userId, 'feedback_cycle_closing', period)) continue;
+    if (await notifications().findOne({ userId: manager.userId, scenario: 'feedback_weekly', 'data.dateKey': today })) continue;
     const { reports, done, pending } = await feedbackProgress(manager, period);
     if (pending.length === 0) continue;
     await notifyUsers([manager.userId], {
-      scenario: 'feedback_cycle_closing',
-      title: `${left} days left: ${cycle.split(' ')[0]} feedback`,
-      body: `${progressLine(done.length, reports.length)} · closes ${closes}`,
-      data: { destination: 'grow_feedback', period },
+      scenario: 'feedback_weekly',
+      title: `${month} feedback: ${pending.length} still to go`,
+      body: `${done.length} of ${reports.length} done. Due ${dayMonth(last)}.`,
+      data: { destination: 'grow_feedback', period, dateKey: today },
     });
-    await mailManager(manager, closingSoonEmail({
-      managerName: manager.name, cycle, closes, daysLeft: left,
-      done: done.length, total: reports.length, pending: pending.map((p) => p.name),
-    }), true);
     sent += 1;
   }
-  logger.info('Feedback cycle closing notices sent', { org, period, daysLeft: left, managers: sent });
+  return sent;
+}
+
+/** Row 26 — the cycle's last day, 10:00 IST: managers with anything pending. */
+export async function sendLastDayFeedbackNotices(org: string, now = new Date()): Promise<number> {
+  const { period, last, today } = await cycleOf(org, now);
+  if (isoDay(last) !== today) return 0;
+  const month = monthOf(period);
+  let sent = 0;
+  for (const manager of await managersOf(org)) {
+    if (await alreadySent(manager.userId, 'feedback_last_day', period)) continue;
+    const { pending } = await feedbackProgress(manager, period);
+    if (pending.length === 0) continue;
+    await notifyUsers([manager.userId], {
+      scenario: 'feedback_last_day',
+      title: `Last day for ${month} feedback`,
+      body: `${pending.length} team ${pending.length === 1 ? 'member still needs' : 'members still need'} feedback`,
+      data: { destination: 'grow_feedback', period },
+    });
+    sent += 1;
+  }
   return sent;
 }
 
