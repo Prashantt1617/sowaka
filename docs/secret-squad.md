@@ -84,12 +84,13 @@ every 20 s for the new code):
     "lobbyOpensAt": 0, "startsAt": 0,
     "phaseEndsAt": 0,                               // end of the lobby, dealing, hunt or break
     "roundIndex": 0, "roundCount": 3,               // which round (0-based) is dealing / hunting / in its break
-    "rounds": [{ "squadSize": 20, "huntMs": 1020000 }],
+    "rounds": [{ "squadSize": 20, "huntMs": 1020000, "breakMs", "lockMs", "pointsPerMember", "timeBonusPerSecond" }],
     "joined": true, "playing": true,                // playing = in the current round (false if joined mid-round)
     "players": 91,
     "faces": [{ "userId", "name", "initials", "photoUrl" }],   // up to 12, lobby only
     "totalPoints": 0,                               // what you have earned this session so far
     "round": null | {                               // the current (or just finished) round
+      "huntStartedAt": 0, "endsAt": 0,
       "player": null | {
         "word": "MARS",
         "code": "4817", "codeExpiresAt": 0,         // null when finished or away
@@ -114,7 +115,7 @@ every 20 s for the new code):
       },
       "notice": null | { "kind": "teammate_away" | "teammate_back" | "squad_left", "name", "word", "at" },
       "results": null | {                           // in the break and when over
-        "squads": [{ "place", "theme", "words": ["…"], "finishedAt", "linked", "size", "mine" }],
+        "squads": [{ "place", "theme", "words": ["…"], "finishedAt" /* server ms or null */, "linked", "size", "points", "mine" }],
         "trickiest": null | { "word", "checks" },
         "points": 0                                 // what you earned this round
       }

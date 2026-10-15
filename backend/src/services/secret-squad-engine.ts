@@ -648,7 +648,14 @@ export function sessionViewFor(session: SquadSession, userId: string, now: numbe
     phaseEndsAt: session.phaseEndsAt,
     roundIndex: session.roundIndex,
     roundCount: session.rounds.length,
-    rounds: session.rounds.map((config) => ({ squadSize: config.squadSize, huntMs: config.huntMs })),
+    rounds: session.rounds.map((config) => ({
+      squadSize: config.squadSize,
+      huntMs: config.huntMs,
+      breakMs: config.breakMs,
+      lockMs: config.lockMs,
+      pointsPerMember: config.pointsPerMember,
+      timeBonusPerSecond: config.timeBonusPerSecond,
+    })),
     joined: Boolean(me),
     playing: Boolean(me?.playing) && Boolean(round) && !round?.skipped,
     players: session.status === 'lobby'
@@ -673,6 +680,8 @@ function roundViewFor(session: SquadSession, round: SquadRoundState, me: SquadPl
     index: round.index,
     skipped: Boolean(round.skipped),
     huntStartsAt: round.huntStartsAt,
+    // The page's name for it (when the hunt started, for "linked in 11:13").
+    huntStartedAt: round.huntStartsAt,
     endsAt: round.endsAt,
     board,
     player: null as null | Record<string, unknown>,
@@ -742,7 +751,7 @@ function resultsFor(session: SquadSession, round: SquadRoundState, me: SquadPlay
       place: squad.place ?? 0,
       theme: squad.theme,
       words: squad.words,
-      finishedAt: squad.finishedAt ? squad.finishedAt - round.huntStartsAt : null,
+      finishedAt: squad.finishedAt ?? null,
       linked: largestGroup(round, index),
       size: squad.members.length,
       points: round.points?.[squad.members[0]] ?? 0,
