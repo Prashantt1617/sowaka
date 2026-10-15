@@ -548,25 +548,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     return true;
   }
 
+  /// Signs out. The profile has already asked ([confirmLogOut]).
   Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text('You will need to sign in again to continue.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Log out'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
     // Every copy on this phone goes with them — dashboard and feed — and a
     // load still in flight cannot put one back.
     await DashboardCache.clearAll();

@@ -12,7 +12,8 @@ enum ProfileTab {
   grow('Grow'),
   rank('Rank'),
   counselor('Counselor'),
-  documentation('Documentation');
+  documentation('Documentation'),
+  settings('Settings');
 
   const ProfileTab(this.label);
 
@@ -60,7 +61,8 @@ List<ProfileTab> memberProfileTabs({
 
 /// The tabs on one's own profile. Growth is reviewed by one's manager, so
 /// someone with nobody above them has no Grow; the counsellor is there where
-/// the company has Help.
+/// the company has Help. Settings — privacy, blocked people, log out, delete
+/// — is last, and only ever on one's own.
 List<ProfileTab> ownProfileTabs({
   required bool hasManager,
   required bool showsHelp,
@@ -72,6 +74,7 @@ List<ProfileTab> ownProfileTabs({
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,
   if (showsHelp) ProfileTab.counselor,
+  ProfileTab.settings,
 ];
 
 /// Another person's profile: a report's from the Team tab, or anyone's in the
@@ -374,6 +377,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       ],
       // Never on someone else's profile.
       ProfileTab.counselor => const <Widget>[],
+      ProfileTab.settings => const <Widget>[],
     };
 
     return Scaffold(
@@ -585,7 +589,6 @@ class _ProfileScrollFrame extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.children,
-    this.footer = const [],
   });
 
   final Widget hero;
@@ -593,9 +596,6 @@ class _ProfileScrollFrame extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onChanged;
   final List<Widget> children;
-
-  /// Below whichever tab is open — the log-out on one's own profile.
-  final List<Widget> footer;
 
   /// Tablets get the phone's column rather than lines a foot long.
   static Widget _column(Widget child) => Center(
@@ -640,7 +640,7 @@ class _ProfileScrollFrame extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [...children, ...footer],
+                children: children,
               ),
             ),
           ),
@@ -1134,12 +1134,13 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       nameSize: helpOnly ? 26 : 24,
       subtitleSize: helpOnly ? 15 : 16,
     );
-    // Room between whatever came last and the log-out, whichever kind of
-    // profile this is; the privacy footnote under it is deliberately small —
-    // a note about this person's own account, not company policy.
-    final footer = [
+    // A company whose app is Help alone has no tabs, so no Settings: the
+    // log-out and the account footnotes sit under the counsellor instead.
+    // The footnote is deliberately small — a note about this person's own
+    // account, not company policy.
+    final helpOnlyFooter = [
       const SizedBox(height: 24),
-      _LogoutButton(onPressed: widget.onLogout),
+      _LogoutButton(onPressed: () => confirmLogOut(context, widget.onLogout)),
       const SizedBox(height: 14),
       _PrivacyAndDataRow(session: session),
       const SizedBox(height: 24),
@@ -1225,6 +1226,9 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ProfileTab.counselor => [HelpProfileSection(session: session)],
       // One's own documents are not loaded with the workspace.
       ProfileTab.documentation => const <Widget>[],
+      ProfileTab.settings => [
+        ProfileSettingsTab(session: session, onLogOut: widget.onLogout),
+      ],
     };
 
     return ColoredBox(
@@ -1254,7 +1258,6 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                     tabs: [for (final tab in tabs) tab.label],
                     selected: selected,
                     onChanged: (index) => setState(() => _tab = index),
-                    footer: footer,
                     children: content,
                   )
                 : SingleChildScrollView(
@@ -1268,7 +1271,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                             hero,
                             const SizedBox(height: 6),
                             if (helpHere) HelpProfileSection(session: session),
-                            ...footer,
+                            ...helpOnlyFooter,
                           ],
                         ),
                       ),
@@ -3312,6 +3315,313 @@ class _FootnoteLink extends StatelessWidget {
             decoration: TextDecoration.underline,
             decorationColor: Color(0xFFD1D5DB),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+/// The Settings tab on one's own profile (node 3857:82656): the privacy
+/// policy, the people they have blocked, log out, and deleting the account.
+/// Log out asks first ([confirmLogOut]); the rest open what they always did.
+class ProfileSettingsTab extends StatelessWidget {
+  const ProfileSettingsTab({
+    super.key,
+    required this.session,
+    required this.onLogOut,
+    this.openLink = openExternalLink,
+  });
+
+  final AuthSession session;
+
+  /// Signs out, once they have said yes.
+  final Future<void> Function() onLogOut;
+
+  /// Opens a web page; false when nothing could, and the data and privacy
+  /// sheet shows instead. A test stands in for the browser here.
+  final Future<bool> Function(String url) openLink;
+
+  Future<void> _open(BuildContext context, String url) async {
+    final opened = await openLink(url);
+    if (opened || !context.mounted) return;
+    _PrivacyAndDataRow._showFallback(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SettingsRow(
+          key: const ValueKey('profile-settings-privacy'),
+          label: 'Privacy Policy',
+          icon: const _PrivacyPolicyGlyph(),
+          arrowAsset: 'assets/icons/settings_arrow.svg',
+          onTap: () => _open(context, ApiConfig.privacyPolicyUrl),
+        ),
+        // The only way back from a block, which is why the block sheet
+        // points to the profile.
+        _SettingsRow(
+          key: const ValueKey('profile-settings-blocked'),
+          label: 'Blocked users',
+          icon: SvgPicture.asset(
+            'assets/icons/settings_blocked.svg',
+            width: 19.99,
+            height: 19.99,
+          ),
+          arrowAsset: 'assets/icons/settings_arrow.svg',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => BlockedPeopleScreen(session: session),
+            ),
+          ),
+        ),
+        _SettingsRow(
+          key: const ValueKey('profile-settings-logout'),
+          label: 'Log out',
+          color: ProfileStyle.tertiary,
+          icon: SvgPicture.asset(
+            'assets/icons/settings_log_out.svg',
+            width: 19.99,
+            height: 19.99,
+          ),
+          arrowAsset: 'assets/icons/settings_arrow_grey.svg',
+          onTap: () => confirmLogOut(context, onLogOut),
+        ),
+        _SettingsRow(
+          key: const ValueKey('profile-settings-delete'),
+          label: 'Delete my account',
+          color: const Color(0xFFFF5A5F),
+          icon: SvgPicture.asset(
+            'assets/icons/settings_delete.svg',
+            width: 19.99,
+            height: 19.99,
+          ),
+          arrowAsset: 'assets/icons/settings_arrow_red.svg',
+          onTap: () => _open(context, ApiConfig.dataDeletionUrl),
+        ),
+      ],
+    );
+  }
+}
+
+/// One 40pt line of Settings: the glyph on its soft disc, the label, and the
+/// arrow at the far end, all in the row's colour.
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.arrowAsset,
+    required this.onTap,
+    this.color = ProfileStyle.ink,
+  });
+
+  final String label;
+  final Widget icon;
+  final String arrowAsset;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: SizedBox(
+          height: 40,
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF7F7F7),
+                  shape: BoxShape.circle,
+                ),
+                child: icon,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ProfileStyle.sora(
+                    14,
+                    weight: FontWeight.w500,
+                    color: color,
+                    height: 20,
+                  ),
+                ),
+              ),
+              // Drawn pointing left; the design turns it to point on.
+              Transform.flip(
+                flipX: true,
+                child: SvgPicture.asset(arrowAsset, width: 20, height: 20),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The privacy-policy glyph, placed in its 20pt box where the design puts it
+/// (its strokes sit off-centre, toward the right).
+class _PrivacyPolicyGlyph extends StatelessWidget {
+  const _PrivacyPolicyGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 19.99,
+      height: 19.99,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned(
+            left: 2.707,
+            top: 1.041,
+            child: SvgPicture.asset(
+              'assets/icons/settings_privacy_policy.svg',
+              width: 17.0692,
+              height: 18.7406,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Asks before signing out (node 3861:82911) and signs out on yes. Cancel,
+/// a tap outside or back leaves them where they were.
+Future<void> confirmLogOut(
+  BuildContext context,
+  Future<void> Function() onLogOut,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0x75000000),
+    builder: (_) => const LogOutDialog(),
+  );
+  if (confirmed == true) await onLogOut();
+}
+
+/// "Are you sure you want to log out?" — pops true for Log Out, false for
+/// Cancel.
+class LogOutDialog extends StatelessWidget {
+  const LogOutDialog({super.key});
+
+  static TextStyle _button(Color color) =>
+      ProfileStyle.sora(14, weight: FontWeight.w600, color: color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: const ValueKey('logout-dialog'),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.all(24),
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 16,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0x12DF2C2C),
+                shape: BoxShape.circle,
+              ),
+              child: SvgPicture.asset(
+                'assets/icons/log_out_dialog.svg',
+                width: 24,
+                height: 24,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Log Out',
+              textAlign: TextAlign.center,
+              style: ProfileStyle.sora(
+                20,
+                weight: FontWeight.w700,
+                color: const Color(0xFF1A1C1E),
+                height: 25.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Are you sure you want to log out?',
+              textAlign: TextAlign.center,
+              style: ProfileStyle.sora(
+                14,
+                color: const Color(0xFF6C727A),
+                height: 19.6,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: FilledButton(
+                key: const ValueKey('logout-confirm'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFDF2C2C),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: _button(Colors.white),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Log Out'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton(
+                key: const ValueKey('logout-cancel'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1A1C1E),
+                  padding: EdgeInsets.zero,
+                  side: const BorderSide(color: Color(0xFFE8E8EC), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: _button(const Color(0xFF1A1C1E)),
+                ),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+            ),
+          ],
         ),
       ),
     );

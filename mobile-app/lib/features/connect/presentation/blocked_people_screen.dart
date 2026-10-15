@@ -8,8 +8,8 @@ import '../data/connect_models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 /// Everyone this person has muted in Connect, and the one place a block can be
-/// undone. Reached from the footnote under Profile — blocking is rare, and a
-/// list that is empty for almost everyone does not belong higher up.
+/// undone. Reached from Profile › Settings — blocking is rare, and a list
+/// that is empty for almost everyone does not belong higher up.
 class BlockedPeopleScreen extends StatefulWidget {
   const BlockedPeopleScreen({super.key, required this.session});
 
