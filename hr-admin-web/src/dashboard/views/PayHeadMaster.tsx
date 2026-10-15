@@ -65,11 +65,18 @@ const REIMBURSEMENTS: ReimbRow[] = [
 ];
 
 type Catalog = { earnings: EarningRow[]; deductions: DeductionRow[]; benefits: BenefitRow[]; reimbursements: ReimbRow[] };
-// Which catalog shows is decided by the signed-in org. ACMT runs on a single
-// Basic component; everyone else still sees the capture above.
+// Which catalog shows is decided by the signed-in org. ACMT and CDE run on a
+// single Basic component; everyone else still sees the capture above.
 const CATALOGS: Record<string, Catalog> = {
   acmt: {
     earnings: [{ name: 'Basic', type: 'Basic', calc: 'Fixed; 50% of CTC', epf: 'Yes', esi: 'Yes', status: 'Active' }],
+    deductions: [],
+    benefits: [],
+    reimbursements: [],
+  },
+  // As set up in their pay head master: Basic is the whole CTC, no EPF or ESI.
+  cde: {
+    earnings: [{ name: 'Basic', type: 'Basic', calc: 'Fixed; 100% of CTC', epf: 'No', esi: 'No', status: 'Active' }],
     deductions: [],
     benefits: [],
     reimbursements: [],

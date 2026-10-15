@@ -53,6 +53,24 @@ const MOCKS: Record<string, OrgForm> = {
     senderName: 'ACMT HR',
     replyToEmail: 'hr@acmt.in',
   },
+  // What CDE have told us so far; the rest is theirs to fill in.
+  cde: {
+    name: 'CDE Enterprises LLP',
+    displayName: 'CDE Enterprises',
+    country: 'India',
+    industry: '',
+    incorporatedOn: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    pincode: '',
+    addressCountry: 'India',
+    primaryContactEmail: 'yash@cdeenterprises.in',
+    senderEmail: '',
+    senderName: 'CDE Enterprises',
+    replyToEmail: 'yash@cdeenterprises.in',
+  },
 };
 const MOCK: OrgForm = {
   name: ORG_REGISTERED_NAME,

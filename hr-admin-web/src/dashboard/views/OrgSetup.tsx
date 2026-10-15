@@ -74,6 +74,17 @@ const MOCK_REGS: Record<string, RegForm> = {
     deductorName: 'ACMT Group of Colleges',
     deductorDesignation: 'Director',
   },
+  // Blank until CDE fill in their own registration; never another company's.
+  cde: {
+    pan: '',
+    tan: '',
+    tdsCircle: '',
+    aoCode: '',
+    taxPaymentFrequency: '',
+    deductorType: 'LLP',
+    deductorName: 'CDE Enterprises LLP',
+    deductorDesignation: 'Founder',
+  },
 };
 
 // —— Pay Schedule ——————————————————————————————————————————————————
