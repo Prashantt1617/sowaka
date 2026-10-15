@@ -12,6 +12,13 @@ import {
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
+import {
+  CELEBRANT_MAX_PINNED,
+  celebrantPinKeys,
+  celebrationGroupFor,
+  isPinnedForCelebrant,
+  istDateKey,
+} from './connect-celebrations';
 import { fetchLinkPreview } from './link-preview.service';
 import { companyDisplayName } from './company-settings.service';
 import {
@@ -152,7 +159,11 @@ function decodeFeedCursor(
     id: id && ObjectId.isValid(id) ? new ObjectId(id) : null,
     // A cursor from before pins rode along has none; that page may then
     // repeat a pinned post, which the app drops as one it already has.
-    pinnedIds: (pinned ?? '').split(',').filter(Boolean).slice(0, FEED_MAX_PINNED),
+    // The celebrant's own cards ride along with the company's pins.
+    pinnedIds: (pinned ?? '')
+      .split(',')
+      .filter(Boolean)
+      .slice(0, FEED_MAX_PINNED + CELEBRANT_MAX_PINNED),
   };
 }
 
@@ -210,15 +221,34 @@ export async function getConnectFeed(
   // every page, by the ids the cursor carries: a pin past the limit keeps its
   // place in the list, and a post pinned or unpinned mid-scroll is neither
   // skipped nor shown twice.
+  //
+  // Above them, on the day of someone's birthday or work anniversary, that
+  // person's own card — for them alone, until the day ends in India. It is
+  // found by the key the daily job writes (`birthday:<userId>:<day>`), so
+  // yesterday's card drops back into the list by itself at midnight.
   const now = new Date();
 
-  const [pinned, rows] = await Promise.all([
+  const [celebrantPinned, orgPinned, rows] = await Promise.all([
+    after
+      ? Promise.resolve([])
+      : connectPosts()
+          .find({
+            org,
+            ...typeFilter,
+            ...blockFilter,
+            systemKey: { $in: celebrantPinKeys(viewerUserId, now) },
+            $and: [audienceFilter],
+          })
+          .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+          .limit(CELEBRANT_MAX_PINNED)
+          .toArray(),
     after
       ? Promise.resolve([])
       : connectPosts()
           .find({ org, ...typeFilter, ...blockFilter, pinnedUntil: { $gt: now }, $and: [audienceFilter] })
           .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
-          .limit(FEED_MAX_PINNED)
+          // One more in case HR also pinned the celebrant's own card.
+          .limit(FEED_MAX_PINNED + CELEBRANT_MAX_PINNED)
           .toArray(),
     connectPosts()
       .find({
@@ -230,9 +260,14 @@ export async function getConnectFeed(
       .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
       // One more than the page, to know whether another page follows without
       // a second count query, and room for the pinned ones taken out below.
-      .limit(limit + 1 + FEED_MAX_PINNED)
+      .limit(limit + 1 + FEED_MAX_PINNED + CELEBRANT_MAX_PINNED)
       .toArray(),
   ]);
+  const celebrantIds = celebrantPinned.map((post) => post.id);
+  const pinned = [
+    ...celebrantPinned,
+    ...orgPinned.filter((post) => !celebrantIds.includes(post.id)).slice(0, FEED_MAX_PINNED),
+  ];
   const shownPinnedIds = after ? after.pinnedIds : pinned.map((post) => post.id);
   const page = rows.filter((post) => !shownPinnedIds.includes(post.id)).slice(0, limit + 1);
   const hasMore = page.length > limit;
@@ -1255,6 +1290,14 @@ async function viewPost(
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
   const actionValue = post.actionBy?.[viewerUserId] ?? null;
   const body = { ...post.body };
+  // Birthday and anniversary cards: the celebrant's own card for today is
+  // pinned for them (see `getConnectFeed`) and says so; everyone else's carry
+  // the key the app clubs one day's cards of a company by, each person keeping
+  // their own post and so their own wishes. Set on every read, not only the
+  // feed's, so a card refreshed after a wish stays in its club.
+  const celebrationGroup = celebrationGroupFor(post, viewerUserId);
+  if (celebrationGroup) body.celebrationGroup = celebrationGroup;
+  if (isPinnedForCelebrant(post, viewerUserId, new Date())) body.pinnedForCelebrant = true;
   // Lifecycle posts (birthday/anniversary/new joinee) reference the subject's
   // photo by key so the post document stays small; resolve it per read.
   if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
@@ -1696,8 +1739,12 @@ function normalizePostBody(
         actionLabel: input.allowRegistration === false ? '' : 'Register',
         actionDoneLabel: input.allowRegistration === false ? '' : 'Registered',
       };
-    default:
-      return input;
+    default: {
+      // What a read adds for one viewer (see `viewPost`) is never stored,
+      // should an edit hand the card it was shown straight back.
+      const { celebrationGroup: _group, pinnedForCelebrant: _pinned, ...stored } = input;
+      return stored;
+    }
   }
 }
 
@@ -2127,7 +2174,8 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
   const year = part('year');
   const month = part('month');
   const day = part('day');
-  const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // The same day the feed pins the celebrant's card by.
+  const dateKey = istDateKey(now);
   // Projected: this scans the whole directory daily, and full documents would
   // pull every profile photo along with it.
   const employees = await users()
