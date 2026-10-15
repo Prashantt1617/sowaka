@@ -521,7 +521,9 @@ class NotificationRow extends StatelessWidget {
                 look: look,
                 palette: NotificationPalette.of(kind),
                 title: title,
-                subtitle: [body, ago].where((s) => s.isNotEmpty).join(' · '),
+                // As the design: the message under the title, or the time
+                // when there is no message ("9 min ago" on a challenge).
+                subtitle: body.isNotEmpty ? body : ago,
                 unread: unread,
               ),
       ),
