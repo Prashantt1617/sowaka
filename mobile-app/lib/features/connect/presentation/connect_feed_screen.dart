@@ -34,6 +34,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 // sheet, and the poll card are drawn in their own files: this one was already
 // past ten thousand lines. They share this library's private helpers.
 part 'comment_mentions.dart';
+part 'celebration_cards.dart';
 part 'contest_composer.dart';
 part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
@@ -152,6 +153,10 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
 
   /// One key per post card, so a card can be found and scrolled to.
   final _postKeys = <String, GlobalKey>{};
+
+  /// For a post drawn inside a clubbed celebrations card, the post whose key
+  /// that card carries — so a notification about it scrolls to the card.
+  final _cardOfPost = <String, String>{};
 
   // AuthUser carries no initials/avatarColor fields of its own, so the
   // signed-in viewer's comment-composer avatar is derived the same way the
@@ -344,6 +349,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       );
     }
     final posts = state.posts;
+    // One day's birthdays and anniversaries of the company are one card.
+    final cards = _feedCards(posts);
+    _cardOfPost
+      ..clear()
+      ..addAll({
+        for (final card in cards)
+          if (card.length > 1)
+            for (final post in card) post.id: card.first.id,
+      });
     final publishing = state.publishing > 0 ? 1 : 0;
     return _FeedScope(
       bloc: _bloc,
@@ -364,11 +378,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           // The composer, a placeholder while a post is being published,
           // the posts, and — while older ones exist — a last row that asks
           // for the next page as it comes into view.
-          itemCount: posts.length + 1 + publishing + (state.hasMore ? 1 : 0),
+          itemCount: cards.length + 1 + publishing + (state.hasMore ? 1 : 0),
           // 24 above every card, the first included (frame 3332:23887).
           separatorBuilder: (_, _) => const SizedBox(height: 24),
           itemBuilder: (context, index) {
-            if (index == posts.length + 1 + publishing) {
+            if (index == cards.length + 1 + publishing) {
               if (state.loadMoreFailed) {
                 return Center(
                   child: TextButton(
@@ -423,7 +437,17 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                 audienceLabel: _publishingLabel(state.publishingTo),
               );
             }
-            final post = posts[index - 1 - publishing];
+            final card = cards[index - 1 - publishing];
+            if (card.length > 1) {
+              return _CelebrationsCard(
+                key: _postKeys.putIfAbsent(card.first.id, GlobalKey.new),
+                posts: card,
+                onWish: (post) => _bloc.performAction(post.id),
+                onOpenWishes: (post, {initialText = ''}) =>
+                    _openComments(post.id, initialText: initialText),
+              );
+            }
+            final post = card.single;
             // The game draws its whole card itself — its own gradient, and the
             // viewer's own team — rather than sitting inside a standard post.
             if (post.type == ConnectPostType.relayGame) {
@@ -657,7 +681,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     for (var step = 0; step < 60; step++) {
-      final card = _postKeys[postId]?.currentContext;
+      final card = _postKeys[_cardOfPost[postId] ?? postId]?.currentContext;
       if (card != null) {
         await Scrollable.ensureVisible(
           card,
@@ -681,7 +705,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     if (comments && mounted) await _openComments(postId);
   }
 
-  Future<void> _openComments(String postId) {
+  /// The post's comments — on a birthday or anniversary, its wishes.
+  /// [initialText] starts the box off, as a wish does.
+  Future<void> _openComments(String postId, {String initialText = ''}) {
     return showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -690,6 +716,7 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       builder: (_) => _CommentsSheet(
         bloc: _bloc,
         postId: postId,
+        initialText: initialText,
         people: _taggablePeople,
         viewerUserId: widget.session.user.id,
         viewerInitials: _viewerInitials,
@@ -916,6 +943,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 onDelete: widget.onDelete,
                 onCommentPrefill: (text) =>
                     setState(() => _commentController.text = text),
+                onOpenComments: widget.onOpenComments,
                 onOpenPerson: widget.onOpenPerson,
                 onSubmitCaption: widget.onSubmitCaption,
                 onDeleteCaption: widget.onDeleteCaption,
@@ -1990,12 +2018,16 @@ class _BodyTopStrip extends StatelessWidget {
     required this.canManage,
     required this.onEdit,
     required this.onDelete,
+    this.pinned = false,
   });
 
   final String icon;
   final Color iconBg;
   final String label;
   final String timestamp;
+
+  /// Shows the pin beside the label: the celebrant's own card, on their day.
+  final bool pinned;
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -2019,13 +2051,25 @@ class _BodyTopStrip extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: _ConnectColors.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ConnectColors.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (pinned) ...[
+                      const SizedBox(width: 8),
+                      const _PinnedChip(),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -2061,6 +2105,7 @@ class _PostBody extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCommentPrefill,
+    this.onOpenComments,
     this.onOpenPerson,
     this.onSubmitCaption,
     this.onDeleteCaption,
@@ -2074,6 +2119,9 @@ class _PostBody extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<String> onCommentPrefill;
+
+  /// Opens the post's comments — a celebrant's "View all wishes".
+  final VoidCallback? onOpenComments;
 
   /// Opens a tagged person's profile. Null where the host can't navigate.
   final ValueChanged<String>? onOpenPerson;
@@ -2108,6 +2156,7 @@ class _PostBody extends StatelessWidget {
         onEdit: onEdit,
         onDelete: onDelete,
         onCommentPrefill: onCommentPrefill,
+        onOpenComments: onOpenComments,
       ),
       ConnectPostType.anniversary => _AnniversaryBody(
         post: post,
@@ -2116,6 +2165,7 @@ class _PostBody extends StatelessWidget {
         onEdit: onEdit,
         onDelete: onDelete,
         onCommentPrefill: onCommentPrefill,
+        onOpenComments: onOpenComments,
       ),
       ConnectPostType.kudos => _KudosBody(
         post: post,
@@ -3221,6 +3271,7 @@ class _BirthdayBody extends StatefulWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCommentPrefill,
+    this.onOpenComments,
   });
 
   final ConnectPost post;
@@ -3229,6 +3280,9 @@ class _BirthdayBody extends StatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<String> onCommentPrefill;
+
+  /// The celebrant's "View all wishes": the post's comments.
+  final VoidCallback? onOpenComments;
 
   @override
   State<_BirthdayBody> createState() => _BirthdayBodyState();
@@ -3262,6 +3316,8 @@ class _BirthdayBodyState extends State<_BirthdayBody> {
   Widget build(BuildContext context) {
     final post = widget.post;
     final done = post.actionValue != null;
+    // The birthday person sees their wishes, not a button to wish themselves.
+    final celebrant = _isCelebrant(post, _FeedScope.of(context)?.viewerUserId);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -3273,6 +3329,7 @@ class _BirthdayBodyState extends State<_BirthdayBody> {
               iconBg: const Color(0xFFF7F7F9),
               label: 'Celebration',
               timestamp: _timeAgo(post.publishedAt),
+              pinned: _isPinnedForCelebrant(post),
               canManage: widget.canManage,
               onEdit: widget.onEdit,
               onDelete: widget.onDelete,
@@ -3327,7 +3384,13 @@ class _BirthdayBodyState extends State<_BirthdayBody> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (!done) ...[
+                  if (celebrant) ...[
+                    const SizedBox(height: 16),
+                    _CelebrantWishes(
+                      post: post,
+                      onViewAll: widget.onOpenComments,
+                    ),
+                  ] else if (!done) ...[
                     const SizedBox(height: 16),
                     _ActionButton(
                       label:
@@ -3360,6 +3423,7 @@ class _AnniversaryBody extends StatefulWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCommentPrefill,
+    this.onOpenComments,
   });
 
   final ConnectPost post;
@@ -3368,6 +3432,9 @@ class _AnniversaryBody extends StatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<String> onCommentPrefill;
+
+  /// The celebrant's "View all wishes": the post's comments.
+  final VoidCallback? onOpenComments;
 
   @override
   State<_AnniversaryBody> createState() => _AnniversaryBodyState();
@@ -3407,6 +3474,9 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
     final years = (post.body['years'] as num?)?.toInt() ?? 1;
     final done = post.actionValue != null;
     final actionLabel = _bodyString(post, 'actionLabel');
+    // The person whose anniversary it is sees their wishes instead of a
+    // button to congratulate themselves.
+    final celebrant = _isCelebrant(post, _FeedScope.of(context)?.viewerUserId);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -3418,6 +3488,7 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
               iconBg: Colors.white,
               label: 'Celebration',
               timestamp: _timeAgo(post.publishedAt),
+              pinned: _isPinnedForCelebrant(post),
               canManage: widget.canManage,
               onEdit: widget.onEdit,
               onDelete: widget.onDelete,
@@ -3498,16 +3569,22 @@ class _AnniversaryBodyState extends State<_AnniversaryBody> {
                   const SizedBox(height: 16),
                   // The popper lives in the label, like the birthday card's
                   // cake; an icon beside it showed two.
-                  _ActionButton(
-                    label: done
-                        ? (_bodyString(post, 'actionDoneLabel').isEmpty
-                              ? '🎉 Congratulations sent!'
-                              : _bodyString(post, 'actionDoneLabel'))
-                        : (actionLabel.isEmpty
-                              ? '🎉 Congratulations'
-                              : actionLabel),
-                    onTap: () => _congratulate(years),
-                  ),
+                  if (celebrant)
+                    _CelebrantWishes(
+                      post: post,
+                      onViewAll: widget.onOpenComments,
+                    )
+                  else
+                    _ActionButton(
+                      label: done
+                          ? (_bodyString(post, 'actionDoneLabel').isEmpty
+                                ? '🎉 Congratulations sent!'
+                                : _bodyString(post, 'actionDoneLabel'))
+                          : (actionLabel.isEmpty
+                                ? '🎉 Congratulations'
+                                : actionLabel),
+                      onTap: () => _congratulate(years),
+                    ),
                 ],
               ),
             ),
@@ -6908,10 +6985,14 @@ class _CommentsSheet extends StatefulWidget {
     this.viewerPhotoUrl = '',
     this.onOpenPerson,
     this.people = const [],
+    this.initialText = '',
   });
 
   final ConnectBloc bloc;
   final String postId;
+
+  /// What the box starts with — a wish, ready to send or change.
+  final String initialText;
 
   /// Everyone in the company who can be tagged with "@".
   final List<ConnectTeammate> people;
@@ -6938,6 +7019,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialText.isNotEmpty) {
+      _controller.value = TextEditingValue(
+        text: widget.initialText,
+        selection: TextSelection.collapsed(offset: widget.initialText.length),
+      );
+    }
     // The suggestion list follows what is typed after an "@".
     _controller.addListener(_onTyping);
   }
@@ -7110,9 +7197,15 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                               letterSpacing: -0.16,
                             ),
                             children: [
-                              const TextSpan(
-                                text: 'Comments · ',
-                                style: TextStyle(color: Color(0xFF222222)),
+                              // A birthday's or anniversary's comments are
+                              // the wishes it got.
+                              TextSpan(
+                                text: _isCelebration(post.type)
+                                    ? 'Wishes · '
+                                    : 'Comments · ',
+                                style: const TextStyle(
+                                  color: Color(0xFF222222),
+                                ),
                               ),
                               TextSpan(
                                 text: '${post.commentCount}',
@@ -7127,10 +7220,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     ),
                     Expanded(
                       child: post.comments.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
-                                'No comments yet — say something first.',
-                                style: TextStyle(
+                                !_isCelebration(post.type)
+                                    ? 'No comments yet — say something first.'
+                                    : _isCelebrant(post, widget.viewerUserId)
+                                    ? 'No wishes yet. They will show up here.'
+                                    : 'No wishes yet — be the first.',
+                                style: const TextStyle(
                                   color: _ConnectColors.faint,
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w600,
