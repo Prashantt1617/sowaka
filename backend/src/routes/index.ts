@@ -26,6 +26,7 @@ import { supportAdminRouter, supportRouter } from './support.routes';
 import { gamesRouter, playRouter } from './game-catalog.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
+import { appUpdateRouter } from './app-update.routes';
 
 export const router = Router();
 
@@ -59,6 +60,8 @@ router.use('/games', gamesRouter);
 router.use('/play', playRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.
 router.use('/app-pages', appPagesRouter);
+// Whether the app must, or may, update: set per company by Sowaka.
+router.use('/app', appUpdateRouter);
 // Actions › View Policies: the company's own policy texts, when it has them.
 router.use('/policies', policiesRouter);
 router.use('/help', helpRouter);

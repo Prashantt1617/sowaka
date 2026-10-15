@@ -74,6 +74,12 @@ export interface Company {
    */
   enabledGames?: string[];
   /**
+   * Which app versions this company's people must, or are asked to, update
+   * from; see AppUpdateRule. Absent means no prompt at all. Set by Sowaka with
+   * src/scripts/app-update.ts, never by the client's HR dashboard.
+   */
+  appUpdate?: AppUpdateRule;
+  /**
    * The most accounts this company may have (offboarded and terminated people
    * not counted). Absent means no limit. Set by Sowaka per agreement; the HR
    * dashboard cannot raise it, and adding an employee past it is refused.
@@ -81,4 +87,22 @@ export interface Company {
   maxUsers?: number;
   createdAt?: number;
   updatedAt?: Date;
+}
+
+/** Versions by store: the App Store and Play Store builds ship separately. */
+export interface AppVersionByPlatform {
+  ios?: string;
+  android?: string;
+}
+
+/**
+ * An app older than `force` gets the full-screen update it cannot close; one
+ * older than `optional` (and not forced) gets the closable one. Versions are
+ * "1.3.8", or "1.3.8+41" to name a build.
+ */
+export interface AppUpdateRule {
+  force?: AppVersionByPlatform;
+  optional?: AppVersionByPlatform;
+  updatedAt?: Date;
+  updatedBy?: string;
 }
