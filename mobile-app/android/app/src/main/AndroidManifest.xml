@@ -18,6 +18,16 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
+    <!-- The camera, for scanning a colleague's QR code in a game (Secret
+         Squad, through Sowaka.scanQr()). The scanner plugin declares it too;
+         it is here so the app's own list is complete.
+
+         CAMERA implies a camera with autofocus is required, and Play would
+         hide the app from devices without one; neither is required. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <application
         android:label="Sowaka"
         android:name="${applicationName}"

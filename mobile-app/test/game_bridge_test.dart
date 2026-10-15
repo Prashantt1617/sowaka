@@ -105,7 +105,7 @@ void main() {
     );
     expect(offered, contains('S.openProfile = function (userId)'));
     expect(offered, contains("type: 'openProfile'"));
-    expect(offered, contains('S.version = 4;'));
+    expect(offered, contains('S.version = 5;'));
   });
 
   test("the page's openProfile opens that person, with no answer", () async {
