@@ -288,6 +288,7 @@ class ConnectCaptionEntry {
     required this.isMine,
     this.rank,
     this.createdAt,
+    this.taggedBy = const [],
   });
 
   final String id;
@@ -311,6 +312,10 @@ class ConnectCaptionEntry {
   /// that person was last tagged.
   final DateTime? createdAt;
 
+  /// Most Likely board rows only: the colleagues who tagged this person,
+  /// latest first ("Tag by" on the Entries page).
+  final List<ConnectTagger> taggedBy;
+
   factory ConnectCaptionEntry.fromJson(Map<String, dynamic> json) {
     return ConnectCaptionEntry(
       id: json['id'] as String? ?? '',
@@ -325,8 +330,53 @@ class ConnectCaptionEntry {
       isMine: json['isMine'] as bool? ?? false,
       rank: (json['rank'] as num?)?.toInt(),
       createdAt: DateTime.tryParse('${json['createdAt'] ?? ''}'),
+      taggedBy: [
+        for (final value in json['taggedBy'] as List<dynamic>? ?? const [])
+          if (value is Map<String, dynamic>) ConnectTagger.fromJson(value),
+      ],
     );
   }
+}
+
+/// Someone who tagged a colleague in a Most Likely contest.
+class ConnectTagger {
+  const ConnectTagger({
+    required this.userId,
+    required this.name,
+    required this.initials,
+    this.designation = '',
+    this.department = '',
+    this.location = '',
+    this.photoUrl,
+    this.taggedAt,
+  });
+
+  final String userId;
+  final String name;
+  final String initials;
+  final String designation;
+  final String department;
+  final String location;
+  final String? photoUrl;
+  final DateTime? taggedAt;
+
+  /// "3D Artist · 3D · Gurugram", leaving out whatever is missing.
+  String get roleLine => [
+    designation,
+    department,
+    location,
+  ].where((part) => part.isNotEmpty).join(' · ');
+
+  factory ConnectTagger.fromJson(Map<String, dynamic> json) => ConnectTagger(
+    userId: json['userId'] as String? ?? '',
+    name: json['name'] as String? ?? 'Teammate',
+    initials: json['initials'] as String? ?? '?',
+    designation: json['designation'] as String? ?? '',
+    department: json['department'] as String? ?? '',
+    location: json['location'] as String? ?? '',
+    photoUrl: json['photoUrl'] as String?,
+    taggedAt: DateTime.tryParse('${json['taggedAt'] ?? ''}'),
+  );
 }
 
 class ConnectPost {

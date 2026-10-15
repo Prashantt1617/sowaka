@@ -25,6 +25,11 @@ const _entryMedals = {
 /// entry on the board.
 const _entryViewMotion = Duration(milliseconds: 280);
 
+/// How long a Most Likely bar takes to fill as the page opens, or to slide
+/// to its new length when a tag moves the board. Figma has no motion for
+/// it (3929:53104); the length is the app's own.
+const _barFillMotion = Duration(milliseconds: 600);
+
 /// The contest as the feed has it now, or as it was opened where the feed no
 /// longer holds it.
 ConnectPost _currentContest(ConnectState state, ConnectPost opened) =>
@@ -82,6 +87,7 @@ Future<void> _openEntriesSheet(
         bloc: scope?.bloc,
         initialPost: post,
         people: scope?.people ?? const [],
+        viewerUserId: scope?.viewerUserId ?? '',
         onOpenPerson: scope?.onOpenPerson,
         onAddEntry: onAddEntry,
       ),
@@ -98,6 +104,7 @@ class _EntriesSheet extends StatefulWidget {
     required this.people,
     required this.onOpenPerson,
     required this.onAddEntry,
+    this.viewerUserId = '',
   });
 
   /// Null only where there is no live feed behind the sheet; it then shows
@@ -106,6 +113,10 @@ class _EntriesSheet extends StatefulWidget {
   final ConnectPost initialPost;
   final List<ConnectTeammate> people;
   final ValueChanged<String>? onOpenPerson;
+
+  /// Who is looking, so the Most Likely vote picker can leave them out —
+  /// the server refuses a tag on yourself.
+  final String viewerUserId;
 
   /// Starts the viewer's own entry back on the card ("Add your answer").
   final Future<void> Function()? onAddEntry;
@@ -161,6 +172,73 @@ class _EntriesSheetState extends State<_EntriesSheet> {
     open(userId);
   }
 
+  // ---- Most Likely: who tagged whom, and changing your own tag -------------
+
+  /// Everyone the viewer could tag: the directory, less the viewer.
+  List<ConnectTeammate> get _taggable => [
+    for (final person in widget.people)
+      if (person.userId.isNotEmpty && person.userId != widget.viewerUserId)
+        person,
+  ];
+
+  /// The viewer's tag can be moved here: the contest is live, there is a
+  /// bloc to send it through and a directory to pick from.
+  bool _canRetag(ConnectPost post) =>
+      widget.bloc != null && !_contestClosed(post) && _taggable.isNotEmpty;
+
+  /// A change of tag on its way; a second pick waits for it.
+  bool _retagging = false;
+
+  /// "YOUR VOTE ▾": the colleagues to tag, the current one ticked.
+  Future<void> _openVotePicker(ConnectPost post) async {
+    final picked = await _showPeopleSheet<String>(
+      context,
+      builder: (_) => _VotePickerSheet(
+        people: _taggable,
+        currentUserId: post.myTaggedUserId,
+        photos: _photos,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    await _retag(post, picked);
+  }
+
+  /// Moves the viewer's tag to [userId] the way the card does it: the old
+  /// tag is taken back, then the new one goes in. If taking it back fails
+  /// nothing more is sent, and the bloc says why.
+  Future<void> _retag(ConnectPost post, String userId) async {
+    final bloc = widget.bloc;
+    if (bloc == null || _retagging || _contestClosed(post)) return;
+    if (userId == post.myTaggedUserId) return;
+    setState(() => _retagging = true);
+    try {
+      if (post.myTaggedUserId != null) {
+        await bloc.deleteCaption(post.id);
+        if (_currentContest(bloc.state, post).myTaggedUserId != null) return;
+      }
+      await bloc.submitCaption(post.id, '', taggedUserId: userId);
+    } finally {
+      if (mounted) setState(() => _retagging = false);
+    }
+  }
+
+  /// "View all" under a row: everyone who tagged that person.
+  void _openTaggers(ConnectCaptionEntry row) {
+    _showPeopleSheet<void>(
+      context,
+      builder: (sheetContext) => _TagBySheet(
+        taggers: row.taggedBy,
+        photos: _photos,
+        onOpenPerson: widget.onOpenPerson == null
+            ? null
+            : (userId) {
+                Navigator.of(sheetContext).pop();
+                _openPerson(userId);
+              },
+      ),
+    );
+  }
+
   /// Opens [entry] full screen as its whole card, the entries either side of
   /// it a swipe away in the order the page has them now.
   void _openEntry(
@@ -210,7 +288,10 @@ class _EntriesSheetState extends State<_EntriesSheet> {
         bottom: false,
         child: Column(
           children: [
-            _EntriesTopBar(onBack: () => Navigator.of(context).maybePop()),
+            if (post.type == ConnectPostType.mostLikely)
+              _EntriesHeader(onBack: () => Navigator.of(context).maybePop())
+            else
+              _EntriesTopBar(onBack: () => Navigator.of(context).maybePop()),
             Expanded(
               child: Builder(
                 builder: (context) {
@@ -304,9 +385,24 @@ class _EntriesSheetState extends State<_EntriesSheet> {
         : (isTag ? board : post.captionEntries)
               .where((row) => (isTag ? row.userId : row.id) == votedId)
               .firstOrNull;
+    // A tag on someone the board does not show (the viewer has blocked
+    // them) still has a name in the directory.
+    final votedPerson = isTag && voted == null && votedId != null
+        ? widget.people.where((p) => p.userId == votedId).firstOrNull
+        : null;
+    final votedName = voted?.name ?? votedPerson?.name;
     // Where the viewer stands: their own caption's place, or their own row
     // among the people named.
     final mine = board.where((row) => row.isMine).firstOrNull;
+    final VoidCallback? onVoteTap;
+    if (isTag && _canRetag(post)) {
+      // A dropdown while the contest is live: pick someone, or someone else.
+      onVoteTap = () => _openVotePicker(post);
+    } else if (voted != null) {
+      onVoteTap = () => _reveal(isTag ? voted.userId : voted.id);
+    } else {
+      onVoteTap = _canAddEntry(post) && isTag ? _addEntry : null;
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: Container(
@@ -323,9 +419,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
               width: 179,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: voted != null
-                    ? () => _reveal(isTag ? voted.userId : voted.id)
-                    : (_canAddEntry(post) && isTag ? _addEntry : null),
+                onTap: onVoteTap,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 16, 9, 13),
                   child: Column(
@@ -335,22 +429,24 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                       const SizedBox(height: 7),
                       Row(
                         children: [
-                          if (voted != null) ...[
+                          if (voted != null || votedPerson != null) ...[
                             _InitialDot(
-                              userId: voted.userId,
-                              initials: voted.initials,
+                              userId: voted?.userId ?? votedPerson!.userId,
+                              initials:
+                                  voted?.initials ?? votedPerson!.initials,
                             ),
                             const SizedBox(width: 7),
                           ],
                           Flexible(
                             child: Text(
-                              voted?.name ?? 'Vote for someone',
+                              votedName ?? 'Vote for someone',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
+                                fontFamily: _soraFont,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: voted == null
+                                color: votedName == null
                                     ? _EngagementColors.inkTertiary
                                     : _sheetInk,
                               ),
@@ -379,7 +475,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                 behavior: HitTestBehavior.opaque,
                 onTap: mine != null
                     ? () => _reveal(isTag ? mine.userId : mine.id)
-                    : (_canAddEntry(post) && !isTag ? _addEntry : null),
+                    : (_canAddEntry(post) ? _addEntry : null),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(11, 17, 9, 13),
                   child: Column(
@@ -394,7 +490,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                               'YOUR RANK',
                             ),
                           ),
-                          if (mine == null && !isTag && _canAddEntry(post))
+                          if (mine == null && _canAddEntry(post))
                             SvgPicture.asset(
                               '$_engagementIcons/plus.svg',
                               width: 13,
@@ -438,11 +534,16 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                       else
                         Text(
                           // Most Likely ranks the people named, so you are on
-                          // the board only once someone tags you.
-                          isTag ? 'Not tagged yet' : 'Submit your entry',
+                          // the board only once someone tags you. Until then,
+                          // while you have not nominated anyone, the design
+                          // asks for your entry — your nomination.
+                          isTag && !_canAddEntry(post)
+                              ? 'Not tagged yet'
+                              : 'Submit your entry',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
+                            fontFamily: _soraFont,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: _EngagementColors.inkTertiary,
@@ -679,6 +780,8 @@ class _EntriesSheetState extends State<_EntriesSheet> {
     );
   }
 
+  /// The people named, each as a bar with who tagged them under it
+  /// (PollInfo, node 3929:53327).
   Widget _tagBoard(ConnectPost post, List<ConnectCaptionEntry> rows) {
     final top = rows.fold<int>(0, (best, row) => math.max(best, row.points));
     return Padding(
@@ -689,15 +792,33 @@ class _EntriesSheetState extends State<_EntriesSheet> {
             if (index > 0) const SizedBox(height: 12),
             KeyedSubtree(
               key: _keyFor(row.userId),
-              child: _TagBoardBar(
-                row: row,
-                color: _tagBarColor(row, post),
-                maxPoints: top,
-                suffix: row.userId == post.myTaggedUserId
-                    ? '(You tagged)'
-                    : (row.isMine ? '(You)' : ''),
-                photo: _photos[row.userId],
-                onOpenPerson: () => _openPerson(row.userId),
+              child: Container(
+                padding: const EdgeInsets.only(bottom: 8),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: _EngagementColors.border),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TagBoardBar(
+                      row: row,
+                      color: _tagBarColor(row, post),
+                      maxPoints: top,
+                      suffix: row.userId == post.myTaggedUserId
+                          ? '(You tagged)'
+                          : (row.isMine ? '(You)' : ''),
+                      photo: _photos[row.userId],
+                      onOpenPerson: () => _openPerson(row.userId),
+                    ),
+                    if (row.taggedBy.isNotEmpty)
+                      _TagByRow(
+                        taggers: row.taggedBy,
+                        onViewAll: () => _openTaggers(row),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -838,6 +959,7 @@ class _SheetHero extends StatelessWidget {
             Text(
               '$points pts per vote',
               style: const TextStyle(
+                fontFamily: _soraFont,
                 fontSize: 11,
                 height: 16 / 11,
                 fontWeight: FontWeight.w600,
@@ -986,11 +1108,20 @@ class _SortTabs extends StatelessWidget {
                   '$_engagementIcons/$icon',
                   width: gallery ? 14 : 15,
                   height: gallery ? 14 : 15,
+                  // The icon takes the label's ink, so whichever order is
+                  // chosen reads dark (node 3929:53315).
+                  colorFilter: gallery
+                      ? null
+                      : ColorFilter.mode(
+                          selected ? ink : muted,
+                          BlendMode.srcIn,
+                        ),
                 ),
                 SizedBox(width: gallery ? 7 : 6),
                 Text(
                   label,
                   style: TextStyle(
+                    fontFamily: gallery ? null : _soraFont,
                     fontSize: 12,
                     fontWeight: selected || !gallery
                         ? FontWeight.w600
@@ -1456,86 +1587,106 @@ class _TagBoardBar extends StatelessWidget {
         final nameEnd = 16 + nameWidth + 8;
         final roomBeforePoints = width - 12 - pointsWidth - 8 - 33;
         final share = maxPoints == 0 ? 0.0 : row.points / maxPoints;
-        final fill = width * share.clamp(0.0, 1.0);
-        // The face sits after the name, or at the end of the fill when that
-        // is further on, and never into the points.
-        final avatarLeft = math.min(math.max(fill, nameEnd), roomBeforePoints);
+        final target = share.clamp(0.0, 1.0);
+        // A fill too long to leave the face room before the points — the
+        // leader's full bar — has the face just after the name (node
+        // 3929:53335); every other face rides the fill's edge (3929:53363).
+        final faceAfterName = width * target > roomBeforePoints;
         // Text is white where the fill is under it and takes the bar's colour
         // where it is not, split at the fill's edge: a fill ending mid-name
         // must not leave half the name the same colour as what is behind it.
         final pointsLeft = width - 12 - pointsWidth;
-        return GestureDetector(
-          onTap: onOpenPerson,
-          child: Container(
-            height: 47.996,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: color, width: 1.114),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: fill,
-                  child: ColoredBox(color: color),
+        // The fill grows in when the page opens and slides to its new length
+        // when a tag moves the board; the face and the split ink go with it.
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: target),
+          duration: _barFillMotion,
+          curve: Curves.easeOutCubic,
+          builder: (context, grown, _) {
+            final fill = width * grown;
+            // After the name while the fill has not reached past it, and never
+            // into the points.
+            final avatarLeft = math.min(
+              faceAfterName ? nameEnd : math.max(fill, nameEnd),
+              roomBeforePoints,
+            );
+            return GestureDetector(
+              onTap: onOpenPerson,
+              child: Container(
+                height: 47.996,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color, width: 1.114),
                 ),
-                Positioned(
-                  left: 16,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _SplitInk(
-                      onFill: name,
-                      offFill: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: firstName,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: fill,
+                      child: ColoredBox(
+                        key: ValueKey('tag-bar-fill-${row.userId}'),
+                        color: color,
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _SplitInk(
+                          onFill: name,
+                          offFill: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: firstName,
+                                style: _nameStyle.copyWith(color: color),
+                              ),
+                              if (suffix.isNotEmpty)
+                                TextSpan(
+                                  text: ' $suffix',
+                                  style: _suffixStyle.copyWith(color: color),
+                                ),
+                            ],
+                          ),
+                          splitAt: fill - 16,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: avatarLeft,
+                      top: 6,
+                      child: _EngagementAvatar(
+                        userId: row.userId,
+                        initials: row.initials,
+                        photoUrl: photo,
+                        size: 33,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Positioned(
+                      right: 12,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _SplitInk(
+                          onFill: TextSpan(text: points, style: _nameStyle),
+                          offFill: TextSpan(
+                            text: points,
                             style: _nameStyle.copyWith(color: color),
                           ),
-                          if (suffix.isNotEmpty)
-                            TextSpan(
-                              text: ' $suffix',
-                              style: _suffixStyle.copyWith(color: color),
-                            ),
-                        ],
+                          splitAt: fill - pointsLeft,
+                        ),
                       ),
-                      splitAt: fill - 16,
                     ),
-                  ),
+                  ],
                 ),
-                Positioned(
-                  left: avatarLeft,
-                  top: 6,
-                  child: _EngagementAvatar(
-                    userId: row.userId,
-                    initials: row.initials,
-                    photoUrl: photo,
-                    size: 33,
-                    fontSize: 13,
-                  ),
-                ),
-                Positioned(
-                  right: 12,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _SplitInk(
-                      onFill: TextSpan(text: points, style: _nameStyle),
-                      offFill: TextSpan(
-                        text: points,
-                        style: _nameStyle.copyWith(color: color),
-                      ),
-                      splitAt: fill - pointsLeft,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1581,6 +1732,471 @@ class _LeftOf extends CustomClipper<Rect> {
 
   @override
   bool shouldReclip(_LeftOf oldClipper) => oldClipper.x != x;
+}
+
+/// "Tag by:" under a person on the Most Likely board (node 3929:53337): the
+/// faces of whoever tagged them, latest first — six at most, then a count of
+/// the rest — and "View all", which lists them.
+class _TagByRow extends StatelessWidget {
+  const _TagByRow({required this.taggers, required this.onViewAll});
+
+  final List<ConnectTagger> taggers;
+  final VoidCallback onViewAll;
+
+  static const _maxFaces = 6;
+  static const double _face = 32;
+
+  /// Each face tucks 7 under the next.
+  static const double _step = _face - 7;
+
+  static const _label = TextStyle(
+    fontFamily: _soraFont,
+    fontSize: 12,
+    height: 18 / 12,
+    color: Color(0xFF9197A2),
+  );
+
+  /// The faces' fills in the design's order; the rest take the last.
+  static const _fills = [
+    Color(0xFFF8D6C2),
+    Color(0xFFCBE3C9),
+    Color(0xFFDCCCEB),
+  ];
+
+  Widget _faceOf(String text, Color fill, {bool bold = false}) => Container(
+    width: _face,
+    height: _face,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+    child: Text(
+      text,
+      maxLines: 1,
+      style: TextStyle(
+        fontFamily: _soraFont,
+        fontSize: 10,
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        color: const Color(0xFF155844),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = taggers.take(_maxFaces).toList();
+    final more = taggers.length - shown.length;
+    final faces = [
+      for (final (index, tagger) in shown.indexed)
+        _faceOf(
+          tagger.initials.isEmpty ? '?' : tagger.initials,
+          _fills[math.min(index, _fills.length - 1)],
+        ),
+      if (more > 0) _faceOf('+$more', const Color(0xFFCDE3E8), bold: true),
+    ];
+    return GestureDetector(
+      key: const ValueKey('tag-by-row'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onViewAll,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            const Text('Tag by:', style: _label),
+            const SizedBox(width: 8),
+            // Clipped, as drawn, so a narrow phone loses faces at the right
+            // rather than pushing "View all" off the row.
+            Expanded(
+              child: SizedBox(
+                height: _face,
+                child: ClipRect(
+                  child: Stack(
+                    children: [
+                      for (final (index, face) in faces.indexed)
+                        Positioned(left: index * _step, top: 0, child: face),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text('View all', style: _label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens one of the Most Likely lists — who tagged someone, or whom to
+/// tag — as a sheet over the page dimmed to 45% black (node 3929:53880).
+Future<T?> _showPeopleSheet<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    barrierColor: const Color(0x73000000),
+    builder: builder,
+  );
+}
+
+/// The white sheet those lists come up in (node 3929:53881): rounded top,
+/// a grab handle, the title, then the people, scrolling once they outgrow
+/// most of the screen.
+class _PeopleSheetFrame extends StatelessWidget {
+  const _PeopleSheetFrame({
+    super.key,
+    required this.title,
+    required this.children,
+    this.header,
+  });
+
+  final String title;
+  final Widget? header;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: media.size.height * 0.85,
+        ),
+        padding: EdgeInsets.only(
+          bottom: math.max(24, media.padding.bottom) + media.viewInsets.bottom,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x1F000000),
+              offset: Offset(0, -4),
+              blurRadius: 16,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 4),
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 16,
+                  height: 22 / 16,
+                  letterSpacing: 0.4,
+                  color: _EngagementColors.ink,
+                ),
+              ),
+            ),
+            ?header,
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: children,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One person in those lists (node 3929:53963): face, name and role line,
+/// and at the right a 32-wide slot for whatever the list needs there.
+class _PersonRow extends StatelessWidget {
+  const _PersonRow({
+    required this.userId,
+    required this.name,
+    required this.initials,
+    required this.subtitle,
+    this.photoUrl,
+    this.trailing,
+    this.onTap,
+    this.last = false,
+  });
+
+  final String userId;
+  final String name;
+  final String initials;
+  final String subtitle;
+  final String? photoUrl;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  /// The last row has no rule under it.
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 60),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: last
+            ? null
+            : const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: _EngagementColors.border,
+                    width: 1.115,
+                  ),
+                ),
+              ),
+        child: Row(
+          children: [
+            _EngagementAvatar(
+              userId: userId,
+              initials: initials,
+              photoUrl: photoUrl,
+              size: 35.983,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 13,
+                      height: 19.5 / 13,
+                      fontWeight: FontWeight.w600,
+                      color: _EngagementColors.ink,
+                    ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: _soraFont,
+                        fontSize: 9,
+                        height: 12.6 / 9,
+                        color: Color(0xFF767676),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 31.993,
+              height: 31.993,
+              child: trailing == null ? null : Center(child: trailing),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Tag by" (node 3929:53531): everyone who tagged one person, latest
+/// first. A tap on someone opens their profile, where the app can.
+class _TagBySheet extends StatelessWidget {
+  const _TagBySheet({
+    required this.taggers,
+    required this.photos,
+    this.onOpenPerson,
+  });
+
+  final List<ConnectTagger> taggers;
+  final Map<String, String> photos;
+  final ValueChanged<String>? onOpenPerson;
+
+  @override
+  Widget build(BuildContext context) {
+    final open = onOpenPerson;
+    return _PeopleSheetFrame(
+      key: const ValueKey('tag-by-sheet'),
+      title: 'Tag by',
+      children: [
+        for (final (index, tagger) in taggers.indexed)
+          _PersonRow(
+            userId: tagger.userId,
+            name: tagger.name,
+            initials: tagger.initials,
+            subtitle: tagger.roleLine,
+            photoUrl: tagger.photoUrl ?? photos[tagger.userId],
+            last: index == taggers.length - 1,
+            onTap: open == null ? null : () => open(tagger.userId),
+          ),
+      ],
+    );
+  }
+}
+
+/// "YOUR VOTE ▾" opened: the colleagues the viewer can tag, in the Tag by
+/// sheet's rows, the one they tagged ticked and at the top. Pops with the
+/// id of whoever is picked.
+class _VotePickerSheet extends StatefulWidget {
+  const _VotePickerSheet({
+    required this.people,
+    required this.currentUserId,
+    required this.photos,
+  });
+
+  final List<ConnectTeammate> people;
+  final String? currentUserId;
+  final Map<String, String> photos;
+
+  @override
+  State<_VotePickerSheet> createState() => _VotePickerSheetState();
+}
+
+class _VotePickerSheetState extends State<_VotePickerSheet> {
+  final _search = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _search.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final typed = _search.text.trim().toLowerCase();
+    final current = widget.currentUserId;
+    final people =
+        [
+              ...widget.people.where((p) => p.userId == current),
+              ...widget.people.where((p) => p.userId != current),
+            ]
+            .where((p) => typed.isEmpty || p.name.toLowerCase().contains(typed))
+            .toList();
+    return _PeopleSheetFrame(
+      key: const ValueKey('vote-picker-sheet'),
+      title: current == null ? 'Vote for someone' : 'Change your vote',
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F7F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _EngagementColors.border),
+          ),
+          child: Row(
+            children: [
+              SvgPicture.asset(
+                'assets/icons/audience_search.svg',
+                width: 16,
+                height: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('vote-picker-search'),
+                  controller: _search,
+                  textInputAction: TextInputAction.search,
+                  cursorColor: _sheetPurple,
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 13,
+                    color: _EngagementColors.ink,
+                  ),
+                  // Bare: the app's input theme would draw a second box.
+                  decoration: const InputDecoration(
+                    isCollapsed: true,
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: 'Search name',
+                    hintStyle: TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 13,
+                      color: Color(0xFF9197A2),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      children: [
+        if (people.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Text(
+              'No one by that name',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: _soraFont,
+                fontSize: 12,
+                color: _sheetMuted,
+              ),
+            ),
+          ),
+        for (final (index, person) in people.indexed)
+          _PersonRow(
+            userId: person.userId,
+            name: person.name,
+            initials: person.initials,
+            subtitle: person.department,
+            photoUrl: person.photoUrl ?? widget.photos[person.userId],
+            last: index == people.length - 1,
+            trailing: person.userId == current
+                ? SvgPicture.asset(
+                    '$_engagementIcons/circle_check.svg',
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                      _sheetPurple,
+                      BlendMode.srcIn,
+                    ),
+                  )
+                : null,
+            onTap: () => Navigator.of(context).pop(person.userId),
+          ),
+      ],
+    );
+  }
 }
 
 /// A gallery tile's fill: the podium in three shades of violet, white after.
@@ -2019,6 +2635,82 @@ class _EntriesTopBar extends StatelessWidget {
               color: _EngagementColors.ink,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Entries" over the Most Likely page (node 3939:54035): a grey band with a
+/// round white back button at the left and the title centred between it and
+/// a button-wide gap at the right.
+class _EntriesHeader extends StatelessWidget {
+  const _EntriesHeader({required this.onBack});
+
+  final VoidCallback onBack;
+
+  static const double _button = 39.988;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF7F7F9),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: GestureDetector(
+              onTap: onBack,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: _button,
+                height: _button,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _EngagementColors.border,
+                    width: 1.114,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1A000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 1.5,
+                    ),
+                    BoxShadow(
+                      color: Color(0x1A000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 1,
+                    ),
+                  ],
+                ),
+                child: SvgPicture.asset(
+                  'assets/icons/chevron_back.svg',
+                  width: 19.985,
+                  height: 19.985,
+                ),
+              ),
+            ),
+          ),
+          const Expanded(
+            child: Center(
+              child: Text(
+                'Entries',
+                style: TextStyle(
+                  fontFamily: _soraFont,
+                  fontSize: 16,
+                  height: 24 / 16,
+                  fontWeight: FontWeight.w700,
+                  color: _EngagementColors.ink,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: _button),
         ],
       ),
     );
