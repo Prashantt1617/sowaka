@@ -8,38 +8,44 @@ this file is the contract between the game page and the server.
 
 ## Decisions (15 Oct 2026)
 
-- Web only: a game page, no app release. Inside the app's Games tab it plays
-  with typed 4-digit codes; opened in a phone browser it signs in by email code
-  and can also scan QR codes with the camera.
+- The game is a web page (rules and content change without updates). The next
+  app release adds the animated feed card and QR scanning in the app through
+  the game bridge (`Sowaka.scanQr()`); without it, players type codes. Opened
+  in a phone browser it signs in by email code and can scan with the camera.
+- Everything is configured per **session** later: office, start time, lobby
+  length, and a list of rounds (squad size, hunt length, break, lock, points).
+  Example: squads of 20, then 5, then 2.
 - One lobby per office. A person's office comes from the office list loaded
   with `src/scripts/secret-squad.ts offices`, else their profile location.
-- Each office plays as one round however big (Gurgaon is ~155: ~26 squads).
-- Rounds start at scheduled times set from the backend; nobody starts one
-  from the app.
-- Points follow Hint Relay: 40 per member of your linked group, plus half the
-  seconds left when your squad finished.
+- Each office plays together however big (Gurgaon is ~155).
+- Sessions start at scheduled times set from the backend; nobody starts one
+  from the app. A feed post per office announces it; the Games tab joins too.
+- Points follow Hint Relay by default: 40 per member of your linked group,
+  plus half the seconds left when your squad finished (both configurable).
 
 ## Rules
 
 | | |
 |---|---|
-| Lobby | Opens 3:00 before the start. A push goes to everyone in that office. Anyone who joins before it closes plays. |
-| Minimum | 4 players, or the round is called off ("Not enough players"). |
-| Dealing | 0:10 to read your word; scanning starts after it. |
-| Hunt | 17:00. |
-| Squads | `k = max(2, ceil(n / 6))` squads, sizes as even as possible: 20 → 4×5, 23 → 6,6,6,5, 7 → 4,3, 4 → 2,2, 155 → 26 squads of 5–6. People from the same department are dealt round-robin so they spread across squads. |
-| Words | Each squad gets one theme from the word packs; each member a different word of it. Whole packs are used together, because a pack's themes are written to mislead each other. Packs used in an org recently are skipped while others remain. |
+| Session | One office, a start time, a lobby length (default 3:00), and rounds played back to back. |
+| Lobby | Opens before the start. A push goes to everyone in that office. Anyone who joins before it closes plays; anyone who joins during a break plays from the next round. |
+| Minimum | 4 players for a round, or it is skipped ("Not enough players"). |
+| Dealing | 0:10 to read your word; checks start after it. |
+| Hunt | Per round (default 17:00). |
+| Break | Per round (default 2:00) showing that round's results, then the next round deals. The last round ends with the session results. |
+| Squads | For a round's squad size `s`: `k = max(2, round(n / s))` squads, sizes as even as possible (never more than `s + ceil(s/5)`, never fewer than 2). People from the same department are dealt round-robin so they spread across squads. |
+| Words | Each squad gets one theme with at least as many words as members; each member a different word of it. Whole packs are used together where possible, because a pack's themes are written to mislead each other. Packs used in an org recently are skipped while others remain. Themes carry up to 24 words so squads of 20 work. |
 | Code | Each player shows a 4-digit code that changes every 20 s. Codes never clash inside a round. The current and the previous code are accepted. |
 | Check | A types (or scans) B's code. B is asked to Allow (20 s to answer). Allow → the server compares squads. |
 | Same squad | Linked. The link joins both groups. Both see each other's word. |
-| Different | Both are locked from checking for 45 s. A locked player can still be checked by others. |
+| Different | Both are locked from checking for the round's lock time (default 45 s). A locked player can still be checked by others. |
 | Already linked | Answered at once, no Allow, no lock. |
 | One at a time | A player has at most one open check, sent or received. |
 | Finished | A squad is finished when every member still in the game is in one linked group. Its members' codes stop working; they can watch. |
 | Away | 60 s offline during the hunt marks a player away: their squad needs one fewer, and their word is shown to their squad. Their links still count. Back before the end: present again but unlinked (their links are dropped), unless the squad already finished. |
 | Squad of one | A squad with one member still in the game can't finish. |
-| End | At 0:00, or once every squad has finished or can't. Places by finish time; unfinished squads after, by group size. Every theme and word is revealed. |
-| Points | Per player: 40 × size of their squad's largest linked group (0 if alone), plus `floor(secondsLeft / 2)` if the squad finished. Paid once, to `users.points` and `point_events` as `game_challenge` / `gameKey: 'secret-squad'`. |
+| Round end | At 0:00, or once every squad has finished or can't. Places by finish time; unfinished squads after, by group size. Every theme and word is revealed. |
+| Points | Per player per round: `pointsPerMember` (40) × size of their squad's largest linked group (0 if alone), plus `floor(secondsLeft × timeBonusPerSecond)` (0.5) if the squad finished. Paid at the end of each round, once, to `users.points` and `point_events` as `game_challenge` / `gameKey: 'secret-squad'`. |
 
 ## Transport
 
@@ -67,45 +73,51 @@ every 20 s for the new code):
 
 ```jsonc
 {
-  "v": 42,                       // round version; ignore anything older
+  "v": 42,                       // session version; ignore anything older
   "now": 1792070000000,          // server clock, ms: use it to correct the phone's clock
   "office": "Gurgaon",
   "me": { "userId": "…", "name": "Tanvi", "initials": "T" },
-  "next": { "lobbyOpensAt": 0, "startsAt": 0 } | null,   // next scheduled round, when none is live
-  "round": null | {
+  "next": null | { "sessionId", "lobbyOpensAt", "startsAt", "rounds": [{ "squadSize", "huntMs" }] },
+  "session": null | {
     "id": "…",
-    "status": "lobby" | "dealing" | "hunt" | "over" | "cancelled",
-    "lobbyOpensAt": 0, "startsAt": 0, "huntStartsAt": 0, "endsAt": 0,
-    "joined": true,
-    "players": 17,                                  // in the lobby / in the round
+    "status": "lobby" | "dealing" | "hunt" | "break" | "over" | "cancelled",
+    "lobbyOpensAt": 0, "startsAt": 0,
+    "phaseEndsAt": 0,                               // end of the lobby, dealing, hunt or break
+    "roundIndex": 0, "roundCount": 3,               // which round (0-based) is dealing / hunting / in its break
+    "rounds": [{ "squadSize": 20, "huntMs": 1020000 }],
+    "joined": true, "playing": true,                // playing = in the current round (false if joined mid-round)
+    "players": 91,
     "faces": [{ "userId", "name", "initials", "photoUrl" }],   // up to 12, lobby only
-    "player": null | {                              // once squads are made
-      "word": "MARS",
-      "code": "4817", "codeExpiresAt": 0,           // null when finished or away
-      "qr": "SQ1:<round>:<code>",
-      "lockedUntil": 0,                             // 0 when free
-      "away": false
-    },
-    "squad": null | {
-      "size": 5, "needed": 5,                       // needed = members still in the game
-      "linked": [{ "userId", "name", "initials", "word", "me": true, "away": false }],
-      "awayWords": [{ "name", "word" }],            // away members not linked to you
-      "unknown": 2,                                 // members you have not found yet
-      "finishedAt": 0, "place": 0,                  // 0 until finished
-      "theme": null | "Chocolate bars"              // only once finished or over
-    },
-    "board": { "squads": 26, "finished": 3, "hunting": 22, "stuck": 1 },
-    "ask": null | { "id", "fromName", "fromInitials", "expiresAt" },        // someone wants to check with you
-    "asking": null | { "id", "toName", "expiresAt" },                       // you are waiting for them
-    "result": null | {                              // the last check you were part of
-      "id", "kind": "match" | "miss" | "already" | "declined" | "expired",
-      "otherName", "otherWord", "at"
-    },
-    "notice": null | { "kind": "teammate_away" | "teammate_back" | "squad_left", "name", "word", "at" },
-    "results": null | {                             // when over
-      "squads": [{ "place", "theme", "words": ["…"], "finishedAt", "linked", "size", "mine" }],
-      "trickiest": null | { "word", "checks" },
-      "points": 0                                   // what you earned
+    "totalPoints": 0,                               // what you have earned this session so far
+    "round": null | {                               // the current (or just finished) round
+      "player": null | {
+        "word": "MARS",
+        "code": "4817", "codeExpiresAt": 0,         // null when finished or away
+        "qr": "SQ1:<session>:<round>:<code>",
+        "lockedUntil": 0,                           // 0 when free
+        "away": false
+      },
+      "squad": null | {
+        "size": 5, "needed": 5,                     // needed = members still in the game
+        "linked": [{ "userId", "name", "initials", "word", "me": true, "away": false }],
+        "awayWords": [{ "name", "word" }],          // away members not linked to you
+        "unknown": 2,                               // members you have not found yet
+        "finishedAt": 0, "place": 0,                // 0 until finished
+        "theme": null | "Chocolate bars"            // only once finished, or in the break / over
+      },
+      "board": { "squads": 26, "finished": 3, "hunting": 22, "stuck": 1 },
+      "ask": null | { "id", "fromName", "fromInitials", "expiresAt" },        // someone wants to check with you
+      "asking": null | { "id", "toName", "expiresAt" },                       // you are waiting for them
+      "result": null | {                            // the last check you were part of
+        "id", "kind": "match" | "miss" | "already" | "declined" | "expired",
+        "otherName", "otherWord", "at"
+      },
+      "notice": null | { "kind": "teammate_away" | "teammate_back" | "squad_left", "name", "word", "at" },
+      "results": null | {                           // in the break and when over
+        "squads": [{ "place", "theme", "words": ["…"], "finishedAt", "linked", "size", "mine" }],
+        "trickiest": null | { "word", "checks" },
+        "points": 0                                 // what you earned this round
+      }
     }
   }
 }
@@ -132,8 +144,29 @@ message and stops reconnecting.
 ```
 # who plays in which office (CSV: email,office)
 node --env-file=.env --import tsx src/scripts/secret-squad.ts offices convrse offices.csv
-# schedule a round (lobby opens 3 minutes before)
-node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule convrse Gurgaon 2026-10-17T16:00+05:30
+# schedule a session: rounds as size:huntMinutes[:breakMinutes], comma-separated
+node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule convrse Gurgaon 2026-10-17T16:00+05:30 --rounds 20:17,5:12,2:8
+#   options: --lobby 3 (minutes)  --lock 45 (seconds)  --points 40  --bonus 0.5  --post (feed card)
+node --env-file=.env --import tsx src/scripts/secret-squad.ts edit <id> --rounds 5:17 --at 2026-10-17T16:30+05:30
 node --env-file=.env --import tsx src/scripts/secret-squad.ts list convrse
 node --env-file=.env --import tsx src/scripts/secret-squad.ts cancel <id>
 ```
+
+## Feed card (app release)
+
+Scheduling with `--post` (or later `secret-squad.ts post <id>`) publishes one
+Connect post per session, type `secret_squad`, to that office's people only:
+
+```jsonc
+"body": {
+  "sessionId": "…", "office": "Gurgaon",
+  "title": "Secret Squad", "subtitle": "Your word is a clue to find your secret squad.",
+  "kicker": "SQUAD HUNT", "rewards": "SURPRISE REWARDS", "rewardsNote": "For the top squads to link up",
+  "lobbyOpensAt": "ISO", "startsAt": "ISO",
+  "gameKey": "secret-squad",                        // Let's Play opens this catalog game in the app
+  "webUrl": "https://…/squad"                       // older apps: opens the web lobby in the browser
+}
+```
+
+The app draws the "Secret Squad Feed Card" design (animated envelope, live
+countdown to `lobbyOpensAt`, then "Lobby open" / "Playing now" / "Ended").
