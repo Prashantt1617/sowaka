@@ -3,6 +3,7 @@ import { employeePayslipsHandler } from '../controllers/payrollRun.controller';
 import {
   addEmployeeDocumentHandler,
   attendanceReportHandler,
+  accountLimit,
   createEmployee,
   decideLeave,
   decideOvertime,
@@ -78,6 +79,7 @@ adminRouter.delete('/offices/:officeId', deleteOfficeHandler);
 adminRouter.get('/feedback', listFeedback);
 adminRouter.get('/employees', listEmployees);
 adminRouter.post('/employees', createEmployee);
+adminRouter.get('/account-limit', accountLimit);
 // Per-employee overtime eligibility (HR-controlled)
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 // One person's month, graded the way the report grades it.

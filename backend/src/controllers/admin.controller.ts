@@ -18,6 +18,7 @@ import {
 } from '../services/reimbursement.service';
 import {
   AdminError,
+  accountLimitForAdmin,
   addEmployeeDocument,
   createEmployeeForAdmin,
   removeEmployeeDocument,
@@ -177,6 +178,13 @@ export async function updateCompanySettingsHandler(req: Request, res: Response, 
   } catch (error) {
     next(error);
   }
+}
+
+/** The company's account limit (null for none) and the accounts in use, for the Add user button. */
+export async function accountLimit(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, ...(await accountLimitForAdmin(adminUserId(req))) });
+  } catch (error) { next(error); }
 }
 
 export async function createEmployee(req: Request, res: Response, next: NextFunction) {

@@ -41,6 +41,13 @@ const BRANDS: Record<string, Brand> = {
     // Their seal sets ACMT in a heavy red face on the navy; the navy carries better as type.
     wordmark: { text: 'ACMT', weight: 800, letterSpacing: '-.02em', color: '#1B1464' },
   },
+  cde: {
+    name: 'CDE Enterprises LLP',
+    // Made from the small logo they sent (100 × 33); to be replaced by the original file.
+    icon: '/brand/cde-icon.png',
+    // Their mark is CDE in cyan, indigo and magenta; the indigo carries best as type.
+    wordmark: { text: 'CDE Enterprises', weight: 700, letterSpacing: '-.01em', color: '#33308C' },
+  },
 };
 
 const LAST_ORG_KEY = 'sowaka.brandOrg';

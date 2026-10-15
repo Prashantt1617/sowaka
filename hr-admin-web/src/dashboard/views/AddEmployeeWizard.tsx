@@ -17,6 +17,7 @@ import {
   EMPLOYEE_DOCUMENT_TYPES, type EmployeeDocumentDTO, type ShiftDTO,
 } from '../../services/hrms';
 import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
+import { AccountLimitModal, isAccountLimitError } from './AccountLimitModal';
 import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { evenWeights, weightError, weightTotal } from '../weights';
 
@@ -66,6 +67,8 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // The server refused the new account because the company is at its limit.
+  const [atLimit, setAtLimit] = useState(false);
   /** Set once the employee exists on the server; every later step needs it. */
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
 
@@ -230,11 +233,14 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
       setStep(1);
       setTouched(false);
     } catch (e) {
-      setError((e as Error).message);
+      if (isAccountLimitError(e)) setAtLimit(true);
+      else setError((e as Error).message);
     } finally {
       setSaving(false);
     }
   };
+
+  if (atLimit) return <AccountLimitModal max={null} onClose={onClose} />;
 
   return (
     <div style={overlay} onClick={onClose}>

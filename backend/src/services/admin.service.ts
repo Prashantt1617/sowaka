@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { feedbackRecords, users } from '../config/db';
+import { companies, feedbackRecords, users } from '../config/db';
 import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -78,6 +78,29 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
   }));
 }
 
+/** The company's account limit, or null when it has none. */
+async function accountLimitOf(org: string): Promise<number | null> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, maxUsers: 1 } });
+  const max = company?.maxUsers;
+  return typeof max === 'number' && Number.isInteger(max) && max >= 0 ? max : null;
+}
+
+/** Accounts that count against the limit: everyone not offboarded or terminated. */
+const countAccounts = (org: string) =>
+  users().countDocuments({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } });
+
+const accountLimitError = (limit: number) =>
+  new AdminError(409, `Your plan allows up to ${limit} accounts. Contact Sowaka to add more.`);
+
+/** The admin's company's account limit and how much of it is used; max is null when there is none. */
+export async function accountLimitForAdmin(adminUserId: string): Promise<{ max: number | null; used: number }> {
+  const admin = await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } });
+  if (!admin) throw new AdminError(404, 'Admin user not found');
+  if (!admin.org) return { max: null, used: 0 };
+  const [max, used] = await Promise.all([accountLimitOf(admin.org), countAccounts(admin.org)]);
+  return { max, used };
+}
+
 export interface CreateEmployeeInput {
   name?: string; email?: string; designation?: string; department?: string;
   location?: string; employeeType?: string; managerUserId?: string;
@@ -105,6 +128,10 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
   if (employeeId && await users().findOne({ org: admin.org, employeeId })) {
     throw new AdminError(409, `Employee ID ${employeeId} is already in use`);
   }
+  // The company's account limit, checked before and after the write: two
+  // admins adding at once must not both slip under it.
+  const limit = admin.org ? await accountLimitOf(admin.org) : null;
+  if (limit !== null && (await countAccounts(admin.org!)) >= limit) throw accountLimitError(limit);
   const employee: User = {
     userId: randomUUID(), name, email, org: admin.org,
     // Left out rather than set to undefined: the driver would store null,
@@ -129,6 +156,10 @@ export async function createEmployeeForAdmin(adminUserId: string, input: CreateE
     ? await users().findOne({ userId: employee.managerUserId, ...(admin.org ? { org: admin.org } : {}) })
     : undefined;
   await users().insertOne(employee);
+  if (limit !== null && (await countAccounts(admin.org!)) > limit) {
+    await users().deleteOne({ userId: employee.userId });
+    throw accountLimitError(limit);
+  }
   // The welcome post is switched off: adding an employee no longer announces
   // them on Connect. [generateNewJoineePost] is kept for when it comes back.
   return employee;
