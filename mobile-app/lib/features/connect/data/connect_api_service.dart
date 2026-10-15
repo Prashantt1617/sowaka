@@ -211,6 +211,13 @@ class ConnectApiService {
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 
+  /// The person a birthday or anniversary card celebrates has opened their
+  /// wishes: the card's "N new" counts from now.
+  Future<ConnectPost> markWishesSeen(String postId) async {
+    final json = await _request('POST', '/connect/posts/$postId/wishes/seen');
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
   /// Reports a post, or one comment on it when `commentId` is given. Returns
   /// true when this is a new report, false when the same thing was already
   /// reported by this person and is still open.

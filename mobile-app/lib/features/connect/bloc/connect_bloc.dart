@@ -475,6 +475,29 @@ class ConnectBloc {
     );
   }
 
+  /// The celebrant has opened their wishes: the card's "N new" goes at once,
+  /// and the server is told so it stays gone on their other devices. Nothing
+  /// is sent for a card the server gave no count — not theirs, or a server
+  /// from before the count — and a failure says nothing: the count is only a
+  /// hint, and comes back as it was.
+  Future<void> markWishesSeen(String postId) async {
+    final post = _state.posts.where((item) => item.id == postId).firstOrNull;
+    if (post == null || post.body['newWishCount'] is! num) return;
+    final index = _state.posts.indexOf(post);
+    final seen = post.copyWith(body: {...post.body, 'newWishCount': 0});
+    _emit(_state.copyWith(posts: [..._state.posts]..[index] = seen));
+    try {
+      final reply = await _api.markWishesSeen(postId);
+      if (_controller.isClosed) return;
+      _emit(_state.copyWith(posts: _replacePost(reply)));
+    } catch (_) {
+      if (_controller.isClosed) return;
+      final current = _state.posts.indexWhere((item) => identical(item, seen));
+      if (current < 0) return;
+      _emit(_state.copyWith(posts: [..._state.posts]..[current] = post));
+    }
+  }
+
   /// The latest pick per poll while a vote is on its way, and the polls with
   /// one travelling.
   final _latestPollPick = <String, String>{};
