@@ -123,6 +123,12 @@ export interface ConnectPost {
    * `src/scripts/pin-post.ts`); nothing in the app or dashboard writes it.
    */
   pinnedUntil?: Date | null;
+  /**
+   * On a birthday or work-anniversary card: when the person it celebrates
+   * last opened their wishes, by their user id. Wishes after it are the "new"
+   * ones their card counts. Never sent to the app as it is.
+   */
+  wishesSeenAt?: Record<string, Date>;
   createdAt: Date;
   updatedAt: Date;
 }

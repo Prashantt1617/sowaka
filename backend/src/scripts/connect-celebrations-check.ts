@@ -18,8 +18,14 @@ import {
   celebrationGroupFor,
   isPinnedForCelebrant,
   istDateKey,
+  newWishCountFor,
 } from '../services/connect-celebrations';
-import { getConnectFeed } from '../services/connect.service';
+import {
+  addConnectComment,
+  getConnectFeed,
+  getConnectPost,
+  markCelebrationWishesSeen,
+} from '../services/connect.service';
 
 let failures = 0;
 function check(label: string, passed: boolean, detail = '') {
@@ -81,6 +87,25 @@ check(
 );
 const legacy = { ...card('birthday', 'u5', '2026-10-15'), systemKey: undefined, publishedAt: new Date('2026-10-14T20:00:00Z') };
 check('a card without a key is clubbed by the India day it went up', celebrationGroupFor(legacy, 'u9') === group);
+
+console.log('\nNew wishes, for the celebrant only');
+const wish = (userId: string, at: string, parentId?: string) => ({ userId, createdAt: new Date(at), parentId });
+const wishes = [
+  wish('u2', '2026-10-15T04:00:00Z'),
+  wish('u3', '2026-10-15T05:00:00Z'),
+  wish('u1', '2026-10-15T05:30:00Z', 'w2'),
+  wish('u1', '2026-10-15T05:40:00Z'),
+  wish('u4', '2026-10-15T06:00:00Z', 'w1'),
+  wish('u5', '2026-10-15T07:00:00Z'),
+];
+const birthdayCard = { type: 'birthday' as const, body: { personUserId: 'u1' } };
+check('before they open them, every wish is new', newWishCountFor(birthdayCard, wishes, 'u1') === 3);
+check(
+  'after, only the ones since',
+  newWishCountFor({ ...birthdayCard, wishesSeenAt: { u1: new Date('2026-10-15T05:00:00Z') } }, wishes, 'u1') === 1,
+);
+check('nobody else gets a count', newWishCountFor(birthdayCard, wishes, 'u2') === null);
+check('nor does any other post', newWishCountFor({ ...birthdayCard, type: 'kudos' as const }, wishes, 'u1') === null);
 
 // ------------------------------------------------------------- the feed
 
@@ -192,6 +217,40 @@ async function feedChecks() {
   const lead = two.first.slice(0, 2).map((p) => p.id);
   check('both of their cards lead', lead.includes(birthday.id) && two.first.slice(0, 2).every((p) => p.body.pinnedForCelebrant === true));
   check('nothing is lost or repeated', two.seen.length === all.length + 1 && new Set(two.seen.map((p) => p.id)).size === all.length + 1);
+
+  console.log('\nWishes the celebrant has not seen');
+  type Viewed = { body: Record<string, unknown>; wishesSeenAt?: unknown };
+  const view = async (viewer: string, id = birthday.id) =>
+    (await getConnectPost(viewer, id)) as unknown as Viewed;
+  check('no wishes, none new', (await view('cel')).body.newWishCount === 0);
+  await addConnectComment('viewer', birthday.id, 'Happy birthday!');
+  await addConnectComment('cel2', birthday.id, 'Many happy returns');
+  check('two wishes, two new', (await view('cel')).body.newWishCount === 2);
+  check('a colleague sees no count', (await view('viewer')).body.newWishCount === undefined);
+  const seen = (await markCelebrationWishesSeen('cel', birthday.id)) as unknown as Viewed;
+  check('opening them clears the count', seen.body.newWishCount === 0);
+  check('when they looked is never sent', seen.wishesSeenAt === undefined);
+  await addConnectComment('cel', birthday.id, 'Thank you all!');
+  check('their own words are not new wishes', (await view('cel')).body.newWishCount === 0);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await addConnectComment('viewer', birthday.id, 'One more 🎉');
+  check('a wish after counts again', (await view('cel')).body.newWishCount === 1);
+  let refused = false;
+  try {
+    await markCelebrationWishesSeen('viewer', birthday.id);
+  } catch {
+    refused = true;
+  }
+  check('nobody else can mark them seen', refused);
+
+  console.log('\nThe card names their team and when they joined');
+  await users().updateOne(
+    { userId: 'cel2' },
+    { $set: { department: 'Engineering', joiningDate: new Date('2023-10-15T00:00:00Z') } },
+  );
+  const anniversaryView = await view('viewer', anniversary.id);
+  check('their department', anniversaryView.body.personDepartment === 'Engineering');
+  check('the day they joined', anniversaryView.body.joinedOn === '2023-10-15T00:00:00.000Z');
 }
 
 async function main() {

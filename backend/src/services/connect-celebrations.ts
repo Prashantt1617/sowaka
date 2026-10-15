@@ -79,3 +79,30 @@ export function celebrationGroupFor(
   if (celebrantOfPost(post) === viewerUserId) return null;
   return `celebrations:${post.org}:${celebrationDayOf(post)}`;
 }
+
+/**
+ * How many of the wishes on [post] its celebrant has not seen yet, or null
+ * when [viewerUserId] is not the person it celebrates (only they get a count).
+ *
+ * A wish is a colleague's top-level comment — not the celebrant's own, and not
+ * a reply in a thread. "Seen" is the last time the celebrant opened their
+ * wishes, on any device (`wishesSeenAt`); before the first time, every wish is
+ * new. [comments] are the ones the viewer may see, so a blocked colleague's
+ * wish never counts.
+ */
+export function newWishCountFor(
+  post: Pick<ConnectPost, 'type' | 'body' | 'wishesSeenAt'>,
+  comments: Array<{ userId: string; parentId?: string; createdAt: Date }>,
+  viewerUserId: string,
+): number | null {
+  const celebrant = celebrantOfPost(post);
+  if (!celebrant || celebrant !== viewerUserId) return null;
+  const seenAt = post.wishesSeenAt?.[viewerUserId];
+  const seen = seenAt ? new Date(seenAt).getTime() : null;
+  return comments.filter(
+    (comment) =>
+      !comment.parentId &&
+      comment.userId !== celebrant &&
+      (seen === null || new Date(comment.createdAt).getTime() > seen),
+  ).length;
+}

@@ -14,10 +14,12 @@ import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import {
   CELEBRANT_MAX_PINNED,
+  celebrantOfPost,
   celebrantPinKeys,
   celebrationGroupFor,
   isPinnedForCelebrant,
   istDateKey,
+  newWishCountFor,
 } from './connect-celebrations';
 import { fetchLinkPreview } from './link-preview.service';
 import { companyDisplayName } from './company-settings.service';
@@ -557,6 +559,26 @@ export async function toggleConnectCommentReaction(
   const updated = await connectPosts().findOne({ id: postId });
   // A like on a comment notifies nobody.
   announceChange(post, 'updated', viewerUserId);
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * The person a birthday or work-anniversary card celebrates has opened their
+ * wishes: the ones up to now are no longer new (see `newWishCountFor`). Theirs
+ * alone to say — anyone else is refused, as is any other kind of post.
+ */
+export async function markCelebrationWishesSeen(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (celebrantOfPost(post) !== viewerUserId) {
+    throw new ConnectError(403, 'Only the person celebrated can mark their wishes seen');
+  }
+  // No change announced: what is new is the celebrant's alone, and no one
+  // else's card changes.
+  await connectPosts().updateOne(
+    { id: postId },
+    { $set: { [`wishesSeenAt.${viewerUserId}`]: new Date() } },
+  );
+  const updated = await connectPosts().findOne({ id: postId });
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -1306,11 +1328,26 @@ async function viewPost(
   // Kudos name the person they are about; their face is read now rather than
   // stored, so it follows whatever photo they have today.
   if (typeof body.personUserId === 'string' && body.personUserId.length > 0) {
+    const celebration = post.type === 'birthday' || post.type === 'anniversary';
     const person = await users().findOne(
       { userId: body.personUserId },
-      { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+      {
+        projection: celebration
+          ? { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, department: 1, designation: 1, joiningDate: 1 }
+          : { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 },
+      },
     );
     body.photoUrl = (await resolveProfilePhoto(person)) ?? body.photoUrl;
+    // A birthday or anniversary card names the person's team, and an
+    // anniversary the month they joined ("Since Oct 2023") — read now, so
+    // cards written before these were stored carry them too.
+    if (celebration && person) {
+      const team = person.department ?? person.designation;
+      if (team) body.personDepartment = team;
+      if (post.type === 'anniversary' && person.joiningDate) {
+        body.joinedOn = new Date(person.joiningDate).toISOString();
+      }
+    }
   }
   // Tags store ids only, so a tagged person's name and photo are always
   // current rather than frozen at the moment the post was written.
@@ -1516,6 +1553,9 @@ async function viewPost(
       !hiddenCommentIds.has(comment.id) &&
       !(comment.parentId && hiddenCommentIds.has(comment.parentId)),
   );
+  // The celebrant's own card counts the wishes they have not seen yet.
+  const newWishCount = newWishCountFor(post, visibleComments, viewerUserId);
+  if (newWishCount !== null) body.newWishCount = newWishCount;
   const commenterPhotos = await commentPhotoUrls(visibleComments, authorPhotoUrls);
   const comments = visibleComments.map((comment) => ({
     ...comment,
@@ -1537,6 +1577,9 @@ async function viewPost(
     commentCount: comments.length,
     selectedPollOptionId,
     actionValue,
+    // When the celebrant last opened their wishes is theirs; it is sent as
+    // the count above, never as it is.
+    wishesSeenAt: undefined,
   };
 }
 
@@ -1770,7 +1813,14 @@ function normalizePostBody(
     default: {
       // What a read adds for one viewer (see `viewPost`) is never stored,
       // should an edit hand the card it was shown straight back.
-      const { celebrationGroup: _group, pinnedForCelebrant: _pinned, ...stored } = input;
+      const {
+        celebrationGroup: _group,
+        pinnedForCelebrant: _pinned,
+        newWishCount: _newWishes,
+        personDepartment: _department,
+        joinedOn: _joinedOn,
+        ...stored
+      } = input;
       return stored;
     }
   }
