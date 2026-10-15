@@ -195,6 +195,9 @@ class NotificationLook {
         return _game('GAME CHALLENGE');
       case 'live_game_started':
         return _game('LIVE GAME');
+      // "Secret Squad starts in 3 minutes": an office's lobby is open.
+      case 'secret_squad_lobby':
+        return secretSquad;
       case 'game_challenge_declined':
       case 'game_challenge_withdrawn':
       case 'game_challenge_cancelled':
@@ -250,6 +253,8 @@ class NotificationLook {
       case 'punch_out':
         return _activity(Icons.fingerprint_rounded, _greenInk, _greenDisc);
     }
+    // Anything else Secret Squad sends reads as the game too.
+    if (scenario.startsWith('secret_squad')) return secretSquad;
     if (scenario.startsWith('post_published_')) {
       final type = '${data['postType'] ?? ''}'.isNotEmpty
           ? '${data['postType']}'
@@ -266,6 +271,8 @@ class NotificationLook {
   /// A new post: what it is to this reader, from the copy they were sent
   /// (who it is from depends on the reader, so it lives in the title).
   static NotificationLook _post(String type, String priority, String title) {
+    // A Secret Squad session announced on the feed.
+    if (type == 'secret_squad') return secretSquad;
     if (type == 'caption_challenge' ||
         type == 'photo_story_challenge' ||
         type == 'most_likely') {
@@ -368,6 +375,14 @@ class NotificationLook {
         glyph: IconGlyph(icon, _priorityInk),
         disc: NotificationPalette.priority.disc,
       );
+
+  /// Secret Squad's rows: a green GAME card with its top-secret envelope.
+  static const secretSquad = NotificationLook(
+    kind: NotificationKind.game,
+    label: 'SECRET SQUAD',
+    glyph: IconGlyph(Icons.drafts_outlined, _gameInk),
+    disc: Color(0xFFCBEDE6),
+  );
 
   static NotificationLook _game(String label) => NotificationLook(
     kind: NotificationKind.game,
