@@ -10,6 +10,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../auth/data/auth_models.dart';
+import '../../profile/profile_launcher.dart';
 import '../../shared/app_toast.dart';
 import '../data/game_bridge.dart';
 import '../data/game_socket_service.dart';
@@ -164,6 +165,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
       service: service,
       gameKey: game.key,
       company: widget.session!.user.company,
+      // A row on the game's board opens that person's profile over the game.
+      onOpenProfile: (userId) => openPersonProfile(userId),
     );
     _controller
       ..enableZoom(false)
@@ -190,6 +193,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
     playerName: widget.session!.user.name,
     userId: widget.session!.user.id,
     startChallengeId: widget.challengeId,
+    // Offered only while the signed-in shell is there to open a profile.
+    opensProfiles: canOpenPersonProfile,
   );
 
   Future<void> _runInPage(String script) async {

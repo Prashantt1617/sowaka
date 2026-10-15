@@ -13,11 +13,17 @@ import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
 import 'package:mobile_app/features/profile/profile.dart';
+import 'package:mobile_app/features/shared/photo_viewer.dart';
+
+/// A 1x1 PNG, as a `data:` photo: no network in a test.
+const photo =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 Map<String, dynamic> member(
   String name, {
   bool reportsToViewer = false,
   bool isSelf = false,
+  String? photoUrl,
 }) => {
   'userId': name.toLowerCase(),
   'name': name,
@@ -29,6 +35,7 @@ Map<String, dynamic> member(
   'email': '${name.toLowerCase()}@example.test',
   'parameters': <dynamic>[],
   'history': <dynamic>[],
+  'photoUrl': ?photoUrl,
 };
 
 http.Response ok(Map<String, dynamic> body) => http.Response(
@@ -37,7 +44,7 @@ http.Response ok(Map<String, dynamic> body) => http.Response(
   headers: {'content-type': 'application/json; charset=utf-8'},
 );
 
-Future<ManagerBloc> boot(WidgetTester tester) async {
+Future<ManagerBloc> boot(WidgetTester tester, {String? ownPhoto}) async {
   tester.view.physicalSize = const Size(1179, 2556);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -45,7 +52,7 @@ Future<ManagerBloc> boot(WidgetTester tester) async {
     'team': [
       member('Pankaj', isSelf: true),
       member('Haider', reportsToViewer: true),
-      member('Rana'),
+      member('Rana', photoUrl: photo),
     ],
     'recognitionCandidates': <dynamic>[],
     'nominations': <dynamic>[],
@@ -90,7 +97,7 @@ Future<ManagerBloc> boot(WidgetTester tester) async {
     return http.Response('{"success":false}', 404);
   });
   addTearDown(() => ProfileApiService.testClient = null);
-  const session = AuthSession(
+  final session = AuthSession(
     token: 'token',
     user: AuthUser(
       id: 'pankaj',
@@ -101,6 +108,7 @@ Future<ManagerBloc> boot(WidgetTester tester) async {
       org: 'acmt',
       employeeId: 'AC042',
       employmentType: 'full_time',
+      profilePhotoUrl: ownPhoto,
     ),
   );
   final bloc = ManagerBloc(
@@ -267,6 +275,92 @@ void main() {
 
     expect(find.text('My Profile'), findsOneWidget);
     await close(tester, bloc);
+  });
+
+  group('the profile photo, full screen with pinch to zoom', () {
+    testWidgets('a colleague\'s photo opens, zooms and closes', (tester) async {
+      final bloc = await boot(tester);
+      expect(openPersonProfile('rana'), isTrue);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('profile-photo')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PhotoViewer), findsOneWidget);
+      final zoom = tester.widget<InteractiveViewer>(
+        find.byKey(const ValueKey('photo-viewer-zoom')),
+      );
+      expect(zoom.minScale, 1);
+      expect(zoom.maxScale, 4);
+      expect(find.bySemanticsLabel("Rana's photo"), findsOneWidget);
+
+      // A double tap zooms in, another back out.
+      final surface = find.byKey(const ValueKey('photo-viewer-surface'));
+      Future<void> doubleTap() async {
+        await tester.tap(surface);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(surface);
+        await tester.pumpAndSettle();
+      }
+
+      await doubleTap();
+      expect(zoom.transformationController!.value.getMaxScaleOnAxis(), 2.5);
+      await doubleTap();
+      expect(zoom.transformationController!.value.getMaxScaleOnAxis(), 1);
+
+      // Two fingers pinch it bigger.
+      final centre = tester.getCenter(surface);
+      final a = await tester.startGesture(centre - const Offset(40, 0));
+      final b = await tester.startGesture(
+        centre + const Offset(40, 0),
+        pointer: 2,
+      );
+      await tester.pump();
+      for (var i = 0; i < 6; i++) {
+        await a.moveBy(const Offset(-10, 0));
+        await b.moveBy(const Offset(10, 0));
+        await tester.pump();
+      }
+      await a.up();
+      await b.up();
+      await tester.pumpAndSettle();
+      expect(
+        zoom.transformationController!.value.getMaxScaleOnAxis(),
+        greaterThan(1.5),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('photo-viewer-close')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PhotoViewer), findsNothing);
+      expect(find.text('Profile-Rana'), findsOneWidget);
+      await close(tester, bloc);
+    });
+
+    testWidgets('someone with no photo has nothing to open', (tester) async {
+      final bloc = await boot(tester);
+      expect(openPersonProfile('haider'), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('profile-photo')), findsNothing);
+      await close(tester, bloc);
+    });
+
+    testWidgets('one\'s own photo opens too, with Change photo there', (
+      tester,
+    ) async {
+      final bloc = await boot(tester, ownPhoto: photo);
+      expect(openPersonProfile('pankaj'), isTrue);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('own-profile-photo')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PhotoViewer), findsOneWidget);
+      expect(find.byKey(const ValueKey('photo-viewer-change')), findsOneWidget);
+      expect(find.text('Change photo'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('photo-viewer-close')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PhotoViewer), findsNothing);
+      expect(find.text('My Profile'), findsOneWidget);
+      await close(tester, bloc);
+    });
   });
 
   testWidgets('nothing to open without a shell', (tester) async {

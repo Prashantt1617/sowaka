@@ -16,8 +16,14 @@ const String gameBridgeChannel = 'SowakaGame';
 ///   Sowaka.playerName()    the player's name, at once
 ///   Sowaka.submitScore(n)  a Promise of the board after it; the app posts
 ///                          the score under the player's own session
-///   Sowaka.leaderboard()   a Promise of {entries: [{rank, name, score, me}],
-///                          me: {rank, score} | null, company, label}
+///   Sowaka.leaderboard()   a Promise of {entries: [{rank, userId, name,
+///                          score, me}], me: {rank, score} | null, company,
+///                          label}
+///   Sowaka.openProfile(userId)  fire and forget: opens that person's
+///                          profile over the game (Back comes back to it).
+///                          Only there when the app can open profiles, and
+///                          new in version 4: a page checks
+///                          `typeof Sowaka.openProfile === 'function'`.
 ///
 /// and for colleague challenges, each a Promise of what the server answered:
 ///
@@ -48,6 +54,7 @@ String gameBridgeScript({
   required String playerName,
   required String userId,
   String? startChallengeId,
+  bool opensProfiles = false,
 }) {
   // Inside a <script> element: '<' is escaped so a value can never close it.
   final name = _scriptJson(playerName);
@@ -72,7 +79,7 @@ String gameBridgeScript({
   function text(value) { return value == null ? null : String(value); }
   var S = window.Sowaka || {};
   S.native = true;
-  S.version = 3;
+  S.version = 4;
   S.userId = $id;
   S.playerName = function () { return $name; };
   S.submitScore = function (score) { return call('submitScore', { score: Number(score) }); };
@@ -90,7 +97,7 @@ String gameBridgeScript({
   S.haptic = function (kind) {
     try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'h', type: 'haptic', data: { kind: text(kind) || 'light' } })); } catch (e) {}
   };
-  S.__reply = function (id, ok, payload) {
+${opensProfiles ? _openProfileScript : ''}  S.__reply = function (id, ok, payload) {
     var p = pending[id];
     if (!p) return;
     delete pending[id];
@@ -105,6 +112,16 @@ String gameBridgeScript({
 })();
 ''';
 }
+
+/// `Sowaka.openProfile(userId)`: fire and forget, as a tap's haptic is.
+const String _openProfileScript =
+    '''  S.openProfile = function (userId) {
+    try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'p', type: 'openProfile', data: { userId: text(userId) } })); } catch (e) {}
+  };
+''';
+
+/// A person's id as the page may hand one back; anything else is dropped.
+final RegExp _personId = RegExp(r'^[A-Za-z0-9_-]{1,64}$');
 
 /// [value] as a JavaScript literal that is safe inside a `<script>` element.
 String _scriptJson(Object? value) => jsonEncode(value)
@@ -164,10 +181,15 @@ class GameBridge {
     required this.service,
     required this.gameKey,
     required this.company,
+    this.onOpenProfile,
   });
 
   final GamesApiService service;
   final String gameKey;
+
+  /// Opens a person's profile, for the page's `Sowaka.openProfile(userId)`.
+  /// Null when nothing can open one; the call is then dropped.
+  final void Function(String userId)? onOpenProfile;
 
   /// The company's name, for the board's heading.
   final String company;
@@ -212,6 +234,16 @@ class GameBridge {
               unawaited(HapticFeedback.mediumImpact());
             default:
               unawaited(HapticFeedback.selectionClick());
+          }
+          return null;
+        case 'openProfile':
+          // No answer either: the profile opens over the game.
+          final person = data['userId'];
+          final open = onOpenProfile;
+          if (open != null &&
+              person is String &&
+              _personId.hasMatch(person.trim())) {
+            open(person.trim());
           }
           return null;
         case 'submitScore':

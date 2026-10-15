@@ -85,13 +85,53 @@ void main() {
     expect(reply.payload['company'], 'Sowaka');
     expect(reply.payload['improved'], isTrue);
     expect(reply.payload['me'], {'rank': 2, 'score': 4200});
+    // Each row carries whose it is, so the page can open their profile.
     expect((reply.payload['entries'] as List).first, {
       'rank': 1,
+      'userId': 'u-1',
       'name': 'Neha Iyer',
       'score': 9100,
       'me': false,
     });
-    expect(js, isNot(contains('u-1')));
+  });
+
+  test('openProfile is offered only when the app can open profiles', () {
+    final without = gameBridgeScript(playerName: 'Tanvi', userId: 'u-2');
+    expect(without, isNot(contains('S.openProfile')));
+    final offered = gameBridgeScript(
+      playerName: 'Tanvi',
+      userId: 'u-2',
+      opensProfiles: true,
+    );
+    expect(offered, contains('S.openProfile = function (userId)'));
+    expect(offered, contains("type: 'openProfile'"));
+    expect(offered, contains('S.version = 4;'));
+  });
+
+  test("the page's openProfile opens that person, with no answer", () async {
+    serve((request) async => http.Response('{}', 404));
+    final opened = <String>[];
+    bridge = GameBridge(
+      service: GamesApiService(
+        session: _session,
+        baseUrl: 'https://api.example.test',
+        client: MockClient((request) async => http.Response('{}', 404)),
+      ),
+      gameKey: 'odd-one-out',
+      company: 'Sowaka',
+      onOpenProfile: opened.add,
+    );
+    Future<String?> send(Object? userId) => bridge.handle(
+      jsonEncode({'id': 'p', 'type': 'openProfile', 'data': {'userId': userId}}),
+    );
+    expect(await send('u-1'), isNull);
+    expect(opened, ['u-1']);
+    // Nothing that is not a person's id is passed on.
+    for (final bad in ['', '../x', 'a b', null, 42]) {
+      expect(await send(bad), isNull);
+    }
+    expect(opened, ['u-1']);
+    expect(requests, isEmpty);
   });
 
   test('the leaderboard is read for the game it was opened for', () async {

@@ -13,6 +13,7 @@ class _LeaderboardPane extends StatelessWidget {
     required this.viewerId,
     required this.onPeriod,
     required this.onRefresh,
+    this.onOpenPerson,
   });
 
   final PointsLeaderboard? board;
@@ -22,6 +23,9 @@ class _LeaderboardPane extends StatelessWidget {
   final String viewerId;
   final ValueChanged<PointsPeriod> onPeriod;
   final Future<void> Function() onRefresh;
+
+  /// Opens the profile of whoever's row or podium place is tapped.
+  final ValueChanged<String>? onOpenPerson;
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +96,7 @@ class _LeaderboardPane extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: podium.isEmpty
                       ? _EmptyPodium(period: period)
-                      : _PointsPodium(top: podium),
+                      : _PointsPodium(top: podium, onOpenPerson: onOpenPerson),
                 ),
                 const SizedBox(height: 14),
                 Padding(
@@ -105,6 +109,7 @@ class _LeaderboardPane extends StatelessWidget {
                           key: ValueKey('board-row-${entry.userId}'),
                           entry: entry,
                           isMe: entry.userId == viewerId,
+                          onOpenPerson: onOpenPerson,
                         ),
                     ],
                   ),
@@ -238,9 +243,10 @@ class _PeriodToggle extends StatelessWidget {
 /// its padding, as Figma draws a stroke: the places start 18pt down and 12pt
 /// in from the surface's outside.
 class _PointsPodium extends StatelessWidget {
-  const _PointsPodium({required this.top});
+  const _PointsPodium({required this.top, this.onOpenPerson});
 
   final List<PointsEntry> top;
+  final ValueChanged<String>? onOpenPerson;
 
   static const _placeColor = {
     1: Color(0xFFFFCC00),
@@ -326,6 +332,22 @@ class _PointsPodium extends StatelessWidget {
     final first = place == 1;
     final frame = first ? 68.0 : 54.0;
     final portrait = first ? 62.0 : 48.0;
+    return _OpensPerson(
+      userId: entry.userId,
+      name: entry.name,
+      onOpenPerson: onOpenPerson,
+      child: _podiumPlace(entry, place, color, first, frame, portrait),
+    );
+  }
+
+  Widget _podiumPlace(
+    PointsEntry entry,
+    int place,
+    Color color,
+    bool first,
+    double frame,
+    double portrait,
+  ) {
     return Column(
       key: ValueKey('podium-$place'),
       mainAxisSize: MainAxisSize.min,
@@ -489,10 +511,16 @@ class _EmptyPodium extends StatelessWidget {
 /// One person's row (node 3628:33559). The viewer's is cream, tipped a
 /// little, with a pink edge and YOU beside their name (node 3628:33542).
 class _LeaderboardRow extends StatelessWidget {
-  const _LeaderboardRow({super.key, required this.entry, required this.isMe});
+  const _LeaderboardRow({
+    super.key,
+    required this.entry,
+    required this.isMe,
+    this.onOpenPerson,
+  });
 
   final PointsEntry entry;
   final bool isMe;
+  final ValueChanged<String>? onOpenPerson;
 
   @override
   Widget build(BuildContext context) {
@@ -641,9 +669,46 @@ class _LeaderboardRow extends StatelessWidget {
         ],
       ),
     );
-    return isMe
-        ? Transform.rotate(angle: -0.4 * math.pi / 180, child: row)
-        : row;
+    return _OpensPerson(
+      userId: entry.userId,
+      name: entry.name,
+      onOpenPerson: onOpenPerson,
+      child: isMe
+          ? Transform.rotate(angle: -0.4 * math.pi / 180, child: row)
+          : row,
+    );
+  }
+}
+
+/// A person on the board — their row, their podium place — that opens their
+/// profile when tapped. Just [child] when nothing opens profiles here or the
+/// row has no userId.
+class _OpensPerson extends StatelessWidget {
+  const _OpensPerson({
+    required this.userId,
+    required this.name,
+    required this.onOpenPerson,
+    required this.child,
+  });
+
+  final String userId;
+  final String name;
+  final ValueChanged<String>? onOpenPerson;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final open = onOpenPerson;
+    if (open == null || userId.isEmpty) return child;
+    return Semantics(
+      button: true,
+      label: 'Open $name\'s profile',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => open(userId),
+        child: child,
+      ),
+    );
   }
 }
 

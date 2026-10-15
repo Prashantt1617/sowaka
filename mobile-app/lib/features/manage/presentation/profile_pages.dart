@@ -404,7 +404,11 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                             ? const Color(0xFF00C950)
                             : const Color(0xFFDDDDDD))
                       : null,
-                  child: _TeamMemberPhoto(member: member, size: 112),
+                  child: _TappablePhoto(
+                    url: member.photoUrl,
+                    label: "${member.name}'s photo",
+                    child: _TeamMemberPhoto(member: member, size: 112),
+                  ),
                 ),
                 name: member.name,
                 subtitle: [
@@ -1030,8 +1034,32 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         ),
       ),
     ),
+    // With a photo, a tap opens it full screen (pinch to zoom), with Change
+    // photo there; without one, a tap goes straight to choosing one.
     child: GestureDetector(
-      onTap: _changePhoto,
+      key: const ValueKey('own-profile-photo'),
+      onTap: () => _nonEmpty(user.profilePhotoUrl) == null
+          ? _changePhoto()
+          : _openProfilePhoto(
+              context,
+              user.profilePhotoUrl!,
+              label: 'Your photo',
+              action: Builder(
+                builder: (viewerContext) => FilledButton.icon(
+                  key: const ValueKey('photo-viewer-change'),
+                  onPressed: () {
+                    Navigator.of(viewerContext).pop();
+                    _changePhoto();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF1A1A2E),
+                  ),
+                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                  label: const Text('Change photo'),
+                ),
+              ),
+            ),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -2587,6 +2615,48 @@ ImageProvider _profileImage(String url) {
   // Cached on disk by URL: a photo seen once is not fetched again, on this
   // scroll or the next launch. Keys are immutable, so the cache never goes stale.
   return CachedNetworkImageProvider(resolveMediaUrl(url));
+}
+
+/// [url] full screen, pinch to zoom ([showPhotoViewer]).
+Future<void> _openProfilePhoto(
+  BuildContext context,
+  String url, {
+  required String label,
+  Widget? action,
+}) => showPhotoViewer(
+  context,
+  image: _profileImage(url),
+  label: label,
+  action: action,
+);
+
+/// Someone's profile photo that opens full screen when tapped; just [child]
+/// when they have no photo.
+class _TappablePhoto extends StatelessWidget {
+  const _TappablePhoto({
+    required this.url,
+    required this.label,
+    required this.child,
+  });
+
+  final String? url;
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _nonEmpty(this.url);
+    if (url == null) return child;
+    return Semantics(
+      button: true,
+      label: 'Open $label',
+      child: GestureDetector(
+        key: const ValueKey('profile-photo'),
+        onTap: () => _openProfilePhoto(context, url, label: label),
+        child: child,
+      ),
+    );
+  }
 }
 
 class _TeamMemberPhoto extends StatelessWidget {

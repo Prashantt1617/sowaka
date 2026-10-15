@@ -187,6 +187,7 @@ class _GamesTab extends StatelessWidget {
             openCatalogGame(context, session, game, challengeId: challengeId),
         onOpenPost: _openPost,
         onOpenContest: (postId) => _openContest(context, postId),
+        onOpenPerson: (userId) => openPersonProfile(userId),
       ),
     );
   }

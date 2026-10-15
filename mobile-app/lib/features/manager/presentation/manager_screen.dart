@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
+import '../../shared/photo_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
