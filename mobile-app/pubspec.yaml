@@ -85,6 +85,8 @@ flutter:
 
   assets:
     - assets/images/
+    # The update screens' rocket (an animated GIF) and its accents (Figma 3902:15655).
+    - assets/images/update/
     - assets/icons/
     # Flutter's asset globs are not recursive, so the engagement icons
     # exported from Figma need their own line.

@@ -36,8 +36,7 @@ void main() {
     await tester.pumpWidget(_app(_FakeService(_status('none'))));
     await tester.pumpAndSettle();
     expect(find.text('The app'), findsOneWidget);
-    expect(find.text('Time to update'), findsNothing);
-    expect(find.text('A new version is here'), findsNothing);
+    expect(find.text('We are better than ever'), findsNothing);
   });
 
   testWidgets('force covers the app and has no way to close it', (
@@ -45,10 +44,12 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_FakeService(_status('force'))));
     await tester.pumpAndSettle();
-    expect(find.text('Time to update'), findsOneWidget);
+    expect(find.text('We are better than ever'), findsOneWidget);
     expect(find.text('Update now'), findsOneWidget);
-    expect(find.text('Not now'), findsNothing);
-    expect(find.byIcon(Icons.close_rounded), findsNothing);
+    // Nothing to close it with, and tapping around does nothing.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.text('Update now'), findsOneWidget);
     // The screen is opaque and on top: a tap where the app's text sits
     // lands on the update screen, not on the app.
     final hits = tester.hitTestOnBinding(tester.getCenter(find.text('The app')));
@@ -62,27 +63,30 @@ void main() {
     final service = _FakeService(_status('optional'));
     await tester.pumpWidget(_app(service));
     await tester.pumpAndSettle();
-    expect(find.text('A new version is here'), findsOneWidget);
+    expect(find.text('We are better than ever'), findsOneWidget);
+    expect(find.text('Update'), findsOneWidget);
 
-    await tester.tap(find.text('Not now'));
+    // Tapping the dimmed app above the sheet closes it.
+    await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
-    expect(find.text('A new version is here'), findsNothing);
+    expect(find.text('We are better than ever'), findsNothing);
 
     // Back in the foreground: same version, still closed.
     AppUpdateGate.recheck();
     await tester.pumpAndSettle();
     expect(service.calls, 2);
-    expect(find.text('A new version is here'), findsNothing);
+    expect(find.text('We are better than ever'), findsNothing);
 
     // A newer version asks again.
     service.status = _status('optional', '1.3.9');
     AppUpdateGate.recheck();
     await tester.pumpAndSettle();
-    expect(find.text('A new version is here'), findsOneWidget);
+    expect(find.text('We are better than ever'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close_rounded));
+    // Swiping the sheet down closes it too.
+    await tester.drag(find.text('Update'), const Offset(0, 500));
     await tester.pumpAndSettle();
-    expect(find.text('A new version is here'), findsNothing);
+    expect(find.text('We are better than ever'), findsNothing);
   });
 
   testWidgets('force turned off on the server lets the app through', (
@@ -91,11 +95,11 @@ void main() {
     final service = _FakeService(_status('force'));
     await tester.pumpWidget(_app(service));
     await tester.pumpAndSettle();
-    expect(find.text('Time to update'), findsOneWidget);
+    expect(find.text('Update now'), findsOneWidget);
     service.status = _status('none');
     AppUpdateGate.recheck();
     await tester.pumpAndSettle();
-    expect(find.text('Time to update'), findsNothing);
+    expect(find.text('Update now'), findsNothing);
   });
 
   test('a status with no store to open asks for nothing', () {

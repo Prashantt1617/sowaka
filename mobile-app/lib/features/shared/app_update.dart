@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -188,9 +190,18 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   }
 }
 
-const _ink = Color(0xFF222222);
-const _muted = Color(0xFF6A6A6A);
+// Figma 3902:15655 (force) and 3920:50797 (optional), Sowaka Connect.
+const _headline = Color(0xFF1A1A2E);
+const _body = Color(0xFF7A7A9A);
 const _brand = Color(0xFF0571A6);
+const _tile = Color(0xFFE8F5F8);
+const _spark = Color(0xFFC9A8E2);
+const _handle = Color(0xFFD1D5DB);
+const _scrim = Color(0x73000000); // rgba(0,0,0,0.45)
+
+const _copy =
+    'To keep using the app, please update to the latest version. It only '
+    'takes a moment.';
 
 /// The update nobody can skip: it covers every screen, and its only way
 /// forward is the store. Back reaches only the routes underneath it.
@@ -201,37 +212,25 @@ class ForceUpdateScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(flex: 3),
-              const _UpdateMark(size: 96),
-              const SizedBox(height: 28),
-              const Text(
-                'Time to update',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'This version of Sowaka is no longer supported. '
-                'Update to the latest version to keep using the app.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: _muted, height: 1.5),
-              ),
-              const Spacer(flex: 4),
-              _PrimaryButton(label: 'Update now', onPressed: onUpdate),
-            ],
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Opacity(opacity: t, child: child),
+      child: Material(
+        color: Colors.white,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 70, 20, 32),
+            child: Column(
+              children: [
+                const _UpdateIllustration(width: 184, height: 184, rocket: 248),
+                const SizedBox(height: 50),
+                const _UpdateCopy(),
+                const Spacer(),
+                _UpdateButton(label: 'Update now', onPressed: onUpdate),
+              ],
+            ),
           ),
         ),
       ),
@@ -239,9 +238,10 @@ class ForceUpdateScreen extends StatelessWidget {
   }
 }
 
-/// The update that can wait: a card over a dimmed app, closed with ✕, "Not
-/// now" or a tap outside it.
-class OptionalUpdatePrompt extends StatelessWidget {
+/// The update that can wait: a sheet over the dimmed app. It closes by
+/// swiping it down or tapping above it; there is no close button in the
+/// design.
+class OptionalUpdatePrompt extends StatefulWidget {
   const OptionalUpdatePrompt({
     super.key,
     required this.onUpdate,
@@ -252,85 +252,228 @@ class OptionalUpdatePrompt extends StatelessWidget {
   final VoidCallback onClose;
 
   @override
+  State<OptionalUpdatePrompt> createState() => _OptionalUpdatePromptState();
+}
+
+class _OptionalUpdatePromptState extends State<OptionalUpdatePrompt>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shown = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+    reverseDuration: const Duration(milliseconds: 220),
+  )..forward();
+  double _sheetHeight = 0;
+  bool _closing = false;
+
+  @override
+  void dispose() {
+    _shown.dispose();
+    super.dispose();
+  }
+
+  Future<void> _close() async {
+    if (_closing) return;
+    _closing = true;
+    await _shown.reverse();
+    widget.onClose();
+  }
+
+  void _drag(DragUpdateDetails details) {
+    if (_sheetHeight <= 0) return;
+    _shown.value -= (details.primaryDelta ?? 0) / _sheetHeight;
+  }
+
+  void _release(DragEndDetails details) {
+    final flungDown = (details.primaryVelocity ?? 0) > 700;
+    if (flungDown || _shown.value < 0.6) {
+      _close();
+    } else {
+      _shown.forward();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.45),
-      child: Stack(
-        children: [
-          Positioned.fill(
+    final slide = CurvedAnimation(
+      parent: _shown,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _shown,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: onClose,
+              onTap: _close,
+              child: const ColoredBox(color: _scrim),
             ),
           ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: AnimatedBuilder(
+            animation: slide,
+            builder: (context, child) => FractionalTranslation(
+              translation: Offset(0, 1 - slide.value),
+              child: child,
+            ),
+            child: GestureDetector(
+              onVerticalDragUpdate: _drag,
+              onVerticalDragEnd: _release,
+              child: _MeasuredSheet(
+                onHeight: (height) => _sheetHeight = height,
+                child: _sheet(context),
               ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerRight,
-                        // No tooltip: the gate sits above the app's Overlay.
-                        child: IconButton(
-                          onPressed: onClose,
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: _muted,
-                            semanticLabel: 'Close',
-                          ),
-                        ),
-                      ),
-                      const _UpdateMark(size: 72),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'A new version is here',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: _ink,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Update Sowaka for the latest features and fixes.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: _muted,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _PrimaryButton(label: 'Update now', onPressed: onUpdate),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: onClose,
-                        style: TextButton.styleFrom(
-                          foregroundColor: _muted,
-                          minimumSize: const Size.fromHeight(48),
-                        ),
-                        child: const Text(
-                          'Not now',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sheet(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shadowColor: const Color(0x1F000000),
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _handle,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 46),
+              const _UpdateIllustration(
+                width: double.infinity,
+                height: 171,
+                rocket: 235,
+              ),
+              const SizedBox(height: 50),
+              const _UpdateCopy(),
+              const SizedBox(height: 50),
+              _UpdateButton(label: 'Update', onPressed: widget.onUpdate),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Reports its child's height, so a drag can be read as a fraction of it.
+class _MeasuredSheet extends SingleChildRenderObjectWidget {
+  const _MeasuredSheet({required this.onHeight, required super.child});
+
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasured(onHeight);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMeasured renderObject) {
+    renderObject.onHeight = onHeight;
+  }
+}
+
+class _RenderMeasured extends RenderProxyBox {
+  _RenderMeasured(this.onHeight);
+
+  ValueChanged<double> onHeight;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onHeight(size.height);
+  }
+}
+
+/// The pale tile with the launching rocket (an animated GIF from the design)
+/// and its two accent dots and spark.
+class _UpdateIllustration extends StatelessWidget {
+  const _UpdateIllustration({
+    required this.width,
+    required this.height,
+    required this.rocket,
+  });
+
+  final double width;
+  final double height;
+  final double rocket;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: _tile,
+        borderRadius: BorderRadius.circular(40),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F1A7FA6),
+            offset: Offset(0, 12),
+            blurRadius: 14,
+          ),
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: 23,
+            top: 27,
+            child: SvgPicture.asset(
+              'assets/images/update/accent_bubble.svg',
+              width: 24,
+              height: 24,
+            ),
+          ),
+          Positioned(
+            left: 142,
+            top: 132,
+            child: SvgPicture.asset(
+              'assets/images/update/accent_dot.svg',
+              width: 14,
+              height: 14,
+            ),
+          ),
+          // Larger than its tile on purpose: the rocket's smoke spills out.
+          OverflowBox(
+            maxWidth: rocket,
+            maxHeight: rocket,
+            child: Image.asset(
+              'assets/images/update/update_rocket.gif',
+              width: rocket,
+              height: rocket,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+            ),
+          ),
+          Positioned(
+            left: 139,
+            top: 28.46,
+            child: Transform.rotate(
+              angle: -32 * 3.141592653589793 / 180,
+              child: Container(
+                width: 18,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: _spark,
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
             ),
@@ -341,51 +484,81 @@ class OptionalUpdatePrompt extends StatelessWidget {
   }
 }
 
-class _UpdateMark extends StatelessWidget {
-  const _UpdateMark({required this.size});
-
-  final double size;
+class _UpdateCopy extends StatelessWidget {
+  const _UpdateCopy();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.24),
-        child: Image.asset(
-          'assets/images/sowaka_logo.png',
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => Icon(
-            Icons.system_update_rounded,
-            size: size * 0.7,
-            color: _brand,
+    return Column(
+      children: [
+        Text(
+          // "than": the force screen's frame says "then", a typo the
+          // optional sheet's frame does not have.
+          'We are better than ever',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Sora',
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            fontVariations: [FontVariation.weight(700)],
+            height: 38 / 24,
+            color: _headline,
           ),
         ),
-      ),
+        SizedBox(height: 10),
+        // 323 wide in Figma; Flutter sets Sora a hair wider, so the box is
+        // widened just enough to break where the design does.
+        SizedBox(
+          width: 336,
+          child: Text(
+            _copy,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Sora',
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+              fontVariations: [FontVariation.weight(400)],
+              height: 23 / 15,
+              color: _body,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.label, required this.onPressed});
+class _UpdateButton extends StatelessWidget {
+  const _UpdateButton({required this.label, required this.onPressed});
 
   final String label;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: _brand,
-        foregroundColor: Colors.white,
-        minimumSize: const Size.fromHeight(54),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: _brand,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Sora',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            fontVariations: [FontVariation.weight(600)],
+            height: 24 / 16,
+            letterSpacing: -0.16,
+          ),
+        ),
       ),
     );
   }
