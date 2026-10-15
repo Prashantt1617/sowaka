@@ -177,11 +177,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // A name tapped anywhere — a post's author, a commenter — opens their
     // profile through here.
     registerPersonProfileOpener(_openTeamMember);
+    // The inbox wears the shell's header, this avatar included.
+    registerInboxProfileAction(_inboxProfileAction);
   }
 
   @override
   void dispose() {
     unregisterPersonProfileOpener(_openTeamMember);
+    unregisterInboxProfileAction(_inboxProfileAction);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
@@ -352,6 +355,20 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   Future<void> _openNotifications(BuildContext context) =>
       openNotificationInbox(context, _session);
+
+  /// The avatar over the inbox: it leaves the inbox for the profile.
+  Widget _inboxProfileAction(VoidCallback closeInbox) {
+    final dashboard = _bloc.state.dashboard;
+    return _ProfileAvatarAction(
+      initial: dashboard?.managerInitial ?? '',
+      photoUrl: dashboard?.managerPhotoUrl,
+      onTap: () {
+        closeInbox();
+        _openProfile();
+      },
+      size: 30,
+    );
+  }
 
   /// Takes a tapped notification to the thing it is about, not just to a
   /// tab: the post, the request queue, the person, the review.

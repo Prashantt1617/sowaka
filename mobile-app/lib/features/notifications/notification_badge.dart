@@ -16,7 +16,10 @@ class NotificationBadge {
 
   /// Reads the inbox and lights the dot when anything in it is unread. Quiet
   /// on failure: a missing dot is not worth an error.
-  static Future<void> refresh(AuthSession session, {http.Client? client}) async {
+  static Future<void> refresh(
+    AuthSession session, {
+    http.Client? client,
+  }) async {
     try {
       final response = await (client ?? http.Client()).get(
         Uri.parse('${ApiConfig.baseUrl}/notifications'),
@@ -27,9 +30,11 @@ class NotificationBadge {
           (jsonDecode(response.body) as Map<String, dynamic>)['notifications']
               as List<dynamic>? ??
           const [];
-      hasNew.value = items
-          .whereType<Map<String, dynamic>>()
-          .any((item) => item['readAt'] == null);
+      // Unread, and not already done with (the server's `resolved`), as the
+      // inbox counts it.
+      hasNew.value = items.whereType<Map<String, dynamic>>().any(
+        (item) => item['readAt'] == null && item['resolved'] != true,
+      );
     } catch (_) {
       // Offline or slow: leave the dot as it is.
     }
