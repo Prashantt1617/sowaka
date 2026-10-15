@@ -14,7 +14,8 @@ export type ConnectPostType =
   | 'recommendation'
   | 'caption_challenge'
   | 'photo_story_challenge'
-  | 'most_likely';
+  | 'most_likely'
+  | 'secret_squad';
 
 export interface ConnectAuthor {
   userId?: string;

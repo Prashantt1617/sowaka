@@ -23,7 +23,7 @@ import { helpRouter } from './help.routes';
 import { careRouter } from './care.routes';
 import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
-import { gamesRouter, playRouter } from './game-catalog.routes';
+import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
@@ -58,6 +58,8 @@ router.use('/garden', gardenRouter);
 // The Games tab: which games a company has, their pages and their scores.
 router.use('/games', gamesRouter);
 router.use('/play', playRouter);
+// Secret Squad opened in a phone browser (signs in by email code itself).
+router.use('/squad', squadWebRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.
 router.use('/app-pages', appPagesRouter);
 // Whether the app must, or may, update: set per company by Sowaka.

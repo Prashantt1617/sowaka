@@ -2226,6 +2226,7 @@ function postMeta(type: ConnectPostType) {
     caption_challenge: ['Caption Challenge', '💬', '#6D28D9', '#F3E8FF'],
     photo_story_challenge: ['Photo Challenge', '📸', '#6D28D9', '#F3E8FF'],
     most_likely: ['Most Likely', '🫵', '#6D28D9', '#F3E8FF'],
+    secret_squad: ['Secret Squad', '🕵️', '#3A2E9E', '#EEEAFF'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };

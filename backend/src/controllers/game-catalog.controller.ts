@@ -5,6 +5,7 @@ import {
   GameViewer,
   leaderboardFor,
   pageFor,
+  publicPageFor,
   submitScore,
 } from '../services/game-catalog.service';
 import { gamesHomeFor, parsePeriod, pointsLeaderboardFor } from '../services/games-home.service';
@@ -59,35 +60,47 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
         'Content-Security-Policy': PAGE_CSP,
         'X-Game-Version': version,
       })
-      .send(key === SCRIBBLE_KEY ? withScribbleTicket(html, viewer, true) : html);
+      .send(TICKETED[key] ? withGameTicket(key, html, viewer, true) : html);
   } catch (error) {
     next(error);
   }
 }
 
-// ---------------------------------------------------------------- Scribble's tickets
+// ---------------------------------------------------------------- live games' tickets
 
 const SCRIBBLE_KEY = 'scribble';
-const TICKET_MARKER = '<!--SCRIBBLE-TICKET-->';
+const SQUAD_KEY = 'secret-squad';
+
+/** The live games whose page carries a socket ticket: the marker it leaves, and the global it gets. */
+const TICKETED: Record<string, { marker: string; global: string; name: string }> = {
+  [SCRIBBLE_KEY]: { marker: '<!--SCRIBBLE-TICKET-->', global: '__SCRIBBLE', name: 'Scribble' },
+  [SQUAD_KEY]: { marker: '<!--SQUAD-TICKET-->', global: '__SQUAD', name: 'Secret Squad' },
+};
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
 const scriptJson = (value: unknown) =>
   JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
+/** Puts `payload` into the page where it left its marker, as the game's global. */
+function withGlobal(key: string, html: string, payload: Record<string, unknown>): string {
+  const spec = TICKETED[key];
+  if (!spec || !html.includes(spec.marker)) return html;
+  // A function replacer: a `$&` in the ticket is text, not a replacement pattern.
+  const script = `<script>window.${spec.global}=${scriptJson(payload)}</script>`;
+  return html.replace(spec.marker, () => script);
+}
+
 /**
- * Puts `window.__SCRIBBLE` into the page where it left a marker for it: the
- * ticket its socket presents and, on the copy the app loads as a string, a
- * short-lived hop token for the reload that escapes the app's policy (see
- * PROTOCOL.md §1–2). A page without the marker (an older build) is unchanged.
+ * The ticket the page's socket presents and, on the copy the app loads as a
+ * string, a short-lived hop token for the reload that escapes the app's
+ * policy (Scribble's PROTOCOL.md §1–2). A page without the marker is unchanged.
  */
-function withScribbleTicket(html: string, viewer: GameViewer, withHop: boolean): string {
-  if (!html.includes(TICKET_MARKER) || !viewer.org) return html;
+function withGameTicket(key: string, html: string, viewer: GameViewer, withHop: boolean): string {
+  if (!viewer.org) return html;
   const subject = { userId: viewer.userId, org: viewer.org, name: viewer.name };
   const payload: Record<string, string> = { ticket: mintTicket(subject) };
   if (withHop) payload.hopTicket = mintTicket(subject, { kind: 'hop' });
-  // A function replacer: a `$&` in the ticket is text, not a replacement pattern.
-  const script = `<script>window.__SCRIBBLE=${scriptJson(payload)}</script>`;
-  return html.replace(TICKET_MARKER, () => script);
+  return withGlobal(key, html, payload);
 }
 
 /** The host the request was made to, as the browser sees it, for the policy. */
@@ -105,7 +118,9 @@ function requestHost(req: Request): string {
  * recover from one and the person closes and reopens Scribble.
  */
 export async function scribbleHopHandler(req: Request, res: Response, next: NextFunction) {
-  if (keyOf(req) !== SCRIBBLE_KEY || typeof req.query.ticket !== 'string') {
+  const key = keyOf(req);
+  const spec = TICKETED[key];
+  if (!spec || typeof req.query.ticket !== 'string') {
     next();
     return;
   }
@@ -116,11 +131,11 @@ export async function scribbleHopHandler(req: Request, res: Response, next: Next
         .status(401)
         .set({ 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
         .type('text/plain')
-        .send(verdict.error === 'ticket_expired' ? 'This Scribble link has expired. Close and reopen Scribble.' : 'Close and reopen Scribble.');
+        .send(verdict.error === 'ticket_expired' ? `This ${spec.name} link has expired. Close and reopen ${spec.name}.` : `Close and reopen ${spec.name}.`);
       return;
     }
     const viewer: GameViewer = { userId: verdict.ticket.userId, org: verdict.ticket.org, name: verdict.ticket.name };
-    const { html, version } = await pageFor(viewer, SCRIBBLE_KEY);
+    const { html, version } = await pageFor(viewer, key);
     const host = requestHost(req);
     const sockets = host ? ` https://${host} wss://${host} http://${host} ws://${host}` : '';
     res
@@ -134,7 +149,39 @@ export async function scribbleHopHandler(req: Request, res: Response, next: Next
         'Content-Security-Policy': PAGE_CSP.replace("connect-src 'none'", `connect-src 'self'${sockets}`),
         'X-Game-Version': version,
       })
-      .send(withScribbleTicket(html, viewer, false));
+      .send(withGameTicket(key, html, viewer, false));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Secret Squad in a phone browser, `GET /squad`: the same page with no
+ * session, which signs itself in by email code (same origin, so no CORS) and
+ * connects with the token it gets. Its policy lets it reach this server only.
+ */
+export async function squadWebHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = await publicPageFor(SQUAD_KEY);
+    if (!page) {
+      res.status(404).type('text/plain').send('Secret Squad is not available here yet.');
+      return;
+    }
+    const host = requestHost(req);
+    const sockets = host ? ` https://${host} wss://${host} http://${host} ws://${host}` : '';
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': PAGE_CSP
+          .replace("connect-src 'none'", `connect-src 'self'${sockets}`)
+          .replace("form-action 'none'", "form-action 'self'"),
+        'X-Game-Version': page.version,
+      })
+      .send(withGlobal(SQUAD_KEY, page.html, { web: true }));
   } catch (error) {
     next(error);
   }
