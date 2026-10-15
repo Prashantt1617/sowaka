@@ -1460,10 +1460,10 @@ class _TagBoardBar extends StatelessWidget {
         // The face sits after the name, or at the end of the fill when that
         // is further on, and never into the points.
         final avatarLeft = math.min(math.max(fill, nameEnd), roomBeforePoints);
-        // Text stays white where the fill is under it, and takes the bar's
-        // colour where it is not.
-        final nameOnFill = fill >= nameEnd - 8;
-        final pointsOnFill = fill >= width - 12 - pointsWidth;
+        // Text is white where the fill is under it and takes the bar's colour
+        // where it is not, split at the fill's edge: a fill ending mid-name
+        // must not leave half the name the same colour as what is behind it.
+        final pointsLeft = width - 12 - pointsWidth;
         return GestureDetector(
           onTap: onOpenPerson,
           child: Container(
@@ -1488,23 +1488,22 @@ class _TagBoardBar extends StatelessWidget {
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: Text.rich(
-                      nameOnFill
-                          ? name
-                          : TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: firstName,
-                                  style: _nameStyle.copyWith(color: color),
-                                ),
-                                if (suffix.isNotEmpty)
-                                  TextSpan(
-                                    text: ' $suffix',
-                                    style: _suffixStyle.copyWith(color: color),
-                                  ),
-                              ],
+                    child: _SplitInk(
+                      onFill: name,
+                      offFill: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: firstName,
+                            style: _nameStyle.copyWith(color: color),
+                          ),
+                          if (suffix.isNotEmpty)
+                            TextSpan(
+                              text: ' $suffix',
+                              style: _suffixStyle.copyWith(color: color),
                             ),
-                      maxLines: 1,
+                        ],
+                      ),
+                      splitAt: fill - 16,
                     ),
                   ),
                 ),
@@ -1524,11 +1523,13 @@ class _TagBoardBar extends StatelessWidget {
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: Text(
-                      points,
-                      style: _nameStyle.copyWith(
-                        color: pointsOnFill ? Colors.white : color,
+                    child: _SplitInk(
+                      onFill: TextSpan(text: points, style: _nameStyle),
+                      offFill: TextSpan(
+                        text: points,
+                        style: _nameStyle.copyWith(color: color),
                       ),
+                      splitAt: fill - pointsLeft,
                     ),
                   ),
                 ),
@@ -1539,6 +1540,47 @@ class _TagBoardBar extends StatelessWidget {
       },
     );
   }
+}
+
+/// One line of text in two inks: [onFill] up to [splitAt] (measured from the
+/// text's left edge), [offFill] after it. The two spans must lay out alike.
+class _SplitInk extends StatelessWidget {
+  const _SplitInk({
+    required this.onFill,
+    required this.offFill,
+    required this.splitAt,
+  });
+
+  final InlineSpan onFill;
+  final InlineSpan offFill;
+  final double splitAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Text.rich(offFill, maxLines: 1),
+        ClipRect(
+          clipper: _LeftOf(splitAt),
+          child: Text.rich(onFill, maxLines: 1),
+        ),
+      ],
+    );
+  }
+}
+
+/// Keeps what lies left of [x].
+class _LeftOf extends CustomClipper<Rect> {
+  const _LeftOf(this.x);
+
+  final double x;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(0, 0, x.clamp(0.0, size.width), size.height);
+
+  @override
+  bool shouldReclip(_LeftOf oldClipper) => oldClipper.x != x;
 }
 
 /// A gallery tile's fill: the podium in three shades of violet, white after.
