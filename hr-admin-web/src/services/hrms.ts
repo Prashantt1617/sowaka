@@ -304,6 +304,11 @@ export const removeEmployeeDocument = (userId: string, documentId: string) =>
   api<{ documents: EmployeeDocumentDTO[] }>(`/admin/employees/${userId}/documents/${documentId}`, { method: 'DELETE' })
     .then((r) => r.documents);
 
+/** The company's account limit (null for none) and the accounts already in use. */
+export const getAccountLimit = () =>
+  api<{ max: number | null; used: number }>('/admin/account-limit')
+    .then((r) => ({ max: r.max ?? null, used: r.used ?? 0 }));
+
 export const createEmployee = (input: CreateEmployeeInput) =>
   api<{ employee: EmployeeDTO }>('/admin/employees', { method: 'POST', body: input })
     .then((r) => r.employee);

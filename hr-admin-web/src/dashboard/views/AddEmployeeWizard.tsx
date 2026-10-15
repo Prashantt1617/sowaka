@@ -17,6 +17,7 @@ import {
   EMPLOYEE_DOCUMENT_TYPES, type EmployeeDocumentDTO, type ShiftDTO,
 } from '../../services/hrms';
 import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
+import { AccountLimitModal, isAccountLimitError } from './AccountLimitModal';
 import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { evenWeights, weightError, weightTotal } from '../weights';
 
@@ -66,6 +67,8 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // The server refused the new account because the company is at its limit.
+  const [atLimit, setAtLimit] = useState(false);
   /** Set once the employee exists on the server; every later step needs it. */
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
 
@@ -230,11 +233,14 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
       setStep(1);
       setTouched(false);
     } catch (e) {
-      setError((e as Error).message);
+      if (isAccountLimitError(e)) setAtLimit(true);
+      else setError((e as Error).message);
     } finally {
       setSaving(false);
     }
   };
+
+  if (atLimit) return <AccountLimitModal max={null} onClose={onClose} />;
 
   return (
     <div style={overlay} onClick={onClose}>
@@ -258,7 +264,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
         ) : invite ? (
           <>
             <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
-              <InviteScreen name={fullName || 'this employee'} email={basic.workEmail} employeeId={basic.employeeId} />
+              <InviteScreen name={fullName || 'this employee'} email={basic.workEmail} employeeId={basic.employeeId} orgName={user?.company ?? 'your organisation'} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid #EBEBEB' }}>
               <button onClick={() => { setInvite(false); setError(''); }} style={ghostBtn}>← Back</button>
@@ -323,7 +329,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
   );
 }
 
-function InviteScreen({ name, email, employeeId }: { name: string; email: string; employeeId: string }) {
+function InviteScreen({ name, email, employeeId, orgName }: { name: string; email: string; employeeId: string; orgName: string }) {
   const shownEmail = email || 'their work email';
   return (
     <div style={{ maxWidth: 620, margin: '10px auto' }}>
@@ -350,7 +356,7 @@ function InviteScreen({ name, email, employeeId }: { name: string; email: string
         <div style={{ padding: '16px 18px' }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#222222' }}>Welcome to Sowaka Connect 👋</div>
           <div style={{ fontSize: 14, color: '#484848', marginTop: 8, lineHeight: 1.6 }}>
-            Hi {name}, an account has been created for you at Convrse Spaces. Use the button below to set your
+            Hi {name}, an account has been created for you at {orgName}. Use the button below to set your
             password and sign in to view payslips, submit IT declarations and raise reimbursement claims.
           </div>
           <div style={{ marginTop: 14 }}>
@@ -619,7 +625,7 @@ function BasicStep({ basic, set, touched, missing, options }: {
       {/* Work email + mobile */}
       <div style={grid2}>
         <Field label="Work Email" required error={touched && missing.workEmail}>
-          <input type="email" value={basic.workEmail} onChange={(e) => set('workEmail', e.target.value)} placeholder="name@convrse.ai" style={inputStyle} />
+          <input type="email" value={basic.workEmail} onChange={(e) => set('workEmail', e.target.value)} placeholder="name@company.com" style={inputStyle} />
         </Field>
         <Field label="Mobile Number">
           <input value={basic.mobile} onChange={(e) => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={inputStyle} />

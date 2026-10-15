@@ -98,6 +98,16 @@ class OrgBranding {
       // The icon on the phone stays Sowaka's: no alternate icon is asked for.
       iosIconName: null,
     ),
+    'cde': OrgBranding(
+      org: 'cde',
+      wordmark: 'CDE Enterprises',
+      tagline: 'Your app is powered by',
+      // CDE in cyan, indigo and magenta, drawn for a white ground.
+      logoAsset: 'assets/images/cde_logo.png',
+      light: true,
+      homeLogoAsset: 'assets/images/cde_logo.png',
+      iosIconName: 'AppIconCde',
+    ),
   };
 
   /// The branding for an org id, or Sowaka's when there is none for it.

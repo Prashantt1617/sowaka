@@ -6,6 +6,8 @@ import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
 import { IconPlus } from '../icons';
 import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
+import { AccountLimitModal } from './AccountLimitModal';
+import { getAccountLimit } from '../../services/hrms';
 import { EmployeeProfile } from './EmployeeProfile';
 import { NameCell, Td, Th } from './kpiUi';
 import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
@@ -14,6 +16,19 @@ import * as XLSX from 'xlsx';
 export function Employees() {
   const s = useStore();
   const [addOpen, setAddOpen] = useState(false);
+  // Set to the company's limit when it is already reached: the popup instead of the wizard.
+  const [limitReached, setLimitReached] = useState<number | null | false>(false);
+  const [checkingLimit, setCheckingLimit] = useState(false);
+  // A company without a limit (every company unless Sowaka sets one) goes straight to the wizard.
+  // If the check itself fails, the wizard opens anyway: the server still refuses an account over the limit.
+  const openAdd = () => {
+    if (checkingLimit) return;
+    setCheckingLimit(true);
+    getAccountLimit()
+      .then(({ max, used }) => { if (max !== null && used >= max) setLimitReached(max); else setAddOpen(true); })
+      .catch(() => setAddOpen(true))
+      .finally(() => setCheckingLimit(false));
+  };
   const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
 
@@ -38,6 +53,7 @@ export function Employees() {
   return (
     <div>
       {addOpen && <AddEmployeeWizard onClose={() => setAddOpen(false)} />}
+      {limitReached !== false && <AccountLimitModal max={limitReached} onClose={() => setLimitReached(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
         <SearchInput value={s.empSearch} onChange={s.setEmpSearch} placeholder="Search name, ID or role…" width={280} />
         <SelectBox value={s.empTeam} onChange={s.setEmpTeam}>
@@ -48,7 +64,7 @@ export function Employees() {
         </SelectBox>
         <div style={{ marginLeft: 'auto', fontSize: 16, color: '#717171', fontWeight: 600 }}>{rows.length} of {s.emps.length} people</div>
         <button onClick={() => exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
-        <button onClick={() => setAddOpen(true)} style={primaryBtn}>
+        <button onClick={openAdd} disabled={checkingLimit} style={primaryBtn}>
           <IconPlus size={15} /> Add user
         </button>
       </div>

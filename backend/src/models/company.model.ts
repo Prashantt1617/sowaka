@@ -73,6 +73,12 @@ export interface Company {
    * DEFAULT_ENABLED_GAMES. Set by Sowaka with src/scripts/game-catalog.ts.
    */
   enabledGames?: string[];
+  /**
+   * The most accounts this company may have (offboarded and terminated people
+   * not counted). Absent means no limit. Set by Sowaka per agreement; the HR
+   * dashboard cannot raise it, and adding an employee past it is refused.
+   */
+  maxUsers?: number;
   createdAt?: number;
   updatedAt?: Date;
 }
