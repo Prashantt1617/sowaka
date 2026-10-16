@@ -37,7 +37,7 @@ import {
   standingsOf,
   timeBonusAt,
 } from '../services/secret-squad-engine';
-import { configureSquad, openDueSessions, payPoints, roundConfig, squadPayouts, squadPointsFor, squadSchedules, tickSquad } from '../services/secret-squad.service';
+import { configureSquad, initialsOf, openDueSessions, payPoints, roundConfig, squadPayouts, squadPointsFor, squadSchedules, stateFor, tickSquad } from '../services/secret-squad.service';
 import { initSquadRealtime, closeSquadRealtime } from '../services/secret-squad-realtime.service';
 import { readSession, resetSquadMemory } from '../services/secret-squad-store';
 import { SQUAD_BANK, categoryNamed, planNamed } from '../services/secret-squad-packs';
@@ -300,6 +300,56 @@ function unitChecks() {
   const few = session('few', [roundConfig({ squadSize: 5 })], 3);
   dealRound(few, t0, SQUAD_BANK, die);
   check('fewer than 4 players skips the round', Boolean(few.round?.skipped) && few.status === 'over');
+
+  // The server diffs each phone by its own parts only, against one office-wide
+  // view per push (personalPartsOf): that is right only if every other field
+  // of a player's view is exactly what a watcher sees.
+  console.log('\nevery phone: the office-wide view plus its own parts');
+  const random = seeded(99);
+  const sp = session('sp', [roundConfig({ squadSize: 3, huntMs: 300_000, breakMs: 30_000 }), roundConfig({ squadSize: 2, huntMs: 300_000 })], 20, 'sp', (i) => `D${i % 3}`);
+  const opts = { photoUrl: (player: { photoKey?: string; userId: string }) => `/media/${player.userId}` };
+  const splitFails: string[] = [];
+  const splitHolds = (label: string, at: number) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const watcher: any = JSON.parse(JSON.stringify(sessionViewFor(sp, '', at, opts)));
+    for (const player of sp.players) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mine: any = JSON.parse(JSON.stringify(sessionViewFor(sp, player.userId, at, opts)));
+      for (const k of ['joined', 'playing', 'totalPoints']) mine[k] = watcher[k];
+      if (mine.round) {
+        for (const k of ['me', 'squad', 'scan', 'notice']) mine.round[k] = watcher.round[k];
+        if (mine.round.results) {
+          for (const k of ['rank', 'roundPoints', 'total', 'squad']) mine.round.results[k] = watcher.round.results[k];
+          mine.round.results.squads = mine.round.results.squads.map((row: Record<string, unknown>) => ({ ...row, mine: false }));
+        }
+      }
+      if (mine.final) for (const k of ['rank', 'total', 'lastSquad']) mine.final[k] = watcher.final[k];
+      if (!same(mine, watcher)) splitFails.push(`${label}: ${player.userId}`);
+    }
+  };
+  splitHolds('lobby', t0);
+  let at = hunt(sp, t0, random);
+  splitHolds('hunt', at);
+  const [s0, s1] = sp.round!.squads;
+  scan(sp, s0.members[0], { qr: qrOf(sp, s0.members[1], at) }, at);
+  scan(sp, s0.members[0], { qr: qrOf(sp, s1.members[0], at) }, at);
+  scan(sp, s0.members[1], { qr: qrOf(sp, s0.members[0], at) }, at);
+  scan(sp, s0.members[2], { qr: qrOf(sp, s0.members[1], at) }, at);
+  splitHolds('scans, a squad complete', at);
+  markOffline(sp, s1.members[1], at);
+  at += SQUAD.awayMs + 1000;
+  advance(sp, at);
+  splitHolds('a teammate away', at);
+  at = sp.round!.endsAt;
+  advance(sp, at);
+  splitHolds('the break', at);
+  at = hunt(sp, sp.phaseEndsAt, random);
+  scan(sp, sp.round!.squads[0].members[0], { qr: qrOf(sp, sp.round!.squads[0].members[1], at) }, at);
+  splitHolds('round 2', at);
+  at = sp.round!.endsAt;
+  advance(sp, at);
+  splitHolds('the final', at);
+  check('a player\'s view is the watchers\' view plus their own parts, in every phase', splitFails.length === 0 && sp.status === 'over', splitFails.slice(0, 3).join(', '));
 }
 
 // ------------------------------------------------------------- live, over sockets
@@ -525,6 +575,88 @@ async function liveChecks() {
   check('payPoints: a negative game leaves the balance, 1,240 adds 12, one ledger row', (p1?.points ?? 0) === before1 && (p2?.points ?? 0) === before2 + 12 && rows.length === 1 && rows[0].delta === 12, JSON.stringify(rows));
 }
 
+// ------------------------------------------------------------- a big office
+
+/**
+ * 300 people in one office, over real sockets: all joining at once, then a
+ * burst of scans from everyone at once. Every phone must end on exactly what
+ * the server says it should see, and a burst must reach each phone as a few
+ * pushes, not one per change in the office.
+ */
+async function bigOfficeChecks() {
+  console.log('\na big office (300 players)');
+  const COUNT = 300;
+  const people: User[] = Array.from({ length: COUNT }, (_, i) => ({
+    userId: `big-${i + 1}`, name: `Big ${i + 1}`, email: `big${i + 1}@sowaka.local`, org: ORG,
+    location: 'Big Office', department: `Team ${i % 7}`, lifecycleStatus: 'active',
+  } as User));
+  await users().insertMany(people);
+  const clients = await Promise.all(people.map((u) => open(u, { ticket: mintTicket({ userId: u.userId, org: ORG, name: u.name }) })));
+  await waitFor('every phone gets a first state', () => clients.every((c) => c.states.length > 0), 30_000);
+  // Scheduled once everyone is in: a phone's first state can't then cross the lobby opening.
+  const startsAt = clock.now + SQUAD.defaults.lobbyMs;
+  await squadSchedules().insertOne({
+    id: 'big-1', org: ORG, office: 'Big Office', startsAt: new Date(startsAt), lobbyMs: SQUAD.defaults.lobbyMs,
+    rounds: [roundConfig({ squadSize: 5, huntMs: 10 * 60_000 })],
+    status: 'scheduled', createdAt: new Date(), updatedAt: new Date(),
+  });
+  await openDueSessions();
+  if (await waitFor('the lobby opens on every phone', () => clients.every((c) => latest(c)?.status === 'lobby'), 10_000)) {
+    check('the lobby opens on every phone (watchers, one shared push)', true);
+  }
+
+  const before = clients.map((c) => c.states.length);
+  const joins = await Promise.all(clients.map((c) => request(c, 'squad:join')));
+  check('300 join at once, every one ok', joins.every((ack) => ack.ok), JSON.stringify(joins.find((ack) => !ack.ok)));
+  if (await waitFor('every phone counts 300 in the lobby', () => clients.every((c) => latest(c)?.players === COUNT && latest(c)?.joined === true), 10_000)) {
+    check('every phone counts 300 in the lobby', true);
+  }
+  const lobbyPushes = clients.map((c, i) => c.states.length - before[i]);
+  check('…as a few pushes a phone, not one per join', Math.max(...lobbyPushes) <= 20, `up to ${Math.max(...lobbyPushes)} a phone`);
+
+  clock.now = startsAt;
+  await tickSquad();
+  clock.now += SQUAD.dealMs;
+  await tickSquad();
+  await waitFor('the hunt: every dealt phone has a QR', async () => {
+    const held = await readSession(ORG, 'big-1');
+    return held?.status === 'hunt' && clients.every((c) => !held.players.find((p) => p.userId === c.userId)?.playing || Boolean(latest(c)?.round?.me?.qr));
+  }, 10_000);
+  const held = (await readSession(ORG, 'big-1'))!;
+  const byId = new Map(clients.map((c) => [c.userId, c]));
+  const dealtIn = clients.filter((c) => held.players.find((p) => p.userId === c.userId)?.playing);
+  const pick = seeded(31);
+
+  // The burst: every dealt player scans at once, a squadmate or anyone.
+  const burstStart = clients.map((c) => c.states.length);
+  const scans = await Promise.all(dealtIn.map((c) => {
+    const squad = held.round!.squads.find((sq) => sq.members.includes(c.userId))!;
+    const mates = squad.members.filter((id) => id !== c.userId);
+    const others = dealtIn.filter((o) => o !== c);
+    const target = pick() < 0.5 ? byId.get(mates[Math.floor(pick() * mates.length)])! : others[Math.floor(pick() * others.length)];
+    return request(c, 'squad:scan', { qr: latest(target)!.round!.me.qr });
+  }));
+  // Refusals are the game's (a squad that completed mid-burst), never a failure.
+  check('a burst of 300 scans: every one answered by the rules, none failed', scans.every((ack) => ack.ok || (ack.status >= 400 && ack.status < 500)), JSON.stringify(scans.find((ack) => !ack.ok && !(ack.status >= 400 && ack.status < 500))));
+  check('…mostly scored', scans.filter((ack) => ack.ok).length >= dealtIn.length * 0.9, `${scans.filter((ack) => ack.ok).length} of ${dealtIn.length}`);
+
+  const shown = (state: unknown) => JSON.stringify({ ...(state as object), now: 0, v: 0 });
+  const truth = async () => Promise.all(clients.map((c) => {
+    const u = people.find((p) => p.userId === c.userId)!;
+    return stateFor({ userId: u.userId, org: ORG, name: u.name, initials: initialsOf(u.name), office: 'Big Office', department: u.department });
+  }));
+  const converged = await waitFor('every phone ends on what the server says it should see', async () => {
+    const fresh = await truth();
+    return clients.every((c, i) => shown(c.states.at(-1)) === shown(fresh[i]));
+  }, 10_000);
+  if (converged) check('every phone ends on what the server says it should see', true);
+  const ended = (await readSession(ORG, 'big-1'))!;
+  check('…every phone\'s points are the session\'s', clients.every((c) => latest(c)!.totalPoints === (ended.totals[c.userId] ?? 0)));
+  const burstPushes = clients.map((c, i) => c.states.length - burstStart[i]);
+  check('…in a few pushes a phone', Math.max(...burstPushes) <= 20, `up to ${Math.max(...burstPushes)} a phone`);
+  for (const c of clients) c.socket.close();
+}
+
 // ------------------------------------------------------------- the pages
 
 async function pageChecks() {
@@ -567,6 +699,7 @@ async function pageChecks() {
     const io = initConnectRealtime(server);
     initSquadRealtime(io);
     await liveChecks();
+    await bigOfficeChecks();
     await pageChecks();
   } catch (error) {
     failures += 1;

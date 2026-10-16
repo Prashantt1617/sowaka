@@ -139,7 +139,10 @@ shows the message and stops reconnecting.
 
 `squad:state` goes to each player whenever what they see changes (the server
 diffs per phone and skips identical views). In the hunt it also goes every
-20 s for the new QR. Watchers who haven't joined get a shared copy with no
+20 s for the new QR. Changes close together are sent as one: a session's
+pushes go out at most every 200 ms, carrying the newest state, so two scans
+on one phone within that time arrive as one state whose `round.scan` is the
+later one. Watchers who haven't joined get a shared copy with no
 `me` and no personal parts.
 
 ```jsonc

@@ -533,9 +533,13 @@ const codeIn = (session: SquadSession, roundIndex: number, window: number, seat:
 
 /** A player's current code and when it changes, or null if their QR is off (not hunting, away, or squad complete). */
 export function codeFor(session: SquadSession, userId: string, now: number): { code: string; expiresAt: number } | null {
+  return codeOfPlayer(session, playerOf(session, userId), now);
+}
+
+/** `codeFor` for a player already in hand (a view of every phone must not look each one up again). */
+function codeOfPlayer(session: SquadSession, player: SquadPlayer | undefined, now: number): { code: string; expiresAt: number } | null {
   const round = session.round;
   if (!round || session.status !== 'hunt') return null;
-  const player = playerOf(session, userId);
   if (!player?.playing || player.away || player.left || player.squad === undefined) return null;
   if (round.squads[player.squad]?.finishedAt) return null;
   const seat = seatOf(session, player);
@@ -619,8 +623,18 @@ function largestGroup(round: SquadRoundState, squadIndex: number): number {
   return Math.max(0, ...counts.values());
 }
 
-const presentMembers = (session: SquadSession, squadIndex: number) =>
-  session.round!.squads[squadIndex].members.filter((id) => !playerOf(session, id)?.away);
+const presentMembers = (
+  session: SquadSession,
+  squadIndex: number,
+  lookup: (id: string) => SquadPlayer | undefined = (id) => playerOf(session, id),
+) => session.round!.squads[squadIndex].members.filter((id) => !lookup(id)?.away);
+
+/** Looks players up by id in one pass over the list (the first with an id wins, as `playerOf` finds it). */
+function playerIndex(session: SquadSession): Map<string, SquadPlayer> {
+  const byId = new Map<string, SquadPlayer>();
+  for (const player of session.players) if (!byId.has(player.userId)) byId.set(player.userId, player);
+  return byId;
+}
 
 /** Adds points to a player's session total and this round's net. */
 function credit(session: SquadSession, userId: string, delta: number): { before: number; after: number } {
@@ -852,8 +866,9 @@ function advanceHunt(session: SquadSession, now: number): AdvanceOutcome {
 function maybeEndRound(session: SquadSession, now: number): boolean {
   const round = session.round!;
   if (session.status !== 'hunt') return false;
+  const byId = playerIndex(session);
   const open = round.squads.some(
-    (squad, index) => !squad.finishedAt && presentMembers(session, index).length >= 2,
+    (squad, index) => !squad.finishedAt && presentMembers(session, index, (id) => byId.get(id)).length >= 2,
   );
   if (now < round.endsAt && open) return false;
   round.overAt = now;
@@ -934,15 +949,169 @@ export interface SquadViewOptions {
   photoUrl?: (player: SquadPlayer) => string | null;
 }
 
-/** What every view of one push shares: worked out once, not once per phone. */
-export interface SquadViewContext {
-  standings: SquadStanding[];
-  rankOf: Map<string, SquadStanding>;
+type Photo = (player: SquadPlayer) => string | null;
+type Short = { userId: string; name: string; initials: string };
+type Person = Short & { photoUrl: string | null; word: string | null };
+
+/**
+ * What every view of one push shares, worked out once per push and not once
+ * per phone (a big office has hundreds): the player index, each squad's
+ * linked groups, the board, the standings, and every office-wide part of
+ * the view. Built for one session object, read-only, and only as far as the
+ * views ask (the standings, say, only once a round has results).
+ */
+export class SquadViewContext {
+  readonly byId: Map<string, SquadPlayer>;
+  private standingsMemo?: SquadStanding[];
+  private rankMemo?: Map<string, SquadStanding>;
+  private readonly groupsMemo = new Map<SquadRoundState, Map<number, Map<string, string>>>();
+  private readonly presentMemo = new Map<number, string[]>();
+  private readonly largestMemo = new Map<number, number>();
+  private readonly personMemo = new Map<string, Person | null>();
+  private sharedMemo?: ReturnType<SquadViewContext['buildShared']>;
+  private lastSquadMemo?: Map<string, { round: SquadRoundState; index: number }>;
+
+  /** A player's face for this context's options (null without one). */
+  readonly photo: Photo;
+
+  constructor(readonly session: SquadSession, readonly options: SquadViewOptions = {}) {
+    this.byId = playerIndex(session);
+    this.photo = (player) => options.photoUrl?.(player) ?? null;
+  }
+
+  get standings(): SquadStanding[] {
+    return (this.standingsMemo ??= standingsOf(this.session, this.options.photoUrl));
+  }
+
+  get rankOf(): Map<string, SquadStanding> {
+    return (this.rankMemo ??= new Map(this.standings.map((row) => [row.userId, row])));
+  }
+
+  player(id: string): SquadPlayer | undefined {
+    return this.byId.get(id);
+  }
+
+  /** `groupsIn`, once per squad. */
+  groups(round: SquadRoundState, squadIndex: number): Map<string, string> {
+    let byRound = this.groupsMemo.get(round);
+    if (!byRound) this.groupsMemo.set(round, (byRound = new Map()));
+    let groups = byRound.get(squadIndex);
+    if (!groups) byRound.set(squadIndex, (groups = groupsIn(round, squadIndex)));
+    return groups;
+  }
+
+  /** `presentMembers` of the current round, once per squad. */
+  present(squadIndex: number): string[] {
+    let present = this.presentMemo.get(squadIndex);
+    if (!present) this.presentMemo.set(squadIndex, (present = presentMembers(this.session, squadIndex, (id) => this.byId.get(id))));
+    return present;
+  }
+
+  /** `largestGroup` of the current round, once per squad. */
+  largest(round: SquadRoundState, squadIndex: number): number {
+    if (round !== this.session.round) return largestGroup(round, squadIndex);
+    let size = this.largestMemo.get(squadIndex);
+    if (size === undefined) {
+      const counts = new Map<string, number>();
+      for (const root of this.groups(round, squadIndex).values()) counts.set(root, (counts.get(root) ?? 0) + 1);
+      this.largestMemo.set(squadIndex, (size = Math.max(0, ...counts.values())));
+    }
+    return size;
+  }
+
+  /** A player as a squad shows them: who, their face and their word. */
+  person(id: string): Person | null {
+    let person = this.personMemo.get(id);
+    if (person === undefined) {
+      const player = this.byId.get(id);
+      person = player ? { ...short(player), photoUrl: this.photo(player), word: player.word ?? null } : null;
+      this.personMemo.set(id, person);
+    }
+    return person;
+  }
+
+  /** The latest round each player was dealt into, and their squad in it. */
+  lastSquadOf(userId: string): { round: SquadRoundState; index: number } | undefined {
+    if (!this.lastSquadMemo) {
+      const memo = new Map<string, { round: SquadRoundState; index: number }>();
+      for (const round of roundsOf(this.session).reverse()) {
+        round.squads.forEach((squad, index) => {
+          for (const id of squad.members) if (!memo.has(id)) memo.set(id, { round, index });
+        });
+      }
+      this.lastSquadMemo = memo;
+    }
+    return this.lastSquadMemo.get(userId);
+  }
+
+  /** The parts of the view that are the same on every phone in the office. */
+  shared() {
+    return (this.sharedMemo ??= this.buildShared());
+  }
+
+  private buildShared() {
+    const photo = this.photo;
+    const session = this.session;
+    const round = session.round;
+    const status = session.status;
+    return {
+      rounds: session.rounds.map((config) => ({ squadSize: config.squadSize, huntMs: config.huntMs, breakMs: config.breakMs })),
+      rules: rulesView(),
+      clock: {
+        lobbyEndsAt: status === 'lobby' ? session.startsAt : null,
+        revealEndsAt: status === 'dealing' && round ? round.huntStartsAt : null,
+        huntEndsAt: status === 'hunt' && round ? round.endsAt : null,
+        breakEndsAt: status === 'break' ? session.phaseEndsAt : null,
+      },
+      players: status === 'lobby'
+        ? session.players.filter((player) => !player.left).length
+        : session.players.filter((player) => player.playing).length,
+      faces: status === 'lobby'
+        ? session.players.slice(-12).reverse().map((player) => ({ ...short(player), photoUrl: photo(player) }))
+        : [],
+      board: round
+        ? {
+          squads: round.squads.length,
+          complete: round.squads.filter((squad) => squad.finishedAt).length,
+          hunting: round.squads.filter((squad, i) => !squad.finishedAt && this.present(i).length >= 2).length,
+          stuck: round.squads.filter((squad, i) => !squad.finishedAt && this.present(i).length < 2).length,
+        }
+        : null,
+      results: round ? this.sharedResults(round) : null,
+    };
+  }
+
+  /** A round's results as everyone sees them; built only once the round has ended. */
+  private sharedResults(round: SquadRoundState) {
+    let memo: { top: SquadStanding[]; squads: Array<{ index: number; row: Record<string, unknown> }>; trickiest: { word: string; scans: number } | null } | undefined;
+    return () => {
+      if (memo) return memo;
+      const [trickiestId, scans] = Object.entries(round.missesAgainst).sort((a, b) => b[1] - a[1])[0] ?? [];
+      memo = {
+        top: this.standings.slice(0, SQUAD.topCount),
+        squads: round.squads
+          .map((squad, index) => ({
+            index,
+            row: {
+              place: squad.place ?? 0,
+              category: squad.category,
+              words: squad.words,
+              size: squad.members.length,
+              linked: this.largest(round, index),
+              complete: Boolean(squad.finishedAt),
+              finishedAt: squad.finishedAt ?? null,
+            },
+          }))
+          .sort((a, b) => (a.row.place as number) - (b.row.place as number)),
+        trickiest: trickiestId ? { word: this.byId.get(trickiestId)?.word ?? '', scans } : null,
+      };
+      return memo;
+    };
+  }
 }
 
 export function viewContext(session: SquadSession, options: SquadViewOptions = {}): SquadViewContext {
-  const standings = standingsOf(session, options.photoUrl);
-  return { standings, rankOf: new Map(standings.map((row) => [row.userId, row])) };
+  return new SquadViewContext(session, options);
 }
 
 /** The rules a page shows ("+100 / −25", the squad bonus, the time bonus). */
@@ -958,20 +1127,27 @@ export const rulesView = () => ({
   typedCodes: SQUAD.typedCodes,
 });
 
-/** What one person sees: the per-player `session` part of `squad:state`. */
+/**
+ * What one person sees: the per-player `session` part of `squad:state`.
+ * Office-wide parts come from `context` (pass one per push, so they are
+ * worked out once for every phone); the objects in them are shared between
+ * views, so a view is for sending, not for changing.
+ */
 export function sessionViewFor(
   session: SquadSession,
   userId: string,
   now: number,
   options: SquadViewOptions = {},
-  context: SquadViewContext = viewContext(session, options),
+  context?: SquadViewContext,
 ) {
-  const me = playerOf(session, userId);
+  // A context is for one session object and one set of options.
+  const ctx = context && context.session === session && context.options.photoUrl === options.photoUrl
+    ? context
+    : viewContext(session, options);
+  const me = ctx.player(userId);
   const round = session.round;
-  const photo = (player: SquadPlayer) => options.photoUrl?.(player) ?? null;
-  const lobbyFaces = session.status === 'lobby'
-    ? session.players.slice(-12).reverse().map((player) => ({ ...short(player), photoUrl: photo(player) }))
-    : [];
+  const photo = ctx.photo;
+  const shared = ctx.shared();
   const status = session.status;
   return {
     id: session.id,
@@ -982,36 +1158,32 @@ export function sessionViewFor(
     roundIndex: session.roundIndex,
     roundNumber: session.roundIndex + 1,
     roundCount: session.rounds.length,
-    rounds: session.rounds.map((config) => ({ squadSize: config.squadSize, huntMs: config.huntMs, breakMs: config.breakMs })),
-    rules: rulesView(),
-    clock: {
-      lobbyEndsAt: status === 'lobby' ? session.startsAt : null,
-      revealEndsAt: status === 'dealing' && round ? round.huntStartsAt : null,
-      huntEndsAt: status === 'hunt' && round ? round.endsAt : null,
-      breakEndsAt: status === 'break' ? session.phaseEndsAt : null,
-    },
+    rounds: shared.rounds,
+    rules: shared.rules,
+    clock: shared.clock,
     joined: Boolean(me) && !me?.left,
     playing: Boolean(me?.playing) && Boolean(round) && !round?.skipped,
-    players: status === 'lobby'
-      ? session.players.filter((player) => !player.left).length
-      : session.players.filter((player) => player.playing).length,
-    faces: lobbyFaces,
+    players: shared.players,
+    faces: shared.faces,
     totalPoints: me ? session.totals[userId] ?? 0 : 0,
     cancelReason: session.cancelReason ?? null,
-    round: round ? roundViewFor(session, round, me, now, photo, context) : null,
-    final: status === 'over' ? finalViewFor(session, me, photo, context) : null,
+    round: round ? roundViewFor(session, round, me, now, photo, ctx, shared) : null,
+    final: status === 'over' ? finalViewFor(session, me, photo, ctx) : null,
   };
 }
 
-const short = (player: SquadPlayer) => ({ userId: player.userId, name: player.name, initials: player.initials });
+export type SquadSessionView = ReturnType<typeof sessionViewFor>;
+
+const short = (player: SquadPlayer): Short => ({ userId: player.userId, name: player.name, initials: player.initials });
 
 function roundViewFor(
   session: SquadSession,
   round: SquadRoundState,
   me: SquadPlayer | undefined,
   now: number,
-  photo: (player: SquadPlayer) => string | null,
-  context: SquadViewContext,
+  photo: Photo,
+  ctx: SquadViewContext,
+  shared: ReturnType<SquadViewContext['shared']>,
 ) {
   const done = session.status === 'break' || session.status === 'over' || Boolean(round.overAt);
   const config = configFor(session, round.index);
@@ -1024,12 +1196,7 @@ function roundViewFor(
     huntStartsAt: round.huntStartsAt,
     endsAt: round.endsAt,
     overAt: round.overAt ?? null,
-    board: {
-      squads: round.squads.length,
-      complete: round.squads.filter((squad) => squad.finishedAt).length,
-      hunting: round.squads.filter((squad, i) => !squad.finishedAt && presentMembers(session, i).length >= 2).length,
-      stuck: round.squads.filter((squad, i) => !squad.finishedAt && presentMembers(session, i).length < 2).length,
-    },
+    board: shared.board!,
     me: null as null | Record<string, unknown>,
     squad: null as null | Record<string, unknown>,
     scan: null as null | Record<string, unknown>,
@@ -1037,11 +1204,11 @@ function roundViewFor(
     results: null as null | Record<string, unknown>,
   };
   const dealtMe = me?.playing && me.squad !== undefined && !round.skipped && round.squads[me.squad] ? me : undefined;
-  if (done) view.results = resultsFor(session, round, dealtMe, photo, context);
+  if (done) view.results = resultsFor(session, round, dealtMe, photo, ctx, shared.results!());
   if (!dealtMe) return view;
 
   const squad = round.squads[dealtMe.squad!];
-  const code = codeFor(session, dealtMe.userId, now);
+  const code = codeOfPlayer(session, dealtMe, now);
   view.me = {
     word: dealtMe.word ?? null,
     qr: code ? qrFor(session, code.code) : null,
@@ -1050,24 +1217,23 @@ function roundViewFor(
     away: dealtMe.away,
     roundPoints: round.points[dealtMe.userId] ?? 0,
   };
-  const linkedIds = linkedWith(session, dealtMe.userId);
-  const person = (id: string) => {
-    const player = playerOf(session, id);
-    return player ? { ...short(player), photoUrl: photo(player), word: player.word ?? null } : null;
-  };
+  // linkedWith, from the squad's groups worked out once for the push.
+  const groups = ctx.groups(round, dealtMe.squad!);
+  const mine = groups.get(dealtMe.userId);
+  const linkedIds = squad.members.filter((id) => groups.get(id) === mine);
   const members = linkedIds.flatMap((id) => {
-    const p = person(id);
-    const player = playerOf(session, id);
+    const p = ctx.person(id);
+    const player = ctx.player(id);
     return p ? [{ ...p, me: id === dealtMe.userId, away: Boolean(player?.away || player?.left) }] : [];
   });
   const awayMembers = squad.members
-    .filter((id) => !linkedIds.includes(id) && playerOf(session, id)?.away)
+    .filter((id) => !linkedIds.includes(id) && ctx.player(id)?.away)
     .flatMap((id) => {
-      const p = person(id);
+      const p = ctx.person(id);
       return p ? [p] : [];
     });
-  const needed = presentMembers(session, dealtMe.squad!).length;
-  const linkedPresent = linkedIds.filter((id) => !playerOf(session, id)?.away).length;
+  const needed = ctx.present(dealtMe.squad!).length;
+  const linkedPresent = linkedIds.filter((id) => !ctx.player(id)?.away).length;
   const completion = round.completions[dealtMe.userId];
   const reveal = Boolean(squad.finishedAt) || done;
   view.squad = {
@@ -1095,7 +1261,7 @@ function roundViewFor(
   };
   const last = round.scans[dealtMe.userId];
   if (last) {
-    const other = person(last.otherId);
+    const other = ctx.person(last.otherId);
     view.scan = {
       id: last.id,
       result: last.result,
@@ -1110,16 +1276,16 @@ function roundViewFor(
   }
   const notice = round.notices[dealtMe.userId];
   if (notice) {
-    const about = playerOf(session, notice.userId);
+    const about = ctx.player(notice.userId);
     view.notice = { kind: notice.kind, name: about?.name ?? 'A teammate', word: about?.word ?? null, at: notice.at };
   }
   return view;
 }
 
 /** A squad as the results show it: its category, words in order, and who held each. */
-function squadCard(session: SquadSession, round: SquadRoundState, squadIndex: number, me: SquadPlayer | undefined, photo: (player: SquadPlayer) => string | null) {
+function squadCard(round: SquadRoundState, squadIndex: number, me: SquadPlayer | undefined, photo: Photo, ctx: SquadViewContext) {
   const squad = round.squads[squadIndex];
-  const groups = groupsIn(round, squadIndex);
+  const groups = ctx.groups(round, squadIndex);
   const myGroup = me ? groups.get(me.userId) : undefined;
   return {
     roundNumber: round.index + 1,
@@ -1131,7 +1297,7 @@ function squadCard(session: SquadSession, round: SquadRoundState, squadIndex: nu
     complete: Boolean(squad.finishedAt),
     place: squad.place ?? 0,
     members: squad.members.flatMap((id, i) => {
-      const player = playerOf(session, id);
+      const player = ctx.player(id);
       return player
         ? [{ ...short(player), photoUrl: photo(player), word: squad.words[i] ?? player.word ?? null, me: id === me?.userId, linked: myGroup !== undefined && groups.get(id) === myGroup }]
         : [];
@@ -1143,59 +1309,58 @@ function resultsFor(
   session: SquadSession,
   round: SquadRoundState,
   me: SquadPlayer | undefined,
-  photo: (player: SquadPlayer) => string | null,
-  context: SquadViewContext,
+  photo: Photo,
+  ctx: SquadViewContext,
+  shared: ReturnType<ReturnType<SquadViewContext['shared']>['results'] & object>,
 ) {
-  const mine = me ? context.rankOf.get(me.userId) : undefined;
-  const [trickiestId, scans] = Object.entries(round.missesAgainst).sort((a, b) => b[1] - a[1])[0] ?? [];
-  const trickiest = trickiestId ? { word: playerOf(session, trickiestId)?.word ?? '', scans } : null;
+  const mine = me ? ctx.rankOf.get(me.userId) : undefined;
   return {
     skipped: Boolean(round.skipped),
     rank: mine?.rank ?? null,
-    of: context.standings.length,
+    of: ctx.standings.length,
     roundPoints: me ? round.points[me.userId] ?? 0 : 0,
     total: me ? session.totals[me.userId] ?? 0 : 0,
-    squad: me && me.squad !== undefined ? squadCard(session, round, me.squad, me, photo) : null,
-    top: context.standings.slice(0, SQUAD.topCount),
-    squads: round.squads
-      .map((squad, index) => ({
-        place: squad.place ?? 0,
-        category: squad.category,
-        words: squad.words,
-        size: squad.members.length,
-        linked: largestGroup(round, index),
-        complete: Boolean(squad.finishedAt),
-        finishedAt: squad.finishedAt ?? null,
-        mine: me?.squad === index,
-      }))
-      .sort((a, b) => a.place - b.place),
-    trickiest,
+    squad: me && me.squad !== undefined ? squadCard(round, me.squad, me, photo, ctx) : null,
+    top: shared.top,
+    squads: shared.squads.map(({ index, row }) => ({ ...row, mine: me?.squad === index })),
+    trickiest: shared.trickiest,
   };
 }
 
 function finalViewFor(
   session: SquadSession,
   me: SquadPlayer | undefined,
-  photo: (player: SquadPlayer) => string | null,
-  context: SquadViewContext,
+  photo: Photo,
+  ctx: SquadViewContext,
 ) {
-  const mine = me ? context.rankOf.get(me.userId) : undefined;
+  const mine = me ? ctx.rankOf.get(me.userId) : undefined;
   // My last squad: the latest round I was dealt into.
-  let lastSquad: ReturnType<typeof squadCard> | null = null;
-  if (me) {
-    for (const round of roundsOf(session).reverse()) {
-      const index = round.squads.findIndex((squad) => squad.members.includes(me.userId));
-      if (index >= 0) {
-        lastSquad = squadCard(session, round, index, me, photo);
-        break;
-      }
-    }
-  }
+  const last = me ? ctx.lastSquadOf(me.userId) : undefined;
   return {
     rank: mine?.rank ?? null,
-    of: context.standings.length,
+    of: ctx.standings.length,
     total: me ? session.totals[me.userId] ?? 0 : 0,
-    lastSquad,
-    leaderboard: context.standings,
+    lastSquad: last ? squadCard(last.round, last.index, me, photo, ctx) : null,
+    leaderboard: ctx.standings,
   };
+}
+
+/**
+ * The parts of a view that are one person's own. Everything else in it is
+ * the same on every phone in the office, and equal to what a watcher (no
+ * player) sees: so two views of one push differ only here, and a phone's
+ * view changed only if this or the watchers' view did. The check
+ * (secret-squad-check.ts) holds this to every field.
+ */
+export function personalPartsOf(view: SquadSessionView) {
+  const round = view.round;
+  const results = round?.results as null | { rank: unknown; roundPoints: unknown; total: unknown; squad: unknown; squads: Array<{ mine: boolean }> };
+  return [
+    view.joined,
+    view.playing,
+    view.totalPoints,
+    round ? [round.me, round.squad, round.scan, round.notice] : null,
+    results ? [results.rank, results.roundPoints, results.total, results.squad, results.squads.findIndex((squad) => squad.mine)] : null,
+    view.final ? [view.final.rank, view.final.total, view.final.lastSquad] : null,
+  ];
 }

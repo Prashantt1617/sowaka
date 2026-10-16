@@ -27,6 +27,7 @@ import {
   markOffline,
   markOnline,
   newSession,
+  personalPartsOf,
   roundsOf,
   scan,
   sessionViewFor,
@@ -201,8 +202,8 @@ function stateOf(
   office: string,
   next: unknown,
   context?: SquadViewContext,
+  now = deps.now(),
 ) {
-  const now = deps.now();
   return {
     v: session?.version ?? 0,
     now,
@@ -250,11 +251,28 @@ export async function stateFor(viewer: SquadViewer) {
 
 // -------------------------------------------------------------------- push
 
-const lastSent = new Map<string, string>();
+/**
+ * A session's pushes go out at most this often: a burst of joins or scans in
+ * a big office becomes one push, worked out from the newest version. The
+ * first change after a quiet spell goes out at once.
+ */
+export const SQUAD_PUSH_MS = 200;
+
+/** What each phone was last sent: the office-wide part's generation, and its own parts. */
+const lastSent = new Map<string, { shared: number; own: string }>();
+/** Each session's office-wide part as last pushed (a watcher's view), and its generation. */
+const sharedSent = new Map<string, { print: string; generation: number }>();
+const pendingPushes = new Map<string, { session: SquadSession; timer: NodeJS.Timeout }>();
+const lastPushAt = new Map<string, number>();
 
 /** Forgets everything kept in this process for a session that has ended. */
 function forgetSession(id: string): void {
   for (const key of lastSent.keys()) if (key.startsWith(`${id}:`)) lastSent.delete(key);
+  sharedSent.delete(id);
+  const pending = pendingPushes.get(id);
+  if (pending) clearTimeout(pending.timer);
+  pendingPushes.delete(id);
+  lastPushAt.delete(id);
   codeWindows.delete(id);
   cancelPushed.delete(id);
   for (const key of paidRounds) if (key.startsWith(`${id}:`)) paidRounds.delete(key);
@@ -266,37 +284,75 @@ export function forgetSquadSent(userId: string): void {
 }
 
 /**
- * Sends each player what they now see, skipping anyone whose view is the same
- * as last time; everyone else watching that office (not joined) gets one
- * shared view, since nothing in it is theirs.
+ * Sends each phone what it now sees, soon (see SQUAD_PUSH_MS): pushes for a
+ * session close together are sent once, from the newest version given.
  */
 export function pushSession(session: SquadSession): void {
   if (!emitter) return;
-  // The standings every view ranks from: once per push, not once per phone.
+  const pending = pendingPushes.get(session.id);
+  if (pending) {
+    if (session.version >= pending.session.version) pending.session = session;
+    return;
+  }
+  const wait = Math.max(0, (lastPushAt.get(session.id) ?? 0) + SQUAD_PUSH_MS - Date.now());
+  const timer = setTimeout(() => {
+    const due = pendingPushes.get(session.id);
+    pendingPushes.delete(session.id);
+    lastPushAt.set(session.id, Date.now());
+    if (!due) return;
+    try {
+      sendViews(due.session);
+    } catch (error) {
+      logger.error('Secret Squad push failed', { sessionId: session.id }, error);
+    }
+  }, wait);
+  pendingPushes.set(session.id, { session, timer });
+}
+
+/**
+ * Sends each player what they now see, skipping anyone whose view is the same
+ * as last time; everyone else watching that office (not joined) gets one
+ * shared view, since nothing in it is theirs.
+ *
+ * A view is the office-wide part (the same on every phone: what a watcher
+ * sees) plus the player's own parts (`personalPartsOf`). So the office-wide
+ * part is compared once per push, and each phone only by its own parts.
+ */
+function sendViews(session: SquadSession): void {
+  if (!emitter) return;
+  const now = deps.now();
+  // The standings, groups and office-wide parts every view uses: once per push, not once per phone.
   const context = viewContext(session, viewOptions);
+  const watchers = stateOf(session, null, session.office, null, context, now);
+  // What they see, not when: the version and the clock change on every
+  // action anywhere in the office, and must not send an update by themselves.
+  const print = JSON.stringify({ ...watchers, now: 0, v: 0 });
+  let shared = sharedSent.get(session.id);
+  if (!shared || shared.print !== print) {
+    shared = { print, generation: (shared?.generation ?? 0) + 1 };
+    sharedSent.set(session.id, shared);
+  }
   for (const player of session.players) {
     if (player.left) continue;
     let state: ReturnType<typeof stateOf>;
+    let own: string;
     try {
-      state = stateOf(session, player, session.office, null, context);
+      state = stateOf(session, player, session.office, null, context, now);
+      own = JSON.stringify([state.me, personalPartsOf(state.session!)]);
     } catch (error) {
       // One player's view failing must not cost everyone after them theirs.
       logger.error('Secret Squad view failed', { sessionId: session.id, userId: player.userId }, error);
       continue;
     }
-    // What they see, not when: the version and the clock change on every
-    // action anywhere in the office, and must not send an update by themselves.
-    const print = JSON.stringify({ ...state, now: 0, v: 0 });
     const key = `${session.id}:${player.userId}`;
-    if (lastSent.get(key) === print) continue;
-    lastSent.set(key, print);
+    const last = lastSent.get(key);
+    if (last && last.shared === shared.generation && last.own === own) continue;
+    lastSent.set(key, { shared: shared.generation, own });
     emitter.toUser(player.userId, 'squad:state', state);
   }
-  const watchers = stateOf(session, null, session.office, null, context);
-  const print = JSON.stringify({ ...watchers, now: 0, v: 0 });
   const key = `${session.id}:*`;
-  if (lastSent.get(key) !== print) {
-    lastSent.set(key, print);
+  if (lastSent.get(key)?.shared !== shared.generation) {
+    lastSent.set(key, { shared: shared.generation, own: '' });
     emitter.toOffice(session.org, session.office, session.players.filter((player) => !player.left).map((player) => player.userId), 'squad:state', watchers);
   }
 }
@@ -521,8 +577,10 @@ const cancelPushed = new Set<string>();
 /** Moves every live session on: dealing, the hunt's clock, breaks, the end. */
 export async function tickSquad(): Promise<void> {
   const now = deps.now();
-  for (const { org, id } of await liveSessions()) {
-    if (!(await leaseSession(org, id, INSTANCE, 1_500))) continue;
+  // Sessions side by side: one office's round ending (its card and payout
+  // writes to Mongo) must not hold up another office's clock.
+  await Promise.all((await liveSessions()).map(async ({ org, id }) => {
+    if (!(await leaseSession(org, id, INSTANCE, 1_500))) return;
     try {
       await tickOne(org, id, now);
     } catch (error) {
@@ -530,7 +588,7 @@ export async function tickSquad(): Promise<void> {
     } finally {
       await releaseSession(org, id, INSTANCE);
     }
-  }
+  }));
 }
 
 async function tickOne(org: string, id: string, now: number): Promise<void> {

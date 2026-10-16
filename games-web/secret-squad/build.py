@@ -25,12 +25,16 @@ PINNED = {
     'qr':     ('qrcode-generator-2.0.4.js',     '79ec86f82856005b1c887905cfccfcfbec3821ca61c7fd5a952faa5f778f791c', 'qrcode-generator 2.0.4, dist/qrcode.js (MIT, Kazuhiko Arase)'),
     'jsqr':   ('jsQR-1.4.0.js',                 'bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859', 'jsQR 1.4.0, dist/jsQR.js (Apache-2.0, Cosmo Wolfe)'),
     'jsqrl':  ('jsQR-LICENSE.txt',              'c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08', 'jsQR 1.4.0 LICENSE (Apache-2.0)'),
-    'lilita': ('LilitaOne.woff2',               '8d6cd0f298738a92ca9bf6e13f54a9191afd06ce04ea00ebbf24499c017191b7', 'Lilita One, Google Fonts v17 latin (OFL)'),
-    'sora':   ('Sora.woff2',                    '3902474d3ece89c8580d5ef3325cf58753e6e45a86f9957b4dacc4fce2e7fde1', 'Sora variable, Google Fonts v17 latin (OFL)'),
+    'lexend': ('Lexend.woff2',                  '3ea892cc191dfa9c14e361d5573bd85fdff5b44de208ed521a600431261e4996', 'Lexend variable 1.007 (wght 100-900), latin subset (OFL)'),
+    'lexendl':('Lexend-OFL.txt',                '5da8505887d0fa7fe963445fd58852707fda34adfeb65af25c99d152bab285bd', 'Lexend OFL licence'),
 }
 # The npm tarballs these came from, as the registry lists them (dist.integrity):
 #   jsqr@1.4.0             sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==
 #   qrcode-generator@2.0.4 sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==
+# Lexend.woff2 is the app's own font (mobile-app/assets/fonts/lexend/Lexend-Variable.ttf, sha256 3add53e6…832ee6), cut to Latin as Google
+# Fonts' latin range and packed as woff2 with fontTools 4.67:
+#   pyftsubset Lexend-Variable.ttf --unicodes="U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,
+#     U+2190-2193,U+2212,U+2215,U+FEFF,U+FFFD" --layout-features='*' --flavor=woff2 --output-file=Lexend.woff2
 
 
 def pinned(key):
@@ -63,10 +67,10 @@ def main(argv):
     os.makedirs(out, exist_ok=True)
 
     b64 = lambda k: base64.b64encode(pinned(k)).decode()
-    fonts = ("@font-face{font-family:'Lilita One';font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,%s) format('woff2')}\n"
-             "@font-face{font-family:'Sora';font-style:normal;font-weight:100 800;font-display:block;src:url(data:font/woff2;base64,%s) format('woff2')}"
-             ) % (b64('lilita'), b64('sora'))
-    pinned('jsqrl')  # the licence travels with the source; checked like the rest
+    fonts = ("@font-face{font-family:'Lexend';font-style:normal;font-weight:100 900;font-display:block;src:url(data:font/woff2;base64,%s) format('woff2')}"
+             ) % b64('lexend')
+    pinned('jsqrl')    # the licences travel with the source; checked like the rest
+    pinned('lexendl')
     vendor = ('<script>\n/*! qrcode-generator 2.0.4 | MIT | (c) 2009 Kazuhiko Arase | https://github.com/kazuhikoarase/qrcode-generator */\n' + script_text('qr') + '\n</script>\n'
               '<script>\n/*! jsQR 1.4.0 | Apache-2.0 | (c) Cosmo Wolfe | https://github.com/cozmo/jsQR | licence: games-web/secret-squad/vendor/jsQR-LICENSE.txt */\n' + script_text('jsqr') + '\n</script>')
     io = script_text('io')
