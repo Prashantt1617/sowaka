@@ -541,11 +541,18 @@ void main() {
           '2 requests waiting on you',
           resolved: true,
         ),
+        _row(
+          'e',
+          'punch_in_reminder',
+          "You haven't punched in yet",
+          resolved: true,
+        ),
       ]);
       await _pump(tester, server);
 
       expect(_unreadCount('2'), findsOneWidget);
-      expect(find.text('ATTENDANCE ALERT'), findsOneWidget);
+      // A cleared alert stays amber, without its dot.
+      expect(find.text('ATTENDANCE ALERT'), findsNWidgets(2));
       expect(find.text('GAME CHALLENGE'), findsOneWidget);
       // Read, the priority card keeps its colour and label but loses its dot.
       expect(find.text('FEEDBACK CYCLE'), findsOneWidget);

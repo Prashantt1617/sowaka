@@ -492,9 +492,10 @@ class NotificationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final look = NotificationLook.of(item);
     final unread = notificationUnread(item);
-    // Done is done: an alert that has cleared itself, or a request someone
-    // already acted on, steps out of its colour into a plain row.
-    final kind = item['resolved'] == true
+    // Done is done: a request someone already acted on steps out of its
+    // colour into a plain row. An alert stays amber, so "You haven't
+    // punched in yet" always reads as one; it only loses its dot.
+    final kind = item['resolved'] == true && look.kind != NotificationKind.alert
         ? NotificationKind.activity
         : look.kind;
     final when = _createdAt(item);
