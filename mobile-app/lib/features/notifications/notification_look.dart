@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 
 /// The four kinds of row the Notifications screen draws (Sowaka Connect ›
-/// Notifications, node 3875:84049, and its three boards):
+/// Notifications, node 3875:84049, and its four colour boards, which place
+/// every row of Sowaka_notifications_final.xlsx):
 ///
 /// * [alert] — amber. Something is wrong or due today; clears itself once
 ///   fixed (board 3865:83061).
 /// * [priority] — purple. Something waiting on you or decided about you;
 ///   tap opens the screen to act (board 3865:83067).
-/// * [game] — green. A colleague's game challenge.
+/// * [game] — teal. Things to play or answer: challenges, lobbies, live
+///   games, new contests. Results, votes and tags from games are white rows
+///   with a teal disc.
 /// * [activity] — a plain white row. Things that happened to you
 ///   (board 3863:83058).
 enum NotificationKind { alert, priority, game, activity }
@@ -42,43 +45,62 @@ class InitialGlyph extends NotificationGlyph {
   final String name;
 }
 
-/// The design's colours for each kind, read off node 3875:84049.
+/// The colours of each kind, from the colour boards.
 class NotificationPalette {
   const NotificationPalette({
     required this.background,
-    required this.accent,
+    required this.border,
+    required this.label,
+    required this.dot,
     required this.disc,
   });
 
   /// The card's fill.
   final Color background;
 
-  /// Border, label and unread dot.
-  final Color accent;
+  /// The card's outline while it is unread.
+  final Color border;
+
+  /// The small capitals over the title.
+  final Color label;
+
+  /// The unread dot.
+  final Color dot;
 
   /// The avatar disc behind the glyph.
   final Color disc;
 
+  /// The orange dot on alerts and on every white row.
+  static const unreadOrange = Color(0xFFE8742C);
+
   static const alert = NotificationPalette(
     background: Color(0xFFFFF8EE),
-    accent: Color(0xFFFEAC29),
+    border: Color(0xFFF9DDBA),
+    label: Color(0xFFB45309),
+    dot: unreadOrange,
     disc: Color(0xFFFCEDDA),
   );
   static const game = NotificationPalette(
     background: Color(0xFFE6F6F3),
-    accent: Color(0xFF007F6E),
+    border: Color(0xFFBFE5DC),
+    label: Color(0xFF007F6E),
+    dot: Color(0xFF007F6E),
     disc: Color(0xFFCBEDE6),
   );
   static const priority = NotificationPalette(
     background: Color(0xFFF6F3FE),
-    accent: Color(0xFF7040D0),
+    border: Color(0xFFDDD3FA),
+    label: Color(0xFF7040D0),
+    dot: Color(0xFF7040D0),
     disc: Color(0xFFE9E3FD),
   );
 
-  /// White rows: no fill, the pink unread dot.
+  /// White rows: no fill, the orange unread dot.
   static const activity = NotificationPalette(
     background: Colors.white,
-    accent: Color(0xFFF81F88),
+    border: Colors.transparent,
+    label: Color(0xFF6B7280),
+    dot: unreadOrange,
     disc: Color(0xFFF3F4F6),
   );
 
@@ -125,11 +147,12 @@ class NotificationLook {
   static const _alertInk = Color(0xFFB45309);
   static const _priorityInk = Color(0xFF7040D0);
   static const _gameInk = Color(0xFF007F6E);
+  static const _gameDisc = Color(0xFFCBEDE6);
 
   static const alarmClock = 'assets/icons/attendance_review_clock.png';
   static const gameDie = 'assets/icons/notification_game_die.svg';
 
-  static const _fromManager = 'PRIORITY · FROM MANAGER';
+  static const _fromManager = 'FROM YOUR MANAGER';
 
   static NotificationLook of(Map<String, dynamic> item) {
     final scenario = '${item['scenario'] ?? ''}';
@@ -143,6 +166,8 @@ class NotificationLook {
     final declined =
         title.contains('not approved') || title.contains('not changed');
     final punch = title.startsWith('Punch');
+    // Decisions say who made them; HR can decide in a manager's place.
+    final from = data['from'] == 'hr' ? 'FROM HR' : _fromManager;
 
     switch (scenario) {
       case 'punch_in_reminder':
@@ -158,15 +183,15 @@ class NotificationLook {
             : Icons.check_circle_outline_rounded;
         return declined
             ? _alert('ATTENDANCE ALERT', IconGlyph(icon, _alertInk))
-            : _priority(_fromManager, icon);
+            : _priority(from, icon);
       case 'leave_decided':
         return _priority(
-          _fromManager,
+          from,
           declined ? Icons.highlight_off_rounded : Icons.how_to_reg_outlined,
         );
       case 'overtime_decided':
         return _priority(
-          _fromManager,
+          from,
           declined ? Icons.highlight_off_rounded : Icons.schedule_rounded,
         );
       case 'feedback_shared':
@@ -181,20 +206,29 @@ class NotificationLook {
         );
       case 'feedback_cycle_open':
       case 'feedback_weekly':
-        return _priority(
-          'PRIORITY · FEEDBACK OPEN',
-          Icons.chat_bubble_outline_rounded,
-        );
+        return _priority('FEEDBACK CYCLE', Icons.chat_bubble_outline_rounded);
       case 'support_reply':
         return _priority('SUPPORT DESK', Icons.headset_mic_outlined);
       case 'game_challenge_received':
-      case 'game_challenge_accepted':
-      case 'game_challenge_lobby':
-      case 'game_challenge_result':
       case 'scribble_invite':
-        return _game('GAME CHALLENGE');
+        return _game('GAME CHALLENGE', Icons.sports_esports_outlined);
+      case 'game_challenge_accepted':
+        return _game('YOUR TURN', Icons.play_arrow_outlined);
+      case 'game_challenge_lobby':
+        return _game('LOBBY', Icons.sensor_door_outlined);
       case 'live_game_started':
-        return _game('LIVE GAME');
+        return _game('LIVE NOW', Icons.sports_esports_outlined);
+      // What games tell you afterwards: white rows on a teal disc.
+      case 'game_challenge_result':
+        return _played(Icons.emoji_events_outlined);
+      case 'contest_vote':
+        return _played(
+          title.contains('your photo')
+              ? Icons.image_outlined
+              : Icons.edit_outlined,
+        );
+      case 'most_likely_tagged':
+        return _played(Icons.star_border_rounded);
       // "Secret Squad starts in 3 minutes": an office's lobby is open.
       case 'secret_squad_lobby':
         return secretSquad;
@@ -205,7 +239,7 @@ class NotificationLook {
           kind: NotificationKind.activity,
           label: '',
           glyph: AssetGlyph(gameDie, 20),
-          disc: Color(0xFFCBEDE6),
+          disc: _gameDisc,
         );
       case 'support_resolved':
         return _activity(
@@ -221,30 +255,20 @@ class NotificationLook {
       case 'post_commented':
       case 'post_also_commented':
       case 'post_commented_inbox':
-        return NotificationLook(
-          kind: NotificationKind.activity,
-          label: '',
-          glyph: InitialGlyph(actorOf(title)),
-          disc: Colors.transparent,
+        return _activity(
+          Icons.chat_bubble_outline_rounded,
+          _blueInk,
+          _blueDisc,
         );
       case 'post_liked':
       case 'post_liked_inbox':
-        return const NotificationLook(
-          kind: NotificationKind.activity,
-          label: '',
-          glyph: EmojiGlyph('❤️'),
-          disc: Color(0xFFFEE2E2),
-        );
+        return _activity(Icons.favorite_border_rounded, _redInk, _redDisc);
       case 'poll_voted':
       case 'poll_voted_inbox':
         return _activity(Icons.bar_chart_rounded, _amberInk, _amberDisc);
       case 'card_wished_birthday':
       case 'card_wished_anniversary':
         return _activity(Icons.cake_outlined, _redInk, _redDisc);
-      case 'contest_vote':
-        return _activity(Icons.star_border_rounded, _amberInk, _amberDisc);
-      case 'most_likely_tagged':
-        return _activity(Icons.sell_outlined, _blueInk, _blueDisc);
       case 'leave_submitted':
       case 'overtime_submitted':
       case 'correction_submitted':
@@ -276,12 +300,7 @@ class NotificationLook {
     if (type == 'caption_challenge' ||
         type == 'photo_story_challenge' ||
         type == 'most_likely') {
-      return const NotificationLook(
-        kind: NotificationKind.game,
-        label: 'NEW CONTEST',
-        glyph: IconGlyph(Icons.emoji_events_outlined, _gameInk),
-        disc: Color(0xFFCBEDE6),
-      );
+      return _game('NEW CONTEST', Icons.image_outlined);
     }
     if (title.contains(' gave you kudos')) {
       return _activity(Icons.star_border_rounded, _amberInk, _amberDisc);
@@ -381,15 +400,20 @@ class NotificationLook {
     kind: NotificationKind.game,
     label: 'SECRET SQUAD',
     glyph: IconGlyph(Icons.drafts_outlined, _gameInk),
-    disc: Color(0xFFCBEDE6),
+    disc: _gameDisc,
   );
 
-  static NotificationLook _game(String label) => NotificationLook(
-    kind: NotificationKind.game,
-    label: label,
-    glyph: const AssetGlyph(gameDie, 20),
-    disc: NotificationPalette.game.disc,
-  );
+  static NotificationLook _game(String label, IconData icon) =>
+      NotificationLook(
+        kind: NotificationKind.game,
+        label: label,
+        glyph: IconGlyph(icon, _gameInk),
+        disc: _gameDisc,
+      );
+
+  /// A game's result, a vote on your entry, a tag: a white row, teal disc.
+  static NotificationLook _played(IconData icon) =>
+      _activity(icon, _gameInk, _gameDisc);
 
   static NotificationLook _activity(IconData icon, Color ink, Color disc) =>
       NotificationLook(

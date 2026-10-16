@@ -91,6 +91,10 @@ export async function approversFor(employee: User, kind: RequestKind): Promise<U
   return managerDecides && manager ? [manager] : hrOf(employee.org, employee.userId);
 }
 
+/** Who a decision came from, for the inbox's label: their manager, or HR. */
+const decidedBy = (employee: User, deciderUserId: string | undefined): 'manager' | 'hr' =>
+  !deciderUserId || deciderUserId === employee.managerUserId ? 'manager' : 'hr';
+
 async function nameOf(userId: string | undefined): Promise<string> {
   if (!userId) return 'Your manager';
   return (await users().findOne({ userId }, { projection: { name: 1 } }))?.name || 'Your manager';
@@ -253,7 +257,7 @@ export async function notifyLeaveDecided(input: {
     body: input.approved
       ? `${approver} approved your ${leaveLabel(input.type)}, ${range}${count ? ` (${days(count)})` : ''}`
       : quoted(approver, input.comment) || `${approver} didn't approve your ${leaveLabel(input.type)}, ${range}`,
-    data: { type: 'leave', view: 'mine', requestId: input.requestId ?? '' },
+    data: { type: 'leave', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? leaveApprovedEmail(employee, input.type, longDates)
       : leaveDeclinedEmail(employee, input.type, longDates, input.comment),
@@ -305,7 +309,7 @@ export async function notifyOvertimeDecided(input: {
     body: input.approved
       ? `${approver} approved your ${input.duration.toLowerCase().replace(' ', '-')} overtime on ${date}`
       : quoted(approver, input.comment) || `${approver} didn't approve your overtime on ${date}`,
-    data: { type: 'overtime', view: 'mine', requestId: input.requestId ?? '' },
+    data: { type: 'overtime', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? overtimeApprovedEmail(employee, input.duration, longDate(input.workDate))
       : overtimeDeclinedEmail(employee, longDate(input.workDate), input.comment),
@@ -355,7 +359,7 @@ export async function notifyCorrectionDecided(input: {
     scenario: 'correction_decided',
     title: input.approved ? 'Attendance fixed ✓' : 'Attendance not changed',
     body: input.approved ? `${date} is now marked Present` : `${date} stays Absent.${reason ? ` ${reason}` : ''}`,
-    data: { type: 'attendance', view: 'mine', workDate: input.workDate },
+    data: { type: 'attendance', view: 'mine', workDate: input.workDate, from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
       ? presentApprovedEmail(employee, longDate(input.workDate))
       : presentDeclinedEmail(employee, longDate(input.workDate), input.comment),
@@ -413,7 +417,7 @@ export async function notifyOutOfLocationDecided(input: {
     scenario: 'correction_decided',
     title: input.approved ? 'Punch approved ✓' : 'Punch not approved',
     body: input.approved ? `${date} is marked Present` : `${date} is marked Absent.${reason ? ` ${reason}` : ''}`,
-    data: { type: 'attendance', view: 'mine', workDate: input.workDate },
+    data: { type: 'attendance', view: 'mine', workDate: input.workDate, from: decidedBy(employee, input.decidedByUserId) },
     email: {
       subject: input.approved ? `Out-of-office punch approved for ${longDate(input.workDate)}` : `Out-of-office punch not approved for ${longDate(input.workDate)}`,
       body: input.approved

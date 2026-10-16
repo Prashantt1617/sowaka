@@ -144,37 +144,43 @@ void main() {
           'leave_decided',
           'Leave approved ✓',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
         ),
         (
           'leave_decided',
           'Leave not approved',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
         ),
         (
           'overtime_decided',
           'Overtime approved ✓',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
         ),
         (
           'correction_decided',
           'Attendance fixed ✓',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
         ),
         (
           'correction_decided',
           'Punch approved ✓',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
+        ),
+        (
+          'leave_decided',
+          'Leave approved ✓',
+          <String, dynamic>{'from': 'hr'},
+          'FROM HR',
         ),
         (
           'feedback_shared',
           'Your manager shared your October feedback',
           <String, dynamic>{},
-          'PRIORITY · FROM MANAGER',
+          'FROM YOUR MANAGER',
         ),
         (
           'pending_requests_reminder',
@@ -192,13 +198,13 @@ void main() {
           'feedback_cycle_open',
           'October feedback is open',
           <String, dynamic>{},
-          'PRIORITY · FEEDBACK OPEN',
+          'FEEDBACK CYCLE',
         ),
         (
           'feedback_weekly',
           'October feedback: 3 still to go',
           <String, dynamic>{},
-          'PRIORITY · FEEDBACK OPEN',
+          'FEEDBACK CYCLE',
         ),
         (
           'support_reply',
@@ -263,18 +269,59 @@ void main() {
       );
     });
 
-    test('game challenges are green with the die', () {
-      for (final scenario in [
-        'game_challenge_received',
-        'game_challenge_accepted',
-        'game_challenge_lobby',
-        'game_challenge_result',
-        'scribble_invite',
+    test('things to play or answer are teal cards', () {
+      for (final (scenario, title, label) in [
+        (
+          'game_challenge_received',
+          'Rahul challenged you to Word Trip',
+          'GAME CHALLENGE',
+        ),
+        ('scribble_invite', 'Rahul invited you to Scribble', 'GAME CHALLENGE'),
+        (
+          'game_challenge_accepted',
+          'Asha accepted your challenge',
+          'YOUR TURN',
+        ),
+        (
+          'game_challenge_lobby',
+          'Asha is waiting in the Word Trip lobby',
+          'LOBBY',
+        ),
+        ('live_game_started', 'Live Word Trip starting now', 'LIVE NOW'),
       ]) {
-        final look = _look(scenario, 'Rahul challenged you to Word Trip');
+        final look = _look(scenario, title);
         expect(look.kind, NotificationKind.game, reason: scenario);
-        expect(look.label, 'GAME CHALLENGE');
-        expect((look.glyph as AssetGlyph).asset, NotificationLook.gameDie);
+        expect(look.label, label, reason: scenario);
+        expect(look.palette, NotificationPalette.game);
+      }
+      final contest = _look(
+        'post_published_caption_challenge',
+        'New contest: Monday mood',
+        data: {'postType': 'caption_challenge'},
+      );
+      expect(contest.kind, NotificationKind.game);
+      expect(contest.label, 'NEW CONTEST');
+    });
+
+    test('results, votes and tags from games are white rows, teal disc', () {
+      for (final (scenario, title, icon) in [
+        (
+          'game_challenge_result',
+          'You beat Asha 420 to 380',
+          Icons.emoji_events_outlined,
+        ),
+        ('contest_vote', 'Asha voted for your caption', Icons.edit_outlined),
+        ('contest_vote', 'Rahul voted for your photo', Icons.image_outlined),
+        (
+          'most_likely_tagged',
+          'Someone thinks you’re most likely to win a bake-off',
+          Icons.star_border_rounded,
+        ),
+      ]) {
+        final look = _look(scenario, title);
+        expect(look.kind, NotificationKind.activity, reason: title);
+        expect(look.disc, NotificationPalette.game.disc, reason: title);
+        expect((look.glyph as IconGlyph).icon, icon, reason: title);
       }
     });
 
@@ -349,7 +396,10 @@ void main() {
         'post_also_commented',
         'Manav Manager also commented',
       );
-      expect((comment.glyph as InitialGlyph).name, 'Manav Manager');
+      expect(
+        (comment.glyph as IconGlyph).icon,
+        Icons.chat_bubble_outline_rounded,
+      );
       expect(
         (_look('post_published_kudos', 'Neha gave you kudos 🎉').glyph
                 as IconGlyph)
@@ -399,7 +449,7 @@ void main() {
       tester.getTopLeft(find.text('Neha liked your post')).dy,
       greaterThan(earlierY),
     );
-    expect(find.text('PRIORITY · FROM MANAGER'), findsOneWidget);
+    expect(find.text('FROM YOUR MANAGER'), findsOneWidget);
     expect(find.text('1h ago'), findsOneWidget);
     expect(find.text('2D ago'), findsOneWidget);
   });
@@ -433,7 +483,7 @@ void main() {
       expect(find.text('ATTENDANCE ALERT'), findsOneWidget);
       expect(find.text('GAME CHALLENGE'), findsOneWidget);
       // Read, the priority card keeps its colour and label but loses its dot.
-      expect(find.text('PRIORITY · FEEDBACK OPEN'), findsOneWidget);
+      expect(find.text('FEEDBACK CYCLE'), findsOneWidget);
       // Done with — nothing waits any more — it is a plain row.
       expect(find.text('NEEDS YOUR APPROVAL'), findsNothing);
       expect(find.text('2 requests waiting on you'), findsOneWidget);

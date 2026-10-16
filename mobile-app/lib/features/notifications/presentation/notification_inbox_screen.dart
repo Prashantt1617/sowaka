@@ -596,7 +596,7 @@ class _Card extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.background,
         borderRadius: BorderRadius.circular(12),
-        border: unread ? Border.all(color: palette.accent) : null,
+        border: unread ? Border.all(color: palette.border) : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -628,7 +628,7 @@ class _Card extends StatelessWidget {
                                 style: _sora(
                                   10,
                                   FontWeight.w700,
-                                  palette.accent,
+                                  palette.label,
                                   lineHeight: 15,
                                   spacing: 0.5,
                                 ),
@@ -636,7 +636,7 @@ class _Card extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (unread) _Dot(color: palette.accent),
+                        if (unread) _Dot(color: palette.dot),
                       ],
                     ),
                   ),
@@ -773,7 +773,7 @@ class _WhiteRow extends StatelessWidget {
                 width: 13,
                 child: Align(
                   alignment: Alignment.topLeft,
-                  child: _Dot(color: Color(0xFFF81F88)),
+                  child: _Dot(color: NotificationPalette.unreadOrange),
                 ),
               ),
             )

@@ -132,8 +132,7 @@ function OvertimeDrawer() {
           cells={[
             { label: 'OVERTIME DATE', value: d.otDate },
             { label: 'DAY', value: d.day },
-            { label: 'DURATION', value: d.duration },
-            { label: 'HOURS', value: String(d.hours) },
+            { label: 'DURATION', value: d.duration, wide: true },
           ]}
         />
         <RemarkBlock label="EMPLOYEE NOTE" text={d.eRemark || 'No note provided.'} filled={!!d.eRemark} marginBottom={16} />
