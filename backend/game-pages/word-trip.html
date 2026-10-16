@@ -93,26 +93,35 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .chip.rare{outline:2px solid var(--rare);outline-offset:1px}
 .chip.flash{outline:3px solid var(--ink)}
 .tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
-.tray:empty::before{content:"Tap the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
+.tray:empty::before{content:"Swipe or tap the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
 .tray button{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1;width:38px;height:44px;padding:4px 0 0;border-radius:11px;border:0;
   background:var(--accent);color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep);cursor:pointer;text-transform:uppercase}
 .tray.ok button{background:var(--good);box-shadow:0 4px 0 #1f9a61}
 .tray.gold button{background:var(--gold);box-shadow:0 4px 0 #b88a00}
 .tray.no button{background:var(--bad);box-shadow:0 4px 0 #a83838}
-.tiles{position:relative;display:flex;flex-direction:column;gap:12px;align-items:center;padding:2px 0 6px;touch-action:none}
-/* The line a swipe draws from letter to letter, over the tiles. */
+/* The letters sit on a wheel, as in the connect-the-letters games: evenly round a circle, the first at the top, on a disc of their own.
+   placeTiles() works out the sizes (--W the wheel, --s a letter) so that no two letters ever overlap; the line a swipe draws runs over the
+   disc and under the letters, from letter to letter. touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
+.tiles{--W:240px;--s:60px;position:relative;display:flex;justify-content:center;padding:2px 0 6px;touch-action:none}
+.tiles .disc{position:absolute;top:2px;left:50%;width:var(--W);height:var(--W);margin-left:calc(var(--W) / -2);border-radius:50%;z-index:1;pointer-events:none;
+  background:radial-gradient(circle at 50% 42%,var(--panel2),var(--panel) 72%);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep),inset 0 0 0 7px rgba(11,9,24,.18)}
+.tiles .wheel{position:relative;z-index:3;width:var(--W);height:var(--W);flex-shrink:0}
+/* A short screen (a phone with the app's bar over the page): a shorter wall and tray, so the wheel keeps its size above Delete, Shuffle and Enter. */
+@media (max-height:780px){.wall{height:76px}.tray{height:52px}}
+/* The line a swipe draws from letter to letter. */
 .trail{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:2}
-.trail polyline{fill:none;stroke:var(--accent);stroke-width:8;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
-/* touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
-.tiles .rowt{display:flex;gap:8px}
+.trail polyline{fill:none;stroke:var(--accent);stroke-width:10;stroke-linecap:round;stroke-linejoin:round;opacity:.95}
 .tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.25rem;line-height:1;width:82px;height:70px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
   box-shadow:0 7px 0 var(--tile-edge),0 12px 18px -8px rgba(0,0,0,.6);cursor:pointer;text-transform:uppercase;touch-action:manipulation}
+.wheel .tile{position:absolute;margin:0;width:var(--s);height:var(--s);border-radius:50%;font-size:calc(var(--s) * .54);padding:calc(var(--s) * .1) 0 0;
+  box-shadow:0 5px 0 var(--tile-edge),0 9px 14px -6px rgba(0,0,0,.6)}
 .tile:active{transform:translateY(5px);box-shadow:0 2px 0 var(--tile-edge)}
-/* A letter in the word has left the rack: its socket stays, empty, so a tap on the letter in the word puts it back where it was. */
+.wheel .tile:active{transform:translateY(3px);box-shadow:0 2px 0 var(--tile-edge)}
+/* A letter in the word lights up in the accent, where it is, and the line joins it to the next; a tap on it in the word puts it back. */
 .tile.used,.tile.used:active{background:transparent;color:transparent;border:2px dashed var(--line);box-shadow:none;transform:none;cursor:default}
-/* The gap between letters belongs to the nearer letter: a thumb landing just off a tile still gets it. */
-.tile::before{content:"";position:absolute;inset:-8px -4px}
-@media (max-width:370px){.tile{width:70px;height:62px;font-size:2rem}}
+.wheel .tile.used,.wheel .tile.used:active{background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 2px 0 var(--accent-deep),0 0 0 4px hsl(var(--h) 95% 60% / .28);transform:translateY(3px)}
+/* The gap between letters belongs to the nearer letter (tileAt): a thumb landing just off a tile still gets it. */
+.wheel .tile::before{content:none}
 /* Under the letters: Delete, Shuffle and Enter, and a line for what a word did. */
 .keys{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px}
 .keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
@@ -166,6 +175,7 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .hero .art{height:132px;background:#CFC6FF;border-bottom:2px solid var(--line);display:grid;place-items:center;overflow:hidden}
 .hero .art svg{width:auto;height:112px;display:block}
 .hero .bd{padding:12px 14px 18px;display:flex;flex-direction:column;gap:10px}
+.hero .link{align-self:center;padding:2px 6px 0;margin-bottom:-6px}
 .tag{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;padding:3px 7px 3px 5px;border-radius:5px;background:var(--gold);
   font-family:var(--small);font-weight:800;font-size:.62rem;line-height:1;letter-spacing:.02em;text-transform:uppercase;color:var(--accent-ink)}
 .tag svg{width:12px;height:12px;flex-shrink:0}
@@ -277,7 +287,7 @@ html.app .howto{padding-top:20px}
 .howto{position:fixed;inset:0;z-index:12;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:center;background:var(--bg);
   padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
 .hin{width:100%;max-width:400px;margin:auto 0;display:flex;flex-direction:column;gap:16px}
-.howart{align-self:center;width:min(80vw,280px);padding:14px 12px 16px;background:var(--panel2);border:2px solid var(--line);border-radius:24px;box-shadow:0 6px 0 var(--deep);transform:rotate(-2deg)}
+.howart{align-self:center;width:min(80vw,280px);padding:12px 12px 14px;background:var(--panel2);border:2px solid var(--line);border-radius:24px;box-shadow:0 6px 0 var(--deep);transform:rotate(-2deg)}
 .demo{display:flex;flex-direction:column;gap:10px;align-items:center}
 .demo .wall{height:auto;min-height:44px;width:100%;box-shadow:none;padding:7px;justify-content:center}
 .demo .wall:empty::before{content:none}
@@ -288,14 +298,25 @@ html.app .howto{padding-top:20px}
   background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 0 var(--accent-deep);text-transform:uppercase}
 .demo .tray.ok span{background:var(--good);box-shadow:0 3px 0 #1f9a61}
 .demo .tray.gold span{background:var(--gold);box-shadow:0 3px 0 #b88a00}
-.demo .rowt{display:flex;gap:7px}
-.demo .tile{display:grid;place-items:center;width:42px;height:40px;font-size:1.35rem;border-radius:11px;padding-top:4px;box-shadow:0 5px 0 var(--tile-edge)}
+/* The picture's wheel: an SVG of its own, drawn and played by howDemo(). The line runs over the disc and under the letters, as in the game. */
+.demo .dwheel{display:block;width:150px;height:150px;overflow:visible}
+/* A short screen: a smaller picture, without its wall, so OK shows without scrolling. */
+@media (max-height:780px){.demo .dwheel{width:132px;height:132px}.howto .hin{gap:12px}.demo .wall{display:none}.demo .tray{height:44px}.howart{padding:10px 12px 12px}.steps li{padding:7px 12px}}
+.demo .ddisc{fill:var(--panel);stroke:var(--line);stroke-width:2}
+.demo .dline{fill:none;stroke:var(--accent);stroke-width:8;stroke-linecap:round;stroke-linejoin:round}
+.demo .dedge{fill:var(--tile-edge)}
+.demo .dface{fill:var(--tile)}
+.demo .dkey text{font-family:var(--display);font-weight:800;font-size:23px;fill:var(--tile-ink)}
+.demo .dkey.on .dface{fill:var(--accent)}
+.demo .dkey.on .dedge{fill:var(--accent-deep)}
+.demo .dkey.on text{fill:var(--accent-ink)}
+.demo .dfinger{fill:#fff;fill-opacity:.5;stroke:#fff;stroke-width:2.5}
 .howto .kick{margin:4px 0 0;font-family:var(--body);font-weight:600;font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center}
 .howto h2{margin:-12px 0 0;font-family:var(--display);font-weight:800;font-size:2.3rem;line-height:1.1;color:var(--ink);text-align:center}
-.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.steps li{display:flex;gap:12px;align-items:center;padding:11px 14px;background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:0 4px 0 var(--deep)}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.steps li{display:flex;gap:12px;align-items:center;padding:8px 14px;background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:0 4px 0 var(--deep)}
 .steps i{font-style:normal;flex-shrink:0;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.15rem;background:var(--gold);color:var(--accent-ink)}
-.steps li:nth-child(2) i{background:var(--blue)} .steps li:nth-child(3) i{background:var(--pink)}
+.steps li:nth-child(2) i{background:var(--blue)} .steps li:nth-child(3) i{background:var(--pink)} .steps li:nth-child(4) i{background:var(--good)}
 .steps span{font-family:var(--body);font-size:.86rem;line-height:1.3;color:var(--muted)}
 .steps b{display:block;font-family:var(--display);font-weight:800;font-size:1.1rem;line-height:1.2;color:var(--ink)}
 .howto .btn.go{margin-top:2px}
@@ -334,7 +355,7 @@ html.app .howto{padding-top:20px}
   .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b{animation:bump .3s} .clock.low{animation:beat .5s infinite}
   .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear 2} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear 2}
   .demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
-  .tile.in{animation:tilein .18s ease-out both}
+  .tile.in{animation:tilein .18s ease-out both} .wheel.mv .tile{transition:left .3s cubic-bezier(.3,1.25,.5,1),top .3s cubic-bezier(.3,1.25,.5,1)}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
   .ticker.beat{animation:tickbeat .9s ease-out} .shim{animation:shim 1.2s linear infinite}
   .hero .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
@@ -382,9 +403,10 @@ html.app .howto{padding-top:20px}
       <p class="kick">1 minute · on your own or against a colleague</p>
       <h2 id="howh">How to play</h2>
       <ol class="steps">
-        <li><i>1</i><span><b>Make words</b>Tap letters, then Enter.</span></li>
-        <li><i>2</i><span><b>Go long, be quick</b>Long words pay. Fast ones combo.</span></li>
-        <li><i>3</i><span><b>Use every letter</b>That word drives you to the next stop.</span></li>
+        <li><i>1</i><span><b>Swipe a word</b>Slide through the letters, then lift. Three letters or more. Or tap them, then Enter.</span></li>
+        <li><i>2</i><span><b>Undo a letter</b>Slide back to the one before and rest there.</span></li>
+        <li><i>3</i><span><b>Go long, be quick</b>Long words pay, and 5 letters or more add seconds. Words within 8 s combo, up to ×3.</span></li>
+        <li><i>4</i><span><b>Use every letter</b>That word takes you to the next stop.</span></li>
       </ol>
       <button class="btn go" id="howok" type="button">OK</button>
     </div>
@@ -636,6 +658,7 @@ function heroCard(){ const h=el('section','hero'), art=el('div','art'), bd=el('d
   art.innerHTML=ART; tag.innerHTML=BOLT; tag.append(ROUND_TEXT); go.type='button'; go.onclick=()=>start(null);
   bd.append(tag,el('h2','','Find the words'),go);
   if(canChallenge()){ const du=el('button','btn dark','Challenge a colleague'); du.type='button'; du.id='chbtn'; du.onclick=()=>{sfx.ui();openPicker();}; bd.append(du); }
+  const how=el('button','link','How to play'); how.type='button'; how.id='howlink'; how.onclick=()=>{ sfx.ui(); showHowTo(null); }; bd.append(how);
   h.append(art,bd); return h; }
 /* Your best and your rank at the company, then the leaderboard. */
 function mineCard(){ const t=el('div','mine'), a=el('div','stat'), r=el('div','stat dark'), best=el('b'), rank=el('b'), at=el('span'), lb=el('button','btn','View leaderboard');
@@ -647,21 +670,52 @@ let howThen=null;
 const needsHowTo=()=>save.rounds===0&&!save.seenHowTo;
 function showHowTo(then){ const o=$('howto'); if(!o.hidden&&howThen&&!then)return; howThen=then||null; o.hidden=false; o.scrollTop=0; howDemo(true); $('howok').focus({preventScroll:true}); }
 function hideHowTo(){ $('howto').hidden=true; howThen=null; howDemo(false); }
-/* How to play's picture: a stop that plays itself. ART, then STARE with every letter (drawn whole, and still, under reduced motion). */
-let demoTimer=null;
-function howDemo(on){ clearInterval(demoTimer); demoTimer=null; const box=$('howdemo'); box.innerHTML=''; if(!on)return;
-  const letters='rates'.split(''), wall=el('div','wall'), tr=el('div','tray'), row=el('div','rowt');
-  box.append(wall,tr,row); let used=[], cls='';
-  const draw=()=>{ row.innerHTML=''; letters.forEach((ch,k)=>row.appendChild(el('span','tile'+(used.includes(k)?' used':''),ch)));
-    tr.className='tray'+(cls?' '+cls:''); tr.innerHTML=''; used.forEach(k=>tr.appendChild(el('span','',letters[k]))); };
-  const chip=(w,c)=>{ const x=el('span','chip new '+c,w); wall.insertBefore(x,wall.firstChild); };
-  if(reduce()){ chip('art','l3'); chip('stare','full'); used=[2,3,4,0,1]; cls='gold'; draw(); return; }
-  const script=[['tap',1],['tap',0],['tap',3],['ok','art','l3'],['tap',2],['tap',3],['tap',1],['tap',0],['tap',4],['ok','stare','full gold'],['wait'],['wait'],['reset']];
-  let i=0; draw();
-  demoTimer=setInterval(()=>{ const s=script[i++%script.length];
-    if(s[0]==='tap'){ used.push(s[1]); cls=''; draw(); }
-    else if(s[0]==='ok'){ const c=s[2].split(' '); cls=c[1]||'ok'; draw(); chip(s[1],c[0]); setTimeout(()=>{ used=[]; cls=''; draw(); },420); }
-    else if(s[0]==='reset'){ wall.innerHTML=''; used=[]; cls=''; draw(); } },560); }
+/* How to play's picture: a small wheel that plays itself. A finger lands on a letter, slides from letter to letter while the line grows behind it and
+   each letter lights up and joins the word, then lifts: the word goes green (gold for every letter) and onto the wall. ART, then STARE with every
+   letter, then it starts over. One frame loop, its state worked out from the time, so stopping it is one cancelAnimationFrame. Under reduced
+   motion it is drawn once, still: STARE swiped whole. */
+let demoRaf=0;
+function howDemo(on){ cancelAnimationFrame(demoRaf); demoRaf=0; const box=$('howdemo'); box.innerHTML=''; if(!on)return;
+  const NS='http://www.w3.org/2000/svg', L='taers'.split(''), n=L.length, S=168, R=55, r=21;
+  const mk=(tag,at,parent)=>{ const e=document.createElementNS(NS,tag); for(const k in at)e.setAttribute(k,at[k]); if(parent)parent.appendChild(e); return e; };
+  const wall=el('div','wall'), tr=el('div','tray'), svg=mk('svg',{viewBox:'0 0 '+S+' '+S,class:'dwheel'});
+  mk('circle',{cx:S/2,cy:S/2,r:S/2-2,class:'ddisc'},svg); const line=mk('polyline',{class:'dline',points:''},svg);
+  const P=L.map((ch,i)=>{ const a=2*Math.PI*i/n; return [S/2+R*Math.sin(a),S/2-R*Math.cos(a)]; });
+  const keys=L.map((ch,i)=>{ const g=mk('g',{class:'dkey',transform:'translate('+P[i][0].toFixed(1)+' '+P[i][1].toFixed(1)+')'},svg);
+    mk('circle',{r,cy:4,class:'dedge'},g); mk('circle',{r,class:'dface'},g); mk('text',{y:8,'text-anchor':'middle'},g).textContent=ch.toUpperCase(); return g; });
+  const dot=mk('circle',{r:13,class:'dfinger',cx:P[0][0],cy:P[0][1],opacity:0},svg);
+  box.append(wall,tr,svg);
+  // The words, as slots round the wheel: A R T, then S T A R E.
+  const WORDS_=[{w:[1,3,0],chip:'art',cls:'l3',done:'ok'},{w:[4,0,1,3,2],chip:'stare',cls:'full',done:'gold'}];
+  const IN=380, LEG=430, HOLD=260, SHOW=760, GAP=420, END=1400;
+  let T=0; const segs=WORDS_.map(x=>{ const g=Object.assign({t0:T},x); T+=IN+LEG*(x.w.length-1)+HOLD; g.lift=T; T+=SHOW+GAP; g.t1=T; return g; }); const CYCLE=T+END;
+  let was={tray:null,lit:null,chips:-1};
+  const ease=f=>f<.5?2*f*f:1-Math.pow(-2*f+2,2)/2, pt=p=>p[0].toFixed(1)+','+p[1].toFixed(1);
+  // One frame: the finger, the line, the letters lit, the word in the tray and the words on the wall, all from t (ms into the loop).
+  const paint=t=>{ let finger=null, fade=0, lit=[], trayW=[], trayCls='', chips=0;
+    for(const g of segs)if(t>=g.lift)chips++;
+    const g=segs.find(x=>t>=x.t0&&t<x.t1);
+    if(g&&t<g.lift){ const u=t-g.t0;
+      if(u<IN){ finger=P[g.w[0]]; fade=Math.min(1,u/(IN*.6)); if(u>=IN*.6)lit=[g.w[0]]; }
+      else { const k=Math.min(g.w.length-1,Math.floor((u-IN)/LEG)); fade=1;
+        if(k>=g.w.length-1){ finger=P[g.w[g.w.length-1]]; lit=g.w.slice(); }
+        else { const f=ease(((u-IN)%LEG)/LEG), A=P[g.w[k]], B=P[g.w[k+1]]; finger=[A[0]+(B[0]-A[0])*f,A[1]+(B[1]-A[1])*f];
+          lit=g.w.slice(0,k+1); if(Math.hypot(finger[0]-B[0],finger[1]-B[1])<=r*.7)lit.push(g.w[k+1]); } }
+      trayW=lit.map(i=>L[i]); }
+    else if(g&&t<g.lift+SHOW){ trayW=g.w.map(i=>L[i]); trayCls=g.done; const u=t-g.lift; if(u<200){ finger=P[g.w[g.w.length-1]]; fade=1-u/200; } }
+    // The line: the letters lit, then on to the finger.
+    line.setAttribute('points',finger&&lit.length&&fade>=1?lit.map(i=>pt(P[i])).concat([pt(finger)]).join(' '):'');
+    dot.setAttribute('opacity',finger?(fade*.95).toFixed(2):'0'); if(finger){ dot.setAttribute('cx',finger[0].toFixed(1)); dot.setAttribute('cy',finger[1].toFixed(1)); }
+    const ls=lit.join(); if(ls!==was.lit){ was.lit=ls; keys.forEach((k,i)=>k.classList.toggle('on',lit.includes(i))); }
+    const ts=trayCls+':'+trayW.join(''); if(ts!==was.tray){ const before=was.tray; was.tray=ts;
+      // A letter more on the same word: just that one pops in. Anything else: the tray is drawn again.
+      if(!trayCls&&before!==null&&ts.length===before.length+1&&ts.startsWith(before)&&before.startsWith(':'))tr.appendChild(el('span','',trayW[trayW.length-1]));
+      else { tr.className='tray'+(trayCls?' '+trayCls:''); tr.innerHTML=''; trayW.forEach(ch=>tr.appendChild(el('span','',ch))); } }
+    if(chips!==was.chips){ if(chips<was.chips||was.chips<0)wall.innerHTML=''; for(let c=wall.children.length;c<chips;c++){ const s_=segs[c], x=el('span','chip new '+s_.cls,s_.chip); wall.insertBefore(x,wall.firstChild); } was.chips=chips; } };
+  if(reduce()){ const g=segs[1]; paint(g.lift-1); line.setAttribute('points',g.w.map(i=>pt(P[i])).join(' ')); dot.setAttribute('opacity','0');
+    tr.className='tray gold'; wall.innerHTML=''; segs.forEach(s_=>wall.insertBefore(el('span','chip '+s_.cls,s_.chip),wall.firstChild)); return; }
+  let t0=0; const frame=ts=>{ if(!t0)t0=ts; paint((ts-t0)%CYCLE); demoRaf=requestAnimationFrame(frame); };
+  paint(0); demoRaf=requestAnimationFrame(frame); }
 /* The clock, the score, and the combo: ×1 to ×5, with a bar that runs down to the moment it drops. */
 /* The clock runs ten times a second: it writes to the page only what has changed since, so a tap never waits on it. */
 const hudWas={};
@@ -688,14 +742,36 @@ const usedIds=()=>new Set(tray.map(t=>t.id));
    Built once per stop and never rebuilt on a tap: a tap flips one tile's class and appends one letter to the word.
    Taps are read from the raw touches, every finger on its own, and mapped to the nearest letter by where they land
    (a touch a little off a tile still gets it), so nothing but one class flip and one append runs before the paint. */
-const rack={tiles:new Map(),rects:null};
+const rack={tiles:new Map(),slot:new Map(),rects:null,wheel:null,geo:null,W:0};
+/* The wheel: each letter on a circle, evenly spaced, the first at the top and on clockwise. The sizes are worked out, not guessed. The wheel is as
+   wide as the room under the word allows without pushing Delete, Shuffle and Enter off the screen (WHEEL.min to WHEEL.max); each letter is then as
+   big as it can be while its square stays WHEEL.gap clear of every other letter's square, at these angles, whatever the count, so no two letters
+   ever overlap. wheelSpread(n) is the least radius, per letter-and-gap, at which the n squares stay apart. */
+const WHEEL={min:200,max:264,pad:8,gap:8,maxTile:66};
+const spreads={};
+function wheelSpread(n){ if(spreads[n])return spreads[n]; let k=0; const sin=i=>Math.sin(2*Math.PI*i/n), cos=i=>Math.cos(2*Math.PI*i/n);
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)k=Math.max(k,1/Math.max(Math.abs(sin(i)-sin(j)),Math.abs(cos(i)-cos(j))));
+  return spreads[n]=k; }
+function wheelSize(){ const box=$('tiles'), main=box.closest('main'); let W=Math.min(WHEEL.max,box.clientWidth||WHEEL.max);
+  if(box.offsetParent){ const cs=getComputedStyle(document.body), other=main.getBoundingClientRect().height-box.getBoundingClientRect().height;
+    const room=window.innerHeight-other-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom)-8;
+    W=Math.min(W,Math.max(WHEEL.min,Math.floor(room))); }
+  else if(rack.W)W=Math.min(W,rack.W);
+  return W; }
+/* Puts each letter in its place on the wheel: order[i] in slot i. Shuffle moves them (a short glide, rack.wheel.mv); the places are kept in rack.geo,
+   so the rack is measured from them, never from a letter caught mid-glide. */
+function placeTiles(){ const box=$('tiles'), n=order.length; if(!rack.wheel||!n)return;
+  const W=wheelSize(), k=wheelSpread(n), p=WHEEL.pad, g=WHEEL.gap, s=Math.min(WHEEL.maxTile,Math.floor((W/2-p-k*g)/(k+.5))), R=W/2-p-s/2;
+  rack.W=W; box.style.setProperty('--W',W+'px'); box.style.setProperty('--s',s+'px'); rack.geo={W,s,R,pos:[]}; rack.slot.clear();
+  order.forEach((t,i)=>{ const a=2*Math.PI*i/n, x=W/2+R*Math.sin(a), y=W/2-R*Math.cos(a), b=rack.tiles.get(String(t.id)); rack.geo.pos[i]=[x,y]; rack.slot.set(String(t.id),i);
+    if(b){ b.style.left=(x-s/2).toFixed(1)+'px'; b.style.top=(y-s/2).toFixed(1)+'px'; } });
+  rack.rects=null; }
 function renderTiles(pop){
-  const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const cut=order.length<=6?3:4;
-  [order.slice(0,cut),order.slice(cut)].forEach(row=>{ const r=el('div','rowt');
-    row.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.tabIndex=-1; b.dataset.id=String(t.id); b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); rack.tiles.set(String(t.id),b); r.appendChild(b); });
-    box.appendChild(r); });
-  syncTiles(); }
-function measureRack(){ rack.rects=[]; rack.tiles.forEach((b,id)=>{ const r=b.getBoundingClientRect(); rack.rects.push({id,x:r.left+r.width/2,y:r.top+r.height/2,hw:r.width/2,hh:r.height/2}); }); }
+  const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const wh=el('div','wheel'); rack.wheel=wh;
+  order.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.tabIndex=-1; b.dataset.id=String(t.id); b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); rack.tiles.set(String(t.id),b); wh.appendChild(b); });
+  box.append(el('div','disc'),wh); placeTiles(); syncTiles(); }
+function measureRack(){ rack.rects=[]; const g=rack.geo; if(!g||!rack.wheel)return; const q=rack.wheel.getBoundingClientRect(), h=g.s/2;
+  rack.tiles.forEach((b,id)=>{ const [x,y]=g.pos[rack.slot.get(id)]; rack.rects.push({id,x:q.left+x,y:q.top+y,hw:h,hh:h}); }); }
 /* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. The rack is measured once
    per touch (a new touch forgets the last measure), never on every move: a measure forces the page to lay out. */
 function tileAt(x,y){ if(!rack.rects)measureRack(); let best=null,bd=Infinity;
@@ -713,8 +789,8 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
      as in the connect-the-letters games: each letter it slides onto joins the word, a line runs from letter to letter
      and on to the finger, sliding back onto the letter before takes the last one off, and lifting the finger plays the
      word once two letters or more are linked. During a swipe a letter counts only once the finger is well inside it, so
-     a diagonal between the rows picks up nothing on the way. The letters sit in rows, so the way to a letter can cross
-     the one before: crossing it does nothing, and only holding still on it (or lifting there) takes the last letter off. A tap that does not move is a tap, as before: the end of
+     a line across the wheel picks up nothing on the way. The way to a letter can still cross the one before: crossing
+     it does nothing, and only holding still on it (or lifting there) takes the last letter off. A tap that does not move is a tap, as before: the end of
      the touch, a pointer event and the click all add its letter too, and a letter already in the word is not added
      again, so whichever arrives first wins and the rest do nothing. */
   const fingers=new Map();
@@ -723,8 +799,9 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
   const armBack=(s,id)=>{ clearTimeout(s.backT); s.restX=s.x; s.restY=s.y; s.backT=setTimeout(()=>{ if(swipe===s&&s.over===id){ backOne(s); draw(); } },BACK_REST); };
   const NS='http://www.w3.org/2000/svg'; let trail=null;
   const centreOf=id=>{ const r=rack.rects&&rack.rects.find(q=>q.id===String(id)); return r?[r.x,r.y]:null; };
-  /* The tile the finger is well inside: the middle 70% of it. */
-  const insideTile=(x,y)=>{ if(!rack.rects)measureRack(); for(const r of rack.rects){ if(Math.abs(x-r.x)<=r.hw*.7&&Math.abs(y-r.y)<=r.hh*.7)return idOf(r.id); } return null; };
+  /* The tile the finger is well inside: within 70% of its radius of its centre (the letters are round). A circle, not the square: a line from one
+     letter to one two places round the wheel passes a letter between them closest at its corner-ward side, and must not pick it up. */
+  const insideTile=(x,y)=>{ if(!rack.rects)measureRack(); for(const r of rack.rects){ if(Math.hypot(x-r.x,y-r.y)<=r.hw*.7)return idOf(r.id); } return null; };
   const draw=()=>{ if(!swipe||!swipe.slid||!swipe.ids.length){ if(trail)trail.style.display='none'; return; }
     if(!trail||!box.contains(trail)){ trail=document.createElementNS(NS,'svg'); trail.setAttribute('class','trail'); trail.appendChild(document.createElementNS(NS,'polyline')); box.appendChild(trail); }
     const pts=swipe.ids.map(centreOf).filter(Boolean); pts.push([swipe.x,swipe.y]);
@@ -760,7 +837,8 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
   tr.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); trayHit(e); },{passive:true});
   tr.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch')return; e.preventDefault(); trayHit(e); });
   tr.addEventListener('click',e=>{ if(performance.now()-lastTouchAt<700)return; trayHit(e); });
-  ['resize','orientationchange'].forEach(ev=>window.addEventListener(ev,()=>{rack.rects=null;}));
+  ['resize','orientationchange'].forEach(ev=>window.addEventListener(ev,()=>{ rack.rects=null; placeTiles(); }));
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>placeTiles());
   window.addEventListener('scroll',()=>{rack.rects=null;},{passive:true}); })();
 /* The word being made. */
 function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
@@ -794,7 +872,7 @@ function start(opp,sd){
   duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null;
   mode='count'; cur=makeStop(0); order=cur.letters.split('').map((ch,id)=>({ch,id})); tray=[]; found=[]; $('wall').innerHTML='';
   document.documentElement.style.setProperty('--h',hueFor(0)); render(); say('');
-  renderHud(true); renderGoal(); renderTarget(); playing(true); renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; let k=3;
+  renderHud(true); renderGoal(); renderTarget(); playing(true); placeTiles(); renderTop(); const c=$('cover'); c.hidden=false; c.className='cover'; let k=3;
   const show=()=>{c.innerHTML='';c.appendChild(el('div','n',String(k)));sfx.count();};
   show(); countTimer=setInterval(()=>{k--; if(k>0)show(); else{clearInterval(countTimer);countTimer=null;begin();}},reduce()?350:600);
 }
@@ -814,7 +892,11 @@ function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=ord
 function typeLetter(ch){ if(!canPlay())return; const used=usedIds(), t=order.find(o=>o.ch===ch&&!used.has(o.id)); if(t)tapTile(t.id); else sfx.untap(); }
 function removeAt(j){ if(!canPlay()||j<0||j>=tray.length)return; const [t]=tray.splice(j,1); setTileUsed(t.id,false); renderTray(); renderKeys(); }
 function del(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
-function shuffle(){ if(!canPlay())return; for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];} sfx.shuffle(); renderTiles(true); }
+/* Shuffle: the same letters to new places on the wheel (at least one of them moves), gliding there. */
+let shufT=null;
+function shuffle(){ if(!canPlay())return; const was=order.map(t=>t.id).join();
+  for(let tries=0;tries<8&&order.map(t=>t.id).join()===was;tries++)for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
+  sfx.shuffle(); const wh=rack.wheel; if(!wh){ renderTiles(true); return; } wh.classList.add('mv'); placeTiles(); clearTimeout(shufT); shufT=setTimeout(()=>{ wh.classList.remove('mv'); rack.rects=null; },340); }
 /* The tray shows the word it just played, green (gold for every letter) or red, then empties. */
 let clearT=null;
 function flashTray(cls,ms){ const letters=tray.slice(); tray=[]; syncTiles(); renderKeys(); const e=$('tray'); e.className='tray '+cls; e.innerHTML='';
