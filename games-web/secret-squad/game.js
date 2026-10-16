@@ -139,9 +139,35 @@ const canCamera=()=>!ui.camFailed&&!(window.Sowaka&&window.Sowaka.native)&&!!(na
 const canScan=()=>canNativeScan()||canCamera();
 
 /* ---------------------------------------------------------------- the screens */
+/* View Full Leaderboard: the app opens the page on "board:<session>" (or #board on the web); the page asks the server for that game's
+   final standings and lists everyone who played, best first, your own row highlighted. */
+const boardWanted=()=>{ try{ const w=String((window.Sowaka&&window.Sowaka.startChallengeId)||'');
+  if(/^board(:|$)/.test(w))return w.slice(6); if(/^#board/.test(location.hash))return location.hash.slice(7); }catch(e){} return null; };
+let boardChecked=false;
+function wantBoard(){ if(boardChecked)return; const id=boardWanted(); if(id===null)return; boardChecked=true; ui.board={sessionId:id, asked:false, data:null, error:null}; }
+wantBoard();
+function loadBoard(){ const b=ui.board; if(!b||b.asked||!conn)return; b.asked=true;
+  request('squad:board',b.sessionId?{sessionId:b.sessionId}:{}).then(d=>{ if(ui.board===b){ b.data=d||{}; render(); } })
+    .catch(e=>{ if(ui.board===b){ b.error=e.message||'The leaderboard didn’t load.'; render(); } }); }
+function vBoard(){ const b=ui.board, d=b.data, me=st&&st.me&&st.me.userId;
+  loadBoard();
+  const head=bar('Leaderboard','<button type="button" class="link" data-act="board-close" style="margin:0">Back to the game</button>');
+  if(b.error)return {key:'board:err',html:head+'<div class="grow"></div><div class="box center"><b>No leaderboard</b><span class="s">'+esc(b.error)+'</span></div><div class="grow"></div>'};
+  if(!d)return {key:'board:wait',html:head+'<div class="grow"></div><div class="center"><div class="env" aria-hidden="true"></div><p class="s">Loading the leaderboard…</p></div><div class="grow"></div>'};
+  const rows=Array.isArray(d.results)?d.results:[];
+  const medal=['lb-1','lb-2','lb-3'];
+  const list=rows.map(r=>{ const you=r.userId===me, rk=r.rank|0;
+    return '<li class="lb-row'+(you?' you':'')+'"><span class="lb-rk '+(rk>=1&&rk<=3?medal[rk-1]:'')+'">#'+rk+'</span>'+
+      av({initials:r.initials,name:r.name,userId:r.userId,photoUrl:r.photoUrl})+
+      '<span class="lb-n">'+esc(you?'You':r.name)+'</span><span class="lb-p num">'+(r.points|0)+'<small> pts</small></span></li>'; }).join('');
+  return {key:'board:'+(d.sessionId||''),html:head+
+    '<p class="s" style="margin-top:2px">'+esc([d.office,rows.length===1?'1 player':rows.length+' players'].filter(Boolean).join(' · '))+'</p>'+
+    (rows.length?'<ol class="lb">'+list+'</ol>':'<div class="box center"><b>No one played this time</b></div>')}; }
+
 function view(){
   if(fatal)return vFatal();
   if(WEB&&!token)return vSignin();
+  if(ui.board&&st)return vBoard();
   if(!st)return {key:'connecting',html:bar('Secret Squad',whereChip())+'<div class="grow"></div><div class="center"><div class="env" aria-hidden="true"></div><p class="s">Connecting…</p></div><div class="grow"></div>'};
   const s=S_();
   if(!s)return vNone();
@@ -520,6 +546,7 @@ document.addEventListener('click',e=>{
     case 'join': act('squad:join',{},'You’re in the lobby.'); break;
     case 'leave': act('squad:leave',{},'You left the lobby.'); break;
     case 'intro': ui.intro[roundKey()]=1; haptic('light'); render(); break;
+    case 'board-close': ui.board=null; render(); break;
     case 'keypad': ui.mode='keypad'; ui.digits=''; render(); { const k=$('kin'); if(k)try{ k.focus(); }catch(e){} } break;   // in the tap itself, so the keyboard comes up
     case 'scan': if(canNativeScan()){ let p; try{ p=window.Sowaka.scanQr(); }catch(err){ p=Promise.reject(err); }
         Promise.resolve(p).then(text=>{ if(text)sendCheck({qr:String(text)}); }).catch(()=>toast('Scanning didn’t work. Type the code instead.')); }
@@ -553,7 +580,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ if(conn)try{ conn.sync(); }catch(e){} render(); } else camera(false); });
 document.addEventListener('error',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.closest&&t.closest('.av'))t.remove(); },true);   // a photo that won't load leaves the initial
-window.addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); render(); });
+window.addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); wantBoard(); render(); });
 if(reduced())document.documentElement.classList.add('still');
 
 setInterval(()=>{ tick(); },250);

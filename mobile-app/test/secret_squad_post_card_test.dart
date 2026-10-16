@@ -157,7 +157,7 @@ Future<void> _pump(
                 session: _session,
                 now: now,
                 service: service ?? _games(hasSquad: true),
-                openGame: openGame ?? (context, game) async {},
+                openGame: openGame ?? (context, game, [entry]) async {},
                 openUrl: openUrl ?? (url) async {},
               ),
             ],
@@ -361,7 +361,7 @@ void main() {
           tester,
           body: _body(status: 'cancelled'),
           now: () => _lobby.subtract(const Duration(hours: 1)),
-          openGame: (context, game) async => opened.add(game.key),
+          openGame: (context, game, [entry]) async => opened.add(game.key),
           openUrl: (url) async => urls.add(url),
         );
         expect(find.text('Cancelled'), findsOneWidget);
@@ -396,7 +396,7 @@ void main() {
         body: _body(),
         now: () => _lobby,
         service: _games(hasSquad: true, asked: asked),
-        openGame: (context, game) async => opened.add(game),
+        openGame: (context, game, [entry]) async => opened.add(game),
         openUrl: (url) async => urls.add(url),
       );
       await tester.tap(find.text('Let’s Play'));
@@ -420,7 +420,7 @@ void main() {
           body: _body(),
           now: () => _lobby,
           service: _games(hasSquad: false),
-          openGame: (context, game) async => opened.add(game),
+          openGame: (context, game, [entry]) async => opened.add(game),
           openUrl: (url) async => urls.add(url),
         );
         await tester.tap(find.text('Let’s Play'));
@@ -676,50 +676,15 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('View Full Leaderboard lists everyone who played', (
+    testWidgets('View Full Leaderboard opens the leaderboard on the game page', (
       tester,
     ) async {
-      final opened = <GameCatalogEntry>[];
+      final opened = <(String, String?)>[];
       await _pump(
         tester,
         body: _over(_results(12, mine: 11)),
         now: () => after,
-        openGame: (context, game) async => opened.add(game),
-      );
-      await tester.pump(const Duration(seconds: 3));
-      await tester.tap(find.text('View Full Leaderboard'));
-      // The card's envelope and rays never stop moving: pump the sheet in.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(find.text('FULL LEADERBOARD'), findsOneWidget);
-      // All twelve, past the top 10 too; the viewer's own row reads You.
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('squad-board-u-tanvi')),
-        200,
-        scrollable: find.descendant(
-          of: find.byType(BottomSheet),
-          matching: find.byType(Scrollable),
-        ),
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('squad-board-u-tanvi')),
-          matching: find.text('You'),
-        ),
-        findsOneWidget,
-      );
-      expect(opened, isEmpty);
-    });
-
-    testWidgets("with no standings, View Full Leaderboard opens the game", (
-      tester,
-    ) async {
-      final opened = <GameCatalogEntry>[];
-      await _pump(
-        tester,
-        body: _over(null),
-        now: () => after,
-        openGame: (context, game) async => opened.add(game),
+        openGame: (context, game, [entry]) async => opened.add((game.key, entry)),
       );
       await tester.pump(const Duration(seconds: 3));
       await tester.tap(find.text('View Full Leaderboard'));
@@ -727,7 +692,8 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
       await tester.pump();
-      expect(opened.single.key, 'secret-squad');
+      final sessionId = SecretSquadPost(_over(null)).sessionId;
+      expect(opened.single, ('secret-squad', 'board:$sessionId'));
     });
 
     testWidgets('with animations off it is the last frame, still', (

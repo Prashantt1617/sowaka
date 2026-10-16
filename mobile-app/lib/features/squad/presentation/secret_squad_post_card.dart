@@ -15,8 +15,14 @@ import 'secret_squad_results.dart';
 import 'secret_squad_style.dart';
 
 /// Opens a catalog game for the card; the app pushes its web game screen.
+/// [entry] is where the page opens: `board:<session>` for View Full
+/// Leaderboard, null for the game itself.
 typedef SquadGameOpener =
-    Future<void> Function(BuildContext context, GameCatalogEntry game);
+    Future<void> Function(
+      BuildContext context,
+      GameCatalogEntry game, [
+      String? entry,
+    ]);
 
 /// Secret Squad's post in the Connect feed: the "Secret Squad Feed Card"
 /// design. The violet card, the animated top-secret envelope, when the
@@ -122,14 +128,14 @@ class _SecretSquadPostCardState extends State<SecretSquadPostCard> {
     super.dispose();
   }
 
-  Future<void> _play() async {
+  Future<void> _play({String? entry}) async {
     if (_opening) return;
     setState(() => _opening = true);
     try {
       final game = await _findGame();
       if (!mounted) return;
       if (game != null) {
-        await (widget.openGame ?? _openInApp)(context, game);
+        await (widget.openGame ?? _openInApp)(context, game, entry);
         return;
       }
       final web = _squad.webUrl;
@@ -161,13 +167,18 @@ class _SecretSquadPostCardState extends State<SecretSquadPostCard> {
     }
   }
 
-  Future<void> _openInApp(BuildContext context, GameCatalogEntry game) {
+  Future<void> _openInApp(
+    BuildContext context,
+    GameCatalogEntry game, [
+    String? entry,
+  ]) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => WebGameScreen.catalog(
           game: game,
           session: widget.session,
           service: widget.service,
+          challengeId: entry,
         ),
       ),
     );
@@ -291,16 +302,8 @@ class _SecretSquadPostCardState extends State<SecretSquadPostCard> {
           busy: _opening,
           fontSize: 21,
           padding: 14,
-          // Everyone's places, from the standings on the card; the game
-          // itself when the card has none (a game from before them).
-          onTap: results != null && results.isNotEmpty
-              ? () => showSquadLeaderboard(
-                  context,
-                  results: results,
-                  viewerId: widget.session.user.id,
-                  office: squad.office,
-                )
-              : _play,
+          // Everyone's places, on the game's page (its leaderboard).
+          onTap: () => _play(entry: 'board:${squad.sessionId}'),
         ),
       ],
     );

@@ -483,6 +483,35 @@ function standingsOf(session: SquadSession) {
   }));
 }
 
+/**
+ * View Full Leaderboard: a game's final standings, for its page. The game
+ * itself while it is still held, else what its card kept; without a
+ * session id, the viewer's office's last finished game.
+ */
+export async function squadBoard(viewer: SquadViewer, input: { sessionId?: unknown }) {
+  const sessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
+  if (sessionId) {
+    const session = await readSession(viewer.org, sessionId);
+    if (session && session.status === 'over') {
+      return { sessionId, office: session.office, endsAt: session.phaseEndsAt, results: standingsOf(session) };
+    }
+  }
+  const post = await connectPosts().findOne(
+    sessionId
+      ? { org: viewer.org, type: 'secret_squad', 'body.sessionId': sessionId }
+      : { org: viewer.org, type: 'secret_squad', 'body.office': viewer.office, 'body.status': 'over' },
+    { sort: { publishedAt: -1 }, projection: { _id: 0, body: 1 } },
+  );
+  const body = (post?.body ?? {}) as Record<string, unknown>;
+  if (!post || !Array.isArray(body.results)) throw new SquadRuleError(404, 'There is no leaderboard for that game yet.');
+  return {
+    sessionId: String(body.sessionId ?? sessionId),
+    office: String(body.office ?? ''),
+    endsAt: body.endsAt ?? null,
+    results: body.results,
+  };
+}
+
 async function syncCard(session: SquadSession, status: 'lobby' | 'playing' | 'over' | 'cancelled'): Promise<void> {
   const set: Record<string, unknown> = { 'body.status': status, updatedAt: new Date(deps.now()) };
   if (status === 'over') {
