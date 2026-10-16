@@ -21,7 +21,7 @@
  *   feedback_last_day        the same, or the last day has passed
  */
 import { ObjectId } from 'mongodb';
-import { attendanceOverrides, attendanceRecords, attendanceRegularizations, connectPosts, gameChallenges, getDb, leaves, overtimeRequests, users } from '../config/db';
+import { attendanceOverrides, attendanceRecords, attendanceRegularizations, gameChallenges, getDb, leaves, overtimeRequests, users } from '../config/db';
 import { AppNotification } from '../models/notification.model';
 import { feedbackProgress } from './feedback-notifications.service';
 import { istParts } from './notification-time';
@@ -64,7 +64,7 @@ const LIVE_GAME_MS = 6 * 60 * 60_000;
  * as it is read (nothing is deleted): an invite, an acceptance or a lobby
  * for a challenge that finished, expired or was declined; a Scribble invite
  * past its room's two hours; a Secret Squad lobby whose game was cancelled
- * or is over; a live game's start whose post is gone or a day's evening old.
+ * or is over; a live game's start 6 hours on.
  * The result of a challenge stays: it is the record of how it went.
  */
 export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Promise<InboxRow[]> {
@@ -74,7 +74,7 @@ export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Pro
       ['game_challenge_received', 'game_challenge_accepted', 'game_challenge_lobby'].includes(row.scenario ?? '') && row.data?.challengeId);
     const squadRows = rows.filter((row) => row.scenario === 'secret_squad_lobby' && row.data?.sessionId);
     const liveRows = rows.filter((row) => row.scenario === 'live_game_started');
-    const [challenges, sessions, posts] = await Promise.all([
+    const [challenges, sessions] = await Promise.all([
       challengeRows.length
         ? gameChallenges().find({ id: { $in: [...new Set(challengeRows.map((row) => row.data!.challengeId))] } }, { projection: { _id: 0, id: 1, status: 1 } }).toArray()
         : [],
@@ -82,9 +82,6 @@ export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Pro
         ? getDb().collection<{ id: string; status: string; startsAt: Date; rounds: { huntMs: number; breakMs: number }[] }>('secret_squad_sessions')
           .find({ id: { $in: [...new Set(squadRows.map((row) => row.data!.sessionId))] } }, { projection: { _id: 0, id: 1, status: 1, startsAt: 1, rounds: 1 } })
           .toArray()
-        : [],
-      liveRows.length
-        ? connectPosts().find({ id: { $in: [...new Set(liveRows.map((row) => row.data?.postId).filter(Boolean) as string[])] } }, { projection: { _id: 0, id: 1 } }).toArray()
         : [],
     ]);
     const live = new Map(challenges.map((c) => [c.id, c.status === 'pending' || c.status === 'accepted']));
@@ -95,9 +92,9 @@ export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Pro
       return [s.id, s.status === 'cancelled' || ends < now.getTime()];
     }));
     for (const row of squadRows) if (gameOver.get(row.data!.sessionId) !== false) ended.add(row.id);
-    const postsThere = new Set(posts.map((post) => post.id));
+    // A row whose post is gone never reaches here (listNotifications drops it).
     for (const row of liveRows) {
-      if (!row.data?.postId || !postsThere.has(row.data.postId) || now.getTime() - new Date(row.createdAt).getTime() > LIVE_GAME_MS) ended.add(row.id);
+      if (now.getTime() - new Date(row.createdAt).getTime() > LIVE_GAME_MS) ended.add(row.id);
     }
     for (const row of rows) {
       if (row.scenario === 'scribble_invite' && now.getTime() - new Date(row.createdAt).getTime() > SCRIBBLE_ROOM_MS) ended.add(row.id);

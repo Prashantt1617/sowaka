@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { io as connect, Socket as ClientSocket } from 'socket.io-client';
 import { app } from '../app';
 import { env } from '../config/env';
-import { authSessions, companies, connectDb, gameCatalog, getDb, users } from '../config/db';
+import { authSessions, companies, connectDb, connectPosts, gameCatalog, getDb, users } from '../config/db';
 import type { User } from '../models/user.model';
 import type { SquadSession } from '../models/secret-squad.model';
 import { initConnectRealtime } from '../services/connect-realtime.service';
@@ -50,10 +50,10 @@ const check = (label: string, passed: boolean, detail = '') => {
   console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}${detail && !passed ? ` — ${detail}` : ''}`);
 };
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(label: string, predicate: () => boolean, timeoutMs = 5000): Promise<boolean> {
+async function waitFor(label: string, predicate: () => boolean | Promise<boolean>, timeoutMs = 5000): Promise<boolean> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (predicate()) return true;
+    if (await predicate()) return true;
     await wait(25);
   }
   check(label, false, `timed out after ${timeoutMs}ms`);
@@ -303,6 +303,11 @@ async function liveChecks() {
     rounds: [roundConfig({ squadSize: 3, huntMs: 10 * 60_000, breakMs: 60_000 }), roundConfig({ squadSize: 2, huntMs: 5 * 60_000 })],
     status: 'scheduled', createdAt: new Date(), updatedAt: new Date(),
   });
+  // Its feed card, as `--post` makes one: the game keeps it up to date.
+  await connectPosts().insertOne({
+    id: 'post-live-1', org: ORG, type: 'secret_squad', body: { sessionId: 'live-1', office: 'Gurgaon', status: 'scheduled' },
+    author: { userId: 'sq-1', name: 'HR' }, publishedAt: new Date(), createdAt: new Date(), updatedAt: new Date(),
+  } as never);
 
   const ticket = (u: User) => mintTicket({ userId: u.userId, org: ORG, name: u.name });
   const gurgaon = people.filter((p) => p.location === 'Gurgaon' && p.userId !== 'sq-10');
@@ -396,8 +401,30 @@ async function liveChecks() {
   await move(60_000);
   await waitFor('round 2 dealt in pairs', () => latest(a)?.roundIndex === 1 && latest(a)?.status === 'dealing');
   check('the player who left is not dealt in', latest(a)!.players === 8);
-  await move(SQUAD.dealMs + 5 * 60_000);
+  // The usual end: every pair links up, and the last answer ends the game (not the clock).
+  await move(SQUAD.dealMs);
+  await waitFor('round 2 hunt with codes', () => latest(a)?.status === 'hunt' && Boolean(latest(a)?.round?.player?.code));
+  const second = (await readSession(ORG, 'live-1'))!;
+  for (const squad of second.round!.squads) {
+    const [first, ...rest] = squad.members.map((id) => byId.get(id)!);
+    for (const other of rest) {
+      await waitFor('a code to check', () => Boolean(latest(other)?.round?.player?.code));
+      const ask = await request(first, 'squad:check', { code: latest(other)!.round!.player.code });
+      if (!ask.ok) { check(`round 2 check ${first.userId} → ${other.userId}`, false, JSON.stringify(ask)); continue; }
+      await waitFor('asked', () => Boolean(latest(other)?.round?.ask));
+      await request(other, 'squad:answer', { askId: latest(other)!.round!.ask.id, allow: true });
+    }
+  }
   await waitFor('the last round ends the session', () => latest(a)?.status === 'over');
+  await waitFor('ended by an answer, the card has its final standings', async () => {
+    const card = await connectPosts().findOne({ id: 'post-live-1' });
+    const body = (card?.body ?? {}) as { status?: string; results?: { rank: number }[] };
+    return body.status === 'over' && Array.isArray(body.results) && body.results.length === 9 && body.results[0].rank === 1;
+  });
+  const board = await request(a, 'squad:board', { sessionId: 'live-1' });
+  check('squad:board gives the same standings', board.ok && ((board as { data: { results?: unknown[] } }).data.results ?? []).length === 9, JSON.stringify(board).slice(0, 200));
+  const elsewhere = await request(noida, 'squad:board', { sessionId: 'live-1' });
+  check('…but not to another office', !elsewhere.ok && elsewhere.status === 404);
   check('totals carry across rounds', (latest(a)?.totalPoints ?? 0) >= res.points);
   check('the round count is right', latest(a)!.roundCount === 2);
   for (const c of [...clients, noida]) c.socket.close();

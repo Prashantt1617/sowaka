@@ -178,6 +178,15 @@ async function nextFor(org: string, office: string) {
   };
 }
 
+/** How long a finished game's results stay up before the next game shows instead. */
+const RESULTS_FIRST_MS = 15 * 60_000;
+
+/** When a game ended: its last round's end, else the clock its record expires on less the time it is kept. */
+function endedAt(session: SquadSession): number {
+  const last = session.round ?? session.history[session.history.length - 1];
+  return last?.overAt ?? session.phaseEndsAt - SQUAD.keepAfterMs;
+}
+
 /** A profile photo as this API serves it (as presignConnectMedia does), for the game's faces. */
 const photoOf = (photoKey?: string) => (photoKey ? `/media/${encodeURIComponent(photoKey)}` : null);
 
@@ -224,8 +233,10 @@ export async function stateFor(viewer: SquadViewer) {
   if (!viewer.office) return stateOf(null, viewer, '', null);
   const held = await liveSessionFor(viewer.org, viewer.office);
   const next = held && held.status !== 'over' ? null : await nextFor(viewer.org, viewer.office);
-  // A finished game's results give way to the next one on the schedule.
-  const session = held && held.status === 'over' && next ? null : held;
+  // A finished game's results stay up a while, then give way to the next
+  // game on the schedule.
+  const overFor = held && held.status === 'over' ? deps.now() - endedAt(held) : 0;
+  const session = held && held.status === 'over' && next && overFor > RESULTS_FIRST_MS ? null : held;
   return stateOf(session, viewer, session?.office ?? viewer.office, session ? null : next);
 }
 
@@ -355,6 +366,9 @@ async function afterChange(session: SquadSession | undefined): Promise<void> {
   for (const round of [...session.history, ...(session.round ? [session.round] : [])]) {
     if (round.points && !round.skipped) await awardOnce(session, round.index, round.points);
   }
+  // The last squad linking up ends the game in an answer, not the clock:
+  // the card gets its standings either way (a second write is a no-op).
+  if (session.status === 'over') await syncCard(session, 'over');
 }
 
 // ------------------------------------------------------------------- dealing
@@ -468,7 +482,12 @@ async function payPoints(session: SquadSession, roundIndex: number, points: Reco
  * on a tie.
  */
 function standingsOf(session: SquadSession) {
+  // Those dealt into a round; someone who only sat in the lobby did not play.
+  const dealt = new Set(
+    [...session.history, ...(session.round ? [session.round] : [])].flatMap((round) => round.squads.flatMap((squad) => squad.members)),
+  );
   const rows = session.players
+    .filter((player) => dealt.has(player.userId))
     .map((player) => ({
       userId: player.userId,
       name: player.name,
@@ -493,15 +512,21 @@ export async function squadBoard(viewer: SquadViewer, input: { sessionId?: unkno
   if (sessionId) {
     const session = await readSession(viewer.org, sessionId);
     if (session && session.status === 'over') {
-      return { sessionId, office: session.office, endsAt: session.phaseEndsAt, results: standingsOf(session) };
+      if (officeKey(session.office) !== officeKey(viewer.office ?? '')) throw new SquadRuleError(404, 'There is no leaderboard for that game yet.');
+      return { sessionId, office: session.office, endsAt: new Date(endedAt(session)).toISOString(), results: standingsOf(session) };
     }
   }
-  const post = await connectPosts().findOne(
-    sessionId
-      ? { org: viewer.org, type: 'secret_squad', 'body.sessionId': sessionId }
-      : { org: viewer.org, type: 'secret_squad', 'body.office': viewer.office, 'body.status': 'over' },
-    { sort: { publishedAt: -1 }, projection: { _id: 0, body: 1 } },
-  );
+  // Your own office's games only.
+  const posts = await connectPosts()
+    .find(
+      sessionId
+        ? { org: viewer.org, type: 'secret_squad', 'body.sessionId': sessionId }
+        : { org: viewer.org, type: 'secret_squad', 'body.status': 'over' },
+      { sort: { publishedAt: -1 }, projection: { _id: 0, body: 1 } },
+    )
+    .limit(sessionId ? 1 : 50)
+    .toArray();
+  const post = posts.find((p) => officeKey(String((p.body as Record<string, unknown>).office ?? '')) === officeKey(viewer.office ?? ''));
   const body = (post?.body ?? {}) as Record<string, unknown>;
   if (!post || !Array.isArray(body.results)) throw new SquadRuleError(404, 'There is no leaderboard for that game yet.');
   return {
