@@ -21,6 +21,7 @@ import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { notifications } from '../config/db';
 import { notifyUsers } from './notification.service';
+import { claimOnce } from './scribble-store';
 import { emitRequestsChanged } from './connect-realtime.service';
 import { leaveTypeLabel } from '../models/shift.model';
 import { approvalRulesFor, managerMayDecide } from './shift.service';
@@ -548,6 +549,8 @@ export async function sendPendingRequestReminders(now = new Date()): Promise<num
     const pending = await pendingFor(approver, now);
     const total = pending.leave + pending.overtime + pending.attendance;
     if (total === 0) continue;
+    // Every server fires at 14:00 at once: only the one that claims it sends.
+    if (!(await claimOnce(`notify:pending:${approver.userId}:${todayKey}`, 2 * 24 * 60 * 60_000))) continue;
     const parts = [
       pending.leave ? `${pending.leave} leave` : '',
       pending.overtime ? `${pending.overtime} overtime` : '',
@@ -598,6 +601,7 @@ export async function sendLeaveNextWeek(now = new Date()): Promise<number> {
   let sent = 0;
   for (const [managerId, lines] of byManager) {
     if (await notifications().findOne({ userId: managerId, scenario: 'leave_planning', 'data.weekStart': weekStartKey })) continue;
+    if (!(await claimOnce(`notify:leave-planning:${managerId}:${weekStartKey}`, 8 * 24 * 60 * 60_000))) continue;
     await deliver([managerId], {
       scenario: 'leave_planning',
       title: 'Leave next week',

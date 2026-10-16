@@ -55,9 +55,24 @@ export function groupedCopy(kind: GroupKind, actors: string[]): { title: string;
   }
 }
 
-async function push(doc: GroupDoc, actors: string[], now: Date): Promise<void> {
-  const copy = groupedCopy(doc.kind, actors);
-  await groups().updateOne({ key: doc.key }, { $set: { actors: [], lastPushAt: now, updatedAt: now } });
+/**
+ * Claims the group's push and empties it in one step, so two events (or two
+ * servers) can't both push: only a group whose window is open matches.
+ */
+async function claimPush(key: string, now: Date): Promise<GroupDoc | null> {
+  return groups().findOneAndUpdate(
+    {
+      key,
+      'actors.0': { $exists: true },
+      $or: [{ lastPushAt: { $exists: false } }, { lastPushAt: { $lte: new Date(now.getTime() - GROUP_WINDOW_MS) } }],
+    },
+    { $set: { actors: [], lastPushAt: now, updatedAt: now } },
+    { returnDocument: 'before' },
+  );
+}
+
+async function send(doc: GroupDoc): Promise<void> {
+  const copy = groupedCopy(doc.kind, doc.actors);
   await notifyUsers([doc.recipientUserId], { scenario: doc.kind, ...copy, data: doc.data });
 }
 
@@ -82,12 +97,14 @@ export async function notifyGrouped(input: {
       $pull: { actors: name },
     },
     { upsert: true },
-  );
-  const doc = await groups().findOneAndUpdate({ key }, { $push: { actors: name } }, { returnDocument: 'after' });
-  if (!doc) return;
-  if (!doc.lastPushAt || now.getTime() - doc.lastPushAt.getTime() >= GROUP_WINDOW_MS) {
-    await push(doc, doc.actors, now);
-  }
+  ).catch((error) => {
+    // Two first events at once: the unique key lets one insert; the other updates.
+    if ((error as { code?: number }).code !== 11000) throw error;
+    return groups().updateOne({ key }, { $set: { data: input.data, updatedAt: now }, $pull: { actors: name } });
+  });
+  await groups().updateOne({ key }, { $push: { actors: name } });
+  const claimed = await claimPush(key, now);
+  if (claimed) await send(claimed);
 }
 
 /** The scheduler's tick: any group whose window has closed with people gathered gets its push. */
@@ -98,7 +115,9 @@ export async function flushGroupedNotifications(now = new Date()): Promise<numbe
   let sent = 0;
   for (const doc of due) {
     try {
-      await push(doc, doc.actors, now);
+      const claimed = await claimPush(doc.key, now);
+      if (!claimed) continue;
+      await send(claimed);
       sent += 1;
     } catch (error) {
       logger.error('Grouped notification failed', { key: doc.key }, error);

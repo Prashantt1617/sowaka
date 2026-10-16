@@ -226,6 +226,8 @@ export async function sendNewJoinerNotifications(now = new Date()) {
     if (!team.length) continue;
     const already = await notifications().findOne({ scenario: 'new_joiner', 'data.dateKey': dateKey, 'data.employeeUserId': joiner.userId });
     if (already) continue;
+    const { claimOnce } = await import('./scribble-store');
+    if (!(await claimOnce(`notify:new-joiner:${joiner.userId}:${dateKey}`, 2 * 24 * 60 * 60_000))) continue;
     await notifyUsers(team.map((person) => person.userId), {
       scenario: 'new_joiner',
       title: `${joiner.name} joined your team today 👋`,

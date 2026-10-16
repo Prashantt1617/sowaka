@@ -45,6 +45,7 @@ import {
 import { claimOnce } from './scribble-store';
 import { notifyUsers } from './notification.service';
 import { recordPointChanges } from './points-ledger.service';
+import { env } from '../config/env';
 import { logger } from '../utils/logger';
 
 export { SquadRuleError } from './secret-squad-engine';
@@ -200,6 +201,13 @@ export async function stateFor(viewer: SquadViewer) {
 
 const lastSent = new Map<string, string>();
 
+/** Forgets everything kept in this process for a session that has ended. */
+function forgetSession(id: string): void {
+  for (const key of lastSent.keys()) if (key.startsWith(`${id}:`)) lastSent.delete(key);
+  codeWindows.delete(id);
+  cancelPushed.delete(id);
+}
+
 /** Forgets what was last sent to someone, so their next push goes out whole. */
 export function forgetSquadSent(userId: string): void {
   for (const key of lastSent.keys()) if (key.endsWith(`:${userId}`)) lastSent.delete(key);
@@ -213,7 +221,15 @@ export function forgetSquadSent(userId: string): void {
 export function pushSession(session: SquadSession): void {
   if (!emitter) return;
   for (const player of session.players) {
-    const state = stateOf(session, player, session.office, null);
+    if (player.left) continue;
+    let state: ReturnType<typeof stateOf>;
+    try {
+      state = stateOf(session, player, session.office, null);
+    } catch (error) {
+      // One player's view failing must not cost everyone after them theirs.
+      logger.error('Secret Squad view failed', { sessionId: session.id, userId: player.userId }, error);
+      continue;
+    }
     // What they see, not when: the version and the clock change on every
     // action anywhere in the office, and must not send an update by themselves.
     const print = JSON.stringify({ ...state, now: 0, v: 0 });
@@ -227,7 +243,7 @@ export function pushSession(session: SquadSession): void {
   const key = `${session.id}:*`;
   if (lastSent.get(key) !== print) {
     lastSent.set(key, print);
-    emitter.toOffice(session.org, session.office, session.players.map((player) => player.userId), 'squad:state', watchers);
+    emitter.toOffice(session.org, session.office, session.players.filter((player) => !player.left).map((player) => player.userId), 'squad:state', watchers);
   }
 }
 
@@ -426,6 +442,8 @@ async function syncCard(session: SquadSession, status: 'lobby' | 'playing' | 'ov
 
 const INSTANCE = randomUUID();
 const codeWindows = new Map<string, number>();
+/** Cancelled sessions whose phones have been told. */
+const cancelPushed = new Set<string>();
 
 /** Moves every live session on: dealing, the hunt's clock, breaks, the end. */
 export async function tickSquad(): Promise<void> {
@@ -446,8 +464,14 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
   const current = await readSession(org, id);
   if (!current) {
     await forgetLiveSession(org, id);
-    codeWindows.delete(id);
+    forgetSession(id);
     return;
+  }
+  // Called off from a script: tell every phone once, and the card.
+  if (current.status === 'cancelled' && !cancelPushed.has(id)) {
+    cancelPushed.add(id);
+    pushSession(current);
+    await syncCard(current, 'cancelled');
   }
   const dealDue = (current.status === 'lobby' && now >= current.startsAt)
     || (current.status === 'break' && now >= current.phaseEndsAt);
@@ -478,7 +502,7 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
   const { session, result } = out;
   if (result.kind === 'expire') {
     await deleteSession(org, id);
-    codeWindows.delete(id);
+    forgetSession(id);
     return;
   }
   codeWindows.set(id, codeWindowOf(now));
@@ -493,6 +517,9 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
 
 // ---------------------------------------------------------------- schedule
 
+/** The companies a local backend may open sessions for (SQUAD_LOCAL_ORGS, default sowaka). */
+const localOrgs = () => (process.env.SQUAD_LOCAL_ORGS ?? 'sowaka').split(',').map((org) => org.trim()).filter(Boolean);
+
 /** Opens the lobby of every session whose time has come, once, and tells that office. */
 export async function openDueSessions(): Promise<number> {
   const now = deps.now();
@@ -503,7 +530,16 @@ export async function openDueSessions(): Promise<number> {
   for (const schedule of due) {
     const lobbyOpensAt = schedule.startsAt.getTime() - schedule.lobbyMs;
     if (lobbyOpensAt > now) continue;
-    if (!(await claimOnce(`squad-open:${schedule.id}`, 2 * 24 * 60 * 60_000))) continue;
+    // A developer's machine shares the database with production: it opens
+    // only the test companies' sessions, never a real one.
+    if (env.isLocal && !localOrgs().includes(schedule.org)) continue;
+    // Claimed in Mongo, which every server shares (local ones too): exactly
+    // one process anywhere opens a session.
+    const claimed = await squadSchedules().findOneAndUpdate(
+      { id: schedule.id, status: 'scheduled' },
+      { $set: { status: 'opened', updatedAt: new Date(now) } },
+    );
+    if (!claimed) continue;
     const session = newSession({
       id: schedule.id,
       org: schedule.org,
@@ -515,7 +551,6 @@ export async function openDueSessions(): Promise<number> {
       now,
     });
     if (!(await createSession(session))) continue;
-    await squadSchedules().updateOne({ id: schedule.id }, { $set: { status: 'opened', updatedAt: new Date(now) } });
     opened += 1;
     pushSession(session);
     await syncCard(session, 'lobby');

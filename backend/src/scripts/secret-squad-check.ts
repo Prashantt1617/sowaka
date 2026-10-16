@@ -24,6 +24,7 @@ import {
   dealRound,
   holderOf,
   joinSession,
+  leaveSession,
   markOffline,
   markOnline,
   newSession,
@@ -189,6 +190,44 @@ function unitChecks() {
   advance(q, q.round!.endsAt);
   check('the last round ends the session', q.status === 'over');
   check('totals add up across rounds', q.totals[sq0[0]] === expected + (q.round!.points![sq0[0]] ?? 0));
+
+  console.log('\nfrom the review');
+  // Leaving in a break keeps the player on the list (their old squad names
+  // them): everyone's view still builds, and they are not dealt again.
+  const lb = newSession({ id: 'u4', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0, rounds: [roundConfig({ squadSize: 3, huntMs: 60_000, breakMs: 30_000 }), roundConfig({ squadSize: 3 })], codeSeed: 'lb', now: t0 });
+  for (let i = 0; i < 9; i += 1) joinSession(lb, { userId: `l${i}`, name: `L ${i}`, initials: 'L' }, t0);
+  const lbs = planNextRound(lb, t0, 999);
+  dealRound(lb, t0, lbs, chooseThemes(lbs.length, 3, [], new Map(), die), die);
+  advance(lb, lb.phaseEndsAt);
+  const ls0 = lb.round!.squads[0].members;
+  const lk = startCheck(lb, ls0[0], { code: codeFor(lb, ls0[1], lb.round!.huntStartsAt + 1000)!.code }, lb.round!.huntStartsAt + 1000) as { askId: string };
+  answerCheck(lb, ls0[1], lk.askId, true, lb.round!.huntStartsAt + 2000);
+  advance(lb, lb.round!.endsAt);
+  leaveSession(lb, ls0[1]);
+  let threw = '';
+  try { lb.players.forEach((p) => sessionViewFor(lb, p.userId, lb.round!.endsAt + 1000)); } catch (error) { threw = (error as Error).message; }
+  check('someone leaving in a break: every view still builds', threw === '', threw);
+  check('…and they stay listed, marked as left', lb.players.some((p) => p.userId === ls0[1] && p.left));
+  advance(lb, lb.phaseEndsAt);
+  const lbn = planNextRound(lb, lb.phaseEndsAt, 999);
+  dealRound(lb, lb.phaseEndsAt, lbn, chooseThemes(lbn.length, Math.max(...lbn), lb.packIds, new Map(), die), die);
+  check('…and are not dealt into the next round', !lb.round!.squads.some((sq) => sq.members.includes(ls0[1])));
+
+  // Codes come from fixed seats: someone leaving doesn't move anyone's code.
+  advance(lb, lb.phaseEndsAt);
+  const at2 = lb.round!.huntStartsAt + 1000;
+  const before = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, at2)!.code);
+  joinSession(lb, { userId: 'late', name: 'Late', initials: 'L' }, at2);
+  leaveSession(lb, 'late');
+  const after = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, at2)!.code);
+  check('codes don\'t move when someone joins or leaves mid-round', JSON.stringify(before) === JSON.stringify(after));
+  const nextWindow = at2 + SQUAD.codeWindowMs;
+  const renewed = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, nextWindow)!.code);
+  check('a just-changed code can never be someone else\'s new one', before.every((c) => !renewed.includes(c)) && before.every((c, i) => holderOf(lb, c, nextWindow) === lb.players.filter((p) => p.playing)[i].userId));
+
+  // Squads never bigger than a theme has words for.
+  check('squads of 24 for 155 people stay at 24 or under', Math.max(...squadSizes(155, 24)) <= 24 && squadSizes(155, 24).reduce((a, b) => a + b, 0) === 155);
+  check('squads of 20 for 49 people stay at 24 or under', Math.max(...squadSizes(49, 20)) <= 24);
 
   const few = newSession({ id: 'u3', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0, rounds: [roundConfig({ squadSize: 5 })], codeSeed: 'f', now: t0 });
   for (let i = 0; i < 3; i += 1) joinSession(few, { userId: `f${i}`, name: 'F', initials: 'F' }, t0);

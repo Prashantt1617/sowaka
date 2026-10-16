@@ -74,6 +74,8 @@ export const configFor = (session: SquadSession, index = session.roundIndex): Sq
 export function squadSizes(n: number, target: number, maxSquads = Number.POSITIVE_INFINITY): number[] {
   if (n < 2) return [];
   let k = Math.max(2, Math.round(n / Math.max(SQUAD.minSquadSize, target)));
+  // Never a squad bigger than a theme has words for.
+  k = Math.max(k, Math.ceil(n / SQUAD.maxSquadSize));
   k = Math.min(k, Math.floor(n / 2), Math.max(1, maxSquads));
   const base = Math.floor(n / k);
   const extra = n % k;
@@ -130,9 +132,14 @@ export function joinSession(session: SquadSession, profile: JoinProfile, now: nu
   if (existing) {
     existing.online = true;
     delete existing.offlineAt;
+    delete existing.left;
     return existing;
   }
+  const seat = session.nextSeat ?? seatsUsed(session);
+  if (seat >= CODE_SPACE) throw new SquadRuleError(409, 'This lobby is full.');
+  session.nextSeat = seat + 1;
   const player: SquadPlayer = {
+    seat,
     userId: profile.userId,
     name: profile.name,
     initials: profile.initials,
@@ -148,20 +155,42 @@ export function joinSession(session: SquadSession, profile: JoinProfile, now: nu
   return player;
 }
 
-/** Leaves before a round is dealt. Once dealt, closing the page is what "away" is for. */
+/**
+ * Leaves the session. Before anything is dealt the player simply goes; once
+ * they have been in a round they stay on the list marked as left, because
+ * that round's squad (and its results) still name them. In the hunt, closing
+ * the page is what "away" is for.
+ */
 export function leaveSession(session: SquadSession, userId: string): void {
   const player = playerOf(session, userId);
   if (!player) return;
   if (session.status !== 'lobby' && session.status !== 'break' && player.playing) {
     throw new SquadRuleError(409, 'You can leave between rounds.');
   }
-  session.players = session.players.filter((item) => item.userId !== userId);
+  const dealtBefore = player.squad !== undefined
+    || session.history.some((round) => round.squads.some((squad) => squad.members.includes(userId)));
+  if (session.status === 'lobby' && !dealtBefore) {
+    session.players = session.players.filter((item) => item.userId !== userId);
+    return;
+  }
+  player.left = true;
+  player.online = false;
+  player.offlineAt = player.offlineAt ?? 0;
 }
+
+/** Seats for a session written before seats existed: their place in the list. */
+function seatsUsed(session: SquadSession): number {
+  return session.players.reduce((max, player, i) => Math.max(max, (player.seat ?? i) + 1), 0);
+}
+
+const seatOf = (session: SquadSession, player: SquadPlayer) =>
+  player.seat ?? session.players.indexOf(player);
 
 /** Who a round would deal: everyone joined and online, or only just offline. */
 export function eligiblePlayers(session: SquadSession, now: number): SquadPlayer[] {
   return session.players.filter(
-    (player) => player.online || (player.offlineAt !== undefined && now - player.offlineAt < SQUAD.awayMs),
+    (player) => !player.left
+      && (player.online || (player.offlineAt !== undefined && now - player.offlineAt < SQUAD.awayMs)),
   );
 }
 
@@ -262,7 +291,15 @@ export function dealRound(
 
 const permutations = new Map<string, Uint16Array>();
 
-/** A shuffle of 0000–9999 for one window of one round: every player's code differs. */
+/**
+ * Codes come from 0000–9999 split in two halves: even windows use 0000–4999,
+ * odd ones 5000–9999. Within a window every seat gets a different code, and
+ * a code read just before it changed (the previous window, the other half)
+ * can never be someone else's current code.
+ */
+const CODE_SPACE = 5_000;
+
+/** A shuffle of the half's codes for one window of one round. */
 function permutationFor(seed: string, round: number, window: number): Uint16Array {
   const key = `${seed}:${round}:${window}`;
   const cached = permutations.get(key);
@@ -281,7 +318,7 @@ function permutationFor(seed: string, round: number, window: number): Uint16Arra
     c = (c + out) | 0;
     return (out >>> 0) / 4294967296;
   };
-  const values = new Uint16Array(10_000);
+  const values = new Uint16Array(CODE_SPACE);
   for (let i = 0; i < values.length; i += 1) values[i] = i;
   for (let i = values.length - 1; i > 0; i -= 1) {
     const j = Math.floor(next() * (i + 1));
@@ -296,17 +333,20 @@ function permutationFor(seed: string, round: number, window: number): Uint16Arra
 
 export const codeWindowOf = (now: number) => Math.floor(now / SQUAD.codeWindowMs);
 
+const codeIn = (session: SquadSession, roundIndex: number, window: number, seat: number) =>
+  (window % 2) * CODE_SPACE + permutationFor(session.codeSeed, roundIndex, window)[seat];
+
 /** A player's current code and when it changes, or null if they have none. */
 export function codeFor(session: SquadSession, userId: string, now: number): { code: string; expiresAt: number } | null {
   const round = session.round;
   if (!round || session.status !== 'hunt') return null;
-  const index = session.players.findIndex((player) => player.userId === userId);
-  const player = session.players[index];
-  if (!player?.playing || player.away || player.squad === undefined) return null;
+  const player = playerOf(session, userId);
+  if (!player?.playing || player.away || player.left || player.squad === undefined) return null;
   if (round.squads[player.squad]?.finishedAt) return null;
+  const seat = seatOf(session, player);
+  if (seat < 0 || seat >= CODE_SPACE) return null;
   const window = codeWindowOf(now);
-  const code = permutationFor(session.codeSeed, round.index, window)[index];
-  return { code: String(code).padStart(4, '0'), expiresAt: (window + 1) * SQUAD.codeWindowMs };
+  return { code: String(codeIn(session, round.index, window, seat)).padStart(4, '0'), expiresAt: (window + 1) * SQUAD.codeWindowMs };
 }
 
 /** Who holds `code` now, or held it in the previous window (a code read just as it changed). */
@@ -316,11 +356,12 @@ export function holderOf(session: SquadSession, code: string, now: number): stri
   const value = Number(code);
   const window = codeWindowOf(now);
   for (const w of [window, window - 1]) {
-    const index = permutationFor(session.codeSeed, round.index, w).indexOf(value);
-    if (index >= 0 && index < session.players.length) {
-      const holder = session.players[index];
-      if (codeFor(session, holder.userId, w * SQUAD.codeWindowMs)) return holder.userId;
-    }
+    // Each window owns one half: a code is only ever looked for in its own.
+    if (Math.floor(value / CODE_SPACE) !== w % 2) continue;
+    const seat = permutationFor(session.codeSeed, round.index, w).indexOf(value - (w % 2) * CODE_SPACE);
+    if (seat < 0) continue;
+    const holder = session.players.find((player) => seatOf(session, player) === seat);
+    if (holder && codeFor(session, holder.userId, w * SQUAD.codeWindowMs)) return holder.userId;
   }
   return null;
 }
@@ -705,13 +746,16 @@ function roundViewFor(session: SquadSession, round: SquadRoundState, me: SquadPl
     away: me.away,
   };
   const linkedIds = linkedWith(session, me.userId);
-  const linked = linkedIds.map((id) => {
-    const player = playerOf(session, id)!;
-    return { ...short(player)!, word: player.word, me: id === me.userId, away: player.away };
+  const linked = linkedIds.flatMap((id) => {
+    const player = playerOf(session, id);
+    return player ? [{ ...short(player)!, word: player.word, me: id === me.userId, away: player.away || Boolean(player.left) }] : [];
   });
   const awayWords = squad.members
     .filter((id) => !linkedIds.includes(id) && playerOf(session, id)?.away)
-    .map((id) => ({ name: playerOf(session, id)!.name, word: playerOf(session, id)!.word }));
+    .flatMap((id) => {
+      const player = playerOf(session, id);
+      return player ? [{ name: player.name, word: player.word }] : [];
+    });
   view.squad = {
     size: squad.members.length,
     needed: presentMembers(session, me.squad).length,

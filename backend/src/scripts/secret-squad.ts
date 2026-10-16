@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { companies, connectDb, connectPosts, users } from '../config/db';
+import { redisClient, redisReady } from '../config/redis';
 import type { ConnectPost } from '../models/connect.model';
 import type { SquadRoundConfig, SquadSchedule } from '../models/secret-squad.model';
 import { SQUAD, cancelSession } from '../services/secret-squad-engine';
@@ -187,8 +188,17 @@ async function syncCard(schedule: SquadSchedule, status?: string): Promise<void>
   });
 }
 
+/** With Redis configured, live sessions are there: wait for it rather than miss them. */
+async function storeReady(): Promise<void> {
+  if (!process.env.REDIS_URL) return;
+  redisClient();
+  for (let i = 0; i < 50 && !redisReady(); i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+  if (!redisReady()) fail('Could not reach Redis, where live sessions are kept. Nothing was changed.');
+}
+
 (async () => {
   await connectDb();
+  await storeReady();
   const by = userInfo().username;
 
   if (command === 'packs') {
@@ -325,11 +335,16 @@ async function syncCard(schedule: SquadSchedule, status?: string): Promise<void>
     if (schedule.status === 'scheduled') {
       await squadSchedules().updateOne({ id: schedule.id }, { $set: { status: 'cancelled', updatedAt: new Date() } });
     } else if (schedule.status === 'opened') {
-      await mutateSession(schedule.org, schedule.id, (session) => {
+      const live = await mutateSession(schedule.org, schedule.id, (session) => {
         if (session.status === 'over' || session.status === 'cancelled') return null;
         cancelSession(session, 'Called off', Date.now());
         return true;
       });
+      if (!live) {
+        const held = await readSession(schedule.org, schedule.id);
+        if (!held) fail('This session is not live in this store (is REDIS_URL the same as the servers\'?). Nothing was changed.');
+        if (held.status === 'over') fail('This session has already ended.');
+      }
       await squadSchedules().updateOne({ id: schedule.id }, { $set: { status: 'cancelled', updatedAt: new Date() } });
     }
     await syncCard(schedule, 'cancelled');

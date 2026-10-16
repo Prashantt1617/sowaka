@@ -25,6 +25,10 @@ export interface SquadRoundConfig {
 
 export interface SquadPlayer {
   userId: string;
+  /** Fixed for the session, never reused: what a player's code is worked out from. */
+  seat?: number;
+  /** Left between rounds: kept (their squad still names them) but dealt no more. */
+  left?: boolean;
   name: string;
   initials: string;
   photoKey?: string;
@@ -124,6 +128,8 @@ export interface SquadSession {
   /** Earlier rounds, kept for the session results. */
   history: SquadRoundState[];
   players: SquadPlayer[];
+  /** The next seat to hand out. */
+  nextSeat?: number;
   /** Points each player has earned across the session. */
   totals: Record<string, number>;
   /** Seeds the rotating codes; never sent to a page. */

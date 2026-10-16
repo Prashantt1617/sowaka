@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -156,8 +157,14 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (state == AppLifecycleState.resumed) _check();
   }
 
+  bool _again = false;
+
   Future<void> _check() async {
-    if (_checking) return;
+    // A recheck asked for mid-check runs once that one is done, not never.
+    if (_checking) {
+      _again = true;
+      return;
+    }
     _checking = true;
     try {
       final status = await _service.check();
@@ -174,6 +181,10 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       // Offline or the server is away: carry on as before.
     } finally {
       _checking = false;
+      if (_again && mounted) {
+        _again = false;
+        unawaited(_check());
+      }
     }
   }
 
@@ -184,8 +195,11 @@ class _AppUpdateGateState extends State<AppUpdateGate>
         widget.child,
         if (_status.mode == AppUpdateMode.force)
           Positioned.fill(
-            child: ForceUpdateScreen(
-              onUpdate: () => AppUpdateGate.openStore(_status.storeUrl),
+            // Screen readers too: nothing underneath can be reached.
+            child: BlockSemantics(
+              child: ForceUpdateScreen(
+                onUpdate: () => AppUpdateGate.openStore(_status.storeUrl),
+              ),
             ),
           ),
       ],
