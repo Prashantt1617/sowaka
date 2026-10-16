@@ -173,6 +173,8 @@ export async function updateCompanySettingsHandler(req: Request, res: Response, 
     const settings = await updateCompanySettings(adminUserId(req), {
       weekoffDays: req.body.weekoffDays,
       overtimeDisabledDepartments: req.body.overtimeDisabledDepartments,
+      departmentList: req.body.departmentList,
+      designationList: req.body.designationList,
     });
     res.status(200).json({ success: true, settings });
   } catch (error) {

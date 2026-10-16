@@ -159,6 +159,11 @@ export type CompanySettings = {
   weekoffDays: number[]; // 0 = Sunday .. 6 = Saturday
   overtimeDisabledDepartments: string[];
   departments: string[]; // all departments in the org, for building toggles
+  /** Every designation: those people hold and those HR created. */
+  designations: string[];
+  /** The departments and designations HR created here, before anyone holds them. */
+  departmentList: string[];
+  designationList: string[];
   /** Day of month review cycles open on (1-28). */
   reviewCycleStartDay: number;
   /** Where that day currently puts the org — `YYYY-MM` plus its date bounds. */
@@ -170,7 +175,10 @@ export const getCompanySettings = () =>
 
 export const updateCompanySettings = (
   patch: Partial<
-    Pick<CompanySettings, 'weekoffDays' | 'overtimeDisabledDepartments' | 'reviewCycleStartDay'>
+    Pick<
+      CompanySettings,
+      'weekoffDays' | 'overtimeDisabledDepartments' | 'reviewCycleStartDay' | 'departmentList' | 'designationList'
+    >
   >,
 ) =>
   api<{ settings: CompanySettings }>('/admin/company/settings', {
