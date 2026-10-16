@@ -470,7 +470,46 @@ void main() {
       await _tearDown(tester, bloc);
     });
 
-    testWidgets('a past day says which', (tester) async {
+    testWidgets("yesterday's row goes by its date", (tester) async {
+      final yesterday = DateTime.now().toUtc().add(
+        const Duration(hours: 5, minutes: 30, days: -1),
+      );
+      String two(int v) => v.toString().padLeft(2, '0');
+      final key =
+          '${yesterday.year}-${two(yesterday.month)}-${two(yesterday.day)}';
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      final post = _celebration(
+        id: 'yday',
+        type: 'birthday',
+        personUserId: 'riya',
+        personName: 'Riya Sharma',
+        extra: {'celebrationGroup': 'celebrations:sowaka:$key'},
+      );
+      final bloc = await _pumpFeed(tester, _Server([post]));
+      expect(
+        find.text(
+          'Celebrations · ${yesterday.day} ${months[yesterday.month - 1]}',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Yesterday'), findsNothing);
+      await _tearDown(tester, bloc);
+    });
+
+    testWidgets('an older day is not on the feed', (tester) async {
       final post = _celebration(
         id: 'old',
         type: 'birthday',
@@ -479,7 +518,8 @@ void main() {
         extra: {'celebrationGroup': 'celebrations:sowaka:2026-03-02'},
       );
       final bloc = await _pumpFeed(tester, _Server([post]));
-      expect(find.text('Celebrations · 2 Mar'), findsOneWidget);
+      expect(find.byKey(const ValueKey('celebrations-section')), findsNothing);
+      expect(find.text('Riya Sharma'), findsNothing);
       await _tearDown(tester, bloc);
     });
 

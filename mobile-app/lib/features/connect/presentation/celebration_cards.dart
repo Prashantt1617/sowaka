@@ -33,17 +33,21 @@ String _celebrationGroupOf(ConnectPost post) =>
 
 /// The feed's cards in order: one post each, except a day's celebration
 /// posts, drawn as one row where the first of them sits. The rest of the day
-/// joins it from wherever it is in the list — even from a later page.
+/// joins it from wherever it is in the list — even from a later page. Only
+/// today's and yesterday's celebrations show; older days drop off the feed.
 List<List<ConnectPost>> _feedCards(List<ConnectPost> posts) {
+  final recent = {_todayInIndia(), _todayInIndia(daysAgo: 1)};
+  bool stale(String key) => key.isNotEmpty && !recent.contains(key.split(':').last);
   final clubs = <String, List<ConnectPost>>{};
   for (final post in posts) {
     final key = _celebrationGroupOf(post);
-    if (key.isNotEmpty) (clubs[key] ??= []).add(post);
+    if (key.isNotEmpty && !stale(key)) (clubs[key] ??= []).add(post);
   }
   final cards = <List<ConnectPost>>[];
   final placed = <String>{};
   for (final post in posts) {
     final key = _celebrationGroupOf(post);
+    if (stale(key)) continue;
     if (key.isEmpty) {
       cards.add([post]);
     } else if (placed.add(key)) {
@@ -628,9 +632,7 @@ class _CelebrationsSection extends StatelessWidget {
   String get _title {
     final group = _celebrationGroupOf(posts.first);
     if (group.endsWith(':${_todayInIndia()}')) return 'Celebrations of the day';
-    if (group.endsWith(':${_todayInIndia(daysAgo: 1)}')) {
-      return "Yesterday's celebrations";
-    }
+    // Yesterday's row (the only other day the feed keeps) goes by its date.
     final day = DateTime.tryParse(group.split(':').last);
     return day == null
         ? 'Celebrations'
