@@ -19,6 +19,11 @@ export interface CompanySettingsView {
   weekoffDays: number[];
   overtimeDisabledDepartments: string[];
   departments: string[]; // all departments in the org, for building toggles
+  /** Every designation: those people hold and those HR created. */
+  designations: string[];
+  /** The departments and designations HR created on the dashboard. */
+  departmentList: string[];
+  designationList: string[];
   /** Day of month review cycles open on (1-28). */
   reviewCycleStartDay: number;
   /** The cycle that day currently puts the org in, for the settings preview. */
@@ -73,17 +78,23 @@ export async function getCompanySettings(adminUserId: string): Promise<CompanySe
   );
   const period = periodFor(new Date(), reviewCycleStartDay);
   const { start, end } = cycleWindow(period, reviewCycleStartDay);
-  const orgEmployees = await users().find({ org }).project({ department: 1 }).toArray();
-  const departments = [
-    ...new Set(
-      orgEmployees
-        .map((employee) => (employee as { department?: string }).department?.trim())
-        .filter((department): department is string => Boolean(department)),
-    ),
-  ].sort((a, b) => a.localeCompare(b));
+  const orgEmployees = await users().find({ org }).project({ department: 1, designation: 1 }).toArray();
+  const departmentList = company?.departmentList ?? [];
+  const designationList = company?.designationList ?? [];
+  const departments = uniqueNames([
+    ...orgEmployees.map((employee) => (employee as { department?: string }).department),
+    ...departmentList,
+  ]);
+  const designations = uniqueNames([
+    ...orgEmployees.map((employee) => (employee as { designation?: string }).designation),
+    ...designationList,
+  ]);
   return {
     ...config,
     departments,
+    designations,
+    departmentList,
+    designationList,
     reviewCycleStartDay,
     currentCycle: {
       period,
@@ -93,12 +104,37 @@ export async function getCompanySettings(adminUserId: string): Promise<CompanySe
   };
 }
 
+/** Trimmed, blanks dropped, one of each regardless of case (the first spelling wins), A to Z. */
+function uniqueNames(values: (string | undefined)[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const name = value?.trim().replace(/\s+/g, ' ');
+    if (name && !byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/** A department or designation list from the dashboard: strings of 80 characters at most, 500 at most. */
+function nameList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.every((name) => typeof name === 'string')) {
+    throw new CompanySettingsError(400, `${field} must be an array of strings`);
+  }
+  const names = uniqueNames(value as string[]);
+  if (names.some((name) => name.length > 80)) {
+    throw new CompanySettingsError(400, `${field}: a name can be at most 80 characters`);
+  }
+  if (names.length > 500) throw new CompanySettingsError(400, `${field}: at most 500 names`);
+  return names;
+}
+
 export async function updateCompanySettings(
   adminUserId: string,
   patch: {
     weekoffDays?: unknown;
     overtimeDisabledDepartments?: unknown;
     reviewCycleStartDay?: unknown;
+    departmentList?: unknown;
+    designationList?: unknown;
   },
 ): Promise<CompanySettingsView> {
   const org = await requireAdminOrg(adminUserId);
@@ -134,6 +170,9 @@ export async function updateCompanySettings(
     }
     update.reviewCycleStartDay = day;
   }
+
+  if (patch.departmentList !== undefined) update.departmentList = nameList(patch.departmentList, 'departmentList');
+  if (patch.designationList !== undefined) update.designationList = nameList(patch.designationList, 'designationList');
 
   await companies().updateOne({ id: org }, { $set: update }, { upsert: true });
   return getCompanySettings(adminUserId);

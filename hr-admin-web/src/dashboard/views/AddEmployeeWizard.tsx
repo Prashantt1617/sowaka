@@ -13,7 +13,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconPlus } from '../icons';
 import {
-  addEmployeeDocument, assignShift, createEmployee, getShifts, removeEmployeeDocument, shiftHeadcount,
+  addEmployeeDocument, assignShift, createEmployee, getCompanySettings, getShifts, removeEmployeeDocument, shiftHeadcount,
   EMPLOYEE_DOCUMENT_TYPES, type EmployeeDocumentDTO, type ShiftDTO,
 } from '../../services/hrms';
 import { assignKpis, listKpiParameters, listKpiTemplates } from '../../services/kpi';
@@ -74,6 +74,8 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
 
   // Step 4 and 5 attach to the person created in step 1.
   const [shifts, setShifts] = useState<ShiftDTO[]>([]);
+  // Departments and designations HR added before anyone held them.
+  const [savedNames, setSavedNames] = useState<{ departments: string[]; designations: string[] }>({ departments: [], designations: [] });
   const [shiftId, setShiftId] = useState<string>('');
   const [kpiTemplates, setKpiTemplates] = useState<KpiTemplateDTO[]>([]);
   const [kpiParams, setKpiParams] = useState<KpiParameterDTO[]>([]);
@@ -83,6 +85,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     getShifts().then(setShifts).catch(() => setShifts([]));
+    getCompanySettings()
+      .then((s) => setSavedNames({ departments: s.departmentList ?? [], designations: s.designationList ?? [] }))
+      .catch(() => setSavedNames({ departments: [], designations: [] }));
     listKpiTemplates().then(setKpiTemplates).catch(() => setKpiTemplates([]));
     listKpiParameters().then(setKpiParams).catch(() => setKpiParams([]));
   }, []);
@@ -97,8 +102,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
     };
     return {
       locations: uniq(emps.map((e) => e.location)),
-      designations: uniq(emps.map((e) => e.role)),
-      departments: uniq(emps.map((e) => e.team)),
+      // Who holds what, plus the names HR added on the Departments and Designations pages.
+      designations: uniq([...emps.map((e) => e.role), ...savedNames.designations]),
+      departments: uniq([...emps.map((e) => e.team), ...savedNames.departments]),
       // Anyone already managing someone is offered as a reporting manager.
       managers: [...new Map(
         emps.filter((e) => emps.some((other) => other.managerId === e.id))
@@ -107,7 +113,7 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
       thisMonth: monthName(cycle.period),
       nextMonth: monthName(cycle.next),
     };
-  }, [emps, cycle]);
+  }, [emps, cycle, savedNames]);
 
   const set = <K extends keyof Basic>(k: K, v: Basic[K]) => setBasic({ ...basic, [k]: v });
 
