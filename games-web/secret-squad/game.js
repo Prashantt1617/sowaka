@@ -227,7 +227,7 @@ function vWord(){ const s=S_(), p=P_(), q=SQ_()||{}, dealing=s.status==='dealing
     '<h1 class="word" tabindex="-1"><small>KEEP IT ON YOUR SCREEN</small>'+word+'</h1>'+
     '<div class="box"><b>'+(others===1?'1 other shares':others+' others share')+' a secret theme with '+esc(cap(p.word))+'.</b>'+
     '<span class="s">Nobody knows the theme, not even you. Some words are made to look like they belong together when they don’t.</span></div>'+
-    '<div class="avs" style="justify-content:center;margin-top:2px">'+av({initials:st.me&&st.me.initials,name:st.me&&st.me.name,userId:st.me&&st.me.userId})+
+    '<div class="avs" style="justify-content:center;margin-top:2px">'+av({initials:st.me&&st.me.initials,name:st.me&&st.me.name,userId:st.me&&st.me.userId,photoUrl:st.me&&st.me.photoUrl})+
       '<span class="av more">?</span>'.repeat(ques)+(more?'<span class="av more">+'+more+'</span>':'')+'</div>'+
     '<div class="grow"></div>'+
     (dealing?'<button type="button" class="btn no" disabled>Hunt starts in '+T(s.phaseEndsAt)+'</button>':btn('Start hunting','intro','go'))}; }

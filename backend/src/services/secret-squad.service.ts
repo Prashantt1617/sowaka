@@ -178,15 +178,23 @@ async function nextFor(org: string, office: string) {
   };
 }
 
-function stateOf(session: SquadSession | null, viewer: Pick<SquadViewer, 'userId' | 'name' | 'initials'> | null, office: string, next: unknown) {
+/** A profile photo as this API serves it (as presignConnectMedia does), for the game's faces. */
+const photoOf = (photoKey?: string) => (photoKey ? `/media/${encodeURIComponent(photoKey)}` : null);
+
+function stateOf(
+  session: SquadSession | null,
+  viewer: (Pick<SquadViewer, 'userId' | 'name' | 'initials'> & { photoKey?: string }) | null,
+  office: string,
+  next: unknown,
+) {
   const now = deps.now();
   return {
     v: session?.version ?? 0,
     now,
     office,
-    me: viewer ? { userId: viewer.userId, name: viewer.name, initials: viewer.initials } : null,
+    me: viewer ? { userId: viewer.userId, name: viewer.name, initials: viewer.initials, photoUrl: photoOf(viewer.photoKey) } : null,
     next: session ? null : next,
-    session: session ? sessionViewFor(session, viewer?.userId ?? '', now) : null,
+    session: session ? sessionViewFor(session, viewer?.userId ?? '', now, { photoUrl: (player) => photoOf(player.photoKey) }) : null,
   };
 }
 
