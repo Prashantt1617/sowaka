@@ -3,8 +3,8 @@
  * (docs/secret-squad.md). Writing here is a production change: the database
  * is shared.
  *
- *   # Who plays where: a CSV of email,office (a header row is fine). --replace
- *   # drops everyone not in the file from the org's office list.
+ *   # Who plays where: a CSV of email,office or employeeId,office (a header row
+ *   # is fine). --replace drops everyone not in the file from the org's office list.
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts offices convrse offices.csv [--replace]
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts offices-list convrse
  *
@@ -203,27 +203,37 @@ async function syncCard(schedule: SquadSchedule, status?: string): Promise<void>
     const org = await requireOrg(positional[0]);
     const file = positional[1] ?? fail('Give the CSV file: email,office per line.');
     const rows = readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''))).filter((cells) => cells.length >= 2 && cells[0] && cells[1]);
-    const lines = rows.filter((cells) => cells[0].includes('@'));
-    const emails = lines.map((cells) => cells[0].toLowerCase());
-    const found = await users().find({ org, email: { $in: emails } }).project<{ userId: string; email: string }>({ _id: 0, userId: 1, email: 1 }).toArray();
-    const byEmail = new Map(found.map((user) => [user.email.toLowerCase(), user.userId]));
-    const missing = emails.filter((email) => !byEmail.has(email));
+    // A person by email, or by employee id (as HR lists them): whichever the first column holds.
+    const lines = rows.filter((cells) => cells[0].includes('@') || /^[A-Za-z]{1,6}[-_]?\d+$/.test(cells[0]));
+    const keyOf = (cell: string) => (cell.includes('@') ? cell.toLowerCase() : cell.toUpperCase());
+    const emails = lines.filter((cells) => cells[0].includes('@')).map((cells) => cells[0].toLowerCase());
+    const ids = lines.filter((cells) => !cells[0].includes('@')).map((cells) => cells[0].toUpperCase());
+    const found = await users()
+      .find({ org, $or: [{ email: { $in: emails } }, { employeeId: { $in: ids } }] })
+      .project<{ userId: string; email: string; employeeId?: string }>({ _id: 0, userId: 1, email: 1, employeeId: 1 })
+      .toArray();
+    const byEmail = new Map<string, string>();
+    for (const user of found) {
+      byEmail.set(user.email.toLowerCase(), user.userId);
+      if (user.employeeId) byEmail.set(user.employeeId.toUpperCase(), user.userId);
+    }
+    const missing = lines.map((cells) => keyOf(cells[0])).filter((key) => !byEmail.has(key));
     const now = new Date();
-    const ops = lines.filter((cells) => byEmail.has(cells[0].toLowerCase())).map((cells) => ({
+    const ops = lines.filter((cells) => byEmail.has(keyOf(cells[0]))).map((cells) => ({
       updateOne: {
-        filter: { org, userId: byEmail.get(cells[0].toLowerCase())! },
-        update: { $set: { org, userId: byEmail.get(cells[0].toLowerCase())!, office: cells[1], updatedAt: now } },
+        filter: { org, userId: byEmail.get(keyOf(cells[0]))! },
+        update: { $set: { org, userId: byEmail.get(keyOf(cells[0]))!, office: cells[1], updatedAt: now } },
         upsert: true,
       },
     }));
     if (ops.length) await squadOffices().bulkWrite(ops);
     if (has('replace')) {
-      const keep = [...byEmail.values()];
+      const keep = [...new Set(byEmail.values())];
       const dropped = await squadOffices().deleteMany({ org, userId: { $nin: keep } });
       console.log(`Dropped ${dropped.deletedCount} not in the file.`);
     }
     const counts = new Map<string, number>();
-    for (const cells of lines) if (byEmail.has(cells[0].toLowerCase())) counts.set(cells[1], (counts.get(cells[1]) ?? 0) + 1);
+    for (const cells of lines) if (byEmail.has(keyOf(cells[0]))) counts.set(cells[1], (counts.get(cells[1]) ?? 0) + 1);
     console.log(`Set ${ops.length} people: ${[...counts].map(([office, n]) => `${office} ${n}`).join(', ')}`);
     if (missing.length) console.log(`Not found in ${org} (${missing.length}): ${missing.join(', ')}`);
     process.exit(0);
