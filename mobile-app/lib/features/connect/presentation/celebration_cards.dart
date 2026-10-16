@@ -479,23 +479,30 @@ class _CelebrantCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // node 3840:81145: the big number, in a 77-high box.
+                    // node 3840:81145: the big number, in a 77-high box;
+                    // 1 to 7 are the design's own (4010:63927).
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 81),
-                      child: Text(
-                        '$years',
-                        key: const ValueKey('celebrant-years'),
-                        textAlign: TextAlign.center,
-                        style:
-                            _celebrationText(
-                              96,
-                              FontWeight.w700,
-                              accent,
-                              height: 77,
-                            ).copyWith(
-                              leadingDistribution: TextLeadingDistribution.even,
+                      child: _YearArt.has(years)
+                          ? Center(
+                              key: const ValueKey('celebrant-years'),
+                              child: _YearArt(years: years, height: 77),
+                            )
+                          : Text(
+                              '$years',
+                              key: const ValueKey('celebrant-years'),
+                              textAlign: TextAlign.center,
+                              style:
+                                  _celebrationText(
+                                    96,
+                                    FontWeight.w700,
+                                    accent,
+                                    height: 77,
+                                  ).copyWith(
+                                    leadingDistribution:
+                                        TextLeadingDistribution.even,
+                                  ),
                             ),
-                      ),
                     ),
                     Expanded(
                       child: Column(
@@ -1032,9 +1039,9 @@ class _CelebrationTile extends StatelessWidget {
   }
 }
 
-/// A work anniversary's years on the small card's photo: a white disc, the
-/// number set in gold. The design's own "3" is a stock picture of that one
-/// number, so the gold is drawn here to say any number.
+/// A work anniversary's years on the small card's photo: a white disc with
+/// the design's own number on it (1 to 7, node 4010:63927); past 7 the
+/// number is set in gold.
 class _YearsBadge extends StatelessWidget {
   const _YearsBadge({required this.years});
 
@@ -1062,24 +1069,85 @@ class _YearsBadge extends StatelessWidget {
         color: Colors.white,
         shape: BoxShape.circle,
       ),
-      child: SizedBox(
-        width: 22,
-        height: 19,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: _gold.createShader,
-            child: Text(
-              '$years',
+      child: _YearArt.has(years)
+          ? _YearArt(
               key: const ValueKey('celebration-years'),
-              style: _celebrationText(
-                19,
-                FontWeight.w800,
-                Colors.white,
-                height: 19,
+              years: years,
+              height: 20,
+            )
+          : SizedBox(
+              width: 22,
+              height: 19,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: _gold.createShader,
+                  child: Text(
+                    '$years',
+                    key: const ValueKey('celebration-years'),
+                    style: _celebrationText(
+                      19,
+                      FontWeight.w800,
+                      Colors.white,
+                      height: 19,
+                    ),
+                  ),
+                ),
               ),
             ),
+    );
+  }
+}
+
+/// One of the design's anniversary numbers, 1 to 7 (Figma 4010:63927,
+/// "Birthday year"): each a picture with room around its digit, shown
+/// through a window [height] tall, cropped where the design crops it.
+class _YearArt extends StatelessWidget {
+  const _YearArt({super.key, required this.years, required this.height});
+
+  final int years;
+  final double height;
+
+  static bool has(int years) => years >= 1 && years <= _crops.length;
+
+  /// Per number, at the design's 20 high: the window's width, then the
+  /// picture's width, height, left and top as fractions of the window.
+  static const _crops = <(double, double, double, double, double)>[
+    (11, 2.1475, 1.2243, -0.5738, -0.1308),
+    (16, 1.5412, 1.2018, -0.2706, -0.1009),
+    (16, 1, 1, 0, 0),
+    (15, 1.4444, 1.0924, -0.2111, -0.0504),
+    (15, 1, 1, 0, 0),
+    (14, 1.6667, 1.1765, -0.3333, -0.1176),
+    (16, 1.25, 1, -0.125, 0),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final (w, iw, ih, left, top) = _crops[years - 1];
+    final width = w * height / 20;
+    return Semantics(
+      label: '$years',
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ClipRect(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: left * width,
+                top: top * height,
+                width: iw * width,
+                height: ih * height,
+                child: Image.asset(
+                  'assets/images/celebrations/years/year_$years.png',
+                  fit: iw == 1 && ih == 1 ? BoxFit.cover : BoxFit.fill,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ],
           ),
         ),
       ),

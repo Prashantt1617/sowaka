@@ -88,6 +88,8 @@ flutter:
     - assets/images/
     # The update screens' rocket (an animated GIF) and its accents (Figma 3902:15655).
     - assets/images/update/
+    # The anniversary cards' numbers 1 to 7 (Figma 4010:63927, "Birthday year").
+    - assets/images/celebrations/years/
     - assets/icons/
     # Flutter's asset globs are not recursive, so the engagement icons
     # exported from Figma need their own line.

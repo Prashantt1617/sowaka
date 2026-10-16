@@ -336,7 +336,20 @@ void main() {
         find.textContaining('Congratulations! ', findRichText: true),
         findsOneWidget,
       );
-      expect(find.text('3'), findsOneWidget);
+      // The design's own "3" (Figma 4010:63927), not a typed one.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('celebrant-years')),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Image &&
+                w.image is AssetImage &&
+                (w.image as AssetImage).assetName ==
+                    'assets/images/celebrations/years/year_3.png',
+          ),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('years'), findsOneWidget);
       expect(find.text('at Convrse Space'), findsOneWidget);
       expect(find.text('Since Oct 2023'), findsOneWidget);
