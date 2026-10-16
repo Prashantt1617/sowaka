@@ -8,7 +8,8 @@ import 'secret_squad_style.dart';
 /// The feed card's top-secret envelope ("Secret Squad Feed Card" design):
 /// it bobs over its shadow, its flap opens and its wax seal pops off, a word
 /// card rises out through MARS, TWIX, KITKAT and a red "?", and three
-/// sparkles twinkle round it.
+/// sparkles twinkle round it. Once the game is over (the "Game over" design)
+/// the "?" gives way to its [answer], BOUNTY, small and violet.
 ///
 /// Every motion is the design's own CSS keyframes, timed from one clock:
 /// bob and shadow 3.2 s, flap, seal and card 4 s, the word 16 s (4 s each),
@@ -16,11 +17,14 @@ import 'secret_squad_style.dart';
 /// (MediaQuery.disableAnimations) it holds still, closed, on MARS, as the
 /// design's reduced-motion rule does.
 class SecretSquadEnvelope extends StatefulWidget {
-  const SecretSquadEnvelope({super.key, this.debugTime});
+  const SecretSquadEnvelope({super.key, this.debugTime, this.answer});
 
   /// Draws the envelope frozen at this many seconds into its cycle; for
   /// tests and screenshots only.
   final double? debugTime;
+
+  /// The fourth word once the game is over, in place of the red "?".
+  final String? answer;
 
   static const size = Size(112, 128);
 
@@ -69,6 +73,7 @@ class _SecretSquadEnvelopeState extends State<SecretSquadEnvelope>
               frame: _still
                   ? const _Frame.still()
                   : _Frame.at(widget.debugTime ?? _clock.value * _cycle),
+              answer: widget.answer,
             ),
           ),
         ),
@@ -230,7 +235,7 @@ class _Frame {
   final double sealOpacity;
   final double cardY;
 
-  /// 0 MARS, 1 TWIX, 2 KITKAT, 3 "?".
+  /// 0 MARS, 1 TWIX, 2 KITKAT, 3 "?" (or the answer).
   final int word;
 
   /// Each sparkle's (scale, degrees, opacity).
@@ -238,11 +243,12 @@ class _Frame {
 }
 
 class _EnvelopeFrame extends StatelessWidget {
-  const _EnvelopeFrame({required this.frame});
+  const _EnvelopeFrame({required this.frame, this.answer});
 
   final _Frame frame;
+  final String? answer;
 
-  static const _words = ['MARS', 'TWIX', 'KITKAT', '?'];
+  static const _words = ['MARS', 'TWIX', 'KITKAT'];
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +270,11 @@ class _EnvelopeFrame extends StatelessWidget {
       height: 58,
       child: Transform.translate(
         offset: Offset(0, f.cardY),
-        child: _WordCard(word: _words[f.word], alarm: f.word == 3),
+        child: f.word < 3
+            ? _WordCard.plain(_words[f.word])
+            : answer == null
+            ? const _WordCard.question()
+            : _WordCard.answer(answer!),
       ),
     );
     const front = Positioned.fill(child: _EnvelopeFront());
@@ -299,7 +309,8 @@ class _EnvelopeFrame extends StatelessWidget {
               alignment: Alignment.center,
               transform: Matrix4.diagonal3Values(f.shadowScale, 1, 1),
               child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+                // CSS blur(3px): a standard deviation of 3.
+                imageFilter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
                 child: const DecoratedBox(
                   decoration: ShapeDecoration(
                     color: Color(0x59070A1A),
@@ -375,10 +386,21 @@ class _EnvelopeFrame extends StatelessWidget {
 }
 
 class _WordCard extends StatelessWidget {
-  const _WordCard({required this.word, required this.alarm});
+  /// A word, 14 px navy.
+  const _WordCard.plain(this.word) : size = 14, color = const Color(0xFF141B3F);
+
+  /// The red "?" before the game, 22 px.
+  const _WordCard.question()
+    : word = '?',
+      size = 22,
+      color = const Color(0xFFE8434F);
+
+  /// The word revealed after it, 11 px violet.
+  const _WordCard.answer(this.word) : size = 11, color = SquadStyle.violetMid;
 
   final String word;
-  final bool alarm;
+  final double size;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -396,10 +418,10 @@ class _WordCard extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           style: SquadStyle.lexend(
-            alarm ? 22 : 14,
+            size,
             FontWeight.w800,
-            alarm ? const Color(0xFFE8434F) : const Color(0xFF141B3F),
-            spacing: (alarm ? 22 : 14) * 0.06,
+            color,
+            spacing: size * 0.06,
           ),
         ),
       ),
