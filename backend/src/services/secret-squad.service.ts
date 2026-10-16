@@ -462,9 +462,33 @@ async function payPoints(session: SquadSession, roundIndex: number, points: Reco
 }
 
 /** Keeps the feed card's state in step with the session (lobby, playing, over). */
+/**
+ * The session's final standings for its card ("Game over": the top 10 and
+ * your own rank): everyone who played, most points first, ranked 1, 2, 2, 4
+ * on a tie.
+ */
+function standingsOf(session: SquadSession) {
+  const rows = session.players
+    .map((player) => ({
+      userId: player.userId,
+      name: player.name,
+      initials: player.initials,
+      photoUrl: photoOf(player.photoKey),
+      points: session.totals[player.userId] ?? 0,
+    }))
+    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  return rows.map((row, index) => ({
+    ...row,
+    rank: index > 0 && rows[index - 1].points === row.points ? rows.findIndex((r) => r.points === row.points) + 1 : index + 1,
+  }));
+}
+
 async function syncCard(session: SquadSession, status: 'lobby' | 'playing' | 'over' | 'cancelled'): Promise<void> {
   const set: Record<string, unknown> = { 'body.status': status, updatedAt: new Date(deps.now()) };
-  if (status === 'over') set['body.endsAt'] = new Date(deps.now()).toISOString();
+  if (status === 'over') {
+    set['body.endsAt'] = new Date(deps.now()).toISOString();
+    set['body.results'] = standingsOf(session);
+  }
   await connectPosts()
     .updateOne({ org: session.org, type: 'secret_squad', 'body.sessionId': session.id, 'body.status': { $ne: status } }, { $set: set })
     .catch((error) => logger.error('Secret Squad card sync failed', { id: session.id }, error));
