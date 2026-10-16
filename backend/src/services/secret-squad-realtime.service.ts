@@ -10,9 +10,8 @@ import { verifyTicket } from './scribble-ticket.service';
 import {
   SquadRuleError,
   SquadViewer,
-  answerSquad,
   squadBoard,
-  checkSquad,
+  scanSquad,
   forgetSquadSent,
   joinSquad,
   leaveSquad,
@@ -125,7 +124,7 @@ function listen(socket: Socket, seated: Promise<SquadViewer | null>) {
   const userId = socket.data.userId as string;
   const buckets = {
     join: new Bucket(10 / 60, 6),
-    check: new Bucket(1, 4),
+    check: new Bucket(2, 5),
     small: new Bucket(4, 8),
   };
 
@@ -157,8 +156,10 @@ function listen(socket: Socket, seated: Promise<SquadViewer | null>) {
 
   on('squad:join', buckets.join, (viewer) => joinSquad(viewer));
   on('squad:leave', buckets.small, (viewer) => leaveSquad(viewer));
-  on('squad:check', buckets.check, (viewer, p) => checkSquad(viewer, { code: p.code, qr: p.qr }));
-  on('squad:answer', buckets.small, (viewer, p) => answerSquad(viewer, { askId: p.askId, allow: p.allow }));
+  // A scan resolves at once for both phones (no Allow step). `{ qr }`; `{ code }` only while typed codes are on.
+  on('squad:scan', buckets.check, (viewer, p) => scanSquad(viewer, { code: p.code, qr: p.qr }));
+  // The old name, kept so a page from before keeps working.
+  on('squad:check', buckets.check, (viewer, p) => scanSquad(viewer, { code: p.code, qr: p.qr }));
   on('squad:board', buckets.small, (viewer, p) => squadBoard(viewer, { sessionId: p.sessionId }));
   on('squad:sync', buckets.small, async (viewer) => {
     forgetSquadSent(viewer.userId);

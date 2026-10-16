@@ -1,6 +1,6 @@
 /**
  * Secret Squad under a whole company: N simulated players across four offices
- * on one local server, all joining, then hunting with real checks for a while.
+ * on one local server, all joining, then hunting with real QR scans for a while.
  * Prints how long requests take and how many updates each phone gets.
  * Scratch database only; dropped at the end.
  *
@@ -17,9 +17,8 @@ import { initConnectRealtime } from '../services/connect-realtime.service';
 import { mintTicket } from '../services/scribble-ticket.service';
 import { configureSquad, openDueSessions, roundConfig, squadSchedules, tickSquad } from '../services/secret-squad.service';
 import { closeSquadRealtime, initSquadRealtime } from '../services/secret-squad-realtime.service';
-import { codeFor } from '../services/secret-squad-engine';
+import { codeFor, qrFor } from '../services/secret-squad-engine';
 import { liveSessions, readSession, resetSquadMemory } from '../services/secret-squad-store';
-import type { SquadPack } from '../services/secret-squad-packs';
 
 if (!/scratch|check/i.test(env.mongoDbName)) {
   console.error(`Refusing to run against database "${env.mongoDbName}".`);
@@ -33,10 +32,6 @@ const BASE = `http://localhost:${PORT}`;
 const ORG = 'sowaka';
 const OFFICES: Array<[string, number]> = [['Gurgaon', 0.62], ['Noida', 0.2], ['Kolkata', 0.1], ['Pune', 0.08]];
 
-const PACKS: SquadPack[] = Array.from({ length: 20 }, (_, p) => ({
-  id: `pack-${p}`, name: `Pack ${p}`, difficulty: 'medium' as const,
-  themes: Array.from({ length: 4 }, (_, t) => ({ name: `T${p}.${t}`, words: Array.from({ length: 24 }, (_, w) => `W${p}-${t}-${w}`), traps: '' })),
-}));
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const pct = (values: number[], p: number) => {
@@ -45,7 +40,7 @@ const pct = (values: number[], p: number) => {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 };
 
-interface Bot { user: User; socket: ClientSocket; states: number; bytes: number; lastAsk: string | null }
+interface Bot { user: User; socket: ClientSocket; states: number; bytes: number }
 
 (async () => {
   let server: ReturnType<typeof app.listen> | undefined;
@@ -59,7 +54,7 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
     await getDb().dropDatabase();
     await connectDb();
     resetSquadMemory();
-    configureSquad({ now: () => Date.now() + clock.offset, packs: () => PACKS, notify: async () => undefined, awardPoints: async () => undefined });
+    configureSquad({ now: () => Date.now() + clock.offset, notify: async () => undefined, awardPoints: async () => undefined });
 
     const people: User[] = [];
     let n = 0;
@@ -81,16 +76,10 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
     const t0 = Date.now();
     const bots: Bot[] = await Promise.all(people.map((user) => new Promise<Bot>((resolve, reject) => {
       const socket = connect(`${BASE}/squad`, { path: '/connect/socket', transports: ['websocket'], auth: { ticket: mintTicket({ userId: user.userId, org: ORG, name: user.name }) }, reconnection: false });
-      const bot: Bot = { user, socket, states: 0, bytes: 0, lastAsk: null };
-      socket.on('squad:state', (state: { session?: { round?: { ask?: { id: string } | null } | null } | null }) => {
+      const bot: Bot = { user, socket, states: 0, bytes: 0 };
+      socket.on('squad:state', (state: unknown) => {
         bot.states += 1;
         bot.bytes += JSON.stringify(state).length;
-        const ask = state.session?.round?.ask;
-        if (ask && ask.id !== bot.lastAsk) {
-          bot.lastAsk = ask.id;
-          // Answer like a person: a moment later, nearly always yes.
-          setTimeout(() => socket.emit('squad:answer', { askId: ask.id, allow: Math.random() < 0.95 }, () => undefined), 300 + Math.random() * 1200);
-        }
       });
       socket.on('connect', () => resolve(bot));
       socket.on('connect_error', reject);
@@ -102,7 +91,7 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
     for (const [office] of OFFICES) {
       await squadSchedules().insertOne({
         id: `load-${office}`, org: ORG, office, startsAt: new Date(startsAt), lobbyMs: 120_000,
-        rounds: [roundConfig({ squadSize: 5, huntMs: SECONDS * 1000 + 60_000, lockMs: 5_000 })],
+        rounds: [roundConfig({ squadSize: 5, huntMs: SECONDS * 1000 + 60_000 })],
         status: 'scheduled', createdAt: new Date(), updatedAt: new Date(),
       });
     }
@@ -132,7 +121,7 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
     console.log(`dealt: ${sessions.map((s) => `${s?.office} ${s?.round?.squads.length} squads`).join(', ')}`);
     for (const bot of bots) { bot.states = 0; bot.bytes = 0; }
 
-    // Hunt: every player checks a random colleague in their office every ~4 s.
+    // Hunt: every player scans a random colleague's QR in their office every ~4 s.
     const checkMs: number[] = [];
     let ok = 0, refused = 0, errors = 0;
     const until = Date.now() + SECONDS * 1000;
@@ -146,8 +135,8 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
         const others = session?.players.filter((p) => p.userId !== bot.user.userId && p.playing) ?? [];
         const target = others[Math.floor(Math.random() * others.length)];
         const code = session && target ? codeFor(session, target.userId, Date.now() + clock.offset)?.code : undefined;
-        if (code) {
-          const result = await timed(bot, 'squad:check', { code });
+        if (session && code) {
+          const result = await timed(bot, 'squad:scan', { qr: qrFor(session, code) });
           checkMs.push(result.ms);
           if (result.ok) ok += 1; else if (result.status && result.status < 500) refused += 1; else errors += 1;
         }
@@ -161,8 +150,8 @@ interface Bot { user: User; socket: ClientSocket; states: number; bytes: number;
     const finished = (await Promise.all(OFFICES.map(([office]) => readSession(ORG, `load-${office}`))))
       .map((s) => `${s?.office} ${s?.round?.squads.filter((q) => q.finishedAt).length}/${s?.round?.squads.length}`);
     const mem = process.memoryUsage();
-    console.log(`\nhunt for ${SECONDS}s: ${checkMs.length} checks (${(checkMs.length / SECONDS).toFixed(1)}/s); accepted ${ok}, refused by rules ${refused}, errors ${errors}`);
-    console.log(`check round trip: p50 ${pct(checkMs, 50)} ms, p95 ${pct(checkMs, 95)} ms, p99 ${pct(checkMs, 99)} ms, max ${Math.max(...checkMs)} ms`);
+    console.log(`\nhunt for ${SECONDS}s: ${checkMs.length} scans (${(checkMs.length / SECONDS).toFixed(1)}/s); accepted ${ok}, refused by rules ${refused}, errors ${errors}`);
+    console.log(`scan round trip: p50 ${pct(checkMs, 50)} ms, p95 ${pct(checkMs, 95)} ms, p99 ${pct(checkMs, 99)} ms, max ${Math.max(...checkMs)} ms`);
     console.log(`updates per phone: p50 ${pct(states, 50)}, max ${Math.max(...states)} over ${SECONDS}s; ${perSecond.toFixed(0)} updates/s server-wide; avg update ${Math.round(bots.reduce((a, b) => a + b.bytes, 0) / Math.max(1, states.reduce((a, b) => a + b, 0)))} bytes`);
     console.log(`squads finished: ${finished.join(', ')}; ticks ${ticks}`);
     console.log(`server process memory: rss ${Math.round(mem.rss / 1e6)} MB, heap ${Math.round(mem.heapUsed / 1e6)} MB`);
