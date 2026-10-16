@@ -321,6 +321,9 @@ export function appPages(): Collection<AppPage> {
 }
 
 async function ensureIndexes(database: Db): Promise<void> {
+  // Secret Squad: an office's sessions and who plays where, read on every Games home and inbox.
+  await database.collection('secret_squad_sessions').createIndex({ id: 1 });
+  await database.collection('secret_squad_offices').createIndex({ org: 1, userId: 1 });
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
   // The reads name people and days but not the org, which the unique key leads with.

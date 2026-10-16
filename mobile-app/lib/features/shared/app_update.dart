@@ -449,9 +449,13 @@ class AppUpdateStrip extends StatelessWidget {
   }
 }
 
-const _stripTile = Color(0xFFDCEEF7);
-const _stripBody = Color(0xFFD3E8F3);
-const _stripButtonInk = Color(0xFF0B4F73);
+// The light update strip ("Home – update strip only", 2x mock): a pale blue
+// card with a hairline border, the rocket on its own, dark copy and a solid
+// "Update app" pill.
+const _stripFill = Color(0xFFDDEFF8);
+const _stripBorder = Color(0xFFBFDDEC);
+const _stripTitle = Color(0xFF0B2E42);
+const _stripCopy = Color(0xFF3A5A6C);
 
 TextStyle _manrope(
   double size,
@@ -480,55 +484,48 @@ class _StripCard extends StatelessWidget {
     return Semantics(
       liveRegion: true,
       child: Container(
+        constraints: const BoxConstraints(minHeight: 72),
         decoration: BoxDecoration(
-          color: _brand,
+          color: _stripFill,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _stripBorder),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x470B4F73), // rgba(11,79,115,0.28)
-              offset: Offset(0, 8),
-              blurRadius: 20,
+              color: Color(0x140B2E42), // rgba(11,46,66,0.08)
+              offset: Offset(0, 4),
+              blurRadius: 12,
             ),
           ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Two faint circles behind the copy, as drawn.
+            // Two soft white circles: a large one behind the button and the
+            // close, a small one rising under the copy.
             const Positioned(
-              right: -30,
-              top: -40,
-              child: _Glow(size: 120, alpha: 0.06),
+              right: -34,
+              top: -46,
+              child: _Glow(size: 136, alpha: 0.56),
             ),
             const Positioned(
-              left: 70,
-              bottom: -36,
-              child: _Glow(size: 60, alpha: 0.05),
+              left: 72,
+              bottom: -34,
+              child: _Glow(size: 58, alpha: 0.44),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+              padding: const EdgeInsets.fromLTRB(6, 10, 2, 10),
               child: Row(
                 children: [
-                  Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: _stripTile,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    alignment: Alignment.center,
-                    child: Image.asset(
-                      'assets/images/update/update_strip_rocket.png',
-                      width: 52,
-                      height: 53,
-                      fit: BoxFit.contain,
-                    ),
+                  // The rocket alone, 24 by 41 of it showing in a 44 square.
+                  Image.asset(
+                    'assets/images/update/update_strip_rocket.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
                   ),
-                  const SizedBox(width: 12),
-                  // The design lets the copy run into the gap before the
-                  // button so the title stays on one line; here the copy
-                  // takes that gap, and the title shrinks a touch rather
-                  // than wrap on a narrow phone.
+                  const SizedBox(width: 6),
+                  // The title shrinks a touch rather than wrap on a narrow
+                  // phone; the copy under it takes two lines.
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,9 +539,9 @@ class _StripCard extends StatelessWidget {
                             maxLines: 1,
                             softWrap: false,
                             style: _manrope(
-                              14,
+                              13,
                               FontWeight.w700,
-                              Colors.white,
+                              _stripTitle,
                               spacing: -0.1,
                             ),
                           ),
@@ -554,35 +551,35 @@ class _StripCard extends StatelessWidget {
                           'Update to the latest version, it only takes a '
                           'moment.',
                           style: _manrope(
-                            11,
+                            12,
                             FontWeight.w400,
-                            _stripBody,
-                            height: 1.35,
+                            _stripCopy,
+                            height: 1.3,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   SizedBox(
                     height: 34,
                     child: FilledButton(
                       onPressed: onUpdate,
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: _stripButtonInk,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        backgroundColor: _brand,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         minimumSize: const Size(0, 34),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: const StadiumBorder(),
                       ),
                       child: Text(
-                        'Update',
-                        style: _manrope(13, FontWeight.w700, _stripButtonInk),
+                        'Update app',
+                        style: _manrope(14, FontWeight.w700, Colors.white),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 5),
                   Semantics(
                     button: true,
                     label: 'Dismiss update banner',
@@ -594,8 +591,8 @@ class _StripCard extends StatelessWidget {
                         height: 44,
                         child: Icon(
                           Icons.close_rounded,
-                          size: 16,
-                          color: _stripBody,
+                          size: 18,
+                          color: _stripCopy,
                         ),
                       ),
                     ),

@@ -565,7 +565,7 @@ export async function sendPendingRequestReminders(now = new Date()): Promise<num
       scenario: 'pending_requests_reminder',
       title: `${total} ${total === 1 ? 'request' : 'requests'} waiting on you`,
       body: parts.join(' · '),
-      data: { destination: 'requests_queue', type: 'leave', view: 'inbox', dateKey: todayKey },
+      data: { destination: 'manage_leave', type: 'leave', view: 'inbox', dateKey: todayKey },
     });
     sent += 1;
   }
@@ -610,7 +610,7 @@ export async function sendLeaveNextWeek(now = new Date()): Promise<number> {
       scenario: 'leave_planning',
       title: 'Leave next week',
       body: lines.join(', '),
-      data: { destination: 'requests_queue', type: 'leave', view: 'inbox', weekStart: weekStartKey },
+      data: { destination: 'manage_leave', type: 'leave', view: 'inbox', weekStart: weekStartKey },
     });
     sent += 1;
   }

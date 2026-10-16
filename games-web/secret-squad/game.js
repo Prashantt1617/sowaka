@@ -139,9 +139,35 @@ const canCamera=()=>!ui.camFailed&&!(window.Sowaka&&window.Sowaka.native)&&!!(na
 const canScan=()=>canNativeScan()||canCamera();
 
 /* ---------------------------------------------------------------- the screens */
+/* View Full Leaderboard: the app opens the page on "board:<session>" (or #board on the web); the page asks the server for that game's
+   final standings and lists everyone who played, best first, your own row highlighted. */
+const boardWanted=()=>{ try{ const w=String((window.Sowaka&&window.Sowaka.startChallengeId)||'');
+  if(/^board(:|$)/.test(w))return w.slice(6); if(/^#board/.test(location.hash))return location.hash.slice(7); }catch(e){} return null; };
+let boardChecked=false;
+function wantBoard(){ if(boardChecked)return; const id=boardWanted(); if(id===null)return; boardChecked=true; ui.board={sessionId:id, asked:false, data:null, error:null}; }
+wantBoard();
+function loadBoard(){ const b=ui.board; if(!b||b.asked||!conn)return; b.asked=true;
+  request('squad:board',b.sessionId?{sessionId:b.sessionId}:{}).then(d=>{ if(ui.board===b){ b.data=d||{}; render(); } })
+    .catch(e=>{ if(ui.board===b){ b.error=e.message||'The leaderboard didn’t load.'; render(); } }); }
+function vBoard(){ const b=ui.board, d=b.data, me=st&&st.me&&st.me.userId;
+  loadBoard();
+  const head=bar('Leaderboard','<button type="button" class="link" data-act="board-close" style="margin:0">Back to the game</button>');
+  if(b.error)return {key:'board:err',html:head+'<div class="grow"></div><div class="box center"><b>No leaderboard</b><span class="s">'+esc(b.error)+'</span></div><div class="grow"></div>'};
+  if(!d)return {key:'board:wait',html:head+'<div class="grow"></div><div class="center"><div class="env" aria-hidden="true"></div><p class="s">Loading the leaderboard…</p></div><div class="grow"></div>'};
+  const rows=Array.isArray(d.results)?d.results:[];
+  const medal=['lb-1','lb-2','lb-3'];
+  const list=rows.map(r=>{ const you=r.userId===me, rk=r.rank|0;
+    return '<li class="lb-row'+(you?' you':'')+'"><span class="lb-rk '+(rk>=1&&rk<=3?medal[rk-1]:'')+'">#'+rk+'</span>'+
+      av({initials:r.initials,name:r.name,userId:r.userId,photoUrl:r.photoUrl})+
+      '<span class="lb-n">'+esc(you?'You':r.name)+'</span><span class="lb-p num">'+(r.points|0)+'<small> pts</small></span></li>'; }).join('');
+  return {key:'board:'+(d.sessionId||''),html:head+
+    '<p class="s" style="margin-top:2px">'+esc([d.office,rows.length===1?'1 player':rows.length+' players'].filter(Boolean).join(' · '))+'</p>'+
+    (rows.length?'<ol class="lb">'+list+'</ol>':'<div class="box center"><b>No one played this time</b></div>')}; }
+
 function view(){
   if(fatal)return vFatal();
   if(WEB&&!token)return vSignin();
+  if(ui.board&&st)return vBoard();
   if(!st)return {key:'connecting',html:bar('Secret Squad',whereChip())+'<div class="grow"></div><div class="center"><div class="env" aria-hidden="true"></div><p class="s">Connecting…</p></div><div class="grow"></div>'};
   const s=S_();
   if(!s)return vNone();
@@ -227,7 +253,7 @@ function vWord(){ const s=S_(), p=P_(), q=SQ_()||{}, dealing=s.status==='dealing
     '<h1 class="word" tabindex="-1"><small>KEEP IT ON YOUR SCREEN</small>'+word+'</h1>'+
     '<div class="box"><b>'+(others===1?'1 other shares':others+' others share')+' a secret theme with '+esc(cap(p.word))+'.</b>'+
     '<span class="s">Nobody knows the theme, not even you. Some words are made to look like they belong together when they don’t.</span></div>'+
-    '<div class="avs" style="justify-content:center;margin-top:2px">'+av({initials:st.me&&st.me.initials,name:st.me&&st.me.name,userId:st.me&&st.me.userId})+
+    '<div class="avs" style="justify-content:center;margin-top:2px">'+av({initials:st.me&&st.me.initials,name:st.me&&st.me.name,userId:st.me&&st.me.userId,photoUrl:st.me&&st.me.photoUrl})+
       '<span class="av more">?</span>'.repeat(ques)+(more?'<span class="av more">+'+more+'</span>':'')+'</div>'+
     '<div class="grow"></div>'+
     (dealing?'<button type="button" class="btn no" disabled>Hunt starts in '+T(s.phaseEndsAt)+'</button>':btn('Start hunting','intro','go'))}; }
@@ -250,15 +276,14 @@ function vHunt(){ const p=P_()||{};
     (p.away?'<div class="box warn"><b>You were away</b><span class="s">Your squad stopped counting on you. Stay on this screen and ask a teammate to check you again.</span></div>':'')+
     codeCard()+rotLine()+checkButtons()+squadBox(true)+'<div class="grow"></div>'}; }
 
+/* Typing a code: the phone's own number keyboard, over the four boxes (as the sign-in code is typed), not a keypad of our own. */
 function vKeypad(){ const s=S_(), ask=openAsk(), asking=openAsking();
-  const keys=[1,2,3,4,5,6,7,8,9].map(n=>'<button type="button" data-act="key" data-k="'+n+'" aria-label="'+n+'">'+n+'</button>').join('')+
-    '<button type="button" class="sm" data-act="key" data-k="c">Clear</button><button type="button" data-act="key" data-k="0" aria-label="0">0</button><button type="button" class="sm" data-act="key" data-k="b" aria-label="Delete">⌫</button>';
   const blocked=locked()?'Check again in '+T(P_().lockedUntil):asking?'Waiting for '+esc(first(asking.toName))+'…':ask?'Answer '+esc(first(ask.fromName))+' first':'';
   return {key:'keypad',html:bar(String(P_().word||''),clock(s.phaseEndsAt,true))+
     '<h1 class="t center" style="font-size:24px;margin-top:6px" tabindex="-1">Whose code?</h1>'+
-    '<div class="digits" id="kd" role="img" aria-label="Code typed so far"><span></span><span></span><span></span><span></span></div>'+
-    '<p class="s center" id="khint" style="min-height:20px">Type the 4 digits on their screen.</p>'+
-    '<div class="pad">'+keys+'</div><div class="grow"></div>'+
+    '<label class="otp"><span class="sr">Their 4-digit code</span><div class="digits" id="kd" aria-hidden="true"><span></span><span></span><span></span><span></span></div>'+
+      '<input id="kin" type="text" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]*" enterkeyhint="go"></label>'+
+    '<p class="s center" id="khint" style="min-height:20px">Type the 4 digits on their screen.</p><div class="grow"></div>'+
     (blocked?'<button type="button" class="btn no" disabled>'+blocked+'</button>':btn(ui.sending?'Checking…':'Check','check','',' id="kcheck" disabled'))+
     '<button type="button" class="link" data-act="back">Back to my code</button>'}; }
 
@@ -350,6 +375,7 @@ function render(){
   const v=view(), m=$('screen');
   const changedKey=v.key!==cur.key;
   if(changedKey||v.html!==cur.html){
+    ui.kinFocused=!!(document.activeElement&&document.activeElement.id==='kin');   // the keyboard stays up through a redraw
     m.innerHTML=v.html;
     if(changedKey){ m.classList.remove('in'); void m.offsetWidth; m.classList.add('in'); if(cur.key!==null){ try{ window.scrollTo(0,0); }catch(e){} const h=m.querySelector('h1[tabindex]'); if(h&&!/^signin/.test(v.key))try{ h.focus({preventScroll:true}); }catch(e){} } }
     after(v.key,changedKey);
@@ -363,7 +389,7 @@ function render(){
 }
 function after(key,changedKey){
   document.querySelectorAll('canvas[data-qr]').forEach(drawQr);
-  if(key==='keypad')paintKeypad();
+  if(key==='keypad'){ const k=$('kin'); if(k){ k.value=ui.digits; if(changedKey||ui.kinFocused)try{ k.focus(); }catch(e){} } paintKeypad(); }
   if(/^signin/.test(key)){ const em=$('em'); if(em){ em.value=ui.signin.email; if(changedKey&&ui.signin.step==='email')setTimeout(()=>{ try{ em.focus(); }catch(e){} },60); }
     const o=$('otp'); if(o){ o.value=ui.signin.otp; paintOtp(); if(changedKey)setTimeout(()=>{ try{ o.focus(); }catch(e){} },60); } }
   if(key==='scan'&&stream){ const v=$('vid'); if(v&&v.srcObject!==stream){ v.srcObject=stream; v.play().catch(()=>{}); } }
@@ -521,10 +547,11 @@ document.addEventListener('click',e=>{
     case 'join': act('squad:join',{},'You’re in the lobby.'); break;
     case 'leave': act('squad:leave',{},'You left the lobby.'); break;
     case 'intro': ui.intro[roundKey()]=1; haptic('light'); render(); break;
-    case 'keypad': ui.mode='keypad'; ui.digits=''; render(); break;
+    case 'board-close': ui.board=null; render(); break;
+    case 'keypad': ui.mode='keypad'; ui.digits=''; render(); { const k=$('kin'); if(k)try{ k.focus(); }catch(e){} } break;   // in the tap itself, so the keyboard comes up
     case 'scan': if(canNativeScan()){ let p; try{ p=window.Sowaka.scanQr(); }catch(err){ p=Promise.reject(err); }
         Promise.resolve(p).then(text=>{ if(text)sendCheck({qr:String(text)}); }).catch(()=>toast('Scanning didn’t work. Type the code instead.')); }
-      else if(canCamera()){ ui.mode='scan'; ui.scanHint=''; render(); } else { ui.mode='keypad'; render(); } break;
+      else if(canCamera()){ ui.mode='scan'; ui.scanHint=''; render(); } else { ui.mode='keypad'; render(); const k=$('kin'); if(k)try{ k.focus(); }catch(e){} } break;
     case 'qr': ui.mode='qr'; render(); break;
     case 'back': ui.mode='main'; ui.digits=''; render(); break;
     case 'key': key(b.getAttribute('data-k')); break;
@@ -540,10 +567,12 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('input',e=>{
   if(e.target.id==='em'){ ui.signin.email=e.target.value; }
+  if(e.target.id==='kin'){ const d=String(e.target.value||'').replace(/\D/g,'').slice(0,4); if(e.target.value!==d)e.target.value=d; ui.digits=d; ui.bad=false; paintKeypad(); }
   if(e.target.id==='otp'){ const d=String(e.target.value||'').replace(/\D/g,'').slice(0,6); if(e.target.value!==d)e.target.value=d; ui.signin.otp=d; paintOtp(); if(d.length===6)verify(); }
 });
 document.addEventListener('keydown',e=>{
   if(e.target&&e.target.id==='em'&&e.key==='Enter'){ e.preventDefault(); sendCode(); return; }
+  if(e.target&&e.target.id==='kin'){ if(e.key==='Enter'&&ui.digits.length===4&&!locked()){ sendCheck({code:ui.digits}); e.preventDefault(); } else if(e.key==='Escape'){ ui.mode='main'; render(); } return; }
   if(cur.key!=='keypad'||e.metaKey||e.ctrlKey||e.altKey)return;
   if(/^\d$/.test(e.key)){ key(e.key); e.preventDefault(); }
   else if(e.key==='Backspace'){ key('b'); e.preventDefault(); }
@@ -552,7 +581,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ if(conn)try{ conn.sync(); }catch(e){} render(); } else camera(false); });
 document.addEventListener('error',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.closest&&t.closest('.av'))t.remove(); },true);   // a photo that won't load leaves the initial
-window.addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); render(); });
+window.addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); wantBoard(); render(); });
 if(reduced())document.documentElement.classList.add('still');
 
 setInterval(()=>{ tick(); },250);

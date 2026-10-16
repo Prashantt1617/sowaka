@@ -491,9 +491,16 @@ svg{overflow:visible}
         var hosted = str(r.hostedUrl);
         return {
           key: key, name: name, kind: r.kind, tagline: str(r.tagline), description: str(r.description), accentColor: strOrNull(r.iconColor),
-          thumbnail: strOrNull(r.thumbnail), hasPage: r.hasPage === true, hostedUrl: hosted.indexOf('https://') === 0 ? hosted : null
+          thumbnail: strOrNull(r.thumbnail), hasPage: r.hasPage === true, hostedUrl: hosted.indexOf('https://') === 0 ? hosted : null,
+          liveOnly: r.liveOnly === true
         };
       }),
+      // An office's Secret Squad while its lobby is open or it is being played.
+      liveSquad: json.liveSquad && typeof json.liveSquad === 'object' && str(json.liveSquad.sessionId) ? {
+        sessionId: str(json.liveSquad.sessionId), office: str(json.liveSquad.office),
+        phase: json.liveSquad.phase === 'live' ? 'live' : 'lobby', startsAt: time(json.liveSquad.startsAt),
+        players: int(json.liveSquad.players), round: int(json.liveSquad.round), rounds: int(json.liveSquad.rounds)
+      } : null,
       playingNow: {
         count: int(playing.count),
         people: Array.isArray(playing.people) ? playing.people.map(function (p) {
@@ -841,6 +848,23 @@ svg{overflow:visible}
       footer: footer
     });
   }
+  /** Secret Squad while an office's game is on: the lobby counting down, then live, straight into the game. */
+  function squadCard(q) {
+    var verb = q.phase === 'live' ? 'playing' : 'in the lobby';
+    var footer = '<div class="ft g6">' + use('players', '', 'width:16px;height:16px;display:block;flex:none') +
+      '<span class="ft-t ell" style="line-height:24px">' + esc(q.players === 0 ? (q.phase === 'live' ? 'Under way' : 'Be the first in') : plural(q.players, 'player', 'players') + ' ' + verb) + '</span></div>';
+    var art = composed(tilesSpec('TEAM'), { viewBox: '15.805 22.893 141 63' });
+    return liveFrame({
+      act: 'squad', id: q.sessionId, label: 'Secret Squad, live game',
+      face: '<span class="face" style="width:26px;height:26px;background:var(--purpleArt);border:1.5px solid #fff">' + use('tag-team', '', 'width:14px;height:14px;display:block') + '</span>',
+      who: q.office ? q.office + ' office' : 'Your office',
+      clock: clock('relay', q.startsAt, q.phase, 'clk'),
+      picture: tile('var(--purpleArt)', fitted(art, 4), { rock: true }),
+      title: 'Secret Squad',
+      description: q.phase === 'live' && q.rounds > 1 ? 'Round ' + q.round + ' of ' + q.rounds + '. Find your squad!' : '“Find your secret squad.”',
+      footer: footer
+    });
+  }
   /** The game's name at 26pt, made smaller (then two lines) only when it would not fit. */
   function fitTitles(root) {
     (root || document).querySelectorAll('.lt').forEach(function (box) {
@@ -941,9 +965,10 @@ svg{overflow:visible}
     // The challenge cards show the viewer's own face, which comes from the leaderboard: fetch it once.
     if (challenges.length && !S.meTried && viewerFace().name === 'You') { S.meTried = true; setTimeout(function () { loadBoard(S.period); }, 0); }
     var live = [];
+    if (home.liveSquad && gameFor('secret-squad')) live.push(squadCard(home.liveSquad));
     if (home.liveRelay) live.push(relayCard(home.liveRelay));
     home.liveContests.forEach(function (c) { live.push(contestCard(c)); });
-    var played = home.yourGames.map(function (row) { var g = gameFor(row.key); return g ? { game: g, played: row } : null; }).filter(Boolean);
+    var played = home.yourGames.map(function (row) { var g = gameFor(row.key); return g && !g.liveOnly ? { game: g, played: row } : null; }).filter(Boolean);
 
     var h = '';
     // No score banner (12 Oct 2026): what is live (one card under the other), then the challenges, then a 14pt gap.
@@ -1099,7 +1124,8 @@ svg{overflow:visible}
         btn: '<button type="button" class="get" data-act="post" data-id="' + esc(ev.postId || '') + '"' + (ev.postId ? '' : ' disabled') + '>' + (ev.phase === 'upcoming' ? 'View' : 'Join') + '</button>' }));
     }
     home.games.filter(opens).forEach(function (g) {
-      if (playedKeys[g.key]) return;
+      // A game played only while it is on (Secret Squad) shows under Live then, never here.
+      if (playedKeys[g.key] || g.liveOnly) return;
       rows.push(listRow({ game: g, label: kindLabel(g), sub: g.tagline || g.description || 'New to you', btn: play(g.key) }));
     });
     var pn = home.playingNow;
@@ -1315,6 +1341,7 @@ svg{overflow:visible}
       case 'play': openGame(el.getAttribute('data-key')); break;
       case 'join-room': openGame(el.getAttribute('data-key'), 'room:' + el.getAttribute('data-id')); break;
       case 'contest': openContest(el.getAttribute('data-id')); break;
+      case 'squad': openGame('secret-squad', 'squad'); break;
       case 'post': openPost(el.getAttribute('data-id')); break;
       case 'person': openProfile(el.getAttribute('data-id')); break;
       case 'retry': S.error = null; renderGames(); if (!S.bridge && window.Sowaka) useBridge(window.Sowaka); else refresh(); break;

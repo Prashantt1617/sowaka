@@ -10,6 +10,10 @@
 /// `cancelled`, `over`, ...), `endsAt` (ISO), and `rounds`
 /// (`[{huntMs, breakMs}]`), from which the card works out when the session
 /// is over.
+///
+/// Once the session is over the server adds `results`: everyone who played,
+/// most points first, `[{userId, name, initials, photoUrl, points, rank}]`,
+/// ranked 1, 2, 2, 4 on a tie. Posts from before then have none.
 library;
 
 /// Where the session is, as the card shows it.
@@ -49,7 +53,8 @@ class SecretSquadPost {
       lobbyOpensAt =
           _time(body['lobbyOpensAt']) ??
           _time(body['startsAt'])?.subtract(defaultLobby),
-      endsAt = _time(body['endsAt']) ?? _endFromRounds(body);
+      endsAt = _time(body['endsAt']) ?? _endFromRounds(body),
+      results = _standings(body['results']);
 
   /// How long the lobby is open when the post does not say (the rules'
   /// default).
@@ -83,6 +88,10 @@ class SecretSquadPost {
 
   /// When the last round ends, when the post says or its rounds tell.
   final DateTime? endsAt;
+
+  /// The final standings, most points first, once the session is over; null
+  /// on a post that carries none (one from before the server kept them).
+  final List<SquadStanding>? results;
 
   /// Where the session is at [now]: from the server's status where it is
   /// final (cancelled, over), and from the clock otherwise, so a card left
@@ -159,6 +168,74 @@ class SecretSquadPost {
     final minute = local.minute.toString().padLeft(2, '0');
     return '$hour:$minute ${local.hour < 12 ? 'am' : 'pm'}';
   }
+}
+
+/// One player's line in the final standings.
+class SquadStanding {
+  const SquadStanding({
+    required this.userId,
+    required this.name,
+    required this.initials,
+    required this.points,
+    required this.rank,
+    this.photoUrl,
+  });
+
+  final String userId;
+  final String name;
+  final String initials;
+
+  /// Root-relative (`/media/<key>`) or absolute; null when they have none.
+  final String? photoUrl;
+  final int points;
+
+  /// 1, 2, 2, 4 on a tie.
+  final int rank;
+
+  /// "Priya N.": the first name and the last name's initial, as the card
+  /// writes names; a one-word name as it is.
+  String get shortName => shortNameOf(name);
+
+  static String shortNameOf(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'))
+      ..removeWhere((part) => part.isEmpty);
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first;
+    final last = String.fromCharCode(parts.last.runes.first).toUpperCase();
+    return '${parts.first} $last.';
+  }
+}
+
+List<SquadStanding>? _standings(Object? value) {
+  if (value is! List) return null;
+  final rows = <SquadStanding>[];
+  for (final row in value) {
+    if (row is! Map) continue;
+    final name = _text(row['name'], 'Player');
+    final points = row['points'];
+    final rank = row['rank'];
+    final photo = _text(row['photoUrl']);
+    rows.add(
+      SquadStanding(
+        userId: _text(row['userId']),
+        name: name,
+        initials: _text(row['initials'], _initialsOf(name)),
+        photoUrl: photo.isEmpty ? null : photo,
+        points: points is num ? points.toInt() : 0,
+        rank: rank is num && rank > 0 ? rank.toInt() : rows.length + 1,
+      ),
+    );
+  }
+  return rows;
+}
+
+String _initialsOf(String name) {
+  final parts = name.trim().split(RegExp(r'\s+'))
+    ..removeWhere((part) => part.isEmpty);
+  if (parts.isEmpty) return '?';
+  final first = String.fromCharCode(parts.first.runes.first);
+  if (parts.length == 1) return first.toUpperCase();
+  return (first + String.fromCharCode(parts.last.runes.first)).toUpperCase();
 }
 
 String _text(Object? value, [String fallback = '']) {

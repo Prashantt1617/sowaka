@@ -11,6 +11,7 @@ import {
   SquadRuleError,
   SquadViewer,
   answerSquad,
+  squadBoard,
   checkSquad,
   forgetSquadSent,
   joinSquad,
@@ -158,6 +159,7 @@ function listen(socket: Socket, seated: Promise<SquadViewer | null>) {
   on('squad:leave', buckets.small, (viewer) => leaveSquad(viewer));
   on('squad:check', buckets.check, (viewer, p) => checkSquad(viewer, { code: p.code, qr: p.qr }));
   on('squad:answer', buckets.small, (viewer, p) => answerSquad(viewer, { askId: p.askId, allow: p.allow }));
+  on('squad:board', buckets.small, (viewer, p) => squadBoard(viewer, { sessionId: p.sessionId }));
   on('squad:sync', buckets.small, async (viewer) => {
     forgetSquadSent(viewer.userId);
     socket.emit('squad:state', await stateFor(viewer));

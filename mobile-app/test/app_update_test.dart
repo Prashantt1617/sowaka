@@ -76,7 +76,7 @@ void main() {
     await tester.pumpAndSettle();
     // A strip in the feed, not a screen over the app.
     expect(find.text('We are better than ever'), findsOneWidget);
-    expect(find.text('Update'), findsOneWidget);
+    expect(find.text('Update app'), findsOneWidget);
     expect(find.text('Update now'), findsNothing);
     expect(find.text('The app'), findsOneWidget);
 

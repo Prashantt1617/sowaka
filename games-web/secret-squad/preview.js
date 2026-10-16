@@ -183,6 +183,10 @@ function push(){ if(H&&online)H.state(viewForMe()); paintPanel(); }
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 function handle(ev,p){ const s=sim.session, R=sim.round, me=P(ME);
   if(ev==='squad:sync'){ push(); return {}; }
+  if(ev==='squad:board'){ // a made-up finished game: everyone in the office, most points first
+    const rows=[...sim.players.values()].map((x,i)=>({userId:x.userId,name:x.name,initials:x.initials,photoUrl:null,points:(sim.totals[x.userId]|0)||Math.max(40,980-i*37)}))
+      .sort((a,b)=>b.points-a.points); rows.forEach((r,i)=>{ r.rank=i>0&&rows[i-1].points===r.points?rows[i-1].rank:i+1; });
+    return {sessionId:(s&&s.id)||'ss-preview',office:'Gurugram',endsAt:now(),results:rows}; }
   if(ev==='squad:join'){ if(!s||s.status==='over'||s.status==='cancelled')throw fail(409,'There’s no game to join right now.');
     if(s.status==='hunt'||s.status==='dealing'){ if(s.roundIndex>=s.rounds.length-1)throw fail(409,'This is the last round. Join the next game.'); }
     me.joined=true; me.fromRound=s.status==='lobby'?0:s.roundIndex+1; changed(); return {}; }

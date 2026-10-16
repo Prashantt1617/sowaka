@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { listNotifications, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
-import { resolveNotifications } from '../services/notification-resolution.service';
+import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
 
 const userId = (req: Request) => req.auth!.userId;
 export async function testNotification(req: Request, res: Response, next: NextFunction) {
@@ -16,7 +16,8 @@ export async function unregisterToken(req: Request, res: Response, next: NextFun
 }
 export async function notificationInbox(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json({ success: true, notifications: await resolveNotifications(userId(req), await listNotifications(userId(req))) });
+    const rows = await resolveNotifications(userId(req), await listNotifications(userId(req)));
+    res.json({ success: true, notifications: await withoutEndedGames(rows) });
   } catch (error) { next(error); }
 }
 export async function readNotification(req: Request, res: Response, next: NextFunction) {
