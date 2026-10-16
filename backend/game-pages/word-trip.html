@@ -329,7 +329,7 @@ html.app .howto{padding-top:20px}
 @keyframes shine{0%{background-position:120% 0}100%{background-position:-120% 0}}
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b{animation:bump .3s} .clock.low{animation:beat .5s infinite}
-  .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear infinite} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear infinite}
+  .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear 2} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear 2}
   .demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
   .tile.in{animation:tilein .18s ease-out both}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
@@ -660,12 +660,16 @@ function howDemo(on){ clearInterval(demoTimer); demoTimer=null; const box=$('how
     else if(s[0]==='ok'){ const c=s[2].split(' '); cls=c[1]||'ok'; draw(); chip(s[1],c[0]); setTimeout(()=>{ used=[]; cls=''; draw(); },420); }
     else if(s[0]==='reset'){ wall.innerHTML=''; used=[]; cls=''; draw(); } },560); }
 /* The clock, the score, and the combo: ×1 to ×5, with a bar that runs down to the moment it drops. */
+/* The clock runs ten times a second: it writes to the page only what has changed since, so a tap never waits on it. */
+const hudWas={};
+function hudSet(key,v,write){ if(hudWas[key]!==v){ hudWas[key]=v; write(v); } }
 function renderHud(instant){
-  const left=mode==='play'?Math.max(0,endAt-now()):mode==='over'?0:ROUND; $('secs').textContent=fmtClock(left); $('clock').setAttribute('aria-label',fmtClock(left)+' left');
-  $('clock').style.setProperty('--pct',Math.min(100,left/ROUND*100)+'%'); $('clock').classList.toggle('low',mode==='play'&&left<=10);
+  const left=mode==='play'?Math.max(0,endAt-now()):mode==='over'?0:ROUND, clk=fmtClock(left);
+  hudSet('secs',clk,v=>{ $('secs').textContent=v; $('clock').setAttribute('aria-label',v+' left'); });
+  hudSet('pct',Math.round(Math.min(100,left/ROUND*100)*2)/2,v=>$('clock').style.setProperty('--pct',v+'%')); $('clock').classList.toggle('low',mode==='play'&&left<=10);
   if(instant){shown=score;$('score').textContent=fmtn(score);}
-  $('cx').textContent='×'+combo; $('combo').classList.toggle('hot',mode==='play'&&combo>1);
-  const cb=mode==='play'&&combo>1?Math.max(0,(comboUntil-now())/COMBO_WINDOW):0; $('cbar').style.width=(cb*100)+'%';
+  hudSet('cx','×'+combo,v=>{ $('cx').textContent=v; }); $('combo').classList.toggle('hot',mode==='play'&&combo>1);
+  const cb=mode==='play'&&combo>1?Math.max(0,(comboUntil-now())/COMBO_WINDOW):0; hudSet('cbar',Math.round(cb*1000)/10,v=>{ $('cbar').style.width=v+'%'; });
 }
 function renderGoal(){ const max=STARS[2]*1.08; $('gfill').style.width=Math.min(100,score/max*100)+'%';
   STARS.forEach((t,i)=>{const e=$('st'+(i+1)); e.style.left=(t/max*100)+'%'; e.classList.toggle('on',score>=t);});
@@ -689,8 +693,9 @@ function renderTiles(pop){
     box.appendChild(r); });
   syncTiles(); }
 function measureRack(){ rack.rects=[]; rack.tiles.forEach((b,id)=>{ const r=b.getBoundingClientRect(); rack.rects.push({id,x:r.left+r.width/2,y:r.top+r.height/2,hw:r.width/2,hh:r.height/2}); }); }
-/* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. */
-function tileAt(x,y){ measureRack(); let best=null,bd=Infinity;
+/* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. The rack is measured once
+   per touch (a new touch forgets the last measure), never on every move: a measure forces the page to lay out. */
+function tileAt(x,y){ if(!rack.rects)measureRack(); let best=null,bd=Infinity;
   for(const r of rack.rects){ const dx=Math.max(0,Math.abs(x-r.x)-r.hw), dy=Math.max(0,Math.abs(y-r.y)-r.hh), d=dx*dx+dy*dy; if(d<bd){bd=d;best=r;} }
   return best&&bd<=18*18?best.id:null; }
 function syncTiles(){ const used=new Set([...usedIds()].map(String)), live=mode==='play'&&!locked;
@@ -698,18 +703,20 @@ function syncTiles(){ const used=new Set([...usedIds()].map(String)), live=mode=
 function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b.classList.toggle('used',on); b.setAttribute('aria-disabled',String(on||mode!=='play'||locked)); }
 (()=>{ const box=$('tiles'), tr=$('tray'); let lastTouchAt=0;
   const idOf=s=>{ const t=order.find(o=>String(o.id)===s); return t?t.id:null; };
-  const hit=(x,y,target)=>{ const s=tileAt(x,y); if(s!==null)return idOf(s); const b=target&&target.closest&&target.closest('.tile'); return b?idOf(b.dataset.id):null; };
+  /* The letter under the finger is read off the element it landed on, which costs nothing; only a touch in a gap
+     between letters is worked out from where it landed. */
+  const hit=(x,y,target)=>{ const b=target&&target.closest&&target.closest('.tile'); if(b)return idOf(b.dataset.id); const s=tileAt(x,y); return s!==null?idOf(s):null; };
   /* Taps and slides. A finger that lands on a letter adds it the moment it lands; a finger that then slides over other
      letters adds each one it crosses (a word in one gesture), once it has moved a little, so a wobbling tap adds nothing
      extra. The end of the touch, a pointer event and the click all add the letter too: a letter already in the word is
      not added again, so whichever of them the app delivers first wins and the rest do nothing. */
   const fingers=new Map();
-  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY,slid:false}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } },{passive:true});
+  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); rack.rects=null; for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY,slid:false}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } },{passive:true});
   box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); if(!f)continue;
       if(!f.slid&&Math.hypot(t.clientX-f.x,t.clientY-f.y)<14)continue; f.slid=true; const s=tileAt(t.clientX,t.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } } },{passive:true});
   const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); if(f&&!f.slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
   box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches)fingers.delete(t.identifier); },{passive:true});
-  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch')e.preventDefault(); const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch'){ e.preventDefault(); rack.rects=null; } const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
   box.addEventListener('pointermove',e=>{ if(e.pointerType==='touch'||!(e.buttons&1))return; const s=tileAt(e.clientX,e.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } });
   box.addEventListener('click',e=>{ const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
   // The word: a touch on a letter there puts it back, the moment it lands.
