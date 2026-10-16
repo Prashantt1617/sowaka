@@ -398,7 +398,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
         if (_teamMember(employeeUserId) != null) {
           _openTeamMember(employeeUserId);
         }
+      // The requests queue, under either name the server has used.
       case 'manage_leave':
+      case 'requests_queue':
         _openTeamRequests();
       case 'manage_attendance':
       case 'attendance_team':

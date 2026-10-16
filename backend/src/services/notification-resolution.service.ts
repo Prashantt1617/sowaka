@@ -21,7 +21,7 @@
  *   feedback_last_day        the same, or the last day has passed
  */
 import { ObjectId } from 'mongodb';
-import { attendanceOverrides, attendanceRecords, attendanceRegularizations, leaves, overtimeRequests, users } from '../config/db';
+import { attendanceOverrides, attendanceRecords, attendanceRegularizations, connectPosts, gameChallenges, getDb, leaves, overtimeRequests, users } from '../config/db';
 import { AppNotification } from '../models/notification.model';
 import { feedbackProgress } from './feedback-notifications.service';
 import { istParts } from './notification-time';
@@ -50,6 +50,64 @@ export async function resolveNotifications(userId: string, rows: AppNotification
     logger.error('Inbox resolution failed', { userId }, error);
   }
   return rows.map((row) => (resolved.has(row.id) ? { ...row, resolved: true as const } : row));
+}
+
+// ------------------------------------------------------------ ended games
+
+/** A Scribble room lasts two hours; its invite is no use after that. */
+const SCRIBBLE_ROOM_MS = 2 * 60 * 60_000;
+/** A live game is over within an evening. */
+const LIVE_GAME_MS = 6 * 60 * 60_000;
+
+/**
+ * The rows about a game or challenge that has ended, left out of the inbox
+ * as it is read (nothing is deleted): an invite, an acceptance or a lobby
+ * for a challenge that finished, expired or was declined; a Scribble invite
+ * past its room's two hours; a Secret Squad lobby whose game was cancelled
+ * or is over; a live game's start whose post is gone or a day's evening old.
+ * The result of a challenge stays: it is the record of how it went.
+ */
+export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Promise<InboxRow[]> {
+  const ended = new Set<string>();
+  try {
+    const challengeRows = rows.filter((row) =>
+      ['game_challenge_received', 'game_challenge_accepted', 'game_challenge_lobby'].includes(row.scenario ?? '') && row.data?.challengeId);
+    const squadRows = rows.filter((row) => row.scenario === 'secret_squad_lobby' && row.data?.sessionId);
+    const liveRows = rows.filter((row) => row.scenario === 'live_game_started');
+    const [challenges, sessions, posts] = await Promise.all([
+      challengeRows.length
+        ? gameChallenges().find({ id: { $in: [...new Set(challengeRows.map((row) => row.data!.challengeId))] } }, { projection: { _id: 0, id: 1, status: 1 } }).toArray()
+        : [],
+      squadRows.length
+        ? getDb().collection<{ id: string; status: string; startsAt: Date; rounds: { huntMs: number; breakMs: number }[] }>('secret_squad_sessions')
+          .find({ id: { $in: [...new Set(squadRows.map((row) => row.data!.sessionId))] } }, { projection: { _id: 0, id: 1, status: 1, startsAt: 1, rounds: 1 } })
+          .toArray()
+        : [],
+      liveRows.length
+        ? connectPosts().find({ id: { $in: [...new Set(liveRows.map((row) => row.data?.postId).filter(Boolean) as string[])] } }, { projection: { _id: 0, id: 1 } }).toArray()
+        : [],
+    ]);
+    const live = new Map(challenges.map((c) => [c.id, c.status === 'pending' || c.status === 'accepted']));
+    for (const row of challengeRows) if (!live.get(row.data!.challengeId)) ended.add(row.id);
+    const gameOver = new Map(sessions.map((s) => {
+      // The lobby, every round and break, and a few minutes of results.
+      const ends = new Date(s.startsAt).getTime() + s.rounds.reduce((sum, r) => sum + (r.huntMs ?? 0) + (r.breakMs ?? 0), 0) + 15 * 60_000;
+      return [s.id, s.status === 'cancelled' || ends < now.getTime()];
+    }));
+    for (const row of squadRows) if (gameOver.get(row.data!.sessionId) !== false) ended.add(row.id);
+    const postsThere = new Set(posts.map((post) => post.id));
+    for (const row of liveRows) {
+      if (!row.data?.postId || !postsThere.has(row.data.postId) || now.getTime() - new Date(row.createdAt).getTime() > LIVE_GAME_MS) ended.add(row.id);
+    }
+    for (const row of rows) {
+      if (row.scenario === 'scribble_invite' && now.getTime() - new Date(row.createdAt).getTime() > SCRIBBLE_ROOM_MS) ended.add(row.id);
+    }
+  } catch (error) {
+    // The inbox still opens, ended games and all.
+    logger.error('Inbox ended-games filter failed', {}, error);
+    return rows;
+  }
+  return rows.filter((row) => !ended.has(row.id));
 }
 
 async function punchReminders(userId: string, rows: AppNotification[], now: Date, resolved: Set<string>) {
