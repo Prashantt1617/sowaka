@@ -269,6 +269,71 @@ void main() {
       );
     });
 
+    test('rows written before the spreadsheet keep their board colour', () {
+      for (final (scenario, title, kind, label) in [
+        (
+          'pending_leave_reminder',
+          'Leave approvals',
+          NotificationKind.priority,
+          'NEEDS YOUR APPROVAL',
+        ),
+        (
+          'leave_decided',
+          'Leave request declined',
+          NotificationKind.priority,
+          'FROM YOUR MANAGER',
+        ),
+        (
+          'correction_decided',
+          'Marked Present ✓',
+          NotificationKind.priority,
+          'FROM YOUR MANAGER',
+        ),
+        (
+          'correction_decided',
+          'Out of location request (Working from home) rejected',
+          NotificationKind.alert,
+          'ATTENDANCE ALERT',
+        ),
+        (
+          'feedback_due',
+          'Feedback due in 2 days',
+          NotificationKind.priority,
+          'FEEDBACK CYCLE',
+        ),
+        (
+          'feedback_received',
+          'Tanvi shared performance feedback with you',
+          NotificationKind.priority,
+          'FROM YOUR MANAGER',
+        ),
+        (
+          'demo_leave_requested',
+          'Leave request from Sneha Kulkarni',
+          NotificationKind.priority,
+          'NEEDS YOUR APPROVAL',
+        ),
+      ]) {
+        final look = _look(scenario, title);
+        expect(look.kind, kind, reason: '$scenario $title');
+        expect(look.label, label, reason: '$scenario $title');
+      }
+      expect(
+        (_look('leave_decided', 'Leave request declined').glyph as IconGlyph)
+            .icon,
+        Icons.highlight_off_rounded,
+      );
+      expect(
+        (_look(
+                  'correction_decided',
+                  'Out of location request (Site survey) rejected',
+                ).glyph
+                as IconGlyph)
+            .icon,
+        Icons.location_on_outlined,
+      );
+    });
+
     test('things to play or answer are teal cards', () {
       for (final (scenario, title, label) in [
         (

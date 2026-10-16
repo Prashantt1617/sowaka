@@ -154,18 +154,60 @@ class NotificationLook {
 
   static const _fromManager = 'FROM YOUR MANAGER';
 
+  /// Scenarios the server wrote before the notifications spreadsheet (and
+  /// the demo rows), read as the one that took their place, so a row already
+  /// in someone's inbox wears the same colour as a new one.
+  static const _formerly = {
+    'pending_leave_reminder': 'pending_requests_reminder',
+    'feedback_due': 'feedback_weekly',
+    'feedback_received': 'feedback_shared',
+    'feedback_submitted': 'leave_submitted',
+    'comment_liked': 'post_liked',
+    'support_ticket_new': 'support_staff',
+    'support_employee_reply': 'support_staff',
+    'attendance_summary': 'weekly_attendance_report',
+    'birthday': 'post_published_birthday',
+    'demo_leave_requested': 'leave_requested',
+    'demo_leave_approved': 'leave_decided',
+    'demo_leave_declined': 'leave_decided',
+    'demo_leave_submitted': 'leave_submitted',
+    'demo_ot_requested': 'overtime_requested',
+    'demo_ot_approved': 'overtime_decided',
+    'demo_ot_declined': 'overtime_decided',
+    'demo_ot_submitted': 'overtime_submitted',
+    'demo_present_requested': 'correction_requested',
+    'demo_present_approved': 'correction_decided',
+    'demo_present_declined': 'correction_decided',
+    'demo_present_submitted': 'correction_submitted',
+    'demo_punch_in': 'punch_in',
+    'demo_punch_out': 'punch_out',
+    'demo_punch_out_half': 'punch_out_half_day',
+    'demo_post_commented': 'post_commented',
+    'demo_post_liked': 'post_liked',
+    'demo_poll_voted': 'poll_voted',
+    'demo_birthday': 'post_published_birthday',
+    'demo_anniversary': 'post_published_anniversary',
+    'demo_post_leadership': 'post_published_leadership',
+  };
+
   static NotificationLook of(Map<String, dynamic> item) {
-    final scenario = '${item['scenario'] ?? ''}';
+    final written = '${item['scenario'] ?? ''}';
+    final scenario = _formerly[written] ?? written;
     final title = '${item['title'] ?? ''}';
     final data = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'] as Map)
         : const <String, dynamic>{};
     // Decisions carry no outcome of their own; their titles are fixed copy
     // ("Leave approved ✓" / "Leave not approved", "Attendance fixed ✓" /
-    // "Attendance not changed").
+    // "Attendance not changed"; before that "Leave request declined",
+    // "Out of location request (…) rejected").
     final declined =
-        title.contains('not approved') || title.contains('not changed');
-    final punch = title.startsWith('Punch');
+        title.contains('not approved') ||
+        title.contains('not changed') ||
+        title.contains('declined') ||
+        title.contains('rejected');
+    final punch =
+        title.startsWith('Punch') || title.startsWith('Out of location');
     // Decisions say who made them; HR can decide in a manager's place.
     final from = data['from'] == 'hr' ? 'FROM HR' : _fromManager;
 
@@ -175,6 +217,8 @@ class NotificationLook {
         return _alert('ATTENDANCE ALERT', const AssetGlyph(alarmClock, 30));
       case 'feedback_last_day':
         return _alert('DUE TODAY', const AssetGlyph(alarmClock, 30));
+      case 'feedback_overdue':
+        return _alert('FEEDBACK OVERDUE', const AssetGlyph(alarmClock, 30));
       case 'correction_decided':
         final icon = punch
             ? Icons.location_on_outlined
@@ -241,6 +285,12 @@ class NotificationLook {
           glyph: AssetGlyph(gameDie, 20),
           disc: _gameDisc,
         );
+      case 'support_staff':
+        return _activity(Icons.headset_mic_outlined, _blueInk, _blueDisc);
+      case 'weekly_attendance_report':
+        return _activity(Icons.insert_chart_outlined, _greenInk, _greenDisc);
+      case 'nomination_received':
+        return _activity(Icons.star_border_rounded, _amberInk, _amberDisc);
       case 'support_resolved':
         return _activity(
           Icons.check_circle_outline_rounded,
@@ -299,6 +349,7 @@ class NotificationLook {
     if (type == 'secret_squad') return secretSquad;
     if (type == 'caption_challenge' ||
         type == 'photo_story_challenge' ||
+        type == 'photo_challenge' ||
         type == 'most_likely') {
       return _game('NEW CONTEST', Icons.image_outlined);
     }
