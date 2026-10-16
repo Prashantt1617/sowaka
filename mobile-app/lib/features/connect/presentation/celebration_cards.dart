@@ -96,10 +96,6 @@ bool _hasWished(ConnectPost post, String viewerUserId) =>
     post.actionValue != null ||
     _wishesOn(post).any((wish) => wish.userId == viewerUserId);
 
-/// The wishes the celebrant has not seen yet, as the server counts them.
-int _newWishCount(ConnectPost post) =>
-    (post.body['newWishCount'] as num?)?.toInt() ?? 0;
-
 /// The person's team, as the small card names it: the server's, else what
 /// leads the card's subtitle ("Designer · turns a year wiser today").
 String _departmentOf(ConnectPost post) {
@@ -163,13 +159,18 @@ class _CelebrationColors {
 
   /// accents/purple, accents/orange and accents/yellow.
   static const purple = Color(0xFFCB30E0);
-  static const orange = Color(0xFFFF8D28);
+  static const orange = Color(0xFFFF8F0E);
+
+  /// The celebrant's own birthday card (4010:63960): lavender, deep purple.
+  static const celebrantBirthdayCard = Color(0xFFE2DBFF);
+  static const celebrantPurple = Color(0xFF3B0764);
+
+  /// The years badge on the small anniversary card (3972:63814).
+  static const yearsDisc = Color(0xFFFFFCEE);
+  static const yearsDiscBorder = Color(0xFFEBEBEB);
   static const yellow = Color(0xFFFFCC00);
 
   static const tileBorder = Color(0xFFD2CEFF);
-  static const title = Color(0xFF111827);
-  static const newPill = Color(0xFFE8F4FC);
-  static const newPillText = Color(0xFF0571A6);
   static const main = Color(0xFF222222);
   static const tertiary = Color(0xFF717171);
   static const night = Color(0xFF160D2C);
@@ -299,9 +300,9 @@ class _WisherFaces extends StatelessWidget {
 
 // ------------------------------------------------- the celebrant's own card
 
-/// The celebrant's own card: "Work Anniversary" (frame 3840:81136) or
-/// "Birthday Wishes" (3840:81108), how many wishes are new, and "View all
-/// wishes" over the faces of who wished.
+/// The celebrant's own card (frames 4010:63960 birthday, 4010:63931
+/// anniversary): the greeting, and "View all wishes" over the faces of who
+/// wished.
 class _CelebrantCard extends StatelessWidget {
   const _CelebrantCard({
     super.key,
@@ -316,72 +317,21 @@ class _CelebrantCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final birthday = post.type == ConnectPostType.birthday;
     final accent = birthday
-        ? _CelebrationColors.purple
+        ? _CelebrationColors.celebrantPurple
         : _CelebrationColors.orange;
-    final fresh = _newWishCount(post);
     return Container(
       key: ValueKey('celebrant-card-${post.id}'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: birthday
-            ? _CelebrationColors.birthdayCard
+            ? _CelebrationColors.celebrantBirthdayCard
             : _CelebrationColors.anniversaryCard,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent, width: 0.4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // node 3840:81138
-          SizedBox(
-            height: 24.5,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    birthday ? 'Birthday Wishes' : 'Work Anniversary',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _celebrationText(
-                      16,
-                      FontWeight.w700,
-                      _CelebrationColors.title,
-                      height: 24,
-                    ),
-                  ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(scale: animation, child: child),
-                  ),
-                  child: fresh > 0
-                      ? Container(
-                          key: ValueKey('celebrant-new-$fresh'),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _CelebrationColors.newPill,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '$fresh new',
-                            style: _celebrationText(
-                              11,
-                              FontWeight.w700,
-                              _CelebrationColors.newPillText,
-                              height: 16.5,
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
           if (birthday) _birthdayBody(accent) else _anniversaryBody(accent),
           const SizedBox(height: 16),
           _ViewAllWishesBar(post: post, accent: accent, onTap: onViewAll),
@@ -409,36 +359,47 @@ class _CelebrantCard extends StatelessWidget {
     ),
   );
 
-  /// node 3840:81115: the photo, "Happy Birthday" and their name.
+  /// node 4010:63966: the photo, "Happy Birthday", their name and a wish.
   Widget _birthdayBody(Color accent) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _photo(73),
           const SizedBox(width: 12),
           Expanded(
-            child: SizedBox(
-              height: 55,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
                     'Happy Birthday',
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _celebrationText(24, FontWeight.w700, accent),
+                    style: _celebrationText(28, FontWeight.w700, accent),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    _bodyString(post, 'personName'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _celebrationText(14, FontWeight.w400, accent),
+                ),
+                Text(
+                  _bodyString(post, 'personName'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _celebrationText(16, FontWeight.w400, accent),
+                ),
+                SizedBox(
+                  height: 21,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Wishing you a successful year ahead.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _celebrationText(10, FontWeight.w400, accent),
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1039,7 +1000,7 @@ class _CelebrationTile extends StatelessWidget {
   }
 }
 
-/// A work anniversary's years on the small card's photo: a white disc with
+/// A work anniversary's years on the small card's photo: a cream disc with
 /// the design's own number on it (1 to 7, node 4010:63927); past 7 the
 /// number is set in gold.
 class _YearsBadge extends StatelessWidget {
@@ -1065,9 +1026,10 @@ class _YearsBadge extends StatelessWidget {
       width: 30,
       height: 30,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(
+        color: _CelebrationColors.yearsDisc,
         shape: BoxShape.circle,
+        border: Border.all(color: _CelebrationColors.yearsDiscBorder, width: 0.4),
       ),
       child: _YearArt.has(years)
           ? _YearArt(

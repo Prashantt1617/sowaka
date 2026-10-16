@@ -287,10 +287,11 @@ void main() {
       final bloc = await _pumpFeed(tester, server);
 
       expect(find.byKey(const ValueKey('celebrant-card-mine')), findsOneWidget);
-      expect(find.text('Birthday Wishes'), findsOneWidget);
+      // Figma 4010:63960: the greeting, their name and a wish; no heading.
+      expect(find.text('Birthday Wishes'), findsNothing);
       expect(find.text('Happy Birthday'), findsOneWidget);
       expect(find.text('Viewer Person'), findsOneWidget);
-      expect(find.text('2 new'), findsOneWidget);
+      expect(find.text('Wishing you a successful year ahead.'), findsOneWidget);
       // Two faces and the other two as "+2".
       expect(find.text('+2'), findsOneWidget);
       // No button to wish themselves, and not the usual card.
@@ -331,7 +332,8 @@ void main() {
       ]);
       final bloc = await _pumpFeed(tester, server);
 
-      expect(find.text('Work Anniversary'), findsOneWidget);
+      // Figma 4010:63931: straight to the greeting, no heading.
+      expect(find.text('Work Anniversary'), findsNothing);
       expect(
         find.textContaining('Congratulations! ', findRichText: true),
         findsOneWidget,
