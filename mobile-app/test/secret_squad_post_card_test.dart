@@ -676,13 +676,48 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets("View Full Leaderboard opens the game as Let's Play does", (
+    testWidgets('View Full Leaderboard lists everyone who played', (
       tester,
     ) async {
       final opened = <GameCatalogEntry>[];
       await _pump(
         tester,
         body: _over(_results(12, mine: 11)),
+        now: () => after,
+        openGame: (context, game) async => opened.add(game),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.tap(find.text('View Full Leaderboard'));
+      // The card's envelope and rays never stop moving: pump the sheet in.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('FULL LEADERBOARD'), findsOneWidget);
+      // All twelve, past the top 10 too; the viewer's own row reads You.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('squad-board-u-tanvi')),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('squad-board-u-tanvi')),
+          matching: find.text('You'),
+        ),
+        findsOneWidget,
+      );
+      expect(opened, isEmpty);
+    });
+
+    testWidgets("with no standings, View Full Leaderboard opens the game", (
+      tester,
+    ) async {
+      final opened = <GameCatalogEntry>[];
+      await _pump(
+        tester,
+        body: _over(null),
         now: () => after,
         openGame: (context, game) async => opened.add(game),
       );
