@@ -168,9 +168,8 @@ class _WishesSheetState extends State<_WishesSheet> {
   /// Report or block, for a wish or reply someone else wrote — held down, as
   /// the design leaves the row free of a menu button.
   Future<void> _showMenu(ConnectComment comment, Offset at) async {
-    if (comment.userId.isEmpty || comment.userId == widget.viewerUserId) {
-      return;
-    }
+    if (comment.userId.isEmpty) return;
+    final mine = comment.userId == widget.viewerUserId;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final action = await showMenu<_PostMenuAction>(
@@ -181,7 +180,20 @@ class _WishesSheetState extends State<_WishesSheet> {
       ),
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      items: [
+      items: mine
+          ? const [
+              PopupMenuItem(
+                value: _PostMenuAction.delete,
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE5484D)),
+                    SizedBox(width: 10),
+                    Text('Delete', style: TextStyle(color: Color(0xFFE5484D))),
+                  ],
+                ),
+              ),
+            ]
+          : [
         const PopupMenuItem(
           value: _PostMenuAction.report,
           child: Row(
@@ -209,6 +221,16 @@ class _WishesSheetState extends State<_WishesSheet> {
         ),
       ],
     );
+    if (!mounted) return;
+    if (action == _PostMenuAction.delete) {
+      await _confirmDeleteComment(
+        context,
+        widget.bloc,
+        widget.postId,
+        comment,
+        noun: comment.parentId == null ? 'wish' : 'reply',
+      );
+    }
     if (action == _PostMenuAction.report) widget.onReportComment(comment);
     if (action == _PostMenuAction.block) widget.onBlockCommenter(comment);
   }

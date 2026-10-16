@@ -475,6 +475,36 @@ class ConnectBloc {
     );
   }
 
+  /// A comment goes at once, with the replies under it; if the server
+  /// refuses, it comes back. False when it could not be deleted.
+  Future<bool> deleteComment(String postId, String commentId) {
+    return _mutateOptimistically(
+      postId,
+      (post) {
+        final gone = {commentId};
+        for (var grew = true; grew;) {
+          grew = false;
+          for (final comment in post.comments) {
+            final parent = comment.parentId;
+            if (parent != null && gone.contains(parent) && gone.add(comment.id)) {
+              grew = true;
+            }
+          }
+        }
+        final kept = [
+          for (final comment in post.comments)
+            if (!gone.contains(comment.id)) comment,
+        ];
+        return post.copyWith(
+          comments: kept,
+          commentCount: (post.commentCount - (post.comments.length - kept.length))
+              .clamp(0, 1 << 30),
+        );
+      },
+      () => _api.deleteComment(postId, commentId),
+    );
+  }
+
   /// The celebrant has opened their wishes: the card's "N new" goes at once,
   /// and the server is told so it stays gone on their other devices. Nothing
   /// is sent for a card the server gave no count — not theirs, or a server

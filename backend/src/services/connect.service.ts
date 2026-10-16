@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
-import { audienceLists, companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
+import { audienceLists, companies, connectPosts, contentReports, gameScores, notifications, relayEvents, users } from '../config/db';
 import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
@@ -538,6 +538,47 @@ export async function addConnectComment(
       ]),
     );
   }
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * Deletes a comment, and the replies under it: by the person who wrote it, or
+ * by HR (anyone with dashboard access) taking one down. Its notifications go
+ * with it, and any open report on it is closed as handled.
+ */
+export async function deleteConnectComment(viewerUserId: string, postId: string, commentId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  const comment = post.comments.find((item) => item.id === commentId);
+  if (!comment) throw new ConnectError(404, 'Comment not found');
+  if (comment.userId !== viewerUserId) {
+    const viewer = await users().findOne({ userId: viewerUserId }, { projection: { dashboardAccess: 1 } });
+    if (!viewer?.dashboardAccess) throw new ConnectError(403, 'You can only delete your own comments.');
+  }
+  // The comment and every reply beneath it, however deep.
+  const gone = new Set([commentId]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const item of post.comments) {
+      if (item.parentId && gone.has(item.parentId) && !gone.has(item.id)) {
+        gone.add(item.id);
+        grew = true;
+      }
+    }
+  }
+  const ids = [...gone];
+  await connectPosts().updateOne(
+    { id: postId },
+    { $pull: { comments: { id: { $in: ids } } } as never, $set: { updatedAt: new Date() } },
+  );
+  const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
+  inBackground('comment cleanup', async () => {
+    await notifications().deleteMany({ 'data.postId': postId, 'data.commentId': { $in: ids } });
+    await contentReports().updateMany(
+      { postId, commentId: { $in: ids }, status: 'open' },
+      { $set: { status: 'actioned', reviewedAt: new Date(), reviewedByUserId: viewerUserId, reviewNote: 'Comment deleted' } },
+    );
+  });
   return viewPost(updated ?? post, viewerUserId);
 }
 

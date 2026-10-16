@@ -202,6 +202,15 @@ class ConnectApiService {
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 
+  /// Deletes one of your comments, and the replies under it.
+  Future<ConnectPost> deleteComment(String postId, String commentId) async {
+    final json = await _request(
+      'DELETE',
+      '/connect/posts/$postId/comments/$commentId',
+    );
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
   Future<ConnectPost> performAction(String postId, {String? optionId}) async {
     final json = await _request(
       'POST',

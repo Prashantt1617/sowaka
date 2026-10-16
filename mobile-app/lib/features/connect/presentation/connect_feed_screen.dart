@@ -7890,8 +7890,42 @@ class _DeletePostSheet extends StatelessWidget {
   }
 }
 
-/// The three-dot menu on a colleague's comment: report it, or stop seeing
-/// them. Absent on your own comments, and on anything without a real author.
+/// Asks before deleting one of your own comments (replies to it go too),
+/// then deletes it.
+Future<void> _confirmDeleteComment(
+  BuildContext context,
+  ConnectBloc bloc,
+  String postId,
+  ConnectComment comment, {
+  String noun = 'comment',
+}) async {
+  final sure = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text('Delete $noun?'),
+      content: Text(
+        'It will be removed for everyone, along with any replies to it.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFFE5484D)),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (sure == true) await bloc.deleteComment(postId, comment.id);
+}
+
+/// The three-dot menu on a comment: on yours, delete it; on a colleague's,
+/// report it or stop seeing them. Absent on anything without a real author.
 class _CommentMenuButton extends StatelessWidget {
   const _CommentMenuButton({
     required this.comment,
@@ -7905,9 +7939,8 @@ class _CommentMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (comment.userId.isEmpty || comment.userId == sheet.viewerUserId) {
-      return const SizedBox.shrink();
-    }
+    if (comment.userId.isEmpty) return const SizedBox.shrink();
+    final mine = comment.userId == sheet.viewerUserId;
     return SizedBox(
       width: iconSize + 12,
       height: iconSize + 12,
@@ -7919,13 +7952,28 @@ class _CommentMenuButton extends StatelessWidget {
         color: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         onSelected: (action) {
-          if (action == _PostMenuAction.report) {
+          if (action == _PostMenuAction.delete) {
+            _confirmDeleteComment(context, sheet.bloc, sheet.postId, comment);
+          } else if (action == _PostMenuAction.report) {
             sheet.onReportComment(comment);
           } else if (action == _PostMenuAction.block) {
             sheet.onBlockCommenter(comment);
           }
         },
-        itemBuilder: (context) => [
+        itemBuilder: (context) => mine
+            ? const [
+                PopupMenuItem(
+                  value: _PostMenuAction.delete,
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE5484D)),
+                      SizedBox(width: 10),
+                      Text('Delete comment', style: TextStyle(color: Color(0xFFE5484D))),
+                    ],
+                  ),
+                ),
+              ]
+            : [
           const PopupMenuItem(
             value: _PostMenuAction.report,
             child: Row(
@@ -7951,7 +7999,7 @@ class _CommentMenuButton extends StatelessWidget {
               ],
             ),
           ),
-        ],
+              ],
       ),
     );
   }

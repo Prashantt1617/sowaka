@@ -4,6 +4,7 @@ import {
   addConnectComment,
   ConnectError,
   createConnectPost,
+  deleteConnectComment,
   deleteConnectPost,
   getConnectFeed,
   parsePostTypeList,
@@ -112,6 +113,19 @@ export async function commentOnConnectPost(req: Request, res: Response, next: Ne
 export async function reactToConnectComment(req: Request, res: Response, next: NextFunction) {
   try {
     const post = await toggleConnectCommentReaction(
+      requireUserId(req),
+      String(req.params.postId ?? ''),
+      String(req.params.commentId ?? ''),
+    );
+    res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+export async function deleteComment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await deleteConnectComment(
       requireUserId(req),
       String(req.params.postId ?? ''),
       String(req.params.commentId ?? ''),
