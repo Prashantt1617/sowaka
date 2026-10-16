@@ -99,7 +99,10 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .tray.ok button{background:var(--good);box-shadow:0 4px 0 #1f9a61}
 .tray.gold button{background:var(--gold);box-shadow:0 4px 0 #b88a00}
 .tray.no button{background:var(--bad);box-shadow:0 4px 0 #a83838}
-.tiles{display:flex;flex-direction:column;gap:12px;align-items:center;padding:2px 0 6px;touch-action:none}
+.tiles{position:relative;display:flex;flex-direction:column;gap:12px;align-items:center;padding:2px 0 6px;touch-action:none}
+/* The line a swipe draws from letter to letter, over the tiles. */
+.trail{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:2}
+.trail polyline{fill:none;stroke:var(--accent);stroke-width:8;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
 /* touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
 .tiles .rowt{display:flex;gap:8px}
 .tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.25rem;line-height:1;width:82px;height:70px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
@@ -706,19 +709,52 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
   /* The letter under the finger is read off the element it landed on, which costs nothing; only a touch in a gap
      between letters is worked out from where it landed. */
   const hit=(x,y,target)=>{ const b=target&&target.closest&&target.closest('.tile'); if(b)return idOf(b.dataset.id); const s=tileAt(x,y); return s!==null?idOf(s):null; };
-  /* Taps and slides. A finger that lands on a letter adds it the moment it lands; a finger that then slides over other
-     letters adds each one it crosses (a word in one gesture), once it has moved a little, so a wobbling tap adds nothing
-     extra. The end of the touch, a pointer event and the click all add the letter too: a letter already in the word is
-     not added again, so whichever of them the app delivers first wins and the rest do nothing. */
+  /* Taps and swipes. A finger that lands on a letter adds it the moment it lands. One finger at a time can then swipe,
+     as in the connect-the-letters games: each letter it slides onto joins the word, a line runs from letter to letter
+     and on to the finger, sliding back onto the letter before takes the last one off, and lifting the finger plays the
+     word once two letters or more are linked. During a swipe a letter counts only once the finger is well inside it, so
+     a diagonal between the rows picks up nothing on the way. The letters sit in rows, so the way to a letter can cross
+     the one before: crossing it does nothing, and only holding still on it (or lifting there) takes the last letter off. A tap that does not move is a tap, as before: the end of
+     the touch, a pointer event and the click all add its letter too, and a letter already in the word is not added
+     again, so whichever arrives first wins and the rest do nothing. */
   const fingers=new Map();
-  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); rack.rects=null; for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY,slid:false}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } },{passive:true});
-  box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); if(!f)continue;
-      if(!f.slid&&Math.hypot(t.clientX-f.x,t.clientY-f.y)<14)continue; f.slid=true; const s=tileAt(t.clientX,t.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } } },{passive:true});
-  const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); if(f&&!f.slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
-  box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches)fingers.delete(t.identifier); },{passive:true});
-  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch'){ e.preventDefault(); rack.rects=null; } const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
-  box.addEventListener('pointermove',e=>{ if(e.pointerType==='touch'||!(e.buttons&1))return; const s=tileAt(e.clientX,e.clientY); if(s!==null){ const id=idOf(s); if(id!==null)tapTile(id); } });
-  box.addEventListener('click',e=>{ const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
+  let swipe=null, lastSwipeAt=0; // swipe: {key, ids, ox, oy, x, y, sx, sy, slid, over, backT}
+  const BACK_REST=150; // ms held still on the letter before that takes the last one off
+  const armBack=(s,id)=>{ clearTimeout(s.backT); s.restX=s.x; s.restY=s.y; s.backT=setTimeout(()=>{ if(swipe===s&&s.over===id){ backOne(s); draw(); } },BACK_REST); };
+  const NS='http://www.w3.org/2000/svg'; let trail=null;
+  const centreOf=id=>{ const r=rack.rects&&rack.rects.find(q=>q.id===String(id)); return r?[r.x,r.y]:null; };
+  /* The tile the finger is well inside: the middle 70% of it. */
+  const insideTile=(x,y)=>{ if(!rack.rects)measureRack(); for(const r of rack.rects){ if(Math.abs(x-r.x)<=r.hw*.7&&Math.abs(y-r.y)<=r.hh*.7)return idOf(r.id); } return null; };
+  const draw=()=>{ if(!swipe||!swipe.slid||!swipe.ids.length){ if(trail)trail.style.display='none'; return; }
+    if(!trail||!box.contains(trail)){ trail=document.createElementNS(NS,'svg'); trail.setAttribute('class','trail'); trail.appendChild(document.createElementNS(NS,'polyline')); box.appendChild(trail); }
+    const pts=swipe.ids.map(centreOf).filter(Boolean); pts.push([swipe.x,swipe.y]);
+    trail.firstChild.setAttribute('points',pts.map(([x,y])=>(x-swipe.ox).toFixed(1)+','+(y-swipe.oy).toFixed(1)).join(' ')); trail.style.display=''; };
+  const swipeStart=(key,x,y,id)=>{ if(swipe)return; if(!rack.rects)measureRack(); const b=box.getBoundingClientRect();
+    swipe={key,ids:id!==null&&tray.some(t=>t.id===id)?[id]:[],ox:b.left,oy:b.top,x,y,sx:x,sy:y,slid:false,over:id,backT:null}; };
+  /* Take the swipe's last letter off, if it is still the word's last. */
+  const backOne=s=>{ const ids=s.ids; if(ids.length>=2&&tray.length&&tray[tray.length-1].id===ids[ids.length-1]){ ids.pop(); del(); } };
+  const swipeMove=(key,x,y)=>{ if(!swipe||swipe.key!==key)return; swipe.x=x; swipe.y=y;
+    if(!swipe.slid){ if(Math.hypot(x-swipe.sx,y-swipe.sy)<14)return; swipe.slid=true; }
+    const id=insideTile(x,y), ids=swipe.ids;
+    if(id!==swipe.over){ swipe.over=id; clearTimeout(swipe.backT); swipe.backT=null;
+      if(id!==null&&id!==ids[ids.length-1]){
+        if(ids.length>=2&&id===ids[ids.length-2])armBack(swipe,id);
+        else if(canPlay()&&!tray.some(t=>t.id===id)){ tapTile(id); ids.push(id); }
+      }
+    } else if(swipe.backT&&Math.hypot(x-swipe.restX,y-swipe.restY)>6)armBack(swipe,id); // still moving: not resting yet
+    draw(); };
+  const swipeEnd=key=>{ if(!swipe||swipe.key!==key)return; const s=swipe; swipe=null; clearTimeout(s.backT);
+    // Lifted on the letter before: that letter ends the word.
+    if(s.slid&&s.ids.length>=2&&s.over===s.ids[s.ids.length-2])backOne(s);
+    draw(); if(s.slid){ lastSwipeAt=performance.now(); if(s.ids.length>=2)enter(); } return s.slid; };
+  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); rack.rects=null; for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); swipeStart('t'+t.identifier,t.clientX,t.clientY,id); } },{passive:true});
+  box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches)swipeMove('t'+t.identifier,t.clientX,t.clientY); },{passive:true});
+  const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); const slid=swipeEnd('t'+t.identifier); if(f&&!slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
+  box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches){ fingers.delete(t.identifier); if(swipe&&swipe.key==='t'+t.identifier){ clearTimeout(swipe.backT); swipe=null; draw(); } } },{passive:true});
+  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch'){ e.preventDefault(); rack.rects=null; } const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); if(e.pointerType!=='touch')swipeStart('p',e.clientX,e.clientY,id); });
+  window.addEventListener('pointermove',e=>{ if(e.pointerType==='touch')return; if(!(e.buttons&1)){ if(swipe&&swipe.key==='p'){ clearTimeout(swipe.backT); swipe=null; draw(); } return; } swipeMove('p',e.clientX,e.clientY); });
+  window.addEventListener('pointerup',e=>{ if(e.pointerType!=='touch')swipeEnd('p'); });
+  box.addEventListener('click',e=>{ if(performance.now()-lastSwipeAt<400)return; const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
   // The word: a touch on a letter there puts it back, the moment it lands.
   const trayHit=e=>{ const b=e.target.closest&&e.target.closest('button'); if(b&&b.dataset.j!=null)removeAt(+b.dataset.j); };
   tr.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); trayHit(e); },{passive:true});
