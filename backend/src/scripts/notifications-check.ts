@@ -159,7 +159,7 @@ const user = (id: string) => getDb().collection('users').findOne({ userId: id })
   check('earlier commenter: first "also commented" at once', rows.length === 1 && rows[0].title === 'Manav Manager also commented', rows.map((r) => r.title));
   await flushGroupedNotifications(new Date(Date.now() + 3 * 3_600_000 + 1000));
   rows = await notifications().find({ 'data.postId': ordinary.id, userId: 'b', scenario: 'post_commented' }).sort({ createdAt: 1 }).toArray();
-  check('after 3h the gathered comments go as one', rows.length === 2 && rows[1].title === 'Hema HR and 1 other commented on your post', rows.map((r) => r.title));
+  check('after 3h the gathered comments go as one, replacing the earlier row and counting everyone', rows.length === 1 && rows[0].title === 'Hema HR and 2 others commented on your post', rows.map((r) => r.title));
 
   const wish = { id: 'w1', userId: 'b', name: 'Bala', text: 'HBD', createdAt: t0, likedBy: [] };
   await notifyPostCommented(bday, wish as never, await user('b'));
