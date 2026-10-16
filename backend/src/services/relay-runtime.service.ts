@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  connectPosts,
   relayEvents,
   relayItems,
   relayProgress,
@@ -29,6 +30,8 @@ import {
 import { itemsForTeam } from './relay-pool';
 import { presignConnectMedia } from './s3-connect-media.service';
 import { RelayError } from './relay-import.service';
+import { notifyLiveGameStarted } from './connect-notifications.service';
+import { logger } from '../utils/logger';
 import {
   answeringTeams,
   cacheProgress,
@@ -839,6 +842,13 @@ export async function startEvent(eventId: string) {
       updatedAt: startedAt,
     })),
   );
+  // Spec row 29: everyone the game's post reached hears that it has started.
+  void (async () => {
+    const post = await connectPosts().findOne({ type: 'relay_game', 'body.eventId': eventId });
+    if (!post) return;
+    const host = post.author.userId ? await users().findOne({ userId: post.author.userId }) : null;
+    await notifyLiveGameStarted(post, host?.name ?? post.author.name);
+  })().catch((error) => logger.error('Live game notification failed', { eventId }, error));
   return { startedAt, teams: teams.length };
 }
 

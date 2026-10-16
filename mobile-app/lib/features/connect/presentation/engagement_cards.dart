@@ -2962,9 +2962,11 @@ class _TagBar extends StatelessWidget {
         )..layout()).width;
         // The face rides the end of the fill, but never into the points.
         final pointsStart = width - 10.75 - pointsWidth;
-        final faceLeft = fill.clamp(0.0, math.max(0.0, pointsStart - 8 - 33)).toDouble();
-        // Once the fill runs under the points they turn white to stay read.
-        final pointsOnFill = fill >= pointsStart;
+        final faceLeft = fill
+            .clamp(0.0, math.max(0.0, pointsStart - 8 - 33))
+            .toDouble();
+        // Where the fill runs under the points they turn white to stay read,
+        // split at the fill's edge (see _SplitInk).
         return Container(
           height: 47.996,
           clipBehavior: Clip.antiAlias,
@@ -3003,11 +3005,16 @@ class _TagBar extends StatelessWidget {
                 top: 0,
                 bottom: 0,
                 child: Center(
-                  child: Text(
-                    points,
-                    style: pointsStyle.copyWith(
-                      color: pointsOnFill ? Colors.white : color,
+                  child: _SplitInk(
+                    onFill: TextSpan(
+                      text: points,
+                      style: pointsStyle.copyWith(color: Colors.white),
                     ),
+                    offFill: TextSpan(
+                      text: points,
+                      style: pointsStyle.copyWith(color: color),
+                    ),
+                    splitAt: fill - pointsStart,
                   ),
                 ),
               ),

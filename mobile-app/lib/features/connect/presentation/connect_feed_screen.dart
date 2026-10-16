@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderShiftedBox;
 
+import '../../shared/app_update.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -26,6 +27,7 @@ import '../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
+import '../../squad/presentation/secret_squad_post_card.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -34,6 +36,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 // sheet, and the poll card are drawn in their own files: this one was already
 // past ten thousand lines. They share this library's private helpers.
 part 'comment_mentions.dart';
+part 'celebration_cards.dart';
+part 'celebration_wishes_sheet.dart';
 part 'contest_composer.dart';
 part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
@@ -344,6 +348,8 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
       );
     }
     final posts = state.posts;
+    // One day's birthdays and anniversaries of the company are one row.
+    final cards = _feedCards(posts);
     final publishing = state.publishing > 0 ? 1 : 0;
     return _FeedScope(
       bloc: _bloc,
@@ -364,11 +370,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
           // The composer, a placeholder while a post is being published,
           // the posts, and — while older ones exist — a last row that asks
           // for the next page as it comes into view.
-          itemCount: posts.length + 1 + publishing + (state.hasMore ? 1 : 0),
+          itemCount: cards.length + 1 + publishing + (state.hasMore ? 1 : 0),
           // 24 above every card, the first included (frame 3332:23887).
           separatorBuilder: (_, _) => const SizedBox(height: 24),
           itemBuilder: (context, index) {
-            if (index == posts.length + 1 + publishing) {
+            if (index == cards.length + 1 + publishing) {
               if (state.loadMoreFailed) {
                 return Center(
                   child: TextButton(
@@ -405,11 +411,18 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
             // The composer entry point, now that the nav has no Post tab
             // (node 2002:39114).
             if (index == 0) {
-              return _StartAPostCard(
-                initials: _viewerInitials,
-                color: _viewerColor,
-                photoUrl: _viewerPhotoUrl,
-                onTap: _openPostTypePicker,
+              return Column(
+                children: [
+                  // The minor-update strip, when one is on for this company
+                  // and has not been closed.
+                  const AppUpdateStrip(),
+                  _StartAPostCard(
+                    initials: _viewerInitials,
+                    color: _viewerColor,
+                    photoUrl: _viewerPhotoUrl,
+                    onTap: _openPostTypePicker,
+                  ),
+                ],
               );
             }
             // The post on its way, where it will land (node 663:15998).
@@ -423,7 +436,29 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                 audienceLabel: _publishingLabel(state.publishingTo),
               );
             }
-            final post = posts[index - 1 - publishing];
+            final card = cards[index - 1 - publishing];
+            // Everyone else's view of the day's celebrations: one row, a
+            // small card per person, each keyed by its own post so a
+            // notification about it scrolls straight to it.
+            if (_celebrationGroupOf(card.first).isNotEmpty) {
+              return _CelebrationsSection(
+                posts: card,
+                viewerUserId: widget.session.user.id,
+                keyFor: (post) => _postKeys.putIfAbsent(post.id, GlobalKey.new),
+                onOpenWishes: (post, {initialText = ''}) =>
+                    _openComments(post.id, initialText: initialText),
+              );
+            }
+            final post = card.single;
+            // The celebrant's own birthday or anniversary: their wishes, not
+            // a card asking them to wish themselves.
+            if (_isCelebrant(post, widget.session.user.id)) {
+              return _CelebrantCard(
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
+                post: post,
+                onViewAll: () => _openComments(post.id),
+              );
+            }
             // The game draws its whole card itself — its own gradient, and the
             // viewer's own team — rather than sitting inside a standard post.
             if (post.type == ConnectPostType.relayGame) {
@@ -431,6 +466,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
                 key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: RelayPostCard(post: post, session: widget.session),
+              );
+            }
+            // Secret Squad's session for this office: its own animated card,
+            // drawn whole like the relay's, with the way into the game.
+            if (post.type == ConnectPostType.secretSquad) {
+              return SecretSquadPostCard(
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
+                post: post,
+                session: widget.session,
               );
             }
             return _ConnectPostCard(
@@ -681,7 +725,15 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     if (comments && mounted) await _openComments(postId);
   }
 
-  Future<void> _openComments(String postId) {
+  /// The post's comments — on a birthday or anniversary, its wishes, with
+  /// [initialText] in the box as a wish starts.
+  Future<void> _openComments(String postId, {String initialText = ''}) {
+    final post = _bloc.state.posts
+        .where((item) => item.id == postId)
+        .firstOrNull;
+    if (post != null && _isCelebration(post.type)) {
+      return _openWishes(post, initialText: initialText);
+    }
     return showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -706,6 +758,45 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         onOpenPerson: widget.onOpenPerson,
       ),
     );
+  }
+
+  /// A birthday's or anniversary's wishes (frame 3886:93781). For the person
+  /// it celebrates, opening them is seeing them: their card's "N new" goes,
+  /// and anything that arrived while the sheet was up goes when it closes.
+  Future<void> _openWishes(ConnectPost post, {String initialText = ''}) async {
+    final celebrant = _isCelebrant(post, widget.session.user.id);
+    if (celebrant) unawaited(_bloc.markWishesSeen(post.id));
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _WishesSheet(
+        bloc: _bloc,
+        postId: post.id,
+        initialText: initialText,
+        people: _taggablePeople,
+        viewerUserId: widget.session.user.id,
+        viewerInitials: _viewerInitials,
+        viewerColor: _viewerColor,
+        viewerPhotoUrl: _viewerPhotoUrl,
+        onReportComment: (comment) => _reportContent(
+          postId: post.id,
+          authorName: comment.name,
+          isComment: true,
+          commentId: comment.id,
+        ),
+        onBlockCommenter: (comment) =>
+            _confirmBlock(comment.userId, comment.name),
+        onOpenPerson: widget.onOpenPerson,
+      ),
+    );
+    if (!celebrant || !mounted) return;
+    final now = _bloc.state.posts
+        .where((item) => item.id == post.id)
+        .firstOrNull;
+    final unseen = (now?.body['newWishCount'] as num?)?.toInt() ?? 0;
+    if (unseen > 0) unawaited(_bloc.markWishesSeen(post.id));
   }
 
   Future<void> _openGame(ConnectPost post) async {
@@ -1068,6 +1159,7 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.photoStoryChallenge:
     case ConnectPostType.mostLikely:
     case ConnectPostType.relayGame:
+    case ConnectPostType.secretSquad:
       return false;
   }
 }
@@ -2094,6 +2186,8 @@ class _PostBody extends StatelessWidget {
     return switch (post.type) {
       // Drawn by RelayPostCard before it reaches here; this is never shown.
       ConnectPostType.relayGame => const SizedBox.shrink(),
+      // Drawn by SecretSquadPostCard before it reaches here, as the relay is.
+      ConnectPostType.secretSquad => const SizedBox.shrink(),
       ConnectPostType.leadership => _MediaPostBody(post: post),
       ConnectPostType.recommendation => _RecommendationBody(post: post),
       ConnectPostType.newPost => _TextPostBody(
@@ -7796,8 +7890,42 @@ class _DeletePostSheet extends StatelessWidget {
   }
 }
 
-/// The three-dot menu on a colleague's comment: report it, or stop seeing
-/// them. Absent on your own comments, and on anything without a real author.
+/// Asks before deleting one of your own comments (replies to it go too),
+/// then deletes it.
+Future<void> _confirmDeleteComment(
+  BuildContext context,
+  ConnectBloc bloc,
+  String postId,
+  ConnectComment comment, {
+  String noun = 'comment',
+}) async {
+  final sure = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text('Delete $noun?'),
+      content: Text(
+        'It will be removed for everyone, along with any replies to it.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFFE5484D)),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (sure == true) await bloc.deleteComment(postId, comment.id);
+}
+
+/// The three-dot menu on a comment: on yours, delete it; on a colleague's,
+/// report it or stop seeing them. Absent on anything without a real author.
 class _CommentMenuButton extends StatelessWidget {
   const _CommentMenuButton({
     required this.comment,
@@ -7811,9 +7939,8 @@ class _CommentMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (comment.userId.isEmpty || comment.userId == sheet.viewerUserId) {
-      return const SizedBox.shrink();
-    }
+    if (comment.userId.isEmpty) return const SizedBox.shrink();
+    final mine = comment.userId == sheet.viewerUserId;
     return SizedBox(
       width: iconSize + 12,
       height: iconSize + 12,
@@ -7825,13 +7952,28 @@ class _CommentMenuButton extends StatelessWidget {
         color: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         onSelected: (action) {
-          if (action == _PostMenuAction.report) {
+          if (action == _PostMenuAction.delete) {
+            _confirmDeleteComment(context, sheet.bloc, sheet.postId, comment);
+          } else if (action == _PostMenuAction.report) {
             sheet.onReportComment(comment);
           } else if (action == _PostMenuAction.block) {
             sheet.onBlockCommenter(comment);
           }
         },
-        itemBuilder: (context) => [
+        itemBuilder: (context) => mine
+            ? const [
+                PopupMenuItem(
+                  value: _PostMenuAction.delete,
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE5484D)),
+                      SizedBox(width: 10),
+                      Text('Delete comment', style: TextStyle(color: Color(0xFFE5484D))),
+                    ],
+                  ),
+                ),
+              ]
+            : [
           const PopupMenuItem(
             value: _PostMenuAction.report,
             child: Row(
@@ -7857,7 +7999,7 @@ class _CommentMenuButton extends StatelessWidget {
               ],
             ),
           ),
-        ],
+              ],
       ),
     );
   }

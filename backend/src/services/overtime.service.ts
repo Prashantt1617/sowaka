@@ -97,6 +97,7 @@ export async function createOvertimeRequest(
   const result = await overtimeRequests().insertOne(request);
   await notifyOvertimeSubmitted({
     employeeUserId: userId,
+    requestId: String(result.insertedId),
     workDate,
     duration: labelOf(duration),
     reason: note ?? '',
@@ -181,6 +182,8 @@ export async function decideOvertime(
     duration: await durationLabel(request),
     approved: decision === 'approved',
     comment: managerNote ?? '',
+    decidedByUserId: updated.decidedByUserId,
+    requestId: String(updated._id),
   });
   return await toView(updated, employee, await fullDayHoursFor(request.userId));
 }
@@ -261,6 +264,8 @@ export async function adminDecideOvertime(
     duration: await durationLabel(request),
     approved: decision === 'approved',
     comment: managerNote ?? '',
+    decidedByUserId: updated.decidedByUserId,
+    requestId: String(updated._id),
   });
   return await toView(updated, employee, await fullDayHoursFor(request.userId));
 }

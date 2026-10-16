@@ -219,9 +219,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
         name: fullName,
         email: basic.workEmail.trim(),
         employeeId: basic.employeeId.trim() || undefined,
-        designation: basic.designation || undefined,
-        department: basic.department || undefined,
-        location: basic.workLocation || undefined,
+        designation: basic.designation.trim() || undefined,
+        department: basic.department.trim() || undefined,
+        location: basic.workLocation.trim() || undefined,
         gender: basic.gender || undefined,
         mobile: basic.mobile.trim() || undefined,
         joiningDate: basic.doj || undefined,
@@ -651,17 +651,17 @@ function BasicStep({ basic, set, touched, missing, options }: {
           <Select value={basic.gender} onChange={(v) => set('gender', v)} placeholder="Select gender" options={GENDERS} />
         </Field>
         <Field label="Work Location" required>
-          <Select value={basic.workLocation} onChange={(v) => set('workLocation', v)} placeholder="Select location" options={options.locations} />
+          <TypeOrPick id="new-emp-location" value={basic.workLocation} onChange={(v) => set('workLocation', v)} placeholder="Type or pick a location" options={options.locations} />
         </Field>
       </div>
 
       {/* Designation + department */}
       <div style={grid2}>
         <Field label="Designation" required error={touched && missing.designation}>
-          <Select value={basic.designation} onChange={(v) => set('designation', v)} placeholder="Select designation" options={options.designations} />
+          <TypeOrPick id="new-emp-designation" value={basic.designation} onChange={(v) => set('designation', v)} placeholder="Type or pick a designation" options={options.designations} />
         </Field>
         <Field label="Department" required error={touched && missing.department}>
-          <Select value={basic.department} onChange={(v) => set('department', v)} placeholder="Select department" options={options.departments} />
+          <TypeOrPick id="new-emp-department" value={basic.department} onChange={(v) => set('department', v)} placeholder="Type or pick a department" options={options.departments} />
         </Field>
       </div>
 
@@ -1461,6 +1461,30 @@ function Select({ value, onChange, placeholder, options }: { value: string; onCh
       <option value="">{placeholder}</option>
       {options.map((o) => <option key={o} value={o} style={{ color: '#222222' }}>{o}</option>)}
     </select>
+  );
+}
+
+/**
+ * A text box that also suggests the values already in use. Designation,
+ * department and location used to be dropdowns of what existing employees
+ * have, so a new company (none yet) could not fill them in at all.
+ */
+function TypeOrPick({ id, value, onChange, placeholder, options }: { id: string; value: string; onChange: (v: string) => void; placeholder: string; options: string[] }) {
+  return (
+    <>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        list={`${id}-options`}
+        autoComplete="off"
+        maxLength={80}
+        style={inputStyle}
+      />
+      <datalist id={`${id}-options`}>
+        {options.filter(Boolean).map((o) => <option key={o} value={o} />)}
+      </datalist>
+    </>
   );
 }
 

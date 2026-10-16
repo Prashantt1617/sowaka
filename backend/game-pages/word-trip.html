@@ -221,6 +221,7 @@ html.app .howto{padding-top:20px}
 .lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--body);font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
 .lb.full .ranks{max-height:min(64vh,560px)}
+.rank.tap{cursor:pointer}.rank.tap:active{filter:brightness(.92)}
 .rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
   font-family:var(--body);font-size:.88rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
 .rank>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -473,6 +474,10 @@ const store=()=>{try{localStorage.setItem(saveKey,JSON.stringify(save));}catch(e
    In a plain browser there is no bridge: scores stay on this device, in localStorage, the letters are your own, and there are no challenges. */
 const LOCAL_TOP=10;
 const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
+/* A colleague's row on the board opens their profile over the game, where the app's bridge offers Sowaka.openProfile(userId)
+   (bridge version 4; an older app has none, and the rows stay as they were). Never one's own row: that would leave the game. */
+const opensProfile=r=>{ const b=bridge(); return !!(b&&typeof b.openProfile==='function'&&r&&r.userId&&!r.me); };
+function openProfile(r){ const b=bridge(); if(!opensProfile(r))return; try{ b.openProfile(r.userId); }catch(e){} }
 const playerId=()=>{ const b=bridge(); const id=b&&b.userId; return id==null?'':String(id).trim(); };
 function readSave(key){ try{ const s=JSON.parse(localStorage.getItem(key)||'null'); return s&&typeof s.bank==='number'?s:null; }catch(e){ return null; } }
 /* Reads the save of whoever is signed in (see SAVE_KEY). True when it is a different save from the one in hand: the bridge arrived after the page had read the plain one. */
@@ -483,7 +488,7 @@ function loadSave(){ const id=playerId(), key=id?SAVE_KEY+'.'+id:SAVE_KEY; if(ke
   if(s&&id)store(); return true; }
 loadSave();
 let board=null; /* the last board seen, for the best line under the grid */
-function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
+function shapeBoard(r){ r=r||{}; const rows=(Array.isArray(r.entries)?r.entries:[]).map(x=>({rank:+x.rank||0,userId:x.userId?String(x.userId):'',name:String(x.name||'Player'),score:+x.score||0,me:!!x.me}));
   const me=r.me&&typeof r.me.score==='number'?{rank:+r.me.rank||0,score:r.me.score}:null;
   return {rows,me,title:r.company?'Top at '+r.company:'Leaderboard',company:r.company?String(r.company):'',shared:true}; }
 function localBoard(at){ const list=save.scores.slice(0,LOCAL_TOP);
@@ -514,7 +519,9 @@ function drawBoard(box,b){
   box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
   if(b.offline){ box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.')); return; }
   if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
-  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score))); list.appendChild(w); };
+  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score)));
+    if(opensProfile(r)){ w.classList.add('tap'); w.setAttribute('role','button'); w.tabIndex=0; w.setAttribute('aria-label',r.name+'’s profile');
+      w.onclick=()=>openProfile(r); w.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openProfile(r); } }; } list.appendChild(w); };
   b.rows.forEach(r=>row(r,r.me&&b.shared?(r.name+' (you)'):r.name));
   if(b.me&&b.shared&&!b.rows.some(r=>r.me))row({rank:b.me.rank,score:b.me.score,me:true},(Board.name()||'You')+' (you)');
   box.appendChild(list);

@@ -15,6 +15,7 @@ import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/data/manager_models.dart';
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
+import 'package:mobile_app/features/notifications/notification_look.dart';
 import 'package:mobile_app/features/profile/data/leaderboard_models.dart';
 import 'package:mobile_app/services/notification_service.dart';
 
@@ -151,6 +152,38 @@ void main() {
     await _tearDown(tester, bloc);
     expect(tab, ManagerTab.games);
     expect(calls, isEmpty);
+  });
+
+  // "Secret Squad starts in 3 minutes": an office's lobby has opened.
+  testWidgets('a Secret Squad lobby push opens the Games tab and the game', (tester) async {
+    final (bloc, opened) = await _pump(tester, ['connect', 'games']);
+    AppNotificationService.instance.openDestination({
+      'destination': 'game_challenge',
+      'gameKey': 'secret-squad',
+      'challengeId': 'squad',
+      'scenario': 'secret_squad_lobby',
+    });
+    await tester.pump();
+    await tester.pump();
+    final tab = bloc.state.tab;
+    final calls = [...opened];
+    await _tearDown(tester, bloc);
+    expect(tab, ManagerTab.games);
+    expect(calls, [('secret-squad', 'squad')]);
+  });
+
+  test('a Secret Squad notification is a green GAME row with the envelope', () {
+    for (final item in [
+      {'scenario': 'secret_squad_lobby', 'title': 'Secret Squad starts in 3 minutes'},
+      {'scenario': 'secret_squad_results', 'title': 'Your squad came 2nd'},
+      {'scenario': 'post_published_secret_squad', 'title': 'Secret Squad', 'data': {'postType': 'secret_squad'}},
+    ]) {
+      final look = NotificationLook.of(item);
+      expect(look.kind, NotificationKind.game, reason: '${item['scenario']}');
+      expect(look.label, 'SECRET SQUAD');
+      expect(look.palette, NotificationPalette.game);
+      expect(look.glyph, isA<IconGlyph>().having((g) => g.icon, 'icon', Icons.drafts_outlined));
+    }
   });
 
   group('finding the game a notification names', () {

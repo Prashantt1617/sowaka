@@ -16,8 +16,20 @@ const String gameBridgeChannel = 'SowakaGame';
 ///   Sowaka.playerName()    the player's name, at once
 ///   Sowaka.submitScore(n)  a Promise of the board after it; the app posts
 ///                          the score under the player's own session
-///   Sowaka.leaderboard()   a Promise of {entries: [{rank, name, score, me}],
-///                          me: {rank, score} | null, company, label}
+///   Sowaka.leaderboard()   a Promise of {entries: [{rank, userId, name,
+///                          score, me}], me: {rank, score} | null, company,
+///                          label}
+///   Sowaka.openProfile(userId)  fire and forget: opens that person's
+///                          profile over the game (Back comes back to it).
+///                          Only there when the app can open profiles, and
+///                          new in version 4: a page checks
+///                          `typeof Sowaka.openProfile === 'function'`.
+///   Sowaka.scanQr()        a Promise of the text of a QR code read with the
+///                          phone's camera, in a full-screen scanner over the
+///                          game; null when the person cancels or the camera
+///                          is not allowed. Only there where the app can
+///                          scan, and new in version 5: a page checks
+///                          `typeof Sowaka.scanQr === 'function'`.
 ///
 /// and for colleague challenges, each a Promise of what the server answered:
 ///
@@ -48,6 +60,8 @@ String gameBridgeScript({
   required String playerName,
   required String userId,
   String? startChallengeId,
+  bool opensProfiles = false,
+  bool scansQr = false,
 }) {
   // Inside a <script> element: '<' is escaped so a value can never close it.
   final name = _scriptJson(playerName);
@@ -72,7 +86,7 @@ String gameBridgeScript({
   function text(value) { return value == null ? null : String(value); }
   var S = window.Sowaka || {};
   S.native = true;
-  S.version = 3;
+  S.version = 5;
   S.userId = $id;
   S.playerName = function () { return $name; };
   S.submitScore = function (score) { return call('submitScore', { score: Number(score) }); };
@@ -90,7 +104,7 @@ String gameBridgeScript({
   S.haptic = function (kind) {
     try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'h', type: 'haptic', data: { kind: text(kind) || 'light' } })); } catch (e) {}
   };
-  S.__reply = function (id, ok, payload) {
+${opensProfiles ? _openProfileScript : ''}${scansQr ? _scanQrScript : ''}  S.__reply = function (id, ok, payload) {
     var p = pending[id];
     if (!p) return;
     delete pending[id];
@@ -105,6 +119,25 @@ String gameBridgeScript({
 })();
 ''';
 }
+
+/// `Sowaka.openProfile(userId)`: fire and forget, as a tap's haptic is.
+const String _openProfileScript =
+    '''  S.openProfile = function (userId) {
+    try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'p', type: 'openProfile', data: { userId: text(userId) } })); } catch (e) {}
+  };
+''';
+
+/// `Sowaka.scanQr()`: a request like any other, answered with the text read
+/// or null.
+const String _scanQrScript = '''  S.scanQr = function () { return call('scanQr'); };
+''';
+
+/// The most of a scanned code handed to a page: far more than any game's
+/// code needs, and a bound on what goes back into it.
+const int maxScannedLength = 2048;
+
+/// A person's id as the page may hand one back; anything else is dropped.
+final RegExp _personId = RegExp(r'^[A-Za-z0-9_-]{1,64}$');
 
 /// [value] as a JavaScript literal that is safe inside a `<script>` element.
 String _scriptJson(Object? value) => jsonEncode(value)
@@ -164,10 +197,25 @@ class GameBridge {
     required this.service,
     required this.gameKey,
     required this.company,
+    this.onOpenProfile,
+    this.scanQr,
   });
 
   final GamesApiService service;
   final String gameKey;
+
+  /// Opens a person's profile, for the page's `Sowaka.openProfile(userId)`.
+  /// Null when nothing can open one; the call is then dropped.
+  final void Function(String userId)? onOpenProfile;
+
+  /// Opens the camera scanner over the game, for the page's
+  /// `Sowaka.scanQr()`: the text read, or null when the person backs out or
+  /// the camera is not allowed. Null where this phone cannot scan; the page
+  /// is then told so.
+  final Future<String?> Function()? scanQr;
+
+  /// Whether a scan is open: a second ask while it is gets null at once.
+  bool _scanning = false;
 
   /// The company's name, for the board's heading.
   final String company;
@@ -214,6 +262,32 @@ class GameBridge {
               unawaited(HapticFeedback.selectionClick());
           }
           return null;
+        case 'openProfile':
+          // No answer either: the profile opens over the game.
+          final person = data['userId'];
+          final open = onOpenProfile;
+          if (open != null &&
+              person is String &&
+              _personId.hasMatch(person.trim())) {
+            open(person.trim());
+          }
+          return null;
+        case 'scanQr':
+          final scan = scanQr;
+          if (scan == null) {
+            return reply(id, false, {
+              'message': 'Scanning is not available here',
+              'status': 501,
+            });
+          }
+          if (_scanning) return reply(id, true, null);
+          _scanning = true;
+          try {
+            final text = await scan();
+            return reply(id, true, _scanned(text));
+          } finally {
+            _scanning = false;
+          }
         case 'submitScore':
           final value = score();
           if (value == null)
@@ -292,6 +366,15 @@ class GameBridge {
     }
   }
 
+  /// What a scan read, as the page gets it: null for nothing, and never
+  /// more than [maxScannedLength] characters.
+  static String? _scanned(String? text) {
+    if (text == null || text.isEmpty) return null;
+    return text.length > maxScannedLength
+        ? text.substring(0, maxScannedLength)
+        : text;
+  }
+
   /// Notes a challenge that is now in play, so a live score finds it.
   Map<String, dynamic> _seen(Map<String, dynamic> view) {
     final viewId = view['id'];
@@ -301,6 +384,9 @@ class GameBridge {
   }
 
   /// The call that settles the page's promise [id].
-  static String reply(String id, bool ok, Map<String, dynamic> payload) =>
-      'window.Sowaka && window.Sowaka.__reply(${jsonEncode(id)}, $ok, ${jsonEncode(payload)});';
+  /// [payload] is what the promise resolves with: a map, or for a scan the
+  /// text read (or null). Encoded here, so whatever it holds reaches the
+  /// page as a value, never as script.
+  static String reply(String id, bool ok, Object? payload) =>
+      'window.Sowaka && window.Sowaka.__reply(${jsonEncode(id)}, $ok, ${_scriptJson(payload)});';
 }

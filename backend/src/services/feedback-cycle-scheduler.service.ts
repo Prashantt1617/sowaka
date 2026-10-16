@@ -1,5 +1,6 @@
 /**
- * The daily pass that sends the two feedback-cycle messages.
+ * The daily pass (10:00 IST) that sends the feedback-cycle messages: cycle open,
+ * the Friday reminder and the last day.
  *
  * Run once a day rather than on a timer per org: both messages are tied to a
  * date, not a moment, and each org's boundary depends on its own cycle start
@@ -8,7 +9,7 @@
  */
 import { users } from '../config/db';
 import { logger } from '../utils/logger';
-import { sendCycleClosingNotices, sendCycleOpenNotices } from './feedback-notifications.service';
+import { sendCycleOpenNotices, sendLastDayFeedbackNotices, sendWeeklyFeedbackReminders } from './feedback-notifications.service';
 
 export async function runFeedbackCycleMessages(now = new Date()): Promise<void> {
   // Every org that has people, not only those with a company document — a
@@ -19,7 +20,8 @@ export async function runFeedbackCycleMessages(now = new Date()): Promise<void> 
   for (const org of orgs) {
     try {
       await sendCycleOpenNotices(org, now);
-      await sendCycleClosingNotices(org, now);
+      await sendWeeklyFeedbackReminders(org, now);
+      await sendLastDayFeedbackNotices(org, now);
     } catch (error) {
       logger.error('Feedback cycle messages failed', { org }, error);
     }

@@ -202,12 +202,28 @@ class ConnectApiService {
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 
+  /// Deletes one of your comments, and the replies under it.
+  Future<ConnectPost> deleteComment(String postId, String commentId) async {
+    final json = await _request(
+      'DELETE',
+      '/connect/posts/$postId/comments/$commentId',
+    );
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
   Future<ConnectPost> performAction(String postId, {String? optionId}) async {
     final json = await _request(
       'POST',
       '/connect/posts/$postId/actions',
       body: optionId == null ? null : {'optionId': optionId},
     );
+    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  /// The person a birthday or anniversary card celebrates has opened their
+  /// wishes: the card's "N new" counts from now.
+  Future<ConnectPost> markWishesSeen(String postId) async {
+    final json = await _request('POST', '/connect/posts/$postId/wishes/seen');
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 

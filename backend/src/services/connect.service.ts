@@ -1,16 +1,26 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
-import { audienceLists, companies, connectPosts, gameScores, relayEvents, users } from '../config/db';
+import { audienceLists, companies, connectPosts, contentReports, gameScores, notifications, relayEvents, users } from '../config/db';
 import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
 import { challengePointSource, recordPointChanges } from './points-ledger.service';
 import {
-  notifyCommentLiked, notifyPollVoted, notifyPostCommented, notifyPostLiked, notifyPostPublished,
+  notifyContestVote, notifyMostLikelyTag, notifyPollVoted, notifyPostCommented, notifyPostLiked,
+  notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
+import {
+  CELEBRANT_MAX_PINNED,
+  celebrantOfPost,
+  celebrantPinKeys,
+  celebrationGroupFor,
+  isPinnedForCelebrant,
+  istDateKey,
+  newWishCountFor,
+} from './connect-celebrations';
 import { fetchLinkPreview } from './link-preview.service';
 import { companyDisplayName } from './company-settings.service';
 import {
@@ -151,7 +161,11 @@ function decodeFeedCursor(
     id: id && ObjectId.isValid(id) ? new ObjectId(id) : null,
     // A cursor from before pins rode along has none; that page may then
     // repeat a pinned post, which the app drops as one it already has.
-    pinnedIds: (pinned ?? '').split(',').filter(Boolean).slice(0, FEED_MAX_PINNED),
+    // The celebrant's own cards ride along with the company's pins.
+    pinnedIds: (pinned ?? '')
+      .split(',')
+      .filter(Boolean)
+      .slice(0, FEED_MAX_PINNED + CELEBRANT_MAX_PINNED),
   };
 }
 
@@ -209,15 +223,34 @@ export async function getConnectFeed(
   // every page, by the ids the cursor carries: a pin past the limit keeps its
   // place in the list, and a post pinned or unpinned mid-scroll is neither
   // skipped nor shown twice.
+  //
+  // Above them, on the day of someone's birthday or work anniversary, that
+  // person's own card — for them alone, until the day ends in India. It is
+  // found by the key the daily job writes (`birthday:<userId>:<day>`), so
+  // yesterday's card drops back into the list by itself at midnight.
   const now = new Date();
 
-  const [pinned, rows] = await Promise.all([
+  const [celebrantPinned, orgPinned, rows] = await Promise.all([
+    after
+      ? Promise.resolve([])
+      : connectPosts()
+          .find({
+            org,
+            ...typeFilter,
+            ...blockFilter,
+            systemKey: { $in: celebrantPinKeys(viewerUserId, now) },
+            $and: [audienceFilter],
+          })
+          .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+          .limit(CELEBRANT_MAX_PINNED)
+          .toArray(),
     after
       ? Promise.resolve([])
       : connectPosts()
           .find({ org, ...typeFilter, ...blockFilter, pinnedUntil: { $gt: now }, $and: [audienceFilter] })
           .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
-          .limit(FEED_MAX_PINNED)
+          // One more in case HR also pinned the celebrant's own card.
+          .limit(FEED_MAX_PINNED + CELEBRANT_MAX_PINNED)
           .toArray(),
     connectPosts()
       .find({
@@ -229,9 +262,14 @@ export async function getConnectFeed(
       .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
       // One more than the page, to know whether another page follows without
       // a second count query, and room for the pinned ones taken out below.
-      .limit(limit + 1 + FEED_MAX_PINNED)
+      .limit(limit + 1 + FEED_MAX_PINNED + CELEBRANT_MAX_PINNED)
       .toArray(),
   ]);
+  const celebrantIds = celebrantPinned.map((post) => post.id);
+  const pinned = [
+    ...celebrantPinned,
+    ...orgPinned.filter((post) => !celebrantIds.includes(post.id)).slice(0, FEED_MAX_PINNED),
+  ];
   const shownPinnedIds = after ? after.pinnedIds : pinned.map((post) => post.id);
   const page = rows.filter((post) => !shownPinnedIds.includes(post.id)).slice(0, limit + 1);
   const hasMore = page.length > limit;
@@ -503,6 +541,47 @@ export async function addConnectComment(
   return viewPost(updated ?? post, viewerUserId);
 }
 
+/**
+ * Deletes a comment, and the replies under it: by the person who wrote it, or
+ * by HR (anyone with dashboard access) taking one down. Its notifications go
+ * with it, and any open report on it is closed as handled.
+ */
+export async function deleteConnectComment(viewerUserId: string, postId: string, commentId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  const comment = post.comments.find((item) => item.id === commentId);
+  if (!comment) throw new ConnectError(404, 'Comment not found');
+  if (comment.userId !== viewerUserId) {
+    const viewer = await users().findOne({ userId: viewerUserId }, { projection: { dashboardAccess: 1 } });
+    if (!viewer?.dashboardAccess) throw new ConnectError(403, 'You can only delete your own comments.');
+  }
+  // The comment and every reply beneath it, however deep.
+  const gone = new Set([commentId]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const item of post.comments) {
+      if (item.parentId && gone.has(item.parentId) && !gone.has(item.id)) {
+        gone.add(item.id);
+        grew = true;
+      }
+    }
+  }
+  const ids = [...gone];
+  await connectPosts().updateOne(
+    { id: postId },
+    { $pull: { comments: { id: { $in: ids } } } as never, $set: { updatedAt: new Date() } },
+  );
+  const updated = await connectPosts().findOne({ id: postId });
+  announceChange(post, 'updated', viewerUserId);
+  inBackground('comment cleanup', async () => {
+    await notifications().deleteMany({ 'data.postId': postId, 'data.commentId': { $in: ids } });
+    await contentReports().updateMany(
+      { postId, commentId: { $in: ids }, status: 'open' },
+      { $set: { status: 'actioned', reviewedAt: new Date(), reviewedByUserId: viewerUserId, reviewNote: 'Comment deleted' } },
+    );
+  });
+  return viewPost(updated ?? post, viewerUserId);
+}
+
 export async function toggleConnectCommentReaction(
   viewerUserId: string,
   postId: string,
@@ -519,14 +598,28 @@ export async function toggleConnectCommentReaction(
     arrayFilters: [{ 'c.id': commentId }],
   });
   const updated = await connectPosts().findOne({ id: postId });
-  // Feeds first, then the push in the background — see toggleConnectReaction.
+  // A like on a comment notifies nobody.
   announceChange(post, 'updated', viewerUserId);
-  if (!liked) {
-    inBackground('comment like notification', async () => {
-      const viewer = await users().findOne({ userId: viewerUserId });
-      if (viewer) await notifyCommentLiked(updated ?? post, comment, viewer);
-    });
+  return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * The person a birthday or work-anniversary card celebrates has opened their
+ * wishes: the ones up to now are no longer new (see `newWishCountFor`). Theirs
+ * alone to say — anyone else is refused, as is any other kind of post.
+ */
+export async function markCelebrationWishesSeen(viewerUserId: string, postId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (celebrantOfPost(post) !== viewerUserId) {
+    throw new ConnectError(403, 'Only the person celebrated can mark their wishes seen');
   }
+  // No change announced: what is new is the celebrant's alone, and no one
+  // else's card changes.
+  await connectPosts().updateOne(
+    { id: postId },
+    { $set: { [`wishesSeenAt.${viewerUserId}`]: new Date() } },
+  );
+  const updated = await connectPosts().findOne({ id: postId });
   return viewPost(updated ?? post, viewerUserId);
 }
 
@@ -625,6 +718,7 @@ export async function addCaptionEntry(
     }]);
     const afterTag = await connectPosts().findOne({ id: postId });
     announceChange(post, 'updated', viewerUserId);
+    inBackground('most likely tag notification', () => notifyMostLikelyTag(post, tagged.userId, viewerUserId));
     return viewPost(afterTag ?? post, viewerUserId);
   }
 
@@ -812,6 +906,11 @@ export async function voteOnCaptionEntry(
           }]
         : []),
     ]);
+    // Every vote, not grouped (spec rows 31–32); taking a vote back sends nothing.
+    inBackground('contest vote notification', async () => {
+      const voter = await users().findOne({ userId: viewerUserId });
+      if (voter) await notifyContestVote(post, entry.userId, voter);
+    });
   }
   const updated = await connectPosts().findOne({ id: postId });
   announceChange(post, 'updated', viewerUserId);
@@ -1254,6 +1353,14 @@ async function viewPost(
   const selectedPollOptionId = pollVotes[viewerUserId] ?? null;
   const actionValue = post.actionBy?.[viewerUserId] ?? null;
   const body = { ...post.body };
+  // Birthday and anniversary cards: the celebrant's own card for today is
+  // pinned for them (see `getConnectFeed`) and says so; everyone else's carry
+  // the key the app clubs one day's cards of a company by, each person keeping
+  // their own post and so their own wishes. Set on every read, not only the
+  // feed's, so a card refreshed after a wish stays in its club.
+  const celebrationGroup = celebrationGroupFor(post, viewerUserId);
+  if (celebrationGroup) body.celebrationGroup = celebrationGroup;
+  if (isPinnedForCelebrant(post, viewerUserId, new Date())) body.pinnedForCelebrant = true;
   // Lifecycle posts (birthday/anniversary/new joinee) reference the subject's
   // photo by key so the post document stays small; resolve it per read.
   if (typeof body.photoKey === 'string' && body.photoKey.length > 0) {
@@ -1262,11 +1369,26 @@ async function viewPost(
   // Kudos name the person they are about; their face is read now rather than
   // stored, so it follows whatever photo they have today.
   if (typeof body.personUserId === 'string' && body.personUserId.length > 0) {
+    const celebration = post.type === 'birthday' || post.type === 'anniversary';
     const person = await users().findOne(
       { userId: body.personUserId },
-      { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+      {
+        projection: celebration
+          ? { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, department: 1, designation: 1, joiningDate: 1 }
+          : { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 },
+      },
     );
     body.photoUrl = (await resolveProfilePhoto(person)) ?? body.photoUrl;
+    // A birthday or anniversary card names the person's team, and an
+    // anniversary the month they joined ("Since Oct 2023") — read now, so
+    // cards written before these were stored carry them too.
+    if (celebration && person) {
+      const team = person.department ?? person.designation;
+      if (team) body.personDepartment = team;
+      if (post.type === 'anniversary' && person.joiningDate) {
+        body.joinedOn = new Date(person.joiningDate).toISOString();
+      }
+    }
   }
   // Tags store ids only, so a tagged person's name and photo are always
   // current rather than frozen at the moment the post was written.
@@ -1362,7 +1484,18 @@ async function viewPost(
       // entry list above already drops the first; doing it here too keeps the
       // board from disagreeing with the card it sits under.
       // Each row also carries when its latest tag came in, for the entries
-      // sheet's "Most recent" order. Only the time — never who tagged them.
+      // sheet's "Most recent" order, and who tagged them ("Tag by" on the
+      // Entries page, Figma 3929:53104 / 3929:53531), latest first. That is
+      // shown to everyone who can see the contest, the person named
+      // included. The tag's push notification still does not say who
+      // ("Someone thinks you're…"); the board is where names are read.
+      const counted = (post.captionEntries ?? []).filter(
+        (entry): entry is ConnectCaptionEntry & { taggedUserId: string } =>
+          Boolean(entry.taggedUserId) &&
+          !blockedUserIds.includes(entry.userId) &&
+          !blockedUserIds.includes(entry.taggedUserId as string),
+      );
+      const taggers = await mostLikelyTaggers(counted.map((entry) => entry.userId));
       const board = new Map<
         string,
         {
@@ -1372,25 +1505,42 @@ async function viewPost(
           designation: string;
           votes: number;
           createdAt?: Date;
+          taggedBy: Array<MostLikelyTagger & { taggedAt?: Date }>;
         }
       >();
-      for (const entry of post.captionEntries ?? []) {
-        if (!entry.taggedUserId) continue;
-        if (blockedUserIds.includes(entry.userId)) continue;
-        if (blockedUserIds.includes(entry.taggedUserId)) continue;
+      for (const entry of counted) {
         const row = board.get(entry.taggedUserId) ?? {
           userId: entry.taggedUserId,
           name: entry.taggedName ?? 'Teammate',
           initials: entry.taggedInitials ?? '?',
           designation: entry.taggedDesignation ?? '',
           votes: 0,
+          taggedBy: [],
         };
         row.votes += 1;
         const taggedAt = entry.createdAt ? new Date(entry.createdAt) : undefined;
         if (taggedAt && (!row.createdAt || taggedAt > row.createdAt)) {
           row.createdAt = taggedAt;
         }
+        // The tagger as they are now; the name stored with the tag stands in
+        // for someone no longer on the roster.
+        row.taggedBy.push({
+          ...(taggers.get(entry.userId) ?? {
+            userId: entry.userId,
+            name: entry.name,
+            initials: entry.initials,
+            designation: '',
+            department: '',
+            location: '',
+          }),
+          taggedAt,
+        });
         board.set(entry.taggedUserId, row);
+      }
+      for (const row of board.values()) {
+        row.taggedBy.sort(
+          (a, b) => (b.taggedAt?.getTime() ?? 0) - (a.taggedAt?.getTime() ?? 0),
+        );
       }
       body.leaderboard = [...board.values()]
         .sort((a, b) => b.votes - a.votes)
@@ -1444,6 +1594,9 @@ async function viewPost(
       !hiddenCommentIds.has(comment.id) &&
       !(comment.parentId && hiddenCommentIds.has(comment.parentId)),
   );
+  // The celebrant's own card counts the wishes they have not seen yet.
+  const newWishCount = newWishCountFor(post, visibleComments, viewerUserId);
+  if (newWishCount !== null) body.newWishCount = newWishCount;
   const commenterPhotos = await commentPhotoUrls(visibleComments, authorPhotoUrls);
   const comments = visibleComments.map((comment) => ({
     ...comment,
@@ -1465,6 +1618,9 @@ async function viewPost(
     commentCount: comments.length,
     selectedPollOptionId,
     actionValue,
+    // When the celebrant last opened their wishes is theirs; it is sent as
+    // the count above, never as it is.
+    wishesSeenAt: undefined,
   };
 }
 
@@ -1695,8 +1851,19 @@ function normalizePostBody(
         actionLabel: input.allowRegistration === false ? '' : 'Register',
         actionDoneLabel: input.allowRegistration === false ? '' : 'Registered',
       };
-    default:
-      return input;
+    default: {
+      // What a read adds for one viewer (see `viewPost`) is never stored,
+      // should an edit hand the card it was shown straight back.
+      const {
+        celebrationGroup: _group,
+        pinnedForCelebrant: _pinned,
+        newWishCount: _newWishes,
+        personDepartment: _department,
+        joinedOn: _joinedOn,
+        ...stored
+      } = input;
+      return stored;
+    }
   }
 }
 
@@ -1829,6 +1996,58 @@ function normalizePoints(value: unknown) {
 /** Ids of people tagged in a media post. Deduped and capped; names and photos
  * are resolved per read so a tag never shows a stale name. */
 /** Names and photos for the people tagged in a post, in the order tagged. */
+/** Someone who tagged a colleague in a Most Likely contest, as "Tag by" shows them. */
+interface MostLikelyTagger {
+  userId: string;
+  name: string;
+  initials: string;
+  designation: string;
+  department: string;
+  location: string;
+  photoUrl?: string;
+}
+
+/**
+ * The people behind a Most Likely board's tags, read live in one query so a
+ * renamed colleague or a new photo shows at once. Anyone no longer on the
+ * roster is simply missing from the map.
+ */
+async function mostLikelyTaggers(userIds: string[]): Promise<Map<string, MostLikelyTagger>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Map();
+  const people = await users()
+    .find({ userId: { $in: ids } })
+    .project<{
+      userId: string;
+      name: string;
+      designation?: string;
+      department?: string;
+      location?: string;
+      profilePhotoKey?: string;
+      profilePhotoUrl?: string;
+    }>({
+      _id: 0, userId: 1, name: 1, designation: 1, department: 1, location: 1,
+      profilePhotoKey: 1, profilePhotoUrl: 1,
+    })
+    .toArray();
+  return new Map(
+    await Promise.all(
+      people.map(async (person) => [
+        person.userId,
+        {
+          userId: person.userId,
+          name: person.name,
+          initials: initialsFor(person.name),
+          designation: person.designation ?? '',
+          department: person.department ?? '',
+          location: person.location ?? '',
+          photoUrl: await resolveProfilePhoto(person),
+        },
+      ] as [string, MostLikelyTagger]),
+    ),
+  );
+}
+
 async function resolveTaggedPeople(userIds: string[]) {
   const tagged = await users()
     .find({ userId: { $in: userIds } })
@@ -2048,6 +2267,7 @@ function postMeta(type: ConnectPostType) {
     caption_challenge: ['Caption Challenge', '💬', '#6D28D9', '#F3E8FF'],
     photo_story_challenge: ['Photo Challenge', '📸', '#6D28D9', '#F3E8FF'],
     most_likely: ['Most Likely', '🫵', '#6D28D9', '#F3E8FF'],
+    secret_squad: ['Secret Squad', '🕵️', '#3A2E9E', '#EEEAFF'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };
@@ -2126,7 +2346,8 @@ export async function generateDailyLifecyclePosts(now = new Date()) {
   const year = part('year');
   const month = part('month');
   const day = part('day');
-  const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // The same day the feed pins the celebrant's card by.
+  const dateKey = istDateKey(now);
   // Projected: this scans the whole directory daily, and full documents would
   // pull every profile photo along with it.
   const employees = await users()

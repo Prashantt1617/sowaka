@@ -10,11 +10,13 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../auth/data/auth_models.dart';
+import '../../profile/profile_launcher.dart';
 import '../../shared/app_toast.dart';
 import '../data/game_bridge.dart';
 import '../data/game_socket_service.dart';
 import '../data/games_api_service.dart';
 import '../data/games_models.dart';
+import 'qr_scanner_screen.dart';
 
 /// A web game, full screen under a bar with the way back and its name.
 ///
@@ -46,7 +48,8 @@ class WebGameScreen extends StatefulWidget {
        session = null,
        service = null,
        challengeId = null,
-       realtime = null;
+       realtime = null,
+       scanQr = null;
 
   /// A game from the company's catalog.
   WebGameScreen.catalog({
@@ -56,6 +59,7 @@ class WebGameScreen extends StatefulWidget {
     this.service,
     this.challengeId,
     this.realtime,
+    this.scanQr,
   }) : title = game.name,
        url = null;
 
@@ -72,6 +76,9 @@ class WebGameScreen extends StatefulWidget {
 
   /// Supplied by tests; the screen opens its own socket otherwise.
   final GameRealtime? realtime;
+
+  /// Supplied by tests in place of the camera scanner.
+  final Future<String?> Function()? scanQr;
 
   @override
   State<WebGameScreen> createState() => _WebGameScreenState();
@@ -164,6 +171,10 @@ class _WebGameScreenState extends State<WebGameScreen> {
       service: service,
       gameKey: game.key,
       company: widget.session!.user.company,
+      // A row on the game's board opens that person's profile over the game.
+      onOpenProfile: (userId) => openPersonProfile(userId),
+      // `Sowaka.scanQr()`: the camera, over the game, where there is one.
+      scanQr: _scansQr ? (widget.scanQr ?? _scanQr) : null,
     );
     _controller
       ..enableZoom(false)
@@ -186,10 +197,20 @@ class _WebGameScreenState extends State<WebGameScreen> {
     super.dispose();
   }
 
+  bool get _scansQr => widget.scanQr != null || canScanQr;
+
+  Future<String?> _scanQr() async {
+    if (!mounted) return null;
+    return showQrScanner(context);
+  }
+
   String _bridgeScript() => gameBridgeScript(
     playerName: widget.session!.user.name,
     userId: widget.session!.user.id,
     startChallengeId: widget.challengeId,
+    // Offered only while the signed-in shell is there to open a profile.
+    opensProfiles: canOpenPersonProfile,
+    scansQr: _scansQr,
   );
 
   Future<void> _runInPage(String script) async {

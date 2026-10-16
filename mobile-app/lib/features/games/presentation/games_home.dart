@@ -48,6 +48,7 @@ class GamesHomeView extends StatefulWidget {
     this.onOpenGame,
     this.onOpenPost,
     this.onOpenContest,
+    this.onOpenPerson,
     this.canOpen,
     this.thumbnailFor,
     this.fallbackGames = const [],
@@ -72,6 +73,10 @@ class GamesHomeView extends StatefulWidget {
 
   /// Opens a live contest's entries over this tab, Back returning here.
   final ValueChanged<String>? onOpenContest;
+
+  /// Opens someone's profile by userId: a leaderboard row or podium place
+  /// tapped. Nobody on the board is tappable when not given.
+  final ValueChanged<String>? onOpenPerson;
 
   /// Whether this app can open a catalog game: a native one it has, a web
   /// one with a page. Web games with a page only, when not given.
@@ -462,6 +467,7 @@ class _GamesHomeViewState extends State<GamesHomeView>
                     error: _boardError,
                     viewerId: widget.session.user.id,
                     onPeriod: _choosePeriod,
+                    onOpenPerson: widget.onOpenPerson,
                     onRefresh: () async {
                       await Future.wait([
                         _loadBoard(_period, force: true),

@@ -4,11 +4,13 @@ import {
   addConnectComment,
   ConnectError,
   createConnectPost,
+  deleteConnectComment,
   deleteConnectPost,
   getConnectFeed,
   parsePostTypeList,
   getConnectPost,
   getConnectPostLikes,
+  markCelebrationWishesSeen,
   performConnectAction,
   removeCaptionEntry,
   toggleConnectCommentReaction,
@@ -121,11 +123,34 @@ export async function reactToConnectComment(req: Request, res: Response, next: N
   }
 }
 
+export async function deleteComment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await deleteConnectComment(
+      requireUserId(req),
+      String(req.params.postId ?? ''),
+      String(req.params.commentId ?? ''),
+    );
+    res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
 export async function actOnConnectPost(req: Request, res: Response, next: NextFunction) {
   try {
     const post = await performConnectAction(requireUserId(req), String(req.params.postId ?? ''), {
       optionId: req.body.optionId == null ? undefined : String(req.body.optionId),
     });
+    res.status(200).json({ success: true, post });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+/** The celebrant opened their wishes; their card's "N new" counts from here. */
+export async function markWishesSeen(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await markCelebrationWishesSeen(requireUserId(req), String(req.params.postId ?? ''));
     res.status(200).json({ success: true, post });
   } catch (error) {
     handleConnectError(error, next);

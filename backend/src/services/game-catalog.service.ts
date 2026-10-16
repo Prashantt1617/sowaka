@@ -167,6 +167,26 @@ export async function pageFor(viewer: GameViewer, key: string): Promise<{ html: 
   return { html: entry.html, version: versionOf(entry) };
 }
 
+/**
+ * A game's page with no viewer, for one that signs people in itself (Secret
+ * Squad in a browser): the dev folder's copy, else the active catalog entry.
+ * Who may play is decided by its own sign-in and socket, not here.
+ */
+export async function publicPageFor(key: string): Promise<{ html: string; version: string } | null> {
+  if (!GAME_KEY_PATTERN.test(key)) return null;
+  if (env.gamePageDir) {
+    try {
+      const html = await readFile(join(resolve(env.gamePageDir), `${key}.html`), 'utf8');
+      if (html.length > 0) return { html, version: 'dev' };
+    } catch {
+      /* no file for this key: the catalog's copy */
+    }
+  }
+  const entry = await gameCatalog().findOne({ key, active: true, kind: 'web' });
+  if (!entry || typeof entry.html !== 'string' || entry.html.length === 0) return null;
+  return { html: entry.html, version: versionOf(entry) };
+}
+
 function parseScore(raw: unknown, max: number): number {
   const score =
     typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : Number.NaN;

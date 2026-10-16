@@ -233,6 +233,7 @@ void main() {
 
   final opened = <(String, String?)>[];
   final posts = <String>[];
+  final people = <String>[];
 
   Widget host(
     GamesApiService service, {
@@ -259,6 +260,7 @@ void main() {
         fallbackGames: fallback,
         onOpenGame: (_, game, {challengeId}) async => opened.add((game.key, challengeId)),
         onOpenPost: posts.add,
+        onOpenPerson: people.add,
       ),
     ),
   );
@@ -267,6 +269,7 @@ void main() {
     forgetGames();
     opened.clear();
     posts.clear();
+    people.clear();
   });
 
   Future<void> scrollTo(WidgetTester tester, Finder finder) => tester.scrollUntilVisible(
@@ -655,6 +658,64 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(find.text('EXPLORE GAMES'), findsOneWidget);
+  });
+
+  testWidgets('a person on the leaderboard opens their profile: a row or a podium place', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final service = serviceAnswering((request) {
+      if (request.url.path == '/games/leaderboard') {
+        return _json(_board(request.url.queryParameters['period']!));
+      }
+      return _json(_fullHome());
+    });
+    await tester.pumpWidget(host(service));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('games-tab-leaderboard')));
+    await tester.pumpAndSettle();
+
+    // A row: its name, its picture, anywhere on it.
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey('board-row-rohan')), matching: find.text('Rohan Mehta')),
+    );
+    await tester.pumpAndSettle();
+    expect(people, ['rohan']);
+    // The viewer's own row too: the shell opens their own profile.
+    await tester.tap(find.byKey(const ValueKey('board-row-me')));
+    // A podium place.
+    await tester.tap(find.byKey(const ValueKey('podium-1')));
+    await tester.pumpAndSettle();
+    expect(people, ['rohan', 'me', 'shiv']);
+    expect(find.bySemanticsLabel(RegExp(r"^Open Kabir Shah's profile")), findsOneWidget);
+  });
+
+  testWidgets('without a way to open profiles, nobody on the board is tappable', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final service = serviceAnswering((request) {
+      if (request.url.path == '/games/leaderboard') {
+        return _json(_board(request.url.queryParameters['period']!));
+      }
+      return _json(_fullHome());
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
+        home: Scaffold(body: GamesHomeView(session: _session, service: service)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('games-tab-leaderboard')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('board-row-rohan')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r"^Open Rohan Mehta's profile")), findsNothing);
   });
 
   testWidgets(

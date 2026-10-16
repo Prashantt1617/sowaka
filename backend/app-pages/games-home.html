@@ -256,6 +256,8 @@ svg{overflow:visible}
 .pod-empty .s{font:400 12px/17px var(--sora);color:var(--secondary)}
 .rows{margin-top:14px;padding:0 16px;display:flex;flex-direction:column;gap:8px}
 .row{height:57px;padding:5px 9px;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:var(--soft);display:flex;align-items:center;color:var(--text)}
+[data-act="person"]{cursor:pointer}
+.row[data-act="person"]:active,.place[data-act="person"]:active{transform:scale(.98)}
 .row.me{height:61px;background:#FFF7DC;border-color:#F5D86B;color:var(--ink2)}
 .row .rk{width:24px;flex:none;text-align:center;font:17px/19.43px var(--lil);white-space:nowrap;overflow:hidden}
 .row .av{width:33px;margin-left:5px;flex:none;display:flex}
@@ -494,7 +496,9 @@ svg{overflow:visible}
       }),
       playingNow: {
         count: int(playing.count),
-        initials: Array.isArray(playing.people) ? playing.people.map(function (p) { return p && str(p.initials); }).filter(Boolean) : []
+        people: Array.isArray(playing.people) ? playing.people.map(function (p) {
+          return p && str(p.initials) ? { initials: str(p.initials), name: str(p.name), userId: strOrNull(p.userId) } : null;
+        }).filter(Boolean) : []
       }
     };
   }
@@ -556,6 +560,24 @@ svg{overflow:visible}
     toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2400);
   }
   function haptic(kind) { call('haptic', kind || 'light'); }
+  /** Whether a tap on a person opens their profile: the app's bridge offers Sowaka.openProfile (an older app does not,
+      and then nobody is tappable), or the sample in a plain browser. */
+  function opensProfiles() {
+    if (S.mode === 'sample') return true;
+    return S.mode === 'app' && !!S.bridge && typeof S.bridge.openProfile === 'function';
+  }
+  /** The attributes that make an element open [userId]'s profile; none when it cannot. */
+  function personAttrs(userId, name) {
+    if (!userId || !opensProfiles()) return '';
+    return ' data-act="person" data-id="' + esc(userId) + '" role="button" tabindex="0" aria-label="' +
+      esc((name ? name + '’s' : 'Their') + ' profile') + '"';
+  }
+  function openProfile(userId) {
+    if (!userId || !opensProfiles()) return;
+    if (S.mode === 'sample') { toast('Preview: opens their profile'); return; }
+    haptic('light');
+    call('openProfile', userId);
+  }
   function viewerId() {
     var b = S.bridge, id = null;
     if (b) {
@@ -586,7 +608,7 @@ svg{overflow:visible}
     var style = 'width:' + size + 'px;height:' + size + 'px;background:' + (o.bg || colorFor(name)) +
       (border > 0 ? ';border:' + border + 'px solid #fff' : '') +
       ';' + (o.text || 'font-size:' + (size * 0.36).toFixed(2) + 'px') + (o.pos ? ';' + o.pos : '');
-    return '<span class="face" style="' + style + '">' + esc(initialOf(name, o.initials)) + img(photo) + '</span>';
+    return '<span class="face"' + (o.attrs || '') + ' style="' + style + '">' + esc(initialOf(name, o.initials)) + img(photo) + '</span>';
   }
   function sowakaFace(size) {
     return '<span class="face" style="width:' + size + 'px;height:' + size + 'px;background:#fff;border:1.5px solid #fff;padding:' +
@@ -759,7 +781,7 @@ svg{overflow:visible}
     var arrow = o.footRight != null ? o.footRight : o.act ? use('live-card-arrow', 'arw') : '';
     var attrs = o.act ? ' data-act="' + o.act + '" data-id="' + esc(o.id) + '" role="button" tabindex="0"' : '';
     return '<div class="lc' + (o.cls ? ' ' + o.cls : '') + '"' + attrs + ' aria-label="' + esc(o.label) + '">' +
-      '<div class="strip"><div class="who">' + o.face + '<span class="ell">' + esc(o.who) + '</span></div>' + o.clock + '</div>' +
+      '<div class="strip"><div class="who"' + (o.whoAttrs || '') + '>' + o.face + '<span class="ell">' + esc(o.who) + '</span></div>' + o.clock + '</div>' +
       '<div class="intro">' + o.picture + '<div class="lt"><div class="lt-t">' + esc(o.title.toUpperCase()) + '</div>' +
       (o.description ? '<div class="lt-d">' + esc(o.description) + '</div>' : '') + '</div></div>' +
       '<div class="foot' + (o.footRight != null ? ' cta-foot' : '') + '"><div class="l">' + o.footer + '</div>' + arrow + '</div></div>';
@@ -789,6 +811,7 @@ svg{overflow:visible}
     return liveFrame({
       act: 'contest', id: c.id, label: (c.title || 'Contest') + ', contest',
       face: c.official ? sowakaFace(26) : face(c.authorName, c.authorPhotoUrl, 26),
+      whoAttrs: c.official ? '' : personAttrs(c.authorUserId, c.authorName),
       who: who,
       clock: clock('contest', c.closesAt, '', 'clk'),
       picture: pic,
@@ -1019,13 +1042,14 @@ svg{overflow:visible}
     return liveFrame({
       cls: 'ch', act: '', id: '', label: who + ', ' + name,
       face: face(c.fromName, c.fromPhotoUrl, 26),
+      whoAttrs: personAttrs(c.fromUserId, c.fromName),
       who: who,
       clock: clock('challenge', c.expiresAt, '', 'clk'),
       picture: game ? gameTile(game, { rock: true }) : tile('var(--cream)', fitted(oddIcon(), 5), { rock: true }),
       title: name,
       description: c.incoming ? 'Beat their score before time runs out.' : 'Play your round to settle it.',
       footer: '<div class="ft"><span class="pile" style="width:44px">' +
-        face(me.name, me.photo, 28, { pos: 'left:0' }) + face(c.fromName, c.fromPhotoUrl, 28, { pos: 'left:16px' }) +
+        face(me.name, me.photo, 28, { pos: 'left:0' }) + face(c.fromName, c.fromPhotoUrl, 28, { pos: 'left:16px', attrs: personAttrs(c.fromUserId, c.fromName) }) +
         '</span><span class="ft-t vs ell">You vs ' + esc(other) + '</span></div>',
       footRight: cta(c.incoming ? 'Accept' : 'Play', { act: 'accept', id: c.id, w: 110, h: 46, fs: 15, lc: 0.467, disabled: S.accepting === c.id })
     });
@@ -1038,12 +1062,13 @@ svg{overflow:visible}
     return liveFrame({
       cls: 'inv', act: '', id: '', label: who,
       face: face(v.fromName, v.fromPhotoUrl, 26),
+      whoAttrs: personAttrs(v.fromUserId, v.fromName),
       who: who,
       clock: clock('challenge', v.expiresAt, '', 'clk'),
       picture: game ? gameTile(game, { rock: true }) : tile('var(--cream)', '', { rock: true }),
       title: name,
       description: 'Join the room before the game starts.',
-      footer: '<div class="ft"><span class="pile" style="width:28px">' + face(v.fromName, v.fromPhotoUrl, 28, { pos: 'left:0' }) +
+      footer: '<div class="ft"><span class="pile" style="width:28px">' + face(v.fromName, v.fromPhotoUrl, 28, { pos: 'left:0', attrs: personAttrs(v.fromUserId, v.fromName) }) +
         '</span><span class="ft-t vs ell">' + esc(count(v.players) + ' in the room') + '</span></div>',
       footRight: cta('Join', { act: 'join-room', id: v.code, key: v.gameKey, w: 110, h: 46, fs: 15, lc: 0.467 })
     });
@@ -1093,9 +1118,9 @@ svg{overflow:visible}
   }
   function playingNow(pn) {
     var colors = ['var(--blue)', '#C6F03C', '#FF8A3D'];
-    var f = pn.initials.slice(0, 3);
-    var pile = f.length ? '<span class="pn-f" style="width:' + (20 + (f.length - 1) * 13) + 'px">' + f.map(function (i, n) {
-      return '<b style="left:' + n * 13 + 'px;background:' + colors[n % 3] + '">' + esc(Array.from(i)[0]) + '</b>';
+    var f = pn.people.slice(0, 3);
+    var pile = f.length ? '<span class="pn-f" style="width:' + (20 + (f.length - 1) * 13) + 'px">' + f.map(function (p, n) {
+      return '<b' + personAttrs(p.userId, p.name) + ' style="left:' + n * 13 + 'px;background:' + colors[n % 3] + '">' + esc(Array.from(p.initials)[0]) + '</b>';
     }).join('') + '</span>' : '';
     var text = pn.count === 1 ? '1 person from your team is playing right now' : count(pn.count) + ' people from your team are playing right now';
     return '<div class="pn"><div class="pn-in">' + pile + '<span class="pn-t ell">' + esc(text) + '</span></div></div>';
@@ -1146,7 +1171,7 @@ svg{overflow:visible}
       var medal = first ? '<div class="medal one"><img src="' + IMG.trophy + '" alt=""></div>'
         : n <= 3 ? '<div class="medal">' + (n === 2 ? '🥈' : '🥉') + '</div>'
         : '<div class="medal"><span class="pos">' + n + '</span></div>';
-      return '<div class="place p' + n + '">' + medal +
+      return '<div class="place p' + n + '"' + personAttrs(entry.userId, entry.name) + '>' + medal +
         '<div class="frame" style="width:' + frame + 'px;height:' + frame + 'px;border-color:' + COLORS[n] + '">' +
         face(entry.name, entry.photoUrl, portrait, { border: 0, text: 'font:' + Math.round(portrait * 0.42) + 'px/1.143 var(--lil);color:var(--ink2)' }) + '</div>' +
         '<div class="pl-n">' + esc(firstWord(entry.name) || entry.name) + '</div>' +
@@ -1157,7 +1182,7 @@ svg{overflow:visible}
   }
   function rowHtml(e, me) {
     var moved = e.moved || 0;
-    return '<div class="row' + (me ? ' me' : '') + '"><div class="rk">' + (e.points > 0 ? e.rank : '–') + '</div>' +
+    return '<div class="row' + (me ? ' me' : '') + '"' + personAttrs(e.userId, e.name) + '><div class="rk">' + (e.points > 0 ? e.rank : '–') + '</div>' +
       '<div class="av">' + face(e.name, e.photoUrl, 29, { border: 1.1, bg: colorFor(e.userId), text: 'font:800 10px/15px var(--fig)' }) + '</div>' +
       '<div class="nm"><div class="nm1"><span class="ell">' + esc(e.name) + '</span>' + (me ? '<b class="you">YOU</b>' : '') + '</div>' +
       (e.department ? '<div class="dp ell">' + esc(e.department) + '</div>' : '') + '</div>' +
@@ -1291,12 +1316,13 @@ svg{overflow:visible}
       case 'join-room': openGame(el.getAttribute('data-key'), 'room:' + el.getAttribute('data-id')); break;
       case 'contest': openContest(el.getAttribute('data-id')); break;
       case 'post': openPost(el.getAttribute('data-id')); break;
+      case 'person': openProfile(el.getAttribute('data-id')); break;
       case 'retry': S.error = null; renderGames(); if (!S.bridge && window.Sowaka) useBridge(window.Sowaka); else refresh(); break;
       case 'retry-board': loadBoard(S.period, true); break;
     }
   });
   app.addEventListener('keydown', function (event) {
-    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches && event.target.matches('.lc[data-act]')) {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches && event.target.matches('.lc[data-act],[data-act="person"]')) {
       event.preventDefault();
       event.target.click();
     }
@@ -1527,7 +1553,7 @@ svg{overflow:visible}
           { key: 'scribble', name: 'Scribble', tagline: 'Draw it. Guess it.', description: 'Draw for your colleagues and guess their doodles, live.',
             instructions: '', kind: 'web', accentColor: '#FF6F7D', backgroundColor: '#0F1530', order: 4,
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' }],
-        playingNow: { count: 3, people: [{ name: 'Aarav Mehta', initials: 'AM' }, { name: 'Meera Iyer', initials: 'MI' }, { name: 'Raghav Rao', initials: 'RR' }] }
+        playingNow: { count: 3, people: [{ userId: 'u-aarav', name: 'Aarav Mehta', initials: 'AM' }, { userId: 'u-meera', name: 'Meera Iyer', initials: 'MI' }, { userId: 'u-raghav', name: 'Raghav Rao', initials: 'RR' }] }
       };
     }
     var PEOPLE = [

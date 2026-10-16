@@ -1,70 +1,69 @@
-import { sendPendingLeaveReminders, sendTodayLifecycleNotifications } from './notification.service';
-import { sendLeavePlanningReport, sendWeeklyAttendanceReport } from './notification-digests.service';
+import { sendNewJoinerNotifications } from './notification.service';
+import { sendLeaveNextWeek, sendPendingRequestReminders } from './request-notifications.service';
+import { sendOpenTicketReminders } from './support.service';
 import { runFeedbackCycleMessages } from './feedback-cycle-scheduler.service';
 import { sendLatePunchInReminders } from './punch-reminder.service';
+import { flushGroupedNotifications } from './notification-groups.service';
+import { istParts } from './notification-time';
 import { logger } from '../utils/logger';
 
 /**
  * Runs one scheduled job in isolation: a thrown error is logged and does not
- * stop the other jobs in this tick. These jobs are gated on an exact
- * date/day-of-week match with no tracked reminder state, so a job skipped by
- * an earlier throw would otherwise not run again until the same condition
- * recurs next week or month.
+ * stop the other jobs in this tick. Each job decides for itself whether today
+ * is its day (Tuesday/Thursday, a holiday moving it on, the cycle's dates) and
+ * dedupes against the notification store, so a second run sends nothing.
  */
-async function run(name: string, job: () => Promise<void>) {
+async function run(name: string, job: () => Promise<unknown>) {
   try { await job(); }
   catch (error) { logger.error(`Scheduled notification job failed: ${name}`, {}, error); }
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+const IST_OFFSET_MS = 5.5 * HOUR_MS;
+
+/** Milliseconds to the next top of the hour in IST (half past, in UTC). */
+export function msToNextIstHour(now: Date): number {
+  return HOUR_MS - ((now.getTime() + IST_OFFSET_MS) % HOUR_MS);
+}
+
+/** The jobs for one IST hour. The spec's times are all IST. */
+export async function runHourlyJobs(now = new Date()): Promise<void> {
+  const { hour, weekday } = istParts(now);
+  if (hour === 10) {
+    await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
+    // Cycle open, the Friday reminder and the last day, to managers only.
+    await run('runFeedbackCycleMessages', () => runFeedbackCycleMessages(now));
+  }
+  if (hour === 14) {
+    await run('sendPendingRequestReminders', () => sendPendingRequestReminders(now));
+    await run('sendOpenTicketReminders', () => sendOpenTicketReminders(now));
+  }
+  if (hour === 16 && weekday === 'Fri') await run('sendLeaveNextWeek', () => sendLeaveNextWeek(now));
+}
+
 let timer: NodeJS.Timeout | undefined;
-let punchTimer: NodeJS.Timeout | undefined;
-let punchRunning = false;
+let fiveMinuteTimer: NodeJS.Timeout | undefined;
+let fiveMinuteRunning = false;
 export function startNotificationScheduler() {
   // Shifts start at different times, so the punch-in reminder checks every
-  // five minutes rather than on the hour. A tick still running when the next
-  // one is due is not doubled up.
-  punchTimer = setInterval(() => {
-    if (punchRunning) return;
-    punchRunning = true;
-    void run('sendLatePunchInReminders', async () => { await sendLatePunchInReminders(); })
-      .finally(() => { punchRunning = false; });
+  // five minutes; grouped Connect pushes go out as their three-hour windows
+  // close. A tick still running when the next one is due is not doubled up.
+  fiveMinuteTimer = setInterval(() => {
+    if (fiveMinuteRunning) return;
+    fiveMinuteRunning = true;
+    void (async () => {
+      await run('sendLatePunchInReminders', () => sendLatePunchInReminders());
+      await run('flushGroupedNotifications', () => flushGroupedNotifications());
+    })().finally(() => { fiveMinuteRunning = false; });
   }, 5 * 60 * 1000);
-  punchTimer.unref();
+  fiveMinuteTimer.unref();
 
   const schedule = () => {
-    const now = new Date();
-    const next = new Date(now); next.setMinutes(60, 0, 0);
     timer = setTimeout(async () => {
-      try {
-        // Everything below is scheduled against IST, the timezone the spec's
-        // delivery times are written in.
-        const parts = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Asia/Kolkata',
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', hour12: false, weekday: 'short',
-        }).formatToParts(new Date());
-        const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
-        const istHour = Number(part('hour'));
-        const istDay = Number(part('day'));
-        const weekday = part('weekday');
-        // Last day of the month in IST: tomorrow's date rolls back to 1.
-        const istDate = new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00Z`);
-        const daysLeftInMonth = new Date(Date.UTC(
-          istDate.getUTCFullYear(), istDate.getUTCMonth() + 1, 0,
-        )).getUTCDate() - istDay;
-
-        if (istHour === 9) {
-          await run('sendTodayLifecycleNotifications', sendTodayLifecycleNotifications);
-          await run('sendPendingLeaveReminders', sendPendingLeaveReminders);
-          // Two messages a cycle, to managers only, on the org's own cycle dates.
-          await run('runFeedbackCycleMessages', () => runFeedbackCycleMessages());
-          if (weekday === 'Mon') await run('sendWeeklyAttendanceReport', sendWeeklyAttendanceReport);
-        }
-        if (istHour === 16 && weekday === 'Fri') await run('sendLeavePlanningReport', sendLeavePlanningReport);
-      }
+      try { await runHourlyJobs(); }
       catch (error) { logger.error('Notification scheduler tick failed', {}, error); }
       finally { schedule(); }
-    }, next.getTime() - now.getTime());
+    }, msToNextIstHour(new Date()));
     timer.unref();
   };
   schedule();
@@ -72,6 +71,6 @@ export function startNotificationScheduler() {
 export function stopNotificationScheduler() {
   if (timer) clearTimeout(timer);
   timer = undefined;
-  if (punchTimer) clearInterval(punchTimer);
-  punchTimer = undefined;
+  if (fiveMinuteTimer) clearInterval(fiveMinuteTimer);
+  fiveMinuteTimer = undefined;
 }

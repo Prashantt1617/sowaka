@@ -210,6 +210,7 @@ class GameLeaderEntry {
     required this.rank,
     required this.playerName,
     required this.score,
+    this.userId = '',
     this.isMe = false,
   });
 
@@ -218,12 +219,17 @@ class GameLeaderEntry {
         rank: (json['rank'] as num?)?.toInt() ?? 0,
         playerName: _string(json['playerName']),
         score: (json['score'] as num?) ?? 0,
+        userId: _string(json['userId']),
         isMe: json['isMe'] == true,
       );
 
   final int rank;
   final String playerName;
   final num score;
+
+  /// Whose score it is, so the page can open their profile. Empty from a
+  /// server that does not say.
+  final String userId;
   final bool isMe;
 }
 
@@ -268,12 +274,15 @@ class GameLeaderboard {
   final num? score;
   final bool improved;
 
-  /// What the page is handed: names and scores, never anyone's id.
+  /// What the page is handed: names and scores, and each player's userId so a
+  /// row can open their profile (`Sowaka.openProfile`) — the same ids the
+  /// page already gets from `colleagues()` and its challenges.
   Map<String, dynamic> toPageJson({required String company}) => {
     'entries': [
       for (final entry in entries)
         {
           'rank': entry.rank,
+          if (entry.userId.isNotEmpty) 'userId': entry.userId,
           'name': entry.playerName,
           'score': entry.score,
           'me': entry.isMe,

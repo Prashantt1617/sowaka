@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'features/manager_shell/presentation/tablet_shell.dart';
 import 'features/auth/presentation/auth_gate.dart';
+import 'features/shared/app_update.dart';
 import 'routes/app_routes.dart';
 import 'services/notification_service.dart';
 
@@ -86,7 +87,10 @@ class HrmsMobileApp extends StatelessWidget {
         // Tablets get a rail and a readable content column; phones get exactly
         // what they had. Wrapped here, above the navigator, so both hold for
         // screens pushed over the shell too.
-        child: TabletShell(child: child ?? const SizedBox()),
+        // Above everything, so the update screens cover any screen at all.
+        child: AppUpdateGate(
+          child: TabletShell(child: child ?? const SizedBox()),
+        ),
       ),
       home: const AuthGate(),
       routes: AppRoutes.routes,

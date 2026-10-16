@@ -256,6 +256,7 @@ class _ContestEntriesPageState extends State<_ContestEntriesPage> with _FlowMess
             bloc: flow.bloc,
             initialPost: post,
             people: people,
+            viewerUserId: flow.session.user.id,
             onOpenPerson: flow.onOpenPerson,
             onAddEntry: widget.onAddEntry,
           ),

@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { connectPosts, deviceTokens, getDb, leaves, notifications, users } from '../config/db';
+import { connectPosts, deviceTokens, getDb, notifications, users } from '../config/db';
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
-import { companyDisplayName } from './company-settings.service';
 
 /** Greeting name for email copy; falls back to a neutral form when unset. */
 function firstName(name?: string): string {
@@ -94,6 +93,7 @@ export async function removePostNotifications(postId: string) {
   await Promise.all([
     notifications().deleteMany({ 'data.postId': postId }),
     getDb().collection('notification_batches').deleteMany({ entityId: postId }),
+    getDb().collection('notification_groups').deleteMany({ entityId: postId }),
   ]);
 }
 
@@ -101,6 +101,12 @@ export async function markNotificationRead(userId: string, id: string) {
   const result = await notifications().updateOne({ userId, id }, { $set: { readAt: new Date() } });
   if (!result.matchedCount) throw new NotificationError(404, 'Notification not found');
   return { id, read: true };
+}
+
+/** "Mark all as read": everything still unread in this person's inbox. */
+export async function markAllNotificationsRead(userId: string) {
+  const result = await notifications().updateMany({ userId, readAt: { $exists: false } }, { $set: { readAt: new Date() } });
+  return { read: result.modifiedCount };
 }
 
 export interface NotificationEmail {
@@ -115,6 +121,16 @@ export interface NotificationInput {
   scenario: string; title: string; body: string; data: Record<string, string>;
   /** Email copy to send alongside the push. Omit for in-app-only scenarios. */
   email?: NotificationEmail;
+  /**
+   * Whether the phone is pushed. False for the notification spec's "inbox
+   * only" rows: the entry waits in the app's inbox, and the phone stays quiet.
+   */
+  push?: boolean;
+  /**
+   * Whether it is kept in the app's inbox. False for the spec's "email only"
+   * rows (support staff), which go to a mailbox and nowhere else.
+   */
+  inbox?: boolean;
 }
 
 /**
@@ -129,7 +145,10 @@ export function notifiesOrg(org: string | undefined): boolean {
 export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
-  const all = await users().find({ userId: { $in: uniqueIds } }).toArray();
+  // Someone who has left hears nothing more from the app.
+  const all = await users()
+    .find({ userId: { $in: uniqueIds }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } })
+    .toArray();
   // Same allowlist the mail transport enforces — see `env.notifyOrgs`. Applied
   // here too so a suppressed org gets no push and no stored notification
   // either, not just no email.
@@ -141,10 +160,12 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   }
   if (!recipients.length) return;
   const now = new Date();
-  // `email` is copy for delivery, not part of the stored notification record.
-  const { email, ...record } = input;
-  await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
-    org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, createdAt: now })));
+  // `email`, `push` and `inbox` are how it is delivered, not part of the stored record.
+  const { email, push, inbox, ...record } = input;
+  if (inbox !== false) {
+    await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
+      org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, pushed: push !== false, createdAt: now })));
+  }
   // Fire-and-forget: sendNotificationEmail never throws, but callers of
   // notifyUsers (leave/feedback request handlers) must not block on SMTP.
   // Iterates `recipients`, so NOTIFY_ORGS gates email as well as push.
@@ -159,6 +180,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
       );
     }
   }
+  if (push === false) return;
   // Scoped to the filtered recipients rather than every id asked for —
   // otherwise a suppressed org still gets the push.
   const tokens = await deviceTokens()
@@ -180,98 +202,37 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   if (invalid.length) await deviceTokens().deleteMany({ token: { $in: invalid } });
 }
 
-export async function queueBatchedNotification(
-  recipientUserId: string,
-  scenario: string,
-  entityId: string,
-  actorName: string,
-  title: string,
-  data: Record<string, string>,
-) {
-  const key = `${recipientUserId}:${scenario}:${entityId}`;
-  await getDb().collection('notification_batches').updateOne(
-    { key },
-    { $set: { recipientUserId, scenario, entityId, title, data, updatedAt: new Date() },
-      $addToSet: { actorNames: actorName }, $inc: { count: 1 }, $setOnInsert: { key, createdAt: new Date() } },
-    { upsert: true },
-  );
-}
-
-export async function flushNotificationBatches(includeDaily = false) {
-  const collection = getDb().collection('notification_batches');
-  const batches = await collection.find(includeDaily ? {} : { scenario: { $ne: 'nomination_received' } }).toArray();
-  for (const batch of batches) {
-    const names = (batch.actorNames as string[] | undefined) ?? [];
-    const count = Number(batch.count ?? names.length);
-    const first = names[0] ?? 'Someone';
-    const body = batch.scenario === 'post_liked'
-      ? count > 1 ? `${first} and ${count - 1} others liked your post` : `${first} liked your post`
-      : batch.scenario === 'poll_voted'
-        ? `${count} new vote${count === 1 ? '' : 's'} on your poll "${batch.title}"`
-        : batch.scenario === 'nomination_received'
-          ? `${count} nomination${count === 1 ? '' : 's'} received today`
-        : `${count} new responses to "${batch.title}"`;
-    // Titled with the company the reader works for. One deployment serves
-    // several, so the product's own name is wrong for all but one of them.
-    const recipient = await users().findOne(
-      { userId: String(batch.recipientUserId) },
-      { projection: { org: 1 } },
-    );
-    await notifyUsers([String(batch.recipientUserId)], {
-      scenario: String(batch.scenario),
-      title: await companyDisplayName(recipient?.org, 'Connect'),
-      body,
-      data: batch.data as Record<string, string>,
-    });
-    await collection.deleteOne({ _id: batch._id });
-  }
-}
-
-export async function sendTodayLifecycleNotifications(now = new Date()) {
+/**
+ * Spec row 51 — the joining day, 10:00 IST: the joiner's team hears they
+ * arrived (their manager, the colleagues who share that manager, and their
+ * department), never the joiner. Opens the joiner's profile.
+ */
+export async function sendNewJoinerNotifications(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
-  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
-  const year = value('year'); const month = value('month'); const day = value('day');
-  const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const employees = await users().find({ lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }).toArray();
-  const byOrg = new Map<string, string[]>();
-  for (const employee of employees) {
-    const org = employee.org ?? employee.email.split('@').at(1) ?? 'default';
-    byOrg.set(org, [...(byOrg.get(org) ?? []), employee.userId]);
-  }
-  for (const employee of employees) {
-    const org = employee.org ?? employee.email.split('@').at(1) ?? 'default';
-    const recipients = byOrg.get(org) ?? [];
-    // Birthdays and anniversaries are announced by the Connect card the daily
-    // job publishes — see `lifecycleCopy`, which sends the 🎂 and 🎉 copy. This
-    // job used to send its own plainer version of both, so everyone got the
-    // same news twice, hours apart. A new joiner has no such card, so it stays.
-    const events: Array<{ scenario: string; body: string }> = [];
-    if (employee.joiningDate?.getUTCMonth() === month - 1 && employee.joiningDate.getUTCDate() === day) {
-      const years = year - employee.joiningDate.getUTCFullYear();
-      if (years === 0) events.push({ scenario: 'new_joiner', body: `Welcome ${employee.name} to the team!` });
-    }
-    for (const event of events) {
-      const alreadySent = await notifications().findOne({ userId: recipients[0], scenario: event.scenario, 'data.dateKey': dateKey, 'data.employeeUserId': employee.userId });
-      if (!alreadySent) await notifyUsers(recipients, { scenario: event.scenario, title: await companyDisplayName(employee.org, 'Connect'), body: event.body,
-        data: { destination: 'employee_profile', employeeUserId: employee.userId, dateKey } });
-    }
-  }
-}
-
-export async function sendPendingLeaveReminders(now = new Date()) {
-  const dateKey = now.toISOString().slice(0, 10);
-  const pending = await leaves().find({ status: 'pending' }).toArray();
-  const employees = await users().find({ userId: { $in: [...new Set(pending.map((leave) => leave.userId))] } }).toArray();
-  const managerByEmployee = new Map(employees.map((employee) => [employee.userId, employee.managerUserId]));
-  const counts = new Map<string, number>();
-  for (const leave of pending) {
-    const managerId = managerByEmployee.get(leave.userId);
-    if (managerId) counts.set(managerId, (counts.get(managerId) ?? 0) + 1);
-  }
-  for (const [managerId, count] of counts) {
-    const sent = await notifications().findOne({ userId: managerId, scenario: 'pending_leave_reminder', 'data.dateKey': dateKey });
-    if (!sent) await notifyUsers([managerId], { scenario: 'pending_leave_reminder', title: 'Leave approvals',
-      body: `You have ${count} leave request${count === 1 ? '' : 's'} waiting for approval`,
-      data: { destination: 'manage_leave', dateKey } });
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  const dateKey = `${value('year')}-${value('month')}-${value('day')}`;
+  const joiners = await users().find({
+    lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    joiningDate: { $gte: new Date(`${dateKey}T00:00:00.000Z`), $lte: new Date(`${dateKey}T23:59:59.999Z`) },
+  }).toArray();
+  for (const joiner of joiners) {
+    if (!joiner.org) continue;
+    const roster = await users().find({ org: joiner.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }).toArray();
+    const team = roster.filter((person) => person.userId !== joiner.userId && (
+      person.userId === joiner.managerUserId
+      || (joiner.managerUserId && person.managerUserId === joiner.managerUserId)
+      || (joiner.department && person.department === joiner.department)
+    ));
+    if (!team.length) continue;
+    const already = await notifications().findOne({ scenario: 'new_joiner', 'data.dateKey': dateKey, 'data.employeeUserId': joiner.userId });
+    if (already) continue;
+    const { claimOnce } = await import('./scribble-store');
+    if (!(await claimOnce(`notify:new-joiner:${joiner.userId}:${dateKey}`, 2 * 24 * 60 * 60_000))) continue;
+    await notifyUsers(team.map((person) => person.userId), {
+      scenario: 'new_joiner',
+      title: `${joiner.name} joined your team today 👋`,
+      body: 'Say hello',
+      data: { destination: 'employee_profile', employeeUserId: joiner.userId, dateKey },
+    });
   }
 }

@@ -251,12 +251,16 @@ function broadcast(c: GameChallenge, kind: string, extra: Record<string, unknown
   }
 }
 
+/** Declined, withdrawn and called off reach the inbox only (spec rows 58–60). */
+const INBOX_ONLY = new Set(['game_challenge_declined', 'game_challenge_withdrawn', 'game_challenge_cancelled']);
+
 /** A push about a challenge; never holds up the request that caused it. */
 function push(userId: string, scenario: string, title: string, body: string, c: GameChallenge) {
   void notifyUsers([userId], {
     scenario,
     title,
     body,
+    push: !INBOX_ONLY.has(scenario),
     data: { destination: 'game_challenge', gameKey: c.gameKey, challengeId: c.id },
   }).catch((error) => logger.error('Game challenge push failed', { scenario, challengeId: c.id }, error));
 }

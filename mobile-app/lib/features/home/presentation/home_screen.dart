@@ -9,6 +9,7 @@ import '../../manager/data/manager_api_service.dart';
 import '../../manager/presentation/manager_screen.dart';
 import '../../onboarding/presentation/onboarding_flow.dart';
 import '../../shared/app_icon.dart';
+import '../../shared/app_update.dart';
 import '../../shared/org_branding.dart';
 
 /// Where a signed-in person lands, and the one place that decides whether
@@ -52,6 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _applyBranding(AuthSession session) async {
     if (_branded) return;
     _branded = true;
+    // Now there is a company to ask about: must, or may, this build update?
+    AppUpdateGate.recheck();
     final branding = OrgBranding.of(session.user.org);
     OrgBranding.current.value = branding;
     await OrgBranding.remember(session.user.org);

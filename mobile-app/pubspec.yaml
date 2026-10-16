@@ -59,6 +59,8 @@ dependencies:
   pdf: ^3.12.0
   cached_network_image: ^4.0.4
   path_provider: ^2.1.6
+  package_info_plus: ^9.0.1
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:
@@ -84,6 +86,8 @@ flutter:
 
   assets:
     - assets/images/
+    # The update screens' rocket (an animated GIF) and its accents (Figma 3902:15655).
+    - assets/images/update/
     - assets/icons/
     # Flutter's asset globs are not recursive, so the engagement icons
     # exported from Figma need their own line.
@@ -121,6 +125,10 @@ flutter:
       fonts:
         - asset: assets/fonts/sora/Sora-Variable.ttf
     # The relay game's "+40" pops in the arcade face the design asks for.
+    # The minor-update strip on the home feed is set in Manrope, as designed.
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/manrope/Manrope-Variable.ttf
     - family: PressStart2P
       fonts:
         - asset: assets/fonts/press_start/PressStart2P-Regular.ttf
@@ -136,6 +144,11 @@ flutter:
     - family: Figtree
       fonts:
         - asset: assets/fonts/figtree/Figtree-Variable.ttf
+    # Secret Squad's feed card is set in Lexend, as designed (Google Fonts,
+    # OFL; licence beside it). Variable: weights go on its axis.
+    - family: Lexend
+      fonts:
+        - asset: assets/fonts/lexend/Lexend-Variable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

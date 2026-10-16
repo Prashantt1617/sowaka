@@ -50,11 +50,11 @@ export function DrawerHeader({
   );
 }
 
-export function InfoGrid({ cells }: { cells: { label: string; value: ReactNode }[] }) {
+export function InfoGrid({ cells }: { cells: { label: string; value: ReactNode; wide?: boolean }[] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: '#EBEBEB', border: '1px solid #EBEBEB', borderRadius: 13, overflow: 'hidden', marginBottom: 20 }}>
       {cells.map((c) => (
-        <div key={c.label} style={{ background: '#fff', padding: '13px 15px' }}>
+        <div key={c.label} style={{ background: '#fff', padding: '13px 15px', gridColumn: c.wide ? '1 / -1' : undefined }}>
           <div style={{ fontSize: 12, color: '#717171', fontWeight: 600, marginBottom: 4 }}>{c.label}</div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{c.value}</div>
         </div>

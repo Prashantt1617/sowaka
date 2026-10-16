@@ -762,8 +762,18 @@ export async function upsertFeedback(
     },
     { upsert: true, returnDocument: 'after' },
   );
-  // No message on submit: managers hear about the cycle twice, at its open
-  // and five days before it closes, with their done-versus-pending count.
+  // The first send tells the employee their review is there to read (spec
+  // row 27). An edit to a review already sent says nothing more.
+  if (effectiveStatus === 'sent' && previous?.status !== 'sent') {
+    const month = new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' })
+      .format(new Date(`${period}-01T00:00:00.000Z`));
+    void notifyUsers([employeeUserId], {
+      scenario: 'feedback_shared',
+      title: `Your manager shared your ${month} feedback`,
+      body: 'Tap to read it',
+      data: { destination: 'grow_feedback', view: 'mine', period, feedbackId: String(record?._id ?? '') },
+    }).catch(() => undefined);
+  }
   return record;
 }
 
@@ -791,20 +801,8 @@ export async function nominateForRecognition(
     },
     { upsert: true },
   );
-  const [manager, employee] = await Promise.all([
-    users().findOne({ userId: managerUserId }), users().findOne({ userId: employeeUserId }),
-  ]);
-  const hrUsers = manager?.org
-    ? await users().find({ org: manager.org, dashboardAccess: true }).toArray()
-    : [];
-  if (hrUsers.length) {
-    await notifyUsers(hrUsers.map((hr) => hr.userId), {
-      scenario: 'nomination_received', title: 'New nomination',
-      body: `${manager?.name ?? 'A manager'} nominated ${employee?.name ?? 'an employee'} for ${category}`,
-      data: { destination: 'nomination_review', period, category, employeeUserId,
-        employeeName: employee?.name ?? 'Employee' },
-    });
-  }
+  // No notification: nominations are outside the notification spec until
+  // recognition ships (Rules sheet, "Recognition").
   return { period, category, employeeUserId, reason };
 }
 

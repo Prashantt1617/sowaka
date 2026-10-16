@@ -324,7 +324,7 @@ async function requestOutOfLocation(
   const result = await attendanceRegularizations().insertOne(row);
   void location;
   await notifyOutOfLocationSubmitted({
-    employeeUserId: userId, workDate, reason: note.reason, place: placeLabel(note.distanceMeters, note.officeName),
+    employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: note.reason, place: placeLabel(note.distanceMeters, note.officeName),
   });
   return {
     workDate,
@@ -663,7 +663,7 @@ export async function requestRegularization(
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
     workDate, ...requested, note, status: 'pending', createdAt,
   });
-  await notifyCorrectionSubmitted({ employeeUserId: userId, workDate, reason: note });
+  await notifyCorrectionSubmitted({ employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: note });
   return toRegularizationView({
     _id: result.insertedId, userId, employeeId: employee.employeeId,
     managerUserId: employee.managerUserId, workDate, ...requested, note,
@@ -877,6 +877,7 @@ async function applyRegularizationDecision(
       reason: result.outsideLocation?.reason ?? '',
       approved: decision === 'approved',
       comment: managerNote,
+      decidedByUserId: result.decidedByUserId,
     });
     return;
   }
@@ -885,6 +886,7 @@ async function applyRegularizationDecision(
     workDate: result.workDate,
     approved: decision === 'approved',
     comment: managerNote,
+    decidedByUserId: result.decidedByUserId,
   });
 }
 

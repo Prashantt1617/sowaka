@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
+import '../../shared/photo_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -176,11 +177,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // A name tapped anywhere — a post's author, a commenter — opens their
     // profile through here.
     registerPersonProfileOpener(_openTeamMember);
+    // The inbox wears the shell's header, this avatar included.
+    registerInboxProfileAction(_inboxProfileAction);
   }
 
   @override
   void dispose() {
     unregisterPersonProfileOpener(_openTeamMember);
+    unregisterInboxProfileAction(_inboxProfileAction);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
     _quickActionsController
@@ -351,6 +355,20 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   Future<void> _openNotifications(BuildContext context) =>
       openNotificationInbox(context, _session);
+
+  /// The avatar over the inbox: it leaves the inbox for the profile.
+  Widget _inboxProfileAction(VoidCallback closeInbox) {
+    final dashboard = _bloc.state.dashboard;
+    return _ProfileAvatarAction(
+      initial: dashboard?.managerInitial ?? '',
+      photoUrl: dashboard?.managerPhotoUrl,
+      onTap: () {
+        closeInbox();
+        _openProfile();
+      },
+      size: 30,
+    );
+  }
 
   /// Takes a tapped notification to the thing it is about, not just to a
   /// tab: the post, the request queue, the person, the review.
@@ -547,25 +565,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     return true;
   }
 
+  /// Signs out. The profile has already asked ([confirmLogOut]).
   Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text('You will need to sign in again to continue.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Log out'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
     // Every copy on this phone goes with them — dashboard and feed — and a
     // load still in flight cannot put one back.
     await DashboardCache.clearAll();

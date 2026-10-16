@@ -7,15 +7,17 @@ import 'package:video_player/video_player.dart';
 import '../../../services/api_config.dart';
 import '../../shared/network_status.dart';
 
-/// A video posted to the feed, or picked for a post and not yet sent. It
-/// shows its first frame until tapped, then plays where it is, at its own
-/// shape: portrait stays portrait, landscape stays landscape. A tap pauses
-/// it, and the corner button opens it full screen on the same player, so it
-/// carries on from where it was.
+/// A video posted to the feed, or picked for a post and not yet sent. As on
+/// Instagram it has no play button: it plays by itself, looping, once most
+/// of it is on screen, and stops once it is scrolled away or its screen is
+/// covered. It starts muted; a tap turns the sound on or off, and that
+/// choice holds for the next video too. Holding a finger on it pauses it
+/// until let go. It plays at its own shape: portrait stays portrait,
+/// landscape stays landscape. The corner button opens it full screen on the
+/// same player, so it carries on from where it was.
 ///
-/// Only one plays at a time, and one scrolled mostly out of sight pauses.
-/// The player is made when the card is built and goes with it, so only the
-/// cards near the screen hold one.
+/// Only one plays at a time. The player is made when the card is built and
+/// goes with it, so only the cards near the screen hold one.
 ///
 /// Given a [header], it is a video post's own card (node 3752:27075): who
 /// posted it over the top of the video on a shade that keeps it legible, and
@@ -45,6 +47,10 @@ class FeedVideo extends StatefulWidget {
 
   Widget _wrap(Widget surface) => surfaceWrapper?.call(surface) ?? surface;
 
+  /// Back to muted, as the app opens: each test starts where a person would.
+  @visibleForTesting
+  static void resetSound() => _FeedVideoState._soundOn = false;
+
   @override
   State<FeedVideo> createState() => _FeedVideoState();
 }
@@ -66,11 +72,27 @@ class _FeedVideoState extends State<FeedVideo> {
   /// The one playing now, paused when another starts.
   static _FeedVideoState? _playing;
 
+  /// Sound on or off, for every video: off until someone taps for it.
+  static bool _soundOn = false;
+
+  /// How much of it must be on screen for it to start, and how little before
+  /// it stops: apart, so one on the edge does not flicker.
+  static const double _startAt = 0.6;
+  static const double _stopBelow = 0.5;
+
   VideoPlayerController? _controller;
   bool _failed = false;
 
-  /// Tapped before the player was ready: it plays as soon as it is.
-  bool _wantsPlay = false;
+  /// Held down: paused until the finger lifts.
+  bool _held = false;
+
+  /// Full screen, on this player: its own screen covers the feed, but it
+  /// plays on.
+  bool _fullScreen = false;
+
+  /// Its screen is showing: not a tab in the background, not under another
+  /// page.
+  bool _shown = true;
   ScrollPosition? _scroll;
 
   @override
@@ -85,9 +107,16 @@ class _FeedVideoState extends State<FeedVideo> {
     super.didChangeDependencies();
     final scroll = Scrollable.maybeOf(context)?.position;
     if (scroll != _scroll) {
-      _scroll?.removeListener(_pauseIfOutOfSight);
-      _scroll = scroll?..addListener(_pauseIfOutOfSight);
+      _scroll?.removeListener(_followSight);
+      _scroll = scroll?..addListener(_followSight);
     }
+    // A tab in the background, or a page pushed over the feed.
+    final shown = TickerMode.valuesOf(context).enabled && Visibility.of(context);
+    if (shown != _shown) {
+      _shown = shown;
+      if (!shown && !_fullScreen) _pause();
+    }
+    _followSightSoon();
   }
 
   @override
@@ -99,7 +128,7 @@ class _FeedVideoState extends State<FeedVideo> {
   @override
   void dispose() {
     NetworkStatus.offline.removeListener(_onNetworkChanged);
-    _scroll?.removeListener(_pauseIfOutOfSight);
+    _scroll?.removeListener(_followSight);
     if (identical(_playing, this)) _playing = null;
     _controller?.dispose();
     super.dispose();
@@ -113,8 +142,10 @@ class _FeedVideoState extends State<FeedVideo> {
     _controller = controller;
     controller.initialize().then((_) {
       if (!mounted || !identical(_controller, controller)) return;
+      controller.setLooping(true);
+      controller.setVolume(_soundOn ? 1 : 0);
       setState(() {});
-      if (_wantsPlay) _play();
+      _followSightSoon();
     }).catchError((Object _) {
       if (mounted && identical(_controller, controller)) setState(() => _failed = true);
     });
@@ -123,10 +154,7 @@ class _FeedVideoState extends State<FeedVideo> {
   void _reopen() {
     final old = _controller;
     if (identical(_playing, this)) _playing = null;
-    setState(() {
-      _failed = false;
-      _wantsPlay = false;
-    });
+    setState(() => _failed = false);
     _open();
     old?.dispose();
   }
@@ -141,12 +169,7 @@ class _FeedVideoState extends State<FeedVideo> {
     final other = _playing;
     if (other != null && !identical(other, this)) other._pause();
     _playing = this;
-    _wantsPlay = false;
-    final value = controller.value;
-    // Played to the end: from the start again.
-    if (value.duration > Duration.zero && value.position >= value.duration) {
-      controller.seekTo(Duration.zero);
-    }
+    controller.setVolume(_soundOn ? 1 : 0);
     controller.play();
   }
 
@@ -155,32 +178,69 @@ class _FeedVideoState extends State<FeedVideo> {
     if (identical(_playing, this)) _playing = null;
   }
 
-  void _toggle() {
+  /// A tap: the sound on or off, here and for every video after.
+  void _toggleSound() {
     final controller = _controller;
     if (_failed) return _reopen();
-    if (controller == null || !controller.value.isInitialized) {
-      setState(() => _wantsPlay = !_wantsPlay);
-      return;
+    _soundOn = !_soundOn;
+    controller?.setVolume(_soundOn ? 1 : 0);
+    if (controller != null && controller.value.isInitialized && !controller.value.isPlaying && !_held) {
+      _play();
     }
-    controller.value.isPlaying ? _pause() : _play();
   }
 
-  /// Pauses once less than a third of it is on screen.
-  void _pauseIfOutOfSight() {
-    final controller = _controller;
-    if (controller == null || !controller.value.isPlaying || !mounted) return;
+  void _hold() {
+    _held = true;
+    _controller?.pause();
+  }
+
+  void _letGo() {
+    _held = false;
+    if (identical(_playing, this)) {
+      _controller?.play();
+    } else {
+      _followSight();
+    }
+  }
+
+  /// How much of it is on screen, 0 to 1.
+  double _inSight() {
+    if (!mounted) return 0;
     final box = context.findRenderObject();
-    if (box is! RenderBox || !box.hasSize || !box.attached) return;
+    if (box is! RenderBox || !box.hasSize || !box.attached) return 0;
     final top = box.localToGlobal(Offset.zero).dy;
     final height = box.size.height;
     final screen = MediaQuery.sizeOf(context).height;
     final visible = (top + height).clamp(0.0, screen) - top.clamp(0.0, screen);
-    if (height > 0 && visible / height < 1 / 3) _pause();
+    return height > 0 ? visible / height : 0;
+  }
+
+  /// Plays once most of it is on screen and nothing else is playing in
+  /// plain sight; stops once it is mostly gone.
+  void _followSight() {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized || !mounted || _fullScreen) return;
+    final seen = _shown ? _inSight() : 0.0;
+    if (controller.value.isPlaying || identical(_playing, this)) {
+      if (seen < _stopBelow) _pause();
+      return;
+    }
+    if (_held || seen < _startAt) return;
+    final other = _playing;
+    if (other != null && other._inSight() >= _startAt) return;
+    _play();
+  }
+
+  /// After this frame is laid out, so its place on screen is known.
+  void _followSightSoon() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _followSight());
   }
 
   Future<void> _openFullScreen() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
+    _fullScreen = true;
+    if (!controller.value.isPlaying) _play();
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
@@ -192,6 +252,10 @@ class _FeedVideoState extends State<FeedVideo> {
         ),
       ),
     );
+    _fullScreen = false;
+    // Sound turned on or off full screen holds here too.
+    _soundOn = controller.value.volume > 0;
+    if (mounted) _followSightSoon();
   }
 
   /// A frame with no picture yet (loading, or failed) still says who posted
@@ -236,30 +300,29 @@ class _FeedVideoState extends State<FeedVideo> {
         if (!value.isInitialized) {
           return _VideoFrame(
             aspectRatio: 4 / 5,
-            onTap: _toggle,
+            onTap: _toggleSound,
             child: _withHeader(
-              Center(
-                child: _wantsPlay
-                    ? const SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                      )
-                    : const _PlayButton(icon: Icons.play_arrow_rounded),
+              const Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                ),
               ),
             ),
           );
         }
-        final ended = value.duration > Duration.zero && value.position >= value.duration && !value.isPlaying;
-        final left = value.isPlaying ? value.duration - value.position : value.duration;
+        final left = value.duration - value.position;
         // At the shape it was filmed: a portrait clip stands tall, a
         // landscape one lies wide. Only something stranger than 9:16 or
         // 16:9 is trimmed to fit.
         final ratio = value.aspectRatio.clamp(9 / 16, 16 / 9);
-        void toggleSound() => controller.setVolume(value.volume == 0 ? 1 : 0);
+        void toggleSound() => _toggleSound();
         return _VideoFrame(
           aspectRatio: ratio,
-          onTap: _toggle,
+          onTap: _toggleSound,
+          onHold: _hold,
+          onLetGo: _letGo,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -281,12 +344,6 @@ class _FeedVideoState extends State<FeedVideo> {
                   ],
                 ),
               ),
-              if (!value.isPlaying)
-                Center(
-                  child: value.isBuffering && _wantsPlay
-                      ? const CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)
-                      : _PlayButton(icon: ended ? Icons.replay_rounded : Icons.play_arrow_rounded),
-                ),
               if (value.isPlaying && value.isBuffering)
                 const Center(child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
               if (header == null) ...[
@@ -563,10 +620,20 @@ String _clock(Duration duration) {
 }
 
 class _VideoFrame extends StatelessWidget {
-  const _VideoFrame({required this.aspectRatio, required this.onTap, required this.child});
+  const _VideoFrame({
+    required this.aspectRatio,
+    required this.onTap,
+    this.onHold,
+    this.onLetGo,
+    required this.child,
+  });
 
   final double aspectRatio;
   final VoidCallback onTap;
+
+  /// A finger held down, and lifted again.
+  final VoidCallback? onHold;
+  final VoidCallback? onLetGo;
   final Widget child;
 
   @override
@@ -574,6 +641,8 @@ class _VideoFrame extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      onLongPressStart: onHold == null ? null : (_) => onHold!(),
+      onLongPressEnd: onLetGo == null ? null : (_) => onLetGo!(),
       child: AspectRatio(
         aspectRatio: aspectRatio,
         child: ColoredBox(color: const Color(0xFF15140F), child: child),

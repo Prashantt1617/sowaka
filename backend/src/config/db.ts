@@ -358,6 +358,8 @@ async function ensureIndexes(database: Db): Promise<void> {
   await writings.createIndex({ userId: 1, key: 1 }, { unique: true });
   await database.collection('care_content').createIndex({ id: 1 }, { unique: true });
   await database.collection('app_pages').createIndex({ key: 1 }, { unique: true });
+  // One group per recipient, kind and post: two first events can't make two.
+  await database.collection('notification_groups').createIndex({ key: 1 }, { unique: true });
   // One quiz of each kind per person; a partner finds it by its link.
   const pairs = database.collection<PairQuiz>('care_pair_quizzes');
   await pairs.createIndex({ userId: 1, kind: 1 }, { unique: true });

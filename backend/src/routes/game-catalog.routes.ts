@@ -6,6 +6,7 @@ import {
   playHandler,
   pointsLeaderboardHandler,
   scribbleHopHandler,
+  squadWebHandler,
   submitScoreHandler,
 } from '../controllers/game-catalog.controller';
 import {
@@ -67,3 +68,7 @@ export const playRouter = Router();
 playRouter.get('/:key', scribbleHopHandler);
 playRouter.use(requireAuth);
 playRouter.get('/:key', playHandler);
+
+/** Secret Squad in a phone browser: the page signs in by itself (see squadWebHandler). */
+export const squadWebRouter = Router();
+squadWebRouter.get('/', squadWebHandler);

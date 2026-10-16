@@ -10,7 +10,9 @@ import {
   createPost,
   deletePost,
   listBlockedPeople,
+  markWishesSeen,
   reactToConnectComment,
+  deleteComment,
   reactToConnectPost,
   deleteCaption,
   reportPost,
@@ -44,7 +46,9 @@ connectRouter.post('/posts', uploadConnectPostMedia, createPost);
 connectRouter.post('/posts/:postId/reaction', reactToConnectPost);
 connectRouter.post('/posts/:postId/comments', commentOnConnectPost);
 connectRouter.post('/posts/:postId/comments/:commentId/reaction', reactToConnectComment);
+connectRouter.delete('/posts/:postId/comments/:commentId', deleteComment);
 connectRouter.post('/posts/:postId/actions', actOnConnectPost);
+connectRouter.post('/posts/:postId/wishes/seen', markWishesSeen);
 // Moderation, as the app offers it: report a post or one of its comments, and
 // mute a colleague. `commentId` in the body narrows a report to one comment.
 connectRouter.post('/posts/:postId/report', reportPost);

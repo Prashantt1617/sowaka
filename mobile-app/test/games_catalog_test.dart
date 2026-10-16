@@ -124,7 +124,7 @@ void main() {
     expect(GameThumbnail.of('data:image/png;base64,%%%'), isA<NoThumbnail>());
   });
 
-  test('a leaderboard reaches the page with names and scores, never ids', () {
+  test("a leaderboard reaches the page with names, scores and each player's id", () {
     final board = GameLeaderboard.fromJson({
       'success': true,
       'score': 4200,
@@ -143,10 +143,17 @@ void main() {
     expect(page['score'], 4200);
     expect(page['improved'], isTrue);
     expect(page['entries'], [
-      {'rank': 1, 'name': 'Neha Iyer', 'score': 9100, 'me': false},
-      {'rank': 2, 'name': 'Tanvi Shah', 'score': 4200, 'me': true},
+      {'rank': 1, 'userId': 'u-1', 'name': 'Neha Iyer', 'score': 9100, 'me': false},
+      {'rank': 2, 'userId': 'u-2', 'name': 'Tanvi Shah', 'score': 4200, 'me': true},
     ]);
-    expect(jsonEncode(page), isNot(contains('u-1')));
+    // The id is there so a row can open its player's profile (Sowaka.openProfile);
+    // a server that sends none leaves it out.
+    final noIds = GameLeaderboard.fromJson({
+      'leaderboard': [
+        {'rank': 1, 'playerName': 'Neha Iyer', 'score': 9100},
+      ],
+    }).toPageJson(company: 'Sowaka');
+    expect((noIds['entries'] as List).single, isNot(contains('userId')));
 
     final empty = GameLeaderboard.fromJson({'leaderboard': [], 'me': null});
     expect(empty.toPageJson(company: 'Sowaka')['me'], isNull);

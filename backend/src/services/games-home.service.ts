@@ -547,7 +547,8 @@ async function playedGamesFor(viewer: User, games: PublicGame[], allMine: ScoreR
 
 export interface PlayingNow {
   count: number;
-  people: { name: string; initials: string }[];
+  /** The first few, each with their userId so the page can open their profile. */
+  people: { userId: string; name: string; initials: string }[];
 }
 
 /**
@@ -595,7 +596,11 @@ async function playingNowFor(
   const colleagues = roster.filter((person) => active.has(person.userId));
   return {
     count: colleagues.length,
-    people: colleagues.slice(0, PLAYING_FACES).map((person) => ({ name: person.name, initials: initialsOf(person.name) })),
+    people: colleagues.slice(0, PLAYING_FACES).map((person) => ({
+      userId: person.userId,
+      name: person.name,
+      initials: initialsOf(person.name),
+    })),
   };
 }
 
