@@ -91,7 +91,7 @@ const icoQr='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#FF
 function howItWorks(){ const s=S_(), n=s||st&&st.next, c=(n&&n.rounds&&n.rounds[0])||{}, lk=Math.round(((s&&cfg(0).lockMs)||DEFAULT_LOCK_MS)/1000);
   return '<div class="box steps"><b>How it works</b>'+
     '<span>1. You get a word. Some colleagues’ words share a secret theme with it.</span>'+
-    '<span>2. Check their code. Same squad: you’re linked. Wrong: both wait '+lk+' s.</span>'+
+    '<span>2. Scan their code. Same squad: you’re linked. Wrong: both wait '+lk+' s.</span>'+
     '<span>3. Link your whole squad before '+(c.huntMs?fmt(c.huntMs):'the clock')+' runs out.</span></div>'; }
 function foot(){ if(!WEB)return ''; const me=st&&st.me;
   return '<div class="foot">'+(me&&me.name?'<span>Playing as '+esc(me.name)+'</span><span aria-hidden="true">·</span>':'')+'<button type="button" class="link" style="padding:0;min-height:0" data-act="signout">Sign out</button></div>'; }
@@ -123,9 +123,12 @@ function noticeBox(){ const r=R_(); const n=r&&r.notice; if(!n||!n.kind)return '
   else return '';
   return '<div class="box warn" role="note"><b>'+title+'</b><span class="s">'+body+'</span><button type="button" class="x" data-act="notice" data-key="'+esc(key)+'" aria-label="Dismiss">×</button></div>'; }
 
+/* Codes are scanned, never typed: your code is the QR, for a colleague to scan. */
 function codeCard(){ const p=P_()||{};
   if(p.away)return '<div class="code off"><small>YOUR CODE</small>Away</div>';
-  if(!p.code)return '<div class="code off"><small>YOUR CODE</small>—</div>';
+  if(!p.code&&!p.qr)return '<div class="code off"><small>YOUR CODE</small>—</div>';
+  if(p.qr&&typeof window.qrcode==='function')return '<div class="code qrcode"><small>YOUR CODE · LET A COLLEAGUE SCAN IT</small>'+
+    '<canvas class="qr sm" data-qr="'+esc(p.qr)+'" role="img" aria-label="Your QR code"></canvas></div>';
   const fresh=ui.lastCode&&ui.lastCode!==p.code; ui.lastCode=p.code;
   return '<div class="code'+(fresh?' fresh':'')+'" aria-label="Your code '+esc(String(p.code).split('').join(' '))+'"><small>YOUR CODE</small>'+
     String(p.code).split('').map((d,i)=>'<span class="d" style="animation-delay:'+(i*40)+'ms">'+esc(d)+'</span>').join('')+
@@ -242,8 +245,8 @@ function checkButtons(){ const ask=openAsk(), asking=openAsking(), p=P_()||{};
     '<button type="button" class="btn no" disabled>Check again in '+T(p.lockedUntil)+'</button>';
   if(asking)return '<button type="button" class="btn no" disabled>Waiting for '+esc(first(asking.toName))+'…</button>';
   if(ask)return '<button type="button" class="btn no" disabled>Answer '+esc(first(ask.fromName))+' first</button>';
-  if(canScan())return '<div class="btns">'+btn('Type a code','keypad')+btn('Scan a code','scan','ghost')+'</div>';
-  return btn('Enter a colleague’s code','keypad'); }
+  if(canScan())return btn('Scan a colleague’s code','scan');
+  return '<div class="box"><b>Scan on your phone</b><span class="s">Checking a colleague means scanning their code: open Secret Squad on a phone with a camera.</span></div>'; }
 
 function vHunt(){ const p=P_()||{};
   return {key:'hunt',html:huntBar()+noticeBox()+
@@ -265,14 +268,13 @@ function vKeypad(){ const s=S_(), ask=openAsk(), asking=openAsking();
 function vScan(){ const s=S_(), p=P_()||{};
   return {key:'scan',html:bar(String(p.word||''),WEB?'<span class="where">Browser</span>':clock(s.phaseEndsAt,true))+
     (p.qr?'<canvas class="qr sm" data-qr="'+esc(p.qr)+'" role="img" aria-label="Your QR code"></canvas>':'')+
-    (p.code?'<div class="rot">or tell them your code: <b class="num">'+esc(String(p.code).split('').join(' '))+'</b> · new code in '+T(p.codeExpiresAt)+'</div>':'')+
     '<div class="cam'+(ui.camFailed?' fail':'')+'" id="cam">'+(ui.camFailed?'':'<video id="vid" playsinline muted autoplay></video>')+
-      '<span id="camhint" aria-live="polite">'+esc(ui.camFailed?'The camera isn’t available here. Type the code instead.':(ui.scanHint||'Point at a colleague’s code'))+'</span></div>'+
-    btn('Type a code instead','keypad','ghost')}; }
+      '<span id="camhint" aria-live="polite">'+esc(ui.camFailed?'The camera isn’t available here. Open Secret Squad on a phone to scan.':(ui.scanHint||'Point at a colleague’s code'))+'</span></div>'+
+    btn('Back to my code','back','ghost')}; }
 
 function vQr(){ const s=S_(), p=P_()||{};
   return {key:'qr',html:bar(String(p.word||''),clock(s.phaseEndsAt,true))+'<h1 class="t center" style="font-size:24px;margin-top:6px" tabindex="-1">Your QR code</h1>'+
-    '<p class="s center">Let a colleague scan it, or read them the code.</p>'+
+    '<p class="s center">Let a colleague scan it.</p>'+
     (p.qr?'<canvas class="qr" data-qr="'+esc(p.qr)+'" role="img" aria-label="Your QR code"></canvas>':'')+codeCard().replace(/<button[^]*?<\/button>/,'')+rotLine()+'<div class="grow"></div>'+btn('Done','back','ghost')}; }
 
 function pendingResult(){ const r=R_(); const x=r&&r.result; if(!x||!x.id||ui.seenResult[x.id])return null; if(x.kind!=='match'&&x.kind!=='miss')return null;
@@ -523,8 +525,8 @@ document.addEventListener('click',e=>{
     case 'intro': ui.intro[roundKey()]=1; haptic('light'); render(); break;
     case 'keypad': ui.mode='keypad'; ui.digits=''; render(); break;
     case 'scan': if(canNativeScan()){ let p; try{ p=window.Sowaka.scanQr(); }catch(err){ p=Promise.reject(err); }
-        Promise.resolve(p).then(text=>{ if(text)sendCheck({qr:String(text)}); }).catch(()=>toast('Scanning didn’t work. Type the code instead.')); }
-      else if(canCamera()){ ui.mode='scan'; ui.scanHint=''; render(); } else { ui.mode='keypad'; render(); } break;
+        Promise.resolve(p).then(text=>{ if(text)sendCheck({qr:String(text)}); }).catch(()=>toast('Scanning didn’t work. Try again.')); }
+      else if(canCamera()){ ui.mode='scan'; ui.scanHint=''; render(); } else toast('Open Secret Squad on a phone to scan.'); break;
     case 'qr': ui.mode='qr'; render(); break;
     case 'back': ui.mode='main'; ui.digits=''; render(); break;
     case 'key': key(b.getAttribute('data-k')); break;
