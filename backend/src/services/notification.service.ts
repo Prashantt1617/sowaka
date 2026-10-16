@@ -131,6 +131,12 @@ export interface NotificationInput {
    * rows (support staff), which go to a mailbox and nowhere else.
    */
   inbox?: boolean;
+  /**
+   * Whether this row replaces the person's earlier rows of the same scenario
+   * about the same post: a grouped "Asha and 20 others liked your post"
+   * already says what the earlier ones did, so only the latest is kept.
+   */
+  latestOnly?: boolean;
 }
 
 /**
@@ -161,7 +167,14 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   if (!recipients.length) return;
   const now = new Date();
   // `email`, `push` and `inbox` are how it is delivered, not part of the stored record.
-  const { email, push, inbox, ...record } = input;
+  const { email, push, inbox, latestOnly, ...record } = input;
+  if (inbox !== false && latestOnly && record.data?.postId) {
+    await notifications().deleteMany({
+      userId: { $in: recipients.map((user) => user.userId) },
+      scenario: record.scenario,
+      'data.postId': record.data.postId,
+    });
+  }
   if (inbox !== false) {
     await notifications().insertMany(recipients.map((user) => ({ id: randomUUID(), userId: user.userId,
       org: user.org ?? user.email.split('@').at(1) ?? 'default', ...record, pushed: push !== false, createdAt: now })));

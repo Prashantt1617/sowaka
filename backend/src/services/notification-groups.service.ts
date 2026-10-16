@@ -30,6 +30,11 @@ interface GroupDoc {
   data: Record<string, string>;
   /** People gathered since the last push, oldest first, each once. */
   actors: string[];
+  /**
+   * Everyone so far, oldest first, each once: the latest row replaces the
+   * earlier ones for the post, so it counts them all.
+   */
+  everyone?: string[];
   lastPushAt?: Date;
   updatedAt: Date;
 }
@@ -72,8 +77,9 @@ async function claimPush(key: string, now: Date): Promise<GroupDoc | null> {
 }
 
 async function send(doc: GroupDoc): Promise<void> {
-  const copy = groupedCopy(doc.kind, doc.actors);
-  await notifyUsers([doc.recipientUserId], { scenario: doc.kind, ...copy, data: doc.data });
+  const copy = groupedCopy(doc.kind, doc.everyone?.length ? doc.everyone : doc.actors);
+  // The newest group's row says it all: it replaces the earlier ones for this post.
+  await notifyUsers([doc.recipientUserId], { scenario: doc.kind, ...copy, data: doc.data, latestOnly: true });
 }
 
 /** One event: pushed now when the post has been quiet for three hours, else gathered. */
@@ -94,15 +100,15 @@ export async function notifyGrouped(input: {
     {
       $setOnInsert: { key, recipientUserId: input.recipientUserId, kind: input.kind, entityId: input.entityId },
       $set: { data: input.data, updatedAt: now },
-      $pull: { actors: name },
+      $pull: { actors: name, everyone: name },
     },
     { upsert: true },
   ).catch((error) => {
     // Two first events at once: the unique key lets one insert; the other updates.
     if ((error as { code?: number }).code !== 11000) throw error;
-    return groups().updateOne({ key }, { $set: { data: input.data, updatedAt: now }, $pull: { actors: name } });
+    return groups().updateOne({ key }, { $set: { data: input.data, updatedAt: now }, $pull: { actors: name, everyone: name } });
   });
-  await groups().updateOne({ key }, { $push: { actors: name } });
+  await groups().updateOne({ key }, { $push: { actors: name, everyone: name } });
   const claimed = await claimPush(key, now);
   if (claimed) await send(claimed);
 }

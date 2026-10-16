@@ -116,6 +116,9 @@ function pick(rules: Array<Copy | null | undefined | false>): Copy | null {
  * `notifyUsers` also applies the NOTIFY_ORGS gate, so a suppressed org gets
  * nothing here either.
  */
+/** The inbox-only rows where each new one supersedes the earlier ones about the same post. */
+const LATEST_ONLY = new Set(['post_liked_inbox', 'post_commented_inbox', 'poll_voted_inbox']);
+
 async function send(
   recipients: Array<{ user: User; copy: Copy | null }>,
   scenario: string,
@@ -133,6 +136,8 @@ async function send(
         body: r.copy!.body,
         data,
         push: r.copy!.push !== false,
+        // Inbox-only likes, comments and votes on a post: the latest row stands for the rest.
+        latestOnly: LATEST_ONLY.has(scenario),
       }),
     ),
   );
