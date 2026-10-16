@@ -87,6 +87,9 @@ double _actionBarTop(WidgetTester tester) => tester
 class _FakeVideoPlayer extends VideoPlayerPlatform {
   final _events = <int, StreamController<VideoEvent>>{};
   final volumes = <double>[];
+
+  /// Each play and pause, in order: (player, playing).
+  final plays = <(int, bool)>[];
   int _next = 0;
 
   @override
@@ -131,10 +134,10 @@ class _FakeVideoPlayer extends VideoPlayerPlatform {
       volumes.add(volume);
 
   @override
-  Future<void> play(int playerId) async {}
+  Future<void> play(int playerId) async => plays.add((playerId, true));
 
   @override
-  Future<void> pause(int playerId) async {}
+  Future<void> pause(int playerId) async => plays.add((playerId, false));
 
   @override
   Future<void> setPlaybackSpeed(int playerId, double speed) async {}
@@ -219,6 +222,7 @@ void main() {
     realPlatform = VideoPlayerPlatform.instance;
     videos = _FakeVideoPlayer();
     VideoPlayerPlatform.instance = videos;
+    FeedVideo.resetSound();
   });
 
   tearDown(() => VideoPlayerPlatform.instance = realPlatform);
@@ -331,10 +335,14 @@ void main() {
     expect(find.text('Public'), findsOneWidget);
     expect(find.text('LEADERSHIP'), findsOneWidget);
 
-    // The sound toggle in the corner: sound on to start, muted on a tap.
+    // It plays by itself, muted, with no play button: the sound toggle in
+    // the corner turns the sound on.
+    expect(videos.plays, contains((0, true)));
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    expect(videos.volumes.last, 0);
     final sound = find.byKey(const ValueKey('feed-video-sound'));
     expect(sound, findsOneWidget);
-    expect(_labelled('Mute'), findsOneWidget);
+    expect(_labelled('Sound on'), findsOneWidget);
     final card = tester.getRect(find.byType(FeedVideo));
     // Portrait stays portrait: 9:16 across the card.
     expect(card.height / card.width, closeTo(16 / 9, 0.01));
@@ -347,8 +355,26 @@ void main() {
     await tester.tap(sound);
     // A single tap lands once the post's double-tap-to-like window passes.
     await tester.pump(const Duration(milliseconds: 400));
-    expect(videos.volumes.last, 0);
-    expect(_labelled('Sound on'), findsOneWidget);
+    expect(videos.volumes.last, 1);
+    expect(_labelled('Mute'), findsOneWidget);
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('a tap on the video turns the sound on; holding pauses it', (
+    tester,
+  ) async {
+    final (_, bloc) = await _pumpFeed(tester, _videoPost('7'));
+    final spot = tester.getCenter(find.byType(FeedVideo));
+    await tester.tapAt(spot);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(videos.volumes.last, 1);
+
+    final hold = await tester.startGesture(spot);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(videos.plays.last, (0, false));
+    await hold.up();
+    await tester.pump();
+    expect(videos.plays.last, (0, true));
     await _tearDown(tester, bloc);
   });
 
@@ -430,7 +456,8 @@ void main() {
   testWidgets('a double-tap on the video likes the post', (tester) async {
     final (requests, bloc) = await _pumpFeed(tester, _videoPost('8'));
     // On the picture, clear of the play button in the middle.
-    final spot = tester.getCenter(find.byType(FeedVideo)) + const Offset(0, 160);
+    final spot =
+        tester.getCenter(find.byType(FeedVideo)) + const Offset(0, 160);
     await tester.tapAt(spot);
     await tester.pump(const Duration(milliseconds: 50));
     await tester.tapAt(spot);

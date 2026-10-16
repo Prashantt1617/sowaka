@@ -45,7 +45,8 @@ class InitialGlyph extends NotificationGlyph {
   final String name;
 }
 
-/// The colours of each kind, from the colour boards.
+/// The colours of each kind, measured off the colour boards (3865:83061
+/// alerts, games, 3865:83067 priority).
 class NotificationPalette {
   const NotificationPalette({
     required this.background,
@@ -71,28 +72,28 @@ class NotificationPalette {
   final Color disc;
 
   /// The orange dot on alerts and on every white row.
-  static const unreadOrange = Color(0xFFE8742C);
+  static const unreadOrange = Color(0xFFDB6C2F);
 
   static const alert = NotificationPalette(
-    background: Color(0xFFFFF8EE),
-    border: Color(0xFFF9DDBA),
-    label: Color(0xFFB45309),
+    background: Color(0xFFFEF7ED),
+    border: Color(0xFFF3E3CC),
+    label: Color(0xFF8F4420),
     dot: unreadOrange,
-    disc: Color(0xFFFCEDDA),
+    disc: Color(0xFFF9E8D2),
   );
   static const game = NotificationPalette(
-    background: Color(0xFFE6F6F3),
-    border: Color(0xFFBFE5DC),
-    label: Color(0xFF007F6E),
-    dot: Color(0xFF007F6E),
-    disc: Color(0xFFCBEDE6),
+    background: Color(0xFFE9F6F3),
+    border: Color(0xFFD3EBE6),
+    label: Color(0xFF3E897A),
+    dot: Color(0xFF3E897A),
+    disc: Color(0xFFD3EBE6),
   );
   static const priority = NotificationPalette(
-    background: Color(0xFFF6F3FE),
-    border: Color(0xFFDDD3FA),
-    label: Color(0xFF7040D0),
-    dot: Color(0xFF7040D0),
-    disc: Color(0xFFE9E3FD),
+    background: Color(0xFFF0EDFB),
+    border: Color(0xFFE2DCF6),
+    label: Color(0xFF4B3C9F),
+    dot: Color(0xFF4432A9),
+    disc: Color(0xFFDED9F1),
   );
 
   /// White rows: no fill, the orange unread dot.
@@ -144,10 +145,10 @@ class NotificationLook {
   static const _purpleDisc = Color(0xFFF0ECFA);
   static const _greenInk = Color(0xFF2E7D4A);
   static const _greenDisc = Color(0xFFE8F3EB);
-  static const _alertInk = Color(0xFFB45309);
-  static const _priorityInk = Color(0xFF7040D0);
-  static const _gameInk = Color(0xFF007F6E);
-  static const _gameDisc = Color(0xFFCBEDE6);
+  static const _alertInk = Color(0xFF8F4420);
+  static const _priorityInk = Color(0xFF4B3C9F);
+  static const _gameInk = Color(0xFF3E897A);
+  static const _gameDisc = Color(0xFFD3EBE6);
 
   static const alarmClock = 'assets/icons/attendance_review_clock.png';
   static const gameDie = 'assets/icons/notification_game_die.svg';
