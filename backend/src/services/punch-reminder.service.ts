@@ -21,6 +21,7 @@ const CLAIM_KEEP_SECONDS = 3 * 24 * 60 * 60;
 const SCENARIO = 'punch_in_reminder';
 
 const APP_PUNCH_FORMATS = new Set(['Geotag (powered by Sowaka)', 'In-app punch in']);
+const BIOMETRIC = 'Biometric';
 
 type Person = Pick<User, 'userId' | 'employeeId' | 'org' | 'state' | 'location' | 'branch'>;
 
@@ -111,7 +112,8 @@ async function releaseReminder(person: Person, workDate: string): Promise<void> 
 
 /**
  * Reminds everyone who has not punched in an hour after their own shift
- * started: once a day, on a working day, only people who punch in the app, and
+ * started: once a day, on a working day, everyone who punches (in the app, or
+ * at the biometric machine once that day's machine punches are arriving), and
  * never someone on approved leave, on a holiday or week-off, or marked by HR. Runs every few minutes, since shifts start at different
  * times; each person's own shift decides when they are due.
  */
@@ -166,10 +168,10 @@ async function remindFor(
   const due = people.filter((person) => {
     const policy = policies.get(person.userId);
     if (!policy) return false;
-    // Only people who punch in the app. Auto punch marks them present without
-    // a punch; a biometric punch reaches us late through the SQL sync, and the
-    // app could not take it anyway.
-    if (!APP_PUNCH_FORMATS.has(policy.correction?.punchFormat ?? '')) return false;
+    // Everyone who punches: in the app, or at the office's biometric machine.
+    // Auto Punch marks people present without a punch: nothing to remind.
+    const format = policy.correction?.punchFormat ?? '';
+    if (!APP_PUNCH_FORMATS.has(format) && format !== BIOMETRIC) return false;
     if (isWeekOffDay(day, policy.weeklyOff)) return false;
     const start = minutesOf(policy.startTime ?? '');
     if (start === null) return false;
@@ -177,6 +179,26 @@ async function remindFor(
     return since >= 0 && since < DUE_FOR_MINUTES;
   });
   if (due.length === 0) return 0;
+
+  // A biometric punch reaches us only through the SQL import. Until that
+  // day's machine punches have started arriving for a company, its biometric
+  // people cannot be told they have not punched: the import may be late or
+  // down, and they may well have punched.
+  const biometric = due.filter((person) => policies.get(person.userId)?.correction?.punchFormat === BIOMETRIC);
+  if (biometric.length) {
+    const flowing = new Set<string>();
+    for (const org of new Set(biometric.map((person) => person.org ?? ''))) {
+      const employeeIds = biometric.filter((person) => (person.org ?? '') === org && person.employeeId).map((person) => person.employeeId!);
+      if (employeeIds.length && (await attendanceRecords().countDocuments({ workDate, source: 'sql_import', employeeId: { $in: employeeIds } }, { limit: 1 })) > 0) {
+        flowing.add(org);
+      }
+    }
+    for (let i = due.length - 1; i >= 0; i--) {
+      const person = due[i];
+      if (policies.get(person.userId)?.correction?.punchFormat === BIOMETRIC && !flowing.has(person.org ?? '')) due.splice(i, 1);
+    }
+    if (due.length === 0) return 0;
+  }
 
   const ids = due.map((person) => person.userId);
   const employeeIds = due.map((person) => person.employeeId).filter((id): id is string => Boolean(id));
@@ -240,11 +262,12 @@ async function remindFor(
     // Taken last, just before the send, so nothing above can strand it.
     if (claims && !(await claimReminder(person, workDate))) continue;
     const policy = policies.get(person.userId);
+    const where = policy?.correction?.punchFormat === BIOMETRIC ? 'Punch in at the biometric machine' : 'Punch in';
     try {
       await deliver([person.userId], {
         scenario: SCENARIO,
         title: 'You haven’t punched in yet',
-        body: `Your shift started at ${policy?.startTime}. Punch in when you’re at work, or apply for leave if you’re off today.`,
+        body: `Your shift started at ${policy?.startTime}. ${where} when you’re at work, or apply for leave if you’re off today.`,
         // No `destination`: every app version, the released one included, takes
         // a request-style notification without one to the Actions tab, where
         // the punch is.
