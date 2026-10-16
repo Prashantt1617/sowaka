@@ -45,6 +45,7 @@ import { pointEvents } from './points-ledger.service';
 import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 import { openInvitesFor } from './scribble-room.service';
+import { liveSquadFor } from './secret-squad.service';
 import { logger } from '../utils/logger';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
@@ -619,7 +620,16 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
   const blockedP = blockedUserIdsFor(viewer.userId);
   const mineP = myScoresFor(viewer);
   const relayP = liveRelayFor(viewer, now).catch(() => null);
-  const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow] = await Promise.all([
+  // An office's Secret Squad, while it is on: a fault there must not take the home down.
+  const squadP = gamesP.then((games) =>
+    games.some((game) => game.key === LIVE_ONLY_GAME)
+      ? liveSquadFor(viewer).catch((error) => {
+        logger.error('Games home Secret Squad failed', { userId: viewer.userId }, error);
+        return null;
+      })
+      : null,
+  );
+  const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad] = await Promise.all([
     rosterP,
     gamesP,
     Promise.all([gamesP, mineP, blockedP]).then(([games, mine, blocked]) =>
@@ -635,6 +645,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     }),
     Promise.all([gamesP, mineP]).then(([games, mine]) => playedGamesFor(viewer, games, mine)),
     Promise.all([rosterP, relayP]).then(([roster, relay]) => playingNowFor(viewer, roster, relay, now)),
+    squadP,
   ]);
   const ranked = rankByPoints(roster);
   const own = ranked.find((entry) => entry.userId === viewer.userId);
@@ -646,13 +657,19 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     banner,
     liveContests,
     liveRelay,
+    liveSquad,
     challenges,
     invites,
     yourGames,
-    games,
+    // Secret Squad is played only when an office's game is on: it shows under
+    // Live then (liveSquad), never in the list of games to play any time.
+    games: games.map((game) => (game.key === LIVE_ONLY_GAME ? { ...game, liveOnly: true } : game)),
     playingNow,
   };
 }
+
+/** The game the tab lists only while it is live. */
+const LIVE_ONLY_GAME = 'secret-squad';
 
 // ---------------------------------------------------------------- leaderboard
 

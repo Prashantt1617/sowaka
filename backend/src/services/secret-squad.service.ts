@@ -190,11 +190,35 @@ function stateOf(session: SquadSession | null, viewer: Pick<SquadViewer, 'userId
   };
 }
 
+/**
+ * An office's game while its lobby is open or it is being played, for the
+ * Games tab's Live section; null before the lobby opens and once it is over.
+ */
+export async function liveSquadFor(user: Pick<User, 'userId' | 'org' | 'location'>) {
+  if (!user.org) return null;
+  const office = await officeOf(user);
+  if (!office) return null;
+  const session = await liveSessionFor(user.org, office);
+  if (!session || session.status === 'over' || session.status === 'cancelled') return null;
+  return {
+    sessionId: session.id,
+    office: session.office,
+    phase: session.status === 'lobby' ? ('lobby' as const) : ('live' as const),
+    startsAt: session.startsAt,
+    players: session.players.filter((player) => !player.left).length,
+    round: session.roundIndex + 1,
+    rounds: session.rounds.length,
+  };
+}
+
 /** The whole `squad:state` for one person, read fresh. */
 export async function stateFor(viewer: SquadViewer) {
   if (!viewer.office) return stateOf(null, viewer, '', null);
-  const session = await liveSessionFor(viewer.org, viewer.office);
-  return stateOf(session, viewer, session?.office ?? viewer.office, session ? null : await nextFor(viewer.org, viewer.office));
+  const held = await liveSessionFor(viewer.org, viewer.office);
+  const next = held && held.status !== 'over' ? null : await nextFor(viewer.org, viewer.office);
+  // A finished game's results give way to the next one on the schedule.
+  const session = held && held.status === 'over' && next ? null : held;
+  return stateOf(session, viewer, session?.office ?? viewer.office, session ? null : next);
 }
 
 // -------------------------------------------------------------------- push
