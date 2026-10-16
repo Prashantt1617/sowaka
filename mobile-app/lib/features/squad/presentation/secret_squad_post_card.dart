@@ -291,7 +291,16 @@ class _SecretSquadPostCardState extends State<SecretSquadPostCard> {
           busy: _opening,
           fontSize: 21,
           padding: 14,
-          onTap: _play,
+          // Everyone's places, from the standings on the card; the game
+          // itself when the card has none (a game from before them).
+          onTap: results != null && results.isNotEmpty
+              ? () => showSquadLeaderboard(
+                  context,
+                  results: results,
+                  viewerId: widget.session.user.id,
+                  office: squad.office,
+                )
+              : _play,
         ),
       ],
     );

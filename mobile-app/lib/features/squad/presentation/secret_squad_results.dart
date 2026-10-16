@@ -932,3 +932,221 @@ class _ConfettiPainter extends CustomPainter {
   bool shouldRepaint(covariant _ConfettiPainter oldDelegate) =>
       oldDelegate.time != time;
 }
+
+// ---------------------------------------------------------- full leaderboard
+
+/// View Full Leaderboard: everyone who played, best first, in a sheet in the
+/// card's colours. The podium's three keep their colours; your own row is
+/// the yellow "You" row, as on the card.
+Future<void> showSquadLeaderboard(
+  BuildContext context, {
+  required List<SquadStanding> results,
+  required String viewerId,
+  String office = '',
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) =>
+        _LeaderboardSheet(results: results, viewerId: viewerId, office: office),
+  );
+}
+
+class _LeaderboardSheet extends StatelessWidget {
+  const _LeaderboardSheet({
+    required this.results,
+    required this.viewerId,
+    required this.office,
+  });
+
+  final List<SquadStanding> results;
+  final String viewerId;
+  final String office;
+
+  /// The podium's colours for #1, #2 and #3, as the card's bars.
+  static const _medals = [_gold, Color(0xFF5B4BD6), Color(0xFF2F80ED)];
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    final players = results.length;
+    return Container(
+      constraints: BoxConstraints(maxHeight: height * 0.88),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF4F5F9),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The card's purple, with the title.
+          Container(
+            padding: const EdgeInsets.fromLTRB(22, 12, 12, 18),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment(-0.5, -1),
+                end: Alignment(0.5, 1),
+                colors: [Color(0xFF5B4BD6), Color(0xFF3A2E9E), Color(0xFF1B1F55)],
+                stops: [0, 0.45, 1],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'FULL LEADERBOARD',
+                            style: SquadStyle.lexend(
+                              12,
+                              FontWeight.w600,
+                              const Color(0xFFCFC8FF),
+                            ).copyWith(letterSpacing: 12 * 0.14),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Secret Squad',
+                            style: SquadStyle.lexend(
+                              26,
+                              FontWeight.w700,
+                              Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if (office.isNotEmpty) office,
+                              players == 1 ? '1 player' : '$players players',
+                            ].join(' · '),
+                            style: SquadStyle.lexend(
+                              14,
+                              FontWeight.w400,
+                              const Color(0xFFE4E0FF),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + bottom),
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final row = results[i];
+                final you = row.userId == viewerId;
+                final medal = row.rank >= 1 && row.rank <= 3
+                    ? _medals[row.rank - 1]
+                    : null;
+                return Container(
+                  key: ValueKey('squad-board-${row.userId}'),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: you ? const Color(0xFFFFF3C4) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: you ? _gold : const Color(0xFFE6E2FF),
+                      width: you ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: medal == null
+                            ? null
+                            : BoxDecoration(
+                                color: medal,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                        child: Text(
+                          '#${row.rank}',
+                          style: SquadStyle.lexend(
+                            12.5,
+                            FontWeight.w700,
+                            medal == null || medal == _gold
+                                ? _navy
+                                : Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _Face(
+                        initials: row.initials,
+                        photoUrl: row.photoUrl,
+                        size: 34,
+                        fill: you ? _youFill : _faceFills[i % _faceFills.length],
+                        ink: you ? Colors.white : _navy,
+                        initialsSize: 12,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          you ? 'You' : row.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SquadStyle.lexend(
+                            15,
+                            you ? FontWeight.w700 : FontWeight.w500,
+                            _navy,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${row.points}',
+                        style: SquadStyle.lexend(15, FontWeight.w700, _navy)
+                            .copyWith(
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                      ),
+                      Text(
+                        ' pts',
+                        style: SquadStyle.lexend(
+                          12,
+                          FontWeight.w400,
+                          const Color(0xFF5B6075),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
