@@ -33,17 +33,21 @@ String _celebrationGroupOf(ConnectPost post) =>
 
 /// The feed's cards in order: one post each, except a day's celebration
 /// posts, drawn as one row where the first of them sits. The rest of the day
-/// joins it from wherever it is in the list — even from a later page.
+/// joins it from wherever it is in the list — even from a later page. Only
+/// today's and yesterday's celebrations show; older days drop off the feed.
 List<List<ConnectPost>> _feedCards(List<ConnectPost> posts) {
+  final recent = {_todayInIndia(), _todayInIndia(daysAgo: 1)};
+  bool stale(String key) => key.isNotEmpty && !recent.contains(key.split(':').last);
   final clubs = <String, List<ConnectPost>>{};
   for (final post in posts) {
     final key = _celebrationGroupOf(post);
-    if (key.isNotEmpty) (clubs[key] ??= []).add(post);
+    if (key.isNotEmpty && !stale(key)) (clubs[key] ??= []).add(post);
   }
   final cards = <List<ConnectPost>>[];
   final placed = <String>{};
   for (final post in posts) {
     final key = _celebrationGroupOf(post);
+    if (stale(key)) continue;
     if (key.isEmpty) {
       cards.add([post]);
     } else if (placed.add(key)) {
@@ -154,23 +158,20 @@ TextStyle _celebrationText(
 class _CelebrationColors {
   const _CelebrationColors._();
 
-  static const birthdayCard = Color(0xFFEFEAFE);
   static const anniversaryCard = Color(0xFFFFF4D6);
-
-  /// accents/purple, accents/orange and accents/yellow.
-  static const purple = Color(0xFFCB30E0);
   static const orange = Color(0xFFFF8F0E);
 
-  /// The celebrant's own birthday card (4010:63960): lavender, deep purple.
+  /// Birthdays, the celebrant's own card (4010:63960) and the small ones
+  /// (3972:63810) alike: lavender, deep purple.
   static const celebrantBirthdayCard = Color(0xFFE2DBFF);
   static const celebrantPurple = Color(0xFF3B0764);
 
   /// The years badge on the small anniversary card (3972:63814).
   static const yearsDisc = Color(0xFFFFFCEE);
   static const yearsDiscBorder = Color(0xFFEBEBEB);
-  static const yellow = Color(0xFFFFCC00);
 
-  static const tileBorder = Color(0xFFD2CEFF);
+  /// The rim of the small faces on the cards (3972:63810).
+  static const faceRing = Color(0xFFEFEAFE);
   static const main = Color(0xFF222222);
   static const tertiary = Color(0xFF717171);
   static const night = Color(0xFF160D2C);
@@ -628,9 +629,7 @@ class _CelebrationsSection extends StatelessWidget {
   String get _title {
     final group = _celebrationGroupOf(posts.first);
     if (group.endsWith(':${_todayInIndia()}')) return 'Celebrations of the day';
-    if (group.endsWith(':${_todayInIndia(daysAgo: 1)}')) {
-      return "Yesterday's celebrations";
-    }
+    // Yesterday's row (the only other day the feed keeps) goes by its date.
     final day = DateTime.tryParse(group.split(':').last);
     return day == null
         ? 'Celebrations'
@@ -702,12 +701,14 @@ class _CelebrationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final birthday = post.type == ConnectPostType.birthday;
+    // Figma 3972:63810 (birthday) and 3972:63814 (anniversary): lavender with
+    // deep purple, cream with orange, as the celebrant's own cards.
     final background = birthday
-        ? _CelebrationColors.birthdayCard
+        ? _CelebrationColors.celebrantBirthdayCard
         : _CelebrationColors.anniversaryCard;
     final accent = birthday
-        ? _CelebrationColors.purple
-        : _CelebrationColors.yellow;
+        ? _CelebrationColors.celebrantPurple
+        : _CelebrationColors.orange;
     final wished = _hasWished(post, viewerUserId);
     final radius = BorderRadius.circular(20);
     return ConstrainedBox(
@@ -726,10 +727,10 @@ class _CelebrationTile extends StatelessWidget {
             ),
           ],
         ),
-        // Figma draws the 1.11 stroke inside the card, over its padding.
+        // A hairline in the card's own colour, inside the card.
         foregroundDecoration: BoxDecoration(
           borderRadius: radius,
-          border: Border.all(color: _CelebrationColors.tileBorder, width: 1.11),
+          border: Border.all(color: accent, width: 0.4),
         ),
         child: Material(
           type: MaterialType.transparency,
@@ -940,7 +941,7 @@ class _CelebrationTile extends StatelessWidget {
                   _WisherFaces(
                     wishers: wishers,
                     size: 20,
-                    ring: background,
+                    ring: _CelebrationColors.faceRing,
                     ringWidth: 1,
                     moreColor: accent,
                     moreText: Colors.white,
@@ -988,7 +989,7 @@ class _CelebrationTile extends StatelessWidget {
             _WisherFaces(
               wishers: others,
               size: 20,
-              ring: background,
+              ring: _CelebrationColors.faceRing,
               ringWidth: 1,
               moreColor: accent,
               moreText: Colors.white,
