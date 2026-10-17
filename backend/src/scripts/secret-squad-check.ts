@@ -18,9 +18,11 @@ import { hashSessionToken } from '../services/auth.service';
 import { mintTicket } from '../services/scribble-ticket.service';
 import {
   SQUAD,
-  answerCheck,
+  SquadRuleError,
   advance,
+  bonusFor,
   codeFor,
+  codeWindowOf,
   dealRound,
   holderOf,
   joinSession,
@@ -28,16 +30,19 @@ import {
   markOffline,
   markOnline,
   newSession,
-  planNextRound,
-  squadSizes,
-  startCheck,
+  qrFor,
+  scan,
   sessionViewFor,
+  squadSizes,
+  standingsOf,
+  timeBonusAt,
 } from '../services/secret-squad-engine';
-import { chooseThemes, configureSquad, openDueSessions, roundConfig, squadSchedules, tickSquad } from '../services/secret-squad.service';
+import { configureSquad, initialsOf, openDueSessions, payPoints, roundConfig, squadPayouts, squadPointsFor, squadSchedules, stateFor, tickSquad } from '../services/secret-squad.service';
 import { initSquadRealtime, closeSquadRealtime } from '../services/secret-squad-realtime.service';
 import { readSession, resetSquadMemory } from '../services/secret-squad-store';
-import type { SquadPack } from '../services/secret-squad-packs';
+import { SQUAD_BANK, categoryNamed, planNamed } from '../services/secret-squad-packs';
 import type { NotificationInput } from '../services/notification.service';
+import { pointEvents } from '../services/points-ledger.service';
 
 if (!/scratch|check/i.test(env.mongoDbName)) {
   console.error(`Refusing to run against database "${env.mongoDbName}". Use MONGODB_DB=secret_squad_scratch.`);
@@ -45,8 +50,10 @@ if (!/scratch|check/i.test(env.mongoDbName)) {
 }
 
 let failures = 0;
+let passes = 0;
 const check = (label: string, passed: boolean, detail = '') => {
   if (!passed) failures += 1;
+  else passes += 1;
   console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${label}${detail && !passed ? ` — ${detail}` : ''}`);
 };
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,179 +67,289 @@ async function waitFor(label: string, predicate: () => boolean | Promise<boolean
   return false;
 }
 
-/** 40 themes of 26 words in 10 packs, so any round size can be dealt. */
-const PACKS: SquadPack[] = Array.from({ length: 10 }, (_, p) => ({
-  id: `pack-${p + 1}`,
-  name: `Pack ${p + 1}`,
-  difficulty: 'medium' as const,
-  themes: Array.from({ length: 4 }, (_, t) => ({
-    name: `Theme ${p + 1}.${t + 1}`,
-    words: Array.from({ length: 26 }, (_, w) => `W${p + 1}${String.fromCharCode(65 + t)}${w + 1}`),
-    traps: '',
-  })),
-}));
-
 let seed = 7;
 const die = () => {
   seed = (seed * 16807) % 2147483647;
   return seed / 2147483647;
 };
+const seeded = (start: number) => {
+  let x = start;
+  return () => {
+    x = (x * 16807) % 2147483647;
+    return x / 2147483647;
+  };
+};
 
 // ------------------------------------------------------------- the rules
 
-function unitChecks() {
-  console.log('\nsquad sizes');
-  const same = (a: number[], b: number[]) => JSON.stringify(a) === JSON.stringify(b);
-  check('20 players, squads of 5 → 5,5,5,5', same(squadSizes(20, 5), [5, 5, 5, 5]));
-  check('7 players, squads of 5 → 4,3', same(squadSizes(7, 5), [4, 3]));
-  check('4 players, squads of 5 → 2,2', same(squadSizes(4, 5), [2, 2]));
-  const big = squadSizes(155, 20);
-  check('155 players, squads of 20 → 8 squads of 19–20', big.length === 8 && big.reduce((a, b) => a + b, 0) === 155 && Math.max(...big) - Math.min(...big) <= 1, String(big));
-  const pairs = squadSizes(155, 2);
-  check('155 players in pairs → 77 squads, one of 3', pairs.length === 77 && pairs.filter((n) => n === 3).length === 1, String(pairs.length));
-  check('at most N squads when themes run short', squadSizes(155, 2, 40).length === 40);
-
-  console.log('\nthemes');
-  configureSquad({ packs: () => PACKS, random: die });
-  const themes = chooseThemes(6, 20, [], new Map(), die);
-  check('6 themes picked from whole packs', themes.length === 6 && new Set(themes.map((t) => t.packId)).size === 2);
-  const fresh = chooseThemes(4, 20, ['pack-1', 'pack-2'], new Map(), die);
-  check('packs already used this session come last', fresh.every((t) => t.packId !== 'pack-1' && t.packId !== 'pack-2'));
-  const recent = chooseThemes(4, 20, [], new Map(PACKS.slice(0, 9).map((p, i) => [p.id, i])), die);
-  check('packs used lately at the company come after unused ones', recent.every((t) => t.packId === 'pack-10'));
-
-  console.log('\ncodes');
-  const t0 = Date.UTC(2026, 9, 16, 10, 0, 0);
-  const s = newSession({ id: 'u1', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0 + 1000, rounds: [roundConfig({ squadSize: 5 })], codeSeed: 'seed', now: t0 });
-  for (let i = 0; i < 250; i += 1) joinSession(s, { userId: `p${i}`, name: `P ${i}`, initials: 'P', department: `D${i % 7}` }, t0);
-  // 40 test themes: 250 players aiming at 5 get 40 squads of 6–7 instead.
-  const sizes = planNextRound(s, t0 + 1000, 40);
-  dealRound(s, t0 + 1000, sizes, chooseThemes(sizes.length, Math.max(...sizes), [], new Map(), die), die);
-  check('250 players, 40 themes → 40 squads of 6–7', s.round!.squads.length === 40 && s.status === 'dealing' && s.round!.squads.every((sq) => sq.members.length >= 6 && sq.members.length <= 7));
+const t0 = Date.UTC(2026, 9, 16, 10, 0, 0);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const planRounds = (name: string) => planNamed(name)!.rounds.map((round) => roundConfig(round));
+const session = (id: string, rounds: ReturnType<typeof roundConfig>[], players: number, prefix = id, department?: (i: number) => string) => {
+  const s = newSession({ id, org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0, rounds, codeSeed: id, now: t0 });
+  for (let i = 0; i < players; i += 1) joinSession(s, { userId: `${prefix}${i}`, name: `${prefix.toUpperCase()} ${i}`, initials: 'P', department: department?.(i) }, t0);
+  return s;
+};
+/** Deals the next round and moves into its hunt; returns when the hunt starts. */
+const hunt = (s: SquadSession, at: number, random = die) => {
+  dealRound(s, at, SQUAD_BANK, random);
   advance(s, s.phaseEndsAt);
-  const at = s.round!.huntStartsAt + 5_000;
-  const codes = s.players.map((p) => codeFor(s, p.userId, at)!.code);
-  check('every code is different', new Set(codes).size === 250);
-  check('a code finds its holder', s.players.every((p, i) => holderOf(s, codes[i], at) === p.userId));
-  check('the previous code still works for one window', holderOf(s, codes[0], at + SQUAD.codeWindowMs) === 'p0');
-  check('a code two windows old does not', holderOf(s, codes[0], at + 2 * SQUAD.codeWindowMs) !== 'p0' || codeFor(s, 'p0', at + 2 * SQUAD.codeWindowMs)!.code === codes[0]);
-  const departments = s.round!.squads.map((sq) => new Set(sq.members.map((id) => s.players.find((p) => p.userId === id)!.department)).size);
-  check('teams spread across squads (7 departments, no two teammates in a squad of ≤7)', departments.every((n, i) => n === Math.min(7, s.round!.squads[i].members.length)), String(departments.slice(0, 8)));
+  return s.round!.huntStartsAt;
+};
+const qrOf = (s: SquadSession, id: string, now: number) => qrFor(s, codeFor(s, id, now)!.code);
+const refusal = (fn: () => unknown): SquadRuleError | null => {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error as SquadRuleError;
+  }
+};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const view = (s: SquadSession, id: string, now: number): any => sessionViewFor(s, id, now);
+const partnersOf = (s: SquadSession) => {
+  const out = new Map<string, string[]>();
+  for (const round of [...s.history, ...(s.round ? [s.round] : [])]) {
+    for (const squad of round.squads) for (const id of squad.members) out.set(id, [...(out.get(id) ?? []), ...squad.members.filter((m) => m !== id)]);
+  }
+  return out;
+};
+const repeatPairs = (s: SquadSession) => {
+  const seen = new Map<string, number>();
+  for (const round of [...s.history, ...(s.round ? [s.round] : [])]) {
+    for (const squad of round.squads) {
+      for (let i = 0; i < squad.members.length; i += 1) {
+        for (let j = i + 1; j < squad.members.length; j += 1) {
+          const key = [squad.members[i], squad.members[j]].sort().join('|');
+          seen.set(key, (seen.get(key) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  return [...seen.values()].filter((n) => n > 1).length;
+};
+/** Plays every round of a session to its clock, no scans. */
+const playOut = (s: SquadSession, random: () => number) => {
+  let at = s.startsAt;
+  while (s.status !== 'over') {
+    hunt(s, at, random);
+    advance(s, s.round!.endsAt);
+    at = s.phaseEndsAt;
+  }
+};
 
-  console.log('\nchecks, locks, away, finishing, points');
-  const q = newSession({ id: 'u2', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0 + 1000, rounds: [roundConfig({ squadSize: 3, huntMs: 600_000, breakMs: 60_000 }), roundConfig({ squadSize: 2, huntMs: 300_000 })], codeSeed: 'q', now: t0 });
-  for (let i = 0; i < 9; i += 1) joinSession(q, { userId: `q${i}`, name: `Q ${i}`, initials: 'Q', department: `D${i}` }, t0);
-  check('advance at the start asks for a deal', advance(q, t0 + 1000).kind === 'deal');
-  const qs = planNextRound(q, t0 + 1000, 999);
-  dealRound(q, t0 + 1000, qs, chooseThemes(qs.length, 3, [], new Map(), die), die);
+function unitChecks() {
+  console.log('\nsquad sizes and bonuses');
+  check('140 players, squads of 10 → 14 × 10', same(squadSizes(140, 10), Array(14).fill(10)));
+  check('43 players, squads of 6 → one 7 and six 6s', same(squadSizes(43, 6), [7, 6, 6, 6, 6, 6, 6]));
+  check('13 players in pairs → five pairs and a trio', same(squadSizes(13, 2), [3, 2, 2, 2, 2, 2]));
+  check('14 players in pairs → 7 pairs', same(squadSizes(14, 2), Array(7).fill(2)));
+  check('7 players, squads of 5 → 4, 3', same(squadSizes(7, 5), [4, 3]));
+  check('146 players, squads of 10 → 15 squads, none over 10 words', squadSizes(146, 10).length === 15 && Math.max(...squadSizes(146, 10)) <= 10);
+  check('squads cap at the categories there are (250 in 5s, 42 categories → 42 squads)', squadSizes(250, 5, 42).length === 42);
+  check('bonus: standard squad +200', bonusFor(5, 5) === 200);
+  check('bonus: a squad of 4 in a round of 5s +300', bonusFor(4, 5) === 300);
+  check('bonus: a trio in a round of pairs +100', bonusFor(3, 2) === 100);
+  check('time bonus: 90 s left → +45 (and 91.9 s → +45)', timeBonusAt({ endsAt: t0 + 90_000 }, t0).timeBonus === 45 && timeBonusAt({ endsAt: t0 + 91_900 }, t0).timeBonus === 45);
+
+  console.log('\ncategories and words from the plan');
+  const k = session('k', planRounds('Kolkata'), 14);
+  hunt(k, t0);
+  const kolkata1 = planNamed('Kolkata')!.rounds[0].categories;
+  check('Kolkata round 1: 7 pairs, the plan\'s 7 categories in list order', same(k.round!.squads.map((sq) => sq.category), kolkata1));
+  check('each squad has its category\'s first words, member i holds word i', k.round!.squads.every((sq) =>
+    same(sq.words, categoryNamed(sq.category)!.words.slice(0, sq.members.length))
+    && sq.members.every((id, i) => k.players.find((p) => p.userId === id)!.word === sq.words[i])));
+  const words = k.round!.squads.flatMap((sq) => sq.words);
+  check('a word is used once per round', new Set(words).size === words.length);
+  check('the category is secret during the hunt', view(k, 'k0', k.round!.huntStartsAt + 1).round.squad.category === null);
+  const n = session('n', planRounds('Noida'), 43);
+  hunt(n, t0);
+  check('Noida round 1: the squad of 7 takes the first category (Pets, 7 words)', n.round!.squads[0].members.length === 7 && n.round!.squads[0].category === 'Pets' && n.round!.squads[0].words.length === 7);
+  check('…and each squad of 6 its bonus +200, the 7 one +100', n.round!.squads[0].bonus === 100 && n.round!.squads.slice(1).every((sq) => sq.bonus === 200));
+  const k16 = session('k16', planRounds('Kolkata'), 16);
+  hunt(k16, t0);
+  const kolkataAll = new Set(planNamed('Kolkata')!.rounds.flatMap((round) => round.categories));
+  const extra = k16.round!.squads.map((sq) => sq.category).filter((c) => !kolkata1.includes(c));
+  check('a short plan falls back to a bank category no Kolkata round plays', extra.length === 1 && !kolkataAll.has(extra[0]), extra.join());
+  const hq = session('hq', planRounds('HQ'), 146);
+  hunt(hq, t0);
+  const hq1 = planNamed('HQ')!.rounds[0].categories;
+  const hqExtra = hq.round!.squads.map((sq) => sq.category).filter((c) => !hq1.includes(c));
+  check('HQ with 146: all 14 planned + 1 borrowed from a later round\'s list', hq.round!.squads.length === 15 && hqExtra.length === 1 && planNamed('HQ')!.rounds[1].categories.includes(hqExtra[0]), hqExtra.join());
+  const loose = session('loose', [roundConfig({ squadSize: 3 })], 9);
+  hunt(loose, t0);
+  check('no plan: categories from the bank in order', same(loose.round!.squads.map((sq) => sq.category), SQUAD_BANK.slice(0, 3).map((c) => c.category)));
+
+  console.log('\nsquads: no repeat partners');
+  let kolkataOk = 0;
+  let gurgaonOk = 0;
+  const seeds = 20;
+  for (let i = 0; i < seeds; i += 1) {
+    const ks = session(`kr${i}`, planRounds('Kolkata'), 14);
+    playOut(ks, seeded(101 + i));
+    const partners = partnersOf(ks);
+    if (ks.history.length + 1 === 5 && [...partners.values()].every((list) => list.length === 5 && new Set(list).size === 5)) kolkataOk += 1;
+    const gs = session(`gr${i}`, planRounds('Gurgaon'), 13);
+    playOut(gs, seeded(501 + i));
+    if (repeatPairs(gs) === 0 && [...partnersOf(gs).values()].every((list) => new Set(list).size >= 5)) gurgaonOk += 1;
+  }
+  check(`14 people, 5 pair rounds: everyone has 5 different partners (${kolkataOk}/${seeds} seeds)`, kolkataOk === seeds);
+  check(`13 people, 5 rounds of pairs + a trio: no pair twice (${gurgaonOk}/${seeds} seeds)`, gurgaonOk === seeds);
+  const hqStarted = Date.now();
+  const hqs = session('hqs', planRounds('HQ'), 140, 'h', (i) => `D${i % 12}`);
+  playOut(hqs, seeded(9));
+  check(`HQ 140: round 2's squads of 5 share no pair with round 1's squads of 10 (${Date.now() - hqStarted} ms for both deals)`, repeatPairs(hqs) === 0);
+
+  console.log('\nscans');
+  const q = session('q', [roundConfig({ squadSize: 4, huntMs: 600_000, breakMs: 60_000 }), roundConfig({ squadSize: 2, huntMs: 300_000 })], 12, 'q', (i) => `D${i}`);
+  const T = hunt(q, t0) + 1000;
+  const [A, B, C, D] = q.round!.squads[0].members;
+  const [X, Y, Z, W] = q.round!.squads[1].members;
+  const nameOf = (id: string) => q.players.find((p) => p.userId === id)!.name;
+  const wordOf = (id: string) => q.players.find((p) => p.userId === id)!.word;
+  const typed = refusal(() => scan(q, A, { code: codeFor(q, B, T)!.code }, T));
+  check('a typed code is refused (scan only)', typed?.status === 400, typed?.message);
+  check('the state carries no code to type', view(q, A, T).round.me.code === null && /^SQ1:/.test(view(q, A, T).round.me.qr));
+  const right = scan(q, A, { qr: qrOf(q, B, T) }, T);
+  check('right scan: +100 to both', right.result === 'right' && right.delta === 100 && q.totals[A] === 100 && q.totals[B] === 100);
+  const scannedB = view(q, B, T).round.scan;
+  check('the scanned player sees "[Name] scanned you", the same result and points', scannedB.role === 'scanned' && scannedB.result === 'right' && scannedB.other.name === nameOf(A) && scannedB.other.word === wordOf(A) && scannedB.delta === 100 && scannedB.before === 0 && scannedB.after === 100);
+  const scannerA = view(q, A, T).round.scan;
+  check('the scanner sees the other\'s name and word', scannerA.role === 'scanner' && scannerA.other.word === wordOf(B) && typeof scannerA.id === 'string');
+  const again = scan(q, A, { qr: qrOf(q, B, T + 1000) }, T + 1000);
+  check('re-scanning someone linked costs nothing and says so', again.result === 'already' && again.delta === 0 && q.totals[A] === 100 && view(q, A, T + 1000).round.scan.result === 'already');
+  scan(q, B, { qr: qrOf(q, C, T + 2000) }, T + 2000);
+  const chain = scan(q, A, { qr: qrOf(q, C, T + 3000) }, T + 3000);
+  const aSquad = view(q, A, T + 3000).round.squad;
+  check('a chain link: A–B and B–C makes A–C linked (A scanning C is "already")', chain.result === 'already' && aSquad.members.length === 3 && aSquad.members.some((m: { userId: string; word: string }) => m.userId === C && m.word === wordOf(C)) && aSquad.more === 1);
+  for (let i = 0; i < 4; i += 1) {
+    const r = refusal(() => scan(q, A, { qr: qrOf(q, X, T + 4000 + i * 100) }, T + 4000 + i * 100));
+    if (r) check(`wrong scan ${i + 1} is allowed`, false, r.message);
+  }
+  check('wrong scans: −25 to both, every time, with no pause (4 in a row)', q.totals[A] === 0 && q.totals[X] === -100);
+  check('a score can go below 0', q.totals[X] < 0 && view(q, X, T + 4500).totalPoints === -100);
+  const wrongX = view(q, X, T + 4500).round.scan;
+  check('the wrongly scanned player sees it too, counting down', wrongX.result === 'wrong' && wrongX.role === 'scanned' && wrongX.delta === -25 && wrongX.before === -75 && wrongX.after === -100);
+  check('no pause fields in the state', !('pausedUntil' in view(q, A, T + 4500).round.me) && !('wrongInARow' in view(q, A, T + 4500).round.me));
+  const oldQrOfD = qrOf(q, D, T + 5000);
+  const aQr = qrOf(q, A, T + 5000);
+  const later = (codeWindowOf(T + 5000) + 1) * SQUAD.codeWindowMs + 100;
+  const completing = scan(q, A, { qr: oldQrOfD }, later);
+  const tb = timeBonusAt(q.round!, later).timeBonus;
+  check('the previous window\'s QR still scans', completing.result === 'right');
+  check('the last link completes the squad: +100 and +200 + the time bonus to each member', completing.completed && q.totals[A] === 0 + 100 + 200 + tb && q.totals[B] === 200 + 200 + tb && q.totals[C] === 100 + 200 + tb && q.totals[D] === 100 + 200 + tb, `tb ${tb}, A ${q.totals[A]}`);
+  const done = view(q, B, later).round.squad;
+  check('"squad complete" carries the category, the bonus and the time bonus apart', done.complete?.category === q.round!.squads[0].category && done.complete.bonus === 200 && done.complete.timeBonus === tb && done.complete.timeBonus > 0 && done.complete.after - done.complete.before === 200 + tb && done.category === q.round!.squads[0].category);
+  check('both phones\' scan events say it completed', view(q, A, later).round.scan.completed === true && view(q, D, later).round.scan.completed === true);
+  check('a complete squad\'s QRs stop', codeFor(q, A, later) === null && view(q, A, later).round.me.qr === null);
+  const deadQr = refusal(() => scan(q, X, { qr: aQr }, later));
+  check('…scanning one is refused, no points', deadQr?.status === 409 && /complete/.test(deadQr.message) && q.totals[X] === -100, deadQr?.message);
+  check('…and its members can\'t scan', refusal(() => scan(q, A, { qr: qrOf(q, X, later) }, later))?.status === 409);
+  check('holderOf finds nobody for a complete squad\'s code', holderOf(q, aQr.split(':')[3], later) === null);
+
+  // Away: one of squad 3 goes offline a minute; the squad needs one fewer and sees their word.
+  const [E, F, G, H] = q.round!.squads[2].members;
+  markOffline(q, E, later);
+  advance(q, later + SQUAD.awayMs + 1);
+  const fSquad = view(q, F, later + SQUAD.awayMs + 1).round;
+  check('60 s offline → away; their squad needs one fewer and sees their word', fSquad.squad.needed === 3 && fSquad.squad.awayMembers.some((m: { userId: string; word: string }) => m.userId === E && m.word === wordOf(E)) && fSquad.notice?.kind === 'teammate_away');
+  const t2 = later + SQUAD.awayMs + 2000;
+  scan(q, F, { qr: qrOf(q, G, t2) }, t2);
+  scan(q, F, { qr: qrOf(q, H, t2) }, t2);
+  check('…and completes without them; the away member gets no bonus', Boolean(q.round!.squads[2].finishedAt) && !q.round!.completions[E] && Boolean(q.round!.completions[F]));
+  check('the round goes on while a squad is still hunting', q.status === 'hunt');
+  scan(q, X, { qr: qrOf(q, Y, t2) }, t2);
+  scan(q, X, { qr: qrOf(q, Z, t2) }, t2);
+  scan(q, W, { qr: qrOf(q, Z, t2) }, t2);
+  check('every squad complete ends the round early, into its break', q.status === 'break' && q.round!.overAt === t2 && t2 < q.round!.endsAt);
+  const brk = view(q, B, t2);
+  check('the break: rank in the office, points so far, my squad\'s category and words, top 5, countdown', brk.round.results.rank >= 1 && brk.round.results.total === q.totals[B] && brk.round.results.squad.category === q.round!.squads[0].category && same(brk.round.results.squad.words, q.round!.squads[0].words) && brk.round.results.top.length === 5 && brk.clock.breakEndsAt === t2 + 60_000);
+  check('…the top 5 ranked by total, with ties', brk.round.results.top.every((row: { points: number }, i: number, all: Array<{ points: number }>) => i === 0 || all[i - 1].points >= row.points));
+  markOnline(q, E, t2 + 1);
   advance(q, q.phaseEndsAt);
-  const T = q.round!.huntStartsAt + 1000;
-  const sq0 = q.round!.squads[0].members;
-  const otherSquad = q.round!.squads[1].members;
-  const code = (id: string, now = T) => codeFor(q, id, now)!.code;
-  const ask = startCheck(q, sq0[0], { code: code(sq0[1]) }, T) as { askId: string };
-  check('a check asks the other person first', typeof ask.askId === 'string' && sessionViewFor(q, sq0[1], T).round?.ask !== null);
-  let refused = '';
-  try { startCheck(q, sq0[0], { code: code(sq0[2]) }, T); } catch (error) { refused = (error as Error).message; }
-  check('one open check at a time', /Finish the check/.test(refused), refused);
-  answerCheck(q, sq0[1], ask.askId, true, T + 1000);
-  check('allowed, same squad → linked, both see each other\'s word', q.round!.edges.length === 1 && (sessionViewFor(q, sq0[0], T).round?.squad as { linked: unknown[] }).linked.length === 2);
-  const again = startCheck(q, sq0[1], { code: code(sq0[0]) }, T + 2000);
-  check('checking someone already linked costs nothing', 'already' in again && q.round!.asks.length === 0);
-  const wrong = startCheck(q, sq0[0], { code: code(otherSquad[0]) }, T + 3000) as { askId: string };
-  answerCheck(q, otherSquad[0], wrong.askId, true, T + 4000);
-  const lockA = q.players.find((p) => p.userId === sq0[0])!.lockedUntil;
-  check('different squads → both locked for the lock time', lockA === T + 4000 + 45_000 && q.players.find((p) => p.userId === otherSquad[0])!.lockedUntil === lockA);
-  refused = '';
-  try { startCheck(q, sq0[0], { code: code(sq0[2]) }, T + 5000); } catch (error) { refused = (error as Error).message; }
-  check('a locked player cannot check', /paused/.test(refused), refused);
-  const intoLocked = startCheck(q, sq0[2], { code: code(sq0[0], T + 6000) }, T + 6000) as { askId: string };
-  check('…but a locked player can still be checked', typeof intoLocked.askId === 'string');
-  answerCheck(q, sq0[0], intoLocked.askId, false, T + 7000);
-  check('turning a check down tells the asker', (sessionViewFor(q, sq0[2], T + 7000).round?.result as { kind: string }).kind === 'declined');
-  const timeout = startCheck(q, sq0[2], { code: code(sq0[1], T + 8000) }, T + 8000) as { askId: string };
-  advance(q, T + 8000 + SQUAD.askMs + 1);
-  check('an unanswered check expires', (sessionViewFor(q, sq0[2], T + 30_000).round?.result as { kind: string }).kind === 'expired' && !q.round!.asks.some((a) => a.id === timeout.askId));
-
-  // Away: sq0[2] goes offline for a minute; the squad of 3 needs only the 2 already linked.
-  markOffline(q, sq0[2], T + 31_000);
-  advance(q, T + 31_000 + SQUAD.awayMs + 1);
-  const finished = q.round!.squads[0];
-  check('60 s offline → away, and a squad linked except for them is finished', q.players.find((p) => p.userId === sq0[2])!.away && Boolean(finished.finishedAt) && finished.place === 1);
-  const teammateNotice = sessionViewFor(q, sq0[0], T + 95_000).round?.notice as { kind: string; word: string } | null;
-  check('their squad is told, with their word', teammateNotice?.kind === 'teammate_away' && Boolean(teammateNotice.word));
-  markOnline(q, sq0[2], T + 100_000);
-  check('coming back to a finished squad keeps it finished', Boolean(q.round!.squads[0].finishedAt));
-
-  // Away and back while the squad is still hunting: back unlinked.
-  const sq1 = q.round!.squads[1].members;
-  const link = startCheck(q, sq1[1], { code: code(sq1[2], T + 101_000) }, T + 101_000) as { askId: string };
-  answerCheck(q, sq1[2], link.askId, true, T + 102_000);
-  markOffline(q, sq1[2], T + 103_000);
-  advance(q, T + 103_000 + SQUAD.awayMs + 1);
-  markOnline(q, sq1[2], T + 170_000);
-  check('back before the end → present again but unlinked', !q.round!.edges.some((e) => e.a === sq1[2] || e.b === sq1[2]) && !q.players.find((p) => p.userId === sq1[2])!.away);
-
-  // Time runs out.
-  const end = advance(q, q.round!.endsAt);
-  check('at 0:00 the round ends and goes to its break', end.kind === 'roundEnded' && q.status === 'break');
-  const pts = q.round!.points!;
-  const expected = 40 * 2 + Math.floor((q.round!.endsAt - finished.finishedAt!) / 1000 * 0.5);
-  check('points: 40 per linked member + half the seconds left', pts[sq0[0]] === expected && pts[sq0[2]] === expected, `${pts[sq0[0]]} vs ${expected}`);
-  check('an unfinished squad with nobody linked earns 0', q.round!.squads.slice(2).every((sq) => sq.members.every((id) => pts[id] === 0)));
-  const results = sessionViewFor(q, sq0[0], q.round!.endsAt).round?.results as { squads: Array<{ place: number; theme: string; mine: boolean }>; points: number };
-  check('the break shows every theme, places and my points', results.squads.length === 3 && results.squads[0].mine && results.squads[0].place === 1 && results.points === expected);
-  check('the break ends in a new deal', advance(q, q.phaseEndsAt).kind === 'deal');
-  const next = planNextRound(q, q.phaseEndsAt, 999);
-  dealRound(q, q.phaseEndsAt, next, chooseThemes(next.length, Math.max(...next), q.packIds, new Map(), die), die);
-  check('round 2 deals pairs with new words', q.roundIndex === 1 && q.round!.squads.every((sq) => sq.members.length >= 2 && sq.members.length <= 3) && q.history.length === 1);
-  advance(q, q.phaseEndsAt);
+  const T2 = hunt(q, q.phaseEndsAt);
+  void T2;
+  const met = partnersOf({ ...q, round: null, history: q.history } as SquadSession);
+  check('round 2 pairs avoid round 1 squadmates', q.round!.squads.every((sq) => !(met.get(sq.members[0]) ?? []).includes(sq.members[1])));
   advance(q, q.round!.endsAt);
-  check('the last round ends the session', q.status === 'over');
-  check('totals add up across rounds', q.totals[sq0[0]] === expected + (q.round!.points![sq0[0]] ?? 0));
+  check('time out on the last round ends the game', q.status === 'over');
+  check('a squad that never completes gets no time bonus', q.round!.squads.every((sq) => !sq.finishedAt && sq.timeBonus === undefined));
+  const fin = view(q, A, q.round!.endsAt);
+  check('the final: rank, total, my last squad, the whole office ranked', fin.final.rank >= 1 && fin.final.total === q.totals[A] && fin.final.lastSquad.roundNumber === 2 && fin.final.leaderboard.length === 12);
 
-  console.log('\nfrom the review');
-  // Leaving in a break keeps the player on the list (their old squad names
-  // them): everyone's view still builds, and they are not dealt again.
-  const lb = newSession({ id: 'u4', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0, rounds: [roundConfig({ squadSize: 3, huntMs: 60_000, breakMs: 30_000 }), roundConfig({ squadSize: 3 })], codeSeed: 'lb', now: t0 });
-  for (let i = 0; i < 9; i += 1) joinSession(lb, { userId: `l${i}`, name: `L ${i}`, initials: 'L' }, t0);
-  const lbs = planNextRound(lb, t0, 999);
-  dealRound(lb, t0, lbs, chooseThemes(lbs.length, 3, [], new Map(), die), die);
-  advance(lb, lb.phaseEndsAt);
-  const ls0 = lb.round!.squads[0].members;
-  const lk = startCheck(lb, ls0[0], { code: codeFor(lb, ls0[1], lb.round!.huntStartsAt + 1000)!.code }, lb.round!.huntStartsAt + 1000) as { askId: string };
-  answerCheck(lb, ls0[1], lk.askId, true, lb.round!.huntStartsAt + 2000);
-  advance(lb, lb.round!.endsAt);
-  leaveSession(lb, ls0[1]);
-  let threw = '';
-  try { lb.players.forEach((p) => sessionViewFor(lb, p.userId, lb.round!.endsAt + 1000)); } catch (error) { threw = (error as Error).message; }
-  check('someone leaving in a break: every view still builds', threw === '', threw);
-  check('…and they stay listed, marked as left', lb.players.some((p) => p.userId === ls0[1] && p.left));
-  advance(lb, lb.phaseEndsAt);
-  const lbn = planNextRound(lb, lb.phaseEndsAt, 999);
-  dealRound(lb, lb.phaseEndsAt, lbn, chooseThemes(lbn.length, Math.max(...lbn), lb.packIds, new Map(), die), die);
-  check('…and are not dealt into the next round', !lb.round!.squads.some((sq) => sq.members.includes(ls0[1])));
-
-  // Codes come from fixed seats: someone leaving doesn't move anyone's code.
-  advance(lb, lb.phaseEndsAt);
-  const at2 = lb.round!.huntStartsAt + 1000;
-  const before = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, at2)!.code);
-  joinSession(lb, { userId: 'late', name: 'Late', initials: 'L' }, at2);
-  leaveSession(lb, 'late');
-  const after = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, at2)!.code);
-  check('codes don\'t move when someone joins or leaves mid-round', JSON.stringify(before) === JSON.stringify(after));
-  const nextWindow = at2 + SQUAD.codeWindowMs;
-  const renewed = lb.players.filter((p) => p.playing).map((p) => codeFor(lb, p.userId, nextWindow)!.code);
-  check('a just-changed code can never be someone else\'s new one', before.every((c) => !renewed.includes(c)) && before.every((c, i) => holderOf(lb, c, nextWindow) === lb.players.filter((p) => p.playing)[i].userId));
-
-  // Squads never bigger than a theme has words for.
-  check('squads of 24 for 155 people stay at 24 or under', Math.max(...squadSizes(155, 24)) <= 24 && squadSizes(155, 24).reduce((a, b) => a + b, 0) === 155);
-  check('squads of 20 for 49 people stay at 24 or under', Math.max(...squadSizes(49, 20)) <= 24);
-
-  const few = newSession({ id: 'u3', org: 'o', office: 'X', lobbyOpensAt: t0, startsAt: t0, rounds: [roundConfig({ squadSize: 5 })], codeSeed: 'f', now: t0 });
-  for (let i = 0; i < 3; i += 1) joinSession(few, { userId: `f${i}`, name: 'F', initials: 'F' }, t0);
-  dealRound(few, t0, planNextRound(few, t0, 999), [], die);
+  console.log('\nodd-sized squads, ranks, the lobby');
+  const odd = session('odd', [roundConfig({ squadSize: 5, huntMs: 300_000 })], 7);
+  const To = hunt(odd, t0) + 1000;
+  const trio = odd.round!.squads.find((sq) => sq.members.length === 3)!;
+  check('7 players in a round of 5s: a 4 (+300) and a 3 (+400)', same(odd.round!.squads.map((sq) => sq.bonus).sort(), [300, 400]));
+  scan(odd, trio.members[0], { qr: qrOf(odd, trio.members[1], To) }, To);
+  scan(odd, trio.members[0], { qr: qrOf(odd, trio.members[2], To) }, To);
+  const oddTb = timeBonusAt(odd.round!, To).timeBonus;
+  check('the short squad completing pays +400 + time bonus each', odd.round!.completions[trio.members[1]]?.bonus === 400 && odd.totals[trio.members[1]] === 100 + 400 + oddTb);
+  const g = session('g', planRounds('Gurgaon'), 13);
+  hunt(g, t0);
+  check('13 in pairs: the trio\'s bonus is +100', g.round!.squads.find((sq) => sq.members.length === 3)?.bonus === 100);
+  const r = session('r', [roundConfig({ squadSize: 2 })], 4);
+  hunt(r, t0);
+  r.totals = { r0: 300, r1: 100, r2: 100, r3: -25 };
+  check('ranks 1, 2, 2, 4, with a negative last', same(standingsOf(r).map((row) => [row.userId, row.rank]), [['r0', 1], ['r1', 2], ['r2', 2], ['r3', 4]]));
+  const lob = session('lob', [roundConfig({ squadSize: 2 })], 5);
+  leaveSession(lob, 'lob4');
+  check('leaving the lobby removes the player', lob.players.length === 4);
+  const few = session('few', [roundConfig({ squadSize: 5 })], 3);
+  dealRound(few, t0, SQUAD_BANK, die);
   check('fewer than 4 players skips the round', Boolean(few.round?.skipped) && few.status === 'over');
+
+  // The server diffs each phone by its own parts only, against one office-wide
+  // view per push (personalPartsOf): that is right only if every other field
+  // of a player's view is exactly what a watcher sees.
+  console.log('\nevery phone: the office-wide view plus its own parts');
+  const random = seeded(99);
+  const sp = session('sp', [roundConfig({ squadSize: 3, huntMs: 300_000, breakMs: 30_000 }), roundConfig({ squadSize: 2, huntMs: 300_000 })], 20, 'sp', (i) => `D${i % 3}`);
+  const opts = { photoUrl: (player: { photoKey?: string; userId: string }) => `/media/${player.userId}` };
+  const splitFails: string[] = [];
+  const splitHolds = (label: string, at: number) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const watcher: any = JSON.parse(JSON.stringify(sessionViewFor(sp, '', at, opts)));
+    for (const player of sp.players) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mine: any = JSON.parse(JSON.stringify(sessionViewFor(sp, player.userId, at, opts)));
+      for (const k of ['joined', 'playing', 'totalPoints']) mine[k] = watcher[k];
+      if (mine.round) {
+        for (const k of ['me', 'squad', 'scan', 'notice']) mine.round[k] = watcher.round[k];
+        if (mine.round.results) {
+          for (const k of ['rank', 'roundPoints', 'total', 'squad']) mine.round.results[k] = watcher.round.results[k];
+          mine.round.results.squads = mine.round.results.squads.map((row: Record<string, unknown>) => ({ ...row, mine: false }));
+        }
+      }
+      if (mine.final) for (const k of ['rank', 'total', 'lastSquad']) mine.final[k] = watcher.final[k];
+      if (!same(mine, watcher)) splitFails.push(`${label}: ${player.userId}`);
+    }
+  };
+  splitHolds('lobby', t0);
+  let at = hunt(sp, t0, random);
+  splitHolds('hunt', at);
+  const [s0, s1] = sp.round!.squads;
+  scan(sp, s0.members[0], { qr: qrOf(sp, s0.members[1], at) }, at);
+  scan(sp, s0.members[0], { qr: qrOf(sp, s1.members[0], at) }, at);
+  scan(sp, s0.members[1], { qr: qrOf(sp, s0.members[0], at) }, at);
+  scan(sp, s0.members[2], { qr: qrOf(sp, s0.members[1], at) }, at);
+  splitHolds('scans, a squad complete', at);
+  markOffline(sp, s1.members[1], at);
+  at += SQUAD.awayMs + 1000;
+  advance(sp, at);
+  splitHolds('a teammate away', at);
+  at = sp.round!.endsAt;
+  advance(sp, at);
+  splitHolds('the break', at);
+  at = hunt(sp, sp.phaseEndsAt, random);
+  scan(sp, sp.round!.squads[0].members[0], { qr: qrOf(sp, sp.round!.squads[0].members[1], at) }, at);
+  splitHolds('round 2', at);
+  at = sp.round!.endsAt;
+  advance(sp, at);
+  splitHolds('the final', at);
+  check('a player\'s view is the watchers\' view plus their own parts, in every phase', splitFails.length === 0 && sp.status === 'over', splitFails.slice(0, 3).join(', '));
 }
 
 // ------------------------------------------------------------- live, over sockets
@@ -253,10 +370,7 @@ function open(user: User, auth: Record<string, string>): Promise<Client> {
   return new Promise((resolve, reject) => {
     const socket = connect(`${BASE}/squad`, { path: '/connect/socket', transports: ['websocket'], auth, reconnection: false });
     const client: Client = { userId: user.userId, socket, states: [], fatal: [] };
-    socket.on('squad:state', (state: State) => {
-      // A broadcast to watchers carries no `me`; a joined player never gets one.
-      client.states.push(state);
-    });
+    socket.on('squad:state', (state: State) => client.states.push(state));
     socket.on('squad:fatal', (p: unknown) => client.fatal.push(p));
     socket.on('connect', () => resolve(client));
     socket.on('connect_error', (error: Error) => {
@@ -273,6 +387,7 @@ const move = async (ms: number) => {
   await tickSquad();
   await wait(80);
 };
+const dataOf = (ack: Ack) => (ack.ok ? ack.data : {}) as Record<string, unknown>;
 
 async function liveChecks() {
   console.log('\na session over sockets');
@@ -281,7 +396,7 @@ async function liveChecks() {
     name: `Player ${i + 1}`,
     email: `sq${i + 1}@sowaka.local`,
     org: ORG,
-    location: i < 10 ? 'Gurgaon' : 'Noida',
+    location: i < 11 ? 'Gurgaon' : 'Noida',
     department: `Team ${i % 4}`,
     lifecycleStatus: 'active',
   } as User));
@@ -298,34 +413,37 @@ async function liveChecks() {
   await authSessions().insertOne({ tokenHash: hashSessionToken(token), userId: 'sq-1', createdAt: new Date(), expiresAt: new Date(Date.now() + 3_600_000) } as never);
 
   const startsAt = clock.now + 10 * 60_000;
+  const round1 = ['Pets', 'Predators', 'Herbivores'];
   await squadSchedules().insertOne({
-    id: 'live-1', org: ORG, office: 'Gurgaon', startsAt: new Date(startsAt), lobbyMs: 3 * 60_000,
-    rounds: [roundConfig({ squadSize: 3, huntMs: 10 * 60_000, breakMs: 60_000 }), roundConfig({ squadSize: 2, huntMs: 5 * 60_000 })],
+    id: 'live-1', org: ORG, office: 'Gurgaon', startsAt: new Date(startsAt), lobbyMs: SQUAD.defaults.lobbyMs,
+    rounds: [
+      roundConfig({ squadSize: 3, huntMs: 10 * 60_000, breakMs: 60_000, categories: round1 }),
+      roundConfig({ squadSize: 2, huntMs: 5 * 60_000, categories: planNamed('Kolkata')!.rounds[1].categories }),
+    ],
     status: 'scheduled', createdAt: new Date(), updatedAt: new Date(),
   });
-  // Its feed card, as `--post` makes one: the game keeps it up to date.
   await connectPosts().insertOne({
     id: 'post-live-1', org: ORG, type: 'secret_squad', body: { sessionId: 'live-1', office: 'Gurgaon', status: 'scheduled' },
     author: { userId: 'sq-1', name: 'HR' }, publishedAt: new Date(), createdAt: new Date(), updatedAt: new Date(),
   } as never);
 
   const ticket = (u: User) => mintTicket({ userId: u.userId, org: ORG, name: u.name });
-  const gurgaon = people.filter((p) => p.location === 'Gurgaon' && p.userId !== 'sq-10');
+  const gurgaon = people.filter((p) => p.location === 'Gurgaon' && p.userId !== 'sq-10' && p.userId !== 'sq-11');
   const clients: Client[] = [];
   clients.push(await open(gurgaon[0], { token }));
   for (const u of gurgaon.slice(1)) clients.push(await open(u, { ticket: ticket(u) }));
   const noida = await open(people[9], { ticket: ticket(people[9]) });
-  // The first state reads the profile, the office and the schedule from Mongo: slow on a remote cluster.
-  await waitFor('everyone gets a first state', () => clients.every((c) => c.states.length > 0) && noida.states.length > 0, 20_000);
+  const lateComer = await open(people[10], { ticket: ticket(people[10]) });
+  await waitFor('everyone gets a first state', () => clients.every((c) => c.states.length > 0) && noida.states.length > 0 && lateComer.states.length > 0, 20_000);
   check('a browser token signs in too', clients[0].states.length > 0);
   check('before the lobby: no session, the next one is shown', clients[1].states[0].session === null && Boolean(clients[1].states[0].next));
   check('the office list wins over the profile (player 10 is in Noida)', noida.states[0].office === 'Noida' && noida.states[0].next === null);
 
-  clock.now = startsAt - 3 * 60_000;
+  clock.now = startsAt - 5 * 60_000;
   await openDueSessions();
-  check('the lobby opens 3 minutes before, once', (await openDueSessions()) === 0 && Boolean(await readSession(ORG, 'live-1')));
+  check('the lobby opens 5 minutes before (the default), once', (await openDueSessions()) === 0 && Boolean(await readSession(ORG, 'live-1')));
   const push = pushes.at(-1);
-  check('Gurgaon gets the push, Noida does not', Boolean(push) && push!.userIds.length === 9 && !push!.userIds.includes('sq-10') && push!.input.data.gameKey === 'secret-squad');
+  check('Gurgaon gets the push, Noida does not', Boolean(push) && push!.userIds.length === 10 && !push!.userIds.includes('sq-10') && push!.input.data.gameKey === 'secret-squad');
   await waitFor('watchers see the lobby open', () => latest(clients[1])?.status === 'lobby');
   check('Noida sees nothing of it', noida.states.every((s) => s.session === null));
 
@@ -334,100 +452,209 @@ async function liveChecks() {
     if (!ack.ok) check(`join ${c.userId}`, false, ack.message);
   }
   await waitFor('the lobby counts 9', () => latest(clients[0])?.players === 9 && latest(clients[0])?.joined === true);
+  await request(clients[8], 'squad:leave');
+  await waitFor('leaving the lobby: 8', () => latest(clients[0])?.players === 8);
+  await request(clients[8], 'squad:join');
+  await waitFor('…and back: 9', () => latest(clients[0])?.players === 9);
   const late = await request(noida, 'squad:join');
   check('someone from another office cannot join', !late.ok && late.status === 404);
 
-  await move(3 * 60_000);
-  await waitFor('dealt: everyone has a word', () => clients.every((c) => Boolean(latest(c)?.round?.player?.word)));
-  check('9 players, squads of 3 → 3 squads', latest(clients[0])?.round?.board.squads === 3 && latest(clients[0])?.status === 'dealing');
-  check('no codes while dealing', clients.every((c) => latest(c)?.round?.player?.code === null));
+  await move(5 * 60_000);
+  await waitFor('dealt: everyone has a word', () => clients.every((c) => Boolean(latest(c)?.round?.me?.word)));
+  const dealt = latest(clients[0])!;
+  check('the word reveal: round 1 of 2, squads of 3, a 10 s countdown', dealt.status === 'dealing' && dealt.roundNumber === 1 && dealt.roundCount === 2 && dealt.round.squadSize === 3 && dealt.clock.revealEndsAt === startsAt + SQUAD.dealMs);
+  check('the rules ride along (+100 / −25 / +200 / ½ point a second)', dealt.rules.right === 100 && dealt.rules.wrong === -25 && dealt.rules.squadBonus === 200 && dealt.rules.timeBonusPerSecond === 0.5 && dealt.rules.typedCodes === false);
+  check('no QR while dealing', clients.every((c) => latest(c)?.round?.me?.qr === null));
+  const held = (await readSession(ORG, 'live-1'))!;
+  check('the round\'s categories are the configured list, words in order', same(held.round!.squads.map((sq) => sq.category), round1) && held.round!.squads.every((sq) => same(sq.words, categoryNamed(sq.category)!.words.slice(0, 3))));
   await move(SQUAD.dealMs);
-  await waitFor('the hunt starts with codes', () => clients.every((c) => Boolean(latest(c)?.round?.player?.code)));
+  await waitFor('the hunt starts with QRs and a clock', () => clients.every((c) => Boolean(latest(c)?.round?.me?.qr)) && latest(clients[0])?.clock.huntEndsAt === held.round!.endsAt);
 
-  const session = (await readSession(ORG, 'live-1'))!;
   const byId = new Map(clients.map((c) => [c.userId, c]));
-  const squadOf = (userId: string) => session.round!.squads.findIndex((sq) => sq.members.includes(userId));
+  const squadOf = (userId: string) => held.round!.squads.findIndex((sq) => sq.members.includes(userId));
   const a = clients[0];
-  const mates = session.round!.squads[squadOf(a.userId)].members.filter((id) => id !== a.userId).map((id) => byId.get(id)!);
+  const mates = held.round!.squads[squadOf(a.userId)].members.filter((id) => id !== a.userId).map((id) => byId.get(id)!);
   const stranger = clients.find((c) => squadOf(c.userId) !== squadOf(a.userId))!;
 
-  const ask1 = await request(a, 'squad:check', { code: latest(mates[0])!.round!.player.code });
-  check('a check is sent', ask1.ok && typeof (ask1 as { data: { askId?: string } }).data.askId === 'string', JSON.stringify(ask1));
-  await waitFor('the other phone is asked to allow it', () => Boolean(latest(mates[0])?.round?.ask));
-  const askId = latest(mates[0])!.round!.ask.id;
-  await request(mates[0], 'squad:answer', { askId, allow: true });
-  await waitFor('both see "same squad"', () => latest(a)?.round?.result?.kind === 'match' && latest(mates[0])?.round?.result?.kind === 'match');
-  check('and each other\'s word', latest(a)!.round!.squad.linked.length === 2 && latest(a)!.round!.result.otherWord === latest(mates[0])!.round!.player.word);
+  const right = await request(a, 'squad:scan', { qr: latest(mates[0])!.round!.me.qr });
+  check('squad:scan resolves at once: right, +100', right.ok && dataOf(right).result === 'right' && dataOf(right).delta === 100 && dataOf(right).total === 100, JSON.stringify(right));
+  await waitFor('the scanned phone shows "Player 1 scanned you", +100', () => latest(mates[0])?.round?.scan?.role === 'scanned' && latest(mates[0])?.round?.scan?.other?.name === 'Player 1' && latest(mates[0])?.totalPoints === 100);
+  check('…both see each other\'s word', latest(a)!.round!.squad.members.length === 2 && latest(a)!.round!.scan.other.word === latest(mates[0])!.round!.me.word);
+  const typed = await request(a, 'squad:check', { code: '1234' });
+  check('a typed code is refused', !typed.ok && typed.status === 400);
+  for (let i = 0; i < 3; i += 1) {
+    const wrong = await request(a, 'squad:scan', { qr: latest(stranger)!.round!.me.qr });
+    if (!wrong.ok || dataOf(wrong).result !== 'wrong') check(`wrong scan ${i + 1}`, false, JSON.stringify(wrong));
+  }
+  await waitFor('3 wrong scans: −25 each to both, no pause, below 0 for the stranger', () => latest(a)?.totalPoints === 25 && latest(stranger)?.totalPoints === -75 && latest(stranger)?.round?.scan?.result === 'wrong');
+  await wait(1100); // the socket's own rate limit (2 a second, bursts of 5), not a game rule
+  const fourth = await request(a, 'squad:scan', { qr: latest(stranger)!.round!.me.qr });
+  check('a 4th wrong scan in a row is still allowed', fourth.ok && dataOf(fourth).result === 'wrong', JSON.stringify(fourth));
 
-  const bad = await request(a, 'squad:check', { code: '00x0' });
-  check('a malformed code is refused politely', !bad.ok && bad.status === 400);
-  const qrAsk = await request(a, 'squad:check', { qr: latest(stranger)!.round!.player.qr });
-  check('a scanned QR works like a typed code', qrAsk.ok, JSON.stringify(qrAsk));
-  await waitFor('the stranger is asked', () => Boolean(latest(stranger)?.round?.ask));
-  await request(stranger, 'squad:answer', { askId: latest(stranger)!.round!.ask.id, allow: true });
-  await waitFor('different squads: both locked', () => (latest(a)?.round?.player?.lockedUntil ?? 0) > 0 && (latest(stranger)?.round?.player?.lockedUntil ?? 0) > 0);
-  const locked = await request(a, 'squad:check', { code: latest(mates[1])!.round!.player.code });
-  check('a locked player\'s check is refused with the time left', !locked.ok && /paused/.test((locked as { message: string }).message));
-
-  // The third member links in by checking the first: the squad finishes.
-  const before = latest(mates[1])!.round!.player.code;
+  const before = latest(mates[1])!.round!.me.qr;
   await move(SQUAD.codeWindowMs);
-  await waitFor('the code changes every 20 s', () => latest(mates[1])!.round!.player.code !== before);
-  const ask3 = await request(mates[1], 'squad:check', { code: latest(a)!.round!.player.code });
-  check('a locked player can still be checked', ask3.ok, JSON.stringify(ask3));
-  await waitFor('asked', () => Boolean(latest(a)?.round?.ask));
-  await request(a, 'squad:answer', { askId: latest(a)!.round!.ask.id, allow: true });
-  await waitFor('the squad finishes in 1st place with its theme shown', () => latest(a)?.round?.squad?.place === 1 && Boolean(latest(a)?.round?.squad?.theme));
-  check('a finished squad\'s codes stop', latest(a)!.round!.player.code === null);
+  await waitFor('the QR changes every 20 s', () => latest(mates[1])!.round!.me.qr !== before);
+  const aOldQr = latest(a)!.round!.me.qr;
+  const third = await request(mates[1], 'squad:scan', { qr: aOldQr });
+  check('the third member scans in: right, and the squad completes', third.ok && dataOf(third).completed === true, JSON.stringify(third));
+  await waitFor('"squad complete" with its category, +200 and the time bonus', () => latest(a)?.round?.squad?.complete?.category === held.round!.squads[squadOf(a.userId)].category && latest(a)?.round?.squad?.complete?.bonus === 200 && latest(a)?.round?.squad?.complete?.timeBonus > 0);
+  const complete = latest(a)!.round!.squad.complete;
+  check('the time bonus is ½ point per second left', complete.timeBonus === Math.floor(complete.secondsLeft * 0.5) && complete.after === complete.before + 200 + complete.timeBonus);
+  check('a complete squad\'s QRs stop', latest(a)!.round!.me.qr === null);
+  const dead = await request(stranger, 'squad:scan', { qr: aOldQr });
+  check('…scanning one is refused', !dead.ok && dead.status === 409);
 
-  // Someone in another squad drops: away after a minute, the squad is told.
   const leaver = clients.find((c) => squadOf(c.userId) !== squadOf(a.userId) && c !== stranger)!;
-  const leaverSquad = session.round!.squads[squadOf(leaver.userId)].members.filter((id) => id !== leaver.userId).map((id) => byId.get(id)!);
+  const leaverSquad = held.round!.squads[squadOf(leaver.userId)].members.filter((id) => id !== leaver.userId).map((id) => byId.get(id)!);
   leaver.socket.close();
   await wait(200);
   await move(SQUAD.awayMs + 1000);
-  await waitFor('their squad is told they left, with their word', () => latest(leaverSquad[0])?.round?.notice?.kind === 'teammate_away' && Boolean(latest(leaverSquad[0])?.round?.notice?.word));
+  await waitFor('their squad is told they\'re away, and sees their word', () => latest(leaverSquad[0])?.round?.notice?.kind === 'teammate_away' && latest(leaverSquad[0])?.round?.squad?.awayMembers?.[0]?.word);
   check('…and now needs one fewer', latest(leaverSquad[0])!.round!.squad.needed === 2);
 
-  // Time runs out: the break, results and points, paid once.
   await move(10 * 60_000);
-  await waitFor('the round ends into its break with results', () => latest(a)?.status === 'break' && Boolean(latest(a)?.round?.results));
+  await waitFor('time out: the break, with results', () => latest(a)?.status === 'break' && Boolean(latest(a)?.round?.results));
   const res = latest(a)!.round!.results;
-  check('results list every squad, mine first', res.squads.length === 3 && res.squads[0].mine && res.points > 0);
+  check('the break: my rank, total, squad category and words, office top 5', res.rank >= 1 && res.total === latest(a)!.totalPoints && Boolean(res.squad.category) && res.squad.words.length === 3 && res.top.length === 5 && latest(a)!.clock.breakEndsAt > clock.now);
   await move(1000);
-  check('points paid once for round 1', awarded.filter((x) => x.round === 0).length === 1 && awarded[0].points[a.userId] === res.points);
+  await move(1000);
+  check('nothing reaches the org leaderboard mid-game', awarded.length === 0 && (await squadPayouts().countDocuments({ sessionId: 'live-1' })) === 0, JSON.stringify(awarded));
 
-  // Round 2: pairs; someone joining in the break plays.
   await move(60_000);
   await waitFor('round 2 dealt in pairs', () => latest(a)?.roundIndex === 1 && latest(a)?.status === 'dealing');
-  check('the player who left is not dealt in', latest(a)!.players === 8);
-  // The usual end: every pair links up, and the last answer ends the game (not the clock).
+  check('the away player is not dealt in', latest(a)!.players === 8);
   await move(SQUAD.dealMs);
-  await waitFor('round 2 hunt with codes', () => latest(a)?.status === 'hunt' && Boolean(latest(a)?.round?.player?.code));
+  await waitFor('round 2 hunt with QRs', () => latest(a)?.status === 'hunt' && Boolean(latest(a)?.round?.me?.qr));
+  await request(lateComer, 'squad:join');
+  await waitFor('someone joining mid-round waits for the next one', () => latest(lateComer)?.joined === true && latest(lateComer)?.playing === false);
   const second = (await readSession(ORG, 'live-1'))!;
+  const met = new Map<string, string[]>();
+  for (const sq of second.history[0].squads) for (const id of sq.members) met.set(id, sq.members);
+  check('round 2 pairs avoid round 1 squadmates', second.round!.squads.every((sq) => !(met.get(sq.members[0]) ?? []).includes(sq.members[1])));
   for (const squad of second.round!.squads) {
     const [first, ...rest] = squad.members.map((id) => byId.get(id)!);
     for (const other of rest) {
-      await waitFor('a code to check', () => Boolean(latest(other)?.round?.player?.code));
-      const ask = await request(first, 'squad:check', { code: latest(other)!.round!.player.code });
-      if (!ask.ok) { check(`round 2 check ${first.userId} → ${other.userId}`, false, JSON.stringify(ask)); continue; }
-      await waitFor('asked', () => Boolean(latest(other)?.round?.ask));
-      await request(other, 'squad:answer', { askId: latest(other)!.round!.ask.id, allow: true });
+      const ack = await request(first, 'squad:scan', { qr: latest(other)!.round!.me.qr });
+      if (!ack.ok) check(`round 2 scan ${first.userId} → ${other.userId}`, false, JSON.stringify(ack));
     }
   }
-  await waitFor('the last round ends the session', () => latest(a)?.status === 'over');
-  await waitFor('ended by an answer, the card has its final standings', async () => {
+  await waitFor('everyone complete ends the last round, and the game', () => latest(a)?.status === 'over');
+  const final = latest(a)!.final;
+  check('the final: rank, total, last squad, the office leaderboard (9 dealt in)', final.rank >= 1 && final.total === latest(a)!.totalPoints && final.lastSquad.roundNumber === 2 && Boolean(final.lastSquad.category) && final.leaderboard.length === 9);
+  const ended = (await readSession(ORG, 'live-1'))!;
+  await waitFor('the card has its final standings', async () => {
     const card = await connectPosts().findOne({ id: 'post-live-1' });
-    const body = (card?.body ?? {}) as { status?: string; results?: { rank: number }[] };
-    return body.status === 'over' && Array.isArray(body.results) && body.results.length === 9 && body.results[0].rank === 1;
+    const body = (card?.body ?? {}) as { status?: string; results?: unknown[] };
+    return body.status === 'over' && Array.isArray(body.results) && body.results.length === 9;
   });
+  const card = (await connectPosts().findOne({ id: 'post-live-1' }))!.body as { endsAt: string; results: Array<Record<string, unknown>> };
+  check('card results: {userId, name, initials, photoUrl, points, rank}, the session totals', card.results.every((row) => same(Object.keys(row).sort(), ['initials', 'name', 'photoUrl', 'points', 'rank', 'userId']) && row.points === (ended.totals[String(row.userId)] ?? 0)), JSON.stringify(card.results[0]) + JSON.stringify(ended.totals));
+  check('…only those dealt in (not the mid-round joiner)', !card.results.some((row) => row.userId === 'sq-11'));
+  check('…most points first, ranked 1, 2, 2, 4 on ties', card.results.every((row, i, all) => i === 0 || ((all[i - 1].points as number) >= (row.points as number) && row.rank === (all[i - 1].points === row.points ? all[i - 1].rank : i + 1))));
+  check('…endsAt is the real end', card.endsAt === new Date(ended.round!.overAt!).toISOString());
+  const finalPaid = awarded.filter((x) => x.round === -1);
+  const aTotal = (card.results as Array<{ userId: string; points: number }>).find((r) => r.userId === a.userId)!.points;
+  check('the game is paid once, at the end, as the other games: score ÷ 100, at most 25, never below 0',
+    awarded.length === 1 && finalPaid.length === 1 && finalPaid[0].points[a.userId] === squadPointsFor(aTotal)
+      && Object.values(finalPaid[0].points).every((v) => v >= 0 && v <= 25), JSON.stringify(awarded));
+  check('…with its payout row in Mongo (survives restarts)', (await squadPayouts().countDocuments({ sessionId: 'live-1' })) === 1);
+  check('squadPointsFor: 1,240 → 12, 3,000 → 25, −40 → 0', squadPointsFor(1240) === 12 && squadPointsFor(3000) === 25 && squadPointsFor(-40) === 0);
   const board = await request(a, 'squad:board', { sessionId: 'live-1' });
-  check('squad:board gives the same standings', board.ok && ((board as { data: { results?: unknown[] } }).data.results ?? []).length === 9, JSON.stringify(board).slice(0, 200));
+  check('squad:board gives the same standings', board.ok && same(dataOf(board).results, card.results), JSON.stringify(board).slice(0, 200));
   const elsewhere = await request(noida, 'squad:board', { sessionId: 'live-1' });
   check('…but not to another office', !elsewhere.ok && elsewhere.status === 404);
-  check('totals carry across rounds', (latest(a)?.totalPoints ?? 0) >= res.points);
-  check('the round count is right', latest(a)!.roundCount === 2);
-  for (const c of [...clients, noida]) c.socket.close();
+  for (const c of [...clients, noida, lateComer]) c.socket.close();
+
+  // The real payout: a negative game adds nothing (never takes points away); a positive one adds its points.
+  const before1 = (await users().findOne({ userId: 'sq-1' }))?.points ?? 0;
+  const before2 = (await users().findOne({ userId: 'sq-2' }))?.points ?? 0;
+  await payPoints(ended, -1, { 'sq-1': squadPointsFor(-40), 'sq-2': squadPointsFor(1240) });
+  await wait(300);
+  const [p1, p2] = await Promise.all([users().findOne({ userId: 'sq-1' }), users().findOne({ userId: 'sq-2' })]);
+  const rows = await pointEvents().find({ refId: 'live-1' }).toArray();
+  check('payPoints: a negative game leaves the balance, 1,240 adds 12, one ledger row', (p1?.points ?? 0) === before1 && (p2?.points ?? 0) === before2 + 12 && rows.length === 1 && rows[0].delta === 12, JSON.stringify(rows));
+}
+
+// ------------------------------------------------------------- a big office
+
+/**
+ * 300 people in one office, over real sockets: all joining at once, then a
+ * burst of scans from everyone at once. Every phone must end on exactly what
+ * the server says it should see, and a burst must reach each phone as a few
+ * pushes, not one per change in the office.
+ */
+async function bigOfficeChecks() {
+  console.log('\na big office (300 players)');
+  const COUNT = 300;
+  const people: User[] = Array.from({ length: COUNT }, (_, i) => ({
+    userId: `big-${i + 1}`, name: `Big ${i + 1}`, email: `big${i + 1}@sowaka.local`, org: ORG,
+    location: 'Big Office', department: `Team ${i % 7}`, lifecycleStatus: 'active',
+  } as User));
+  await users().insertMany(people);
+  const clients = await Promise.all(people.map((u) => open(u, { ticket: mintTicket({ userId: u.userId, org: ORG, name: u.name }) })));
+  await waitFor('every phone gets a first state', () => clients.every((c) => c.states.length > 0), 30_000);
+  // Scheduled once everyone is in: a phone's first state can't then cross the lobby opening.
+  const startsAt = clock.now + SQUAD.defaults.lobbyMs;
+  await squadSchedules().insertOne({
+    id: 'big-1', org: ORG, office: 'Big Office', startsAt: new Date(startsAt), lobbyMs: SQUAD.defaults.lobbyMs,
+    rounds: [roundConfig({ squadSize: 5, huntMs: 10 * 60_000 })],
+    status: 'scheduled', createdAt: new Date(), updatedAt: new Date(),
+  });
+  await openDueSessions();
+  if (await waitFor('the lobby opens on every phone', () => clients.every((c) => latest(c)?.status === 'lobby'), 10_000)) {
+    check('the lobby opens on every phone (watchers, one shared push)', true);
+  }
+
+  const before = clients.map((c) => c.states.length);
+  const joins = await Promise.all(clients.map((c) => request(c, 'squad:join')));
+  check('300 join at once, every one ok', joins.every((ack) => ack.ok), JSON.stringify(joins.find((ack) => !ack.ok)));
+  if (await waitFor('every phone counts 300 in the lobby', () => clients.every((c) => latest(c)?.players === COUNT && latest(c)?.joined === true), 10_000)) {
+    check('every phone counts 300 in the lobby', true);
+  }
+  const lobbyPushes = clients.map((c, i) => c.states.length - before[i]);
+  check('…as a few pushes a phone, not one per join', Math.max(...lobbyPushes) <= 20, `up to ${Math.max(...lobbyPushes)} a phone`);
+
+  clock.now = startsAt;
+  await tickSquad();
+  clock.now += SQUAD.dealMs;
+  await tickSquad();
+  await waitFor('the hunt: every dealt phone has a QR', async () => {
+    const held = await readSession(ORG, 'big-1');
+    return held?.status === 'hunt' && clients.every((c) => !held.players.find((p) => p.userId === c.userId)?.playing || Boolean(latest(c)?.round?.me?.qr));
+  }, 10_000);
+  const held = (await readSession(ORG, 'big-1'))!;
+  const byId = new Map(clients.map((c) => [c.userId, c]));
+  const dealtIn = clients.filter((c) => held.players.find((p) => p.userId === c.userId)?.playing);
+  const pick = seeded(31);
+
+  // The burst: every dealt player scans at once, a squadmate or anyone.
+  const burstStart = clients.map((c) => c.states.length);
+  const scans = await Promise.all(dealtIn.map((c) => {
+    const squad = held.round!.squads.find((sq) => sq.members.includes(c.userId))!;
+    const mates = squad.members.filter((id) => id !== c.userId);
+    const others = dealtIn.filter((o) => o !== c);
+    const target = pick() < 0.5 ? byId.get(mates[Math.floor(pick() * mates.length)])! : others[Math.floor(pick() * others.length)];
+    return request(c, 'squad:scan', { qr: latest(target)!.round!.me.qr });
+  }));
+  // Refusals are the game's (a squad that completed mid-burst), never a failure.
+  check('a burst of 300 scans: every one answered by the rules, none failed', scans.every((ack) => ack.ok || (ack.status >= 400 && ack.status < 500)), JSON.stringify(scans.find((ack) => !ack.ok && !(ack.status >= 400 && ack.status < 500))));
+  check('…mostly scored', scans.filter((ack) => ack.ok).length >= dealtIn.length * 0.9, `${scans.filter((ack) => ack.ok).length} of ${dealtIn.length}`);
+
+  const shown = (state: unknown) => JSON.stringify({ ...(state as object), now: 0, v: 0 });
+  const truth = async () => Promise.all(clients.map((c) => {
+    const u = people.find((p) => p.userId === c.userId)!;
+    return stateFor({ userId: u.userId, org: ORG, name: u.name, initials: initialsOf(u.name), office: 'Big Office', department: u.department });
+  }));
+  const converged = await waitFor('every phone ends on what the server says it should see', async () => {
+    const fresh = await truth();
+    return clients.every((c, i) => shown(c.states.at(-1)) === shown(fresh[i]));
+  }, 10_000);
+  if (converged) check('every phone ends on what the server says it should see', true);
+  const ended = (await readSession(ORG, 'big-1'))!;
+  check('…every phone\'s points are the session\'s', clients.every((c) => latest(c)!.totalPoints === (ended.totals[c.userId] ?? 0)));
+  const burstPushes = clients.map((c, i) => c.states.length - burstStart[i]);
+  check('…in a few pushes a phone', Math.max(...burstPushes) <= 20, `up to ${Math.max(...burstPushes)} a phone`);
+  for (const c of clients) c.socket.close();
 }
 
 // ------------------------------------------------------------- the pages
@@ -464,7 +691,6 @@ async function pageChecks() {
     configureSquad({
       now: () => clock.now,
       random: die,
-      packs: () => PACKS,
       notify: async (userIds: string[], input: NotificationInput) => void pushes.push({ userIds, input }),
       awardPoints: async (_session: SquadSession, round: number, points: Record<string, number>) => void awarded.push({ round, points }),
     });
@@ -473,6 +699,7 @@ async function pageChecks() {
     const io = initConnectRealtime(server);
     initSquadRealtime(io);
     await liveChecks();
+    await bigOfficeChecks();
     await pageChecks();
   } catch (error) {
     failures += 1;
@@ -481,7 +708,7 @@ async function pageChecks() {
     closeSquadRealtime();
     server?.close();
     await getDb().dropDatabase().catch(() => undefined);
-    console.log(failures ? `\n${failures} failed` : '\nall checks passed');
+    console.log(failures ? `\n${failures} failed, ${passes} passed` : `\nall ${passes} checks passed`);
     process.exit(failures ? 1 : 0);
   }
 })();

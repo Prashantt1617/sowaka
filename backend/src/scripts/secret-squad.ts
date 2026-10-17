@@ -8,10 +8,16 @@
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts offices convrse offices.csv [--replace]
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts offices-list convrse
  *
- *   # A session: rounds as squadSize:huntMinutes[:breakMinutes], comma-separated.
- *   node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule convrse Gurgaon 2026-10-17T16:00+05:30 --rounds 20:17,5:12,2:8
- *   #   --lobby 3 (minutes)  --lock 45 (seconds)  --points 40  --bonus 0.5 (per second left)  --post (the feed card)
- *   node --env-file=.env --import tsx src/scripts/secret-squad.ts edit <id> --at 2026-10-17T16:30+05:30 --rounds 5:17
+ *   # A session from its office's plan (services/secret-squad-packs.ts: HQ, Noida,
+ *   # Kolkata, Gurgaon): squad sizes, hunt and break lengths and each round's
+ *   # categories. With no --rounds the plan named like the office is used;
+ *   # --plan <name> picks one for an office named differently.
+ *   node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule convrse HQ 2026-10-24T16:00+05:30 --post
+ *   node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule convrse "Gurgaon 2" 2026-10-24T16:00+05:30 --plan Gurgaon
+ *   # Or rounds by hand, as squadSize:huntMinutes[:breakMinutes] (categories then come from the whole bank):
+ *   node --env-file=.env --import tsx src/scripts/secret-squad.ts schedule sowaka Gurgaon 2026-10-17T16:00+05:30 --rounds 5:8:1,2:3
+ *   #   --lobby 5 (minutes, the default)  --post (the feed card)  --force (a plan for a very different head count)
+ *   node --env-file=.env --import tsx src/scripts/secret-squad.ts edit <id> --at 2026-10-17T16:30+05:30 [--plan [name] | --rounds 5:8]
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts post <id>
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts list convrse
  *   node --env-file=.env --import tsx src/scripts/secret-squad.ts cancel <id>
@@ -25,7 +31,7 @@ import { redisClient, redisReady } from '../config/redis';
 import type { ConnectPost } from '../models/connect.model';
 import type { SquadRoundConfig, SquadSchedule } from '../models/secret-squad.model';
 import { SQUAD, cancelSession } from '../services/secret-squad-engine';
-import { SQUAD_PACKS } from '../services/secret-squad-packs';
+import { SQUAD_BANK, SQUAD_PLANS, SquadPlan, planNamed } from '../services/secret-squad-packs';
 import {
   officeKey,
   officeMembers,
@@ -41,10 +47,22 @@ const flag = (name: string) => {
   return at >= 0 ? args[at + 1] : undefined;
 };
 const has = (name: string) => args.includes(`--${name}`);
-const BOOLEAN_FLAGS = new Set(['replace', 'post']);
+const BOOLEAN_FLAGS = new Set(['replace', 'post', 'force']);
+/** The word after `--plan` is its name unless it is another flag or a time. */
+const takesPlanName = (next: string | undefined) => Boolean(next && !next.startsWith('--') && !/^\d{4}-\d{2}-\d{2}/.test(next));
+/** `--plan` alone (the office's own plan) gives '', `--plan <name>` the name, no flag undefined. */
+const planArg = (): string | undefined => {
+  const at = args.indexOf('--plan');
+  if (at < 0) return undefined;
+  return takesPlanName(args[at + 1]) ? args[at + 1] : '';
+};
 const positional: string[] = [];
 for (let i = 0; i < args.length; i += 1) {
   if (args[i].startsWith('--')) {
+    if (args[i] === '--plan') {
+      if (takesPlanName(args[i + 1])) i += 1;
+      continue;
+    }
     if (!BOOLEAN_FLAGS.has(args[i].slice(2))) i += 1;
     continue;
   }
@@ -63,12 +81,8 @@ const minutes = (value: string | undefined, fallbackMs: number) => {
   return n * 60_000;
 };
 
-/** "20:17,5:12:3,2:8" → rounds; lock, points and bonus apply to every round. */
-function parseRounds(text: string | undefined): SquadRoundConfig[] {
-  const spec = text ?? '5:17';
-  const lockMs = flag('lock') !== undefined ? Number(flag('lock')) * 1000 : undefined;
-  const points = flag('points') !== undefined ? Number(flag('points')) : undefined;
-  const bonus = flag('bonus') !== undefined ? Number(flag('bonus')) : undefined;
+/** "10:8:1,5:8" → rounds (minutes may be decimals: 2:3:0.5 is a 30 s break). */
+function parseRounds(spec: string): SquadRoundConfig[] {
   return spec.split(',').map((part) => {
     const [size, hunt, rest] = part.split(':').map((value) => value.trim());
     if (!/^\d+$/.test(size ?? '')) fail(`Round "${part}": squad size first, e.g. 5:17.`);
@@ -80,11 +94,33 @@ function parseRounds(text: string | undefined): SquadRoundConfig[] {
       squadSize,
       huntMs: hunt ? minutes(hunt, SQUAD.defaults.huntMs) : undefined,
       breakMs: rest ? minutes(rest, SQUAD.defaults.breakMs) : undefined,
-      lockMs,
-      pointsPerMember: points,
-      timeBonusPerSecond: bonus,
     });
   });
+}
+
+/** A plan's rounds as a session's: sizes, lengths and categories copied in. */
+const roundsFromPlan = (plan: SquadPlan): SquadRoundConfig[] =>
+  plan.rounds.map((round) => roundConfig({ squadSize: round.squadSize, huntMs: round.huntMs, breakMs: round.breakMs, categories: round.categories }));
+
+/**
+ * The rounds for a schedule: `--rounds` by hand, else `--plan <name>`, else
+ * the plan named like the office. A plan written for a very different head
+ * count is refused without --force (today's data still calls HQ "Gurgaon").
+ */
+function chooseRounds(office: string, people: number): { rounds: SquadRoundConfig[]; plan?: string } {
+  const named = planArg();
+  if (flag('rounds') !== undefined) {
+    if (named !== undefined) fail('Give --rounds or --plan, not both.');
+    return { rounds: parseRounds(flag('rounds')!) };
+  }
+  const plan = planNamed(named || office);
+  if (!plan) {
+    fail(`No plan is named "${named || office}". Plans: ${SQUAD_PLANS.map((p) => p.name).join(', ')}. Use --plan <name> or --rounds size:min[:break].`);
+  }
+  if ((people > plan.people * 2 || people * 2 < plan.people) && !has('force')) {
+    fail(`The ${plan.name} plan is for about ${plan.people} people; ${office} has ${people}. Pick another with --plan <name>, or add --force.`);
+  }
+  return { rounds: roundsFromPlan(plan), plan: plan.name };
 }
 
 function parseTime(text: string | undefined): Date {
@@ -96,8 +132,10 @@ function parseTime(text: string | undefined): Date {
 const ist = (at: Date | number) =>
   new Date(at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
+const clockOf = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
 const describeRounds = (rounds: SquadRoundConfig[]) =>
-  rounds.map((r, i) => `R${i + 1}: squads of ${r.squadSize}, ${r.huntMs / 60_000} min${i < rounds.length - 1 ? ` + ${r.breakMs / 60_000} min break` : ''}`).join('; ');
+  rounds.map((r, i) => `R${i + 1}: squads of ${r.squadSize}, ${clockOf(r.huntMs)}${i < rounds.length - 1 ? ` + ${clockOf(r.breakMs)} break` : ''}`
+    + (r.categories?.length ? ` [${r.categories.length} categories: ${r.categories.slice(0, 3).join(', ')}${r.categories.length > 3 ? ', …' : ''}]` : ' [categories from the whole bank]')).join('\n');
 
 async function requireOrg(org: string | undefined): Promise<string> {
   if (!org) fail('Name the company id, e.g. convrse.');
@@ -202,10 +240,9 @@ async function storeReady(): Promise<void> {
   const by = userInfo().username;
 
   if (command === 'packs') {
-    for (const pack of SQUAD_PACKS) {
-      console.log(`${pack.id.padEnd(24)} ${pack.difficulty.padEnd(7)} ${pack.themes.map((theme) => `${theme.name} (${theme.words.length})`).join(', ')}`);
-    }
-    console.log(`${SQUAD_PACKS.length} packs, ${SQUAD_PACKS.reduce((sum, pack) => sum + pack.themes.length, 0)} themes`);
+    for (const entry of SQUAD_BANK) console.log(`${entry.category.padEnd(20)} ${entry.words.join(', ')}`);
+    console.log(`${SQUAD_BANK.length} categories\n`);
+    for (const plan of SQUAD_PLANS) console.log(`${plan.name} (~${plan.people} people)\n${describeRounds(roundsFromPlan(plan))}\n`);
     process.exit(0);
   }
 
@@ -272,6 +309,7 @@ async function storeReady(): Promise<void> {
     if (startsAt.getTime() < Date.now()) fail('That time has passed.');
     const members = await officeMembers(org, office);
     if (members.length === 0) fail(`Nobody plays in ${office} yet: load the office list (offices) or check the spelling.`);
+    const { rounds, plan } = chooseRounds(office, members.length);
     const now = new Date();
     const schedule: SquadSchedule = {
       id: randomUUID(),
@@ -279,14 +317,15 @@ async function storeReady(): Promise<void> {
       office,
       startsAt,
       lobbyMs: minutes(flag('lobby'), SQUAD.defaults.lobbyMs),
-      rounds: parseRounds(flag('rounds')),
+      rounds,
+      ...(plan ? { plan } : {}),
       status: 'scheduled',
       createdAt: now,
       updatedAt: now,
       createdBy: by,
     };
     await squadSchedules().insertOne(schedule);
-    console.log(`Scheduled ${schedule.id}: ${office} (${members.length} people), ${ist(startsAt)}; lobby opens ${ist(startsAt.getTime() - schedule.lobbyMs)}.`);
+    console.log(`Scheduled ${schedule.id}: ${office} (${members.length} people), ${ist(startsAt)}; lobby opens ${ist(startsAt.getTime() - schedule.lobbyMs)}.${plan ? ` Plan: ${plan}.` : ''}`);
     console.log(describeRounds(schedule.rounds));
     if (has('post')) console.log(`Feed card posted: ${await postCard(schedule)}`);
     process.exit(0);
@@ -297,19 +336,16 @@ async function storeReady(): Promise<void> {
     if (schedule.status !== 'scheduled') fail(`It is ${schedule.status}; only a session that hasn't opened can be edited.`);
     const set: Partial<SquadSchedule> = { updatedAt: new Date() };
     if (flag('at')) set.startsAt = parseTime(flag('at'));
-    if (flag('rounds') || flag('lock') || flag('points') || flag('bonus')) {
-      set.rounds = flag('rounds') ? parseRounds(flag('rounds')) : schedule.rounds.map((round) => roundConfig({
-        ...round,
-        lockMs: flag('lock') !== undefined ? Number(flag('lock')) * 1000 : round.lockMs,
-        pointsPerMember: flag('points') !== undefined ? Number(flag('points')) : round.pointsPerMember,
-        timeBonusPerSecond: flag('bonus') !== undefined ? Number(flag('bonus')) : round.timeBonusPerSecond,
-      }));
+    if (flag('rounds') !== undefined || planArg() !== undefined) {
+      const { rounds, plan } = chooseRounds(schedule.office, (await officeMembers(schedule.org, schedule.office)).length);
+      set.rounds = rounds;
+      set.plan = plan;
     }
     if (flag('lobby')) set.lobbyMs = minutes(flag('lobby'), schedule.lobbyMs);
     await squadSchedules().updateOne({ id: schedule.id }, { $set: set });
     const updated = { ...schedule, ...set } as SquadSchedule;
     await syncCard(updated);
-    console.log(`${updated.office}, ${ist(updated.startsAt)}. ${describeRounds(updated.rounds)}`);
+    console.log(`${updated.office}, ${ist(updated.startsAt)}.\n${describeRounds(updated.rounds)}`);
     process.exit(0);
   }
 
@@ -325,7 +361,7 @@ async function storeReady(): Promise<void> {
     const rows = await squadSchedules().find({ org }).sort({ startsAt: -1 }).limit(20).toArray();
     for (const row of rows) {
       const live = row.status === 'opened' ? await readSession(org, row.id) : null;
-      console.log(`${row.id}  ${row.office.padEnd(10)} ${ist(row.startsAt).padEnd(24)} ${(live?.status ?? row.status).padEnd(10)} ${row.postId ? 'card ' : '     '}${describeRounds(row.rounds)}`);
+      console.log(`${row.id}  ${row.office.padEnd(10)} ${ist(row.startsAt).padEnd(24)} ${(live?.status ?? row.status).padEnd(10)} ${row.postId ? 'card ' : '     '}${row.plan ? `plan ${row.plan}` : 'by hand'}\n${describeRounds(row.rounds)}`);
     }
     process.exit(0);
   }

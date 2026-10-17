@@ -1,5 +1,5 @@
 /**
- * Secret Squad sessions: opening them on schedule, joining, checks, the clock,
+ * Secret Squad sessions: opening them on schedule, joining, scans, the clock,
  * pushing each phone what it should see, and paying points
  * (docs/secret-squad.md). The rules are in secret-squad-engine.ts; this file
  * is everything that touches a clock, the store, Mongo or a socket.
@@ -8,6 +8,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { connectPosts, getDb, users } from '../config/db';
 import type {
   SquadOfficeAssignment,
+  SquadPayout,
   SquadPlayer,
   SquadRoundConfig,
   SquadSchedule,
@@ -17,8 +18,7 @@ import type { User } from '../models/user.model';
 import {
   SQUAD,
   SquadRuleError,
-  SquadThemePick,
-  answerCheck,
+  SquadViewContext,
   advance,
   codeWindowOf,
   dealRound,
@@ -27,11 +27,14 @@ import {
   markOffline,
   markOnline,
   newSession,
-  planNextRound,
+  personalPartsOf,
+  roundsOf,
+  scan,
   sessionViewFor,
-  startCheck,
+  standingsOf as rankedStandings,
+  viewContext,
 } from './secret-squad-engine';
-import { SQUAD_PACKS, SquadPack } from './secret-squad-packs';
+import { SQUAD_BANK, SquadCategory } from './secret-squad-packs';
 import {
   createSession,
   deleteSession,
@@ -42,7 +45,6 @@ import {
   readSession,
   releaseSession,
 } from './secret-squad-store';
-import { claimOnce } from './scribble-store';
 import { notifyUsers } from './notification.service';
 import { recordPointChanges } from './points-ledger.service';
 import { env } from '../config/env';
@@ -52,7 +54,8 @@ export { SquadRuleError } from './secret-squad-engine';
 
 export const squadSchedules = () => getDb().collection<SquadSchedule>('secret_squad_sessions');
 export const squadOffices = () => getDb().collection<SquadOfficeAssignment>('secret_squad_offices');
-const packUsage = () => getDb().collection<{ org: string; packId: string; lastUsedAt: Date }>('secret_squad_pack_usage');
+/** One row per round paid to the org leaderboard: what makes paying idempotent across instances and restarts. */
+export const squadPayouts = () => getDb().collection<SquadPayout>('secret_squad_payouts');
 
 const GAME_KEY = 'secret-squad';
 
@@ -61,21 +64,22 @@ const GAME_KEY = 'secret-squad';
 interface SquadDeps {
   now: () => number;
   random: () => number;
-  packs: () => SquadPack[];
+  bank: () => SquadCategory[];
   notify: typeof notifyUsers;
+  /** Pays one round's net points (each player's, can be below 0) to the org leaderboard. */
   awardPoints: (session: SquadSession, roundIndex: number, points: Record<string, number>) => Promise<void>;
 }
 
 const defaults: SquadDeps = {
   now: () => Date.now(),
   random: Math.random,
-  packs: () => SQUAD_PACKS,
+  bank: () => SQUAD_BANK,
   notify: notifyUsers,
   awardPoints: payPoints,
 };
 let deps: SquadDeps = { ...defaults };
 
-/** For checks: a hand-moved clock, a fixed die, packs of their own, captured pushes. */
+/** For checks: a hand-moved clock, a fixed die, a word bank of their own, captured pushes. */
 export function configureSquad(overrides: Partial<SquadDeps> | null): void {
   deps = overrides ? { ...defaults, ...overrides } : { ...defaults };
 }
@@ -174,7 +178,7 @@ async function nextFor(org: string, office: string) {
     sessionId: schedule.id,
     lobbyOpensAt: schedule.startsAt.getTime() - schedule.lobbyMs,
     startsAt: schedule.startsAt.getTime(),
-    rounds: schedule.rounds.map((round) => ({ squadSize: round.squadSize, huntMs: round.huntMs })),
+    rounds: schedule.rounds.map((round) => ({ squadSize: round.squadSize, huntMs: round.huntMs, breakMs: round.breakMs })),
   };
 }
 
@@ -190,20 +194,25 @@ function endedAt(session: SquadSession): number {
 /** A profile photo as this API serves it (as presignConnectMedia does), for the game's faces. */
 const photoOf = (photoKey?: string) => (photoKey ? `/media/${encodeURIComponent(photoKey)}` : null);
 
+const viewOptions = { photoUrl: (player: SquadPlayer) => photoOf(player.photoKey) };
+
 function stateOf(
   session: SquadSession | null,
   viewer: (Pick<SquadViewer, 'userId' | 'name' | 'initials'> & { photoKey?: string }) | null,
   office: string,
   next: unknown,
+  context?: SquadViewContext,
+  now = deps.now(),
 ) {
-  const now = deps.now();
   return {
     v: session?.version ?? 0,
     now,
     office,
     me: viewer ? { userId: viewer.userId, name: viewer.name, initials: viewer.initials, photoUrl: photoOf(viewer.photoKey) } : null,
     next: session ? null : next,
-    session: session ? sessionViewFor(session, viewer?.userId ?? '', now, { photoUrl: (player) => photoOf(player.photoKey) }) : null,
+    session: session
+      ? sessionViewFor(session, viewer?.userId ?? '', now, viewOptions, context ?? viewContext(session, viewOptions))
+      : null,
   };
 }
 
@@ -242,13 +251,31 @@ export async function stateFor(viewer: SquadViewer) {
 
 // -------------------------------------------------------------------- push
 
-const lastSent = new Map<string, string>();
+/**
+ * A session's pushes go out at most this often: a burst of joins or scans in
+ * a big office becomes one push, worked out from the newest version. The
+ * first change after a quiet spell goes out at once.
+ */
+export const SQUAD_PUSH_MS = 200;
+
+/** What each phone was last sent: the office-wide part's generation, and its own parts. */
+const lastSent = new Map<string, { shared: number; own: string }>();
+/** Each session's office-wide part as last pushed (a watcher's view), and its generation. */
+const sharedSent = new Map<string, { print: string; generation: number }>();
+const pendingPushes = new Map<string, { session: SquadSession; timer: NodeJS.Timeout }>();
+const lastPushAt = new Map<string, number>();
 
 /** Forgets everything kept in this process for a session that has ended. */
 function forgetSession(id: string): void {
   for (const key of lastSent.keys()) if (key.startsWith(`${id}:`)) lastSent.delete(key);
+  sharedSent.delete(id);
+  const pending = pendingPushes.get(id);
+  if (pending) clearTimeout(pending.timer);
+  pendingPushes.delete(id);
+  lastPushAt.delete(id);
   codeWindows.delete(id);
   cancelPushed.delete(id);
+  for (const key of paidRounds) if (key.startsWith(`${id}:`)) paidRounds.delete(key);
 }
 
 /** Forgets what was last sent to someone, so their next push goes out whole. */
@@ -257,35 +284,75 @@ export function forgetSquadSent(userId: string): void {
 }
 
 /**
- * Sends each player what they now see, skipping anyone whose view is the same
- * as last time; everyone else watching that office (not joined) gets one
- * shared view, since nothing in it is theirs.
+ * Sends each phone what it now sees, soon (see SQUAD_PUSH_MS): pushes for a
+ * session close together are sent once, from the newest version given.
  */
 export function pushSession(session: SquadSession): void {
   if (!emitter) return;
+  const pending = pendingPushes.get(session.id);
+  if (pending) {
+    if (session.version >= pending.session.version) pending.session = session;
+    return;
+  }
+  const wait = Math.max(0, (lastPushAt.get(session.id) ?? 0) + SQUAD_PUSH_MS - Date.now());
+  const timer = setTimeout(() => {
+    const due = pendingPushes.get(session.id);
+    pendingPushes.delete(session.id);
+    lastPushAt.set(session.id, Date.now());
+    if (!due) return;
+    try {
+      sendViews(due.session);
+    } catch (error) {
+      logger.error('Secret Squad push failed', { sessionId: session.id }, error);
+    }
+  }, wait);
+  pendingPushes.set(session.id, { session, timer });
+}
+
+/**
+ * Sends each player what they now see, skipping anyone whose view is the same
+ * as last time; everyone else watching that office (not joined) gets one
+ * shared view, since nothing in it is theirs.
+ *
+ * A view is the office-wide part (the same on every phone: what a watcher
+ * sees) plus the player's own parts (`personalPartsOf`). So the office-wide
+ * part is compared once per push, and each phone only by its own parts.
+ */
+function sendViews(session: SquadSession): void {
+  if (!emitter) return;
+  const now = deps.now();
+  // The standings, groups and office-wide parts every view uses: once per push, not once per phone.
+  const context = viewContext(session, viewOptions);
+  const watchers = stateOf(session, null, session.office, null, context, now);
+  // What they see, not when: the version and the clock change on every
+  // action anywhere in the office, and must not send an update by themselves.
+  const print = JSON.stringify({ ...watchers, now: 0, v: 0 });
+  let shared = sharedSent.get(session.id);
+  if (!shared || shared.print !== print) {
+    shared = { print, generation: (shared?.generation ?? 0) + 1 };
+    sharedSent.set(session.id, shared);
+  }
   for (const player of session.players) {
     if (player.left) continue;
     let state: ReturnType<typeof stateOf>;
+    let own: string;
     try {
-      state = stateOf(session, player, session.office, null);
+      state = stateOf(session, player, session.office, null, context, now);
+      own = JSON.stringify([state.me, personalPartsOf(state.session!)]);
     } catch (error) {
       // One player's view failing must not cost everyone after them theirs.
       logger.error('Secret Squad view failed', { sessionId: session.id, userId: player.userId }, error);
       continue;
     }
-    // What they see, not when: the version and the clock change on every
-    // action anywhere in the office, and must not send an update by themselves.
-    const print = JSON.stringify({ ...state, now: 0, v: 0 });
     const key = `${session.id}:${player.userId}`;
-    if (lastSent.get(key) === print) continue;
-    lastSent.set(key, print);
+    const last = lastSent.get(key);
+    if (last && last.shared === shared.generation && last.own === own) continue;
+    lastSent.set(key, { shared: shared.generation, own });
     emitter.toUser(player.userId, 'squad:state', state);
   }
-  const watchers = stateOf(session, null, session.office, null);
-  const print = JSON.stringify({ ...watchers, now: 0, v: 0 });
   const key = `${session.id}:*`;
-  if (lastSent.get(key) !== print) {
-    lastSent.set(key, print);
+  if (lastSent.get(key)?.shared !== shared.generation) {
+    lastSent.set(key, { shared: shared.generation, own: '' });
     emitter.toOffice(session.org, session.office, session.players.filter((player) => !player.left).map((player) => player.userId), 'squad:state', watchers);
   }
 }
@@ -324,27 +391,19 @@ export async function leaveSquad(viewer: SquadViewer) {
   return {};
 }
 
-export async function checkSquad(viewer: SquadViewer, input: { code?: unknown; qr?: unknown }) {
+/** A scan of someone's QR (`{ qr }`; `{ code }` only while typed codes are on): resolves at once for both phones. */
+export async function scanSquad(viewer: SquadViewer, input: { code?: unknown; qr?: unknown }) {
   const session = await requireLive(viewer);
   const now = deps.now();
   const out = await change(session.org, session.id, (s) =>
-    startCheck(s, viewer.userId, {
+    scan(s, viewer.userId, {
       code: input.code === undefined ? undefined : String(input.code),
       qr: input.qr === undefined ? undefined : String(input.qr),
     }, now),
   );
-  return out?.result ?? {};
-}
-
-export async function answerSquad(viewer: SquadViewer, input: { askId?: unknown; allow?: unknown }) {
-  const session = await requireLive(viewer);
-  const now = deps.now();
-  const out = await change(session.org, session.id, (s) => {
-    answerCheck(s, viewer.userId, String(input.askId ?? ''), input.allow === true, now);
-    return true;
-  });
+  // A scan can complete the last squad and so end the round (or the game).
   await afterChange(out?.session);
-  return {};
+  return out?.result ?? {};
 }
 
 /** A socket of theirs arrived or the last one left. */
@@ -360,104 +419,80 @@ export async function squadPresence(viewer: SquadViewer, online: boolean): Promi
   });
 }
 
-/** An answer can end a round (the last squad finishing): pay it now rather than on the next tick. */
+/**
+ * Once the game is over: pays the org leaderboard (once) and gives the card
+ * its final standings. Called after anything that can end it: the clock, and
+ * a scan completing the last squad.
+ */
 async function afterChange(session: SquadSession | undefined): Promise<void> {
   if (!session) return;
-  for (const round of [...session.history, ...(session.round ? [session.round] : [])]) {
-    if (round.points && !round.skipped) await awardOnce(session, round.index, round.points);
-  }
-  // The last squad linking up ends the game in an answer, not the clock:
+  if (session.status === 'over') await awardOnce(session, FINAL_PAYOUT, leaderboardPointsOf(session));
+  // The last squad linking up ends the game in a scan, not the clock:
   // the card gets its standings either way (a second write is a no-op).
   if (session.status === 'over') await syncCard(session, 'over');
 }
 
-// ------------------------------------------------------------------- dealing
-
-interface ThemeEntry extends SquadThemePick {
-  difficulty: SquadPack['difficulty'];
-}
-
-/** Enough themes for the next round, whole packs together, packs not used lately first. */
-export function chooseThemes(
-  count: number,
-  minWords: number,
-  sessionPacks: string[],
-  recentPacks: Map<string, number>,
-  random: () => number,
-): SquadThemePick[] {
-  const packs = deps.packs()
-    .map((pack) => ({
-      pack,
-      themes: pack.themes.filter((theme) => theme.words.length >= minWords),
-      rank: (sessionPacks.includes(pack.id) ? 2 : 0) + (recentPacks.has(pack.id) ? 1 : 0),
-      recency: recentPacks.get(pack.id) ?? 0,
-      tie: random(),
-    }))
-    .filter((entry) => entry.themes.length > 0)
-    .sort((a, b) => a.rank - b.rank || a.recency - b.recency || a.tie - b.tie);
-  const out: ThemeEntry[] = [];
-  for (const entry of packs) {
-    for (const theme of entry.themes) {
-      if (out.length >= count) break;
-      out.push({ theme: theme.name, packId: entry.pack.id, words: theme.words, difficulty: entry.pack.difficulty });
-    }
-    if (out.length >= count) break;
-  }
-  return out;
-}
-
-/** How many themes have at least `minWords` words. */
-const themesWith = (minWords: number) =>
-  deps.packs().reduce((sum, pack) => sum + pack.themes.filter((theme) => theme.words.length >= minWords).length, 0);
-
-/** Squad sizes and themes for the next round; fewer squads if there aren't enough themes. */
-function planDeal(session: SquadSession, now: number, recent: Map<string, number>) {
-  let sizes = planNextRound(session, now, Number.POSITIVE_INFINITY);
-  for (let pass = 0; pass < 6 && sizes.length > 0; pass += 1) {
-    const available = themesWith(Math.max(...sizes));
-    if (available >= sizes.length) break;
-    sizes = available >= 2 ? planNextRound(session, now, available) : [];
-  }
-  const themes = sizes.length > 0
-    ? chooseThemes(sizes.length, Math.max(...sizes), session.packIds, recent, deps.random)
-    : [];
-  return { sizes, themes };
-}
-
-async function recentPacksOf(org: string): Promise<Map<string, number>> {
-  try {
-    const since = new Date(deps.now() - 21 * 24 * 60 * 60_000);
-    const rows = await packUsage().find({ org, lastUsedAt: { $gte: since } }).toArray();
-    return new Map(rows.map((row) => [row.packId, row.lastUsedAt.getTime()]));
-  } catch (error) {
-    logger.error('Secret Squad pack usage read failed', { org }, error);
-    return new Map();
-  }
-}
-
-async function notePacksUsed(session: SquadSession): Promise<void> {
-  const ids = [...new Set(session.round?.squads.map((squad) => squad.packId) ?? [])];
-  if (ids.length === 0) return;
-  const at = new Date(deps.now());
-  await packUsage().bulkWrite(ids.map((packId) => ({
-    updateOne: { filter: { org: session.org, packId }, update: { $set: { org: session.org, packId, lastUsedAt: at } }, upsert: true },
-  }))).catch((error) => logger.error('Secret Squad pack usage write failed', { org: session.org }, error));
-}
-
 // -------------------------------------------------------------------- points
 
-/** Pays a round's points once, across every instance. */
+/**
+ * Pays a round's net points once, across every instance and restart: the
+ * round's row in `secret_squad_payouts` is written first (its id is
+ * session:round, so a second writer gets a duplicate-key error and stops),
+ * then the points move. Points are earned live in the game, but reach the org
+ * leaderboard per round, as each player's net for it.
+ */
+/**
+ * What a finished game adds to the org leaderboard, as the other games do:
+ * the player's game score ÷ 100, rounded, at most 25, never below 0. The game
+ * score itself can go below 0; the leaderboard never loses points to it.
+ */
+export const SQUAD_POINTS_PER_SCORE = 100;
+export const SQUAD_POINTS_MAX = 25;
+export const squadPointsFor = (score: number): number =>
+  Math.max(0, Math.min(SQUAD_POINTS_MAX, Math.round(score / SQUAD_POINTS_PER_SCORE)));
+
+/** The payout row of a whole game (rounds are not paid one by one). */
+const FINAL_PAYOUT = -1;
+
+function leaderboardPointsOf(session: SquadSession): Record<string, number> {
+  return Object.fromEntries(standingsOf(session).map((row) => [row.userId, squadPointsFor(row.points)]));
+}
+
+/** Games this process knows are paid (Mongo is the truth; this saves asking it again on every scan). */
+const paidRounds = new Set<string>();
+
 async function awardOnce(session: SquadSession, roundIndex: number, points: Record<string, number>): Promise<void> {
-  if (!(await claimOnce(`squad-points:${session.id}:${roundIndex}`, 7 * 24 * 60 * 60_000))) return;
+  const key = roundIndex === FINAL_PAYOUT ? `${session.id}:final` : `${session.id}:${roundIndex}`;
+  if (paidRounds.has(key)) return;
+  try {
+    await squadPayouts().insertOne({
+      _id: roundIndex === FINAL_PAYOUT ? `${session.id}:final` : `${session.id}:${roundIndex}`,
+      org: session.org,
+      sessionId: session.id,
+      roundIndex,
+      points,
+      paidAt: new Date(deps.now()),
+    });
+    paidRounds.add(key);
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      paidRounds.add(key); // paid already
+      return;
+    }
+    logger.error('Secret Squad payout claim failed', { sessionId: session.id, roundIndex }, error);
+    return; // try again on the next pass
+  }
   try {
     await deps.awardPoints(session, roundIndex, points);
   } catch (error) {
+    // Claimed but not paid: logged rather than retried, so nobody is paid twice.
     logger.error('Secret Squad points failed', { sessionId: session.id, roundIndex }, error);
   }
 }
 
-async function payPoints(session: SquadSession, roundIndex: number, points: Record<string, number>): Promise<void> {
-  const paid = Object.entries(points).filter(([, value]) => value > 0);
+/** Each player's leaderboard points for the game, to `users.points` and the ledger. Never below 0. */
+export async function payPoints(session: SquadSession, roundIndex: number, points: Record<string, number>): Promise<void> {
+  const paid = Object.entries(points).filter(([, value]) => Number.isFinite(value) && value > 0);
   if (paid.length === 0) return;
   await users().bulkWrite(paid.map(([userId, value]) => ({
     updateOne: { filter: { userId }, update: { $inc: { points: value } } },
@@ -468,38 +503,21 @@ async function payPoints(session: SquadSession, roundIndex: number, points: Reco
     delta: value,
     source: 'game_challenge' as const,
     reason: 'game' as const,
-    refId: `${session.id}:${roundIndex}`,
+    refId: roundIndex === FINAL_PAYOUT ? session.id : `${session.id}:${roundIndex}`,
     gameKey: GAME_KEY,
     title: 'Secret Squad',
-    note: `${session.office} · round ${roundIndex + 1}`,
+    note: roundIndex === FINAL_PAYOUT ? session.office : `${session.office} · round ${roundIndex + 1}`,
   })));
 }
 
-/** Keeps the feed card's state in step with the session (lobby, playing, over). */
 /**
  * The session's final standings for its card ("Game over": the top 10 and
- * your own rank): everyone who played, most points first, ranked 1, 2, 2, 4
- * on a tie.
+ * your own rank) and the full leaderboard: everyone dealt into a round, most
+ * points first (can be below 0), ranked 1, 2, 2, 4 on a tie. Each row is
+ * `{ userId, name, initials, photoUrl, points, rank }`.
  */
 function standingsOf(session: SquadSession) {
-  // Those dealt into a round; someone who only sat in the lobby did not play.
-  const dealt = new Set(
-    [...session.history, ...(session.round ? [session.round] : [])].flatMap((round) => round.squads.flatMap((squad) => squad.members)),
-  );
-  const rows = session.players
-    .filter((player) => dealt.has(player.userId))
-    .map((player) => ({
-      userId: player.userId,
-      name: player.name,
-      initials: player.initials,
-      photoUrl: photoOf(player.photoKey),
-      points: session.totals[player.userId] ?? 0,
-    }))
-    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
-  return rows.map((row, index) => ({
-    ...row,
-    rank: index > 0 && rows[index - 1].points === row.points ? rows.findIndex((r) => r.points === row.points) + 1 : index + 1,
-  }));
+  return rankedStandings(session, (player) => photoOf(player.photoKey));
 }
 
 /**
@@ -540,7 +558,8 @@ export async function squadBoard(viewer: SquadViewer, input: { sessionId?: unkno
 async function syncCard(session: SquadSession, status: 'lobby' | 'playing' | 'over' | 'cancelled'): Promise<void> {
   const set: Record<string, unknown> = { 'body.status': status, updatedAt: new Date(deps.now()) };
   if (status === 'over') {
-    set['body.endsAt'] = new Date(deps.now()).toISOString();
+    // The real end: when the last round ended, not when this write ran.
+    set['body.endsAt'] = new Date(endedAt(session)).toISOString();
     set['body.results'] = standingsOf(session);
   }
   await connectPosts()
@@ -558,8 +577,10 @@ const cancelPushed = new Set<string>();
 /** Moves every live session on: dealing, the hunt's clock, breaks, the end. */
 export async function tickSquad(): Promise<void> {
   const now = deps.now();
-  for (const { org, id } of await liveSessions()) {
-    if (!(await leaseSession(org, id, INSTANCE, 1_500))) continue;
+  // Sessions side by side: one office's round ending (its card and payout
+  // writes to Mongo) must not hold up another office's clock.
+  await Promise.all((await liveSessions()).map(async ({ org, id }) => {
+    if (!(await leaseSession(org, id, INSTANCE, 1_500))) return;
     try {
       await tickOne(org, id, now);
     } catch (error) {
@@ -567,7 +588,7 @@ export async function tickSquad(): Promise<void> {
     } finally {
       await releaseSession(org, id, INSTANCE);
     }
-  }
+  }));
 }
 
 async function tickOne(org: string, id: string, now: number): Promise<void> {
@@ -583,16 +604,11 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
     pushSession(current);
     await syncCard(current, 'cancelled');
   }
-  const dealDue = (current.status === 'lobby' && now >= current.startsAt)
-    || (current.status === 'break' && now >= current.phaseEndsAt);
-  const recent = dealDue ? await recentPacksOf(org) : new Map<string, number>();
-
   const out = await mutateSession(org, id, (session) => {
     const step = advance(session, now);
     if (step.kind === 'none') return null;
     if (step.kind === 'deal') {
-      const { sizes, themes } = planDeal(session, now, recent);
-      dealRound(session, now, sizes, themes, deps.random);
+      dealRound(session, now, deps.bank(), deps.random);
       return { kind: 'dealt' as const };
     }
     return step;
@@ -617,10 +633,7 @@ async function tickOne(org: string, id: string, now: number): Promise<void> {
   }
   codeWindows.set(id, codeWindowOf(now));
   pushSession(session);
-  if (result.kind === 'dealt') {
-    await notePacksUsed(session);
-    if (session.roundIndex === 0) await syncCard(session, 'playing');
-  }
+  if (result.kind === 'dealt' && session.roundIndex === 0) await syncCard(session, 'playing');
   if (session.status === 'over') await syncCard(session, 'over');
   await afterChange(session);
 }
@@ -687,14 +700,15 @@ export function roundConfig(input: Partial<SquadRoundConfig>): SquadRoundConfig 
   const d = SQUAD.defaults;
   const clamp = (value: number | undefined, fallback: number, min: number, max: number) =>
     Number.isFinite(value) ? Math.min(max, Math.max(min, value as number)) : fallback;
-  return {
+  const config: SquadRoundConfig = {
     squadSize: Math.round(clamp(input.squadSize, 5, SQUAD.minSquadSize, SQUAD.maxSquadSize)),
     huntMs: clamp(input.huntMs, d.huntMs, 60_000, 60 * 60_000),
-    breakMs: clamp(input.breakMs, d.breakMs, 15_000, 30 * 60_000),
-    lockMs: clamp(input.lockMs, d.lockMs, 0, 5 * 60_000),
-    pointsPerMember: clamp(input.pointsPerMember, d.pointsPerMember, 0, 1000),
-    timeBonusPerSecond: clamp(input.timeBonusPerSecond, d.timeBonusPerSecond, 0, 10),
+    // 0 is allowed: a plan's last round has no break (and the last break is never used).
+    breakMs: clamp(input.breakMs, d.breakMs, 0, 30 * 60_000),
   };
+  const categories = (input.categories ?? []).map((name) => String(name).trim()).filter(Boolean);
+  if (categories.length > 0) config.categories = categories;
+  return config;
 }
 
 export type { SquadPlayer };

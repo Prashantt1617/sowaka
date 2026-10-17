@@ -19,6 +19,8 @@ const lockKey = (org: string, id: string) => `squad:lock:${org}:${id}`;
 const LIVE_KEY = 'squad:live';
 
 const memorySessions = new Map<string, string>();
+/** Each memory session parsed once, for reads (see `readSession`). */
+const memoryParsed = new Map<string, SquadSession>();
 const memoryLive = new Set<string>();
 const memoryQueues = new Map<string, Promise<unknown>>();
 
@@ -38,9 +40,9 @@ return 0`;
  * read first asks Redis for the version (a few bytes), and only fetches the
  * session itself (tens of KB for a big office) when another instance moved it.
  */
-const cache = new Map<string, { version: string; raw: string }>();
+const cache = new Map<string, { version: string; raw: string; session?: SquadSession }>();
 
-async function readRaw(client: Redis, org: string, id: string): Promise<{ raw: string; version: string } | null> {
+async function readRaw(client: Redis, org: string, id: string): Promise<{ raw: string; version: string; session?: SquadSession } | null> {
   const key = sessionKey(org, id);
   const version = await client.get(versionKey(org, id));
   if (version === null) {
@@ -51,7 +53,7 @@ async function readRaw(client: Redis, org: string, id: string): Promise<{ raw: s
   if (held && held.version === version) return held;
   const raw = await client.get(key);
   if (raw === null) return null;
-  const fresh = { raw, version };
+  const fresh: { version: string; raw: string; session?: SquadSession } = { raw, version };
   cache.set(key, fresh);
   return fresh;
 }
@@ -69,19 +71,28 @@ export class SquadStoreConflict extends Error {
   }
 }
 
+/**
+ * The session as last written, parsed once per version and shared by every
+ * reader in this process: read it, never change it (changes go through
+ * `mutateSession`, which works on its own copy).
+ */
 export async function readSession(org: string, id: string): Promise<SquadSession | null> {
   const key = sessionKey(org, id);
   const client = redis();
   if (client) {
     try {
       const held = await readRaw(client, org, id);
-      return held ? (JSON.parse(held.raw) as SquadSession) : null;
+      if (!held) return null;
+      return (held.session ??= JSON.parse(held.raw) as SquadSession);
     } catch (error) {
       logger.error('Secret Squad session read failed', { org, id }, error);
     }
   }
   const raw = memorySessions.get(key);
-  return raw ? (JSON.parse(raw) as SquadSession) : null;
+  if (!raw) return null;
+  let session = memoryParsed.get(key);
+  if (!session) memoryParsed.set(key, (session = JSON.parse(raw) as SquadSession));
+  return session;
 }
 
 /** Writes a new session, unless one with that id exists. */
@@ -106,6 +117,7 @@ export async function createSession(session: SquadSession): Promise<boolean> {
   }
   if (memorySessions.has(key)) return false;
   memorySessions.set(key, raw);
+  memoryParsed.delete(key);
   memoryLive.add(live);
   return true;
 }
@@ -165,7 +177,7 @@ async function redisMutate<T>(
     try {
       const written = await client.eval(CAS_SCRIPT, 2, key, versionKey(org, id), held.version, raw, version, String(SESSION_TTL_SECONDS));
       if (written === 1) {
-        cache.set(key, { raw, version });
+        cache.set(key, { raw, version, session });
         return { session, result };
       }
     } catch (error) {
@@ -194,6 +206,8 @@ function memoryMutate<T>(
     if (result === null) return null;
     session.version += 1;
     memorySessions.set(key, JSON.stringify(session));
+    // What the change made is what readers see next; nothing changes it after this.
+    memoryParsed.set(key, session);
     return { session, result };
   });
   memoryQueues.set(key, run.catch(() => undefined));
@@ -213,6 +227,7 @@ export async function deleteSession(org: string, id: string): Promise<void> {
     }
   }
   memorySessions.delete(sessionKey(org, id));
+  memoryParsed.delete(sessionKey(org, id));
   memoryLive.delete(live);
 }
 
@@ -276,6 +291,7 @@ export async function releaseSession(org: string, id: string, owner: string): Pr
 /** For checks: forget every session kept in memory. */
 export function resetSquadMemory(): void {
   memorySessions.clear();
+  memoryParsed.clear();
   memoryLive.clear();
   memoryQueues.clear();
   queues.clear();
