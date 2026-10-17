@@ -82,9 +82,12 @@ export async function verifyLoginOtp(
   // A store reviewer cannot receive a mailed code, so a named few accounts may
   // use a fixed one. Scoped to the allowlist and logged every time; the older
   // blanket dev bypass stays for local work only.
-  const testAccount = otp === '123456' && env.otpTestEmails.includes(email);
+  // A shared desk may have its own fixed code instead (OTP_FIXED_CODES).
+  const fixedCode = env.otpFixedCodes.get(email);
+  const testAccount = (otp === '123456' && env.otpTestEmails.includes(email))
+    || (fixedCode !== undefined && otp === fixedCode);
   if (testAccount) {
-    logger.warn('Login with the fixed test code', {
+    logger.warn('Login with a fixed code', {
       email: `${email.slice(0, 2)}***@${email.split('@')[1] ?? ''}`,
     });
   }
