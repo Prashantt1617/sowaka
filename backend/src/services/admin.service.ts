@@ -75,6 +75,9 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     employeeType: e.employeeType,
     joiningDate: e.joiningDate ? e.joiningDate.toISOString().slice(0, 10) : undefined,
     birthday: e.birthday ? e.birthday.toISOString().slice(0, 10) : undefined,
+    gender: e.gender,
+    phone: e.phone,
+    isDirector: e.isDirector === true,
   }));
 }
 
@@ -185,6 +188,119 @@ export async function setOvertimeEligibilityForAdmin(
   );
   if (!employee) throw new AdminError(404, 'Employee not found');
   return { userId: employee.userId, name: employee.name, overtimeEligible: eligible };
+}
+
+export interface EmployeeDetailsInput {
+  name?: string; email?: string; employeeId?: string; joiningDate?: string; birthday?: string;
+  mobile?: string; gender?: string; designation?: string; department?: string; location?: string;
+  employeeType?: string; isDirector?: boolean;
+}
+
+/**
+ * Whether `employee` is the editor or sits anywhere below them in the
+ * reporting line. Walks up the managers; a loop in the data ends the walk.
+ */
+async function isSelfOrBelow(editor: User, employee: User): Promise<boolean> {
+  const seen = new Set<string>();
+  let current: Pick<User, 'userId' | 'managerUserId'> | null = employee;
+  while (current && !seen.has(current.userId)) {
+    if (current.userId === editor.userId) return true;
+    seen.add(current.userId);
+    if (!current.managerUserId) return false;
+    current = await users().findOne(
+      { userId: current.managerUserId, org: editor.org },
+      { projection: { _id: 0, userId: 1, managerUserId: 1 } },
+    );
+  }
+  return false;
+}
+
+/**
+ * Edits an employee's profile details from the dashboard. Only someone given
+ * `canEditEmployeeDetails`, and only for themselves and the people below them.
+ * Fields left out stay as they are; an empty optional field clears it.
+ */
+export async function updateEmployeeDetailsForAdmin(editorUserId: string, employeeUserId: string, input: EmployeeDetailsInput) {
+  const editor = await users().findOne({ userId: editorUserId });
+  if (!editor) throw new AdminError(404, 'Admin user not found');
+  if (editor.canEditEmployeeDetails !== true) throw new AdminError(403, 'You cannot edit employee details');
+  const employee = await users().findOne({ userId: employeeUserId, ...(editor.org ? { org: editor.org } : {}) });
+  if (!employee) throw new AdminError(404, 'Employee not found');
+  if (!(await isSelfOrBelow(editor, employee))) {
+    throw new AdminError(403, 'You can edit your own details and those of the people who report to you');
+  }
+
+  const set: Partial<User> = {};
+  const unset: Record<string, ''> = {};
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : undefined);
+  const optional = (key: 'phone' | 'gender' | 'designation' | 'department' | 'location', value: unknown) => {
+    const v = text(value);
+    if (v === undefined) return;
+    if (v) set[key] = v.slice(0, 120);
+    else unset[key] = '';
+  };
+  const date = (value: unknown, label: string) => {
+    const v = text(value);
+    if (v === undefined) return undefined;
+    if (!v) return null;
+    const parsed = new Date(`${v}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(parsed.valueOf())) throw new AdminError(400, `${label} is invalid`);
+    return parsed;
+  };
+
+  if (input.name !== undefined) {
+    const name = text(input.name);
+    if (!name) throw new AdminError(400, 'Full name is required');
+    set.name = name.slice(0, 120);
+  }
+  if (input.email !== undefined) {
+    const email = text(input.email)?.toLowerCase();
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new AdminError(400, 'A valid work email is required');
+    if (email !== employee.email) {
+      if (await users().findOne({ email, userId: { $ne: employee.userId } })) {
+        throw new AdminError(409, 'An employee with this email already exists');
+      }
+      set.email = email;
+    }
+  }
+  if (input.employeeId !== undefined) {
+    // Attendance is keyed by the employee id, so two people must never share one.
+    const employeeId = text(input.employeeId);
+    if (employeeId) {
+      if (employeeId !== employee.employeeId
+        && await users().findOne({ org: employee.org, employeeId, userId: { $ne: employee.userId } })) {
+        throw new AdminError(409, `Employee ID ${employeeId} is already in use`);
+      }
+      set.employeeId = employeeId;
+    } else {
+      // Unset rather than null: the unique index refuses a second null.
+      unset.employeeId = '';
+    }
+  }
+  const joining = date(input.joiningDate, 'Joining date');
+  if (joining === null) throw new AdminError(400, 'Joining date is required');
+  if (joining) set.joiningDate = joining;
+  const birthday = date(input.birthday, 'Date of birth');
+  if (birthday) set.birthday = birthday;
+  else if (birthday === null) unset.birthday = '';
+  optional('phone', input.mobile);
+  optional('gender', input.gender);
+  optional('designation', input.designation);
+  optional('department', input.department);
+  optional('location', input.location);
+  if (input.employeeType !== undefined) {
+    if (!['full_time', 'contract', 'intern'].includes(String(input.employeeType))) throw new AdminError(400, 'Employee type is invalid');
+    set.employeeType = input.employeeType as User['employeeType'];
+  }
+  if (input.isDirector !== undefined) set.isDirector = input.isDirector === true;
+
+  const updated = await users().findOneAndUpdate(
+    { userId: employee.userId },
+    { $set: { ...set, updatedAt: new Date() }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+    { returnDocument: 'after' },
+  );
+  if (!updated) throw new AdminError(404, 'Employee not found');
+  return { userId: updated.userId, changed: [...Object.keys(set), ...Object.keys(unset)] };
 }
 
 

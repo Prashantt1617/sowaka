@@ -167,6 +167,12 @@ export type Emp = {
   managerId: string;
   dob: string;
   joining: string;
+  /** YYYY-MM-DD, or empty: what the Edit details form starts from. */
+  joiningDate: string;
+  birthday: string;
+  gender: string;
+  phone: string;
+  isDirector: boolean;
   /** What HR has filed against them — offer letter, ID proof and the like. */
   documents: EmpDocument[];
 };

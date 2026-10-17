@@ -119,6 +119,14 @@ export interface User {
   supportRoleSetBy?: string;
   supportRoleSetAt?: Date;
   /**
+   * May edit every field of the employee profile on the dashboard — their own
+   * and that of everyone below them in the reporting line. Given per person by
+   * script (today cde's founder alone); absent means no.
+   */
+  canEditEmployeeDetails?: boolean;
+  /** A director / person with substantial interest (Form 12BA). Absent means no. */
+  isDirector?: boolean;
+  /**
    * Per-employee overtime eligibility, set by HR from the dashboard. Absent
    * means eligible, so existing employees keep the behaviour they had before
    * this flag existed. Applied on top of the department-level gate

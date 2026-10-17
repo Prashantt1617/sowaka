@@ -330,6 +330,8 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     dashboardTabs: user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs) ? null : user.dashboardTabs,
     // Whether the dashboard shows the Support desk, and which desk.
     supportRole: supportRoleOf(user),
+    // Whether the profile offers Edit details (own and their reports'); the server checks it again.
+    canEditEmployees: user.canEditEmployeeDetails === true,
     isLeadership: user.isLeadership === true,
     // Whether the composer offers contests; the server refuses one without it.
     canCreateContests: user.canCreateContests === true,
