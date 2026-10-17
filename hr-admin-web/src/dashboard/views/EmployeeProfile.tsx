@@ -216,10 +216,9 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
                 <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
               </Section>
             )}
+            {/* Only when something is filed; an empty box said nothing useful. */}
+            {emp.documents.length > 0 && (
             <Section title="Documents">
-            {emp.documents.length === 0 ? (
-              <div style={{ fontSize: 15, color: '#9197A2', fontWeight: 500 }}>Nothing filed yet. Documents are added from the employee's record.</div>
-            ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {emp.documents.map((doc) => (
                   <a
@@ -240,8 +239,8 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
                   </a>
                 ))}
               </div>
-            )}
           </Section>
+            )}
           </div>
         </div>
       )}
