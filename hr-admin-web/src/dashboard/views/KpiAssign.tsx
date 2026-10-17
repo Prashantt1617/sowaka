@@ -30,10 +30,13 @@ export function EmployeeKpiPanel({
   designation,
   period,
   nextPeriod,
+  readOnly,
 }: {
   userId: string;
   userName: string;
   designation: string;
+  /** Shows what is set without the button to change it, e.g. on someone's own profile. */
+  readOnly?: string;
   /** The live cycle — what their manager is scoring against, read-only. */
   period: string;
   /** The cycle being edited. The one in progress is frozen. */
@@ -108,6 +111,9 @@ export function EmployeeKpiPanel({
               templates={templates}
               empty={`Nothing set yet. Without it they carry no KPIs into ${periodLabel(nextPeriod)}.`}
             />
+            {readOnly ? (
+              <div style={{ fontSize: 13, color: '#9197A2', marginTop: 12 }}>{readOnly}</div>
+            ) : (
             <button
               onClick={() => setOpen(true)}
               disabled={params.length === 0}
@@ -120,6 +126,7 @@ export function EmployeeKpiPanel({
             >
               {upcoming ? 'Edit next cycle KPIs' : 'Set KPIs for next cycle'}
             </button>
+            )}
           </div>
         </>
       )}

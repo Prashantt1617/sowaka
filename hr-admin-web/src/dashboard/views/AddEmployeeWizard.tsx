@@ -23,7 +23,7 @@ import { evenWeights, weightError, weightTotal } from '../weights';
 
 const STEPS = ['Basic details', 'Personal details', 'Payment information', 'Shift template', 'Feedback parameters'];
 
-const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
+export const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 
 type Basic = {
   firstName: string;
@@ -1449,7 +1449,7 @@ function PersonalStep({ userId }: { userId: string | null }) {
 }
 
 // —— Small building blocks ————————————————————————————————————————————
-function Field({ label, required, error, children }: { label: string; required?: boolean; error?: boolean; children: ReactNode }) {
+export function Field({ label, required, error, children }: { label: string; required?: boolean; error?: boolean; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' }}>
@@ -1461,7 +1461,7 @@ function Field({ label, required, error, children }: { label: string; required?:
   );
 }
 
-function Select({ value, onChange, placeholder, options }: { value: string; onChange: (v: string) => void; placeholder: string; options: string[] }) {
+export function Select({ value, onChange, placeholder, options }: { value: string; onChange: (v: string) => void; placeholder: string; options: string[] }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inputStyle, color: value ? '#222222' : '#717171' }}>
       <option value="">{placeholder}</option>
@@ -1475,7 +1475,7 @@ function Select({ value, onChange, placeholder, options }: { value: string; onCh
  * department and location used to be dropdowns of what existing employees
  * have, so a new company (none yet) could not fill them in at all.
  */
-function TypeOrPick({ id, value, onChange, placeholder, options }: { id: string; value: string; onChange: (v: string) => void; placeholder: string; options: string[] }) {
+export function TypeOrPick({ id, value, onChange, placeholder, options }: { id: string; value: string; onChange: (v: string) => void; placeholder: string; options: string[] }) {
   return (
     <>
       <input
@@ -1549,11 +1549,11 @@ function InfoDot({ text }: { text: string }) {
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(34,34,34,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: 22 };
 const modalCard: CSSProperties = { width: '100%', maxWidth: 1440, height: '100%', display: 'flex', flexDirection: 'column', background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 18, boxShadow: '0 30px 70px rgba(34,34,34,.32)' };
-const inputStyle: CSSProperties = { width: '100%', padding: '11px 12px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+export const inputStyle: CSSProperties = { width: '100%', padding: '11px 12px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const iconBtn: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#717171' };
 const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 };
-const grid3: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 };
-const infoCallout: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#EAF2FB', border: '1px solid #CFE0F2', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#41597A', lineHeight: 1.5 };
-const infoIcon: CSSProperties = { flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: '#5A8FD1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, fontStyle: 'italic', marginTop: 1 };
+export const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 };
+export const grid3: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 };
+export const infoCallout: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#EAF2FB', border: '1px solid #CFE0F2', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#41597A', lineHeight: 1.5 };
+export const infoIcon: CSSProperties = { flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: '#5A8FD1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, fontStyle: 'italic', marginTop: 1 };

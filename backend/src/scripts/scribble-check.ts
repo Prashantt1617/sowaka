@@ -22,7 +22,7 @@ import { hashSessionToken } from '../services/auth.service';
 import { closeConnectRealtime, initConnectRealtime } from '../services/connect-realtime.service';
 import type { NotificationInput } from '../services/notification.service';
 import { gamesHomeFor } from '../services/games-home.service';
-import { SCRIBBLE, WORDS, advance, applySettings, chooseWords, guessOutcome, guessPoints, hintsWanted, levelOf, maskOf, newRoom, normalizeGuess, roundsOf, startGame, stillKicked, validateOp, viewFor, wasKicked } from '../services/scribble-engine';
+import { SCRIBBLE, WORDS, advance, applySettings, chooseWords, makeCode, parseCode, guessOutcome, guessPoints, hintsWanted, levelOf, maskOf, newRoom, normalizeGuess, roundsOf, startGame, stillKicked, validateOp, viewFor, wasKicked } from '../services/scribble-engine';
 import { closeScribbleRealtime, initScribbleRealtime } from '../services/scribble-realtime.service';
 import { configureScribble, openInvitesFor, peekRoom, tickScribble } from '../services/scribble-room.service';
 import { clearInvite, mutateRoom, pendingInvitesOf, recordInvite, resetScribbleMemory } from '../services/scribble-store';
@@ -336,11 +336,15 @@ async function runChecks() {
     const view = hosted.ok ? (hosted.data as unknown as ScribbleView) : null;
     check('hosting answers with the room view', !!view && view.status === 'lobby' && view.hostId === A0.userId && view.players.length === 1 && view.you === A0.userId);
     const code = view?.code ?? '';
-    check('the code is five unambiguous characters', /^[A-HJKMNP-Z2-9]{5}$/.test(code), code);
+    check('the code is a four-digit number', /^[1-9]\d{3}$/.test(code), code);
+    check('codes stay four digits at both ends of the range', makeCode(() => 0) === '1000' && makeCode(() => 0.99999) === '9999');
+    check('a code parses bare, as room:, and (from before the switch) as five characters',
+      parseCode('4827') === '4827' && parseCode('room:4827') === '4827' && parseCode(' k7qxp ') === 'K7QXP'
+      && parseCode('0827') === null && parseCode('48271') === null && parseCode('abc') === null);
     check('the view carries the rules, medium words and two rounds by default', view?.min === 3 && view?.max === 8 && view?.rounds === 2 && view?.level === 'medium' && view?.turnSec === 70 && view?.pickSec === 10 && view?.revealSec === 6);
     A.states.push({ room: view });
 
-    const wrong = await request(B, 'room:join', { code: 'ZZZZZ' });
+    const wrong = await request(B, 'room:join', { code: '9999' === code ? '9998' : '9999' });
     check('a wrong code is a 404 with the company wording', !wrong.ok && wrong.status === 404 && /No room with that code at your company/.test(wrong.message));
     const badShape = await request(B, 'room:join', { code: 'abc' });
     check('a malformed code is the same 404', !badShape.ok && badShape.status === 404);
@@ -776,11 +780,11 @@ async function runChecks() {
     const afterwards = await request(A, 'room:join', { code });
     check('and its code is gone', !afterwards.ok && afterwards.status === 404);
 
-    const finished = newRoom('ABCDE', ORG, { userId: 'x', name: 'X', photoUrl: null }, clock.now);
+    const finished = newRoom('5150', ORG, { userId: 'x', name: 'X', photoUrl: null }, clock.now);
     finished.status = 'over';
     finished.finishedAt = clock.now;
     check('a finished room is kept fifteen minutes (engine)', advance(finished, clock.now + SCRIBBLE.overKeepMs - 1, Math.random) === null && advance(finished, clock.now + SCRIBBLE.overKeepMs, Math.random)?.some((e) => e.type === 'delete') === true);
-    const ancient = newRoom('ABCDE', ORG, { userId: 'x', name: 'X', photoUrl: null }, clock.now - SCRIBBLE.roomMaxMs);
+    const ancient = newRoom('5151', ORG, { userId: 'x', name: 'X', photoUrl: null }, clock.now - SCRIBBLE.roomMaxMs);
     check('no room outlives two hours (engine)', advance(ancient, clock.now, Math.random)?.some((e) => e.type === 'delete') === true);
 
     console.log('\nfull rooms and two companies');
@@ -823,7 +827,7 @@ async function runChecks() {
     const foreignHosted = await request(O, 'room:host', { gameKey: 'scribble' });
     const foreignCode = foreignHosted.ok ? String(foreignHosted.data.code) : '';
     const crossMissing = await request(D, 'room:join', { code: foreignCode });
-    check("another company's code reads as missing here", foreignCode.length === 5 && !crossMissing.ok && crossMissing.status === 404 && /No room with that code at your company/.test(crossMissing.message));
+    check("another company's code reads as missing here", foreignCode.length === 4 && !crossMissing.ok && crossMissing.status === 404 && /No room with that code at your company/.test(crossMissing.message));
     dieSequence = [0.1, 0.2, 0.3, 0.4, 0.5];
     const otherHosted = await request(O, 'room:host', { gameKey: 'scribble' });
     const otherCode = otherHosted.ok ? String(otherHosted.data.code) : '';
@@ -831,7 +835,7 @@ async function runChecks() {
     const sameCodeHosted = await request(ninth, 'room:host', { gameKey: 'scribble' });
     const sameCode = sameCodeHosted.ok ? String(sameCodeHosted.data.code) : '';
     if (sameCodeHosted.ok) ninth.states.push({ room: sameCodeHosted.data as unknown as ScribbleView });
-    check('two companies can hold the same code', otherCode.length === 5 && otherCode === sameCode, `${otherCode} / ${sameCode}`);
+    check('two companies can hold the same code', otherCode.length === 4 && otherCode === sameCode, `${otherCode} / ${sameCode}`);
     const O2 = await open(others[1]);
     const crossJoin = await request(O2, 'room:join', { code: sameCode });
     check("a code only ever opens your own company's room", crossJoin.ok && (crossJoin.data.room as ScribbleView).hostId === others[0].userId);

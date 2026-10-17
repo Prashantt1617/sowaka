@@ -240,6 +240,9 @@ export type EmployeeDTO = {
   joiningDate?: string;
   /** YYYY-MM-DD */
   birthday?: string;
+  gender?: string;
+  phone?: string;
+  isDirector?: boolean;
 };
 
 export const getAllEmployees = () =>
@@ -316,6 +319,16 @@ export const removeEmployeeDocument = (userId: string, documentId: string) =>
 export const getAccountLimit = () =>
   api<{ max: number | null; used: number }>('/admin/account-limit')
     .then((r) => ({ max: r.max ?? null, used: r.used ?? 0 }));
+
+/** Profile details as the Edit details form sends them; fields left out stay as they are. */
+export type EmployeeDetailsInput = {
+  name?: string; email?: string; employeeId?: string; joiningDate?: string; birthday?: string;
+  mobile?: string; gender?: string; designation?: string; department?: string; location?: string;
+  employeeType?: 'full_time' | 'contract' | 'intern'; isDirector?: boolean;
+};
+/** Only for someone given the right, on themselves and the people below them; the server checks. */
+export const updateEmployeeDetails = (userId: string, input: EmployeeDetailsInput) =>
+  api<{ employee: { userId: string; changed: string[] } }>(`/admin/employees/${userId}`, { method: 'PATCH', body: input });
 
 export const createEmployee = (input: CreateEmployeeInput) =>
   api<{ employee: EmployeeDTO }>('/admin/employees', { method: 'POST', body: input })

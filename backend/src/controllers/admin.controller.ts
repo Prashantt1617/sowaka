@@ -25,6 +25,7 @@ import {
   listAllEmployeesForAdmin,
   listAllFeedbackForAdmin,
   setOvertimeEligibilityForAdmin,
+  updateEmployeeDetailsForAdmin,
 } from '../services/admin.service';
 import { getCompanySettings, updateCompanySettings } from '../services/company-settings.service';
 
@@ -287,6 +288,14 @@ export async function updateOvertimeEligibility(req: Request, res: Response, nex
       String(req.params.userId ?? ''),
       eligible,
     );
+    res.status(200).json({ success: true, employee });
+  } catch (error) { next(error); }
+}
+
+/** Edits an employee's profile details: someone given the right, for themselves and their reports. */
+export async function updateEmployeeDetails(req: Request, res: Response, next: NextFunction) {
+  try {
+    const employee = await updateEmployeeDetailsForAdmin(adminUserId(req), String(req.params.userId ?? ''), req.body ?? {});
     res.status(200).json({ success: true, employee });
   } catch (error) { next(error); }
 }

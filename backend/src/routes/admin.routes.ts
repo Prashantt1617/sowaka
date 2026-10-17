@@ -27,6 +27,7 @@ import {
   listReimbursements,
   removeEmployeeDocumentHandler,
   updateCompanySettingsHandler,
+  updateEmployeeDetails,
   updateOvertimeEligibility,
 } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -82,6 +83,8 @@ adminRouter.post('/employees', createEmployee);
 adminRouter.get('/account-limit', accountLimit);
 // Per-employee overtime eligibility (HR-controlled)
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
+// Profile details, by someone given the right (User.canEditEmployeeDetails): their own and their reports'.
+adminRouter.patch('/employees/:userId', updateEmployeeDetails);
 // One person's month, graded the way the report grades it.
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.

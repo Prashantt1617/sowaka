@@ -206,6 +206,11 @@ export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
     managerId: e.managerUserId || '',
     dob: fmtDate(e.birthday),
     joining: fmtDate(e.joiningDate),
+    joiningDate: e.joiningDate || '',
+    birthday: e.birthday || '',
+    gender: e.gender || '',
+    phone: e.phone || '',
+    isDirector: e.isDirector === true,
     documents: (e.documents ?? []).map((doc) => ({
       id: doc.id,
       name: doc.name,
@@ -402,6 +407,11 @@ export function adaptWorkspace(ws: WorkspaceDTO, user: AuthUser): {
     managerId: user.id,
     dob: '—',
     joining: '—',
+    joiningDate: '',
+    birthday: '',
+    gender: '',
+    phone: '',
+    isDirector: false,
     documents: [],
   }));
 
