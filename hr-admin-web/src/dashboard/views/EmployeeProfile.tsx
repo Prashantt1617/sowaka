@@ -17,8 +17,8 @@ import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { clearCalendarDay, clearReportingManager, getCompanySettings, getEmployeeCalendar, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
-import type { EmployeeDetailsInput } from '../../services/hrms';
+import { assignShift, clearCalendarDay, clearReportingManager, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
+import type { EmployeeDetailsInput, ShiftDTO } from '../../services/hrms';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
@@ -211,6 +211,11 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <Row label="Director / substantial interest" value={emp.isDirector ? 'Yes' : 'No'} />
             </Grid>
           </Section>
+            {canEditDetails && (
+              <Section title="Shift template">
+                <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
+              </Section>
+            )}
             <Section title="Documents">
             {emp.documents.length === 0 ? (
               <div style={{ fontSize: 15, color: '#9197A2', fontWeight: 500 }}>Nothing filed yet. Documents are added from the employee's record.</div>
@@ -328,6 +333,8 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               designation={emp.role}
               period={s.cycle.period}
               nextPeriod={s.cycle.next}
+              // Someone with the edit right sets KPIs for the people below them, not for themselves.
+              readOnly={user?.canEditEmployees === true && emp.id === user.id ? 'You set KPIs for the people who report to you, not for yourself.' : undefined}
             />
           </Section>
           </div>
@@ -1053,6 +1060,69 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
           <button type="button" disabled={saving} onClick={save} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Which shift template this person follows, changeable here (for someone with
+ * the edit right). A change starts the next day; today stays on the old one.
+ */
+function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
+  const { flash } = useStore();
+  const [shifts, setShifts] = useState<ShiftDTO[] | null>(null);
+  const [picked, setPicked] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const load = () => getShifts()
+    .then((all) => {
+      setShifts(all);
+      const current = all.find((t) => t.assignedUserIds.includes(emp.id)) ?? all.find((t) => t.isDefault);
+      // On nothing yet: start from the first template they could be put on.
+      setPicked(current?.id ?? all.find((t) => t.active || t.isDefault)?.id ?? '');
+      setError('');
+    })
+    .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load the shift templates'));
+  useEffect(() => { void load(); }, [emp.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (error) return <div style={{ fontSize: 14, color: '#A8475F', fontWeight: 600 }}>{error}</div>;
+  if (!shifts) return <div style={{ fontSize: 14, color: '#9197A2' }}>Loading…</div>;
+  const usable = shifts.filter((t) => t.active || t.isDefault);
+  if (usable.length === 0) return <div style={{ fontSize: 14, color: '#9197A2' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
+  const assigned = shifts.find((t) => t.assignedUserIds.includes(emp.id));
+  const current = assigned ?? shifts.find((t) => t.isDefault);
+  const nameOf = (t: ShiftDTO) => `${t.name}${t.isDefault ? ' (default)' : ''}`;
+  const save = async () => {
+    const target = usable.find((t) => t.id === picked);
+    if (!target || target.id === current?.id) return;
+    setSaving(true);
+    try {
+      const r = await assignShift(target.id, [emp.id]);
+      flash(`${emp.name} moves to ${target.name}${r.effectiveFrom ? ` from ${showDate(r.effectiveFrom)}` : ''}`);
+      await load();
+      onChanged();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not change the shift', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div>
+      <div style={{ fontSize: 14, color: '#717171', marginBottom: 10 }}>
+        Now on <strong style={{ color: '#222222' }}>{current ? nameOf(current) : 'the company policy'}</strong>
+        {current && !assigned && ' · nobody picked one for them, so the default applies'}
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select aria-label="Shift template" value={picked} onChange={(e) => setPicked(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: 260, flex: '1 1 260px' }}>
+          {usable.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
+        </select>
+        <button type="button" disabled={saving || picked === current?.id} onClick={save}
+          style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+          {saving ? 'Saving…' : 'Assign'}
+        </button>
+      </div>
+      <div style={{ fontSize: 13, color: '#9197A2', marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
     </div>
   );
 }
