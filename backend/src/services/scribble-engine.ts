@@ -67,20 +67,24 @@ export const SCRIBBLE = {
   board: 1000,
 } as const;
 
-export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-export const CODE_PATTERN = /^[A-HJKMNP-Z2-9]{5}$/;
+/**
+ * Room codes are four-digit numbers, 1000–9999, easy to read out and type on a
+ * phone's number pad. Codes are per company, so 9,000 is plenty.
+ * Five-character codes from before (letters, no 0/O, 1/I/L) still parse, so
+ * a room opened just before the switch can still be joined.
+ */
+export const CODE_PATTERN = /^[1-9]\d{3}$/;
+const LEGACY_CODE = '[A-HJKMNP-Z2-9]{5}';
 
 export type Random = () => number;
 
 export function makeCode(random: Random): string {
-  let code = '';
-  for (let i = 0; i < 5; i += 1) code += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length) % CODE_ALPHABET.length];
-  return code;
+  return String(1000 + (Math.floor(random() * 9000) % 9000));
 }
 
-/** `room:K7QXP` or `K7QXP` → `K7QXP`; anything else null. */
+/** `room:4827` or `4827` → `4827` (and an older `K7QXP`); anything else null. */
 export function parseCode(raw: unknown): string | null {
-  const match = /^(?:room:)?([A-HJKMNP-Z2-9]{5})$/i.exec(String(raw ?? '').trim());
+  const match = new RegExp(`^(?:room:)?([1-9]\\d{3}|${LEGACY_CODE})$`, 'i').exec(String(raw ?? '').trim());
   return match ? match[1].toUpperCase() : null;
 }
 
