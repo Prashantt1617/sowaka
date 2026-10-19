@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sky Hop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;600;800&display=swap">
+<style>
+  /* One phone-width column inside the Sowaka Games tab: hero scene, rank + leaderboard row, Challenges / Play now tabs.
+     The game opens full-screen on top. A single deliberate light look. */
+  :root {
+    --bg: #f4effb; --card: #ffffff; --ink: #241b3a; --muted: #6d6386; --line: #e4dcf1;
+    --coral: #ff6b57; --coral-soft: #ffe5df; --sun: #ffc857; --teal: #2fb7a6; --teal-soft: #dcf5f1; --violet: #5b4b9a;
+    --display: "Lilita One", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+    --body: "Nunito", "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--body); -webkit-tap-highlight-color: transparent;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  [hidden] { display: none !important; }
+  .app { max-width: 440px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 12px 32px; display: flex; flex-direction: column; gap: 14px; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 38px; }
+  .back { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--muted); padding: 6px 4px; }
+  .back svg { width: 18px; height: 18px; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; margin-left: auto; }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  .hero { position: relative; border-radius: 22px; overflow: hidden; box-shadow: 0 10px 30px rgba(60, 30, 110, .18); aspect-ratio: 16 / 10; max-width: 100%; }
+  .hero canvas { display: block; width: 100%; height: 100%; }
+  .hero-copy { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 18px 14px; background: linear-gradient(transparent, rgba(36, 27, 58, .55)); color: #fff; }
+  .hero h1 { font: 400 34px/1 var(--display); margin: 0; letter-spacing: .01em; text-shadow: 0 2px 0 rgba(36, 27, 58, .5); }
+  .hero p { margin: 4px 0 0; font-weight: 600; font-size: 14px; opacity: .95; }
+  .tag { position: absolute; top: 12px; left: 12px; background: rgba(255, 255, 255, .9); color: var(--ink); font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 99px; letter-spacing: .02em; }
+
+  .row { display: grid; grid-template-columns: 118px 1fr; gap: 12px; }
+  .rank { background: var(--ink); color: #fff; border-radius: 18px; padding: 14px 12px; display: flex; flex-direction: column; justify-content: space-between; min-height: 150px; }
+  .rank small { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+  .rank .big { font: 400 38px/1 var(--display); color: var(--sun); font-variant-numeric: tabular-nums; }
+  .rank .best { font-size: 13px; opacity: .85; }
+  .rank .best b { font-weight: 800; color: #fff; }
+  .rank.locked { background: repeating-linear-gradient(135deg, #2e2449 0 10px, #29203f 10px 20px); align-items: flex-start; }
+  .rank.locked .lock { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.12); display: grid; place-items: center; }
+  .rank.locked .lock svg { width: 16px; height: 16px; }
+  .rank.locked p { margin: 0; font-size: 13px; line-height: 1.35; opacity: .9; }
+
+  .board { background: var(--card); border-radius: 18px; border: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
+  .board-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
+  .board-head h2 { font-size: 13px; font-weight: 800; margin: 0; }
+  .board-head span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .lb li { display: grid; grid-template-columns: 18px 26px 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
+  .lb .pos { font-weight: 800; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+  .lb li.first .pos { color: #d9a400; }
+  .lb .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb .pts { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .lb li.me { background: var(--teal-soft); border-radius: 8px; margin: 0 -6px; padding: 2px 6px; }
+  .lb li.me .nm { font-weight: 800; }
+  .lb .empty { display: block; color: var(--muted); font-size: 13px; padding: 4px 0; }
+  .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; flex: none; overflow: hidden; }
+  .av img { width: 100%; height: 100%; object-fit: cover; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--card); border: 1px solid var(--line); border-radius: 99px; padding: 4px; }
+  .tab { padding: 10px; border-radius: 99px; font-weight: 600; color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 6px; }
+  .tab[aria-selected="true"] { background: var(--ink); color: #fff; font-weight: 800; }
+  .count { background: var(--coral); color: #fff; font-size: 11px; font-weight: 800; min-width: 20px; height: 20px; border-radius: 99px; display: inline-grid; place-items: center; padding: 0 6px; }
+
+  .panel { display: flex; flex-direction: column; gap: 10px; }
+  .cta { width: 100%; background: var(--coral); color: #fff; font-weight: 800; font-size: 16px; padding: 14px; border-radius: 16px; box-shadow: 0 4px 0 #d94a37; display: flex; justify-content: center; align-items: center; gap: 8px; }
+  .cta:active { transform: translateY(3px); box-shadow: 0 1px 0 #d94a37; }
+  .cta:disabled { background: #d7d1e3; box-shadow: none; cursor: not-allowed; transform: none; }
+  .cta svg { width: 20px; height: 20px; }
+  .rule { font-size: 13px; color: var(--muted); text-align: center; margin: 0; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .ch { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; }
+  .ch .av { width: 40px; height: 40px; font-size: 14px; }
+  .ch-main { min-width: 0; }
+  .ch-title { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+  .ch-title b { font-weight: 800; }
+  .ch-meta { font-size: 12px; color: var(--muted); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; letter-spacing: .02em; }
+  .pill.go { background: var(--coral-soft); color: #c43b28; }
+  .pill.new { background: #fff1cf; color: #9a6a00; }
+  .pill.wait { background: #ece7f6; color: var(--violet); }
+  .pill.won { background: var(--teal-soft); color: #13786b; }
+  .pill.lost { background: #efeef2; color: #77708a; }
+  .ch.urgent { border-color: #ffb3a6; box-shadow: 0 0 0 3px var(--coral-soft); }
+  .ch.done { opacity: .75; }
+  .ch-actions { display: flex; gap: 6px; }
+  .btn-s { padding: 8px 14px; border-radius: 12px; font-weight: 800; font-size: 13px; background: var(--ink); color: #fff; }
+  .btn-s.ghost { background: transparent; color: var(--muted); font-weight: 600; padding: 8px 6px; }
+  .btn-s.coral { background: var(--coral); }
+  .btn-s:disabled { opacity: .5; }
+  .section-label { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 2px 0; }
+  .note { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 14px; color: var(--muted); font-size: 14px; text-align: center; }
+
+  .how { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; }
+  .how canvas { width: 120px; height: 150px; border-radius: 14px; display: block; }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .steps li { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+  .steps .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: 16px; }
+  .steps b { font-weight: 800; }
+
+  .game { position: fixed; inset: 0; z-index: 30; background: #1d1733; display: grid; place-items: center;
+    padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
+  .stage { position: relative; height: min(100%, calc((100vw - 20px) * 16 / 9)); aspect-ratio: 9 / 16; max-width: 100%; border-radius: 16px; overflow: hidden; container-type: size; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+  .g-score { position: absolute; top: 7cqh; left: 0; right: 0; text-align: center; font: 400 15cqw var(--display); color: #fff; -webkit-text-stroke: .6cqw var(--ink); paint-order: stroke fill; text-shadow: 0 .8cqw 0 var(--ink); pointer-events: none; font-variant-numeric: tabular-nums; }
+  .g-top { position: absolute; top: 3cqw; left: 3cqw; right: 3cqw; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+  .g-top > * { pointer-events: auto; }
+  .g-close { width: 10cqw; height: 10cqw; border-radius: 50%; background: rgba(255,255,255,.9); display: grid; place-items: center; }
+  .g-close svg { width: 5cqw; height: 5cqw; }
+  .g-vs { background: rgba(36,27,58,.75); color: #fff; font-size: 3.4cqw; font-weight: 600; padding: 1cqw 3cqw; border-radius: 99px; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g-vs b { color: var(--sun); font-weight: 800; }
+  .g-panel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; pointer-events: none; padding: 0 8cqw; }
+  .g-hint { background: #fff; color: var(--ink); font-weight: 800; font-size: 4.6cqw; padding: 1.6cqw 5cqw; border-radius: 99px; box-shadow: 0 1cqw 0 rgba(36,27,58,.35); animation: bob 1.4s ease-in-out infinite; }
+  .g-card { pointer-events: auto; background: #fff; color: var(--ink); border-radius: 5cqw; padding: 6cqw; width: 100%; display: flex; flex-direction: column; gap: 3cqw; box-shadow: 0 2cqw 0 rgba(36,27,58,.35); }
+  .g-card h2 { margin: 0; font: 400 9cqw/1 var(--display); color: var(--coral); }
+  .g-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 3cqw; }
+  .g-stats div { background: var(--bg); border-radius: 3cqw; padding: 3cqw; }
+  .g-stats small { display: block; font-size: 3cqw; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .g-stats b { font: 400 9cqw/1.1 var(--display); font-variant-numeric: tabular-nums; }
+  .g-msg { font-size: 3.8cqw; margin: 0; color: var(--muted); }
+  .g-msg b { color: var(--ink); }
+  .g-btns { display: flex; flex-direction: column; gap: 2.4cqw; }
+  .g-btns button { font-weight: 800; font-size: 4.4cqw; padding: 3.2cqw; border-radius: 3.4cqw; }
+  .g-btns .pri { background: var(--coral); color: #fff; box-shadow: 0 1cqw 0 #d94a37; }
+  .g-btns .sec { background: var(--bg); color: var(--ink); }
+
+  .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(36,27,58,.45); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: var(--card); width: 100%; max-width: 440px; border-radius: 24px 24px 0 0; max-height: 82%; display: flex; flex-direction: column;
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); animation: up .22s ease-out; }
+  .grab { width: 40px; height: 4px; border-radius: 99px; background: var(--line); margin: 0 auto 12px; }
+  .sheet h3 { margin: 0; font: 400 24px/1.1 var(--display); }
+  .sheet .sub { margin: 4px 0 12px; color: var(--muted); font-size: 14px; }
+  .search { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 11px 12px; font: inherit; color: var(--ink); }
+  .people { list-style: none; margin: 10px 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
+  .people button { width: 100%; display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 8px; border-radius: 12px; text-align: left; }
+  .people button[aria-pressed="true"] { background: var(--teal-soft); }
+  .people .av { width: 36px; height: 36px; font-size: 13px; }
+  .people .dept { font-size: 12px; color: var(--muted); }
+  .people .tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+  .people button[aria-pressed="true"] .tick { background: var(--teal); border-color: var(--teal); }
+  .people .tick svg { width: 12px; height: 12px; }
+
+  .toast { position: fixed; left: 50%; bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 16px)); transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 99px; font-weight: 600; font-size: 14px; box-shadow: 0 8px 20px rgba(36,27,58,.3); max-width: calc(100% - 32px); text-align: center; }
+
+  @keyframes bob { 50% { transform: translateY(-1cqh); } }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .g-hint, .sheet { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <button class="back" id="back" type="button" aria-label="Back to Games" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      Games
+    </button>
+    <button class="icon-btn" id="sound" type="button" aria-label="Sound on" aria-pressed="true"></button>
+  </div>
+
+  <section class="hero" aria-label="Sky Hop preview">
+    <canvas id="heroCanvas"></canvas>
+    <span class="tag">Solo · Challenge</span>
+    <div class="hero-copy">
+      <h1>Sky Hop</h1>
+      <p>Tap to fly. Slip through the gaps.</p>
+    </div>
+  </section>
+
+  <div class="row">
+    <div class="rank" id="rank"></div>
+    <div class="board">
+      <div class="board-head"><h2>Leaderboard</h2><span id="lbLabel"></span></div>
+      <ol class="lb" id="lb"></ol>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-ch" aria-selected="true" aria-controls="p-ch" type="button">Challenges <span class="count" id="chCount" hidden>0</span></button>
+    <button class="tab" role="tab" id="tab-play" aria-selected="false" aria-controls="p-play" type="button">Play now</button>
+  </div>
+
+  <section class="panel" id="p-ch" role="tabpanel" aria-labelledby="tab-ch">
+    <button class="cta" id="challengeBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5L14 2h3v3l-4.5 4.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></svg>
+      Challenge a colleague
+    </button>
+    <p class="rule">You both fly the same gaps. Higher score wins.</p>
+    <div class="list" id="chList"></div>
+  </section>
+
+  <section class="panel" id="p-play" role="tabpanel" aria-labelledby="tab-play" hidden>
+    <div class="how">
+      <canvas id="howCanvas" aria-label="A finger taps and the bird flies up through a gap"></canvas>
+      <ul class="steps">
+        <li><span class="ic" style="background:var(--coral-soft)">👆</span><span><b>Tap</b> to fly up</span></li>
+        <li><span class="ic" style="background:var(--teal-soft)">🌀</span><span>Go <b>through</b> the gaps</span></li>
+        <li><span class="ic" style="background:#fff1cf">⭐</span><span>Each gap = <b>10 pts</b></span></li>
+      </ul>
+    </div>
+    <button class="cta" id="playBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 001.5.86l11-6.5a1 1 0 000-1.72l-11-6.5A1 1 0 008 5.5z"/></svg>
+      Play now
+    </button>
+    <p class="rule" id="playRule">Your best score goes to the company leaderboard.</p>
+  </section>
+</div>
+
+<div class="game" id="game" hidden>
+  <div class="stage" id="stage">
+    <canvas id="gameCanvas" aria-label="Sky Hop game"></canvas>
+    <div class="g-score" id="gScore" hidden>0</div>
+    <div class="g-top">
+      <button class="g-close" id="gClose" type="button" aria-label="Close game">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#241b3a" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <span class="g-vs" id="gVs" hidden></span>
+    </div>
+    <div class="g-panel" id="gReady"><div class="g-hint">Tap to fly</div></div>
+    <div class="g-panel" id="gOver" hidden>
+      <div class="g-card">
+        <h2 id="goTitle">Nice flying!</h2>
+        <div class="g-stats">
+          <div><small>Score</small><b id="goScore">0</b></div>
+          <div><small id="goSecondLabel">Best</small><b id="goBest">0</b></div>
+        </div>
+        <p class="g-msg" id="goMsg"></p>
+        <div class="g-btns" id="goBtns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="grab"></div>
+    <h3 id="sheetTitle">Who do you want to beat?</h3>
+    <p class="sub">You'll both fly the same gaps, once each. Higher score wins.</p>
+    <input class="search" id="search" type="search" placeholder="Search colleagues" autocomplete="off">
+    <ul class="people" id="people"></ul>
+    <button class="cta" id="sendBtn" type="button" disabled>Send challenge</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+/* ---------- Sowaka bridge ----------
+   In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
+     Sowaka.userId, Sowaka.playerName(), Sowaka.submitScore(n) -> board, Sowaka.leaderboard() -> {entries:[{rank,userId,name,score,me}], me, label}
+     Sowaka.colleagues(q), Sowaka.challenge(userId), Sowaka.challenges() -> {incoming,outgoing,active,recent}, Sowaka.getChallenge(id),
+     Sowaka.acceptChallenge(id), Sowaka.declineChallenge(id), Sowaka.finishChallenge(id, score), Sowaka.startChallengeId,
+     and window.onSowakaChallenge(evt) for each change to one of the player's challenges.
+   A challenge: {id, seed (once accepted), status: pending|accepted|declined|expired|finished, role: challenger|opponent,
+     me/them: {userId, name, score|null}, outcome: won|lost|draw|null, myAward: {points}|null, expiresAt, withdrawnBy, cancelledBy}.
+   Each player flies one round whenever they like before it expires, on the same gaps (the seed); the result comes once both have played.
+   In a plain browser there is no bridge: the best score stays on this device and there are no challenges.
+   A score is points: 10 a gap. */
+(() => {
+  const $ = id => document.getElementById(id);
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const firstName = n => String(n || 'Someone').trim().split(/\s+/)[0];
+  const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+  const COLORS = ['#ff6b57', '#2fb7a6', '#5b4b9a', '#e0a100', '#e85d9a', '#3d8bd9', '#7a9a2b', '#c4632f'];
+  const colorFor = key => { let h = 0; for (const ch of String(key || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+  const avatar = (name, key, photo) => {
+    const img = typeof photo === 'string' && /^(https:|data:)/.test(photo) ? `<img src="${esc(photo)}" alt="">` : esc(initials(name));
+    return `<span class="av" style="background:${colorFor(key || name)}">${img}</span>`;
+  };
+
+  const bridge = () => (window.Sowaka && window.Sowaka.native ? window.Sowaka : null);
+  const canChallenge = () => { const b = bridge(); return !!(b && ['challenge', 'challenges', 'getChallenge', 'acceptChallenge', 'declineChallenge', 'finishChallenge', 'colleagues'].every(k => typeof b[k] === 'function')); };
+  const ask = (method, ...args) => { const b = bridge(); if (!b || typeof b[method] !== 'function') return Promise.reject(new Error('Challenges need the Sowaka app.')); return Promise.resolve().then(() => b[method](...args)); };
+
+  // ---------- Save, per account ----------
+  let saveKey = 'skyhop.v1';
+  let save = { best: 0, plays: 0, muted: false, pendingFinish: null };
+  function loadSave() {
+    const b = bridge();
+    saveKey = b && b.userId ? `skyhop.v1.${b.userId}` : 'skyhop.v1';
+    try { const v = JSON.parse(localStorage.getItem(saveKey) || 'null'); if (v && typeof v === 'object') save = Object.assign(save, v); } catch {}
+  }
+  const store = () => { try { localStorage.setItem(saveKey, JSON.stringify(save)); } catch {} };
+
+  // ---------- Sound ----------
+  let actx = null;
+  function tone(freq, dur, type = 'square', vol = .08, slide = 0) {
+    if (save.muted) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
+    } catch {}
+  }
+  const sfx = {
+    tap: () => tone(660, .05, 'triangle', .06),
+    flap: () => tone(520, .09, 'triangle', .12, 260),
+    point: () => { tone(880, .08, 'square', .05); setTimeout(() => tone(1320, .12, 'square', .05), 70); },
+    hit: () => tone(180, .25, 'sawtooth', .12, -120),
+    die: () => setTimeout(() => tone(400, .45, 'triangle', .1, -300), 180),
+    win: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, .14, 'square', .06), i * 90)),
+    send: () => { tone(740, .07, 'triangle', .08); setTimeout(() => tone(988, .1, 'triangle', .08), 60); }
+  };
+  const SOUND_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="#241b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/></svg>';
+  const SOUND_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="#6d6386" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
+  function renderSound() { const b = $('sound'); b.innerHTML = save.muted ? SOUND_OFF : SOUND_ON; b.setAttribute('aria-pressed', String(!save.muted)); b.setAttribute('aria-label', save.muted ? 'Sound off' : 'Sound on'); }
+  $('sound').addEventListener('click', () => { save.muted = !save.muted; store(); renderSound(); sfx.tap(); });
+
+  // ---------- Drawing: the sunset world ----------
+  const INK = '#241b3a';
+  const starsFor = (w, h) => Array.from({ length: 24 }, () => [Math.random() * w, Math.random() * h * .3, Math.random() * 1.4 + .4]);
+  function drawSky(c, w, h, ground, hillX, cloudX, stars, sunR) {
+    const g = c.createLinearGradient(0, 0, 0, h - ground);
+    g.addColorStop(0, '#3b3478'); g.addColorStop(.45, '#b9628c'); g.addColorStop(.78, '#ff9a6b'); g.addColorStop(1, '#ffd59a');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,246,230,.75)';
+    for (const [x, y, s] of stars) c.fillRect(x, y, s, s);
+    const sy = h - ground - sunR * 2.6;
+    c.fillStyle = 'rgba(255,230,160,.25)'; c.beginPath(); c.arc(w * .72, sy, sunR * 1.45, 0, 7); c.fill();
+    c.fillStyle = 'rgba(255,230,160,.92)'; c.beginPath(); c.arc(w * .72, sy, sunR, 0, 7); c.fill();
+    c.fillStyle = 'rgba(255,240,225,.5)';
+    for (let i = 0; i < 2; i++) {
+      const ox = -cloudX + i * w;
+      cloud(c, ox + w * .16, h * .22, sunR / 46); cloud(c, ox + w * .68, h * .14, sunR / 58); cloud(c, ox + w * .48, h * .34, sunR / 76);
+    }
+    c.fillStyle = '#9a5a7a'; hills(c, w, h, -hillX * .6, h - ground - sunR * 1.5, sunR * 1.3, .018);
+    c.fillStyle = '#6e4a6e'; hills(c, w, h, -hillX, h - ground - sunR * .65, sunR, .026);
+  }
+  function cloud(c, x, y, s) { c.beginPath(); c.arc(x, y, 20 * s, 0, 7); c.arc(x + 22 * s, y - 10 * s, 24 * s, 0, 7); c.arc(x + 46 * s, y, 18 * s, 0, 7); c.rect(x, y, 46 * s, 18 * s); c.fill(); }
+  function hills(c, w, h, offset, base, amp, freq) {
+    c.beginPath(); c.moveTo(0, h);
+    for (let x = 0; x <= w; x += 6) { const wx = x - offset; c.lineTo(x, base - Math.abs(Math.sin(wx * freq)) * amp - Math.sin(wx * freq * 2.3) * amp * .2); }
+    c.lineTo(w, h); c.fill();
+  }
+  function drawPipe(c, x, y, h, flip, pw, lw) {
+    const lip = pw * .4;
+    c.fillStyle = '#3aa58f'; c.fillRect(x, y, pw, h);
+    c.fillStyle = 'rgba(255,255,255,.22)'; c.fillRect(x + pw * .12, y, pw * .12, h);
+    c.fillStyle = 'rgba(0,0,0,.16)'; c.fillRect(x + pw * .8, y, pw * .2, h);
+    c.strokeStyle = INK; c.lineWidth = lw; c.strokeRect(x, y, pw, h);
+    const ly = flip ? y + h - lip : y;
+    c.fillStyle = '#4cc2a9'; c.fillRect(x - pw * .08, ly, pw * 1.16, lip);
+    c.strokeRect(x - pw * .08, ly, pw * 1.16, lip);
+  }
+  function drawGround(c, w, h, ground, groundX, lw) {
+    const y = h - ground, band = Math.min(18, ground * .25);
+    c.fillStyle = '#7dcf6f'; c.fillRect(0, y, w, band);
+    c.fillStyle = '#62b456';
+    for (let x = -groundX; x < w; x += 24) { c.beginPath(); c.moveTo(x, y + band); c.lineTo(x + 12, y + band); c.lineTo(x + 24, y); c.lineTo(x + 12, y); c.fill(); }
+    c.fillStyle = '#e8c48e'; c.fillRect(0, y + band, w, ground - band);
+    c.strokeStyle = INK; c.lineWidth = lw;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.moveTo(0, y + band); c.lineTo(w, y + band); c.stroke();
+  }
+  // The Sowaka bird: teal body, coral cheek, a little head tuft.
+  function drawBird(c, x, y, rot, wing, dead, s = 1) {
+    c.save(); c.translate(x, y); c.rotate(rot); c.scale(s, s);
+    c.lineWidth = 2.5; c.strokeStyle = INK; c.lineJoin = 'round';
+    c.fillStyle = '#ff6b57';
+    c.beginPath(); c.moveTo(-1, -12); c.quadraticCurveTo(2, -22, 7, -18); c.quadraticCurveTo(4, -15, 4, -11); c.fill(); c.stroke();
+    c.fillStyle = '#1f8f80';
+    c.beginPath(); c.moveTo(-14, -1); c.lineTo(-25, -9); c.lineTo(-23, 5); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#2fb7a6';
+    c.beginPath(); c.ellipse(0, 0, 17, 13.5, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#d6f4ee';
+    c.beginPath(); c.ellipse(3, 6, 10, 5.5, 0, 0, Math.PI); c.fill();
+    c.fillStyle = 'rgba(255,107,87,.55)';
+    c.beginPath(); c.arc(9, 4, 3.2, 0, 7); c.fill();
+    const f = dead ? 0 : Math.sin(wing) * 6;
+    c.fillStyle = '#ffc857';
+    c.beginPath(); c.ellipse(-5, 1 + f * .3, 8, 5 + Math.abs(f) * .4, -.3 + f * .06, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(8, -5, 5.5, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = INK;
+    if (dead) { c.lineWidth = 2; c.beginPath(); c.moveTo(6, -7); c.lineTo(11, -2); c.moveTo(11, -7); c.lineTo(6, -2); c.stroke(); }
+    else { c.beginPath(); c.arc(9.5, -5, 2.4, 0, 7); c.fill(); }
+    c.lineWidth = 2.5; c.fillStyle = '#ff9a3c';
+    c.beginPath(); c.moveTo(13, -1); c.lineTo(23, 2); c.lineTo(13, 6); c.closePath(); c.fill(); c.stroke();
+    c.restore();
+  }
+  function fitCanvas(cv, w) {
+    const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    return cv.width / w;
+  }
+
+  // ---------- Hero: autopilot scene ----------
+  const hero = (() => {
+    const cv = $('heroCanvas'), c = cv.getContext('2d');
+    const W = 400, H = 250, GROUND = 34, PW = 44, GAP = 96, SP = 150, SPEED = 75;
+    let scale = 1, hx = 0, cx = 0, gx = 0;
+    const stars = starsFor(W, H), pipes = [];
+    for (let i = 0; i < 4; i++) pipes.push({ x: 230 + i * SP, top: 40 + Math.random() * 70 });
+    const b = { x: 120, y: 120, vy: 0, rot: 0, wing: 0 };
+    new ResizeObserver(() => { scale = fitCanvas(cv, W); }).observe(cv);
+    function step(dt) {
+      gx = (gx + SPEED * dt) % 24; hx = (hx + SPEED * .25 * dt) % W; cx = (cx + SPEED * .08 * dt) % W;
+      for (const p of pipes) p.x -= SPEED * dt;
+      if (pipes[0].x < -PW - 10) { const last = pipes[pipes.length - 1]; pipes.shift(); pipes.push({ x: last.x + SP, top: 40 + Math.random() * 70 }); }
+      const next = pipes.find(p => p.x + PW > b.x - 10);
+      const target = next.top + GAP / 2 + 6;
+      b.vy += 900 * dt;
+      if (b.y > target + 6 && b.vy > -40) b.vy = -240;
+      b.y += b.vy * dt;
+      b.rot += ((b.vy < 0 ? -.4 : Math.min(.9, b.vy / 400)) - b.rot) * Math.min(1, dt * 10);
+      b.wing += dt * 16;
+    }
+    function draw() {
+      c.setTransform(scale, 0, 0, scale, 0, 0);
+      drawSky(c, W, H, GROUND, hx, cx, stars, 30);
+      for (const p of pipes) { drawPipe(c, p.x, -4, p.top + 4, true, PW, 2.5); drawPipe(c, p.x, p.top + GAP, H - GROUND - p.top - GAP, false, PW, 2.5); }
+      drawGround(c, W, H, GROUND, gx, 2.5);
+      drawBird(c, b.x, b.y, b.rot, b.wing, false, .95);
+    }
+    return { step, draw };
+  })();
+
+  // ---------- How-to: tap loop ----------
+  const how = (() => {
+    const cv = $('howCanvas'), c = cv.getContext('2d');
+    const W = 120, H = 150; let scale = 1, t = 0;
+    new ResizeObserver(() => { scale = fitCanvas(cv, W); }).observe(cv);
+    function draw(dt) {
+      t = (t + dt) % 2.4;
+      c.setTransform(scale, 0, 0, scale, 0, 0);
+      const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#5a4594'); g.addColorStop(1, '#ffb27a');
+      c.fillStyle = g; c.fillRect(0, 0, W, H);
+      drawPipe(c, 74, -4, 46, true, 30, 2); drawPipe(c, 74, 98, 60, false, 30, 2);
+      let y, rot;
+      const x = 34 + Math.max(0, t - .9) * 40;
+      if (t < .6) { y = 70 + t * t * 60; rot = .3; } else { const k = t - .6; y = 91.6 - 50 * k + 30 * k * k; rot = k < .8 ? -.35 : .1; }
+      y = Math.min(y, 120);
+      drawBird(c, Math.min(x, 140), y, rot, t * 18, false, .7);
+      const tp = t - .55;
+      if (tp > 0 && tp < .45) { c.strokeStyle = `rgba(255,255,255,${1 - tp / .45})`; c.lineWidth = 2.5; c.beginPath(); c.arc(30, 128, 6 + tp * 40, 0, 7); c.stroke(); }
+      c.font = '20px sans-serif'; c.textAlign = 'center';
+      c.fillText('👆', 30, 140 + (tp > 0 && tp < .2 ? 3 : 0));
+    }
+    return { draw };
+  })();
+
+  // ---------- Rank square + leaderboard ----------
+  let board = null; // {entries, me, label} from the app, or null outside it
+  function renderBoard() {
+    const el = $('rank');
+    const me = board && board.me && board.me.score != null ? board.me : null;
+    const best = Math.max(save.best, me ? me.score : 0);
+    if (!me && !save.plays) {
+      el.className = 'rank locked';
+      el.innerHTML = `<span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span><p>Play once to see your rank</p>`;
+    } else {
+      el.className = 'rank';
+      el.innerHTML = `<small>Your rank</small><div class="big">${me ? '#' + me.rank : '—'}</div><div class="best">Best <b>${best.toLocaleString('en-IN')}</b> pts</div>`;
+    }
+    $('lbLabel').textContent = board && board.label ? board.label : (board ? '' : 'On this phone');
+    const entries = board && Array.isArray(board.entries) ? board.entries : [];
+    const top = entries.slice(0, 3);
+    let html = top.map(e => lbRow(e)).join('');
+    const mine = entries.find(e => e.me);
+    if (mine && mine.rank > 3) html += lbRow(mine);
+    if (!board) html = save.plays ? lbRow({ rank: 1, name: 'You', score: save.best, me: true }) : '';
+    $('lb').innerHTML = html || '<li><span class="empty">No scores yet. Be the first!</span></li>';
+  }
+  function lbRow(e) {
+    const name = e.me ? 'You' : firstName(e.name);
+    return `<li class="${e.me ? 'me' : ''}${e.rank === 1 ? ' first' : ''}"><span class="pos">${esc(e.rank)}</span>${avatar(e.me ? 'Me' : e.name, e.userId || e.name, e.photoUrl)}<span class="nm">${esc(name)}</span><span class="pts">${Number(e.score || 0).toLocaleString('en-IN')}</span></li>`;
+  }
+  function loadBoard() {
+    const b = bridge();
+    if (!b || typeof b.leaderboard !== 'function') { board = null; renderBoard(); return Promise.resolve(); }
+    return Promise.resolve().then(() => b.leaderboard()).then(v => { board = v || { entries: [] }; renderBoard(); }).catch(() => renderBoard());
+  }
+
+  // ---------- Challenges ----------
+  let CH = { incoming: [], outgoing: [], active: [], recent: [] };
+  function left(ms) {
+    if (ms <= 0) return '0:00';
+    const s = Math.ceil(ms / 1000);
+    if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+  const scoreOf = p => (p && p.score != null ? Number(p.score) : null);
+  function kindOf(v) {
+    if (v.status === 'pending') return v.role === 'opponent' ? 'incoming' : 'sent';
+    if (v.status === 'accepted') return scoreOf(v.me) == null ? 'turn' : 'waiting';
+    return 'done';
+  }
+  const ORDER = { turn: 0, incoming: 1, waiting: 2, sent: 3, done: 4 };
+  function allChallenges() {
+    const seen = new Map();
+    for (const k of ['active', 'incoming', 'outgoing', 'recent']) for (const v of CH[k] || []) if (v && v.id && !seen.has(v.id)) seen.set(v.id, v);
+    return [...seen.values()].sort((a, b) => ORDER[kindOf(a)] - ORDER[kindOf(b)] || (Date.parse(a.expiresAt) || 0) - (Date.parse(b.expiresAt) || 0));
+  }
+  function renderChallenges() {
+    if (!canChallenge()) {
+      $('challengeBtn').disabled = true;
+      $('chList').innerHTML = '<div class="note">Challenges work in the Sowaka app. Open Sky Hop from the Games tab to challenge a colleague.</div>';
+      $('chCount').hidden = true;
+      return;
+    }
+    $('challengeBtn').disabled = false;
+    const list = allChallenges();
+    const live = list.filter(v => ['turn', 'incoming'].includes(kindOf(v))).length;
+    $('chCount').textContent = live; $('chCount').hidden = !live;
+    let shownDone = 0, labelled = false;
+    const t = Date.now();
+    const rows = [];
+    for (const v of list) {
+      const kind = kindOf(v), them = v.them || {}, first = esc(firstName(them.name)), exp = Date.parse(v.expiresAt) || 0;
+      const timer = exp ? `<span data-ends="${exp}">${left(exp - t)}</span>` : '';
+      let body = '', acts = '', cls = 'ch';
+      if (kind === 'turn') {
+        cls += ' urgent';
+        const theirs = scoreOf(them);
+        body = `<div class="ch-title">${theirs != null ? `Beat <b>${first}</b>'s <b>${theirs}</b>` : `Your round vs <b>${first}</b>`}</div><div class="ch-meta"><span class="pill go">YOUR TURN</span>${timer ? `${timer} left` : ''}</div>`;
+        acts = `<button class="btn-s coral" data-act="play" data-id="${esc(v.id)}" type="button">Play</button>`;
+      } else if (kind === 'incoming') {
+        body = `<div class="ch-title"><b>${first}</b> challenged you</div><div class="ch-meta"><span class="pill new">NEW</span>${timer ? `Ends in ${timer}` : ''}</div>`;
+        acts = `<button class="btn-s ghost" data-act="decline" data-id="${esc(v.id)}" type="button">Skip</button><button class="btn-s" data-act="accept" data-id="${esc(v.id)}" type="button">Accept</button>`;
+      } else if (kind === 'waiting') {
+        body = `<div class="ch-title">You scored <b>${scoreOf(v.me)}</b>. Waiting for <b>${first}</b></div><div class="ch-meta"><span class="pill wait">THEIR TURN</span>${timer ? `${timer} left` : ''}</div>`;
+      } else if (kind === 'sent') {
+        body = `<div class="ch-title">Waiting for <b>${first}</b> to accept</div><div class="ch-meta"><span class="pill wait">SENT</span>${timer ? `${timer} to accept` : ''}</div>`;
+        acts = `<button class="btn-s ghost" data-act="decline" data-id="${esc(v.id)}" type="button">Withdraw</button>`;
+      } else {
+        if (shownDone >= 6) continue;
+        shownDone++;
+        cls += ' done';
+        if (!labelled) { rows.push('<div class="section-label">Finished</div>'); labelled = true; }
+        const mine = scoreOf(v.me), theirs = scoreOf(them), pts = v.myAward && v.myAward.points ? Number(v.myAward.points) : 0;
+        if (v.status === 'finished') {
+          const word = v.outcome === 'won' ? 'You beat' : v.outcome === 'draw' ? 'You drew with' : 'You lost to';
+          const pill = v.outcome === 'won' ? '<span class="pill won">WON</span>' : v.outcome === 'draw' ? '<span class="pill wait">DRAW</span>' : '<span class="pill lost">LOST</span>';
+          body = `<div class="ch-title">${word} <b>${first}</b>${mine != null && theirs != null ? ` · ${mine}–${theirs}` : ''}</div><div class="ch-meta">${pill}${pts ? `+${pts} pts` : ''}</div>`;
+        } else if (v.status === 'expired') {
+          body = `<div class="ch-title">Ran out of time vs <b>${first}</b></div><div class="ch-meta"><span class="pill lost">EXPIRED</span></div>`;
+        } else {
+          const me = bridge() && bridge().userId;
+          const why = v.withdrawnBy ? (v.withdrawnBy === me ? 'You withdrew' : `${first} withdrew`) : v.cancelledBy ? 'Called off' : (v.role === 'challenger' ? `${first} skipped it` : 'You skipped it');
+          body = `<div class="ch-title">${why}</div><div class="ch-meta"><span class="pill lost">CLOSED</span></div>`;
+        }
+      }
+      rows.push(`<div class="${cls}">${avatar(them.name, them.userId, them.photoUrl)}<div class="ch-main">${body}</div><div class="ch-actions">${acts}</div></div>`);
+    }
+    $('chList').innerHTML = rows.join('') || '<div class="note">No challenges yet. Challenge a colleague and see who flies further.</div>';
+  }
+  let refreshT = null;
+  function loadChallenges() {
+    if (!canChallenge()) { renderChallenges(); return Promise.resolve(); }
+    return ask('challenges').then(v => { CH = Object.assign({ incoming: [], outgoing: [], active: [], recent: [] }, v || {}); renderChallenges(); }).catch(() => renderChallenges());
+  }
+  const refreshSoon = () => { clearTimeout(refreshT); refreshT = setTimeout(() => { loadChallenges(); loadBoard(); }, 300); };
+  setInterval(() => {
+    const t = Date.now(); let expired = false;
+    document.querySelectorAll('[data-ends]').forEach(el => { const ms = +el.dataset.ends - t; if (ms <= 0) expired = true; el.textContent = left(ms); });
+    if (expired) refreshSoon();
+  }, 1000);
+  window.onSowakaChallenge = evt => { try { refreshSoon(); if (evt && evt.kind === 'finished' && evt.challenge) toastResult(evt.challenge); } catch {} };
+  function toastResult(v) {
+    if (!v || v.status !== 'finished') return;
+    const first = firstName(v.them && v.them.name);
+    toast(v.outcome === 'won' ? `You beat ${first}!` : v.outcome === 'draw' ? `A draw with ${first}` : `${first} won this one`);
+  }
+
+  $('chList').addEventListener('click', e => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const v = allChallenges().find(x => x.id === b.dataset.id); if (!v) return;
+    sfx.tap();
+    if (b.dataset.act === 'play') { openGame(v); return; }
+    b.disabled = true;
+    const act = b.dataset.act === 'accept' ? 'acceptChallenge' : 'declineChallenge';
+    ask(act, v.id)
+      .then(after => {
+        if (act === 'acceptChallenge') toast(`Accepted. Fly your round before it runs out.`);
+        loadChallenges();
+        if (act === 'acceptChallenge' && after && after.status === 'accepted' && scoreOf(after.me) == null) openGame(after);
+      })
+      .catch(err => { toast(err && err.message ? err.message : 'Could not do that just now'); loadChallenges(); });
+  });
+
+  // ---------- Tabs ----------
+  function selectTab(which) {
+    const ch = which === 'ch';
+    $('tab-ch').setAttribute('aria-selected', String(ch)); $('tab-play').setAttribute('aria-selected', String(!ch));
+    $('p-ch').hidden = !ch; $('p-play').hidden = ch;
+  }
+  $('tab-ch').addEventListener('click', () => { sfx.tap(); selectTab('ch'); });
+  $('tab-play').addEventListener('click', () => { sfx.tap(); selectTab('play'); });
+  $('playBtn').addEventListener('click', () => openGame(null));
+
+  // ---------- Challenge sheet: pick a colleague ----------
+  let picked = null, people = [], searchT = null, searchSeq = 0;
+  function openSheet() {
+    if (!canChallenge()) return;
+    sfx.tap(); picked = null; people = [];
+    $('search').value = ''; $('sendBtn').disabled = true; $('sendBtn').textContent = 'Send challenge';
+    $('scrim').hidden = false; searchPeople('');
+  }
+  function searchPeople(q) {
+    const seq = ++searchSeq;
+    $('people').innerHTML = '<li class="dept" style="padding:12px 8px">Loading…</li>';
+    ask('colleagues', q).then(v => {
+      if (seq !== searchSeq) return;
+      people = (v && Array.isArray(v.colleagues) ? v.colleagues : []).filter(p => p && p.userId);
+      renderPeople(q);
+    }).catch(err => { if (seq === searchSeq) $('people').innerHTML = `<li class="dept" style="padding:12px 8px">${esc(err && err.message ? err.message : 'Could not load colleagues')}</li>`; });
+  }
+  function renderPeople(q) {
+    $('people').innerHTML = people.length ? people.map(p => `<li><button type="button" data-id="${esc(p.userId)}" aria-pressed="${picked && picked.userId === p.userId}">
+      ${avatar(p.name, p.userId, p.photoUrl)}<span><span style="font-weight:600">${esc(p.name)}</span><br><span class="dept">${esc(p.designation || p.department || '')}</span></span>
+      <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></button></li>`).join('')
+      : `<li class="dept" style="padding:12px 8px">${q ? `No one found for “${esc(q)}”` : 'No colleagues to challenge yet'}</li>`;
+  }
+  $('challengeBtn').addEventListener('click', openSheet);
+  $('search').addEventListener('input', () => { clearTimeout(searchT); const q = $('search').value.trim(); searchT = setTimeout(() => searchPeople(q), 250); });
+  $('people').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]'); if (!b) return;
+    sfx.tap(); picked = people.find(p => p.userId === b.dataset.id) || null;
+    renderPeople($('search').value.trim());
+    if (picked) { $('sendBtn').disabled = false; $('sendBtn').textContent = `Challenge ${firstName(picked.name)}`; }
+  });
+  $('sendBtn').addEventListener('click', () => {
+    if (!picked) return;
+    const who = picked;
+    $('sendBtn').disabled = true;
+    ask('challenge', who.userId).then(() => {
+      sfx.send(); closeSheet(); selectTab('ch'); toast(`Challenge sent to ${firstName(who.name)}`); loadChallenges();
+    }).catch(err => { $('sendBtn').disabled = false; toast(err && err.message ? err.message : 'Could not send the challenge'); });
+  });
+  function closeSheet() { $('scrim').hidden = true; }
+  $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeSheet(); });
+
+  let toastT;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2800); }
+
+  // ---------- Game ----------
+  // Same seed, same gaps: a challenge round draws its gaps from the challenge's seed.
+  function seeded(seed) { let a = (Number(seed) >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const G = (() => {
+    const W = 360, H = 640, GROUND = 96;
+    const GRAVITY = 1700, FLAP = -500, MAX_FALL = 720;
+    const PW = 64, GAP = 158, SPACING = 210, SPEED = 165;
+    const cv = $('gameCanvas'), c = cv.getContext('2d');
+    const stars = starsFor(W, H);
+    let scale = 1, state = 'ready', bird, pipes, score, gx = 0, hx = 0, cx = 0, flash = 0, shake = 0, vs = null, rand = Math.random, startedAt = 0;
+    new ResizeObserver(() => { scale = fitCanvas(cv, W); }).observe(cv);
+
+    function reset() {
+      state = 'ready'; bird = { x: W * .3, y: H * .42, vy: 0, rot: 0, wing: 0 };
+      pipes = []; score = 0; flash = 0; shake = 0;
+      rand = vs && vs.seed != null ? seeded(vs.seed) : Math.random;
+      $('gScore').textContent = '0'; $('gScore').hidden = true; $('gReady').hidden = false; $('gOver').hidden = true;
+    }
+    function spawn(x) { const lo = 70, hi = H - GROUND - GAP - 70; pipes.push({ x, top: lo + rand() * (hi - lo), scored: false }); }
+    function flap() {
+      if (state === 'ready') { state = 'play'; startedAt = Date.now(); $('gReady').hidden = true; $('gScore').hidden = false; spawn(W + 40); }
+      if (state === 'play') { bird.vy = FLAP; sfx.flap(); }
+    }
+    function die() {
+      if (state !== 'play') return;
+      state = 'over'; flash = 1; shake = 10; sfx.hit(); sfx.die();
+      setTimeout(finish, 650);
+    }
+    function finish() {
+      if (state !== 'over') return;
+      state = 'done';
+      save.plays++;
+      const isNew = score > save.best;
+      if (isNew) save.best = score;
+      store();
+      $('goScore').textContent = score;
+      $('gScore').hidden = true; $('gOver').hidden = false;
+      if (vs) finishChallenge(vs, score); else finishSolo(score, isNew);
+    }
+    function finishSolo(points, isNew) {
+      $('goSecondLabel').textContent = 'Best'; $('goBest').textContent = save.best;
+      $('goTitle').textContent = isNew && points > 0 ? 'New best!' : points >= 100 ? 'Nice flying!' : 'Ouch!';
+      $('goMsg').innerHTML = bridge() ? 'Saving to the leaderboard…' : `You scored <b>${points} pts</b>.`;
+      $('goBtns').innerHTML = `<button class="pri" data-g="again" type="button">Play again</button>${canChallenge() ? '<button class="sec" data-g="challenge" type="button">Challenge a colleague</button>' : ''}`;
+      if (isNew && points > 0) sfx.win();
+      const b = bridge();
+      if (b && typeof b.submitScore === 'function') {
+        Promise.resolve().then(() => b.submitScore(points)).then(v => {
+          if (v && Array.isArray(v.entries)) board = v;
+          const me = board && board.me;
+          $('goMsg').innerHTML = me && me.rank ? `You're <b>#${me.rank}</b> on the leaderboard with <b>${Number(me.score).toLocaleString('en-IN')} pts</b>.` : `You scored <b>${points} pts</b>.`;
+          renderBoard();
+        }).catch(() => { $('goMsg').innerHTML = `You scored <b>${points} pts</b>. It couldn't reach the leaderboard just now.`; });
+      } else renderBoard();
+      $('goBtns').querySelector('button').focus({ preventScroll: true });
+    }
+    function finishChallenge(v, points) {
+      const first = esc(firstName(v.them && v.them.name));
+      $('goSecondLabel').textContent = first; $('goBest').textContent = scoreOf(v.them) != null ? scoreOf(v.them) : '?';
+      $('goTitle').textContent = 'Round done';
+      $('goMsg').innerHTML = 'Sending your score…';
+      $('goBtns').innerHTML = `<button class="pri" data-g="close" type="button">Back to challenges</button>`;
+      save.pendingFinish = { id: v.id, score: points }; store();
+      sendFinish(v.id, points).then(after => {
+        if (!after) return;
+        const theirs = scoreOf(after.them);
+        $('goBest').textContent = theirs != null ? theirs : '?';
+        if (after.status === 'finished') {
+          const won = after.outcome === 'won', draw = after.outcome === 'draw';
+          $('goTitle').textContent = won ? `You beat ${firstName(after.them && after.them.name)}!` : draw ? 'A draw!' : `${firstName(after.them && after.them.name)} wins`;
+          const pts = after.myAward && after.myAward.points ? Number(after.myAward.points) : 0;
+          $('goMsg').innerHTML = `${points} vs ${theirs ?? '?'}.${pts ? ` You earned <b>+${pts} pts</b>.` : ''}`;
+          if (won) sfx.win();
+        } else {
+          $('goMsg').innerHTML = `Your <b>${points}</b> is in. You'll see who won when ${first} flies.`;
+        }
+      }).catch(err => { $('goMsg').innerHTML = `${esc(err && err.message ? err.message : "Your score couldn't be sent just now")}. It will be sent next time you open Sky Hop.`; });
+      vs = null;
+    }
+    function update(dt) {
+      bird.wing += dt * (state === 'play' ? 18 : 10);
+      if (state === 'ready' || state === 'play') { gx = (gx + SPEED * dt) % 24; hx = (hx + SPEED * .25 * dt) % W; cx = (cx + SPEED * .08 * dt) % W; }
+      if (state === 'ready') { bird.y = H * .42 + Math.sin(performance.now() / 333) * 8; bird.rot = 0; return; }
+      if (state === 'done') return;
+      bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL); bird.y += bird.vy * dt;
+      const tr = bird.vy < 0 ? -.45 : Math.min(1.45, bird.vy / 420);
+      bird.rot += (tr - bird.rot) * Math.min(1, dt * (bird.vy < 0 ? 18 : 6));
+      const floor = H - GROUND - 12;
+      if (bird.y > floor) { bird.y = floor; bird.vy = 0; die(); }
+      if (bird.y < -30) { bird.y = -30; bird.vy = 0; }
+      if (state === 'play') {
+        for (const p of pipes) p.x -= SPEED * dt;
+        if (pipes.length && pipes[0].x < -PW) pipes.shift();
+        const last = pipes[pipes.length - 1];
+        if (!last || last.x < W + 40 - SPACING) spawn((last ? last.x : W) + SPACING);
+        const r = 12;
+        for (const p of pipes) {
+          if (!p.scored && p.x + PW < bird.x) { p.scored = true; score += 10; $('gScore').textContent = score; sfx.point(); }
+          if (bird.x + r > p.x + 3 && bird.x - r < p.x + PW - 3 && (bird.y - r < p.top || bird.y + r > p.top + GAP)) die();
+        }
+      }
+      flash = Math.max(0, flash - dt * 3); shake = Math.max(0, shake - dt * 40);
+    }
+    function draw() {
+      c.setTransform(scale, 0, 0, scale, 0, 0);
+      if (shake > 0) c.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+      drawSky(c, W, H, GROUND, hx, cx, stars, 46);
+      for (const p of pipes) { drawPipe(c, p.x, -4, p.top + 4, true, PW, 3); drawPipe(c, p.x, p.top + GAP, H - GROUND - p.top - GAP, false, PW, 3); }
+      drawGround(c, W, H, GROUND, gx, 3);
+      drawBird(c, bird.x, bird.y, bird.rot, bird.wing, state === 'over' || state === 'done');
+      if (flash > 0) { c.setTransform(scale, 0, 0, scale, 0, 0); c.fillStyle = `rgba(255,255,255,${flash * .8})`; c.fillRect(0, 0, W, H); }
+    }
+    return {
+      open(ch) { vs = ch; reset(); }, flap, update, draw,
+      get state() { return state; },
+      // Leaving mid-round in a challenge sends what was flown, so the round is not lost or replayable.
+      quit() { if (state === 'play' && vs) { state = 'over'; finish(); return true; } if (state === 'play') state = 'done'; vs = null; return false; }
+    };
+  })();
+  function sendFinish(id, points) {
+    return ask('finishChallenge', id, points).then(after => {
+      if (save.pendingFinish && save.pendingFinish.id === id) { save.pendingFinish = null; store(); }
+      loadChallenges(); loadBoard();
+      return after;
+    });
+  }
+
+  let gameOpen = false;
+  function openGame(ch) {
+    sfx.tap();
+    const vsEl = $('gVs');
+    if (ch) { const theirs = scoreOf(ch.them); vsEl.hidden = false; vsEl.innerHTML = theirs != null ? `Beat ${esc(firstName(ch.them.name))}: <b>${theirs}</b>` : `vs <b>${esc(firstName(ch.them && ch.them.name))}</b>`; }
+    else vsEl.hidden = true;
+    $('game').hidden = false; gameOpen = true; G.open(ch);
+  }
+  function closeGame() { if (G.quit()) return; $('game').hidden = true; gameOpen = false; }
+  $('gClose').addEventListener('click', closeGame);
+  $('stage').addEventListener('pointerdown', e => { if (e.target.closest('button')) return; e.preventDefault(); if (G.state === 'ready' || G.state === 'play') G.flap(); });
+  $('goBtns').addEventListener('click', e => {
+    const b = e.target.closest('button[data-g]'); if (!b) return;
+    if (b.dataset.g === 'again') openGame(null);
+    if (b.dataset.g === 'close') { $('game').hidden = true; gameOpen = false; selectTab('ch'); }
+    if (b.dataset.g === 'challenge') { $('game').hidden = true; gameOpen = false; selectTab('ch'); openSheet(); }
+  });
+  window.addEventListener('keydown', e => {
+    if (!gameOpen) { if (e.key === 'Escape' && !$('scrim').hidden) closeSheet(); return; }
+    if (e.code === 'Space' || e.code === 'ArrowUp') { if (G.state === 'ready' || G.state === 'play') { e.preventDefault(); G.flap(); } }
+    if (e.key === 'Escape') closeGame();
+  });
+
+  // ---------- Loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(.033, (now - last) / 1000); last = now;
+    if (gameOpen) { G.update(dt); G.draw(); }
+    else {
+      if (!reduced) hero.step(dt);
+      hero.draw();
+      if (!$('p-play').hidden) how.draw(reduced ? 0 : dt);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Start ----------
+  let started = false;
+  function start() {
+    if (started) return;
+    started = true;
+    loadSave(); renderSound(); renderBoard(); renderChallenges();
+    const b = bridge();
+    if (b && typeof b.close === 'function') { $('back').hidden = false; $('back').addEventListener('click', () => b.close()); }
+    selectTab(canChallenge() ? 'ch' : 'play');
+    loadBoard();
+    loadChallenges().then(() => {
+      if (save.pendingFinish && save.pendingFinish.id) sendFinish(save.pendingFinish.id, save.pendingFinish.score).catch(() => {});
+      const want = b && b.startChallengeId;
+      if (want) ask('getChallenge', String(want)).then(v => {
+        if (!v) return;
+        selectTab('ch');
+        if (v.status === 'accepted' && scoreOf(v.me) == null) openGame(v);
+      }).catch(() => {});
+    });
+    if (reduced) how.draw(1.2);
+    requestAnimationFrame(frame);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && started && !gameOpen) refreshSoon(); });
+  if (bridge()) start();
+  else { window.addEventListener('sowaka-ready', start, { once: true }); setTimeout(start, 600); }
+})();
+</script>
+</body>
+</html>
