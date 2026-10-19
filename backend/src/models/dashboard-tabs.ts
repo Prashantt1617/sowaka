@@ -58,6 +58,7 @@ const RULES: Rule[] = [
   { path: /^\/admin\/offices/, write: ['offices'] },
   { path: /^\/admin\/(shifts|shift-policy)/, write: ['shifttypes', 'shiftbulk'] },
   { path: /^\/admin\/reimbursement-types/, write: ['reimbursementtypes'] },
+  { path: /^\/admin\/company\/profile/, read: ['organisation'], write: ['organisation'] },
   { path: /^\/admin\/company\/settings/, write: ['organisation', 'departments', 'designations', 'cycle'] },
   { path: /^\/admin\/feedback/, read: ['feedback', 'overview'] },
   { path: /^\/admin\/kpi/, write: ['kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle'] },

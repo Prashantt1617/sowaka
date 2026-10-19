@@ -1,6 +1,7 @@
 import { companies, holidays, users } from '../config/db';
 import { Company } from '../models/company.model';
 import { cycleWindow, DEFAULT_CYCLE_START_DAY, normaliseStartDay, periodFor } from './cycle';
+import { AdminError } from './admin.service';
 
 // Default week-off when a company has none configured: Sunday only.
 export const DEFAULT_WEEKOFF_DAYS = [0];
@@ -190,4 +191,55 @@ export async function getOrgHolidayDates(org: string | undefined): Promise<Set<s
   return new Set(
     rows.map((row) => (row as { date: Date }).date.toISOString().slice(0, 10)),
   );
+}
+
+// ------------------------------------------------------- organisation profile
+
+const PROFILE_TEXT = ['registeredName', 'displayName', 'country', 'industry', 'addressLine1', 'addressLine2', 'city', 'state', 'pincode', 'addressCountry', 'senderName'] as const;
+const PROFILE_EMAILS = ['primaryContactEmail', 'senderEmail', 'replyToEmail'] as const;
+type ProfileField = (typeof PROFILE_TEXT)[number] | (typeof PROFILE_EMAILS)[number] | 'incorporatedOn';
+export type OrganisationProfileView = Record<ProfileField, string> & { saved: boolean; companyName: string; updatedAt: string | null };
+
+/** The Organisation page's details for the dashboard user's company; `saved` false until HR first saves. */
+export async function getOrganisationProfile(adminUserId: string): Promise<OrganisationProfileView> {
+  const org = await requireAdminOrg(adminUserId);
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, name: 1, profile: 1 } });
+  const profile = company?.profile ?? {};
+  const view = {} as Record<ProfileField, string>;
+  for (const field of [...PROFILE_TEXT, ...PROFILE_EMAILS, 'incorporatedOn'] as const) view[field] = profile[field] ?? '';
+  return {
+    ...view,
+    saved: Boolean(company?.profile),
+    companyName: company?.name ?? '',
+    updatedAt: profile.updatedAt ? profile.updatedAt.toISOString() : null,
+  };
+}
+
+/** Saves the Organisation page. Fields left out stay as they are; an empty one is cleared. */
+export async function updateOrganisationProfile(adminUserId: string, input: Record<string, unknown>): Promise<OrganisationProfileView> {
+  const org = await requireAdminOrg(adminUserId);
+  const set: Record<string, string | Date> = {};
+  const text = (field: string, value: unknown, max: number) => {
+    if (value === undefined) return;
+    if (typeof value !== 'string') throw new AdminError(400, `${field} must be text`);
+    const v = value.trim();
+    if (v.length > max) throw new AdminError(400, `${field} can be at most ${max} characters`);
+    set[`profile.${field}`] = v;
+  };
+  for (const field of PROFILE_TEXT) text(field, input[field], 200);
+  for (const field of PROFILE_EMAILS) {
+    text(field, input[field], 254);
+    const v = set[`profile.${field}`];
+    if (typeof v === 'string' && v && !/^\S+@\S+\.\S+$/.test(v)) throw new AdminError(400, `${field} is not a valid email`);
+  }
+  text('incorporatedOn', input.incorporatedOn, 10);
+  const day = set['profile.incorporatedOn'];
+  if (typeof day === 'string' && day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T00:00:00Z`).valueOf()))) {
+    throw new AdminError(400, 'Date of incorporation is invalid');
+  }
+  if (!Object.keys(set).length) throw new AdminError(400, 'Nothing to save');
+  set['profile.updatedAt'] = new Date();
+  set['profile.updatedBy'] = adminUserId;
+  await companies().updateOne({ id: org }, { $set: set });
+  return getOrganisationProfile(adminUserId);
 }

@@ -40,9 +40,37 @@ export type AppTab = 'connect' | 'team' | 'grow' | 'actions' | 'games' | 'care' 
 /** What a company gets when it has never been given a list. */
 export const DEFAULT_APP_TABS: AppTab[] = ['connect', 'team', 'grow', 'actions'];
 
+/**
+ * The company's own details, from the dashboard's Organisation page: legal and
+ * display names, filing address and contact emails. Every field optional; an
+ * empty string means HR cleared it.
+ */
+export interface OrganisationProfile {
+  registeredName?: string;
+  displayName?: string;
+  country?: string;
+  industry?: string;
+  /** YYYY-MM-DD, or empty. */
+  incorporatedOn?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  addressCountry?: string;
+  primaryContactEmail?: string;
+  senderEmail?: string;
+  senderName?: string;
+  replyToEmail?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
 export interface Company {
   id: string;
   name: string;
+  /** The Organisation page's details; absent until HR first saves it. */
+  profile?: OrganisationProfile;
   address?: string;
   // Weekly off days as JS weekday numbers (0 = Sunday .. 6 = Saturday).
   // Used to decide which days count as a "week-off" for full-day overtime.

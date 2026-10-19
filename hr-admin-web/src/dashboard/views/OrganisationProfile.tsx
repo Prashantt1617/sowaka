@@ -2,9 +2,10 @@
 // Three field groups: Organisation (identity), Organisation Address (filing
 // address) and Contact Information (notification + sender emails).
 //
-// NOTE: frontend-capture phase — renders from local mock data, no API calls.
-// Every field carries an inline explanation of what it means.
-import { useState } from 'react';
+// Loaded from and saved to the server (`/admin/company/profile`), per company.
+// Until a company's HR first saves, the page starts from what we already knew
+// about that company (below), or from its name alone.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { useAuth } from '../auth/AuthContext';
@@ -12,6 +13,8 @@ import { useBrand } from '../brand';
 import { Card } from '../ui';
 import { Logo } from '../icons';
 import { ORG_DISPLAY_NAME, ORG_REGISTERED_NAME } from '../org';
+import { getOrganisationProfile, saveOrganisationProfile, type OrganisationProfileDTO } from '../../services/hrms';
+import { ApiError } from '../../services/http';
 
 type OrgForm = {
   name: string;
@@ -33,8 +36,8 @@ type OrgForm = {
   replyToEmail: string;
 };
 
-// —— Mock data for capture, per organisation ————————————————————————————
-// Which set shows is decided by the signed-in org; nothing here is fetched.
+// —— What we knew before each company's first save ——————————————————————————
+// Only a starting point: once HR saves, the server's copy is what shows.
 const MOCKS: Record<string, OrgForm> = {
   acmt: {
     name: 'ACMT Group of Colleges',
@@ -72,7 +75,7 @@ const MOCKS: Record<string, OrgForm> = {
     replyToEmail: 'yash@cdeenterprises.in',
   },
 };
-const MOCK: OrgForm = {
+const CONVRSE: OrgForm = {
   name: ORG_REGISTERED_NAME,
   displayName: ORG_DISPLAY_NAME,
   country: 'India',
@@ -90,21 +93,65 @@ const MOCK: OrgForm = {
   replyToEmail: 'hr@convrse.ai',
 };
 
+MOCKS.convrse = CONVRSE;
+
+const EMPTY: OrgForm = {
+  name: '', displayName: '', country: 'India', industry: '', incorporatedOn: '',
+  addressLine1: '', addressLine2: '', city: '', state: '', pincode: '', addressCountry: 'India',
+  primaryContactEmail: '', senderEmail: '', senderName: '', replyToEmail: '',
+};
+
+/** The form from the server's copy, or, before a first save, from what we knew. */
+function formFrom(p: OrganisationProfileDTO, org: string): OrgForm {
+  if (!p.saved) {
+    const known = MOCKS[org];
+    return known ? { ...known } : { ...EMPTY, name: p.companyName, displayName: p.companyName, senderName: p.companyName };
+  }
+  return {
+    name: p.registeredName, displayName: p.displayName, country: p.country, industry: p.industry, incorporatedOn: p.incorporatedOn,
+    addressLine1: p.addressLine1, addressLine2: p.addressLine2, city: p.city, state: p.state, pincode: p.pincode, addressCountry: p.addressCountry,
+    primaryContactEmail: p.primaryContactEmail, senderEmail: p.senderEmail, senderName: p.senderName, replyToEmail: p.replyToEmail,
+  };
+}
+
 export function OrganisationProfile() {
   const { flash } = useStore();
   const { user } = useAuth();
   const brand = useBrand();
-  const [form, setForm] = useState<OrgForm>({ ...(MOCKS[user?.org ?? ''] ?? MOCK) });
+  const org = user?.org ?? '';
+  const [form, setForm] = useState<OrgForm | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setForm(null); setLoadError('');
+    getOrganisationProfile()
+      .then((p) => { if (live) setForm(formFrom(p, org)); })
+      .catch((e) => { if (live) setLoadError(e instanceof ApiError ? e.message : 'Could not load the organisation details'); });
+    return () => { live = false; };
+  }, [org]);
+
+  if (loadError) return <div style={{ maxWidth: 860, color: '#A8475F', fontWeight: 600 }}>{loadError}</div>;
+  if (!form) return <div style={{ maxWidth: 860, color: '#9197A2' }}>Loading…</div>;
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
 
-  const save = () => {
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const saved = await saveOrganisationProfile({
+        registeredName: form.name, displayName: form.displayName, country: form.country, industry: form.industry, incorporatedOn: form.incorporatedOn,
+        addressLine1: form.addressLine1, addressLine2: form.addressLine2, city: form.city, state: form.state, pincode: form.pincode, addressCountry: form.addressCountry,
+        primaryContactEmail: form.primaryContactEmail, senderEmail: form.senderEmail, senderName: form.senderName, replyToEmail: form.replyToEmail,
+      });
+      setForm(formFrom(saved, org));
       flash('Organisation details saved');
-    }, 400);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the organisation details', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -164,6 +211,7 @@ export function OrganisationProfile() {
             label="Industry"
           >
             <select value={form.industry} onChange={(e) => set('industry', e.target.value)} style={inputStyle}>
+              {!form.industry && <option value="">Select industry</option>}
               <option>Services</option>
               <option>Education</option>
               <option>Manufacturing</option>
