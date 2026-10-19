@@ -524,17 +524,19 @@ function standingsOf(session: SquadSession) {
  * View Full Leaderboard: a game's final standings, for its page. The game
  * itself while it is still held, else what its card kept; without a
  * session id, the viewer's office's last finished game.
+ *
+ * A named game's board is open to everyone in the company, whatever their
+ * office: the results are celebrated company-wide, not kept within one office.
  */
 export async function squadBoard(viewer: SquadViewer, input: { sessionId?: unknown }) {
   const sessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
   if (sessionId) {
     const session = await readSession(viewer.org, sessionId);
     if (session && session.status === 'over') {
-      if (officeKey(session.office) !== officeKey(viewer.office ?? '')) throw new SquadRuleError(404, 'There is no leaderboard for that game yet.');
       return { sessionId, office: session.office, endsAt: new Date(endedAt(session)).toISOString(), results: standingsOf(session) };
     }
   }
-  // Your own office's games only.
+  // Always this company's cards; with no game named, your own office's latest.
   const posts = await connectPosts()
     .find(
       sessionId
@@ -544,7 +546,9 @@ export async function squadBoard(viewer: SquadViewer, input: { sessionId?: unkno
     )
     .limit(sessionId ? 1 : 50)
     .toArray();
-  const post = posts.find((p) => officeKey(String((p.body as Record<string, unknown>).office ?? '')) === officeKey(viewer.office ?? ''));
+  const post = sessionId
+    ? posts[0]
+    : posts.find((p) => officeKey(String((p.body as Record<string, unknown>).office ?? '')) === officeKey(viewer.office ?? ''));
   const body = (post?.body ?? {}) as Record<string, unknown>;
   if (!post || !Array.isArray(body.results)) throw new SquadRuleError(404, 'There is no leaderboard for that game yet.');
   return {

@@ -562,7 +562,7 @@ async function liveChecks() {
   const board = await request(a, 'squad:board', { sessionId: 'live-1' });
   check('squad:board gives the same standings', board.ok && same(dataOf(board).results, card.results), JSON.stringify(board).slice(0, 200));
   const elsewhere = await request(noida, 'squad:board', { sessionId: 'live-1' });
-  check('…but not to another office', !elsewhere.ok && elsewhere.status === 404);
+  check('…and to someone in another office of the same company', elsewhere.ok && same(dataOf(elsewhere).results, card.results), JSON.stringify(elsewhere).slice(0, 200));
   for (const c of [...clients, noida, lateComer]) c.socket.close();
 
   // The real payout: a negative game adds nothing (never takes points away); a positive one adds its points.
