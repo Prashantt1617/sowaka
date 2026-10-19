@@ -117,6 +117,19 @@ export const env = {
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean),
   /**
+   * Accounts that sign in with a fixed code of their own, from `OTP_FIXED_CODES`
+   * (`email:code` pairs, comma-separated, six-digit codes). For shared desks whose
+   * mailbox the person signing in cannot read. Kept in the host's settings,
+   * never in the repo; each use is logged.
+   */
+  otpFixedCodes: new Map<string, string>(
+    String(process.env.OTP_FIXED_CODES ?? '')
+      .split(',')
+      .map((pair) => pair.trim().split(':').map((part) => part.trim()))
+      .filter((pair): pair is [string, string] => pair.length === 2 && /^\S+@\S+$/.test(pair[0]) && /^\d{6}$/.test(pair[1]))
+      .map(([email, code]) => [email.toLowerCase(), code] as [string, string]),
+  ),
+  /**
    * Orgs that may receive push and in-app notifications, from `NOTIFY_ORGS`
    * (comma-separated). Empty means unrestricted.
    *

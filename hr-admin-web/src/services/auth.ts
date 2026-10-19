@@ -19,6 +19,8 @@ export type AuthUser = {
   isLeadership?: boolean;
   /** Support desk role, given in People › Accesses. Absent or null: no Support desk. */
   supportRole?: 'head' | 'staff' | null;
+  /** May edit the profile details of themselves and everyone below them in the reporting line. */
+  canEditEmployees?: boolean;
 };
 
 export function getStoredUser(): AuthUser | null {

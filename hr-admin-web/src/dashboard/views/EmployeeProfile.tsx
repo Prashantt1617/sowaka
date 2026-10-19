@@ -17,7 +17,9 @@ import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { clearCalendarDay, clearReportingManager, getEmployeeCalendar, setCalendarDay, setReportingManager } from '../../services/hrms';
+import { assignShift, clearCalendarDay, clearReportingManager, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
+import type { EmployeeDetailsInput, ShiftDTO } from '../../services/hrms';
+import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
@@ -44,7 +46,7 @@ function seedOf(emp: Emp): number {
 }
 function derive(emp: Emp) {
   const seed = seedOf(emp);
-  const [first, last = ''] = emp.name.split(' ');
+  const { first, middle, last } = nameParts(emp.name);
   const gender = GENDERS[seed % 2];
   const level = /Manager|Head|Lead/.test(emp.role) ? 'lead' : /Senior/.test(emp.role) ? 'senior' : 'associate';
   const ctc = (level === 'lead' ? 2800000 : level === 'senior' ? 1800000 : 900000) + (seed % 9) * 60000;
@@ -59,11 +61,10 @@ function derive(emp: Emp) {
 
   return {
     seed, gender, level, ctc, basicM, hraM, template, esi, age,
-    firstName: first, middleName: '', lastName: last,
+    firstName: first, middleName: middle, lastName: last,
     workEmail: emp.email || '—',
     personalEmail: `${first}${seed}`.toLowerCase() + '@gmail.com',
     mobile: `+91 9${String(80000000 + (seed * 137) % 19999999).padStart(8, '0')}`,
-    isDirector: seed % 25 === 0,
     workLocation: WORKLOC_BY_CITY[emp.location] || emp.location,
     dob: `${String(dobDay).padStart(2, '0')} ${MONTHS[dobMonth]} ${dobYear}`,
     fatherName: `Mr. ${last} (Sr.)`,
@@ -100,6 +101,21 @@ function ratingWord(score: number): string {
   return RATINGS[3];
 }
 
+/** First word, last word, and whatever sits between. */
+function nameParts(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return { first: words[0] ?? '', middle: words.slice(1, -1).join(' '), last: words.length > 1 ? words[words.length - 1] : '' };
+}
+
+const EMP_TYPE_VALUE: Record<string, 'full_time' | 'contract' | 'intern'> = { 'Full-time': 'full_time', Contract: 'contract', Intern: 'intern' };
+
+/** YYYY-MM-DD as the profile shows dates, e.g. 15 Oct 2026. */
+const showDate = (iso: string) => {
+  if (!iso) return '—';
+  const [y, m, day] = iso.split('-').map(Number);
+  return `${String(day).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`;
+};
+
 // —— Component ——————————————————————————————————————————————————————————
 export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () => void; onOpen?: (e: Emp) => void }) {
   const s = useStore();
@@ -109,6 +125,9 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   // What someone earns is its own access, apart from Employees.
   const { user } = useAuth();
   const seesSalary = canOpen(user, SALARY_DETAILS);
+  // Edit details: for someone given the right, on themselves and anyone below them.
+  const [editingDetails, setEditingDetails] = useState(false);
+  const canEditDetails = user?.canEditEmployees === true && isSelfOrBelow(s.emps, user.id, emp);
   // This month, fetched once: it names the shift in the header and seeds the
   // Calendar tab, so opening that tab does not ask for the same month again.
   const [currentMonth, setCurrentMonth] = useState<EmployeeCalendarDTO | null>(null);
@@ -143,7 +162,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.6px' }}>{emp.name}</div>
               <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
-              {d.isDirector && <Pill label="Director" tone={{ bg: '#F4E9F1', fg: '#8A4A78' }} />}
+              {emp.isDirector && <Pill label="Director" tone={{ bg: '#F4E9F1', fg: '#8A4A78' }} />}
             </div>
             <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 4 }}>
               {emp.role} · {emp.team} · {emp.employeeId}
@@ -173,7 +192,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {tab === 'profile' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18, alignItems: 'start', maxWidth: 820 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Section title="Basic details">
+            <Section title="Basic details" action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} style={editBtn}>Edit details</button> : undefined}>
             <Grid>
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
@@ -184,14 +203,22 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <Row label="Designation" value={emp.role} />
               <Row label="Department" value={emp.team} />
               <Row label="Work location" value={d.workLocation} />
+              <Row label="Employee type" value={emp.empType} />
+              <Row label="Mobile number" value={emp.phone || '—'} />
+              <Row label="Gender" value={emp.gender || '—'} />
+              <Row label="Date of birth" value={showDate(emp.birthday)} />
               <ManagerRow emp={emp} />
-              <Row label="Director / substantial interest" value={d.isDirector ? 'Yes' : 'No'} />
+              <Row label="Director / substantial interest" value={emp.isDirector ? 'Yes' : 'No'} />
             </Grid>
           </Section>
+            {canEditDetails && (
+              <Section title="Shift template">
+                <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
+              </Section>
+            )}
+            {/* Only when something is filed; an empty box said nothing useful. */}
+            {emp.documents.length > 0 && (
             <Section title="Documents">
-            {emp.documents.length === 0 ? (
-              <div style={{ fontSize: 15, color: '#9197A2', fontWeight: 500 }}>Nothing filed yet. Documents are added from the employee's record.</div>
-            ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {emp.documents.map((doc) => (
                   <a
@@ -212,11 +239,13 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
                   </a>
                 ))}
               </div>
-            )}
           </Section>
+            )}
           </div>
         </div>
       )}
+
+      {editingDetails && <EditDetails emp={emp} onClose={() => setEditingDetails(false)} />}
 
       {tab === 'performance' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18, alignItems: 'start' }}>
@@ -303,6 +332,8 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               designation={emp.role}
               period={s.cycle.period}
               nextPeriod={s.cycle.next}
+              // Someone with the edit right sets KPIs for the people below them, not for themselves.
+              readOnly={user?.canEditEmployees === true && emp.id === user.id ? 'You set KPIs for the people who report to you, not for yourself.' : undefined}
             />
           </Section>
           </div>
@@ -755,10 +786,13 @@ function Fact({ label, value, border }: { label: string; value: string; border?:
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <Card style={{ padding: 0 }}>
-      <div style={{ padding: '15px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 16, fontWeight: 800 }}>{title}</div>
+      <div style={{ padding: '15px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ flex: 1 }}>{title}</span>
+        {action}
+      </div>
       <div style={{ padding: '18px 20px' }}>{children}</div>
     </Card>
   );
@@ -857,3 +891,237 @@ function MiniRow({ label, value }: { label: string; value: string }) {
 }
 
 const backBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: '#0571A6', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '2px 0', marginBottom: 14 };
+
+const editBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE0F2', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+
+/** The editor themselves, or anyone below them in the reporting line. The server checks the same. */
+function isSelfOrBelow(emps: Emp[], editorId: string, emp: Emp): boolean {
+  const byId = new Map(emps.map((e) => [e.id, e]));
+  const seen = new Set<string>();
+  let current: Emp | undefined = emp;
+  while (current && !seen.has(current.id)) {
+    if (current.id === editorId) return true;
+    seen.add(current.id);
+    current = current.managerId ? byId.get(current.managerId) : undefined;
+  }
+  return false;
+}
+
+type DetailsForm = {
+  firstName: string; middleName: string; lastName: string; employeeId: string; joiningDate: string;
+  email: string; mobile: string; gender: string; location: string; designation: string; department: string;
+  empType: string; birthday: string; isDirector: boolean;
+};
+
+function detailsOf(emp: Emp): DetailsForm {
+  const { first, middle, last } = nameParts(emp.name);
+  const dash = (v: string) => (v === '—' ? '' : v);
+  return {
+    firstName: first, middleName: middle, lastName: last,
+    employeeId: dash(emp.employeeId), joiningDate: emp.joiningDate, email: emp.email,
+    mobile: emp.phone, gender: emp.gender, location: dash(emp.location),
+    designation: dash(emp.role), department: dash(emp.team),
+    empType: emp.empType, birthday: emp.birthday, isDirector: emp.isDirector,
+  };
+}
+
+/** Every Basic detail of one person, editable; only what changed is sent. */
+function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
+  const { emps, flash, reload } = useStore();
+  const before = detailsOf(emp);
+  const [form, setForm] = useState<DetailsForm>(before);
+  const [saving, setSaving] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [saved, setSaved] = useState<{ departments: string[]; designations: string[] }>({ departments: [], designations: [] });
+  useEffect(() => {
+    getCompanySettings()
+      .then((c) => setSaved({ departments: c.departmentList ?? [], designations: c.designationList ?? [] }))
+      .catch(() => undefined);
+  }, []);
+  const uniq = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter((v) => v && v !== '—'))].sort();
+  const set = <K extends keyof DetailsForm>(k: K, v: DetailsForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const missing = {
+    firstName: !form.firstName.trim(),
+    email: !/^\S+@\S+\.\S+$/.test(form.email.trim()),
+    joiningDate: !form.joiningDate,
+  };
+
+  const save = async () => {
+    setTouched(true);
+    if (Object.values(missing).some(Boolean)) return;
+    const name = [form.firstName, form.middleName, form.lastName].map((w) => w.trim()).filter(Boolean).join(' ');
+    const changes: EmployeeDetailsInput = {};
+    if (name !== emp.name) changes.name = name;
+    if (form.email.trim().toLowerCase() !== before.email.toLowerCase()) changes.email = form.email.trim();
+    if (form.employeeId.trim() !== before.employeeId) changes.employeeId = form.employeeId.trim();
+    if (form.joiningDate !== before.joiningDate) changes.joiningDate = form.joiningDate;
+    if (form.birthday !== before.birthday) changes.birthday = form.birthday;
+    if (form.mobile.trim() !== before.mobile) changes.mobile = form.mobile.trim();
+    if (form.gender !== before.gender) changes.gender = form.gender;
+    if (form.location.trim() !== before.location) changes.location = form.location.trim();
+    if (form.designation.trim() !== before.designation) changes.designation = form.designation.trim();
+    if (form.department.trim() !== before.department) changes.department = form.department.trim();
+    if (form.empType !== before.empType) changes.employeeType = EMP_TYPE_VALUE[form.empType];
+    if (form.isDirector !== before.isDirector) changes.isDirector = form.isDirector;
+    if (Object.keys(changes).length === 0) { onClose(); return; }
+    setSaving(true);
+    try {
+      await updateEmployeeDetails(emp.id, changes);
+      flash(`${name}'s details saved`);
+      await reload();
+      onClose();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the details', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const emailChanged = form.email.trim().toLowerCase() !== before.email.toLowerCase();
+  const idChanged = form.employeeId.trim() !== before.employeeId && before.employeeId !== '';
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={saving ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.35)' }} />
+      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} style={{ position: 'relative', width: 'min(760px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(34,34,34,.25)' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid #F0F0F2' }}>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>Edit details</div>
+          <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3 }}>{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
+        </div>
+        <div style={{ padding: '18px 22px 4px', overflowY: 'auto' }}>
+          <div style={grid3}>
+            <Field label="First name" required error={touched && missing.firstName}>
+              <input autoFocus value={form.firstName} onChange={(e) => set('firstName', e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Middle name">
+              <input value={form.middleName} onChange={(e) => set('middleName', e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Last name">
+              <input value={form.lastName} onChange={(e) => set('lastName', e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+          <div style={grid2}>
+            <Field label="Employee ID">
+              <input value={form.employeeId} onChange={(e) => set('employeeId', e.target.value.toUpperCase())} style={inputStyle} />
+            </Field>
+            <Field label="Date of Joining" required error={touched && missing.joiningDate}>
+              <input type="date" value={form.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+          <div style={grid2}>
+            <Field label="Work Email" required error={touched && missing.email}>
+              <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Mobile Number">
+              <input value={form.mobile} onChange={(e) => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={inputStyle} />
+            </Field>
+          </div>
+          {(emailChanged || idChanged) && (
+            <div style={{ ...infoCallout, marginBottom: 18 }}>
+              <span style={infoIcon}>i</span>
+              <span>
+                {emailChanged && <>{form.firstName.trim() || 'They'} will sign in with the new <strong>email</strong>, and payslips go there from now on. </>}
+                {idChanged && <>Punches are matched by <strong>Employee ID</strong>: the biometric device must use the new ID too.</>}
+              </span>
+            </div>
+          )}
+          <div style={grid2}>
+            <Field label="Gender">
+              <Select value={form.gender} onChange={(v) => set('gender', v)} placeholder="Select gender" options={GENDER_CHOICES} />
+            </Field>
+            <Field label="Date of birth">
+              <input type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+          <div style={grid2}>
+            <Field label="Designation">
+              <TypeOrPick id="edit-emp-designation" value={form.designation} onChange={(v) => set('designation', v)} placeholder="Type or pick a designation" options={uniq([...emps.map((e) => e.role), ...saved.designations])} />
+            </Field>
+            <Field label="Department">
+              <TypeOrPick id="edit-emp-department" value={form.department} onChange={(v) => set('department', v)} placeholder="Type or pick a department" options={uniq([...emps.map((e) => e.team), ...saved.departments])} />
+            </Field>
+          </div>
+          <div style={grid2}>
+            <Field label="Work Location">
+              <TypeOrPick id="edit-emp-location" value={form.location} onChange={(v) => set('location', v)} placeholder="Type or pick a location" options={uniq(emps.map((e) => e.location))} />
+            </Field>
+            <Field label="Employee type">
+              <Select value={form.empType} onChange={(v) => set('empType', v || before.empType)} placeholder="Select type" options={Object.keys(EMP_TYPE_VALUE)} />
+            </Field>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 15, fontWeight: 600, color: '#484848', cursor: 'pointer', marginBottom: 18 }}>
+            <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} />
+            <span>Employee is a <strong>Director / person with substantial interest</strong> in the company.</span>
+          </label>
+          <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 14 }}>The reporting manager is changed on the profile itself.</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #F0F0F2' }}>
+          <button type="button" disabled={saving} onClick={onClose} style={{ background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={save} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Which shift template this person follows, changeable here (for someone with
+ * the edit right). A change starts the next day; today stays on the old one.
+ */
+function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
+  const { flash } = useStore();
+  const [shifts, setShifts] = useState<ShiftDTO[] | null>(null);
+  const [picked, setPicked] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const load = () => getShifts()
+    .then((all) => {
+      setShifts(all);
+      const current = all.find((t) => t.assignedUserIds.includes(emp.id)) ?? all.find((t) => t.isDefault);
+      // On nothing yet: start from the first template they could be put on.
+      setPicked(current?.id ?? all.find((t) => t.active || t.isDefault)?.id ?? '');
+      setError('');
+    })
+    .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load the shift templates'));
+  useEffect(() => { void load(); }, [emp.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (error) return <div style={{ fontSize: 14, color: '#A8475F', fontWeight: 600 }}>{error}</div>;
+  if (!shifts) return <div style={{ fontSize: 14, color: '#9197A2' }}>Loading…</div>;
+  const usable = shifts.filter((t) => t.active || t.isDefault);
+  if (usable.length === 0) return <div style={{ fontSize: 14, color: '#9197A2' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
+  const assigned = shifts.find((t) => t.assignedUserIds.includes(emp.id));
+  const current = assigned ?? shifts.find((t) => t.isDefault);
+  const nameOf = (t: ShiftDTO) => `${t.name}${t.isDefault ? ' (default)' : ''}`;
+  const save = async () => {
+    const target = usable.find((t) => t.id === picked);
+    if (!target || target.id === current?.id) return;
+    setSaving(true);
+    try {
+      const r = await assignShift(target.id, [emp.id]);
+      flash(`${emp.name} moves to ${target.name}${r.effectiveFrom ? ` from ${showDate(r.effectiveFrom)}` : ''}`);
+      await load();
+      onChanged();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not change the shift', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div>
+      <div style={{ fontSize: 14, color: '#717171', marginBottom: 10 }}>
+        Now on <strong style={{ color: '#222222' }}>{current ? nameOf(current) : 'the company policy'}</strong>
+        {current && !assigned && ' · nobody picked one for them, so the default applies'}
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select aria-label="Shift template" value={picked} onChange={(e) => setPicked(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: 260, flex: '1 1 260px' }}>
+          {usable.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
+        </select>
+        <button type="button" disabled={saving || picked === current?.id} onClick={save}
+          style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+          {saving ? 'Saving…' : 'Assign'}
+        </button>
+      </div>
+      <div style={{ fontSize: 13, color: '#9197A2', marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
+    </div>
+  );
+}

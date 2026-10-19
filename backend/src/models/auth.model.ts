@@ -26,6 +26,8 @@ export interface AuthUser {
   dashboardTabs?: string[] | null;
   /** Support desk role; null when they have none (no Support tab). */
   supportRole?: 'head' | 'staff' | null;
+  /** May edit the profile details of themselves and everyone below them in the reporting line. */
+  canEditEmployees?: boolean;
   isLeadership?: boolean;
   /** May start a contest in Connect; the app shows the contest options only then. */
   canCreateContests?: boolean;

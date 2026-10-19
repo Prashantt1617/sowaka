@@ -630,7 +630,7 @@ const api={
 /* On the app's bridge object (the app's script fills in the rest of it, now or once the page has loaded, and keeps room). */
 const S=window.Sowaka=window.Sowaka||{};
 S.room=api; S.live=true;
-const code=v=>{ const m=/^(?:room:)?([A-HJKMNP-Z2-9]{5})$/i.exec(String(v||'').trim()); return m?m[1].toUpperCase():null; };
+const code=v=>{ const m=/^(?:room:)?([1-9]\d{3}|[A-HJKMNP-Z2-9]{5})$/i.exec(String(v||'').trim()); return m?m[1].toUpperCase():null; };
 L.code=code;
 if(T.room&&code(T.room))S.startRoomCode=code(T.room);
 })();
@@ -727,8 +727,7 @@ function dist(a,b){ const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=
 
 /* ---------- rooms ---------- */
 const rooms={};
-const ALPHA='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-function newCode(){ let c; do{ c=''; for(let i=0;i<5;i++)c+=ALPHA[Math.floor(Math.random()*ALPHA.length)]; }while(rooms[c]); return c; }
+function newCode(){ let c; do{ c=String(1000+Math.floor(Math.random()*9000)); }while(rooms[c]); return c; }
 function makeRoom(code,host){ const r={code,hostId:host.userId,status:'lobby',players:[],invited:[],kicked:new Set(),round:0,turnIdx:-1,order:[],drawerId:null,word:null,choices:null,level:'medium',rounds:CFG.rounds,
   endsAt:0,turnStarted:0,guessed:new Map(),revealed:[],drawerGain:0,log:[],last:null,awards:null,gameId:null,timers:[],lobbyTimers:[]}; rooms[code]=r; return r; }
 function addPlayer(r,p,bot){ if(r.players.some(x=>x.userId===p.userId))return; r.players.push({userId:p.userId,name:p.name,photoUrl:p.photoUrl||null,score:0,online:true,bot,joinedAt:now()+(seq++)});
@@ -829,9 +828,9 @@ setInterval(()=>{ const r=mine; if(!r)return; const t=now();
 },200);
 
 /* Rooms already there: Ananya's, open, and a full one. */
-(function(){ const a=makeRoom('KX7PM',who('Ananya Rao')); addPlayer(a,who('Ananya Rao'),true);
-  const k=makeRoom('M3TRK',who('Kabir Shah')); addPlayer(k,who('Kabir Shah'),true); addPlayer(k,who('Zoya Khan'),true);
-  const f=makeRoom('BZ4QW',who('Rahul Mehta')); ['Rahul Mehta','Shiv Patel','Neha Gupta','Yami Kapoor','Isha Menon','Zoya Khan','Kritik Bansal','Priya Nair'].forEach(n=>addPlayer(f,who(n),true)); })();
+(function(){ const a=makeRoom('4827',who('Ananya Rao')); addPlayer(a,who('Ananya Rao'),true);
+  const k=makeRoom('3150',who('Kabir Shah')); addPlayer(k,who('Kabir Shah'),true); addPlayer(k,who('Zoya Khan'),true);
+  const f=makeRoom('9264',who('Rahul Mehta')); ['Rahul Mehta','Shiv Patel','Neha Gupta','Yami Kapoor','Isha Menon','Zoya Khan','Kritik Bansal','Priya Nair'].forEach(n=>addPlayer(f,who(n),true)); })();
 
 function leaveCurrent(){ if(!mine)return; const r=mine; mine=null; removePlayer(r,ME.userId,'leave'); }
 /* Colleagues the real bridge listed (in the app), by id, so they can be invited; the first three invited join as simulated players. */
@@ -846,11 +845,11 @@ const api={
     if(r.players.some(p=>p.userId===ME.userId)){ mine=r; push(r,true); return view(r); }
     if(r.players.length>=CFG.max)return fail(409,'That room is full ('+CFG.max+' of '+CFG.max+').');
     leaveCurrent(); addPlayer(r,ME,false); mine=r; feed(r,{kind:'join',userId:ME.userId,name:ME.name,text:'You joined'});
-    if(r.code==='KX7PM'&&r.status==='lobby'){
+    if(r.code==='4827'&&r.status==='lobby'){
       later(r,()=>{ addPlayer(r,who('Kabir Shah'),true); feed(r,{kind:'join',userId:'u3',name:'Kabir Shah',text:'Kabir joined'}); push(r); },2500,true);
       later(r,()=>{ addPlayer(r,who('Priya Nair'),true); feed(r,{kind:'join',userId:'u7',name:'Priya Nair',text:'Priya joined'}); push(r); },5000,true);
       later(r,()=>{ const h=pl(r,r.hostId); if(r.status==='lobby'&&h&&h.bot&&r.players.length>=CFG.min)startGame(r); },14000,true); }
-    if(r.code==='M3TRK'&&r.status==='lobby'){ r.level='easy'; r.rounds=3; push(r);
+    if(r.code==='3150'&&r.status==='lobby'){ r.level='easy'; r.rounds=3; push(r);
       later(r,()=>say(r,'u3','hey! starting in a sec'),1800,true);
       later(r,()=>{ const h=pl(r,r.hostId); if(r.status==='lobby'&&h&&h.bot&&r.players.length>=CFG.min)startGame(r); },9000,true); }
     setTimeout(()=>push(r,true),30); return view(r); }); },
@@ -896,8 +895,8 @@ function install(){ let S=window.Sowaka&&window.Sowaka.native?window.Sowaka:null
 if(!install())addEventListener('sowaka-ready',function once(){ if(install())removeEventListener('sowaka-ready',once); });
 /* The browser preview opens with two invites waiting (in the app, these arrive as invite notifications), timed as the server times them. */
 if(MODE==='browser'&&!window.__pvBare){ let myBest0=0; try{ myBest0=+(JSON.parse(localStorage.getItem('scribble.v1')||'{}').best)||0; }catch(e){} if(myBest0)myBest=Math.max(myBest,myBest0);
-  (function sendInvites(){ if(!window.onSowakaRoom)return setTimeout(sendInvites,30); window.onSowakaRoom({type:'invite',from:who('Ananya Rao'),code:'KX7PM',expiresAt:Date.now()+(14*60+20)*1000});
-    window.onSowakaRoom({type:'invite',from:who('Kabir Shah'),code:'M3TRK',expiresAt:Date.now()+42*60e3}); })(); }
+  (function sendInvites(){ if(!window.onSowakaRoom)return setTimeout(sendInvites,30); window.onSowakaRoom({type:'invite',from:who('Ananya Rao'),code:'4827',expiresAt:Date.now()+(14*60+20)*1000});
+    window.onSowakaRoom({type:'invite',from:who('Kabir Shah'),code:'3150',expiresAt:Date.now()+42*60e3}); })(); }
 
 /* ---------- the preview's own chrome ---------- */
 const css=document.createElement('style'); css.textContent=`
@@ -935,7 +934,7 @@ const P=window.__scribblePreview={
     deliver({type:'kicked',by:{userId:h.userId,name:h.name}}); },
   addPlayer(){ const r=mine; if(!r||r.players.length>=CFG.max)return; const p=PEOPLE.find(x=>!pl(r,x.userId)&&!r.kicked.has(x.userId)); if(!p)return;
     addPlayer(r,p,true); feed(r,{kind:'join',userId:p.userId,name:p.name,text:firstOf(p.name)+' joined (test player)'}); push(r); },
-  invite(){ deliver({type:'invite',from:{userId:'u0',name:'Ananya Rao',photoUrl:null},code:'KX7PM'}); },
+  invite(){ deliver({type:'invite',from:{userId:'u0',name:'Ananya Rao',photoUrl:null},code:'4827'}); },
 };
 /* The tag says what this is; holding it opens the tools (a tap says so). In the browser build the tab on the left opens them too. */
 const tag=mk('button','pv-tag','Preview · simulated players'); tag.type='button'; tag.setAttribute('aria-label','Preview with simulated players. Hold for preview tools.');
@@ -948,7 +947,7 @@ const tab=mk('button','pv-tab','Preview'); tab.type='button';
 let panel=null;
 function openPanel(){ if(panel){ panel.remove(); panel=null; return; } panel=mk('div','pv-panel'); const h=mk('h4'), x=mk('button','','✕'); h.append('Preview tools',x); x.onclick=openPanel; panel.append(h);
   const st=mine&&mine.status, host=mine&&mine.hostId===ME.userId, inGame=st&&st!=='lobby'&&st!=='over';
-  const intro=mk('p'); intro.innerHTML=(MODE==='app'?'Everyone else here is simulated; no invite or score leaves this phone. ':'')+'Not part of the game. Codes to try: <code>KX7PM</code> Ananya\'s room, <code>BZ4QW</code> a full room, anything else: no such room.'; panel.append(intro);
+  const intro=mk('p'); intro.innerHTML=(MODE==='app'?'Everyone else here is simulated; no invite or score leaves this phone. ':'')+'Not part of the game. Codes to try: <code>4827</code> Ananya\'s room, <code>9264</code> a full room, anything else: no such room.'; panel.append(intro);
   const btn=(label,fn,on)=>{ const b=mk('button','pv',label); b.type='button'; b.disabled=!on; b.onclick=()=>{ fn(); openPanel(); }; panel.append(b); };
   btn((quick?'✓ ':'')+'Quick turns (24 s instead of 70 s)',()=>P.quick(),true);
   if(inGame&&mine.word&&mine.drawerId!==ME.userId)panel.append(mk('p','','The word: '+mine.word));
@@ -974,8 +973,8 @@ const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className
 const fmtn=x=>Math.round(x).toLocaleString('en-IN');
 const reduce=()=>window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const firstOf=n=>String(n||'').trim().split(/\s+/)[0]||'Someone';
-/* Room codes: five characters, no 0/O, 1/I/L, so a code read out or typed from WhatsApp is never ambiguous. */
-const CODE_LEN=5, CODE_RE=/^[A-HJKMNP-Z2-9]{5}$/;
+/* Room codes: four-digit numbers (1000–9999), typed on the number pad. Five-character codes from before the switch still work. */
+const CODE_RE=/^([1-9]\d{3}|[A-HJKMNP-Z2-9]{5})$/;
 /* Sixteen inks, index 0..15 on the wire: the neutrals and brown, then round the colour wheel, and a skin tone. */
 const PALETTE=['#1B1B2F','#6B7090','#FFFFFF','#8B5A3C','#E8434F','#FF7FA3','#FF9A3C','#FFC531','#A6D93B','#3DBE6B','#1FB5A8','#3BC4F2','#3B82F6','#5B4FE0','#9B5CF6','#F2C8A0'];
 const INK_NAMES=['Ink','Grey','White','Brown','Red','Pink','Orange','Yellow','Lime','Green','Teal','Sky','Blue','Indigo','Purple','Peach'];
@@ -1261,12 +1260,12 @@ function hostGame(){ if(busy)return; busy=true; openSheet('Making a room…',[el
   ask('host').then(r=>{ closeSheet(); if(r&&r.code){ applyState(r); setTimeout(()=>{ if(room&&room.code===r.code&&room.status==='lobby'&&$('sheet').hidden)openPicker(); },350); } })
     .catch(e=>{ sfx.no(); openSheet("Couldn't make a room",[el('p','note',errText(e))],[['OK',closeSheet,true]]); }).finally(()=>{busy=false;}); }
 function openJoin(prefill,err){
-  const input=el('input','codein'); input.type='text'; input.maxLength=CODE_LEN; input.placeholder='•••••'; input.autocomplete='off'; input.setAttribute('autocapitalize','characters'); input.spellcheck=false;
+  const input=el('input','codein'); input.type='text'; input.maxLength=5; input.placeholder='••••'; input.inputMode='numeric'; input.setAttribute('pattern','[0-9]*'); input.autocomplete='off'; input.setAttribute('autocapitalize','characters'); input.spellcheck=false;
   input.setAttribute('aria-label','Room code'); input.enterKeyHint='go'; if(prefill)input.value=prefill;
-  const msg=el('p','err',err||''); msg.hidden=!err; const note=el('p','note','Ask the host for the five-character code. Only colleagues at your company can join.');
-  const tidy=v=>v.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,CODE_LEN);
+  const msg=el('p','err',err||''); msg.hidden=!err; const note=el('p','note','Ask the host for the four-digit code. Only colleagues at your company can join.');
+  const tidy=v=>v.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);
   let go=null;
-  const check=()=>{ input.value=tidy(input.value); if(go)go.disabled=input.value.length!==CODE_LEN; msg.hidden=true; input.classList.remove('bad'); };
+  const check=()=>{ input.value=tidy(input.value); if(go)go.disabled=!CODE_RE.test(input.value); msg.hidden=true; input.classList.remove('bad'); };
   input.addEventListener('input',check); input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&go&&!go.disabled)go.click(); });
   openSheet('Join a game',[input,msg,note],[['Join',b=>{ b.disabled=true; joinCode(input.value,{input,msg,b}); },true]]);
   go=$('sa').lastChild; check(); setTimeout(()=>input.focus(),60);
@@ -1276,7 +1275,7 @@ function joinCode(code,ui){
   code=String(code||'').toUpperCase();
   const fail=text=>{ sfx.no(); buzz([30,40,30]); if(ui&&!$('sheet').hidden){ ui.msg.textContent=text; ui.msg.hidden=false; ui.input.classList.add('bad'); ui.input.classList.remove('shake'); void ui.input.offsetWidth; ui.input.classList.add('shake'); ui.b.disabled=false; }
     else openJoin(code,text); };
-  if(!CODE_RE.test(code)){ fail('Codes are five letters and numbers, like K7QXP.'); return; }
+  if(!CODE_RE.test(code)){ fail('Codes are four digits, like 4827.'); return; }
   if(!ui)openSheet('Joining '+code+'…',[el('p','note','One moment…')],[]);
   ask('join',code).then(r=>{ closeSheet(); sfx.join(); if(r&&r.code)applyState(r); }).catch(e=>{ if(e&&(e.status===404||e.status===403))dropInvite(code); fail(errText(e)); });
 }
@@ -1640,7 +1639,7 @@ document.addEventListener('keydown',e=>{ if(e.key!=='Escape')return; if(!$('howt
 ['gesturestart','gesturechange'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
 /* Opened from an invite notification: straight to that room. */
 let startedFrom=false;
-/* The notification carries the room code, bare (K7QXP) or as room:K7QXP. */
+/* The notification carries the room code, bare (4827) or as room:4827. */
 function fromInvite(){ const b=bridge(), l=liveInfo(); if(startedFrom||!b||(l&&(l.hopping||l.fatal)))return;
   const code=String(b.startRoomCode||b.startChallengeId||'').trim().replace(/^room:/i,'').toUpperCase(); if(!CODE_RE.test(code))return; startedFrom=true; joinCode(code,null); }
 addEventListener('sowaka-ready',()=>{ document.documentElement.classList.add('app'); if(loadSave()){ sndLabel(); } if(!room){ renderMenu(); loadBoard(); } fromInvite(); });
