@@ -676,12 +676,10 @@ svg{overflow:visible}
   }
 
   // ------------------------------------------------------------------ header
-  /** The company's badge with the tilted GAMES one tucked against it: its own logo, else the lettered one. */
+  /** Sowaka's badge with the tilted GAMES one tucked against it: the Games tab is Sowaka's, whichever company is signed in. */
   function renderBrand() {
-    var b = S.bridge, org = '';
-    if (b && S.mode === 'app') { try { org = str(typeof b.org === 'function' ? b.org() : b.org).toLowerCase(); } catch (e) { org = ''; } }
-    var logo = BRAND_LOGOS[org];
-    $('brand').innerHTML = (logo ? '<span class="brand-logo"><img src="' + logo + '" alt="' + esc(org) + '"></span>' : '<span class="brand-badge">sowaka</span>') +
+    var logo = BRAND_LOGOS.sowaka;
+    $('brand').innerHTML = (logo ? '<span class="brand-logo"><img src="' + logo + '" alt="Sowaka"></span>' : '<span class="brand-badge">sowaka</span>') +
       '<span class="games-box"><span class="games-badge">GAMES</span></span>';
   }
   function renderHeader() {
