@@ -27,7 +27,7 @@ import {
   setOvertimeEligibilityForAdmin,
   updateEmployeeDetailsForAdmin,
 } from '../services/admin.service';
-import { getCompanySettings, updateCompanySettings } from '../services/company-settings.service';
+import { getCompanySettings, getOrganisationProfile, updateCompanySettings, updateOrganisationProfile } from '../services/company-settings.service';
 
 function adminUserId(req: Request): string {
   // requireAuth + requireDashboardAccess guarantee this is present.
@@ -167,6 +167,19 @@ export async function getCompanySettingsHandler(req: Request, res: Response, nex
   } catch (error) {
     next(error);
   }
+}
+
+/** The Organisation page: the company's names, address and contact emails. */
+export async function getOrganisationProfileHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, profile: await getOrganisationProfile(adminUserId(req)) });
+  } catch (error) { next(error); }
+}
+
+export async function updateOrganisationProfileHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, profile: await updateOrganisationProfile(adminUserId(req), (req.body ?? {}) as Record<string, unknown>) });
+  } catch (error) { next(error); }
 }
 
 export async function updateCompanySettingsHandler(req: Request, res: Response, next: NextFunction) {

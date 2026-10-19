@@ -19,6 +19,7 @@ import {
   listAccessesHandler,
   setAccessHandler,
   getCompanySettingsHandler,
+  getOrganisationProfileHandler,
   listEmployees,
   listFeedback,
   listLeaves,
@@ -27,6 +28,7 @@ import {
   listReimbursements,
   removeEmployeeDocumentHandler,
   updateCompanySettingsHandler,
+  updateOrganisationProfileHandler,
   updateEmployeeDetails,
   updateOvertimeEligibility,
 } from '../controllers/admin.controller';
@@ -138,6 +140,9 @@ adminRouter.delete('/reimbursement-types/:typeId', deleteReimbursementTypeHandle
 // Company settings: week-off days + per-team overtime toggle
 adminRouter.get('/company/settings', getCompanySettingsHandler);
 adminRouter.patch('/company/settings', updateCompanySettingsHandler);
+// The Organisation page: names, filing address and contact emails.
+adminRouter.get('/company/profile', getOrganisationProfileHandler);
+adminRouter.put('/company/profile', updateOrganisationProfileHandler);
 
 // Reports — attendance for a date range, graded per employee against their own
 // template and grouped by how that team's punches are captured.

@@ -170,6 +170,19 @@ export type CompanySettings = {
   currentCycle: { period: string; start: string; end: string };
 };
 
+// —— Organisation page ——————————————————————————————————————————————
+/** The company's names, filing address and contact emails; `saved` is false until HR first saves. */
+export type OrganisationProfileDTO = {
+  registeredName: string; displayName: string; country: string; industry: string; incorporatedOn: string;
+  addressLine1: string; addressLine2: string; city: string; state: string; pincode: string; addressCountry: string;
+  primaryContactEmail: string; senderEmail: string; senderName: string; replyToEmail: string;
+  saved: boolean; companyName: string; updatedAt: string | null;
+};
+export const getOrganisationProfile = () =>
+  api<{ profile: OrganisationProfileDTO }>('/admin/company/profile').then((r) => r.profile);
+export const saveOrganisationProfile = (input: Partial<Omit<OrganisationProfileDTO, 'saved' | 'companyName' | 'updatedAt'>>) =>
+  api<{ profile: OrganisationProfileDTO }>('/admin/company/profile', { method: 'PUT', body: input }).then((r) => r.profile);
+
 export const getCompanySettings = () =>
   api<{ settings: CompanySettings }>('/admin/company/settings').then((r) => r.settings);
 
