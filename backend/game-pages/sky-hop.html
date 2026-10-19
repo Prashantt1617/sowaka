@@ -106,7 +106,7 @@
   .steps .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: 16px; }
   .steps b { font-weight: 800; }
 
-  .game { position: fixed; inset: 0; z-index: 30; background: #1d1733; display: grid; place-items: center;
+  .game { position: fixed; inset: 0; z-index: 30; background: #1d1733; display: grid; place-items: center; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
     padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
   .stage { position: relative; height: min(100%, calc((100vw - 20px) * 16 / 9)); aspect-ratio: 9 / 16; max-width: 100%; border-radius: 16px; overflow: hidden; container-type: size; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
   .stage canvas { display: block; width: 100%; height: 100%; }
@@ -648,8 +648,9 @@
   function seeded(seed) { let a = (Number(seed) >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   const G = (() => {
     const W = 360, H = 640, GROUND = 96;
-    const GRAVITY = 1700, FLAP = -500, MAX_FALL = 720;
-    const PW = 64, GAP = 158, SPACING = 210, SPEED = 165;
+    // Tuned to be forgiving: softer gravity and flap, wider gaps further apart, a little slower.
+    const GRAVITY = 1350, FLAP = -440, MAX_FALL = 600;
+    const PW = 64, GAP = 190, SPACING = 235, SPEED = 145;
     const cv = $('gameCanvas'), c = cv.getContext('2d');
     const stars = starsFor(W, H);
     let scale = 1, state = 'ready', bird, pipes, score, gx = 0, hx = 0, cx = 0, flash = 0, shake = 0, vs = null, rand = Math.random, startedAt = 0;
@@ -661,7 +662,7 @@
       rand = vs && vs.seed != null ? seeded(vs.seed) : Math.random;
       $('gScore').textContent = '0'; $('gScore').hidden = true; $('gReady').hidden = false; $('gOver').hidden = true;
     }
-    function spawn(x) { const lo = 70, hi = H - GROUND - GAP - 70; pipes.push({ x, top: lo + rand() * (hi - lo), scored: false }); }
+    function spawn(x) { const lo = 80, hi = H - GROUND - GAP - 80; pipes.push({ x, top: lo + rand() * (hi - lo), scored: false }); }
     function flap() {
       if (state === 'ready') { state = 'play'; startedAt = Date.now(); $('gReady').hidden = true; $('gScore').hidden = false; spawn(W + 40); }
       if (state === 'play') { bird.vy = FLAP; sfx.flap(); }
@@ -738,10 +739,11 @@
         if (pipes.length && pipes[0].x < -PW) pipes.shift();
         const last = pipes[pipes.length - 1];
         if (!last || last.x < W + 40 - SPACING) spawn((last ? last.x : W) + SPACING);
-        const r = 12;
+        // A hit area a little smaller than the drawn bird, so a near miss counts as a miss.
+        const r = 10, edge = 6;
         for (const p of pipes) {
           if (!p.scored && p.x + PW < bird.x) { p.scored = true; score += 10; $('gScore').textContent = score; sfx.point(); }
-          if (bird.x + r > p.x + 3 && bird.x - r < p.x + PW - 3 && (bird.y - r < p.top || bird.y + r > p.top + GAP)) die();
+          if (bird.x + r > p.x + edge && bird.x - r < p.x + PW - edge && (bird.y - r < p.top || bird.y + r > p.top + GAP)) die();
         }
       }
       flash = Math.max(0, flash - dt * 3); shake = Math.max(0, shake - dt * 40);
@@ -780,7 +782,8 @@
   }
   function closeGame() { if (G.quit()) return; $('game').hidden = true; gameOpen = false; }
   $('gClose').addEventListener('click', closeGame);
-  $('stage').addEventListener('pointerdown', e => { if (e.target.closest('button')) return; e.preventDefault(); if (G.state === 'ready' || G.state === 'play') G.flap(); });
+  // A tap anywhere on the game screen flies, the dark margins too, and as the finger lands (not on lift).
+  $('game').addEventListener('pointerdown', e => { if (e.target.closest('button') || !$('gOver').hidden) return; e.preventDefault(); if (G.state === 'ready' || G.state === 'play') G.flap(); });
   $('goBtns').addEventListener('click', e => {
     const b = e.target.closest('button[data-g]'); if (!b) return;
     if (b.dataset.g === 'again') openGame(null);
