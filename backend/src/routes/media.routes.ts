@@ -5,6 +5,15 @@ import { isConnectMediaKey, readConnectMedia } from '../services/s3-connect-medi
 
 export const mediaRouter = Router();
 
+/**
+ * A key's bytes never change, so phones keep them for a year. CloudFront
+ * keeps them for a day (`s-maxage`): a busy game page shows every player's
+ * face to everyone, and without the edge cache each view streamed the photo
+ * from S3 through this host. A day also bounds how long a deleted post's
+ * image can still be served from the edge.
+ */
+const MEDIA_CACHE_CONTROL = 'public, max-age=31536000, s-maxage=86400, immutable';
+
 // helmet() sets `Cross-Origin-Resource-Policy: same-origin` on everything,
 // which a browser applies to an <img> too: the dashboard and the Flutter web
 // build sit on other origins, so every avatar and post image would be fetched
@@ -44,7 +53,19 @@ mediaRouter.get('/:key', async (req, res, next) => {
       // A video player asks for the bytes it needs, not the whole file, and
       // AVPlayer on iOS will not scrub at all unless the answer is a 206.
       const range = typeof req.headers.range === 'string' ? req.headers.range : undefined;
-      const object = await readConnectMedia(objectKey, range).catch(() => undefined);
+      // A reader who gives up while S3 is still answering (a busy pool queues
+      // the request) must not leave the S3 response unread: its socket would
+      // never go back to the pool, and once all of them are held every later
+      // request waits in memory until the process runs out of it.
+      const abort = new AbortController();
+      const onEarlyClose = () => abort.abort();
+      res.once('close', onEarlyClose);
+      const object = await readConnectMedia(objectKey, range, abort.signal).catch(() => undefined);
+      res.off('close', onEarlyClose);
+      if (abort.signal.aborted || res.destroyed) {
+        (object?.body as { destroy?: () => void } | undefined)?.destroy?.();
+        return;
+      }
       if (!object?.body) {
         res.status(404).json({ success: false, message: 'Media not found' });
         return;
@@ -56,7 +77,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
       }
       if (object.contentRange) res.setHeader('Content-Range', object.contentRange);
       // Immutable per key, as below.
-      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+      res.setHeader('Cache-Control', MEDIA_CACHE_CONTROL);
       res.status(object.contentRange ? 206 : 200);
       // pipe() does not forward the source's errors. An S3 socket reset
       // part-way through a video would otherwise be an unhandled 'error' on
@@ -83,7 +104,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
     res.setHeader('Accept-Ranges', 'bytes');
     // Content is immutable per key, so let clients cache it hard rather than
     // refetching megabytes on every feed render.
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', MEDIA_CACHE_CONTROL);
     // `bytes=N-M`, `bytes=N-`, and the suffix form `bytes=-N` (the LAST n
     // bytes, which a video probe asks for to find the moov atom — read as
     // 0..n it would hand back the wrong bytes under a truthful header).

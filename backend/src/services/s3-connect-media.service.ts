@@ -91,13 +91,14 @@ export function isConnectMediaKey(objectKey: string): boolean {
   return prefix.length > 0 && objectKey.startsWith(`${prefix}/`);
 }
 
-export async function readConnectMedia(objectKey: string, range?: string) {
+export async function readConnectMedia(objectKey: string, range?: string, abortSignal?: AbortSignal) {
   if (!isConnectMediaKey(objectKey)) {
     throw new Error(`Refusing to read a key outside the Connect media prefix: ${objectKey}`);
   }
   validateConfiguration();
   const object = await getClient().send(
     new GetObjectCommand({ Bucket: env.s3.bucket, Key: objectKey, Range: range }),
+    { abortSignal },
   );
   return {
     body: object.Body as NodeJS.ReadableStream | undefined,
@@ -131,6 +132,13 @@ function getClient() {
     region: env.s3.region,
     ...(env.s3.endpoint ? { endpoint: env.s3.endpoint } : {}),
     forcePathStyle: env.s3.forcePathStyle,
+    // Without timeouts a stalled S3 connection holds its pool slot forever;
+    // /media streams every image and video through this one client.
+    requestHandler: {
+      connectionTimeout: 5_000,
+      requestTimeout: 30_000,
+      httpsAgent: { keepAlive: true, maxSockets: 100 },
+    },
     ...(env.s3.accessKeyId && env.s3.secretAccessKey
       ? {
           credentials: {
