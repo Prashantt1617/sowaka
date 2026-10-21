@@ -48,6 +48,12 @@ export interface StatutoryApplyInput {
   esiCoveredEarlier?: boolean;
   /** The ESI wage, when the template names its components. Absent: gross pay. */
   esiWagePaise?: number;
+  /**
+   * The full month's ESI wage, before loss of pay: whether ESI applies is decided
+   * on the wage the person is on, not on a month shortened by unpaid days.
+   * Absent = the wage itself.
+   */
+  esiTestPaise?: number;
   /** The template's PF mode. Absent or 'org': the org's restricted/actual setting. */
   pfWageMode?: 'org' | 'actual' | 'ceiling';
 }
@@ -98,7 +104,7 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
   const esiWage = input.esiWagePaise ?? input.grossPaise;
   const esi = computeEsi({
     grossPaise: esiWage,
-    applicable: esiOn && isEsiApplicable({ grossPaise: esiWage, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
+    applicable: esiOn && isEsiApplicable({ grossPaise: input.esiTestPaise ?? esiWage, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
   });
 
   const pt = input.ruleSet.pt ? computePt(input.ruleSet.pt, { grossPaise: input.grossPaise, month: input.month }) : { amountPaise: 0 };

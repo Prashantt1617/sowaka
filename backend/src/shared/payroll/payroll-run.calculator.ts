@@ -152,12 +152,20 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   const esiWagePaise = base.statutoryWages?.esiComponents
     ? base.earnings.filter((line) => line.inEsiWage).reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0) + input.overtimePaise
     : undefined;
+  // ESI applies by the wage the person is on (ESIC: "rate of wages"), so the
+  // test uses the full month: a month cut short by unpaid days must not pull
+  // a ₹95,000 earner under the ₹21,000 limit. The contribution, when ESI does
+  // apply, is still on what was actually paid.
+  const esiTestPaise = base.statutoryWages?.esiComponents
+    ? base.earnings.filter((line) => line.inEsiWage).reduce((sum, line) => sum + line.monthlyPaise, 0)
+    : earnings.reduce((sum, line) => sum + line.fullPaise, 0);
   const st = applyStatutory({
     settings,
     ruleSet: input.ruleSet,
     month: input.month,
     grossPaise,
     esiWagePaise,
+    esiTestPaise,
     pfWageMode: base.statutoryWages?.pfWageMode,
     pfAlwaysPaise: alwaysPaid,
     pfConditionalPaise: conditionalPaid,
