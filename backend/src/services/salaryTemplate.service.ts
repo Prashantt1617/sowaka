@@ -134,14 +134,14 @@ export function applyOverrides(
   components: SalaryTemplateComponent[],
   overrides: StructureOverrides | undefined,
   catalogByCode: Map<string, PayHead>,
-): { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' }[] {
+): (SalaryTemplateComponent & { source: 'template' | 'edited' | 'added' })[] {
   const removed = new Set((overrides?.remove ?? []).filter((code) => catalogByCode.get(code)?.componentType !== 'basic'));
   const edits = overrides?.edit ?? {};
-  const out: { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' }[] = [];
+  const out: (SalaryTemplateComponent & { source: 'template' | 'edited' | 'added' })[] = [];
   for (const c of components) {
     if (removed.has(c.payHeadCode) || !catalogByCode.has(c.payHeadCode)) continue;
     const edited = edits[c.payHeadCode];
-    out.push(edited ? { payHeadCode: c.payHeadCode, calculation: edited, source: 'edited' } : { ...c, source: 'template' });
+    out.push(edited ? { ...c, calculation: edited, source: 'edited' } : { ...c, source: 'template' });
   }
   const present = new Set(out.map((c) => c.payHeadCode));
   for (const a of overrides?.add ?? []) {
@@ -160,7 +160,14 @@ export function resolveTemplateComponents(
   for (const c of components) {
     const head = catalogByCode.get(c.payHeadCode);
     if (!head) continue;
-    resolved.push({ ...head, calculation: c.calculation, active: true });
+    resolved.push({
+      ...head,
+      calculation: c.calculation,
+      // The payslip label and visibility: the template's, else the component's.
+      payslipName: c.payslipName?.trim() || head.payslipName,
+      showInPayslip: c.showInPayslip ?? head.showInPayslip,
+      active: true,
+    });
   }
   return resolved;
 }
@@ -200,7 +207,10 @@ async function normalizeInput(
   const components: SalaryTemplateComponent[] = input.components.map((raw) => {
     const r = raw as Record<string, unknown>;
     const payHeadCode = normalizeCode(r.payHeadCode, 'component.payHeadCode');
-    return { payHeadCode, calculation: validateCalculation(r.calculation, payHeadCode, componentCodes) };
+    const out: SalaryTemplateComponent = { payHeadCode, calculation: validateCalculation(r.calculation, payHeadCode, componentCodes) };
+    if (typeof r.payslipName === 'string' && r.payslipName.trim()) out.payslipName = r.payslipName.trim().slice(0, 100);
+    if (typeof r.showInPayslip === 'boolean') out.showInPayslip = r.showInPayslip;
+    return out;
   });
 
   // Basic is a flat monthly amount or a % of CTC, HRA a flat monthly amount or

@@ -232,6 +232,10 @@ export const updateStatutorySettings = (input: StatutorySettingsInput) =>
 export type ComponentLine = {
   code: string;
   name: string;
+  /** How the line reads on the payslip. */
+  payslipName?: string;
+  /** Listed on the payslip; hidden lines still count in every total. */
+  showInPayslip?: boolean;
   category: PayHeadCategory;
   componentType: string;
   calcLabel: string;
@@ -350,7 +354,14 @@ export const DEDUCTION_TRIGGER_LABELS: Record<DeductionTrigger, string> = {
 export type SalaryDeductionRule = { trigger: DeductionTrigger; every: number; deductDays: number; active: boolean };
 
 // —— Salary Templates (Pay Groups) ——
-export type SalaryTemplateComponent = { payHeadCode: string; calculation: CalculationBasis };
+export type SalaryTemplateComponent = {
+  payHeadCode: string;
+  calculation: CalculationBasis;
+  /** This template's payslip label for the component; falls back to the component's. */
+  payslipName?: string;
+  /** Whether this template lists the component on the payslip; falls back to the component's. */
+  showInPayslip?: boolean;
+};
 export type SalaryTemplateDTO = {
   id: string;
   name: string;
@@ -451,8 +462,9 @@ export type PayslipDTO = {
   joiningDate?: string;
   period: string;
   monthlyCtcPaise: number;
-  earnings: { code: string; name: string; calcLabel: string; fullPaise: number; paidPaise: number }[];
-  deductions: { key: string; name: string; amountPaise: number }[];
+  /** `name` is the payslip label; `hidden` lines are not listed but count in every total. */
+  earnings: { code: string; name: string; calcLabel: string; fullPaise: number; paidPaise: number; hidden?: boolean }[];
+  deductions: { key: string; name: string; amountPaise: number; hidden?: boolean }[];
   pfWagePaise: number;
   grossPaise: number;
   employeeDeductionsPaise: number;
@@ -463,7 +475,7 @@ export type PayslipDTO = {
   epf: EpfBreakdown;
   esiApplicable?: boolean;
   /** The structure's reimbursements paid this month. */
-  reimbursementLines?: { code: string; name: string; amountPaise: number }[];
+  reimbursementLines?: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
   inputs: {
     workingDays: number;
     lopDays: number;

@@ -53,24 +53,30 @@ export function payslipHtml(slip: PayslipDTO, company: { name: string; address: 
   const lines = slip.inputs.attendanceDeductions ?? [];
   const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger] : l.label);
   const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`).join(' · ');
-  const deductions: { name: string; sub?: string; paise: number }[] = [];
+  const deductions: { name: string; sub?: string; paise: number; hidden?: boolean }[] = [];
   const covered = slip.inputs.paidLeaveDaysApplied ?? 0;
   if (slip.inputs.lopDays > 0) {
     const sub = [lopDetail, covered > 0 ? `${covered} day${covered === 1 ? '' : 's'} covered by paid leave` : ''].filter(Boolean).join(' · ');
     deductions.push({ name: `Loss of pay · ${slip.inputs.lopDays} day${slip.inputs.lopDays === 1 ? '' : 's'}`, sub: sub || undefined, paise: lopPaise });
   }
-  for (const d of slip.deductions) deductions.push({ name: d.name, paise: d.amountPaise });
+  // Hidden lines (showInPayslip off) count in every total but are not listed.
+  for (const d of slip.deductions) deductions.push({ name: d.name, paise: d.amountPaise, hidden: d.hidden });
   const totalDeductions = deductions.reduce((t, d) => t + d.paise, 0);
   const grossFull = fullEarnings + slip.inputs.overtimePaise;
   const net = slip.netPayablePaise;
 
-  const earningRows = slip.earnings.map((e) => `
+  const earningRows = slip.earnings.filter((e) => !e.hidden).map((e) => `
     <tr><td><div class="n">${esc(e.name)}</div>${e.fullPaise !== e.paidPaise ? `<div class="s">Monthly rate: ${inr(e.fullPaise)}</div>` : ''}</td><td class="r">${inr(e.fullPaise)}</td></tr>`).join('');
   const otRow = slip.inputs.overtimePaise > 0 ? `<tr><td><div class="n">Overtime</div></td><td class="r">${inr(slip.inputs.overtimePaise)}</td></tr>` : '';
   const deductionRows = deductions.length === 0
     ? '<tr><td><div class="n">No deductions</div></td><td class="r">—</td></tr>'
-    : deductions.map((d) => `<tr><td><div class="n">${esc(d.name)}</div>${d.sub ? `<div class="s">${esc(d.sub)}</div>` : ''}</td><td class="r">${inr(d.paise)}</td></tr>`).join('');
-  const reimb = slip.reimbursementsPaise > 0 ? `<tr><td><div class="n">Reimbursements</div></td><td class="r">${inr(slip.reimbursementsPaise)}</td></tr>` : '';
+    : deductions.filter((d) => !d.hidden).map((d) => `<tr><td><div class="n">${esc(d.name)}</div>${d.sub ? `<div class="s">${esc(d.sub)}</div>` : ''}</td><td class="r">${inr(d.paise)}</td></tr>`).join('');
+  const structureReimb = slip.reimbursementLines ?? [];
+  const claimsPaise = slip.reimbursementsPaise - structureReimb.reduce((t, r) => t + r.amountPaise, 0);
+  const reimb = [
+    ...structureReimb.filter((r) => !r.hidden && r.amountPaise > 0).map((r) => `<tr><td><div class="n">${esc(r.name)}</div></td><td class="r">${inr(r.amountPaise)}</td></tr>`),
+    claimsPaise > 0 ? `<tr><td><div class="n">${structureReimb.length ? 'Expense claims' : 'Reimbursements'}</div></td><td class="r">${inr(claimsPaise)}</td></tr>` : '',
+  ].join('');
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Payslip · ${esc(slip.employeeName)} · ${esc(monthLabel(slip.period))}</title>
 <style>

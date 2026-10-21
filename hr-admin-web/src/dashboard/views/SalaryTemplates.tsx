@@ -55,6 +55,10 @@ type Row = {
   base: PercentageBase;
   baseComponentCode: string;
   amountRupees: string;
+  /** This template's payslip label; blank uses the component's. */
+  payslipName: string;
+  /** undefined: the component's own setting. */
+  showInPayslip?: boolean;
 };
 type Form = {
   editingCode?: string;
@@ -77,6 +81,7 @@ function rowFromCalc(payHeadCode: string, c: CalculationBasis): Row {
     base: c.base ?? 'ctc',
     baseComponentCode: c.baseComponentCode ?? '',
     amountRupees: String((c.amountPaise ?? 0) / 100),
+    payslipName: '',
   };
 }
 function calcFromRow(r: Row): CalculationBasis {
@@ -103,7 +108,12 @@ function buildInput(f: Form, code: string): SalaryTemplateInput {
     name: f.name.trim(),
     code,
     description: f.description.trim() || undefined,
-    components: f.rows.filter((r) => r.payHeadCode).map((r) => ({ payHeadCode: r.payHeadCode, calculation: calcFromRow(r) })),
+    components: f.rows.filter((r) => r.payHeadCode).map((r) => ({
+      payHeadCode: r.payHeadCode,
+      calculation: calcFromRow(r),
+      ...(r.payslipName.trim() ? { payslipName: r.payslipName.trim() } : {}),
+      ...(r.showInPayslip !== undefined ? { showInPayslip: r.showInPayslip } : {}),
+    })),
     balancingComponentCode: f.balancingComponentCode || null,
     paidDaysEnabled: f.paidDaysEnabled,
     deductionRules: f.deductionRules,
@@ -327,7 +337,7 @@ export function SalaryTemplates() {
       name: t.name,
       description: t.description ?? '',
       active: t.active,
-      rows: t.components.map((c) => rowFromCalc(c.payHeadCode, c.calculation)),
+      rows: t.components.map((c) => ({ ...rowFromCalc(c.payHeadCode, c.calculation), payslipName: c.payslipName ?? '', showInPayslip: c.showInPayslip })),
       balancingComponentCode: t.balancingComponentCode ?? '',
       paidDaysEnabled: t.paidDaysEnabled ?? true,
       deductionRules: t.deductionRules ?? [],
@@ -596,6 +606,7 @@ export function SalaryTemplates() {
                                 <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Monthly CTC - Sum of all other components</div>
                               ) : null}
                               <FixedTags ph={ph} />
+                              <PayslipLabel r={r} ph={ph} onChange={(patch) => setByCode(r.payHeadCode, patch)} />
                             </td>
                             <td style={bldTd}>
                               <CalcCell r={r} isBalancing={isBalancing} form={form} phByCode={phByCode} setByCode={setByCode} />
@@ -650,6 +661,27 @@ export function SalaryTemplates() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// How a component reads on this template's payslips, and whether it is listed
+// at all. Blank / unchanged uses the component's own payslip name and setting.
+function PayslipLabel({ r, ph, onChange }: { r: Row; ph?: PayHeadDTO; onChange: (patch: Partial<Row>) => void }) {
+  const shown = r.showInPayslip ?? ph?.showInPayslip !== false;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12.5, color: '#717171' }}>
+      <span>On payslip as</span>
+      <input
+        value={r.payslipName}
+        placeholder={ph?.payslipName || ph?.name || r.payHeadCode}
+        onChange={(e) => onChange({ payslipName: e.target.value })}
+        disabled={!shown}
+        style={{ ...input, width: 170, padding: '3px 7px', fontSize: 12.5 }}
+      />
+      <label title="Hidden components still count in every total" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+        <input type="checkbox" checked={!shown} onChange={(e) => onChange({ showInPayslip: !e.target.checked })} /> Hide
+      </label>
     </div>
   );
 }

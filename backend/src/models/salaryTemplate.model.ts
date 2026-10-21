@@ -17,6 +17,10 @@ export interface SalaryTemplateComponent {
   payHeadCode: string;
   /** Per-template calculation for this component (overrides the pay head default). */
   calculation: CalculationBasis;
+  /** How this component reads on the payslip for this template; falls back to the pay head's. */
+  payslipName?: string;
+  /** Whether this component is listed on the payslip for this template; falls back to the pay head's. */
+  showInPayslip?: boolean;
 }
 
 export interface SalaryTemplate {

@@ -245,6 +245,7 @@ async function buildRunPayslips(
       earnings: slip.earnings.map((e) => ({
         code: e.code,
         name: e.name,
+        ...(e.hidden ? { hidden: true } : {}),
         calcLabel: e.calcLabel,
         fullPaise: e.fullPaise,
         paidPaise: e.paidPaise,
@@ -555,6 +556,8 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     reimbursementsPaise: slip.reimbursementsPaise,
     netPayablePaise: slip.netPayablePaise,
     employerCostPaise: slip.employerCostPaise,
+    esiApplicable: slip.esiApplicable,
+    reimbursementLines: slip.reimbursementLines ?? [],
     epf: slip.epf,
     inputs: slip.inputs,
   };

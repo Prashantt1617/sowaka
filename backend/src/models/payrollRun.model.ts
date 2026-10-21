@@ -43,7 +43,10 @@ export interface PayrollRun {
 
 export interface PayslipLine {
   code: string;
+  /** The payslip label: the template's or component's payslip name, else the component name. */
   name: string;
+  /** Not listed on the payslip (showInPayslip off); still counted in every total. */
+  hidden?: boolean;
   calcLabel: string;
   /** Entitled monthly amount before proration. */
   fullPaise: number;
@@ -55,6 +58,8 @@ export interface PayslipDeductionLine {
   key: string; // 'epf' | 'esi' | 'pt' | 'lwf' | a pay head code
   name: string;
   amountPaise: number;
+  /** Not listed on the payslip; still counted in the totals. */
+  hidden?: boolean;
 }
 
 /** The per-employee inputs that fed this payslip, snapshotted for audit. */
@@ -101,7 +106,7 @@ export interface Payslip {
   /** Whether ESI covered this person this month; carries coverage through the contribution period. */
   esiApplicable?: boolean;
   /** The structure's reimbursements paid this month. */
-  reimbursementLines?: { code: string; name: string; amountPaise: number }[];
+  reimbursementLines?: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
 
   /** EPF split retained for statutory filing downstream. */
   epf: {

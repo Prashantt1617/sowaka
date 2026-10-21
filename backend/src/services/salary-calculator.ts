@@ -40,6 +40,10 @@ export interface SalaryCalcInput {
 export interface ComponentLine {
   code: string;
   name: string;
+  /** How the line reads on the payslip: the template's or component's payslip name, else `name`. */
+  payslipName: string;
+  /** Listed on the payslip. Hidden lines still count in every total. */
+  showInPayslip: boolean;
   category: PayHead['category'];
   componentType: PayHead['componentType'];
   calcLabel: string;
@@ -152,6 +156,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     return {
       code: head.code,
       name: head.name,
+      payslipName: head.payslipName?.trim() || head.name,
+      showInPayslip: head.showInPayslip !== false,
       category: head.category,
       componentType: head.componentType,
       calcLabel: calcLabel(head, head.code === balancingCode),
@@ -193,6 +199,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     bonusLine = {
       code: STATUTORY_BONUS_CODE,
       name: 'Statutory Bonus',
+      payslipName: 'Statutory Bonus',
+      showInPayslip: true,
       category: 'earning',
       componentType: 'statutory_bonus',
       calcLabel: `${settings.bonus.ratePercent}% of ${floor > basicPaise ? 'minimum wage' : 'Basic'}`,

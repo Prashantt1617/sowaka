@@ -35,7 +35,10 @@ export interface PayslipInputSet {
 
 export interface PayslipEarningLine {
   code: string;
+  /** The payslip label (payslip name, else the component name). */
   name: string;
+  /** Not listed on the payslip; still counted in the totals. */
+  hidden?: boolean;
   calcLabel: string;
   fullPaise: number;
   paidPaise: number;
@@ -45,6 +48,8 @@ export interface PayslipDeduction {
   key: string;
   name: string;
   amountPaise: number;
+  /** Not listed on the payslip; still counted in the totals. */
+  hidden?: boolean;
 }
 
 export interface PayslipComputation {
@@ -61,7 +66,7 @@ export interface PayslipComputation {
   employerCostPaise: number;
   esiApplicable: boolean;
   /** The structure's reimbursements, paid in full this month. */
-  reimbursementLines: { code: string; name: string; amountPaise: number }[];
+  reimbursementLines: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
   epf: {
     contributionWagePaise: number;
     employeePaise: number;
@@ -77,7 +82,8 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   // Prorate earnings; overtime is added to gross but never prorated.
   const earnings: PayslipEarningLine[] = base.earnings.map((line) => ({
     code: line.code,
-    name: line.name,
+    name: line.payslipName ?? line.name,
+    ...(line.showInPayslip === false ? { hidden: true } : {}),
     calcLabel: line.calcLabel,
     fullPaise: line.monthlyPaise,
     paidPaise: line.prorate ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise,
@@ -122,8 +128,9 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   // Non-statutory deduction components are taken at full value (not prorated).
   const nonStatutoryDeductions: PayslipDeduction[] = base.deductions.map((line) => ({
     key: line.code,
-    name: line.name,
+    name: line.payslipName ?? line.name,
     amountPaise: line.monthlyPaise,
+    ...(line.showInPayslip === false ? { hidden: true } : {}),
   }));
 
   const deductions: PayslipDeduction[] = [];
@@ -148,7 +155,12 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   const netPaise = grossPaise - employeeDeductionsPaise;
   // The structure's reimbursements are paid in full every month; approved
   // business-expense claims come on top.
-  const reimbursementLines = (base.reimbursements ?? []).map((line) => ({ code: line.code, name: line.name, amountPaise: line.monthlyPaise }));
+  const reimbursementLines = (base.reimbursements ?? []).map((line) => ({
+    code: line.code,
+    name: line.payslipName ?? line.name,
+    amountPaise: line.monthlyPaise,
+    ...(line.showInPayslip === false ? { hidden: true } : {}),
+  }));
   const structureReimbursements = reimbursementLines.reduce((sum, line) => sum + line.amountPaise, 0);
   const reimbursementsPaise = structureReimbursements + input.reimbursementsPaise;
   const netPayablePaise = netPaise + reimbursementsPaise;
