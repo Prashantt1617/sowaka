@@ -84,6 +84,14 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .play{display:flex;flex-direction:column;gap:10px}
 .wallhead{display:flex;justify-content:space-between;gap:10px;padding:0 4px 6px;font-family:var(--small);font-size:.8rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
 .wallhead b{color:var(--accent);font-weight:800}
+/* Skip: leave a stop you are stuck on for the next one, for SKIP_COST points. In the button row beside Shuffle, its price on it. */
+.wallhead{align-items:center}
+.wallhead .wl{display:flex;gap:10px;align-items:baseline;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.keys .btn{padding-left:6px;padding-right:6px}
+.keys .btn.skip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:var(--bad);border-color:var(--bad);color:#fff;box-shadow:0 4px 0 #a83838}
+.keys .btn.skip small{font-family:var(--small);font-size:.72rem;font-weight:800;opacity:.92}
+.keys .btn.skip:active{transform:translateY(3px);box-shadow:0 1px 0 #a83838}
+.keys .btn.skip:disabled{background:var(--panel);border-color:var(--line);color:var(--muted);box-shadow:none;cursor:not-allowed}
 .wall{height:96px;overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border-radius:18px;padding:9px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px;
   border:1.5px solid var(--line);box-shadow:0 4px 0 var(--deep)}
 .wall:empty::before{content:"Your words go here";margin:auto;font-family:var(--small);font-weight:600;font-size:.88rem;color:var(--muted)}
@@ -123,7 +131,7 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 /* The gap between letters belongs to the nearer letter (tileAt): a thumb landing just off a tile still gets it. */
 .wheel .tile::before{content:none}
 /* Under the letters: Delete, Shuffle and Enter, and a line for what a word did. */
-.keys{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px}
+.keys{display:grid;grid-template-columns:1fr 1fr 1fr 1.35fr;gap:7px}
 .keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
 .keys .btn.go{font-size:1.35rem;min-height:48px}
 .status{margin:-6px 0 0;min-height:1.35em;text-align:center;font-family:var(--small);font-weight:600;font-size:.88rem;line-height:1.35;color:var(--muted);text-wrap:balance}
@@ -381,7 +389,7 @@ html.app .howto{padding-top:20px}
   <div class="target" id="target" hidden><span>Beat</span><b id="tscore">0</b><small id="tname"></small></div>
   <div class="stage">
     <div class="play" id="playbox">
-      <div><div class="wallhead"><b id="wstop">Stop 1</b><span id="wcount"></span></div><div class="wall" id="wall" aria-live="polite"></div></div>
+      <div><div class="wallhead"><span class="wl"><b id="wstop">Stop 1</b><span id="wcount"></span></span></div><div class="wall" id="wall" aria-live="polite"></div></div>
       <div class="tray" id="tray"></div>
       <div class="tiles" id="tiles"></div>
     </div>
@@ -392,6 +400,7 @@ html.app .howto{padding-top:20px}
   <div class="keys" id="controls">
     <button class="btn" id="del" type="button">Delete</button>
     <button class="btn" id="shuf" type="button">Shuffle</button>
+    <button class="btn skip" id="skip" type="button" aria-label="Skip these letters for 100 points" disabled><span>Skip</span><small>−100</small></button>
     <button class="btn go" id="enter" type="button">Enter</button>
   </div>
   <p class="status" id="status" aria-live="polite"></p>
@@ -406,7 +415,7 @@ html.app .howto{padding-top:20px}
         <li><i>1</i><span><b>Swipe a word</b>Slide through the letters, then lift. Three letters or more. Or tap them, then Enter.</span></li>
         <li><i>2</i><span><b>Undo a letter</b>Slide back to the one before and rest there.</span></li>
         <li><i>3</i><span><b>Go long, be quick</b>Long words pay, and 5 letters or more add seconds. Words within 8 s combo, up to ×3.</span></li>
-        <li><i>4</i><span><b>Use every letter</b>That word takes you to the next stop.</span></li>
+        <li><i>4</i><span><b>Use every letter</b>That word takes you to the next stop. Stuck? Skip to the next one for 100 points.</span></li>
       </ol>
       <button class="btn go" id="howok" type="button">OK</button>
     </div>
@@ -462,6 +471,8 @@ function boardAt(sd,g){
    challenge points across the games. A word pays by length, half again if rare, 150 more for every letter, times a
    combo that climbs by one for each word within 8 s of the last, up to ×3. */
 const VAL={3:30,4:50,5:80,6:120,7:170,8:230}, FULL=150, COMBO_WINDOW=8, MAXCOMBO=3, TIMEB={5:2,6:3,7:4,8:5}, FULL_TIME=3, MAX_ADDED=30;
+/* Skipping a stop costs this many points, and only once the score covers it, so a score never goes below zero. */
+const SKIP_COST=100;
 const worthOf=(w,isRare,isFull,c)=>(Math.round(VAL[w.length]*(isRare?1.5:1))+(isFull?FULL:0))*c;
 const HUES=[45,200,330,150,265,20,180,300,125,225,350,165,285,35,210,320,140,250,5,190];
 const hueFor=g=>HUES[g%HUES.length];
@@ -558,7 +569,7 @@ function openBoard(){ sfx.ui(); const box=el('div','lb full'); box.appendChild(e
   openSheet('Leaderboard',[box],[],closeSheet);
   Board.fetch().then(b=>{seeBoard(b);drawBoard(box,b);}).catch(()=>{box.innerHTML='';box.appendChild(el('p','wait','Could not load the leaderboard. Try again in a moment.'));}); }
 let mode='idle', seed=1, gi=0, cur=null, score=0, shown=0, total=0, fulls=0, rares=0, bestWord='', combo=1, comboUntil=0, maxCombo=1, added=0, endAt=0,
-  timer=null, countTimer=null, lastSec=-1, locked=false, duel=null, starsNow=0;
+  timer=null, countTimer=null, lastSec=-1, locked=false, duel=null, starsNow=0, skips=0;
 /* The stop on screen: its letters as tiles (in the order shown), the tray (tiles tapped, in order), and the words found on it. */
 let order=[], tray=[], found=[], words=new Set(), rareSet=new Set();
 const now=()=>performance.now()/1000;
@@ -844,7 +855,8 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
 function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
 function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach((t,j)=>e.appendChild(trayLetter(t,j))); }
 function renderWall(){ const n=found.filter(f=>!f.rare).length; $('wstop').textContent='Stop '+(gi+1); $('wcount').textContent=n+' of '+cur.words.length+' words'; }
-function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy; $('enter').disabled=busy; }
+function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy; $('enter').disabled=busy;
+  const sk=$('skip'), short=score<SKIP_COST; sk.disabled=busy||short; sk.title=short?'Skipping costs '+SKIP_COST+' points: find a word first':'Skip these letters for '+SKIP_COST+' points'; }
 function render(pop){ if(!cur)return; renderTiles(pop); renderTray(); renderWall(); renderKeys(); }
 /* The next stop of the round, in its own hue. */
 function showStop(){
@@ -867,7 +879,7 @@ function start(opp,sd){
   /* A new player's first round, on their own or a challenge's: how to play first, and this round once they tap OK. */
   if(needsHowTo()){ showHowTo(()=>start(opp,sd)); return; }
   hideHowTo(); clearInterval(timer); clearInterval(countTimer); closeSheet();
-  seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; total=0; fulls=0; rares=0; bestWord=''; combo=1; comboUntil=0; maxCombo=1; added=0;
+  seed=sd!=null?sd:Math.floor(Math.random()*1e6)+1; gi=0; score=0; shown=0; total=0; fulls=0; rares=0; bestWord=''; combo=1; comboUntil=0; maxCombo=1; added=0; skips=0;
   lastSec=-1; starsNow=0; locked=true;
   duel=opp?{id:opp.id,name:opp.name,first:firstOf(opp.name),theirFinal:opp.theirFinal==null?null:+opp.theirFinal}:null;
   mode='count'; cur=makeStop(0); order=cur.letters.split('').map((ch,id)=>({ch,id})); tray=[]; found=[]; $('wall').innerHTML='';
@@ -931,6 +943,16 @@ function enter(){
 /* Every letter used: on to the next stop after a moment to see it. */
 function nextStop(){ locked=true; fulls++; renderTiles(); renderKeys(); const n0=cur.len;
   setTimeout(()=>{ if(mode!=='play')return; gi++; if(makeStop(gi).len>n0)sfx.grow(); showStop(); },reduce()?150:500); }
+/* Stuck on a stop: on to the next one for SKIP_COST points, with the all-letter word it was. The next stop is the one the seed gives anyway (stop
+   gi+1), so in a challenge both players still meet the same stops in the same order; the skip only costs points. Never with less than SKIP_COST. */
+function skip(){
+  if(!canPlay())return;
+  if(score<SKIP_COST){ sfx.no(); say('Skipping costs '+SKIP_COST+' points. Find a word first.',true); return; }
+  const w=(cur.words.filter(x=>x.length===cur.len)[0]||cur.full[0]||'').toUpperCase(), n0=cur.len;
+  score-=SKIP_COST; skips++; locked=true; clearTimeout(clearT); tray=[]; renderTray(); syncTiles(); renderKeys();
+  sfx.no(); buzz(15); toast('−'+SKIP_COST,'bad',centre($('skip'))); say(w?'Skipped. It was '+w+'.':'Skipped.');
+  countUp(); renderHud(); renderGoal(); if(duel)renderTarget();
+  setTimeout(()=>{ if(mode!=='play')return; gi++; if(makeStop(gi).len>n0)sfx.grow(); showStop(); if(w)say('It was '+w+'. '+cur.len+' letters.'); },reduce()?150:700); }
 function tick(){
   if(mode!=='play')return; const t=now(), left=endAt-t;
   if(combo>1&&t>comboUntil){ combo=1; sfx.comboLost(); }
@@ -1289,6 +1311,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='
 $('del').onclick=()=>del();
 $('shuf').onclick=()=>shuffle();
 $('enter').onclick=()=>enter();
+$('skip').onclick=()=>skip();
 /* A keyboard plays too: letters, Enter, Backspace, and Space to shuffle. */
 document.addEventListener('keydown',e=>{ if(mode!=='play'||!$('sheet').hidden||!$('howto').hidden||e.metaKey||e.ctrlKey||e.altKey)return;
   if(e.key==='Enter'){ e.preventDefault(); enter(); } else if(e.key==='Backspace'){ e.preventDefault(); del(); } else if(e.key===' '){ e.preventDefault(); shuffle(); }

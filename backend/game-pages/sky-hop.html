@@ -2,215 +2,324 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Sky Hop</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;600;800&display=swap">
+<!-- A game, not a document: no pinch or double-tap zoom, and the page runs under the notch with its own safe-area padding. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- The app's channels are there from the first byte, so the page knows at once it sits under the app's bar. -->
+<script>if(window.SowakaShare||window.Sowaka)document.documentElement.classList.add('app')</script>
+<meta name="theme-color" content="#241B3A">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Lilita+One&family=Nunito:wght@400;600;800&family=Sora:wght@400;600;700;800&display=swap">
 <style>
-  /* One phone-width column inside the Sowaka Games tab: hero scene, rank + leaderboard row, Challenges / Play now tabs.
-     The game opens full-screen on top. A single deliberate light look. */
-  :root {
-    --bg: #f4effb; --card: #ffffff; --ink: #241b3a; --muted: #6d6386; --line: #e4dcf1;
-    --coral: #ff6b57; --coral-soft: #ffe5df; --sun: #ffc857; --teal: #2fb7a6; --teal-soft: #dcf5f1; --violet: #5b4b9a;
-    --display: "Lilita One", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
-    --body: "Nunito", "Segoe UI", system-ui, sans-serif;
-    color-scheme: light;
-  }
-  * { box-sizing: border-box; }
-  html, body { min-height: 100%; margin: 0; }
-  body { background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--body); -webkit-tap-highlight-color: transparent;
-    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
-  [hidden] { display: none !important; }
-  .app { max-width: 440px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-    padding-block: 12px 32px; display: flex; flex-direction: column; gap: 14px; }
-  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
-  button:focus-visible, input:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+/* The home screen is the one Odd One Out and Trails share: the game's picture across the top with the header, your rank and the leaderboard in it,
+   then the Play now and Challenges tabs, the challenges as cards, and sheets for the leaderboard, history, picking a colleague and each challenge.
+   One dark look, with Lilita One for the big words and Sora and Figtree for the rest. The picture band starts in the catalog's background
+   (#241B3A, which the app's bar wears) and runs down into Sky Hop's sunset.
+   The game itself opens full-screen on top, in its own light look (.game keeps its own colours and font).
+   Sowaka: this one file is the whole game. The Sowaka app stores it in game_catalog and loads it into its own screen with a bridge (window.Sowaka) for the
+   player's name, the company's leaderboard and colleague challenges; in a plain browser there is no bridge, scores stay on this device and there are no challenges. */
+[hidden]{display:none!important}
+:root{
+  color-scheme:dark; --padt:max(14px,env(safe-area-inset-top));
+  --bg:#1D1733; --panel:#271F40; --panel2:#30284D; --line:#463C68; --ink:#FBF7FF; --muted:#B4AACB; --deep:#0F0B1D;
+  --accent:#FF6B57; --accent-deep:#D94A37; --accent-ink:#1E0A26;
+  --good:#4BE39A; --bad:#FF5A5F; --gold:#FFD23F; --blue:#C9B8E8; --pink:#F2A7C3; --teal:#2FB7A6;
+  --display:"Lilita One","Arial Rounded MT Bold","Trebuchet MS",system-ui,sans-serif;
+  --body:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --small:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{overflow-x:clip;background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;overscroll-behavior:none}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;
+  padding:var(--padt) max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  touch-action:manipulation;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+input{-webkit-user-select:text;user-select:text}
+/* main.app, not .app: the html element carries an `app` class of its own inside the Sowaka app. */
+main.app{max-width:440px;margin-inline:auto;display:flex;flex-direction:column;gap:14px;position:relative}
+#home{display:flex;flex-direction:column;gap:14px}
 
-  .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 38px; }
-  .back { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--muted); padding: 6px 4px; }
-  .back svg { width: 18px; height: 18px; }
-  .icon-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; margin-left: auto; }
-  .icon-btn svg { width: 18px; height: 18px; }
+/* The header: the game's name on a tilted badge, and the how-to and sound chips. */
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px}
+h1{margin:0 0 0 2px;font-family:var(--display);font-weight:400;font-size:1.2rem;line-height:1;letter-spacing:.01em;text-transform:uppercase;white-space:nowrap;
+  color:var(--accent-ink);background:var(--accent);padding:6px 11px 5px;border-radius:8px;box-shadow:0 3px 0 var(--accent-deep);transform:rotate(-3deg)}
+.hright{display:flex;align-items:center;gap:8px}
+.pill{font-family:var(--display);font-weight:400;font-size:.95rem;line-height:1;height:34px;padding:0 14px;border-radius:30px;border:2px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap}
+.pill.q{font-family:var(--body);font-weight:600;font-size:.8rem;padding:0 14px}
+.pill.snd{width:34px;padding:0;display:grid;place-items:center;color:var(--gold)}
+.pill.snd svg{width:18px;height:18px;display:block}
+.pill.snd.off{color:var(--muted)}
+.pill:active{transform:translateY(1px)}
+.btn:focus-visible,.pill:focus-visible,.link:focus-visible,.mini:focus-visible,.person:focus-visible,.crow:focus-visible,.dl:focus-visible,.sx:focus-visible,.tab:focus-visible,.lbbtn:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 
-  .hero { position: relative; border-radius: 22px; overflow: hidden; box-shadow: 0 10px 30px rgba(60, 30, 110, .18); aspect-ratio: 16 / 10; max-width: 100%; }
-  .hero canvas { display: block; width: 100%; height: 100%; }
-  .hero-copy { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 18px 14px; background: linear-gradient(transparent, rgba(36, 27, 58, .55)); color: #fff; }
-  .hero h1 { font: 400 34px/1 var(--display); margin: 0; letter-spacing: .01em; text-shadow: 0 2px 0 rgba(36, 27, 58, .5); }
-  .hero p { margin: 4px 0 0; font-weight: 600; font-size: 14px; opacity: .95; }
-  .tag { position: absolute; top: 12px; left: 12px; background: rgba(255, 255, 255, .9); color: var(--ink); font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 99px; letter-spacing: .02em; }
+/* Buttons. The plain one: a panel with a line edge. Go: gold, on its own deeper shade. */
+.btn{font-family:var(--display);font-weight:400;font-size:1.15rem;line-height:1.1;min-height:50px;padding:6px 14px;border-radius:16px;border:2px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;box-shadow:0 4px 0 var(--deep);transition:transform .07s,box-shadow .07s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--deep)}
+.btn.go{background:var(--gold);border-color:var(--gold);color:var(--accent-ink);font-size:1.75rem;min-height:60px;letter-spacing:.01em;box-shadow:0 5px 0 #B88F00}
+.btn.go:active{transform:translateY(4px);box-shadow:0 1px 0 #B88F00}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-size:1.25rem;box-shadow:0 4px 0 var(--muted)}
+.btn.primary:active{box-shadow:0 1px 0 var(--muted)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.mini{font-family:var(--body);font-weight:700;font-size:.75rem;min-height:32px;padding:0 10px;border-radius:10px;border:2px solid var(--line);background:transparent;color:var(--ink);
+  cursor:pointer;white-space:nowrap}
+.mini.yes{font-family:var(--display);font-weight:400;font-size:1.15rem;min-height:42px;min-width:98px;padding:0 14px;border-radius:12px;background:var(--gold);border-color:var(--gold);
+  color:var(--accent-ink);box-shadow:0 4px 0 #B88F00}
+.mini.yes:active{transform:translateY(3px);box-shadow:0 1px 0 #B88F00}
+.mini:disabled{opacity:.5}
+.link{font-family:var(--body);font-weight:600;font-size:.82rem;color:var(--muted);background:none;border:0;padding:6px 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.links{display:flex;justify-content:center;gap:18px;flex-wrap:wrap}
+.links .link{padding:2px 0}
 
-  .row { display: grid; grid-template-columns: 118px 1fr; gap: 12px; }
-  .rank { background: var(--ink); color: #fff; border-radius: 18px; padding: 14px 12px; display: flex; flex-direction: column; justify-content: space-between; min-height: 150px; }
-  .rank small { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
-  .rank .big { font: 400 38px/1 var(--display); color: var(--sun); font-variant-numeric: tabular-nums; }
-  .rank .best { font-size: 13px; opacity: .85; }
-  .rank .best b { font-weight: 800; color: #fff; }
-  .rank.locked { background: repeating-linear-gradient(135deg, #2e2449 0 10px, #29203f 10px 20px); align-items: flex-start; }
-  .rank.locked .lock { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.12); display: grid; place-items: center; }
-  .rank.locked .lock svg { width: 16px; height: 16px; }
-  .rank.locked p { margin: 0; font-size: 13px; line-height: 1.35; opacity: .9; }
+/* Home: the game's picture across the whole top of the page, under the header, with your rank and the leaderboard in it. */
+.top{position:relative;margin:calc(-1*var(--padt)) calc(50% - 50vw) 0;padding:var(--padt) max(16px,env(safe-area-inset-right)) 18px max(16px,env(safe-area-inset-left));
+  background:linear-gradient(180deg,#241B3A 0%,#2E2652 24%,#55407E 50%,#A25B8C 76%,#E9876F 100%);border-bottom:3px solid var(--deep);overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;gap:8px}
+.top::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,246,230,.08) 2px,transparent 2.5px);background-size:22px 22px;pointer-events:none}
+.top>*{position:relative;width:100%;max-width:440px}
+.top header h1{background:var(--gold);color:#1E0A26;box-shadow:0 3px 0 var(--deep)}
+.top .pill{background:rgba(15,11,29,.72);border-color:rgba(255,255,255,.16)}
+.top .art{display:grid;place-items:center;padding:6px 0 4px}
+/* The picture: Sky Hop's own sunset, flying itself, in a tilted frame with sparkles around it. */
+.skyframe{position:relative;width:min(300px,82%);aspect-ratio:16/10;border:3px solid #120D22;border-radius:20px;overflow:hidden;background:#3B3478;
+  box-shadow:0 7px 0 rgba(15,11,29,.55);transform:rotate(-2deg)}
+.skyframe canvas{display:block;width:100%;height:100%}
+.sp{position:absolute;width:22px;height:22px;pointer-events:none}
+.sp svg{width:100%;height:100%;display:block;overflow:visible}
+.sp1{left:2%;top:18%}.sp2{right:3%;top:6%;width:17px;height:17px}.sp3{left:5%;bottom:6%;width:16px;height:16px}.sp4{right:1%;bottom:20%;width:20px;height:20px}
+.top .tt{margin:0;text-align:center;font-family:var(--display);font-weight:400;font-size:1.7rem;line-height:1;text-transform:uppercase;color:#FFF6EC;letter-spacing:.02em;
+  text-shadow:0 3px 0 rgba(15,11,29,.55)}
+.rankbar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch;margin-top:4px;padding:8px;border-radius:20px;background:#120D22;box-shadow:0 5px 0 rgba(15,11,29,.35)}
+.rankbar.solo{grid-template-columns:1fr;background:none;box-shadow:none;padding:0;margin-top:2px}
+.rankbar.solo .lbbtn{flex-direction:row;width:auto;min-height:44px;font-size:.9rem;gap:8px}
+.mystat{display:flex;align-items:center;gap:12px;min-width:0;padding:8px 14px;border-radius:14px;background:var(--panel)}
+.mystat .big{font-family:var(--display);font-weight:400;font-size:2.2rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums;flex-shrink:0}
+.mystat .big small{font-size:.55em;margin-right:1px;opacity:.8}
+.mystat .side{min-width:0;display:flex;flex-direction:column;gap:3px}
+.mystat .side span{font-family:var(--body);font-weight:400;font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mystat .side b{font-family:var(--body);font-weight:400;font-size:.85rem;color:var(--ink);white-space:nowrap}
+.mystat .side b em{font-style:normal;font-weight:600;color:var(--ink);margin-left:2px}
+.lbbtn{font-family:var(--body);font-weight:600;font-size:.78rem;line-height:1;white-space:nowrap;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  padding:6px 14px;border-radius:14px;border:0;background:var(--gold);color:#1E0A26;cursor:pointer;box-shadow:0 4px 0 #B88F00}
+.lbbtn svg{width:22px;height:22px;flex-shrink:0}
+.lbbtn:active{transform:translateY(3px);box-shadow:0 1px 0 #B88F00}
+/* The two tabs under the picture: Play now and Challenges (open by default). */
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;border-radius:20px;background:var(--panel);border:2px solid var(--line);margin-top:4px}
+.tabs.one{grid-template-columns:1fr}
+.tab{position:relative;font-family:var(--body);font-weight:600;font-size:.95rem;line-height:1;min-height:46px;border-radius:14px;border:0;background:transparent;color:var(--muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.tab.on{background:var(--gold);color:#1E0A26;box-shadow:0 3px 0 #B88F00}
+.badge{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--pink);color:#1E0A26;font-family:var(--body);font-weight:600;font-size:.75rem;display:grid;place-items:center}
+.tab.on .badge{background:#1E0A26;color:var(--gold)}
+.panel{display:flex;flex-direction:column;gap:14px}
+/* Play now: the round in one card. */
+.playcard{display:flex;flex-direction:column;align-items:stretch;gap:14px;padding:16px;border-radius:22px;background:var(--panel);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.rules div{display:flex;flex-direction:column;align-items:center;gap:6px;font-family:var(--body);font-weight:400;font-size:.78rem;line-height:1.2;color:var(--muted)}
+.rules i{font-style:normal;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:var(--panel2)}
+.playcard .btn.go{font-size:2rem;min-height:68px}
+/* Challenges: Challenge a colleague, then everything still in play, each on its own card, then the way to history. */
+.chlist{display:flex;flex-direction:column;gap:10px}
+.chlist .empty{margin:0;padding:22px 16px;border-radius:18px;border:2px dashed var(--line);text-align:center;font-family:var(--body);font-size:.88rem;color:var(--muted)}
+.chc{background:var(--panel);border:1.5px solid var(--line);border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;color:var(--ink);text-align:left;box-shadow:0 4px 0 var(--deep)}
+.chc .lab{display:flex;justify-content:space-between;align-items:center;gap:8px;font-family:var(--body);font-weight:600;font-size:11px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold)}
+.chc.turn .lab{color:var(--pink)}
+.chc .row{display:flex;gap:12px;align-items:flex-start}
+.chc .tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.chc .tx b{font-family:var(--body);font-weight:400;font-size:14px;line-height:16px;color:var(--ink)}
+.chc .tx small{font-family:var(--body);font-size:11.5px;line-height:15px;color:var(--muted)}
+.chc .bt{flex-shrink:0;padding-bottom:4px}
+.dl{font-family:var(--body);font-weight:400;font-size:11.5px;color:var(--muted);background:none;border:0;padding:2px 0 0;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.dl:disabled{opacity:.5}
+.clock2{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border-radius:999px;background:var(--panel2);color:var(--ink);font-family:var(--body);font-weight:400;
+  font-size:11.5px;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock2 svg{width:12px;height:12px;flex-shrink:0}
+.clock2.soon{background:rgba(255,90,95,.18);color:#FF9A9D}
+.btn.send{background:var(--gold);border-color:var(--gold);color:#1E0A26;box-shadow:0 4px 0 #B88F00;font-size:1.25rem}
+.btn.send:active{box-shadow:0 1px 0 #B88F00}
+.inbox{display:flex;flex-direction:column;gap:8px;width:100%;text-align:left}
+.crow{font:inherit;color:var(--ink);display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:16px;background:var(--panel);
+  border:1.5px solid var(--line);text-align:left;width:100%}
+div.crow.tap{cursor:pointer}
+.crow p{margin:0;font-family:var(--body);font-size:.84rem;line-height:1.25;color:var(--ink);min-width:0}
+.crow p small{display:block;font-family:var(--body);color:var(--muted);font-size:.75rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.crow .bt{display:flex;gap:6px;align-items:center}
+.crow .pts{font-family:var(--display);font-size:1.05rem;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
+.crow .pts.zero{color:var(--muted);font-family:var(--small);font-weight:700;font-size:.75rem}
+/* Someone's face: their photo, else their initial on a colour picked by the name. */
+.av{--s:34px;width:var(--s);height:var(--s);border-radius:50%;display:grid;place-items:center;font-family:var(--small);font-weight:800;font-size:calc(var(--s)*.4);line-height:1;
+  color:var(--accent-ink);background:hsl(var(--ah,45) 85% 72%);flex-shrink:0;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
 
-  .board { background: var(--card); border-radius: 18px; border: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
-  .board-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
-  .board-head h2 { font-size: 13px; font-weight: 800; margin: 0; }
-  .board-head span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lb { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .lb li { display: grid; grid-template-columns: 18px 26px 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
-  .lb .pos { font-weight: 800; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
-  .lb li.first .pos { color: #d9a400; }
-  .lb .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lb .pts { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .lb li.me { background: var(--teal-soft); border-radius: 8px; margin: 0 -6px; padding: 2px 6px; }
-  .lb li.me .nm { font-weight: 800; }
-  .lb .empty { display: block; color: var(--muted); font-size: 13px; padding: 4px 0; }
-  .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; flex: none; overflow: hidden; }
-  .av img { width: 100%; height: 100%; object-fit: cover; }
+/* Inside the app the page sits under the app's own bar, which has already cleared the notch: no second top inset. */
+html.app{--padt:14px}
+html.app .sheet{padding-top:16px}
+html.app .howto{padding-top:20px}
 
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--card); border: 1px solid var(--line); border-radius: 99px; padding: 4px; }
-  .tab { padding: 10px; border-radius: 99px; font-weight: 600; color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 6px; }
-  .tab[aria-selected="true"] { background: var(--ink); color: #fff; font-weight: 800; }
-  .count { background: var(--coral); color: #fff; font-size: 11px; font-weight: 800; min-width: 20px; height: 20px; border-radius: 99px; display: inline-grid; place-items: center; padding: 0 6px; }
+/* Sheets: a bottom sheet. A tap on the dimmed screen around it, or its ✕, closes it. */
+.sheet{position:fixed;inset:0;background:rgba(8,6,20,.78);display:flex;flex-direction:column;align-items:center;cursor:pointer;
+  padding:max(16px,env(safe-area-inset-top,0px)) 12px calc(14px + env(safe-area-inset-bottom,0px));z-index:40;overflow-y:auto;overscroll-behavior:contain}
+.card{background:var(--panel);color:var(--ink);border-radius:26px;padding:10px 18px 20px;width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px;cursor:auto;outline:none;
+  border:1.5px solid var(--line);margin-top:auto;margin-bottom:4px;flex-shrink:0}
+.card::before{content:"";align-self:center;flex-shrink:0;width:44px;height:5px;border-radius:3px;background:var(--line);margin-bottom:-4px}
+.card h2{font-family:var(--display);font-weight:400;font-size:1.8rem;margin:0;line-height:1.05;color:var(--ink);text-wrap:balance}
+.shead{display:flex;align-items:flex-start;gap:12px}
+.shead h2{flex:1;min-width:0}
+.sx{flex-shrink:0;width:36px;height:36px;margin-top:-2px;display:grid;place-items:center;padding:0;border-radius:999px;cursor:pointer;
+  background:var(--panel2);color:var(--ink);border:2px solid var(--line);box-shadow:0 3px 0 var(--deep);-webkit-tap-highlight-color:transparent}
+.sx:active{transform:translateY(2px);box-shadow:0 1px 0 var(--deep)}
+.sx svg{width:14px;height:14px;display:block}
+.card .note{margin:0;font-family:var(--body);font-size:.86rem;line-height:1.4;color:var(--muted)}
+.card .acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-bottom:6px}
+.card .acts.one{grid-template-columns:1fr}
+/* The leaderboard: one list, the whole of it, in its own scroll. */
+.lb{display:flex;flex-direction:column;gap:8px}
+.lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--body);font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lbh .of{color:var(--ink)}
+.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
+.lb.full .ranks{max-height:min(64vh,560px)}
+.rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
+  font-family:var(--body);font-size:.88rem;font-weight:400;font-variant-numeric:tabular-nums;color:var(--ink)}
+.rank.tap{cursor:pointer}.rank.tap:active{filter:brightness(.92)}
+.rank>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank b{font-family:var(--display);font-weight:400;font-size:1.05rem;flex-shrink:0}
+.rank.me{outline:2px solid var(--gold);outline-offset:-2px;background:#3A3020}
+.lb .pos{font-style:normal;display:inline-grid;place-items:center;vertical-align:middle;min-width:28px;height:28px;padding:0 4px;margin-right:8px;border-radius:999px;
+  background:var(--panel);color:var(--muted);font-family:var(--display);font-size:.85rem;line-height:1}
+.rank.p1 .pos{background:var(--gold);color:var(--accent-ink)}
+.rank.me .pos{background:var(--gold);color:#1E0A26}
+.rank.p2 .pos{background:#F2D7E9;color:#1E0A26} .rank.p3 .pos{background:var(--pink);color:#1E0A26}
+.lb .wait{margin:0;font-family:var(--body);font-size:.85rem;color:var(--muted)}
+.gap{text-align:center;color:var(--muted);font-family:var(--display);font-size:1.2rem;line-height:.6;padding:2px 0 6px;letter-spacing:.3em;flex-shrink:0}
+.pin{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:14px;background:var(--gold);color:#1E0A26;font-family:var(--body);font-weight:400;font-size:.88rem}
+.pin .pos{background:#1E0A26!important;color:var(--gold)!important;margin-right:8px}
+.pin b{font-family:var(--display);font-weight:400;font-size:1.1rem}
+/* A challenge's result: the two scores side by side, and what it paid. */
+.vs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;text-align:center}
+.vs .side{padding:10px 6px;border-radius:16px;background:var(--panel2);border:2px solid transparent;min-width:0}
+.vs .side.win{border-color:var(--gold);box-shadow:0 0 18px -6px var(--gold)}
+.vs .side small{display:block;font-family:var(--body);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vs .side b{display:block;font-family:var(--display);font-weight:400;font-size:1.8rem;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--ink)}
+.vs .side em{display:block;font-style:normal;font-family:var(--small);font-size:.75rem;color:var(--muted);font-weight:700}
+.vs .mid{font-family:var(--display);font-size:1rem;color:var(--muted)}
+.prize{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:var(--panel2);color:var(--ink);
+  font-family:var(--body);font-weight:700;font-size:.9rem}
+.prize span{white-space:nowrap}
+.prize b{font-family:var(--display);font-weight:400;font-size:1.35rem;color:var(--gold);font-variant-numeric:tabular-nums;text-align:right}
+.prize.none b{color:var(--muted);font-family:var(--body);font-size:.84rem;font-weight:600}
+/* Picking a colleague. */
+.lrow{display:grid;grid-template-columns:1fr;gap:6px}
+.lrow input{font-family:var(--body);font-size:.95rem;font-weight:600;min-height:48px;padding:0 14px;border-radius:14px;border:2px solid var(--line);background:var(--bg);color:var(--ink);
+  width:100%;min-width:0;outline:none}
+.lrow input:focus{border-color:var(--gold)}
+.lrow input::placeholder{color:var(--muted)}
+.people{display:flex;flex-direction:column;gap:6px;max-height:min(50vh,400px);overflow-y:auto;overscroll-behavior:contain;padding:2px 0 4px}
+.person{font:inherit;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;text-align:left;padding:9px 10px;border-radius:16px;border:2px solid transparent;
+  background:var(--panel2);color:var(--ink);cursor:pointer;width:100%;flex-shrink:0}
+.person:active{transform:translateY(1px)}
+.person span{min-width:0}
+.person b{display:block;font-family:var(--body);font-weight:700;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person small{display:block;font-family:var(--small);color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person i{font-style:normal;font-family:var(--display);font-size:1rem;color:var(--gold)}
+.shim{height:56px;flex-shrink:0;border-radius:16px;background:linear-gradient(90deg,var(--panel2) 0%,var(--line) 50%,var(--panel2) 100%);background-size:200% 100%;opacity:.6}
 
-  .panel { display: flex; flex-direction: column; gap: 10px; }
-  .cta { width: 100%; background: var(--coral); color: #fff; font-weight: 800; font-size: 16px; padding: 14px; border-radius: 16px; box-shadow: 0 4px 0 #d94a37; display: flex; justify-content: center; align-items: center; gap: 8px; }
-  .cta:active { transform: translateY(3px); box-shadow: 0 1px 0 #d94a37; }
-  .cta:disabled { background: #d7d1e3; box-shadow: none; cursor: not-allowed; transform: none; }
-  .cta svg { width: 20px; height: 20px; }
-  .rule { font-size: 13px; color: var(--muted); text-align: center; margin: 0; }
-  .list { display: flex; flex-direction: column; gap: 8px; }
-  .ch { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; }
-  .ch .av { width: 40px; height: 40px; font-size: 14px; }
-  .ch-main { min-width: 0; }
-  .ch-title { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
-  .ch-title b { font-weight: 800; }
-  .ch-meta { font-size: 12px; color: var(--muted); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 3px; font-variant-numeric: tabular-nums; }
-  .pill { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; letter-spacing: .02em; }
-  .pill.go { background: var(--coral-soft); color: #c43b28; }
-  .pill.new { background: #fff1cf; color: #9a6a00; }
-  .pill.wait { background: #ece7f6; color: var(--violet); }
-  .pill.won { background: var(--teal-soft); color: #13786b; }
-  .pill.lost { background: #efeef2; color: #77708a; }
-  .ch.urgent { border-color: #ffb3a6; box-shadow: 0 0 0 3px var(--coral-soft); }
-  .ch.done { opacity: .75; }
-  .ch-actions { display: flex; gap: 6px; }
-  .btn-s { padding: 8px 14px; border-radius: 12px; font-weight: 800; font-size: 13px; background: var(--ink); color: #fff; }
-  .btn-s.ghost { background: transparent; color: var(--muted); font-weight: 600; padding: 8px 6px; }
-  .btn-s.coral { background: var(--coral); }
-  .btn-s:disabled { opacity: .5; }
-  .section-label { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 2px 0; }
-  .note { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 14px; color: var(--muted); font-size: 14px; text-align: center; }
+/* How to play: full screen, once before a new player's first round, and from How to play. */
+.howto{position:fixed;inset:0;z-index:45;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;align-items:center;background:var(--bg);
+  padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.hin{width:100%;max-width:400px;margin:auto 0;display:flex;flex-direction:column;gap:16px}
+.howart{align-self:center;width:min(48vw,180px);padding:10px;background:var(--panel2);border:2px solid var(--line);border-radius:24px;box-shadow:0 6px 0 var(--deep);transform:rotate(-2deg)}
+.howart canvas{display:block;width:100%;aspect-ratio:4/5;border-radius:16px}
+.howto .kick{margin:4px 0 0;font-family:var(--body);font-weight:600;font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center}
+.howto h2{margin:-12px 0 0;font-family:var(--display);font-weight:400;font-size:2.3rem;line-height:1.1;text-transform:uppercase;color:var(--ink);text-align:center}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.steps li{display:flex;gap:12px;align-items:center;padding:11px 14px;background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:0 4px 0 var(--deep)}
+.steps i{font-style:normal;flex-shrink:0;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-size:1.15rem;background:var(--gold);color:var(--accent-ink)}
+.steps li:nth-child(2) i{background:var(--blue)} .steps li:nth-child(3) i{background:var(--pink)}
+.steps span{font-family:var(--body);font-size:.86rem;line-height:1.3;color:var(--muted)}
+.steps b{display:block;font-family:var(--display);font-weight:400;font-size:1.1rem;line-height:1.2;color:var(--ink)}
+.howto .btn.go{margin-top:2px}
 
-  .how { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; }
-  .how canvas { width: 120px; height: 150px; border-radius: 14px; display: block; }
-  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-  .steps li { display: flex; gap: 10px; align-items: center; font-size: 14px; }
-  .steps .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: 16px; }
-  .steps b { font-weight: 800; }
+/* A short line at the bottom of the screen: a challenge sent, accepted, or won. */
+.toast{position:fixed;left:50%;bottom:max(24px,calc(env(safe-area-inset-bottom,0px) + 16px));transform:translateX(-50%);z-index:50;font-family:var(--body);font-weight:700;font-size:.82rem;
+  color:var(--ink);background:var(--panel2);border:1.5px solid var(--line);padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:calc(100% - 32px);text-align:center}
 
-  .game { position: fixed; inset: 0; z-index: 30; background: #1d1733; display: grid; place-items: center; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
-    padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
-  .stage { position: relative; height: min(100%, calc((100vw - 20px) * 16 / 9)); aspect-ratio: 9 / 16; max-width: 100%; border-radius: 16px; overflow: hidden; container-type: size; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
-  .stage canvas { display: block; width: 100%; height: 100%; }
-  .g-score { position: absolute; top: 7cqh; left: 0; right: 0; text-align: center; font: 400 15cqw var(--display); color: #fff; -webkit-text-stroke: .6cqw var(--ink); paint-order: stroke fill; text-shadow: 0 .8cqw 0 var(--ink); pointer-events: none; font-variant-numeric: tabular-nums; }
-  .g-top { position: absolute; top: 3cqw; left: 3cqw; right: 3cqw; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
-  .g-top > * { pointer-events: auto; }
-  .g-close { width: 10cqw; height: 10cqw; border-radius: 50%; background: rgba(255,255,255,.9); display: grid; place-items: center; }
-  .g-close svg { width: 5cqw; height: 5cqw; }
-  .g-vs { background: rgba(36,27,58,.75); color: #fff; font-size: 3.4cqw; font-weight: 600; padding: 1cqw 3cqw; border-radius: 99px; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .g-vs b { color: var(--sun); font-weight: 800; }
-  .g-panel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; pointer-events: none; padding: 0 8cqw; }
-  .g-hint { background: #fff; color: var(--ink); font-weight: 800; font-size: 4.6cqw; padding: 1.6cqw 5cqw; border-radius: 99px; box-shadow: 0 1cqw 0 rgba(36,27,58,.35); animation: bob 1.4s ease-in-out infinite; }
-  .g-card { pointer-events: auto; background: #fff; color: var(--ink); border-radius: 5cqw; padding: 6cqw; width: 100%; display: flex; flex-direction: column; gap: 3cqw; box-shadow: 0 2cqw 0 rgba(36,27,58,.35); }
-  .g-card h2 { margin: 0; font: 400 9cqw/1 var(--display); color: var(--coral); }
-  .g-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 3cqw; }
-  .g-stats div { background: var(--bg); border-radius: 3cqw; padding: 3cqw; }
-  .g-stats small { display: block; font-size: 3cqw; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-  .g-stats b { font: 400 9cqw/1.1 var(--display); font-variant-numeric: tabular-nums; }
-  .g-msg { font-size: 3.8cqw; margin: 0; color: var(--muted); }
-  .g-msg b { color: var(--ink); }
-  .g-btns { display: flex; flex-direction: column; gap: 2.4cqw; }
-  .g-btns button { font-weight: 800; font-size: 4.4cqw; padding: 3.2cqw; border-radius: 3.4cqw; }
-  .g-btns .pri { background: var(--coral); color: #fff; box-shadow: 0 1cqw 0 #d94a37; }
-  .g-btns .sec { background: var(--bg); color: var(--ink); }
+/* ---------- The game: full-screen over the home screen, in its own light look, as it always was. ---------- */
+.game{--bg:#f4effb;--card:#ffffff;--ink:#241b3a;--muted:#6d6386;--line:#e4dcf1;--coral:#ff6b57;--sun:#ffc857;--violet:#5b4b9a;
+  font:400 15px/1.45 "Nunito","Segoe UI",system-ui,sans-serif;color:var(--ink)}
+.game button{border:0;cursor:pointer}
+.game button:focus-visible{outline:3px solid var(--violet);outline-offset:2px}
+.game { position: fixed; inset: 0; z-index: 30; background: #1d1733; display: grid; place-items: center; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
+.stage { position: relative; height: min(100%, calc((100vw - 20px) * 16 / 9)); aspect-ratio: 9 / 16; max-width: 100%; border-radius: 16px; overflow: hidden; container-type: size; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.g-score { position: absolute; top: 7cqh; left: 0; right: 0; text-align: center; font: 400 15cqw var(--display); color: #fff; -webkit-text-stroke: .6cqw var(--ink); paint-order: stroke fill; text-shadow: 0 .8cqw 0 var(--ink); pointer-events: none; font-variant-numeric: tabular-nums; }
+.g-top { position: absolute; top: 3cqw; left: 3cqw; right: 3cqw; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+.g-top > * { pointer-events: auto; }
+.g-close { width: 10cqw; height: 10cqw; border-radius: 50%; background: rgba(255,255,255,.9); display: grid; place-items: center; }
+.g-close svg { width: 5cqw; height: 5cqw; }
+.g-vs { background: rgba(36,27,58,.75); color: #fff; font-size: 3.4cqw; font-weight: 600; padding: 1cqw 3cqw; border-radius: 99px; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-vs b { color: var(--sun); font-weight: 800; }
+.g-panel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; pointer-events: none; padding: 0 8cqw; }
+.g-hint { background: #fff; color: var(--ink); font-weight: 800; font-size: 4.6cqw; padding: 1.6cqw 5cqw; border-radius: 99px; box-shadow: 0 1cqw 0 rgba(36,27,58,.35); animation: bob 1.4s ease-in-out infinite; }
+.g-card { pointer-events: auto; background: #fff; color: var(--ink); border-radius: 5cqw; padding: 6cqw; width: 100%; display: flex; flex-direction: column; gap: 3cqw; box-shadow: 0 2cqw 0 rgba(36,27,58,.35); }
+.g-card h2 { margin: 0; font: 400 9cqw/1 var(--display); color: var(--coral); }
+.g-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 3cqw; }
+.g-stats div { background: var(--bg); border-radius: 3cqw; padding: 3cqw; }
+.g-stats small { display: block; font-size: 3cqw; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.g-stats b { font: 400 9cqw/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.g-msg { font-size: 3.8cqw; margin: 0; color: var(--muted); }
+.g-msg b { color: var(--ink); }
+.g-btns { display: flex; flex-direction: column; gap: 2.4cqw; }
+.g-btns button { font-weight: 800; font-size: 4.4cqw; padding: 3.2cqw; border-radius: 3.4cqw; }
+.g-btns .pri { background: var(--coral); color: #fff; box-shadow: 0 1cqw 0 #d94a37; }
+.g-btns .sec { background: var(--bg); color: var(--ink); }
 
-  .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(36,27,58,.45); display: flex; align-items: flex-end; justify-content: center; }
-  .sheet { background: var(--card); width: 100%; max-width: 440px; border-radius: 24px 24px 0 0; max-height: 82%; display: flex; flex-direction: column;
-    padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); animation: up .22s ease-out; }
-  .grab { width: 40px; height: 4px; border-radius: 99px; background: var(--line); margin: 0 auto 12px; }
-  .sheet h3 { margin: 0; font: 400 24px/1.1 var(--display); }
-  .sheet .sub { margin: 4px 0 12px; color: var(--muted); font-size: 14px; }
-  .search { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 11px 12px; font: inherit; color: var(--ink); }
-  .people { list-style: none; margin: 10px 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
-  .people button { width: 100%; display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 8px; border-radius: 12px; text-align: left; }
-  .people button[aria-pressed="true"] { background: var(--teal-soft); }
-  .people .av { width: 36px; height: 36px; font-size: 13px; }
-  .people .dept { font-size: 12px; color: var(--muted); }
-  .people .tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
-  .people button[aria-pressed="true"] .tick { background: var(--teal); border-color: var(--teal); }
-  .people .tick svg { width: 12px; height: 12px; }
-
-  .toast { position: fixed; left: 50%; bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 16px)); transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 99px; font-weight: 600; font-size: 14px; box-shadow: 0 8px 20px rgba(36,27,58,.3); max-width: calc(100% - 32px); text-align: center; }
-
-  @keyframes bob { 50% { transform: translateY(-1cqh); } }
-  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .g-hint, .sheet { animation: none; } }
+@media (min-width:700px){.card{margin-block:auto}}
+@keyframes bob { 50% { transform: translateY(-1cqh); } }
+@keyframes up{0%{transform:translateY(28px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes shim{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes twinkle{0%,100%{transform:scale(1) rotate(0)}50%{transform:scale(.7) rotate(20deg)}}
+@media (prefers-reduced-motion:no-preference){
+  .shim{animation:shim 1.2s linear infinite} .sp svg{animation:twinkle 2.4s ease-in-out infinite} .sp2 svg{animation-delay:.6s} .sp3 svg{animation-delay:1.2s} .sp4 svg{animation-delay:1.8s}
+  .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
+}
+@media (prefers-reduced-motion:reduce){ .g-hint{animation:none} .btn{transition:none} }
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="topbar">
-    <button class="back" id="back" type="button" aria-label="Back to Games" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
-      Games
-    </button>
-    <button class="icon-btn" id="sound" type="button" aria-label="Sound on" aria-pressed="true"></button>
+<main class="app" id="app">
+  <header id="hdr">
+    <h1>Sky Hop</h1>
+    <div class="hright"><button class="pill q" id="help" type="button">How to play</button><button class="pill snd" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button></div>
+  </header>
+  <!-- The picture in the band at the top: made once, moved into each redraw of home so its canvas keeps flying. -->
+  <div class="art" id="art" aria-hidden="true">
+    <div class="skyframe"><canvas id="heroCanvas"></canvas></div>
+    <span class="sp sp1"><svg viewBox="-10 -10 20 20"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9Z" fill="#FFD23F" stroke="#120D22" stroke-width="2" stroke-linejoin="round"/></svg></span>
+    <span class="sp sp2"><svg viewBox="-10 -10 20 20"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9Z" fill="#FFD23F" stroke="#120D22" stroke-width="2" stroke-linejoin="round"/></svg></span>
+    <span class="sp sp3"><svg viewBox="-10 -10 20 20"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9Z" fill="#FFF6EC" stroke="#120D22" stroke-width="2" stroke-linejoin="round"/></svg></span>
+    <span class="sp sp4"><svg viewBox="-10 -10 20 20"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9Z" fill="#FFD23F" stroke="#120D22" stroke-width="2" stroke-linejoin="round"/></svg></span>
   </div>
+  <div id="home"></div>
+</main>
 
-  <section class="hero" aria-label="Sky Hop preview">
-    <canvas id="heroCanvas"></canvas>
-    <span class="tag">Solo · Challenge</span>
-    <div class="hero-copy">
-      <h1>Sky Hop</h1>
-      <p>Tap to fly. Slip through the gaps.</p>
-    </div>
-  </section>
+<div class="sheet" id="sheet" hidden><div class="card" id="card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sh"><div class="shead"><h2 id="sh"></h2><button class="sx" id="sx" type="button" aria-label="Close"><svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button></div><div id="sb" style="display:contents"></div><div class="acts" id="sa"></div></div></div>
 
-  <div class="row">
-    <div class="rank" id="rank"></div>
-    <div class="board">
-      <div class="board-head"><h2>Leaderboard</h2><span id="lbLabel"></span></div>
-      <ol class="lb" id="lb"></ol>
-    </div>
+<div class="howto" id="howto" hidden role="dialog" aria-modal="true" aria-labelledby="howh">
+  <div class="hin">
+    <div class="howart" aria-hidden="true"><canvas id="howCanvas"></canvas></div>
+    <p class="kick">One flight · on your own or against a colleague</p>
+    <h2 id="howh">How to play</h2>
+    <ol class="steps">
+      <li><i>1</i><span><b>Tap to fly</b>Each tap lifts the bird. Stop tapping and it drops.</span></li>
+      <li><i>2</i><span><b>Slip through the gaps</b>Fly between the pipes. A pipe or the ground ends the flight.</span></li>
+      <li><i>3</i><span><b>10 points a gap</b>Your best goes to the leaderboard. In a challenge you both fly the same gaps.</span></li>
+    </ol>
+    <button class="btn go" id="howok" type="button">OK</button>
   </div>
-
-  <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-ch" aria-selected="true" aria-controls="p-ch" type="button">Challenges <span class="count" id="chCount" hidden>0</span></button>
-    <button class="tab" role="tab" id="tab-play" aria-selected="false" aria-controls="p-play" type="button">Play now</button>
-  </div>
-
-  <section class="panel" id="p-ch" role="tabpanel" aria-labelledby="tab-ch">
-    <button class="cta" id="challengeBtn" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5L14 2h3v3l-4.5 4.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></svg>
-      Challenge a colleague
-    </button>
-    <p class="rule">You both fly the same gaps. Higher score wins.</p>
-    <div class="list" id="chList"></div>
-  </section>
-
-  <section class="panel" id="p-play" role="tabpanel" aria-labelledby="tab-play" hidden>
-    <div class="how">
-      <canvas id="howCanvas" aria-label="A finger taps and the bird flies up through a gap"></canvas>
-      <ul class="steps">
-        <li><span class="ic" style="background:var(--coral-soft)">👆</span><span><b>Tap</b> to fly up</span></li>
-        <li><span class="ic" style="background:var(--teal-soft)">🌀</span><span>Go <b>through</b> the gaps</span></li>
-        <li><span class="ic" style="background:#fff1cf">⭐</span><span>Each gap = <b>10 pts</b></span></li>
-      </ul>
-    </div>
-    <button class="cta" id="playBtn" type="button">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 001.5.86l11-6.5a1 1 0 000-1.72l-11-6.5A1 1 0 008 5.5z"/></svg>
-      Play now
-    </button>
-    <p class="rule" id="playRule">Your best score goes to the company leaderboard.</p>
-  </section>
 </div>
 
 <div class="game" id="game" hidden>
@@ -238,28 +347,18 @@
   </div>
 </div>
 
-<div class="scrim" id="scrim" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-    <div class="grab"></div>
-    <h3 id="sheetTitle">Who do you want to beat?</h3>
-    <p class="sub">You'll both fly the same gaps, once each. Higher score wins.</p>
-    <input class="search" id="search" type="search" placeholder="Search colleagues" autocomplete="off">
-    <ul class="people" id="people"></ul>
-    <button class="cta" id="sendBtn" type="button" disabled>Send challenge</button>
-  </div>
-</div>
-
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
 /* ---------- Sowaka bridge ----------
    In the Sowaka app, window.Sowaka is there before this script runs (or arrives with a 'sowaka-ready' event):
-     Sowaka.userId, Sowaka.playerName(), Sowaka.submitScore(n) -> board, Sowaka.leaderboard() -> {entries:[{rank,userId,name,score,me}], me, label}
+     Sowaka.userId, Sowaka.playerName(), Sowaka.submitScore(n) -> board, Sowaka.leaderboard() -> {entries:[{rank,userId,name,score,me}], me, company, total, label}
      Sowaka.colleagues(q), Sowaka.challenge(userId), Sowaka.challenges() -> {incoming,outgoing,active,recent}, Sowaka.getChallenge(id),
      Sowaka.acceptChallenge(id), Sowaka.declineChallenge(id), Sowaka.finishChallenge(id, score), Sowaka.startChallengeId,
-     and window.onSowakaChallenge(evt) for each change to one of the player's challenges.
+     Sowaka.openProfile(userId) (bridge version 4), and window.onSowakaChallenge(evt) for each change to one of the player's challenges.
    A challenge: {id, seed (once accepted), status: pending|accepted|declined|expired|finished, role: challenger|opponent,
-     me/them: {userId, name, score|null}, outcome: won|lost|draw|null, myAward: {points}|null, expiresAt, withdrawnBy, cancelledBy}.
+     me/them: {userId, name, score|null}, outcome: won|lost|draw|null, myAward/theirAward: {kind, points, onlyOwnScore, reason}|null, expiresAt,
+     withdrawnBy, cancelledBy, lobby}. A server that knows withdrawing, calling off and clearing sends a `lobby` with each challenge.
    Each player flies one round whenever they like before it expires, on the same gaps (the seed); the result comes once both have played.
    In a plain browser there is no bridge: the best score stays on this device and there are no challenges.
    A score is points: 10 a gap. */
@@ -268,27 +367,31 @@
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const firstName = n => String(n || 'Someone').trim().split(/\s+/)[0];
-  const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
-  const COLORS = ['#ff6b57', '#2fb7a6', '#5b4b9a', '#e0a100', '#e85d9a', '#3d8bd9', '#7a9a2b', '#c4632f'];
-  const colorFor = key => { let h = 0; for (const ch of String(key || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
-  const avatar = (name, key, photo) => {
-    const img = typeof photo === 'string' && /^(https:|data:)/.test(photo) ? `<img src="${esc(photo)}" alt="">` : esc(initials(name));
-    return `<span class="av" style="background:${colorFor(key || name)}">${img}</span>`;
-  };
+  const fmtn = x => Math.round(x).toLocaleString('en-IN');
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 
   const bridge = () => (window.Sowaka && window.Sowaka.native ? window.Sowaka : null);
+  const playerId = () => { const b = bridge(); const id = b && b.userId; return id == null ? '' : String(id).trim(); };
   const canChallenge = () => { const b = bridge(); return !!(b && ['challenge', 'challenges', 'getChallenge', 'acceptChallenge', 'declineChallenge', 'finishChallenge', 'colleagues'].every(k => typeof b[k] === 'function')); };
   const ask = (method, ...args) => { const b = bridge(); if (!b || typeof b[method] !== 'function') return Promise.reject(new Error('Challenges need the Sowaka app.')); return Promise.resolve().then(() => b[method](...args)); };
 
   // ---------- Save, per account ----------
-  let saveKey = 'skyhop.v1';
-  let save = { best: 0, plays: 0, muted: false, pendingFinish: null };
+  // skyhop.v1.<userId> in the app, skyhop.v1 in a plain browser. seenHowTo: the how-to was read once (OK); scores: this device's top ten, for the board without the app.
+  const SAVE_KEY = 'skyhop.v1';
+  const freshSave = () => ({ best: 0, plays: 0, muted: false, pendingFinish: null, seenHowTo: false, scores: [] });
+  let saveKey = '';
+  let save = freshSave();
+  /* Reads the save of whoever is signed in. True when it is a different save from the one in hand (the bridge arrived after the page read the plain one). */
   function loadSave() {
-    const b = bridge();
-    saveKey = b && b.userId ? `skyhop.v1.${b.userId}` : 'skyhop.v1';
-    try { const v = JSON.parse(localStorage.getItem(saveKey) || 'null'); if (v && typeof v === 'object') save = Object.assign(save, v); } catch {}
+    const id = playerId(), key = id ? `${SAVE_KEY}.${id}` : SAVE_KEY;
+    if (key === saveKey) return false;
+    let s = null;
+    try { const v = JSON.parse(localStorage.getItem(key) || 'null'); if (v && typeof v === 'object') s = v; } catch {}
+    saveKey = key; save = Object.assign(freshSave(), s || {}); if (!Array.isArray(save.scores)) save.scores = [];
+    return true;
   }
   const store = () => { try { localStorage.setItem(saveKey, JSON.stringify(save)); } catch {} };
+  loadSave();
 
   // ---------- Sound ----------
   let actx = null;
@@ -310,12 +413,18 @@
     hit: () => tone(180, .25, 'sawtooth', .12, -120),
     die: () => setTimeout(() => tone(400, .45, 'triangle', .1, -300), 180),
     win: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, .14, 'square', .06), i * 90)),
-    send: () => { tone(740, .07, 'triangle', .08); setTimeout(() => tone(988, .1, 'triangle', .08), 60); }
+    send: () => { tone(740, .07, 'triangle', .08); setTimeout(() => tone(988, .1, 'triangle', .08), 60); },
+    lose: () => [392, 330, 262].forEach((f, i) => setTimeout(() => tone(f, .2, 'triangle', .07), i * 120)),
+    no: () => tone(150, .14, 'square', .07, -60)
   };
-  const SOUND_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="#241b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/></svg>';
-  const SOUND_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="#6d6386" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
-  function renderSound() { const b = $('sound'); b.innerHTML = save.muted ? SOUND_OFF : SOUND_ON; b.setAttribute('aria-pressed', String(!save.muted)); b.setAttribute('aria-label', save.muted ? 'Sound off' : 'Sound on'); }
-  $('sound').addEventListener('click', () => { save.muted = !save.muted; store(); renderSound(); sfx.tap(); });
+  sfx.ui = sfx.tap; sfx.horn = sfx.send;
+  const SPK = '<path d="M3 7.5h3L10.5 4v12L6 12.5H3z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>';
+  function sndLabel() {
+    const b = $('snd'), on = !save.muted, label = on ? 'Sound on' : 'Sound off';
+    b.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">' + SPK + (on ? '<path d="M13.5 7.2a4 4 0 0 1 0 5.6M15.8 5a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>' : '<path d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + '</svg>';
+    b.classList.toggle('off', !on); b.setAttribute('aria-label', label); b.title = label; b.setAttribute('aria-pressed', String(on));
+  }
+  $('snd').addEventListener('click', () => { save.muted = !save.muted; store(); sndLabel(); sfx.tap(); });
 
   // ---------- Drawing: the sunset world ----------
   const INK = '#241b3a';
@@ -448,200 +557,490 @@
     return { draw };
   })();
 
-  // ---------- Rank square + leaderboard ----------
-  let board = null; // {entries, me, label} from the app, or null outside it
-  function renderBoard() {
-    const el = $('rank');
-    const me = board && board.me && board.me.score != null ? board.me : null;
-    const best = Math.max(save.best, me ? me.score : 0);
-    if (!me && !save.plays) {
-      el.className = 'rank locked';
-      el.innerHTML = `<span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span><p>Play once to see your rank</p>`;
-    } else {
-      el.className = 'rank';
-      el.innerHTML = `<small>Your rank</small><div class="big">${me ? '#' + me.rank : '—'}</div><div class="best">Best <b>${best.toLocaleString('en-IN')}</b> pts</div>`;
-    }
-    $('lbLabel').textContent = board && board.label ? board.label : (board ? '' : 'On this phone');
-    const entries = board && Array.isArray(board.entries) ? board.entries : [];
-    const top = entries.slice(0, 3);
-    let html = top.map(e => lbRow(e)).join('');
-    const mine = entries.find(e => e.me);
-    if (mine && mine.rank > 3) html += lbRow(mine);
-    if (!board) html = save.plays ? lbRow({ rank: 1, name: 'You', score: save.best, me: true }) : '';
-    $('lb').innerHTML = html || '<li><span class="empty">No scores yet. Be the first!</span></li>';
+  // ---------- Leaderboard ----------
+  // In the app it is the company's board and only that; in a plain browser, with no bridge, it is this device's scores.
+  const LOCAL_TOP = 10;
+  /* A colleague's row on the board opens their profile over the game, where the app's bridge offers Sowaka.openProfile(userId)
+     (bridge version 4; an older app has none, and the rows stay as they were). Never one's own row: that would leave the game. */
+  const opensProfile = r => { const b = bridge(); return !!(b && typeof b.openProfile === 'function' && r && r.userId && !r.me); };
+  function openProfile(r) { const b = bridge(); if (!opensProfile(r)) return; try { b.openProfile(r.userId); } catch {} }
+  let board = null; // the last company board seen
+  function shapeBoard(r) {
+    r = r || {};
+    const rows = (Array.isArray(r.entries) ? r.entries : []).map(x => ({ rank: +x.rank || 0, userId: x.userId ? String(x.userId) : '', name: String(x.name || 'Player'), score: +x.score || 0, me: !!x.me }));
+    const me = r.me && typeof r.me.score === 'number' ? { rank: +r.me.rank || 0, score: r.me.score } : null;
+    return { rows, me, total: +r.total || 0, title: r.company ? 'Top at ' + r.company : 'Leaderboard', company: r.company ? String(r.company) : '', shared: true };
   }
-  function lbRow(e) {
-    const name = e.me ? 'You' : firstName(e.name);
-    return `<li class="${e.me ? 'me' : ''}${e.rank === 1 ? ' first' : ''}"><span class="pos">${esc(e.rank)}</span>${avatar(e.me ? 'Me' : e.name, e.userId || e.name, e.photoUrl)}<span class="nm">${esc(name)}</span><span class="pts">${Number(e.score || 0).toLocaleString('en-IN')}</span></li>`;
+  function localBoard(at) {
+    const list = save.scores.slice(0, LOCAL_TOP);
+    return { rows: list.map((x, i) => ({ rank: i + 1, name: 'You', score: x.s, me: x.t === at })), me: null, title: 'Your best on this device', shared: false };
   }
-  function loadBoard() {
-    const b = bridge();
-    if (!b || typeof b.leaderboard !== 'function') { board = null; renderBoard(); return Promise.resolve(); }
-    return Promise.resolve().then(() => b.leaderboard()).then(v => { board = v || { entries: [] }; renderBoard(); }).catch(() => renderBoard());
+  function keepLocal(s) { const t = Date.now(); save.scores = save.scores.concat({ s, t }).sort((a, b) => b.s - a.s || a.t - b.t).slice(0, LOCAL_TOP); store(); return t; }
+  const Board = {
+    name() { const b = bridge(); try { const n = b && b.playerName(); if (n) return String(n); } catch {} return ''; },
+    /* Every round is kept on the device too, so a round flown offline is not lost to the player. */
+    submit(s) {
+      const t = keepLocal(s), b = bridge();
+      if (!b || typeof b.submitScore !== 'function') return Promise.resolve(localBoard(t));
+      return Promise.resolve().then(() => b.submitScore(s)).then(shapeBoard).catch(() => Object.assign(localBoard(t), { offline: true }));
+    },
+    fetch() { const b = bridge(); if (!b || typeof b.leaderboard !== 'function') return Promise.resolve(localBoard(-1)); return Promise.resolve().then(() => b.leaderboard()).then(shapeBoard); }
+  };
+  /* A small cache on the device, one per player: the last leaderboard and colleague list, so home and the picker open with names at once. */
+  function cacheKey(k) { const id = playerId(); if (id) return 'skyhop.' + k + '.' + id; let h = 7; for (const ch of Board.name() || '?') h = (h * 31 + ch.codePointAt(0)) >>> 0; return 'skyhop.' + k + '.' + h.toString(36); }
+  function cacheGet(k) { try { const v = JSON.parse(localStorage.getItem(cacheKey(k)) || 'null'); return v && typeof v === 'object' ? v : null; } catch { return null; } }
+  function cachePut(k, v) { try { localStorage.setItem(cacheKey(k), JSON.stringify(v)); } catch {} }
+  function seeBoard(b) {
+    if (!b || !b.shared) return; board = b;
+    if (b.me && b.me.score > save.best) { save.best = b.me.score; store(); }
+    if (!b.offline) cachePut('board', { rows: b.rows, me: b.me, total: b.total, title: b.title, company: b.company });
+    renderTop();
+  }
+  function refreshBoard() {
+    if (!bridge()) return;
+    if (!board) { const kept = cacheGet('board'); if (kept && Array.isArray(kept.rows)) { board = Object.assign({ me: null, title: 'Leaderboard', company: '' }, kept, { shared: true }); renderTop(); } }
+    Board.fetch().then(seeBoard).catch(() => {});
+  }
+  /* The leaderboard, drawn into box: one list, the whole of it, in its own scroll, and the player's own row under it when they are further down. */
+  function drawBoard(box, b) {
+    box.innerHTML = ''; const h = el('div', 'lbh'); h.append(el('span', '', b.offline ? 'Leaderboard' : b.title)); if (b.total && b.shared) h.append(el('span', 'of', fmtn(b.total) + ' players')); box.appendChild(h);
+    if (b.offline) { box.appendChild(el('p', 'wait', 'Could not reach the leaderboard. This round is kept on this device.')); return; }
+    if (!b.rows.length) { box.appendChild(el('p', 'wait', 'No scores yet. Yours will be the first.')); return; }
+    const list = el('div', 'ranks'), you = (Board.name() || 'You') + ' (you)';
+    const row = (r, name) => {
+      const w = el('div', 'rank' + (r.me ? ' me' : '') + (r.rank >= 1 && r.rank <= 3 ? ' p' + r.rank : '')), left = el('span');
+      left.append(el('i', 'pos', String(r.rank)), document.createTextNode(name)); w.append(left, el('b', '', fmtn(r.score)));
+      if (opensProfile(r)) {
+        w.classList.add('tap'); w.setAttribute('role', 'button'); w.tabIndex = 0; w.setAttribute('aria-label', r.name + '’s profile');
+        w.onclick = () => openProfile(r); w.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProfile(r); } };
+      }
+      list.appendChild(w); return w;
+    };
+    /* Ranks come sorted: the top, then a gap wherever ranks are skipped. */
+    const rows = b.rows.slice().sort((x, y) => x.rank - y.rank); let prev = 0, mine = null;
+    rows.forEach(r => { if (prev && r.rank > prev + 1) list.appendChild(el('div', 'gap', '•••')); const w = row(r, r.me && b.shared ? you : r.name); if (r.me) mine = w; prev = r.rank; });
+    if (b.me && b.shared && !rows.some(r => r.me)) { if (prev && b.me.rank > prev + 1) list.appendChild(el('div', 'gap', '•••')); mine = row({ rank: b.me.rank, score: b.me.score, me: true }, you); }
+    box.appendChild(list);
+    /* Your own row, always in view under the list, once you are below the top 3. */
+    if (b.me && b.shared && b.me.rank > 3) { const pin = el('div', 'pin'), l = el('span'); l.append(el('i', 'pos', String(b.me.rank)), document.createTextNode('You' + (b.total ? ' · top ' + Math.max(1, Math.ceil(b.me.rank / b.total * 100)) + '%' : ''))); pin.append(l, el('b', '', fmtn(b.me.score))); box.appendChild(pin); }
+    if (mine) requestAnimationFrame(() => { const top = mine.offsetTop - list.offsetTop - list.clientHeight / 2 + mine.clientHeight / 2; if (top > 0) list.scrollTop = top; });
+  }
+  /* The leaderboard sheet: no buttons; a tap outside closes it. */
+  function openBoard() {
+    sfx.ui(); const box = el('div', 'lb full'); box.appendChild(el('p', 'wait', 'Loading…'));
+    openSheet('Leaderboard', [box], [], closeSheet);
+    Board.fetch().then(b => { seeBoard(b); drawBoard(box, b); }).catch(() => { box.innerHTML = ''; box.appendChild(el('p', 'wait', 'Could not load the leaderboard. Try again in a moment.')); });
   }
 
+  // ---------- Home ----------
+  /* Your own square in the band: your best and your rank at the company, once you have played; just the way to the leaderboard before that. */
+  function renderTop() {
+    sndLabel(); const me = board && board.me;
+    const sq = $('mystat'); if (!sq) return; const played = save.best > 0 || save.plays > 0 || !!me;
+    sq.hidden = !played; $('rankbar').classList.toggle('solo', !played); sq.innerHTML = '';
+    if (!played) return;
+    const big = el('div', 'big'), side = el('div', 'side'), best = el('b');
+    if (me) {
+      big.append(el('small', '', '#'), String(me.rank)); side.append(el('span', '', (board.total ? 'of ' + fmtn(board.total) + ' ' : '') + (board.company ? 'at ' + board.company : 'players')));
+      side.append(Object.assign(best, { textContent: 'Your best ' })); best.append(el('em', '', fmtn(Math.max(save.best, me.score))));
+    } else { big.textContent = fmtn(save.best); side.append(el('span', '', bridge() ? 'Your best · not ranked yet' : 'Your best on this device')); }
+    if (me) sq.append(big, side); else { sq.append(side, big); side.style.flex = '1'; }
+  }
+  const TROPHY = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0V4Z M7 6H4v1a3 3 0 0 0 3 3 M17 6h3v1a3 3 0 0 1-3 3 M12 13v4 M8 20h8 M9 17h6v3H9z" stroke="#1E0A26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  /* Home's top: the header, the game's picture across the page, then your rank and best in one square (once you have played) and the leaderboard. */
+  function topCard() {
+    const t = el('section', 'top');
+    const bar = el('div', 'rankbar'), sq = el('div', 'mystat'), lb = el('button', 'lbbtn'); bar.id = 'rankbar'; sq.id = 'mystat';
+    lb.type = 'button'; lb.innerHTML = TROPHY; lb.append('Leaderboard'); lb.onclick = openBoard; bar.append(sq, lb);
+    t.append($('hdr'), $('art'), el('h2', 'tt', 'Tap to fly'), bar); return t;
+  }
+  /* The two tabs, Play now and Challenges; Challenges is open by default. Without the app's bridge there are no challenges, only Play now. */
+  let homeView = null;
+  function tabsCard() {
+    const o = el('div', 'tabs'), mk = (k, label) => {
+      const b = el('button', 'tab' + (homeView === k ? ' on' : ''), label); b.type = 'button';
+      b.setAttribute('aria-pressed', homeView === k ? 'true' : 'false'); b.onclick = () => { if (homeView === k) return; sfx.ui(); homeView = k; menu(); }; return b;
+    };
+    o.append(mk('play', 'Play now'));
+    if (canChallenge()) { const ch = mk('challenges', 'Challenges'); ch.id = 'chbtn'; o.append(ch); } else o.classList.add('one');
+    return o;
+  }
+  function playPanel() {
+    const p = el('div', 'playcard'), r = el('div', 'rules'), go = el('button', 'btn go', 'Play');
+    [['👆', 'Tap to fly up'], ['🌀', 'Slip through the gaps'], ['⭐', '10 points a gap']].forEach(([i, t]) => { const d = el('div'); d.append(el('i', '', i), t); r.append(d); });
+    go.type = 'button'; go.onclick = () => openGame(null); p.append(r, go); return p;
+  }
+  /* Challenges: Challenge a colleague, the challenges still in play, then the way to history. */
+  function chPanel() {
+    const box = el('div', 'panel'), list = el('div', 'chlist'); list.id = 'chlist';
+    const send = el('button', 'btn send', 'Challenge a colleague'); send.type = 'button'; send.onclick = () => { sfx.ui(); openPicker(); };
+    const more = el('div', 'links'), hist = el('button', 'link', 'View history'); hist.type = 'button'; hist.id = 'histlink'; hist.onclick = () => { sfx.ui(); openList(); }; more.append(hist);
+    box.append(send, list, more); return box;
+  }
+  /* Home: the picture across the top with your rank and the leaderboard, then the Play now and Challenges tabs (Challenges open by default). */
+  function menu() {
+    if (!homeView || (homeView === 'challenges' && !canChallenge())) homeView = canChallenge() ? 'challenges' : 'play';
+    $('home').replaceChildren(topCard(), tabsCard(), homeView === 'play' ? playPanel() : chPanel());
+    renderTop(); renderInbox();
+  }
+
+  // ---------- How to play ----------
+  /* One full-screen card, the same wherever it opens. It comes up by itself once, in front of a new player's first flight (on their own or a
+     challenge's; that flight starts on OK), and any time from How to play, where OK just closes it. */
+  let howThen = null;
+  const needsHowTo = () => save.plays === 0 && !save.seenHowTo;
+  function showHowTo(then) { const o = $('howto'); if (!o.hidden && howThen && !then) return; howThen = then || null; o.hidden = false; o.scrollTop = 0; $('howok').focus({ preventScroll: true }); }
+  function hideHowTo() { $('howto').hidden = true; howThen = null; }
+
+  // ---------- Sheets ----------
+  /* Which sheet is on screen: each one opened gets the next number.
+     A sheet has no Close or Cancel: a tap on the dimmed screen around it, or its ✕, closes it and does what those did, onClose (dismiss() unless given). */
+  let sheetSeq = 0, sheetClose = null, sheetAt = 0;
+  function openSheet(title, body, acts, onClose) {
+    sheetSeq++; sheetClose = onClose || dismiss; sheetAt = performance.now();
+    $('sh').textContent = title; const sb = $('sb'); sb.innerHTML = ''; body.forEach(x => { if (x) sb.appendChild(x); });
+    const sa = $('sa'); sa.innerHTML = ''; sa.className = 'acts' + (acts.length === 1 ? ' one' : ''); sa.hidden = !acts.length;
+    acts.forEach(a => { const b = el('button', 'btn' + (a[2] ? ' primary' : ''), a[0]); b.type = 'button'; b.onclick = () => { sfx.ui(); a[1](); }; sa.appendChild(b); });
+    $('sheet').hidden = false; if (sa.lastChild) sa.lastChild.focus({ preventScroll: true }); else $('card').focus({ preventScroll: true });
+  }
+  function closeSheet() { $('sheet').hidden = true; CH.waiting = null; CH.result = null; CH.showing = null; }
+  /* A tap outside the sheet; never in the first half second of a sheet (a tap left over from the one before). */
+  function sheetOutside() { if ($('sheet').hidden || performance.now() - sheetAt < 500) return; sfx.ui(); (sheetClose || dismiss)(); }
+  function sheetX() { if ($('sheet').hidden) return; sfx.ui(); (sheetClose || dismiss)(); }
+  function dismiss() { closeSheet(); renderInbox(); }
+
+  let toastT;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2800); }
+
   // ---------- Challenges ----------
-  let CH = { incoming: [], outgoing: [], active: [], recent: [] };
-  function left(ms) {
-    if (ms <= 0) return '0:00';
-    const s = Math.ceil(ms / 1000);
-    if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-    return `${h}h ${String(m).padStart(2, '0')}m`;
+  /* Real colleagues, through the bridge. Both fly the server's seed, so the same gaps, each whenever they like; the result shows once both
+     have played. What it pays (engagement points, scaled and capped) is the server's to say. */
+  const CH = { incoming: [], outgoing: [], active: [], recent: [], waiting: null, result: null, showing: null, celebrated: {}, opened: false, accepting: false, sending: false, listSeq: -1 };
+  const KINDS = ['incoming', 'outgoing', 'active', 'recent'];
+  const errText = e => (e && e.message) || 'Something went wrong. Try again.';
+  const firstOf = n => String(n || '').trim().split(/\s+/)[0] || 'them';
+  const lobbyServer = v => !!(v && v.lobby && typeof v.lobby === 'object');
+  const isOver = v => v.status === 'finished' || v.status === 'declined' || v.status === 'expired';
+  const SAME = 'Same gaps for both of you, one flight each.';
+  function findCh(id) { for (const k of KINDS) { const v = CH[k].find(x => x.id === id); if (v) return v; } return null; }
+  /* Files a challenge under the list it now belongs in. */
+  function upsert(v) {
+    if (!v || !v.id) return v; KINDS.forEach(k => { CH[k] = CH[k].filter(x => x.id !== v.id); });
+    const k = v.status === 'pending' ? (v.role === 'opponent' ? 'incoming' : 'outgoing') : v.status === 'accepted' ? 'active' : 'recent';
+    if (k === 'recent') CH.recent = [v].concat(CH.recent).slice(0, 10); else CH[k].unshift(v); return v;
   }
-  const scoreOf = p => (p && p.score != null ? Number(p.score) : null);
-  function kindOf(v) {
-    if (v.status === 'pending') return v.role === 'opponent' ? 'incoming' : 'sent';
-    if (v.status === 'accepted') return scoreOf(v.me) == null ? 'turn' : 'waiting';
-    return 'done';
+  function forget(id) { KINDS.forEach(k => { CH[k] = CH[k].filter(x => x.id !== id); }); }
+  function refreshChallenges() {
+    if (!canChallenge()) return Promise.resolve();
+    return ask('challenges').then(r => { r = r || {}; KINDS.forEach(k => { CH[k] = Array.isArray(r[k]) ? r[k] : []; }); renderInbox(); refreshOpenList(); }).catch(() => {});
   }
-  const ORDER = { turn: 0, incoming: 1, waiting: 2, sent: 3, done: 4 };
-  function allChallenges() {
-    const seen = new Map();
-    for (const k of ['active', 'incoming', 'outgoing', 'recent']) for (const v of CH[k] || []) if (v && v.id && !seen.has(v.id)) seen.set(v.id, v);
-    return [...seen.values()].sort((a, b) => ORDER[kindOf(a)] - ORDER[kindOf(b)] || (Date.parse(a.expiresAt) || 0) - (Date.parse(b.expiresAt) || 0));
+  /* Someone's face: their photo, else the first letter of their name on a colour picked by the name. */
+  function avatar(name, photo) {
+    const a = el('span', 'av'), s = String(name || '?'); let h = 0; for (const ch of s) h = (h * 31 + ch.codePointAt(0)) % 360; a.style.setProperty('--ah', h);
+    a.textContent = ([...(s.trim().split(/\s+/)[0] || '?')][0] || '?').toUpperCase();
+    if (photo) { const img = new Image(); img.alt = ''; img.onload = () => { a.textContent = ''; a.appendChild(img); }; img.src = photo; } a.setAttribute('aria-hidden', 'true'); return a;
   }
-  function renderChallenges() {
-    if (!canChallenge()) {
-      $('challengeBtn').disabled = true;
-      $('chList').innerHTML = '<div class="note">Challenges work in the Sowaka app. Open Sky Hop from the Games tab to challenge a colleague.</div>';
-      $('chCount').hidden = true;
-      return;
-    }
-    $('challengeBtn').disabled = false;
-    const list = allChallenges();
-    const live = list.filter(v => ['turn', 'incoming'].includes(kindOf(v))).length;
-    $('chCount').textContent = live; $('chCount').hidden = !live;
-    let shownDone = 0, labelled = false;
-    const t = Date.now();
-    const rows = [];
-    for (const v of list) {
-      const kind = kindOf(v), them = v.them || {}, first = esc(firstName(them.name)), exp = Date.parse(v.expiresAt) || 0;
-      const timer = exp ? `<span data-ends="${exp}">${left(exp - t)}</span>` : '';
-      let body = '', acts = '', cls = 'ch';
-      if (kind === 'turn') {
-        cls += ' urgent';
-        const theirs = scoreOf(them);
-        body = `<div class="ch-title">${theirs != null ? `Beat <b>${first}</b>'s <b>${theirs}</b>` : `Your round vs <b>${first}</b>`}</div><div class="ch-meta"><span class="pill go">YOUR TURN</span>${timer ? `${timer} left` : ''}</div>`;
-        acts = `<button class="btn-s coral" data-act="play" data-id="${esc(v.id)}" type="button">Play</button>`;
-      } else if (kind === 'incoming') {
-        body = `<div class="ch-title"><b>${first}</b> challenged you</div><div class="ch-meta"><span class="pill new">NEW</span>${timer ? `Ends in ${timer}` : ''}</div>`;
-        acts = `<button class="btn-s ghost" data-act="decline" data-id="${esc(v.id)}" type="button">Skip</button><button class="btn-s" data-act="accept" data-id="${esc(v.id)}" type="button">Accept</button>`;
-      } else if (kind === 'waiting') {
-        body = `<div class="ch-title">You scored <b>${scoreOf(v.me)}</b>. Waiting for <b>${first}</b></div><div class="ch-meta"><span class="pill wait">THEIR TURN</span>${timer ? `${timer} left` : ''}</div>`;
-      } else if (kind === 'sent') {
-        body = `<div class="ch-title">Waiting for <b>${first}</b> to accept</div><div class="ch-meta"><span class="pill wait">SENT</span>${timer ? `${timer} to accept` : ''}</div>`;
-        acts = `<button class="btn-s ghost" data-act="decline" data-id="${esc(v.id)}" type="button">Withdraw</button>`;
-      } else {
-        if (shownDone >= 6) continue;
-        shownDone++;
-        cls += ' done';
-        if (!labelled) { rows.push('<div class="section-label">Finished</div>'); labelled = true; }
-        const mine = scoreOf(v.me), theirs = scoreOf(them), pts = v.myAward && v.myAward.points ? Number(v.myAward.points) : 0;
-        if (v.status === 'finished') {
-          const word = v.outcome === 'won' ? 'You beat' : v.outcome === 'draw' ? 'You drew with' : 'You lost to';
-          const pill = v.outcome === 'won' ? '<span class="pill won">WON</span>' : v.outcome === 'draw' ? '<span class="pill wait">DRAW</span>' : '<span class="pill lost">LOST</span>';
-          body = `<div class="ch-title">${word} <b>${first}</b>${mine != null && theirs != null ? ` · ${mine}–${theirs}` : ''}</div><div class="ch-meta">${pill}${pts ? `+${pts} pts` : ''}</div>`;
-        } else if (v.status === 'expired') {
-          body = `<div class="ch-title">Ran out of time vs <b>${first}</b></div><div class="ch-meta"><span class="pill lost">EXPIRED</span></div>`;
-        } else {
-          const me = bridge() && bridge().userId;
-          const why = v.withdrawnBy ? (v.withdrawnBy === me ? 'You withdrew' : `${first} withdrew`) : v.cancelledBy ? 'Called off' : (v.role === 'challenger' ? `${first} skipped it` : 'You skipped it');
-          body = `<div class="ch-title">${why}</div><div class="ch-meta"><span class="pill lost">CLOSED</span></div>`;
-        }
-      }
-      rows.push(`<div class="${cls}">${avatar(them.name, them.userId, them.photoUrl)}<div class="ch-main">${body}</div><div class="ch-actions">${acts}</div></div>`);
-    }
-    $('chList').innerHTML = rows.join('') || '<div class="note">No challenges yet. Challenge a colleague and see who flies further.</div>';
-  }
-  let refreshT = null;
-  function loadChallenges() {
-    if (!canChallenge()) { renderChallenges(); return Promise.resolve(); }
-    return ask('challenges').then(v => { CH = Object.assign({ incoming: [], outgoing: [], active: [], recent: [] }, v || {}); renderChallenges(); }).catch(() => renderChallenges());
-  }
-  const refreshSoon = () => { clearTimeout(refreshT); refreshT = setTimeout(() => { loadChallenges(); loadBoard(); }, 300); };
+  function mini(label, fn, yes) { const b = el('button', 'mini' + (yes ? ' yes' : ''), label); b.type = 'button'; b.onclick = e => { e.stopPropagation(); sfx.ui(); fn(b); }; return b; }
+  function linkRow(items) { const r = el('div', 'links'); items.forEach(([label, fn]) => { const b = el('button', 'link', label); b.type = 'button'; b.onclick = () => { sfx.ui(); fn(); }; r.append(b); }); return r; }
+  /* A live countdown to when a challenge runs out: h:mm:ss, ticking every second; red in the last hour. */
+  const CLOCK = '<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.8" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.4V6l1.7 1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  function hms(ms) { const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0'); }
+  function timerEl(v) { const t = el('span', 'clock2'); t.dataset.exp = String(Date.parse(v.expiresAt) || 0); t.innerHTML = CLOCK; t.append(el('b')); paintTimer(t); return t; }
+  function paintTimer(t) { const ms = +t.dataset.exp - Date.now(), b = t.lastChild; b.style.fontWeight = '400'; b.textContent = ms > 0 ? hms(ms) + ' left' : 'Expired'; t.classList.toggle('soon', ms < 3600e3); }
   setInterval(() => {
-    const t = Date.now(); let expired = false;
-    document.querySelectorAll('[data-ends]').forEach(el => { const ms = +el.dataset.ends - t; if (ms <= 0) expired = true; el.textContent = left(ms); });
-    if (expired) refreshSoon();
+    let expired = false;
+    document.querySelectorAll('.clock2').forEach(t => { paintTimer(t); if (+t.dataset.exp && +t.dataset.exp <= Date.now() && !t.dataset.gone) { t.dataset.gone = '1'; expired = true; } });
+    if (expired && !gameOpen) refreshChallenges();
   }, 1000);
-  window.onSowakaChallenge = evt => { try { refreshSoon(); if (evt && evt.kind === 'finished' && evt.challenge) toastResult(evt.challenge); } catch {} };
+  function leftText(v) { const ms = Date.parse(v.expiresAt) - Date.now(); if (!(ms > 0)) return 'Expired'; const h = Math.floor(ms / 3600000); return h >= 1 ? 'Expires in ' + h + ' h' : 'Expires in ' + Math.max(1, Math.round(ms / 60000)) + ' min'; }
+  /* A 'declined' challenge, as it really ended: declined, withdrawn or called off. */
+  function declinedLine(v) {
+    const n = firstOf(v.them.name), me = v.me && v.me.userId;
+    if (v.withdrawnBy) return v.withdrawnBy === me ? 'You withdrew your challenge to ' + n : n + ' withdrew their challenge';
+    if (v.cancelledBy) return v.cancelledBy === me ? 'You called off the challenge with ' + n : n + ' called off the challenge';
+    return v.role === 'challenger' ? n + ' declined' : 'You declined ' + n;
+  }
+  const declinedTitle = v => v.withdrawnBy ? 'Withdrawn' : v.cancelledBy ? 'Called off' : (v.role === 'challenger' ? firstOf(v.them.name) + ' declined' : 'You declined');
+  /* A challenge waiting on this player, as a card: "New challenge" with Accept (and Decline), or "Your turn" with Play, which starts the flight at once,
+     on the challenge's gaps (and Call it off, while neither has played). */
+  function chRow(kind, v) {
+    const r = el('div', 'chc'), row = el('div', 'row'), tx = el('div', 'tx'), bt = el('div', 'bt'), n = v.them.name, f = firstOf(n);
+    const small = (label, fn) => { const b = el('button', 'dl', label); b.type = 'button'; b.onclick = e => { e.stopPropagation(); sfx.ui(); fn(b); }; return b; };
+    const lab = el('div', 'lab'); lab.append(el('span', '', kind === 'in' ? 'New challenge' : 'Your turn')); if (v.expiresAt) lab.append(timerEl(v)); r.append(lab); if (kind !== 'in') r.classList.add('turn');
+    if (kind === 'in') {
+      tx.append(el('b', '', f + ' challenged you'), small('Decline', b => { b.disabled = true; decline(v.id); }));
+      bt.append(mini('Accept', b => { b.disabled = true; accept(v.id, false); }, true));
+    } else {
+      tx.append(el('b', '', 'You vs ' + f), el('small', '', v.them.score != null ? f + ' scored ' + fmtn(v.them.score) + '. Beat it.' : 'Your flight is waiting.'));
+      if (lobbyServer(v) && v.them.score == null) tx.append(small('Call it off', () => askCallOff(v)));
+      bt.append(mini('Play', () => startChallenge(v), true));
+    }
+    row.append(avatar(n, v.them.photoUrl), tx, bt); r.append(row); return r;
+  }
+  /* A line for anything else: waiting on the other player, or a result. Tapping it opens the challenge; its button withdraws or clears it. */
+  function infoRow(v) {
+    const r = el('div', 'crow tap'), p = el('p'), bt = el('div', 'bt'), n = firstOf(v.them.name); r.tabIndex = 0; r.setAttribute('role', 'button'); r.append(avatar(v.them.name, v.them.photoUrl));
+    let line, sub = '', pts = null;
+    if (v.status === 'pending') { line = 'Waiting for ' + n + ' to accept'; sub = null; }
+    else if (v.status === 'accepted') { line = 'Waiting for ' + n + ' to play'; sub = 'You scored ' + fmtn(v.me.score); }
+    else if (v.status === 'finished') {
+      line = v.outcome === 'won' ? 'You beat ' + n : v.outcome === 'lost' ? n + ' beat you' : 'Tied with ' + n; sub = fmtn(v.me.score) + ' – ' + fmtn(v.them.score);
+      pts = v.myAward ? v.myAward.points : 0;
+      if (!pts && v.myAward && v.myAward.reason) sub += ' · ' + v.myAward.reason;
+    }
+    else if (v.status === 'declined') { line = declinedLine(v); }
+    else { line = 'Expired with ' + n; sub = 'Nobody wins an expired challenge'; }
+    p.append(document.createTextNode(line)); if (sub === null) { const sm = el('small'); sm.append(timerEl(v)); sm.style.marginTop = '4px'; p.append(sm); } else p.append(el('small', '', sub));
+    if (pts != null) bt.append(el('span', 'pts' + (pts > 0 ? '' : ' zero'), pts > 0 ? '+' + pts + ' pts' : 'No pts'));
+    if (lobbyServer(v) && v.status === 'pending') bt.append(mini('Withdraw', () => askWithdraw(v)));
+    if (lobbyServer(v) && isOver(v)) bt.append(mini('Clear', b => { b.disabled = true; clearCh(v.id); }));
+    r.append(p, bt);
+    const go = () => { sfx.ui(); openChallenge(v.id); }; r.onclick = go; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; return r;
+  }
+  /* New (to accept), Your turn (to play), Waiting (on the other player). */
+  function chGroups() {
+    return {
+      new: CH.incoming.map(v => ['in', v]),
+      turn: CH.active.filter(v => v.me && v.me.score == null).map(v => ['turn', v]),
+      wait: [...CH.outgoing, ...CH.active.filter(v => v.me && v.me.score != null)].map(v => ['info', v])
+    };
+  }
+  function renderInbox() {
+    const g = chGroups(), waiting = g.new.length + g.turn.length;
+    const btn = $('chbtn'); if (btn) { const old = btn.querySelector('.badge'); if (old) old.remove(); if (waiting) btn.append(el('span', 'badge', String(waiting))); }
+    const list = $('chlist'); if (!list) return; list.innerHTML = '';
+    /* Everything still in play, in one list: new ones first, then your turn, then waiting on them. */
+    const all = [...g.new, ...g.turn, ...g.wait];
+    if (!all.length) list.append(el('p', 'empty', 'No challenges right now. Send one to a colleague.'));
+    all.forEach(([k, v]) => list.append(k === 'info' ? infoRow(v) : chRow(k, v)));
+    const h = $('histlink'); if (h) h.parentNode.hidden = !CH.recent.length;
+  }
+  /* History: only challenges that are over. The ones still in play are on home, above. */
+  function openList() {
+    const body = [];
+    if (CH.recent.length) { const b = el('div', 'inbox'); CH.recent.forEach(v => b.append(infoRow(v))); body.push(b); }
+    else body.push(el('p', 'note', 'Nothing here yet. Finished challenges show here.'));
+    openSheet('History', body, []); CH.listSeq = sheetSeq;
+  }
+  function refreshOpenList() { if (CH.listSeq === sheetSeq && !$('sheet').hidden) openList(); }
+
+  // ---------- Picking a colleague ----------
+  /* The whole list is fetched as the page opens and kept on the device, so the sheet opens with names at once and refreshes behind them.
+     Search filters that list as you type; when the list may be cut short (the app asks for 50 at a time), the server is asked too. */
+  const PEOPLE = { list: null, at: 0, loading: null };
+  const PEOPLE_PAGE = 50;
+  function shapePerson(p) { p = p || {}; return { userId: String(p.userId || ''), name: String(p.name || 'Colleague'), designation: String(p.designation || ''), department: String(p.department || ''), photoUrl: p.photoUrl ? String(p.photoUrl) : null }; }
+  function peopleKept() { if (!PEOPLE.list) { const k = cacheGet('people'); if (k && Array.isArray(k.list)) { PEOPLE.list = k.list.map(shapePerson).filter(p => p.userId); PEOPLE.at = +k.at || 0; } } return PEOPLE.list; }
+  function loadPeople() {
+    if (!canChallenge()) return Promise.resolve(null); if (PEOPLE.loading) return PEOPLE.loading;
+    PEOPLE.loading = ask('colleagues', '').then(r => {
+      const list = ((r && Array.isArray(r.colleagues)) ? r.colleagues : []).map(shapePerson).filter(p => p.userId);
+      PEOPLE.list = list; PEOPLE.at = Date.now(); cachePut('people', { at: PEOPLE.at, list }); return list;
+    }).finally(() => { PEOPLE.loading = null; });
+    return PEOPLE.loading;
+  }
+  function addPeople(found) {
+    const have = new Set((PEOPLE.list || []).map(p => p.userId)), extra = found.filter(p => p.userId && !have.has(p.userId));
+    if (!extra.length) return false; PEOPLE.list = (PEOPLE.list || []).concat(extra).sort((a, b) => a.name.localeCompare(b.name)); cachePut('people', { at: PEOPLE.at, list: PEOPLE.list }); return true;
+  }
+  function openPicker() {
+    if (!canChallenge()) return;
+    const input = el('input'); input.type = 'search'; input.placeholder = 'Search by name'; input.autocomplete = 'off'; input.enterKeyHint = 'search'; input.setAttribute('aria-label', 'Search colleagues');
+    const wrap = el('div', 'lrow'); wrap.append(input);
+    const list = el('div', 'people'), msg = el('p', 'note', ''); msg.hidden = true;
+    openSheet('Challenge a colleague', [wrap, msg, list], []);
+    const mine = sheetSeq, here = () => mine === sheetSeq && !$('sheet').hidden;
+    const rows = new Map(); let drawn = '', searching = '', searched = new Set(), t = null, failed = '';
+    const rowFor = p => {
+      let b = rows.get(p.userId); if (!b) { b = el('button', 'person'); b.type = 'button'; b.onclick = () => sendChallenge(b._p); rows.set(p.userId, b); }
+      const sig = p.name + '|' + p.designation + '|' + p.department + '|' + (p.photoUrl || '');
+      if (b._sig !== sig) { b._sig = sig; const s = el('span'); s.append(el('b', '', p.name), el('small', '', [p.designation, p.department].filter(Boolean).join(' · ') || 'Colleague')); b.replaceChildren(avatar(p.name, p.photoUrl), s, el('i', '', 'Challenge')); }
+      b._p = p; return b;
+    };
+    const draw = () => {
+      if (!here()) return; const q = input.value.trim(), ql = q.toLowerCase(), all = PEOPLE.list;
+      if (!all) { if (failed) { list.replaceChildren(); msg.hidden = false; msg.textContent = failed; return; } if (!list.querySelector('.shim')) list.replaceChildren(...[0, 1, 2, 3].map(() => el('div', 'shim'))); msg.hidden = true; return; }
+      const people = ql ? all.filter(p => p.name.toLowerCase().includes(ql)) : all, ids = people.map(p => p.userId).join(',');
+      if (ids !== drawn) { drawn = ids; list.replaceChildren(...people.map(rowFor)); } else people.forEach(rowFor);
+      msg.hidden = people.length > 0; msg.textContent = !q ? 'Nobody to challenge yet.' : searching === q ? 'Looking for "' + q + '"…' : 'Nobody called "' + q + '" here.';
+    };
+    const search = () => {
+      const q = input.value.trim(); if (!q || searched.has(q.toLowerCase()) || !PEOPLE.list || PEOPLE.list.length < PEOPLE_PAGE) return;
+      searching = q; draw();
+      ask('colleagues', q).then(r => { searched.add(q.toLowerCase()); addPeople(((r && Array.isArray(r.colleagues)) ? r.colleagues : []).map(shapePerson)); })
+        .catch(() => {}).finally(() => { if (searching === q) searching = ''; draw(); });
+    };
+    input.addEventListener('input', () => { draw(); clearTimeout(t); t = setTimeout(search, 300); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(t); search(); } });
+    peopleKept(); draw();
+    if (!PEOPLE.list || PEOPLE.loading || Date.now() - PEOPLE.at > 60000) loadPeople().then(() => draw()).catch(e => { if (!PEOPLE.list) { failed = errText(e); draw(); } });
+  }
+  function sendChallenge(p) {
+    if (CH.sending || !p) return; CH.sending = true; sfx.horn(); openSheet('Challenging ' + firstOf(p.name) + '…', [el('p', 'note', 'Sending…')], []);
+    ask('challenge', p.userId).then(v => { upsert(v); waitFor(v); renderInbox(); }).catch(challengeRefused).finally(() => { CH.sending = false; });
+  }
+  function challengeRefused(e) {
+    const d = (e && e.details) || {}, id = d.challengeId;
+    if (id && d.reason === 'one_open') { sfx.no(); openSheet('One at a time', [el('p', 'note', errText(e) + '.')], [['Open it', () => openChallenge(String(id)), true]]); return; }
+    if (id) { openChallenge(id); return; }
+    sfx.no(); openSheet("Couldn't send it", [el('p', 'note', errText(e))], [['Back', openPicker, false]]);
+  }
+  /* The challenger's wait for an answer. Still on screen when they accept, it opens the challenge, ready to fly. */
+  function waitFor(v) {
+    const n = firstOf(v.them.name);
+    openSheet('Waiting for ' + n, [el('p', 'note', 'Challenge sent. Once ' + n + ' accepts, you each fly your round whenever you like, and the result shows when you have both played.'), el('p', 'note', leftText(v) + ' if ' + n + " doesn't answer.")],
+      lobbyServer(v) ? [['Withdraw', () => askWithdraw(v), false]] : []);
+    CH.waiting = v.id; showing(v.id);
+  }
+  function openChallenge(id) {
+    openSheet('Challenge', [el('p', 'note', 'Loading…')], []);
+    return ask('getChallenge', id).then(v => { if (!v) throw new Error('That challenge is gone.'); upsert(v); renderInbox(); showChallenge(v); })
+      .catch(e => { const known = findCh(id); if (known) showChallenge(known); else openSheet('Challenge', [el('p', 'note', errText(e))], []); });
+  }
+  /* Which challenge the sheet on screen is about, for an event that changes it. */
+  function showing(id) { CH.showing = { id, seq: sheetSeq }; }
+  const isShowing = id => !!(CH.showing && CH.showing.id === id && CH.showing.seq === sheetSeq && !$('sheet').hidden);
+  function showChallenge(v) {
+    if (v.status === 'pending' && v.role === 'opponent') {
+      openSheet(v.them.name + ' challenged you', [el('p', 'note', SAME + ' The higher score wins, and the result shows once you have both played.'), el('p', 'note', leftText(v) + '.')],
+        [['Decline', () => decline(v.id), false], ['Accept and play', () => accept(v.id, true), true]]);
+      return showing(v.id);
+    }
+    if (v.status === 'pending') return waitFor(v);
+    if (v.status === 'accepted' && v.me.score == null) return soloSheet(v);
+    return showResult(v);
+  }
+  /* An accepted challenge this player has not flown: their round, on the challenge's gaps, against the other's score if it is in. */
+  function soloSheet(v) {
+    const n = firstOf(v.them.name);
+    const line = v.them.score != null ? n + ' scored ' + fmtn(v.them.score) + '. Beat it.' : n + " hasn't played yet. You can go first.";
+    const body = [el('p', 'note', line), el('p', 'note', SAME + ' The result shows once you have both played.')];
+    if (lobbyServer(v) && v.them.score == null) body.push(linkRow([['Call it off', () => askCallOff(v)]]));
+    openSheet('You vs ' + n, body, [['Play', () => startChallenge(v), true]]); showing(v.id);
+  }
+  /* Accepting: from its card the challenge turns into "Your turn" on home; from its sheet ("Accept and play") the flight starts at once. */
+  function accept(id, play) {
+    if (CH.accepting) return; CH.accepting = true;
+    ask('acceptChallenge', id).then(v => { upsert(v); closeSheet(); if (play && v.status === 'accepted') startChallenge(v); else renderInbox(); })
+      .catch(e => {
+        sfx.no(); const other = e && e.details && e.details.challengeId, close = () => { dismiss(); refreshChallenges(); };
+        openSheet("Couldn't accept it", [el('p', 'note', errText(e) + (other ? '.' : ''))], other ? [['Open it', () => openChallenge(String(other)), true]] : [], close);
+      })
+      .finally(() => { CH.accepting = false; });
+  }
+  function decline(id) {
+    ask('declineChallenge', id).then(v => { upsert(v); if (!$('sheet').hidden && !CH.result) dismiss(); else renderInbox(); refreshOpenList(); })
+      .catch(e => { openSheet("Couldn't decline it", [el('p', 'note', errText(e))], [], () => { dismiss(); refreshChallenges(); }); });
+  }
+  /* Taking back a challenge nobody has answered, or calling off an accepted one neither has played: the server's decline does both, and tells the other player. */
+  function askWithdraw(v) {
+    const n = firstOf(v.them.name);
+    openSheet('Withdraw it?', [el('p', 'note', 'Your challenge to ' + n + ' is taken back, and ' + n + ' is told.')], [['Keep it', () => openChallenge(v.id), false], ['Withdraw', () => endEarly(v, 'withdraw'), true]]);
+  }
+  function askCallOff(v) {
+    const n = firstOf(v.them.name);
+    openSheet('Call it off?', [el('p', 'note', 'The challenge with ' + n + ' ends with no result and no points, and ' + n + ' is told.')], [['Keep it', () => openChallenge(v.id), false], ['Call it off', () => endEarly(v, 'call_off'), true]]);
+  }
+  function endEarly(v, how) {
+    const word = how === 'withdraw' ? 'withdraw' : 'call off';
+    openSheet(how === 'withdraw' ? 'Withdrawing…' : 'Calling it off…', [el('p', 'note', 'One moment…')], []);
+    ask('declineChallenge', v.id).then(nv => {
+      upsert(nv); renderInbox();
+      openSheet(declinedTitle(nv), [el('p', 'note', declinedLine(nv) + '. No result and no points.')], [['Challenge someone', openPicker, true]]);
+    }).catch(e => { sfx.no(); openSheet("Couldn't " + word + ' it', [el('p', 'note', errText(e))], [['Open it', () => openChallenge(v.id), true]], () => { dismiss(); refreshChallenges(); }); });
+  }
+  /* Off this player's own list; nobody else's changes and nobody is told. */
+  function clearCh(id) {
+    ask('declineChallenge', id).then(() => { forget(id); if (CH.result && CH.result.id === id) dismiss(); else { renderInbox(); refreshOpenList(); } })
+      .catch(e => { sfx.no(); openSheet("Couldn't clear it", [el('p', 'note', errText(e))], [], () => { dismiss(); refreshChallenges(); }); });
+  }
+  function startChallenge(v) {
+    if (gameOpen) return; if (v.seed == null) return openChallenge(v.id);
+    sfx.horn(); closeSheet(); openGame(v);
+  }
+  function rematch(v) {
+    openSheet('Challenging ' + firstOf(v.them.name) + '…', [el('p', 'note', 'Sending…')], []);
+    ask('challenge', v.them.userId).then(nv => { upsert(nv); waitFor(nv); renderInbox(); }).catch(challengeRefused);
+  }
+  function vsBlock(v) {
+    const w = el('div', 'vs'), side = (p, label, win) => {
+      const s = el('div', 'side' + (win ? ' win' : ''));
+      s.append(el('small', '', label), el('b', '', p.score != null ? fmtn(p.score) : '—'), el('em', '', p.score != null ? (v.status === 'finished' ? 'final' : 'played') : 'not played yet')); return s;
+    };
+    w.append(side(v.me || {}, 'You', v.outcome === 'won'), el('span', 'mid', 'vs'), side(v.them || {}, firstOf(v.them.name), v.outcome === 'lost')); return w;
+  }
+  /* What the challenge paid this player, or why nothing. */
+  function prizeLine(v) {
+    const box = el('div', 'prize'), a = v.myAward, line = (l, r) => box.append(el('span', '', l), el('b', '', r));
+    if (v.status === 'finished') {
+      if (a && a.points > 0) line(a.kind === 'win' ? 'You won' : 'For playing', '+' + fmtn(a.points) + ' point' + (a.points === 1 ? '' : 's'));
+      else { box.classList.add('none'); line('No points', a && a.reason ? a.reason : 'this time'); }
+    }
+    else if (v.status === 'expired') { box.classList.add('none'); line('No points', 'It expired before you both played'); }
+    else if (v.status === 'declined') return null;
+    else { box.classList.add('none'); line('Points', 'once you have both played'); }
+    return box;
+  }
+  /* The challenge's card: who is still to play, or the result with both scores and the points. Drawn again on every change. */
+  function showResult(v) {
+    CH.result = { id: v.id, view: v };
+    const n = firstOf(v.them.name), done = v.status === 'finished';
+    const title = done ? (v.outcome === 'won' ? 'You beat ' + n + '!' : v.outcome === 'lost' ? n + ' wins this one' : 'A tie with ' + n)
+      : v.status === 'expired' ? 'This challenge expired' : v.status === 'declined' ? declinedTitle(v)
+        : v.me && v.me.score != null ? 'Waiting for ' + n + ' to play' : 'You vs ' + n;
+    const body = [vsBlock(v), prizeLine(v)];
+    if (v.status === 'declined' && (v.withdrawnBy || v.cancelledBy)) body.push(el('p', 'note', declinedLine(v) + '. No result and no points.'));
+    if (done && v.myAward && v.myAward.kind === 'win' && v.myAward.onlyOwnScore && v.myAward.points > 0) body.push(el('p', 'note', n + "'s score was too low to add to yours, so only your own counted toward points."));
+    if (done && v.outcome === 'lost' && v.theirAward && v.theirAward.points > 0) body.push(el('p', 'note', n + ' won ' + v.theirAward.points + ' point' + (v.theirAward.points === 1 ? '' : 's') + '.'));
+    if (done && v.myAward && v.myAward.points > 0) body.push(el('p', 'note', 'Points go to your Sowaka rank.'));
+    if (!done && v.status === 'accepted' && v.me && v.me.score != null) body.push(el('p', 'note', 'You scored ' + fmtn(v.me.score) + '. ' + n + " flies the same gaps; the result shows here when they do, and you get a notification if you have left."));
+    const over = isOver(v);
+    if (over && lobbyServer(v)) body.push(linkRow([['Clear from my list', () => clearCh(v.id)]]));
+    const acts = over ? [['Rematch', () => rematch(v), true]] : [['Menu', closeSheet, false], ['Play solo', () => { closeSheet(); openGame(null); }, true]];
+    openSheet(title, body, acts);
+    const celebrate = done && !CH.celebrated[v.id]; if (celebrate) { CH.celebrated[v.id] = true; if (v.outcome === 'lost') sfx.lose(); else sfx.win(); }
+  }
+  /* What the app passes on from the server, as it happens. */
+  function onChallengeEvent(evt) {
+    if (!evt || typeof evt !== 'object') return;
+    if (evt.kind === 'resync') { refreshChallenges(); return; }
+    const id = evt.challengeId;
+    const v = evt.challenge; if (!v || !v.id) return; upsert(v); const n = firstOf(v.them.name), busy = gameOpen;
+    switch (evt.kind) {
+      case 'created': if (v.role === 'opponent' && !busy) { sfx.horn(); toast(n + ' challenged you'); } break;
+      case 'accepted':
+        if (CH.waiting === id) { CH.waiting = null; openChallenge(id); return; }
+        if (v.role === 'challenger' && !busy) toast(n + ' accepted. Your turn!'); break;
+      case 'declined':
+        if (CH.waiting === id) { sfx.no(); openSheet(n + ' declined', [el('p', 'note', 'Maybe another time. Challenge someone else, or fly a round on your own.')], [['Challenge someone', openPicker, false], ['Play solo', () => { closeSheet(); openGame(null); }, true]]); return; }
+        break;
+      case 'withdrawn':
+        if (isShowing(id)) { sfx.no(); openSheet(n + ' withdrew it', [el('p', 'note', 'The challenge is off. Nothing to answer.')], []); renderInbox(); return; }
+        if (!busy) toast(n + ' withdrew their challenge'); break;
+      case 'cancelled':
+        if (isShowing(id)) { sfx.no(); openSheet(n + ' called it off', [el('p', 'note', 'No result and no points.')], [['Challenge someone', openPicker, true]]); renderInbox(); return; }
+        if (!busy) toast(n + ' called off the challenge'); break;
+      case 'scored': if (gameOpen && playing && playing.id === id && v.them.score != null) showVs(v); break;
+      case 'finished':
+        /* Both have played. On home, the result comes up; during a flight, the game's own card shows it. */
+        if (v.status === 'finished' && !busy && $('sheet').hidden && !(CH.result && CH.result.id === id)) { showResult(v); renderInbox(); refreshOpenList(); return; }
+        if (busy && v.status === 'finished') toastResult(v);
+        break;
+      case 'expired':
+        if (CH.waiting === id) { openSheet('No answer from ' + n, [el('p', 'note', 'The challenge expired. Nobody wins an expired challenge.')], [['Challenge someone', openPicker, true]]); return; }
+        break;
+    }
+    if (CH.result && CH.result.id === id) showResult(v);
+    renderInbox(); refreshOpenList(); if (evt.kind === 'finished') refreshBoard();
+  }
+  window.onSowakaChallenge = evt => { try { onChallengeEvent(evt); } catch {} };
   function toastResult(v) {
     if (!v || v.status !== 'finished') return;
     const first = firstName(v.them && v.them.name);
     toast(v.outcome === 'won' ? `You beat ${first}!` : v.outcome === 'draw' ? `A draw with ${first}` : `${first} won this one`);
   }
 
-  $('chList').addEventListener('click', e => {
-    const b = e.target.closest('button[data-act]'); if (!b) return;
-    const v = allChallenges().find(x => x.id === b.dataset.id); if (!v) return;
-    sfx.tap();
-    if (b.dataset.act === 'play') { openGame(v); return; }
-    b.disabled = true;
-    const act = b.dataset.act === 'accept' ? 'acceptChallenge' : 'declineChallenge';
-    ask(act, v.id)
-      .then(after => {
-        if (act === 'acceptChallenge') toast(`Accepted. Fly your round before it runs out.`);
-        loadChallenges();
-        if (act === 'acceptChallenge' && after && after.status === 'accepted' && scoreOf(after.me) == null) openGame(after);
-      })
-      .catch(err => { toast(err && err.message ? err.message : 'Could not do that just now'); loadChallenges(); });
-  });
-
-  // ---------- Tabs ----------
-  function selectTab(which) {
-    const ch = which === 'ch';
-    $('tab-ch').setAttribute('aria-selected', String(ch)); $('tab-play').setAttribute('aria-selected', String(!ch));
-    $('p-ch').hidden = !ch; $('p-play').hidden = ch;
-  }
-  $('tab-ch').addEventListener('click', () => { sfx.tap(); selectTab('ch'); });
-  $('tab-play').addEventListener('click', () => { sfx.tap(); selectTab('play'); });
-  $('playBtn').addEventListener('click', () => openGame(null));
-
-  // ---------- Challenge sheet: pick a colleague ----------
-  let picked = null, people = [], searchT = null, searchSeq = 0;
-  function openSheet() {
-    if (!canChallenge()) return;
-    sfx.tap(); picked = null; people = [];
-    $('search').value = ''; $('sendBtn').disabled = true; $('sendBtn').textContent = 'Send challenge';
-    $('scrim').hidden = false; searchPeople('');
-  }
-  function searchPeople(q) {
-    const seq = ++searchSeq;
-    $('people').innerHTML = '<li class="dept" style="padding:12px 8px">Loading…</li>';
-    ask('colleagues', q).then(v => {
-      if (seq !== searchSeq) return;
-      people = (v && Array.isArray(v.colleagues) ? v.colleagues : []).filter(p => p && p.userId);
-      renderPeople(q);
-    }).catch(err => { if (seq === searchSeq) $('people').innerHTML = `<li class="dept" style="padding:12px 8px">${esc(err && err.message ? err.message : 'Could not load colleagues')}</li>`; });
-  }
-  function renderPeople(q) {
-    $('people').innerHTML = people.length ? people.map(p => `<li><button type="button" data-id="${esc(p.userId)}" aria-pressed="${picked && picked.userId === p.userId}">
-      ${avatar(p.name, p.userId, p.photoUrl)}<span><span style="font-weight:600">${esc(p.name)}</span><br><span class="dept">${esc(p.designation || p.department || '')}</span></span>
-      <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span></button></li>`).join('')
-      : `<li class="dept" style="padding:12px 8px">${q ? `No one found for “${esc(q)}”` : 'No colleagues to challenge yet'}</li>`;
-  }
-  $('challengeBtn').addEventListener('click', openSheet);
-  $('search').addEventListener('input', () => { clearTimeout(searchT); const q = $('search').value.trim(); searchT = setTimeout(() => searchPeople(q), 250); });
-  $('people').addEventListener('click', e => {
-    const b = e.target.closest('button[data-id]'); if (!b) return;
-    sfx.tap(); picked = people.find(p => p.userId === b.dataset.id) || null;
-    renderPeople($('search').value.trim());
-    if (picked) { $('sendBtn').disabled = false; $('sendBtn').textContent = `Challenge ${firstName(picked.name)}`; }
-  });
-  $('sendBtn').addEventListener('click', () => {
-    if (!picked) return;
-    const who = picked;
-    $('sendBtn').disabled = true;
-    ask('challenge', who.userId).then(() => {
-      sfx.send(); closeSheet(); selectTab('ch'); toast(`Challenge sent to ${firstName(who.name)}`); loadChallenges();
-    }).catch(err => { $('sendBtn').disabled = false; toast(err && err.message ? err.message : 'Could not send the challenge'); });
-  });
-  function closeSheet() { $('scrim').hidden = true; }
-  $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeSheet(); });
-
-  let toastT;
-  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2800); }
+  const scoreOf = p => (p && p.score != null ? Number(p.score) : null);
 
   // ---------- Game ----------
   // Same seed, same gaps: a challenge round draws its gaps from the challenge's seed.
@@ -689,15 +1088,14 @@
       $('goMsg').innerHTML = bridge() ? 'Saving to the leaderboard…' : `You scored <b>${points} pts</b>.`;
       $('goBtns').innerHTML = `<button class="pri" data-g="again" type="button">Play again</button>${canChallenge() ? '<button class="sec" data-g="challenge" type="button">Challenge a colleague</button>' : ''}`;
       if (isNew && points > 0) sfx.win();
-      const b = bridge();
-      if (b && typeof b.submitScore === 'function') {
-        Promise.resolve().then(() => b.submitScore(points)).then(v => {
-          if (v && Array.isArray(v.entries)) board = v;
-          const me = board && board.me;
-          $('goMsg').innerHTML = me && me.rank ? `You're <b>#${me.rank}</b> on the leaderboard with <b>${Number(me.score).toLocaleString('en-IN')} pts</b>.` : `You scored <b>${points} pts</b>.`;
-          renderBoard();
-        }).catch(() => { $('goMsg').innerHTML = `You scored <b>${points} pts</b>. It couldn't reach the leaderboard just now.`; });
-      } else renderBoard();
+      // Kept on this device too (the board outside the app), and sent to the company's leaderboard in it.
+      Board.submit(points).then(v => {
+        if (v.offline) { $('goMsg').innerHTML = `You scored <b>${points} pts</b>. It couldn't reach the leaderboard just now.`; return; }
+        if (!v.shared) { renderTop(); return; }
+        seeBoard(v);
+        const me = v.me;
+        $('goMsg').innerHTML = me && me.rank ? `You're <b>#${me.rank}</b> on the leaderboard with <b>${Number(me.score).toLocaleString('en-IN')} pts</b>.` : `You scored <b>${points} pts</b>.`;
+      });
       $('goBtns').querySelector('button').focus({ preventScroll: true });
     }
     function finishChallenge(v, points) {
@@ -767,34 +1165,54 @@
   function sendFinish(id, points) {
     return ask('finishChallenge', id, points).then(after => {
       if (save.pendingFinish && save.pendingFinish.id === id) { save.pendingFinish = null; store(); }
-      loadChallenges(); loadBoard();
+      if (after) upsert(after);
+      renderInbox(); refreshChallenges(); refreshBoard();
       return after;
     });
   }
 
-  let gameOpen = false;
-  function openGame(ch) {
-    sfx.tap();
+  // ---------- Opening and closing the game ----------
+  let gameOpen = false, playing = null; // playing: the challenge being flown, or null for a flight on your own
+  function showVs(ch) {
     const vsEl = $('gVs');
     if (ch) { const theirs = scoreOf(ch.them); vsEl.hidden = false; vsEl.innerHTML = theirs != null ? `Beat ${esc(firstName(ch.them.name))}: <b>${theirs}</b>` : `vs <b>${esc(firstName(ch.them && ch.them.name))}</b>`; }
     else vsEl.hidden = true;
+  }
+  function openGame(ch) {
+    if (needsHowTo()) { showHowTo(() => openGame(ch)); return; }
+    hideHowTo(); closeSheet();
+    sfx.tap();
+    playing = ch || null; showVs(ch);
     $('game').hidden = false; gameOpen = true; G.open(ch);
   }
-  function closeGame() { if (G.quit()) return; $('game').hidden = true; gameOpen = false; }
+  function hideGame() { $('game').hidden = true; gameOpen = false; playing = null; renderInbox(); }
+  function closeGame() { if (G.quit()) return; hideGame(); }
   $('gClose').addEventListener('click', closeGame);
   // A tap anywhere on the game screen flies, the dark margins too, and as the finger lands (not on lift).
   $('game').addEventListener('pointerdown', e => { if (e.target.closest('button') || !$('gOver').hidden) return; e.preventDefault(); if (G.state === 'ready' || G.state === 'play') G.flap(); });
   $('goBtns').addEventListener('click', e => {
     const b = e.target.closest('button[data-g]'); if (!b) return;
     if (b.dataset.g === 'again') openGame(null);
-    if (b.dataset.g === 'close') { $('game').hidden = true; gameOpen = false; selectTab('ch'); }
-    if (b.dataset.g === 'challenge') { $('game').hidden = true; gameOpen = false; selectTab('ch'); openSheet(); }
+    if (b.dataset.g === 'close') { hideGame(); homeView = 'challenges'; menu(); }
+    if (b.dataset.g === 'challenge') { hideGame(); homeView = 'challenges'; menu(); openPicker(); }
   });
+
+  // ---------- Input ----------
+  $('help').addEventListener('click', () => { sfx.ui(); showHowTo(null); });
+  $('howok').addEventListener('click', () => { sfx.ui(); save.seenHowTo = true; store(); const then = howThen; hideHowTo(); if (then) then(); });
+  $('sheet').addEventListener('click', e => { if (e.target === e.currentTarget) sheetOutside(); });
+  $('sx').addEventListener('click', e => { e.stopPropagation(); sheetX(); });
   window.addEventListener('keydown', e => {
-    if (!gameOpen) { if (e.key === 'Escape' && !$('scrim').hidden) closeSheet(); return; }
+    if (!gameOpen) {
+      if (e.key !== 'Escape') return;
+      if (!$('howto').hidden) { if (!howThen) $('howok').click(); return; }
+      if (!$('sheet').hidden) sheetOutside();
+      return;
+    }
     if (e.code === 'Space' || e.code === 'ArrowUp') { if (G.state === 'ready' || G.state === 'play') { e.preventDefault(); G.flap(); } }
     if (e.key === 'Escape') closeGame();
   });
+  ['gesturestart', 'gesturechange'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
 
   // ---------- Loop ----------
   let last = performance.now();
@@ -804,36 +1222,29 @@
     else {
       if (!reduced) hero.step(dt);
       hero.draw();
-      if (!$('p-play').hidden) how.draw(reduced ? 0 : dt);
+      if (!$('howto').hidden) how.draw(reduced ? 0 : dt);
     }
     requestAnimationFrame(frame);
   }
 
   // ---------- Start ----------
-  let started = false;
-  function start() {
-    if (started) return;
-    started = true;
-    loadSave(); renderSound(); renderBoard(); renderChallenges();
-    const b = bridge();
-    if (b && typeof b.close === 'function') { $('back').hidden = false; $('back').addEventListener('click', () => b.close()); }
-    selectTab(canChallenge() ? 'ch' : 'play');
-    loadBoard();
-    loadChallenges().then(() => {
-      if (save.pendingFinish && save.pendingFinish.id) sendFinish(save.pendingFinish.id, save.pendingFinish.score).catch(() => {});
-      const want = b && b.startChallengeId;
-      if (want) ask('getChallenge', String(want)).then(v => {
-        if (!v) return;
-        selectTab('ch');
-        if (v.status === 'accepted' && scoreOf(v.me) == null) openGame(v);
-      }).catch(() => {});
-    });
-    if (reduced) how.draw(1.2);
-    requestAnimationFrame(frame);
+  /* With the bridge: the lists, the colleagues (fetched now so the picker opens at once), a final that never landed, and the challenge a tapped
+     notification opened the game for. */
+  function challengesReady() {
+    if (!canChallenge()) return;
+    if (!$('chbtn')) { if (homeView === 'play' && !$('chlist')) homeView = null; menu(); }
+    refreshChallenges(); peopleKept(); loadPeople().catch(() => {});
+    if (save.pendingFinish && save.pendingFinish.id) sendFinish(save.pendingFinish.id, save.pendingFinish.score).catch(() => {});
+    const want = bridge().startChallengeId; if (want && !CH.opened) { CH.opened = true; openChallenge(String(want)); }
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && started && !gameOpen) refreshSoon(); });
-  if (bridge()) start();
-  else { window.addEventListener('sowaka-ready', start, { once: true }); setTimeout(start, 600); }
+  /* Back on the screen, on home: the lists and the board again, for anything that changed meanwhile. */
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !gameOpen) { refreshChallenges(); refreshBoard(); } });
+  addEventListener('sowaka-ready', () => { document.documentElement.classList.add('app'); if (loadSave()) { sndLabel(); if (!gameOpen) menu(); } refreshBoard(); challengesReady(); });
+  menu();
+  refreshBoard();
+  challengesReady();
+  if (reduced) how.draw(1.2);
+  requestAnimationFrame(frame);
 })();
 </script>
 </body>
