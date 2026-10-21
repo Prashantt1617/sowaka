@@ -52,6 +52,7 @@ export type PayHeadDTO = {
   prorate?: boolean;
   arrears?: boolean;
   maxClaimablePaise?: number;
+  unclaimedHandling?: 'carry_forward' | 'encash_monthly';
   payslipName?: string;
   taxable?: boolean;
   partOfStructure?: boolean;
@@ -71,6 +72,7 @@ export type PayHeadInput = {
   prorate?: boolean;
   recurrence?: 'recurring' | 'one_time';
   maxClaimablePaise?: number;
+  unclaimedHandling?: 'carry_forward' | 'encash_monthly';
   payslipName?: string;
   taxable?: boolean;
   partOfStructure?: boolean;

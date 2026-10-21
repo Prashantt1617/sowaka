@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { payHeads, salaryTemplates, users } from '../config/db';
+import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
 import {
   CalculationBasis,
   CalculationMode,
@@ -19,6 +19,9 @@ const COMPONENT_TYPES = new Set<PayHeadComponentType>([
   'lta',
   'fixed_allowance',
   'special_allowance',
+  'medical',
+  'telephone',
+  'child_education',
   'statutory_bonus',
   'salary_advance',
   'notice_pay',
@@ -62,6 +65,7 @@ export interface PayHeadInput {
   prorate?: unknown;
   arrears?: unknown;
   maxClaimablePaise?: unknown;
+  unclaimedHandling?: unknown;
   payslipName?: unknown;
   taxable?: unknown;
   partOfStructure?: unknown;
@@ -158,7 +162,8 @@ export async function updatePayHead(adminUserId: string, idInput: string, input:
   const others = (await payHeads().find({ org }).toArray()).filter(
     (head) => !head._id.equals(current._id),
   );
-  const draft = normalizeInput(input, others, current);
+  // The code is how templates and salaries refer to the component: it never changes.
+  const draft = normalizeInput({ ...input, code: current.code }, others, current);
 
   const updated = await payHeads().findOneAndUpdate(
     { _id: current._id },
@@ -186,6 +191,14 @@ export async function deletePayHead(adminUserId: string, idInput: string) {
         .map((t) => `"${t.name}"`)
         .join(', ')}. Remove it from ${usedBy.length === 1 ? 'that template' : 'those templates'} first.`,
     );
+  }
+  // A person's own added component, or a per-person amount, refers to it too.
+  const people = await salaryStructures().countDocuments({
+    org,
+    $or: [{ 'overrides.add.payHeadCode': current.code }, { [`componentValues.${current.code}`]: { $exists: true } }],
+  });
+  if (people > 0) {
+    throw new PayHeadError(409, `${label} is on ${people} ${people === 1 ? "person's" : "people's"} salary. Remove it from ${people === 1 ? 'that salary' : 'those salaries'} first.`);
   }
   // Any other component whose percentage references this one would be left
   // dangling — block the delete rather than silently break a calculation.
@@ -276,6 +289,10 @@ function normalizeInput(
     prorate: input.prorate === undefined ? undefined : Boolean(input.prorate),
     arrears: input.arrears === undefined ? undefined : Boolean(input.arrears),
     maxClaimablePaise: normalizeMaxClaimable(input.maxClaimablePaise, category),
+    unclaimedHandling:
+      category === 'reimbursement' && (input.unclaimedHandling === 'carry_forward' || input.unclaimedHandling === 'encash_monthly')
+        ? input.unclaimedHandling
+        : undefined,
     payslipName: optionalString(input.payslipName, 'payslipName', 100),
     taxable: input.taxable === undefined ? undefined : Boolean(input.taxable),
     partOfStructure: input.partOfStructure === undefined ? undefined : Boolean(input.partOfStructure),
@@ -547,6 +564,7 @@ function toView(doc: StoredPayHead) {
     prorate: doc.prorate,
     arrears: doc.arrears,
     maxClaimablePaise: doc.maxClaimablePaise,
+    unclaimedHandling: doc.unclaimedHandling,
     payslipName: doc.payslipName,
     taxable: doc.taxable,
     partOfStructure: doc.partOfStructure,

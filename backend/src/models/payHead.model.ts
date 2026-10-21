@@ -22,6 +22,9 @@ export type PayHeadComponentType =
   | 'lta'
   | 'fixed_allowance'
   | 'special_allowance'
+  | 'medical'
+  | 'telephone'
+  | 'child_education'
   | 'statutory_bonus'
   | 'salary_advance'
   | 'notice_pay'
@@ -98,6 +101,8 @@ export interface PayHead {
 
   /** For `category: 'reimbursement'` only: the per-cycle claimable cap, in paise (PHM-5). */
   maxClaimablePaise?: number;
+  /** For `category: 'reimbursement'` only: what happens to an unclaimed amount. */
+  unclaimedHandling?: 'carry_forward' | 'encash_monthly';
 
   active: boolean;
   createdAt: Date;
