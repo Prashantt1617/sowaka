@@ -1,13 +1,27 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'features/manager_shell/presentation/tablet_shell.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/shared/app_update.dart';
+import 'features/shared/client_log.dart';
 import 'routes/app_routes.dart';
 import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Errors on a phone in someone's pocket otherwise leave no trace at all.
+  // Release builds only: in development they are on the console already.
+  if (kReleaseMode) {
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      ClientLog.reportOnce('app_error', details.exception, stack: details.stack);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      ClientLog.reportOnce('app_error', error, stack: stack);
+      return true;
+    };
+  }
   await AppNotificationService.instance.initialize();
   runApp(const HrmsMobileApp());
 }

@@ -255,6 +255,7 @@ function connectPostInput(req: Request) {
     media: (files.media ?? []).map(toMediaFile),
     pollOptionImages: (files.pollOptionImages ?? []).map(toMediaFile),
     pollOptionImageIndexes,
+    clientRequestId: stringField(req.body.clientRequestId ?? body.clientRequestId),
   };
 }
 

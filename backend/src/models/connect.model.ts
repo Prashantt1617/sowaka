@@ -94,6 +94,11 @@ export interface ConnectPost {
   id: string;
   /** Stable idempotency key for lifecycle-generated posts. */
   systemKey?: string;
+  /**
+   * `<authorUserId>:<id the app made for this post>`, so the app can send a
+   * post again after a dropped connection without it going up twice.
+   */
+  clientKey?: string;
   org: string;
   type: ConnectPostType;
   tag: string;

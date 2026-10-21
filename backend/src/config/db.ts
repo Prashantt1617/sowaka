@@ -440,6 +440,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   const connectCollection = database.collection<ConnectPost>('connect_posts');
   await connectCollection.createIndex({ id: 1 }, { unique: true });
   await connectCollection.createIndex({ systemKey: 1 }, { unique: true, sparse: true });
+  await connectCollection.createIndex({ clientKey: 1 }, { unique: true, sparse: true });
+  await database.collection('client_errors').createIndex({ receivedAt: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+  await database.collection('client_errors').createIndex({ userId: 1, happenedAt: -1 });
   await connectCollection.createIndex({ org: 1, publishedAt: -1 });
   await connectCollection.createIndex({ org: 1, 'audience.department': 1, publishedAt: -1 });
   // A list post is read by the people snapshotted onto it.
