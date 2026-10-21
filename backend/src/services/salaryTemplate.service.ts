@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { payHeads, salaryTemplates, users } from '../config/db';
+import { salaryStructures, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
 import { SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { StructureOverrides } from '../models/salaryStructure.model';
@@ -98,6 +98,14 @@ export async function updateSalaryTemplate(
 
 export async function deleteSalaryTemplate(adminUserId: string, code: string) {
   const org = await requireAdminOrg(adminUserId);
+  // People on the template would silently drop out of every run.
+  const people = await salaryStructures().countDocuments({ org, salaryTemplateCode: normalizeCode(code) });
+  if (people > 0) {
+    throw new SalaryTemplateError(
+      409,
+      `${people} ${people === 1 ? 'person is' : 'people are'} on this template. Move them to another template on their Salary details first.`,
+    );
+  }
   const result = await salaryTemplates().deleteOne({ org, code: normalizeCode(code) });
   if (result.deletedCount === 0) throw new SalaryTemplateError(404, 'Salary template not found');
   return { code: normalizeCode(code), deleted: true };

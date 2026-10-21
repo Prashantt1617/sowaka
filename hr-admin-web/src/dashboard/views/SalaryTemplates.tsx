@@ -398,8 +398,12 @@ export function SalaryTemplates() {
 
   const exportEmployees = (t: SalaryTemplateDTO) => exportEmployeesOnTemplate(t, flash);
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = async () => {
     if (!form?.editingCode) return;
+    // Second click confirms.
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setConfirmDelete(false);
     setSaving(true);
     try {
       await deleteSalaryTemplate(form.editingCode);
@@ -688,7 +692,11 @@ export function SalaryTemplates() {
             <div style={{ display: 'flex', gap: 10, padding: '26px 36px 30px' }}>
               <button onClick={save} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
               <button onClick={closeBuilder} style={ghostBtn}>Cancel</button>
-              {form.editingCode && <button onClick={remove} disabled={saving} style={{ ...ghostBtn, marginLeft: 'auto', color: '#A8475F', borderColor: '#EBD9DE' }}>Delete</button>}
+              {form.editingCode && (
+                <button onClick={() => void remove()} onMouseLeave={() => setConfirmDelete(false)} disabled={saving} style={{ ...ghostBtn, marginLeft: 'auto', color: '#A8475F', borderColor: confirmDelete ? '#A8475F' : '#EBD9DE', background: confirmDelete ? '#FBEFF2' : '#fff' }}>
+                  {confirmDelete ? 'Click again to delete this template' : 'Delete'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -839,7 +847,18 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
 // arrivals, early leaves and absences into loss-of-pay days with these; the
 // slip shows the deduction. The whole thing can be switched off per template.
 
-const TRIGGERS = Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[];
+// Absent days and half days always cost pay straight from the calendar (one
+// day, and half a day, each), so a template rule on them would count those
+// days twice: the server ignores such rules and they are not offered here.
+const CALENDAR_TRIGGERS = new Set<DeductionTrigger>(['absent', 'half_day']);
+const TRIGGERS = (Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[]).filter((t) => !CALENDAR_TRIGGERS.has(t));
+function CalendarNote() {
+  return (
+    <div style={{ padding: '12px 22px', fontSize: 14, color: '#484848', background: '#F7F9FB', borderBottom: '1px solid #EBEBEB' }}>
+      Always, from the calendar: each <strong>absent day</strong> costs 1 paid day and each <strong>half day</strong> ½ a day. The rules below add to that.
+    </div>
+  );
+}
 const ruleText = (rule: SalaryDeductionRule) =>
   `Every ${rule.every} → ${rule.deductDays} paid ${rule.deductDays === 1 ? 'day' : 'days'}`;
 
@@ -852,6 +871,8 @@ function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidL
   onPaidLeaveDays: (v: number) => void;
 }) {
   const [draft, setDraft] = useState<SalaryDeductionRule>({ trigger: 'late', every: 3, deductDays: 1, active: true });
+  // Older templates may hold an absent / half-day rule; it was never applied.
+  const shown = rules.map((rule, index) => ({ rule, index })).filter(({ rule }) => !CALENDAR_TRIGGERS.has(rule.trigger));
   const update = (index: number, patch: Partial<SalaryDeductionRule>) => onChange(rules.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   return (
     <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -870,11 +891,12 @@ function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidL
         <div style={{ padding: '16px 22px', color: '#717171', fontSize: 15 }}>Off for this template: every working day is paid, whatever the attendance calendar shows.</div>
       ) : (
         <>
-          {rules.length > 0 && (
+          <CalendarNote />
+          {shown.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
               <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th><th style={{ ...detTh, width: 90 }} /></tr></thead>
               <tbody>
-                {rules.map((rule, index) => (
+                {shown.map(({ rule, index }) => (
                   <tr key={index}>
                     <td style={ruleTd}><strong style={{ color: rule.active ? '#222222' : '#9197A2' }}>{DEDUCTION_TRIGGER_LABELS[rule.trigger]}</strong></td>
                     <td style={{ ...ruleTd, color: '#717171' }}>{ruleText(rule)}</td>
@@ -891,7 +913,7 @@ function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidL
               </tbody>
             </table>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 180px auto', gap: 12, alignItems: 'end', padding: '16px 22px', background: '#FBFBFC', borderTop: rules.length ? '1px solid #EBEBEB' : 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 180px auto', gap: 12, alignItems: 'end', padding: '16px 22px', background: '#FBFBFC', borderTop: shown.length ? '1px solid #EBEBEB' : 'none' }}>
             <div>
               <label style={fieldLabel}>Counts</label>
               <select value={draft.trigger} onChange={(e) => setDraft({ ...draft, trigger: e.target.value as DeductionTrigger })} style={{ ...input, cursor: 'pointer' }}>
@@ -921,13 +943,18 @@ function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boolean; rul
       </div>
       {!enabled ? (
         <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>Off for this template — every working day is paid.</div>
-      ) : rules.length === 0 ? (
-        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>No attendance deductions — every working day is paid.</div>
+      ) : rules.filter((r) => !CALENDAR_TRIGGERS.has(r.trigger)).length === 0 ? (
+        <>
+          <CalendarNote />
+          <div style={{ padding: '14px 22px', color: '#717171', fontSize: 15 }}>No other attendance rules.</div>
+        </>
       ) : (
+        <>
+        <CalendarNote />
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
           <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th></tr></thead>
           <tbody>
-            {rules.map((rule, index) => (
+            {rules.filter((rule) => !CALENDAR_TRIGGERS.has(rule.trigger)).map((rule, index) => (
               <tr key={index}>
                 <td style={ruleTd}><strong style={{ color: rule.active ? '#222222' : '#9197A2' }}>{DEDUCTION_TRIGGER_LABELS[rule.trigger]}</strong></td>
                 <td style={{ ...ruleTd, color: '#717171' }}>{ruleText(rule)}</td>
@@ -936,6 +963,7 @@ function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boolean; rul
             ))}
           </tbody>
         </table>
+        </>
       )}
       {enabled && paidLeaveDays > 0 && (
         <div style={{ padding: '12px 22px', borderTop: '1px solid #EBEBEB', fontSize: 15, color: '#484848' }}>
