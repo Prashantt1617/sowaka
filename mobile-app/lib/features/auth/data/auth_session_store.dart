@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../shared/client_log.dart';
 import 'auth_models.dart';
 
 class AuthSessionStore {
@@ -10,6 +11,7 @@ class AuthSessionStore {
   Future<void> save(AuthSession session) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_sessionKey, jsonEncode(session.toJson()));
+    ClientLog.useToken(session.token);
   }
 
   Future<AuthSession?> read() async {
@@ -21,7 +23,10 @@ class AuthSessionStore {
       final json = jsonDecode(raw);
       if (json is! Map<String, dynamic>) return null;
       final session = AuthSession.fromJson(json);
-      return session.token.isEmpty ? null : session;
+      if (session.token.isEmpty) return null;
+      // Errors from an earlier run that never made it out go now.
+      ClientLog.useToken(session.token);
+      return session;
     } on FormatException {
       await clear();
       return null;
@@ -31,5 +36,6 @@ class AuthSessionStore {
   Future<void> clear() async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_sessionKey);
+    ClientLog.useToken(null);
   }
 }

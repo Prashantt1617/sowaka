@@ -27,6 +27,7 @@ import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
+import { clientLogRouter } from './client-log.routes';
 
 export const router = Router();
 
@@ -47,6 +48,8 @@ router.use('/manager', managerRouter);
 router.use('/overtime', overtimeRouter);
 router.use('/reimbursements', reimbursementRouter);
 router.use('/notifications', notificationRouter);
+// Errors the app hit on the phone, sent once it can reach us again.
+router.use('/client-logs', clientLogRouter);
 router.use('/attendance', attendanceRouter);
 router.use('/admin/reporting', reportingRouter);
 router.use('/admin/payroll', payrollRouter);

@@ -976,6 +976,8 @@ export interface ConnectPostInput {
   /// without an image are skipped on upload rather than sent as a gap.
   pollOptionImageIndexes?: number[];
   removeMedia?: boolean;
+  /// The app's own id for this post, the same on every attempt to send it.
+  clientRequestId?: string;
 }
 
 function sparsePollImageKeys(
@@ -1026,6 +1028,14 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
   const type = parsePostType(input.type);
   // Before any upload, so a refused contest leaves nothing behind in storage.
   requireMayPublishType(type, viewer);
+  // A second attempt at a post that already went up (the first reply was lost
+  // on the way back to the phone) gets that post back instead of a duplicate.
+  const requestId = input.clientRequestId?.trim().slice(0, 64);
+  const clientKey = requestId ? `${viewerUserId}:${requestId}` : undefined;
+  if (clientKey) {
+    const existing = await connectPosts().findOne({ clientKey });
+    if (existing) return viewPost(existing, viewerUserId);
+  }
   const now = new Date();
   const meta = postMeta(type);
   const uploadedMedia = await storeConnectMediaMany(viewerUserId, input.media ?? []);
@@ -1056,6 +1066,7 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
     const audience = await audienceFromBody(type, enrichedBody, viewer);
     const post: ConnectPost = {
       id: randomUUID(),
+      ...(clientKey ? { clientKey } : {}),
       org: orgForUser(viewer),
       type,
       tag: meta.tag,
@@ -1073,7 +1084,18 @@ export async function createConnectPost(viewerUserId: string, input: ConnectPost
       createdAt: now,
       updatedAt: now,
     };
-    await connectPosts().insertOne(post);
+    try {
+      await connectPosts().insertOne(post);
+    } catch (error) {
+      // Both attempts arrived together: the one that lost hands back the
+      // winner's post (its own uploads are cleaned up below).
+      const winner = clientKey && (error as { code?: number }).code === 11000
+        ? await connectPosts().findOne({ clientKey })
+        : null;
+      if (!winner) throw error;
+      await deleteConnectMediaMany([...uploadedMedia, ...uploadedPollImages]);
+      return viewPost(winner, viewerUserId);
+    }
     published = true;
     announceChange(post, 'created', viewerUserId);
     // One publication push per person in the audience. Awaited so a failure is
@@ -1605,8 +1627,11 @@ async function viewPost(
     likeCount: (comment.likedBy ?? []).length,
     liked: (comment.likedBy ?? []).includes(viewerUserId),
   }));
+  // The resend key is the server's own bookkeeping, not part of the post.
+  const { clientKey: _clientKey, ...shown } = post;
+  void _clientKey;
   return {
-    ...post,
+    ...shown,
     author: { ...post.author, photoUrl: authorPhotoUrl, isLeadership: authorIsLeadership },
     // The author sees their list's name; everyone else "Private", and never
     // the list or who else is on it.

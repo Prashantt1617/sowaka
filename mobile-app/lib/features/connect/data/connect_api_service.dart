@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -7,6 +8,7 @@ import 'package:http_parser/http_parser.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager/data/dashboard_cache.dart';
+import '../../shared/client_log.dart';
 import '../../shared/network_status.dart';
 import '../presentation/audience_lists_ui.dart';
 import 'connect_models.dart';
@@ -81,13 +83,77 @@ class ConnectApiService {
       draft.mediaList.isNotEmpty ||
       draft.pollOptionImages.any((item) => item != null);
 
+  /// Publishes [draft], sending it again if the connection drops on the way.
+  ///
+  /// Every attempt carries the same id, made here once: when a first attempt
+  /// did reach the server and only its reply was lost, the server hands that
+  /// post back instead of making a second one. Without this a post tapped on
+  /// a connection the phone had quietly dropped vanished with nothing logged
+  /// anywhere: a toast, and no request ever reached the server.
   Future<ConnectPost> createPost(ConnectPostDraft draft) async {
-    if (_hasUpload(draft)) {
-      final json = await _multipartRequest('POST', '/connect/posts', draft);
-      return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+    final requestId = _newRequestId();
+    final hasUpload = _hasUpload(draft);
+    for (var attempt = 1; ; attempt++) {
+      try {
+        final json = hasUpload
+            ? await _multipartRequest(
+                'POST',
+                '/connect/posts',
+                draft,
+                extraFields: {'clientRequestId': requestId},
+              )
+            : await _request(
+                'POST',
+                '/connect/posts',
+                body: {...draft.toJson(), 'clientRequestId': requestId},
+              );
+        if (attempt > 1) {
+          unawaited(
+            ClientLog.report(
+              'post_resent',
+              'Published on attempt $attempt',
+              context: {'requestId': requestId, 'type': draft.type.name},
+            ),
+          );
+        }
+        return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+      } catch (error) {
+        final again = attempt < _postAttempts && _worthSendingAgain(error);
+        if (!again) {
+          unawaited(
+            ClientLog.report(
+              'post_failed',
+              error,
+              context: {
+                'requestId': requestId,
+                'attempts': attempt,
+                'type': draft.type.name,
+                'withMedia': hasUpload,
+                if (error is ConnectApiException) 'status': error.statusCode,
+              },
+            ),
+          );
+          rethrow;
+        }
+        await Future<void>.delayed(Duration(seconds: attempt == 1 ? 1 : 3));
+      }
     }
-    final json = await _request('POST', '/connect/posts', body: draft.toJson());
-    return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
+  }
+
+  static const _postAttempts = 3;
+
+  /// A dropped connection, or a gateway that couldn't reach the server. A
+  /// refusal (bad input, not allowed) would only be refused again.
+  static bool _worthSendingAgain(Object error) =>
+      error is ConnectOfflineException ||
+      (error is ConnectApiException &&
+          const {408, 502, 503, 504}.contains(error.statusCode));
+
+  static String _newRequestId() {
+    final random = Random.secure();
+    return List.generate(16, (_) => random.nextInt(256))
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
   }
 
   Future<ConnectPost> updatePost(String postId, ConnectPostDraft draft) async {
@@ -400,9 +466,11 @@ class ConnectApiService {
   Future<Map<String, dynamic>> _multipartRequest(
     String method,
     String path,
-    ConnectPostDraft draft,
-  ) async {
+    ConnectPostDraft draft, {
+    Map<String, String> extraFields = const {},
+  }) async {
     final request = http.MultipartRequest(method, Uri.parse('$_baseUrl$path'));
+    request.fields.addAll(extraFields);
     request.headers['Authorization'] = 'Bearer ${session.token}';
     request.fields['type'] = connectPostTypeToWire(draft.type);
     request.fields['removeMedia'] = draft.removeMedia ? 'true' : 'false';
