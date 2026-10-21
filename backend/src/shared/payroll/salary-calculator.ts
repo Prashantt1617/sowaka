@@ -8,7 +8,7 @@
  */
 
 import { PayHead } from '../../models/payHead.model';
-import { epfCeilingForPeriod, ResolvedRuleSet } from '../../models/statutoryRule.model';
+import { epfCeilingForPeriod, epfCeilingSegments, ResolvedRuleSet } from '../../models/statutoryRule.model';
 import { StatutorySettings } from '../../models/statutorySettings.model';
 import { TemplateStatutoryWages } from '../../models/salaryTemplate.model';
 import { applyStatutory, PersonStatutory } from './statutory-apply';
@@ -80,6 +80,16 @@ export interface ComponentLine {
 }
 
 /** An earning paid once (Bonus), entered per run, not part of the monthly CTC split. */
+/**
+ * The wage Statutory Bonus is worked out on (Bonus Act s.12, as Zoho applies
+ * it): the state minimum wage for the person's employment category when one
+ * is set (₹7,000 if that is lower), else Basic capped at ₹7,000.
+ */
+const BONUS_WAGE_FLOOR_PAISE = 7_000_00;
+function bonusWage(basicPaise: number, minimumWagePaise: number): number {
+  return minimumWagePaise > 0 ? Math.max(BONUS_WAGE_FLOOR_PAISE, minimumWagePaise) : Math.min(basicPaise, BONUS_WAGE_FLOOR_PAISE);
+}
+
 function isOneTime(head: PayHead): boolean {
   return head.category === 'earning' && head.recurrence === 'one_time';
 }
@@ -114,7 +124,8 @@ export interface SalaryCalcResult {
 }
 
 export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResult {
-  const monthlyCtc = input.monthlyCtcPaise;
+  // A month's CTC in whole rupees, as Zoho takes it (₹15,50,000 a year → ₹1,29,167).
+  const monthlyCtc = roundToRupee(input.monthlyCtcPaise);
   const values = input.componentValues ?? {};
   const wages = input.statutoryWages;
   const active = input.payHeads.filter((head) => head.active).map((head) => withTemplateWages(head, wages));
@@ -205,8 +216,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   };
 
   // A Statutory Bonus component in the template follows the Payment of Bonus
-  // Act: its percent of Basic or the state minimum wage, whichever is higher,
-  // and nothing for people whose Basic is above ₹21,000.
+  // Act: its percent of the bonus wage (see bonusWage), and nothing for
+  // people whose Basic is above ₹21,000.
   const bonusPeriod = input.period ?? new Date().toISOString().slice(0, 7);
   for (const head of active) {
     if (head.category !== 'earning' || head.componentType !== 'statutory_bonus') continue;
@@ -215,7 +226,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     if (basic > 0 && basic <= BONUS_ELIGIBILITY_PAISE) {
       const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, bonusPeriod);
       const pct = head.calculation.mode === 'percentage' ? head.calculation.percent ?? 8.33 : settings.bonus.ratePercent;
-      amount = roundToRupee((Math.max(basic, floor) * Math.round(pct * 100)) / 10000);
+      amount = roundToRupee((bonusWage(basic, floor) * Math.round(pct * 100)) / 10000);
     }
     memo.set(head.code, amount);
   }
@@ -229,7 +240,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   if (settings.bonus.enabled && settings.bonus.frequency === 'monthly' && !templateHasBonus && basicPaise > 0 && basicPaise <= BONUS_ELIGIBILITY_PAISE) {
     const period = input.period ?? new Date().toISOString().slice(0, 7);
     const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, period);
-    const amount = roundToRupee((Math.max(basicPaise, floor) * settings.bonus.ratePercent) / 100);
+    const amount = roundToRupee((bonusWage(basicPaise, floor) * settings.bonus.ratePercent) / 100);
     bonusLine = {
       code: STATUTORY_BONUS_CODE,
       name: 'Statutory Bonus',
@@ -297,6 +308,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       pfConditionalPaise: conditional,
       pfTestPaise: always,
       ceilingPaise: ceiling,
+      ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7)),
       person: input.statutory,
       esiWagePaise,
       pfWageMode: wages?.pfWageMode,
@@ -316,7 +328,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       }
       balance = next;
     }
-    memo.set(balancingHead.code, balance);
+    // Whole rupees, as Zoho pays it: the balance rounds to the nearest rupee.
+    memo.set(balancingHead.code, roundToRupee(balance));
   }
 
   const earnings = [...active.filter((head) => head.category === 'earning').map(lineFor), ...(bonusLine ? [bonusLine] : [])];
@@ -324,7 +337,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     const monthlyPaise = reimbursementValue(head);
     return { ...lineFor(head), monthlyPaise, annualPaise: monthlyPaise * 12, prorate: false, considerForEpf: false };
   });
-  const benefits = benefitHeads.map(lineFor);
+  // A benefit accrues on paid days unless its component says not to prorate.
+  const benefits = benefitHeads.map((head) => ({ ...lineFor(head), prorate: head.prorate !== false }));
   const deductions = active.filter((head) => head.category === 'deduction').map(lineFor);
 
   const grossMonthly = earnings.reduce((sum, line) => sum + line.monthlyPaise, 0);

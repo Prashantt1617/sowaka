@@ -30,6 +30,26 @@ export const EPF_CEILING_SCHEDULE: { from: string; ceilingPaise: number }[] = [
   { from: '2026-09-17', ceilingPaise: 25_000_00 },
 ];
 
+/**
+ * The PF ceilings in force across a pay month and for how many days each, in
+ * order: one entry normally, two in a month the ceiling changes (Sep 2026:
+ * ₹15,000 for 16 days, ₹25,000 for 14).
+ */
+export function epfCeilingSegments(period: string): { ceilingPaise: number; days: number }[] {
+  const [year, month] = period.split('-').map(Number);
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const out: { ceilingPaise: number; days: number }[] = [];
+  for (let d = 1; d <= days; d++) {
+    const day = `${period}-${String(d).padStart(2, '0')}`;
+    let ceiling = EPF_CEILING_SCHEDULE[0].ceilingPaise;
+    for (const step of EPF_CEILING_SCHEDULE) if (step.from <= day) ceiling = step.ceilingPaise;
+    const last = out[out.length - 1];
+    if (last && last.ceilingPaise === ceiling) last.days++;
+    else out.push({ ceilingPaise: ceiling, days: 1 });
+  }
+  return out;
+}
+
 /** The PF wage ceiling for a pay month ("YYYY-MM"), day-weighted across any change in it. */
 export function epfCeilingForPeriod(period: string): number {
   const [year, month] = period.split('-').map(Number);

@@ -7,7 +7,7 @@
  * and adds approved reimbursements on top. No I/O; money in INTEGER PAISE.
  */
 
-import { epfCeilingForPeriod, ResolvedRuleSet } from '../../models/statutoryRule.model';
+import { epfCeilingForPeriod, epfCeilingSegments, ResolvedRuleSet } from '../../models/statutoryRule.model';
 import { StatutorySettings } from '../../models/statutorySettings.model';
 import { SalaryCalcResult } from './salary-calculator';
 import { applyStatutory, PersonStatutory } from './statutory-apply';
@@ -171,6 +171,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     pfConditionalPaise: conditionalPaid,
     pfTestPaise: settings.epf.considerLOP ? alwaysPaid : alwaysFull,
     ceilingPaise: ceiling,
+    ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7)).map((s) => ({ days: s.days, ceilingPaise: settings.epf.proRateRestricted ? roundToRupee(s.ceilingPaise * factor) : s.ceilingPaise })),
     person: input.statutory,
     esiCoveredEarlier: input.esiCoveredEarlier,
   });
@@ -216,7 +217,10 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   const reimbursementsPaise = structureReimbursements + input.reimbursementsPaise;
   const netPayablePaise = netPaise + reimbursementsPaise;
 
-  const employerCostPaise = grossPaise + structureReimbursements + st.employerContributionsPaise + base.benefitsMonthlyPaise;
+  // Employer benefits (gratuity…) accrue on the days paid, as Zoho books them,
+  // unless the component is set not to prorate.
+  const benefitsPaid = base.benefits.reduce((sum, line) => sum + (line.prorate !== false && factor !== 1 ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise), 0);
+  const employerCostPaise = grossPaise + structureReimbursements + st.employerContributionsPaise + benefitsPaid;
 
   return {
     payableDays,
@@ -242,8 +246,8 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
       adminPaise: epf.adminPaise ?? 0,
       esiPaise: esi.employerPaise,
       lwfPaise: lwf.employerPaise,
-      benefitsPaise: base.benefitsMonthlyPaise,
-      totalPaise: st.employerContributionsPaise + base.benefitsMonthlyPaise,
+      benefitsPaise: benefitsPaid,
+      totalPaise: st.employerContributionsPaise + benefitsPaid,
     },
     reimbursementLines,
     epf: {

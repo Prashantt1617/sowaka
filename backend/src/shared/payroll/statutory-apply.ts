@@ -43,6 +43,12 @@ export interface StatutoryApplyInput {
   /** The always-counted PF wage the "under the ceiling" test is made on. */
   pfTestPaise: number;
   ceilingPaise: number;
+  /**
+   * The ceilings across the month when it changes mid-month. PF wage is then
+   * capped within each part and weighted by its days (as Zoho books Sep 2026),
+   * instead of capping at one blended ceiling.
+   */
+  ceilingSegments?: { ceilingPaise: number; days: number }[];
   person?: PersonStatutory;
   /** ESI covered this person earlier in the same contribution period. */
   esiCoveredEarlier?: boolean;
@@ -76,12 +82,27 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
   const ceilingPaise = person?.pfRestrictedWagePaise && person.pfRestrictedWagePaise > 0
     ? person.pfRestrictedWagePaise
     : input.ceilingPaise;
-  const pfWagePaise = pfWageWithConditional({
+  let pfWagePaise = pfWageWithConditional({
     alwaysPaise: input.pfAlwaysPaise,
     conditionalPaise: input.pfConditionalPaise,
     testPaise: input.pfTestPaise,
     ceilingPaise,
   });
+  // A month the ceiling changes in: each part's wage capped at its own ceiling, weighted by days.
+  let effectiveCeilingPaise = ceilingPaise;
+  const segments = input.ceilingSegments;
+  if (segments && segments.length > 1 && !(person?.pfRestrictedWagePaise && person.pfRestrictedWagePaise > 0)) {
+    const total = segments.reduce((t, s) => t + s.days, 0);
+    let actual = 0;
+    let capped = 0;
+    for (const s of segments) {
+      const wage = pfWageWithConditional({ alwaysPaise: input.pfAlwaysPaise, conditionalPaise: input.pfConditionalPaise, testPaise: input.pfTestPaise, ceilingPaise: s.ceilingPaise });
+      actual += (wage * s.days) / total;
+      capped += (Math.min(wage, s.ceilingPaise) * s.days) / total;
+    }
+    pfWagePaise = Math.round(actual);
+    effectiveCeilingPaise = Math.round(capped);
+  }
 
   const epfOn = settings.epf.enabled && person?.epf !== false;
   const employeeActual = settings.epf.overrideAtEmployee && person?.pfActualWage === true;
@@ -95,7 +116,7 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
         pfWagePaise,
         employeeRestricted,
         employerRestricted,
-        ceilingPaise,
+        ceilingPaise: effectiveCeilingPaise,
         eps: person?.contributeEps !== false,
       })
     : NO_EPF;
