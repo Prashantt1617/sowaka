@@ -28,7 +28,9 @@
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
     "payroll:reconcile": "tsx src/scripts/payroll-org-reconcile.ts",
     "payroll:tds-check": "tsx src/scripts/payroll-tds-check.ts",
-    "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts"
+    "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",
+    "payroll:e2e-check": "tsx src/scripts/payroll-e2e-check.ts",
+    "api:only": "tsx src/scripts/api-only.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

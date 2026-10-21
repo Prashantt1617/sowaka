@@ -32,6 +32,10 @@ app.use(
 // A month of attendance for a large org is over a megabyte of JSON and
 // compresses ten to one; every other response is small enough not to notice.
 app.use(compression());
+// A sealed run (every payslip, sealed twice) and a key rotation (every sealed
+// record re-sealed) are far over the default 100 kB. Parsed here first; the
+// general parser below then leaves the body alone.
+app.use(['/admin/payroll/sealed', '/admin/payroll/crypto'], express.json({ limit: '25mb' }));
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
 // A Scribble page reloads itself with a credential in its query string

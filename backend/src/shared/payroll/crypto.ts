@@ -6,7 +6,8 @@
  *   passphrase ──PBKDF2-SHA256 (600k)──▶ KEK ──AES-GCM──▶ user's RSA-OAEP private key
  *   org payroll data key (AES-256-GCM, random)
  *     ├─ wrapped to each payroll user's RSA-OAEP-3072 public key   (grants)
- *     └─ wrapped with the org's recovery key (256-bit, shown once)
+ *     └─ wrapped to the org's recovery public key, whose private half is
+ *        sealed under the recovery key (256-bit, shown once at setup)
  *   salary structure / payslip / run totals ──AES-GCM(data key, AAD)──▶ sealed blob
  *   payslip for the employee ──fresh AES key wrapped to the employee's public key──▶ sealedForEmployee
  *
@@ -118,30 +119,71 @@ export function createRecoveryKey(): string {
   const hex = [...random(32)].map((b) => b.toString(16).padStart(2, '0')).join('');
   return hex.match(/.{8}/g)!.join('-');
 }
-async function recoveryAesKey(recoveryKey: string): Promise<CryptoKey> {
+//
+// The recovery key opens an RSA keypair kept for the org (its private half
+// sealed under the recovery key). Every data key the org uses is wrapped to
+// that public key, so rotating the data key needs neither the recovery key
+// nor a new one: it is shown once, at setup, unless someone asks to replace it.
+function recoveryHex(recoveryKey: string): string {
   const hex = recoveryKey.replace(/[^0-9a-f]/gi, '').toLowerCase();
   if (hex.length !== 64) throw new Error('A recovery key is 64 hex characters');
-  const bytes = new Uint8Array(hex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+  return hex;
+}
+async function recoveryAesKey(recoveryKey: string): Promise<CryptoKey> {
+  const bytes = new Uint8Array(recoveryHex(recoveryKey).match(/.{2}/g)!.map((h) => parseInt(h, 16)));
   return subtle().importKey('raw', buf(bytes), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
-export async function wrapWithRecovery(dataKey: CryptoKey, recoveryKey: string): Promise<{ wrapped: string; iv: string }> {
-  const iv = random(12);
-  const raw = await subtle().exportKey('raw', dataKey);
-  const wrapped = await subtle().encrypt({ name: 'AES-GCM', iv: buf(iv), additionalData: buf(utf8('payroll-recovery')) }, await recoveryAesKey(recoveryKey), raw);
-  return { wrapped: toB64(wrapped), iv: toB64(iv) };
+const hexOf = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+export async function sha256Hex(text: string): Promise<string> {
+  return hexOf(await subtle().digest('SHA-256', buf(utf8(text))));
 }
-export async function unwrapWithRecovery(w: { wrapped: string; iv: string }, recoveryKey: string): Promise<CryptoKey> {
-  let raw: ArrayBuffer;
+/**
+ * Proof that the caller holds the recovery key, without revealing it: the
+ * server keeps only sha256(proof) and compares. Neither value opens anything.
+ */
+export function recoveryProof(recoveryKey: string): Promise<string> {
+  return sha256Hex(`sowaka-payroll-recovery-proof:v1:${recoveryHex(recoveryKey)}`);
+}
+
+/** The org's recovery keypair, as the server keeps it. */
+export interface RecoveryRecord {
+  publicKey: string; // SPKI, base64
+  wrappedPrivateKey: string; // AES-GCM(recovery key, PKCS#8), base64
+  iv: string;
+  /** sha256 of the recovery proof. */
+  check: string;
+}
+
+export async function createRecoveryRecord(recoveryKey: string): Promise<RecoveryRecord> {
+  const pair = await subtle().generateKey({ ...RSA, modulusLength: 3072, publicExponent: new Uint8Array([1, 0, 1]) }, true, ['encrypt', 'decrypt']);
+  const spki = await subtle().exportKey('spki', pair.publicKey);
+  const pkcs8 = await subtle().exportKey('pkcs8', pair.privateKey);
+  const iv = random(12);
+  const wrapped = await subtle().encrypt({ name: 'AES-GCM', iv: buf(iv), additionalData: buf(utf8('payroll-recovery')) }, await recoveryAesKey(recoveryKey), pkcs8);
+  return { publicKey: toB64(spki), wrappedPrivateKey: toB64(wrapped), iv: toB64(iv), check: await sha256Hex(await recoveryProof(recoveryKey)) };
+}
+
+/** The data key, opened with the recovery key. Throws "Wrong recovery key". */
+export async function unwrapWithRecovery(record: { wrappedPrivateKey: string; iv: string; wrappedDataKey: string }, recoveryKey: string): Promise<CryptoKey> {
+  let pkcs8: ArrayBuffer;
   try {
-    raw = await subtle().decrypt({ name: 'AES-GCM', iv: buf(fromB64(w.iv)), additionalData: buf(utf8('payroll-recovery')) }, await recoveryAesKey(recoveryKey), buf(fromB64(w.wrapped)));
+    pkcs8 = await subtle().decrypt({ name: 'AES-GCM', iv: buf(fromB64(record.iv)), additionalData: buf(utf8('payroll-recovery')) }, await recoveryAesKey(recoveryKey), buf(fromB64(record.wrappedPrivateKey)));
   } catch {
     throw new Error('Wrong recovery key');
   }
-  return subtle().importKey('raw', raw, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
+  const priv = await subtle().importKey('pkcs8', pkcs8, RSA, false, ['decrypt']);
+  return unwrapWithPrivateKey(record.wrappedDataKey, priv);
+}
+
+/** A short fingerprint of a public key, for people to compare out of band. */
+export async function keyFingerprint(publicKeySpki: string): Promise<string> {
+  const h = hexOf(await subtle().digest('SHA-256', buf(fromB64(publicKeySpki))));
+  return h.slice(0, 16).match(/.{4}/g)!.join(' ');
 }
 
 /** What a blob belongs to; must match on open. */
-export const aadFor = (org: string, kind: 'structure' | 'payslip' | 'run', id: string) => `sowaka-payroll:v1:${org}:${kind}:${id}`;
+export type SealedKind = 'structure' | 'payslip' | 'run' | 'declaration';
+export const aadFor = (org: string, kind: SealedKind, id: string) => `sowaka-payroll:v1:${org}:${kind}:${id}`;
 
 export async function seal(dataKey: CryptoKey, keyVersion: number, value: unknown, aad: string): Promise<Sealed> {
   const iv = random(12);
@@ -177,4 +219,15 @@ export interface StructureSecret {
   overrides?: unknown;
   revisions?: unknown[];
   pfRestrictedWagePaise?: number;
+}
+
+/** A tax declaration's amounts and flags; the regime and proof status stay plain. */
+export interface DeclarationSecret {
+  declarations: Record<string, number | boolean>;
+}
+
+/** The org's recovery state as stored: the keypair plus the current data key wrapped to it. */
+export interface OrgRecovery extends RecoveryRecord {
+  wrappedDataKey: string;
+  keyVersion: number;
 }

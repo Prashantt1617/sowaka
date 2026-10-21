@@ -79,6 +79,8 @@ export interface SalaryStructure {
   effectiveFrom?: Date;
   /** E2E-encrypted orgs: the amounts (CTC, values, overrides, revisions), sealed; the plain fields above are zero / empty. */
   sealed?: import('../shared/payroll/crypto').Sealed;
+  /** Sealed structures: the component codes the person's own lines use (codes, never amounts), so a component in use can't be deleted. */
+  usedComponentCodes?: string[];
   createdAt: Date;
   updatedAt: Date;
 }

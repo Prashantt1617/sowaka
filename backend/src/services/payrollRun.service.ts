@@ -471,6 +471,8 @@ export async function myPayslips(userId: string) {
 
 export async function myPayslipHtml(userId: string, payslipId: string): Promise<string> {
   const slip = await ownedPayslip(userId, payslipId);
+  // Sealed (end-to-end encrypted org): the server holds zeros; only the employee's key opens it.
+  if (slip.sealed) throw new PayrollRunError(409, 'This payslip is encrypted: open it in the app');
   return payslipHtml(payslipView(slip), await companyOf(slip.org));
 }
 

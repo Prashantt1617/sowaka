@@ -48,11 +48,13 @@ import {
   contextHandler,
   cryptoStatusHandler,
   grantHandler,
+  recoverHandler,
   registerKeyHandler,
   rotateHandler,
   runInputsHandler,
   saveSealedRunHandler,
   saveSealedStructureHandler,
+  sealedDeclarationsHandler,
   sealedStructuresHandler,
   setupHandler,
 } from '../controllers/payrollCrypto.controller';
@@ -128,8 +130,10 @@ payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
 payrollRouter.get('/crypto', cryptoStatusHandler);
 payrollRouter.post('/crypto/keys', registerKeyHandler);
 payrollRouter.post('/crypto/setup', setupHandler);
+payrollRouter.post('/crypto/recover', recoverHandler);
 payrollRouter.post('/crypto/grants', grantHandler);
 payrollRouter.post('/crypto/rotate', rotateHandler);
+payrollRouter.get('/sealed/tax-declarations', sealedDeclarationsHandler);
 payrollRouter.get('/sealed/context', contextHandler);
 payrollRouter.get('/sealed/structures', sealedStructuresHandler);
 payrollRouter.put('/sealed/structures/:userId', saveSealedStructureHandler);

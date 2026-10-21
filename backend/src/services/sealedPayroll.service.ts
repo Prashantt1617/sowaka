@@ -7,11 +7,11 @@
  * drives the run's lifecycle; it never sees a salary figure.
  */
 import { ObjectId } from 'mongodb';
-import { companies, payrollRuns, payslips, salaryStructures, salaryTemplates, users } from '../config/db';
-import { Payslip, PayrollRun } from '../models/payrollRun.model';
+import { companies, payrollRuns, payslips, salaryStructures, salaryTemplates, taxDeclarations, users } from '../config/db';
+import { Payslip, PayrollRun, PayrollRunStatus } from '../models/payrollRun.model';
 import { ResolvedRuleSet } from '../models/statutoryRule.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
-import { isSealedForPerson, orgCryptoState, PayrollCryptoError, requireSealed } from './payrollCrypto.service';
+import { employeePublicKeys, isSealedForPerson, myEmployeeKey, orgCryptoState, PayrollCryptoError, requireSealed, requireWritableState } from './payrollCrypto.service';
 import { hasPayrollAccess } from './payrollAccess.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statutorySettings.service';
@@ -19,6 +19,7 @@ import { resolveRuleSet } from './statutory.service';
 import { computeWorkingDays, getEmployeePeriodInputs, parsePeriod } from './payroll-inputs.service';
 import { attendanceCountsForPeriod, payrollDeductions } from './deduction.service';
 import { declarationsFor, tdsConfigsFor } from './tds.service';
+import { openIds, sealIds } from './salaryStructure.service';
 import { fyOf } from '../shared/payroll/tds';
 
 async function encryptedOrgOf(viewerUserId: string) {
@@ -30,6 +31,13 @@ async function encryptedOrgOf(viewerUserId: string) {
   return { org: viewer.org, keyVersion: state.keyVersion };
 }
 
+/** For writes: the org must be on its current key with no rotation outstanding. */
+async function writableOrgOf(viewerUserId: string) {
+  const { org } = await encryptedOrgOf(viewerUserId);
+  const state = await requireWritableState(org);
+  return { org, keyVersion: state.keyVersion };
+}
+
 function omit<T extends object>(obj: T, keys: string[]): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k))) as Partial<T>;
 }
@@ -37,12 +45,13 @@ function omit<T extends object>(obj: T, keys: string[]): Partial<T> {
 /** Everything the browser's calculator needs, none of it an amount someone earns. */
 export async function calcContext(viewerUserId: string, period?: string) {
   const { org, keyVersion } = await encryptedOrgOf(viewerUserId);
-  const [{ all: payHeads }, templates, settings, structures, company] = await Promise.all([
+  const [{ all: payHeads }, templates, settings, structures, company, employeeKeys] = await Promise.all([
     catalogWithStandard(org),
     salaryTemplates().find({ org }).toArray(),
     statutorySettingsFor(org),
     salaryStructures().find({ org }, { projection: { userId: 1 } }).toArray(),
     companies().findOne({ id: org }, { projection: { name: 1, address: 1 } }),
+    employeePublicKeys(org),
   ]);
   const people = await users()
     .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, designation: 1, joiningDate: 1, state: 1, location: 1 } })
@@ -50,9 +59,22 @@ export async function calcContext(viewerUserId: string, period?: string) {
   const ruleSets: Record<string, ResolvedRuleSet> = {};
   const employees = [];
   for (const p of people) {
+    // The server's run resolves the rule set by workStateOf as given; the key here is the same, normalised.
     const state = (workStateOf(p) ?? '').trim().toLowerCase();
-    if (!(state in ruleSets)) ruleSets[state] = await resolveRuleSet(org, state);
+    if (!(state in ruleSets)) ruleSets[state] = await resolveRuleSet(org, workStateOf(p));
     employees.push({ userId: p.userId, name: p.name, employeeId: p.employeeId, department: p.department, designation: p.designation, joiningDate: p.joiningDate ? new Date(p.joiningDate).toISOString().slice(0, 10) : undefined, state });
+  }
+  let tds = null;
+  if (period && settings.tds?.enabled) {
+    const fy = fyOf(period).fy;
+    const configs = [...(await tdsConfigsFor(fy)).values()];
+    const rows = [...(await declarationsFor(org, fy, people.map((p) => p.userId))).values()];
+    tds = {
+      fy,
+      configs,
+      // Regime and proof status plain; the declared amounts sealed (opened in the browser).
+      declarations: rows.map((d) => ({ userId: d.userId, fy: d.fy, regime: d.regime, proofs: d.proofs, ...(d.sealed ? { sealed: d.sealed } : { declarations: d.declarations }) })),
+    };
   }
   return {
     org,
@@ -64,20 +86,24 @@ export async function calcContext(viewerUserId: string, period?: string) {
     ruleSets,
     employees,
     withSalary: structures.map((s) => s.userId),
-    // For the TDS engine in the browser: the FY's slabs and each person's declaration (not salary amounts).
-    tds: period && settings.tds?.enabled
-      ? { fy: fyOf(period).fy, configs: [...(await tdsConfigsFor(fyOf(period).fy)).values()], declarations: [...(await declarationsFor(org, fyOf(period).fy, people.map((p) => p.userId))).values()].map((d) => ({ ...d, _id: undefined })) }
-      : null,
+    /** Employees who have a key: their payslips are also sealed to them. */
+    employeeKeys,
+    tds,
   };
 }
 
 /** One person's structure as stored: plain switches and template, amounts sealed. */
-function structureEnvelope(s: SalaryStructure) {
+function structureEnvelope(s: SalaryStructure, employeeName?: string) {
+  const ids = openIds(s.statutory, true);
   return {
     userId: s.userId,
+    employeeName,
     salaryTemplateCode: s.salaryTemplateCode,
     status: s.status,
-    statutory: { epf: s.statutory?.epf, esi: s.statutory?.esi, lwf: s.statutory?.lwf, pfActualWage: s.statutory?.pfActualWage, contributeEps: s.statutory?.contributeEps },
+    statutory: {
+      epf: s.statutory?.epf, esi: s.statutory?.esi, lwf: s.statutory?.lwf, pfActualWage: s.statutory?.pfActualWage, contributeEps: s.statutory?.contributeEps,
+      pfAccountNumber: ids.pfAccountNumber, uan: ids.uan, esiNumber: ids.esiNumber,
+    },
     bonusCategory: s.bonusCategory,
     sealed: s.sealed ?? null,
     updatedAt: s.updatedAt.toISOString(),
@@ -87,23 +113,37 @@ function structureEnvelope(s: SalaryStructure) {
 export async function listSealedStructures(viewerUserId: string) {
   const { org } = await encryptedOrgOf(viewerUserId);
   const docs = await salaryStructures().find({ org }).toArray();
-  return docs.map(structureEnvelope);
+  const people = await users().find({ userId: { $in: docs.map((d) => d.userId) } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray();
+  const names = new Map(people.map((p) => [p.userId, p.name]));
+  return docs.map((d) => structureEnvelope(d, names.get(d.userId)));
 }
+
+const codeList = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z0-9_]{1,40}$/.test(c)))] : []);
 
 /** Save one person's structure: template, status and switches plain, amounts sealed in the browser. */
 export async function saveSealedStructure(viewerUserId: string, userId: string, input: Record<string, unknown>) {
-  const { org, keyVersion } = await encryptedOrgOf(viewerUserId);
-  const employee = await users().findOne({ userId }, { projection: { _id: 0, org: 1 } });
+  const { org, keyVersion } = await writableOrgOf(viewerUserId);
+  const employee = await users().findOne({ userId }, { projection: { _id: 0, org: 1, name: 1 } });
   if (!employee || employee.org !== org) throw new PayrollCryptoError(404, 'Employee not found');
   const code = String(input.salaryTemplateCode ?? '').trim().toUpperCase();
   if (!(await salaryTemplates().findOne({ org, code }))) throw new PayrollCryptoError(400, 'Pick a salary template');
   const sealed = requireSealed(input.sealed, 'salary', keyVersion);
   const st = (input.statutory ?? {}) as Record<string, unknown>;
   const flag = (v: unknown) => (v === undefined ? undefined : Boolean(v));
+  const usedComponentCodes = codeList(input.componentCodes);
   // Standard components this salary uses become the org's own (codes, never amounts).
-  if (Array.isArray(input.componentCodes)) await materializeStandard(org, input.componentCodes.map(String));
+  if (usedComponentCodes.length) await materializeStandard(org, usedComponentCodes);
   const now = new Date();
   const existing = await salaryStructures().findOne({ org, userId });
+  // UAN, PF and ESI numbers: the interim server-key field encryption, as on the plaintext path.
+  const idsIn: Record<string, string | undefined> = {};
+  for (const f of ['uan', 'pfAccountNumber', 'esiNumber'] as const) {
+    if (st[f] === undefined) continue;
+    const v = st[f] === null ? '' : String(st[f]).trim();
+    if (v.length > 40) throw new PayrollCryptoError(400, `${f} is too long`);
+    idsIn[f] = v || undefined;
+  }
+  const keptIds = sealIds(idsIn, existing?.statutory);
   const doc: SalaryStructure = {
     org,
     userId,
@@ -112,16 +152,21 @@ export async function saveSealedStructure(viewerUserId: string, userId: string, 
     componentValues: {},
     overrides: {},
     revisions: [],
-    statutory: { ...(existing?.statutory ?? {}), epf: flag(st.epf), esi: flag(st.esi), lwf: flag(st.lwf), pfActualWage: flag(st.pfActualWage), contributeEps: flag(st.contributeEps), pfRestrictedWagePaise: undefined },
+    statutory: {
+      epf: flag(st.epf), esi: flag(st.esi), lwf: flag(st.lwf), pfActualWage: flag(st.pfActualWage), contributeEps: flag(st.contributeEps),
+      pfAccountNumber: keptIds.pfAccountNumber, uan: keptIds.uan, esiNumber: keptIds.esiNumber,
+    },
     bonusCategory: input.bonusCategory === undefined ? existing?.bonusCategory : String(input.bonusCategory),
     status: input.status === 'active' ? 'active' : input.status === 'draft' ? 'draft' : existing?.status ?? 'draft',
     effectiveFrom: existing?.effectiveFrom,
     sealed,
+    usedComponentCodes,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
+  for (const k of Object.keys(doc.statutory!) as (keyof NonNullable<SalaryStructure['statutory']>)[]) if (doc.statutory![k] === undefined) delete doc.statutory![k];
   await salaryStructures().updateOne({ org, userId }, { $set: doc }, { upsert: true });
-  return structureEnvelope(doc);
+  return structureEnvelope(doc, employee.name);
 }
 
 /** The month's non-amount inputs for every active salary: days, attendance, approvals, ESI coverage. */
@@ -165,7 +210,7 @@ const NON_AMOUNT_INPUTS = ['workingDays', 'lopDays', 'attendanceLopDays', 'lopEn
  * clear: they drive the lifecycle, ESI periods and the claims marked paid.
  */
 export async function saveSealedRun(viewerUserId: string, input: Record<string, unknown>) {
-  const { org, keyVersion } = await encryptedOrgOf(viewerUserId);
+  const { org, keyVersion } = await writableOrgOf(viewerUserId);
   const period = String(input.period ?? '');
   parsePeriod(period);
   const slipsIn = Array.isArray(input.payslips) ? (input.payslips as Record<string, unknown>[]) : [];
@@ -179,10 +224,13 @@ export async function saveSealedRun(viewerUserId: string, input: Record<string, 
   const now = new Date();
   const zero = { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 };
   const zeroSlip = { ...zero, netPayablePaise: 0 };
+  const seen = new Set<string>();
   const docs: Payslip[] = slipsIn.map((s) => {
     const userId = String(s.userId);
     const p = byId.get(userId);
     if (!p) throw new PayrollCryptoError(400, `${userId} is not in this organisation`);
+    if (seen.has(userId)) throw new PayrollCryptoError(400, `Two payslips for ${userId}`);
+    seen.add(userId);
     const rawInputs = (s.inputs ?? {}) as Record<string, unknown>;
     const inputs = Object.fromEntries(NON_AMOUNT_INPUTS.filter((k) => rawInputs[k] !== undefined).map((k) => [k, rawInputs[k]]));
     return {
@@ -193,7 +241,7 @@ export async function saveSealedRun(viewerUserId: string, input: Record<string, 
       epf: { contributionWagePaise: 0, employeePaise: 0, employerEpsPaise: 0, employerEpfPaise: 0 },
       inputs: { workingDays: 0, lopDays: 0, payableDays: 0, approvedLeaveDays: 0, approvedOtHours: 0, overtimePaise: 0, reimbursementsPaise: 0, reimbursementClaimIds: [], ...inputs } as Payslip['inputs'],
       sealed: requireSealed(s.sealed, 'payslip', keyVersion),
-      ...(isSealedForPerson(s.sealedForEmployee) ? { sealedForEmployee: s.sealedForEmployee } : {}),
+      ...(isSealedForPerson(s.sealedForEmployee) && s.sealedForEmployee.ct.length <= 200_000 ? { sealedForEmployee: s.sealedForEmployee } : {}),
       createdAt: now,
     };
   });
@@ -207,4 +255,73 @@ export async function saveSealedRun(viewerUserId: string, input: Record<string, 
   }
   await payslips().insertMany(docs);
   return { runId: runId.toHexString(), payslipCount: docs.length };
+}
+
+// —— Tax declarations, sealed ——
+
+async function declarationAccess(viewerUserId: string, userId: string) {
+  const { org, keyVersion } = await encryptedOrgOf(viewerUserId);
+  const employee = await users().findOne({ userId }, { projection: { _id: 0, org: 1 } });
+  if (!employee || employee.org !== org) throw new PayrollCryptoError(404, 'Employee not found');
+  return { org, keyVersion };
+}
+
+/** One person's declaration for a FY: regime and proofs plain, amounts sealed. */
+export async function getSealedDeclaration(viewerUserId: string, userId: string, fy: string) {
+  const { org } = await declarationAccess(viewerUserId, userId);
+  const row = await taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } });
+  const configs = await tdsConfigsFor(fy);
+  return {
+    declaration: row ? { userId: row.userId, fy: row.fy, regime: row.regime, proofs: row.proofs, sealed: row.sealed ?? null, updatedAt: row.updatedAt } : null,
+    configs: [...configs.values()].map((c) => ({ regime: c.regime, status: c.status, source: c.source })),
+  };
+}
+
+export async function saveSealedDeclaration(viewerUserId: string, userId: string, fy: string, input: Record<string, unknown>) {
+  await declarationAccess(viewerUserId, userId);
+  const { org, keyVersion } = await writableOrgOf(viewerUserId);
+  if (!/^\d{4}-\d{2}$/.test(fy)) throw new PayrollCryptoError(400, 'fy is like 2026-27');
+  const regime = input.regime === 'old' ? 'old' : input.regime === 'new' ? 'new' : undefined;
+  if (!regime) throw new PayrollCryptoError(400, 'regime must be new or old');
+  const proofs = input.proofs === 'submitted' || input.proofs === 'verified' ? input.proofs : 'none';
+  const sealed = requireSealed(input.sealed, 'tax declaration', keyVersion);
+  await taxDeclarations().updateOne(
+    { org, userId, fy },
+    { $set: { org, userId, fy, regime, declarations: {}, proofs, sealed, updatedAt: new Date(), updatedByUserId: viewerUserId } },
+    { upsert: true },
+  );
+  return getSealedDeclaration(viewerUserId, userId, fy);
+}
+
+/** Every sealed declaration in the org, for rotation. */
+export async function listSealedDeclarations(viewerUserId: string) {
+  const { org } = await encryptedOrgOf(viewerUserId);
+  const rows = await taxDeclarations().find({ org, sealed: { $exists: true } }, { projection: { _id: 0, userId: 1, fy: 1, sealed: 1 } }).toArray();
+  return rows.map((r) => ({ userId: r.userId, fy: r.fy, sealed: r.sealed }));
+}
+
+// —— An employee's own sealed payslips ——
+
+const RELEASED: PayrollRunStatus[] = ['approved', 'paid'];
+
+/**
+ * The signed-in employee's released payslips that were sealed to their own
+ * key, newest first, with their key record so a new device can unlock it.
+ * The server can't open any of it; the app does.
+ */
+export async function mySealedPayslips(userId: string) {
+  const key = await myEmployeeKey(userId);
+  const all = await payslips().find({ userId, sealedForEmployee: { $exists: true } }, { projection: { userId: 1, org: 1, runId: 1, period: 1, employeeName: 1, sealedForEmployee: 1, createdAt: 1 } }).sort({ period: -1, createdAt: -1 }).limit(24).toArray();
+  const runIds = [...new Set(all.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const runs = runIds.length ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED } }, { projection: { _id: 1, status: 1, period: 1 } }).toArray() : [];
+  const byId = new Map(runs.map((r) => [r._id.toHexString(), r]));
+  const org = all[0]?.org;
+  const company = org ? await companies().findOne({ id: org }, { projection: { name: 1, address: 1 } }) : null;
+  return {
+    key,
+    company: org ? { name: company?.name ?? org, address: company?.address ?? '' } : null,
+    payslips: all
+      .filter((s) => byId.has(s.runId))
+      .map((s) => ({ id: s._id.toHexString(), org: s.org, userId: s.userId, period: s.period, runStatus: byId.get(s.runId)!.status, sealedForEmployee: s.sealedForEmployee })),
+  };
 }

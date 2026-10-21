@@ -375,7 +375,7 @@ const ID_FIELDS = ['uan', 'pfAccountNumber', 'esiNumber'] as const;
  * (interim server key, see fieldCrypto). A masked value sent back unchanged
  * keeps the stored one.
  */
-function sealIds(next: EmployeeStatutory, previous: EmployeeStatutory | undefined): EmployeeStatutory {
+export function sealIds(next: EmployeeStatutory, previous: EmployeeStatutory | undefined): EmployeeStatutory {
   const out: EmployeeStatutory = { ...next };
   for (const field of ID_FIELDS) {
     const v = next[field];
@@ -393,7 +393,7 @@ function sealIds(next: EmployeeStatutory, previous: EmployeeStatutory | undefine
 }
 
 /** The IDs in full for payroll access, else masked; never the ciphertext. */
-function openIds(statutory: EmployeeStatutory | undefined, payroll: boolean): EmployeeStatutory {
+export function openIds(statutory: EmployeeStatutory | undefined, payroll: boolean): EmployeeStatutory {
   const out: EmployeeStatutory = { ...(statutory ?? {}) };
   for (const field of ID_FIELDS) {
     const v = out[field];
