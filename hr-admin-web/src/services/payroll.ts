@@ -1,8 +1,6 @@
 // Typed calls against the payroll admin endpoints (/admin/payroll/*).
 // All money crosses the wire as INTEGER PAISE.
-import { api, ApiError } from './http';
-import { isPayrollEncrypted, unlockedSealed } from './payrollSealed';
-import type { OpenStructure } from './payroll-core';
+import { api } from './http';
 import { standardNotAdded } from '../../../backend/src/shared/payroll/standard-components';
 
 // ————————————————————————————————————————————————————————————————
@@ -452,81 +450,22 @@ export const deleteSalaryTemplate = (code: string) =>
 export const previewSalaryTemplate = (input: SalaryTemplateInput & { sampleAnnualCtcPaise: number }) =>
   api<{ computed: ComputedStructure }>('/admin/payroll/salary-templates/preview', { method: 'POST', body: input }).then((r) => r.computed);
 
-export const listSalaryStructures = async (): Promise<StructureListRow[]> => {
-  const rows = await api<{ structures: (StructureListRow & { sealed?: boolean })[] }>('/admin/payroll/salary-structures').then((r) => r.structures);
-  if (!rows.some((r) => r.sealed)) return rows;
-  // Encrypted company: the CTCs open in this browser.
-  const open = new Map((await unlockedSealed().structures()).map((o) => [o.userId, o.secret.annualCtcPaise]));
-  return rows.map((r) => (r.sealed ? { ...r, annualCtcPaise: open.get(r.userId) ?? 0 } : r));
-};
+export const listSalaryStructures = () =>
+  api<{ structures: StructureListRow[] }>('/admin/payroll/salary-structures').then((r) => r.structures);
 
 export type StructureResponse = { structure: SalaryStructureDTO; computed: ComputedStructure; components: StructureComponent[] };
 
-export const getSalaryStructure = async (userId: string): Promise<StructureResponse> => {
-  if (!(await isPayrollEncrypted())) return api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`);
-  const sealed = unlockedSealed();
-  const open = await sealed.structure(userId);
-  if (!open) throw new ApiError(404, 'No salary structure for this employee');
-  const { computed, components, template } = await sealed.compute(open);
-  return { structure: structureView(open, template.name), computed: computed as unknown as ComputedStructure, components: components as unknown as StructureComponent[] };
-};
+export const getSalaryStructure = (userId: string) =>
+  api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`);
 
-/** A sealed salary, opened, in the shape the screens use for a plaintext one. */
-function structureView(o: OpenStructure, templateName?: string): SalaryStructureDTO {
-  return {
-    userId: o.userId,
-    salaryTemplateCode: o.salaryTemplateCode,
-    templateName,
-    annualCtcPaise: o.secret.annualCtcPaise,
-    componentValues: o.secret.componentValues ?? {},
-    overrides: (o.secret.overrides ?? {}) as StructureOverrides,
-    revisions: (o.secret.revisions ?? []) as SalaryRevision[],
-    statutory: { ...(o.statutory as EmployeeStatutory), ...(o.secret.pfRestrictedWagePaise !== undefined ? { pfRestrictedWagePaise: o.secret.pfRestrictedWagePaise } : {}) },
-    bonusCategory: o.bonusCategory,
-    status: o.status as 'draft' | 'active',
-    updatedAt: (o as { updatedAt?: string }).updatedAt ?? new Date().toISOString(),
-  };
-}
+export const previewSalaryStructure = (userId: string, input: SalaryStructureInput) =>
+  api<{ computed: ComputedStructure; components: StructureComponent[] }>(`/admin/payroll/salary-structures/${userId}/preview`, {
+    method: 'POST',
+    body: input,
+  });
 
-/** The saved salary with an edit applied, as the server merges one. */
-function mergeOpen(existing: OpenStructure | null, userId: string, input: SalaryStructureInput) {
-  const statutory = { ...((existing?.statutory ?? {}) as Record<string, unknown>), ...((input.statutory ?? {}) as Record<string, unknown>) };
-  const pfRestricted = 'pfRestrictedWagePaise' in statutory ? statutory.pfRestrictedWagePaise as number | undefined : existing?.secret.pfRestrictedWagePaise;
-  delete statutory.pfRestrictedWagePaise;
-  const templateCode = input.salaryTemplateCode ?? existing?.salaryTemplateCode;
-  if (!templateCode) throw new ApiError(400, 'Assign a salary template first');
-  return {
-    userId,
-    salaryTemplateCode: templateCode,
-    status: input.status ?? (existing?.status as 'draft' | 'active' | undefined) ?? 'draft',
-    statutory: statutory as OpenStructure['statutory'],
-    bonusCategory: input.bonusCategory ?? existing?.bonusCategory,
-    secret: {
-      annualCtcPaise: input.annualCtcPaise ?? existing?.secret.annualCtcPaise ?? 0,
-      componentValues: input.componentValues ?? existing?.secret.componentValues,
-      overrides: input.overrides ?? existing?.secret.overrides,
-      revisions: existing?.secret.revisions ?? [],
-      ...(pfRestricted !== undefined ? { pfRestrictedWagePaise: pfRestricted } : {}),
-    },
-  };
-}
-
-export const previewSalaryStructure = async (userId: string, input: SalaryStructureInput): Promise<{ computed: ComputedStructure; components: StructureComponent[] }> => {
-  if (!(await isPayrollEncrypted())) {
-    return api<{ computed: ComputedStructure; components: StructureComponent[] }>(`/admin/payroll/salary-structures/${userId}/preview`, { method: 'POST', body: input });
-  }
-  const sealed = unlockedSealed();
-  const { computed, components } = await sealed.compute(mergeOpen(await sealed.structure(userId), userId, input));
-  return { computed: computed as unknown as ComputedStructure, components: components as unknown as StructureComponent[] };
-};
-
-export const saveSalaryStructure = async (userId: string, input: SalaryStructureInput): Promise<StructureResponse> => {
-  if (!(await isPayrollEncrypted())) return api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`, { method: 'PUT', body: input });
-  const sealed = unlockedSealed();
-  const existing = await sealed.structure(userId);
-  await sealed.saveStructure(mergeOpen(existing, userId, input), existing?.secret, input.effectiveFrom);
-  return getSalaryStructure(userId);
-};
+export const saveSalaryStructure = (userId: string, input: SalaryStructureInput) =>
+  api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`, { method: 'PUT', body: input });
 
 // ————————————————————————————————————————————————————————————————
 // Payroll Runs
@@ -607,38 +546,14 @@ export type PayslipDTO = {
   };
 };
 
-type SealedRun = PayrollRunDTO & { sealedTotals?: unknown };
-type SealedSlip = PayslipDTO & { sealed?: unknown };
+export const listRuns = () =>
+  api<{ runs: PayrollRunDTO[] }>('/admin/payroll/runs').then((r) => r.runs);
 
-/** A run's totals, opened in this browser when they are sealed. */
-async function openRun(run: SealedRun): Promise<PayrollRunDTO> {
-  if (!run.sealedTotals) return run;
-  return { ...run, totals: await unlockedSealed().openTotals(run as never) };
-}
+export const getRun = (runId: string) =>
+  api<{ run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } }>(`/admin/payroll/runs/${runId}`);
 
-async function openSlip(slip: SealedSlip): Promise<PayslipDTO> {
-  if (!slip.sealed) return slip;
-  return (await unlockedSealed().openPayslip(slip as never)) as unknown as PayslipDTO;
-}
-
-export const listRuns = async (): Promise<PayrollRunDTO[]> => {
-  const runs = await api<{ runs: SealedRun[] }>('/admin/payroll/runs').then((r) => r.runs);
-  if (!runs.some((r) => r.sealedTotals)) return runs;
-  return Promise.all(runs.map(openRun));
-};
-
-export const getRun = async (runId: string) => {
-  const d = await api<{ run: SealedRun; payslips: SealedSlip[]; company: { name: string; address: string } }>(`/admin/payroll/runs/${runId}`);
-  if (!d.run.sealedTotals && !d.payslips.some((p) => p.sealed)) return d as { run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } };
-  return { ...d, run: await openRun(d.run), payslips: await Promise.all(d.payslips.map(openSlip)) };
-};
-
-export const createRun = async (input: { period: string; lopDays?: Record<string, number>; overtimePaise?: Record<string, number> }): Promise<{ run: PayrollRunDTO; payslipCount: number }> => {
-  if (!(await isPayrollEncrypted())) return api<{ run: PayrollRunDTO; payslipCount: number }>('/admin/payroll/runs', { method: 'POST', body: input });
-  // Encrypted company: the month is computed in this browser and saved sealed.
-  const { runId, payslipCount } = await unlockedSealed().buildRun(input.period, { lopDays: input.lopDays, overtimePaise: input.overtimePaise });
-  return { run: (await getRun(runId)).run, payslipCount };
-};
+export const createRun = (input: { period: string; lopDays?: Record<string, number>; overtimePaise?: Record<string, number> }) =>
+  api<{ run: PayrollRunDTO; payslipCount: number }>('/admin/payroll/runs', { method: 'POST', body: input });
 
 /** Per-person figures HR types on a draft run. A null clears one back to attendance / none; people left out keep what was typed before. */
 export type RunOverrides = {
@@ -648,18 +563,14 @@ export type RunOverrides = {
   /** This month only: one-time earnings and deductions per person, paise by component code. */
   componentAmounts?: Record<string, Record<string, number | null> | null>;
 };
-export const recomputeRun = async (
+export const recomputeRun = (
   runId: string,
   overrides: RunOverrides,
-): Promise<PayrollRunDTO> => {
-  if (!(await isPayrollEncrypted())) {
-    return api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/recompute`, { method: 'POST', body: overrides }).then((r) => r.run);
-  }
-  // As the server does it: the run's earlier slips keep what HR typed unless this edit changes it.
-  const { run, payslips } = await getRun(runId);
-  await unlockedSealed().buildRun(run.period, overrides as never, payslips as never);
-  return (await getRun(runId)).run;
-};
+) =>
+  api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/recompute`, {
+    method: 'POST',
+    body: overrides,
+  }).then((r) => r.run);
 
 export const submitRun = (runId: string) =>
   api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/submit`, { method: 'POST' }).then((r) => r.run);
@@ -677,11 +588,8 @@ export const markRunPaid = (runId: string) =>
   api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/mark-paid`, { method: 'POST' }).then((r) => r.run);
 
 /** One employee's payslips across runs, newest first, with the company for the printed slip. */
-export const getEmployeePayslips = async (userId: string) => {
-  const d = await api<{ company: { name: string; address: string }; payslips: { run: SealedRun; payslip: SealedSlip }[] }>(`/admin/employees/${userId}/payslips`);
-  if (!d.payslips.some((x) => x.payslip.sealed || x.run.sealedTotals)) return d as { company: { name: string; address: string }; payslips: { run: PayrollRunDTO; payslip: PayslipDTO }[] };
-  return { ...d, payslips: await Promise.all(d.payslips.map(async (x) => ({ run: await openRun(x.run), payslip: await openSlip(x.payslip) }))) };
-};
+export const getEmployeePayslips = (userId: string) =>
+  api<{ company: { name: string; address: string }; payslips: { run: PayrollRunDTO; payslip: PayslipDTO }[] }>(`/admin/employees/${userId}/payslips`);
 
 // ————————————————————————————————————————————————————————————————
 // Bank account, PAN and UAN — encrypted at rest; in full only with payroll access.
@@ -751,26 +659,8 @@ export type TaxDeclarations = {
 export type TaxDeclarationDTO = { regime: 'new' | 'old'; declarations: TaxDeclarations; proofs: 'none' | 'submitted' | 'verified'; updatedAt?: string };
 export type TaxDeclarationResponse = { fy: string; declaration: TaxDeclarationDTO | null; configs: { regime: 'new' | 'old'; status: string; source?: string }[] };
 
-type SealedDeclarationResponse = TaxDeclarationResponse & { declaration: (TaxDeclarationDTO & { sealed?: unknown; userId?: string; fy?: string }) | null };
+export const getTaxDeclaration = (userId: string, fy?: string) =>
+  api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`);
 
-async function openDeclarationResponse(r: SealedDeclarationResponse, userId: string): Promise<TaxDeclarationResponse> {
-  if (!r.declaration?.sealed) return r;
-  const declarations = await unlockedSealed().openDeclaration({ userId, fy: r.fy, sealed: r.declaration.sealed as never });
-  const { sealed: _s, ...rest } = r.declaration;
-  return { ...r, declaration: { ...rest, declarations: declarations as TaxDeclarations } };
-}
-
-export const getTaxDeclaration = async (userId: string, fy?: string): Promise<TaxDeclarationResponse> => {
-  const r = await api<SealedDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`);
-  return openDeclarationResponse(r, userId);
-};
-
-export const saveTaxDeclaration = async (userId: string, input: Omit<TaxDeclarationDTO, 'updatedAt'>, fy?: string): Promise<TaxDeclarationResponse> => {
-  const path = `/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`;
-  if (!(await isPayrollEncrypted())) return api<TaxDeclarationResponse>(path, { method: 'PUT', body: input });
-  // The FY the server will file it under: the one asked for, else the one it reports now.
-  const year = fy ?? (await api<SealedDeclarationResponse>(path)).fy;
-  const sealed = await unlockedSealed().sealDeclaration(userId, year, input.declarations as never);
-  const r = await api<SealedDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration?fy=${year}`, { method: 'PUT', body: { regime: input.regime, proofs: input.proofs, sealed } });
-  return openDeclarationResponse(r, userId);
-};
+export const saveTaxDeclaration = (userId: string, input: Omit<TaxDeclarationDTO, 'updatedAt'>, fy?: string) =>
+  api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });
