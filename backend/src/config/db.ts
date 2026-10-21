@@ -40,6 +40,7 @@ import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
+import { PayrollCryptoDoc } from '../models/payrollCrypto.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
@@ -258,6 +259,10 @@ export function payrollRuns(): Collection<PayrollRun> {
 
 export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
   return getDb().collection<EmployeePaymentDetails>('employee_payment_details');
+}
+
+export function payrollCrypto(): Collection<PayrollCryptoDoc> {
+  return getDb().collection<PayrollCryptoDoc>('payroll_crypto');
 }
 
 export function tdsConfigs(): Collection<TdsConfigRow> {

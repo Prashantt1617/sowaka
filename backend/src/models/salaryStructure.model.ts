@@ -77,6 +77,8 @@ export interface SalaryStructure {
 
   status: 'draft' | 'active';
   effectiveFrom?: Date;
+  /** E2E-encrypted orgs: the amounts (CTC, values, overrides, revisions), sealed; the plain fields above are zero / empty. */
+  sealed?: import('../shared/payroll/crypto').Sealed;
   createdAt: Date;
   updatedAt: Date;
 }

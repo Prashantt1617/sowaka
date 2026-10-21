@@ -32,6 +32,8 @@ export interface PayrollRun {
   totals: PayrollRunTotals;
   /** Rejection / recall note (PRD §6). */
   note?: string;
+  /** E2E-encrypted orgs: the totals, sealed; `totals` is zeros. */
+  sealedTotals?: import('../shared/payroll/crypto').Sealed;
   createdByUserId: string;
   submittedByUserId?: string;
   decidedByUserId?: string;
@@ -134,5 +136,9 @@ export interface Payslip {
   };
 
   inputs: PayslipInputs;
+  /** E2E-encrypted orgs: the whole computed slip, sealed with the org's data key; amounts above are zero. */
+  sealed?: import('../shared/payroll/crypto').Sealed;
+  /** The same slip for the employee alone, wrapped to their public key (when they have one). */
+  sealedForEmployee?: import('../shared/payroll/crypto').SealedForPerson;
   createdAt: Date;
 }

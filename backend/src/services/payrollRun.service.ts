@@ -32,6 +32,7 @@ import { attendanceCountsForPeriod, payrollDeductions } from './deduction.servic
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
+import { isEncryptedOrg } from './payrollCrypto.service';
 import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from './tds.service';
 import { fyOf } from '../shared/payroll/tds';
 
@@ -66,6 +67,7 @@ type Amounts = Record<string, Record<string, number>>;
  */
 export async function createRun(adminUserId: string, input: CreateRunInput) {
   const org = await requireAdminOrg(adminUserId);
+  await refuseIfEncrypted(org);
   const range = parsePeriod(input.period);
 
   const existing = await payrollRuns().findOne({ org, period: input.period });
@@ -122,6 +124,7 @@ export async function recomputeRun(
   },
 ) {
   const org = await requireAdminOrg(adminUserId);
+  await refuseIfEncrypted(org);
   const run = await findOwnedRun(org, runIdInput);
   if (run.status !== 'draft') {
     throw new PayrollRunError(409, 'Only draft runs can be recomputed');
@@ -430,7 +433,8 @@ export async function myPayslips(userId: string) {
   const runIds = [...new Set(all.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
   const runs = runIds.length ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED } }).toArray() : [];
   const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
-  const slips = all.filter((s) => runById.has(s.runId)).slice(0, MY_PAYSLIPS);
+  // A sealed slip only opens with the employee's own key; the app can't yet, so it isn't listed.
+  const slips = all.filter((s) => runById.has(s.runId) && !s.sealed).slice(0, MY_PAYSLIPS);
   if (slips.length === 0) return { company: null, payslips: [] };
   return {
     company: await companyOf(slips[0].org),
@@ -632,6 +636,11 @@ async function findOwnedRun(org: string, runIdInput: string): Promise<StoredRun>
   return run as StoredRun;
 }
 
+/** An encrypted org's runs are computed and sealed in the browser (sealedPayroll.service). */
+async function refuseIfEncrypted(org: string): Promise<void> {
+  if (await isEncryptedOrg(org)) throw new PayrollRunError(409, 'This organisation’s salaries are encrypted: unlock them in the dashboard to run payroll');
+}
+
 async function requireAdminOrg(adminUserId: string): Promise<string> {
   const admin: User | null = await users().findOne({ userId: adminUserId });
   if (!admin) throw new PayrollRunError(404, 'User not found');
@@ -647,6 +656,7 @@ function runView(run: StoredRun) {
     status: run.status,
     employeeCount: run.employeeCount,
     totals: run.totals,
+    ...(run.sealedTotals ? { sealedTotals: run.sealedTotals } : {}),
     note: run.note,
     createdByUserId: run.createdByUserId,
     submittedByUserId: run.submittedByUserId,
@@ -682,6 +692,8 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     reimbursementLines: slip.reimbursementLines ?? [],
     employer: slip.employer,
     annualCtcPaise: slip.annualCtcPaise,
+    ...(slip.sealed ? { sealed: slip.sealed } : {}),
+    ...(slip.sealedForEmployee ? { sealedForEmployee: slip.sealedForEmployee } : {}),
     epf: slip.epf,
     inputs: slip.inputs,
   };

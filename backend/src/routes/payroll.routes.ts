@@ -44,6 +44,18 @@ import {
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
+import {
+  contextHandler,
+  cryptoStatusHandler,
+  grantHandler,
+  registerKeyHandler,
+  rotateHandler,
+  runInputsHandler,
+  saveSealedRunHandler,
+  saveSealedStructureHandler,
+  sealedStructuresHandler,
+  setupHandler,
+} from '../controllers/payrollCrypto.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -110,3 +122,16 @@ payrollRouter.put('/employees/:userId/payment-details', setPaymentDetailsHandler
 // One employee's income tax regime and declarations for a FY (?fy=2026-27).
 payrollRouter.get('/employees/:userId/tax-declaration', getDeclarationHandler);
 payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
+
+// End-to-end encrypted salaries: keys and grants, and the sealed records the
+// dashboard computes in the browser. The server never holds a key that opens them.
+payrollRouter.get('/crypto', cryptoStatusHandler);
+payrollRouter.post('/crypto/keys', registerKeyHandler);
+payrollRouter.post('/crypto/setup', setupHandler);
+payrollRouter.post('/crypto/grants', grantHandler);
+payrollRouter.post('/crypto/rotate', rotateHandler);
+payrollRouter.get('/sealed/context', contextHandler);
+payrollRouter.get('/sealed/structures', sealedStructuresHandler);
+payrollRouter.put('/sealed/structures/:userId', saveSealedStructureHandler);
+payrollRouter.get('/sealed/run-inputs', runInputsHandler);
+payrollRouter.post('/sealed/runs', saveSealedRunHandler);
