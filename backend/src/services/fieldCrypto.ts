@@ -3,13 +3,11 @@
  * number, PAN, UAN, PF and ESI numbers): AES-256-GCM, a fresh 96-bit IV per
  * value, stored as "f1:<iv>:<tag>:<ciphertext>" (base64url).
  *
- * INTERIM LAYER. The key is a server-side secret from the environment
- * (PAYROLL_FIELD_KEY: 32 random bytes, base64), so it protects the values in
- * the database and its backups, not against someone who also holds the
- * server's environment. The end-to-end scheme in docs/PAYROLL_ENCRYPTION.md
- * (per-org data key wrapped to each payroll user's key, decrypted only in
- * the browser) is meant to take over these fields; until then this keeps
- * them out of plaintext at rest.
+ * The key is a server-side secret from the environment (PAYROLL_FIELD_KEY:
+ * 32 random bytes, base64), so it protects the values in the database and its
+ * backups, not against someone who also holds the server's environment. Every
+ * server reading the same database needs the same key: a value saved with one
+ * key reads as masked under another.
  */
 import crypto from 'node:crypto';
 
