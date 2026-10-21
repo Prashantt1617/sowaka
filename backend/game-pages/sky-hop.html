@@ -179,7 +179,7 @@ html.app .howto{padding-top:20px}
 .lb{display:flex;flex-direction:column;gap:8px}
 .lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--body);font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .lbh .of{color:var(--ink)}
-.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
+.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:2px 2px 4px;margin:0 -2px}
 .lb.full .ranks{max-height:min(64vh,560px)}
 .rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
   font-family:var(--body);font-size:.88rem;font-weight:400;font-variant-numeric:tabular-nums;color:var(--ink)}
@@ -197,6 +197,7 @@ html.app .howto{padding-top:20px}
 .pin{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:14px;background:var(--gold);color:#1E0A26;font-family:var(--body);font-weight:400;font-size:.88rem}
 .pin .pos{background:#1E0A26!important;color:var(--gold)!important;margin-right:8px}
 .pin b{font-family:var(--display);font-weight:400;font-size:1.1rem}
+.pin.tap{cursor:pointer;-webkit-tap-highlight-color:transparent}.pin.tap:active{filter:brightness(.94)}
 /* A challenge's result: the two scores side by side, and what it paid. */
 .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;text-align:center}
 .vs .side{padding:10px 6px;border-radius:16px;background:var(--panel2);border:2px solid transparent;min-width:0}
@@ -622,8 +623,20 @@ html.app .howto{padding-top:20px}
     if (b.me && b.shared && !rows.some(r => r.me)) { if (prev && b.me.rank > prev + 1) list.appendChild(el('div', 'gap', '•••')); mine = row({ rank: b.me.rank, score: b.me.score, me: true }, you); }
     box.appendChild(list);
     /* Your own row, always in view under the list, once you are below the top 3. */
-    if (b.me && b.shared && b.me.rank > 3) { const pin = el('div', 'pin'), l = el('span'); l.append(el('i', 'pos', String(b.me.rank)), document.createTextNode('You' + (b.total ? ' · top ' + Math.max(1, Math.ceil(b.me.rank / b.total * 100)) + '%' : ''))); pin.append(l, el('b', '', fmtn(b.me.score))); box.appendChild(pin); }
-    if (mine) requestAnimationFrame(() => { const top = mine.offsetTop - list.offsetTop - list.clientHeight / 2 + mine.clientHeight / 2; if (top > 0) list.scrollTop = top; });
+    /* Your row centred in the list: at once as the board opens, and smoothly when the pinned row under it is tapped. */
+    const toMine = smooth => {
+      if (!mine) return; const top = Math.max(0, mine.offsetTop - list.offsetTop - list.clientHeight / 2 + mine.clientHeight / 2);
+      if (smooth && list.scrollTo && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) list.scrollTo({ top, behavior: 'smooth' }); else list.scrollTop = top;
+    };
+    if (b.me && b.shared && b.me.rank > 3) {
+      const pin = el('div', 'pin'), l = el('span'); l.append(el('i', 'pos', String(b.me.rank)), document.createTextNode('You' + (b.total ? ' · top ' + Math.max(1, Math.ceil(b.me.rank / b.total * 100)) + '%' : ''))); pin.append(l, el('b', '', fmtn(b.me.score)));
+      if (mine) {
+        pin.classList.add('tap'); pin.setAttribute('role', 'button'); pin.tabIndex = 0; pin.setAttribute('aria-label', 'Show me in the list'); pin.onclick = () => toMine(true);
+        pin.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toMine(true); } };
+      }
+      box.appendChild(pin);
+    }
+    if (mine) requestAnimationFrame(() => toMine(false));
   }
   /* The leaderboard sheet: no buttons; a tap outside closes it. */
   function openBoard() {

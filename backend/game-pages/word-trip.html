@@ -240,7 +240,8 @@ html.app .howto{padding-top:20px}
 /* The leaderboard: one list, the whole of it, in its own scroll. */
 .lb{display:flex;flex-direction:column;gap:8px}
 .lbh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--body);font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;padding:2px 2px 4px;margin:0 -2px}
+.ranks{display:flex;flex-direction:column;gap:6px;max-height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:2px 2px 4px;margin:0 -2px}
+.lbh .jump{cursor:pointer;color:var(--ink);text-decoration:underline dotted;text-underline-offset:3px;-webkit-tap-highlight-color:transparent}
 .lb.full .ranks{max-height:min(64vh,560px)}
 .rank.tap{cursor:pointer}.rank.tap:active{filter:brightness(.92)}
 .rank{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px 6px 6px;border-radius:14px;background:var(--panel2);
@@ -552,15 +553,21 @@ function refreshBoard(){ if(!bridge())return;
    In the app it is the company's board and only that (a round that could not reach it says so, and shows no other list); in a plain browser,
    with no bridge, it is this device's scores. */
 function drawBoard(box,b){
-  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); if(b.me&&b.shared)h.append(el('span','','You: #'+b.me.rank)); box.appendChild(h);
+  box.innerHTML=''; const h=el('div','lbh'); h.append(el('span','',b.offline?'Leaderboard':b.title)); const jump=b.me&&b.shared?el('span','jump','You: #'+b.me.rank):null; if(jump)h.append(jump); box.appendChild(h);
   if(b.offline){ box.appendChild(el('p','wait','Could not reach the leaderboard. This round is kept on this device.')); return; }
   if(!b.rows.length){ box.appendChild(el('p','wait','No scores yet. Yours will be the first.')); return; }
-  const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score)));
+  let mine=null; const list=el('div','ranks'), row=(r,name)=>{ const w=el('div','rank'+(r.me?' me':'')+(r.rank>=1&&r.rank<=3?' p'+r.rank:'')), left=el('span'); left.append(el('i','pos',String(r.rank)),document.createTextNode(name)); w.append(left,el('b','',fmtn(r.score)));
     if(opensProfile(r)){ w.classList.add('tap'); w.setAttribute('role','button'); w.tabIndex=0; w.setAttribute('aria-label',r.name+'’s profile');
-      w.onclick=()=>openProfile(r); w.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openProfile(r); } }; } list.appendChild(w); };
+      w.onclick=()=>openProfile(r); w.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openProfile(r); } }; } list.appendChild(w); if(r.me)mine=w; };
   b.rows.forEach(r=>row(r,r.me&&b.shared?(r.name+' (you)'):r.name));
   if(b.me&&b.shared&&!b.rows.some(r=>r.me))row({rank:b.me.rank,score:b.me.score,me:true},(Board.name()||'You')+' (you)');
   box.appendChild(list);
+  /* Your row centred in the list: at once as the board opens, and smoothly when the "You: #N" above it is tapped. */
+  const toMine=smooth=>{ if(!mine)return; const top=Math.max(0,mine.offsetTop-list.offsetTop-list.clientHeight/2+mine.clientHeight/2);
+    if(smooth&&list.scrollTo&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches))list.scrollTo({top,behavior:'smooth'}); else list.scrollTop=top; };
+  if(jump&&mine){ jump.setAttribute('role','button'); jump.tabIndex=0; jump.setAttribute('aria-label','Show me in the list'); jump.onclick=()=>toMine(true);
+    jump.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toMine(true); } }; }
+  if(mine)requestAnimationFrame(()=>toMine(false));
 }
 function boardBox(pending){ const box=el('div','lb'); box.append(el('div','lbh','Leaderboard'),el('p','wait',bridge()?'Saving your score…':''));
   pending.then(b=>{seeBoard(b);drawBoard(box,b);}).catch(()=>{box.lastChild.textContent='Could not load the leaderboard.';}); return box; }
