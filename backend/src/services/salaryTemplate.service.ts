@@ -154,7 +154,8 @@ async function normalizeInput(
   const byCode = new Map(catalog.map((h) => [h.code, h]));
   const name = requireString(input.name, 'name', 100);
   const code = normalizeCode(input.code);
-  const description = input.description === undefined ? undefined : String(input.description).trim().slice(0, 300);
+  // null clears it; never store the word "null".
+  const description = input.description === undefined ? undefined : input.description === null ? '' : String(input.description).trim().slice(0, 300);
   const active = input.active === undefined ? true : Boolean(input.active);
 
   if (!Array.isArray(input.components) || input.components.length === 0) {
