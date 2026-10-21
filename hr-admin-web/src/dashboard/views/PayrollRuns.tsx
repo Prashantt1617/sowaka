@@ -22,6 +22,7 @@ import { useAuth } from '../auth/AuthContext';
 
 import { Card, EmptyRow, SummaryCard } from '../ui';
 import { printPayslip } from '../payslip';
+import { PayrollEncryptionCard, PayrollUnlockGate } from './PayrollEncryption';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 
 const STATUS_TONE: Record<RunStatus, { bg: string; fg: string; label: string }> = {
@@ -42,7 +43,17 @@ function thisMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+/** Payroll Runs, behind the salary-encryption panel and, when encrypted, the unlock gate. */
 export function PayrollRuns() {
+  return (
+    <>
+      <PayrollEncryptionCard />
+      <PayrollUnlockGate><PayrollRunsBody /></PayrollUnlockGate>
+    </>
+  );
+}
+
+function PayrollRunsBody() {
   const { flash } = useStore();
   const [runs, setRuns] = useState<PayrollRunDTO[]>([]);
   const [loading, setLoading] = useState(true);

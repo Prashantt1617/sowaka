@@ -8,3 +8,5 @@ export type { PayslipComputation } from '../../../backend/src/shared/payroll/pay
 export { applyOverrides, resolveTemplateComponents } from '../../../backend/src/shared/payroll/resolve';
 export { defaultStatutorySettings } from '../../../backend/src/shared/payroll/statutory-defaults';
 export { computeTds, fyOf } from '../../../backend/src/shared/payroll/tds';
+export { SealedPayroll, PayrollLockedError } from '../../../backend/src/shared/payroll/sealed-client';
+export type { CryptoStatus, OpenStructure, OpenPayslip, PayrollApi, RunEdits } from '../../../backend/src/shared/payroll/sealed-client';

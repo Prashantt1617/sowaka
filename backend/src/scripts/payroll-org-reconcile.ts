@@ -31,6 +31,11 @@ async function main() {
   await client.connect();
   try {
     const db = client.db(process.env.MONGODB_DB);
+    // An end-to-end encrypted org's amounts can't be read here, by design.
+    if (await db.collection('payroll_crypto').findOne({ kind: 'org', org, mode: 'encrypted' })) {
+      console.log(JSON.stringify({ org, period, encrypted: true, skipped: 'salaries are end-to-end encrypted — skipped' }, null, 1));
+      return;
+    }
     const [structures, catalog, templates, storedSettings, rules] = await Promise.all([
       db.collection<SalaryStructure>('salary_structures').find({ org }).toArray(),
       db.collection<PayHead>('pay_heads').find({ org }).toArray(),
