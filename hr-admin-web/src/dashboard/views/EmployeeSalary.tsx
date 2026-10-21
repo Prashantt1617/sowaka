@@ -17,7 +17,6 @@ import {
   getSalaryStructure,
   getStatutorySettings,
   listPayHeads,
-  standardPayHeads,
   listSalaryTemplates,
   previewSalaryStructure,
   rupeesToPaise,
@@ -157,7 +156,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
       if (!live) return;
       setData(d);
       setTemplates(ts);
-      setPayHeads([...phs, ...standardPayHeads(phs)]);
+      setPayHeads(phs);
       setStatutory(st);
     }).catch((e) => { if (live) { setData(null); flash(e instanceof ApiError ? e.message : 'Could not load salary'); } });
     return () => { live = false; };

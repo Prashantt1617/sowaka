@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, standardPayHeads, updatePayHead } from '../../services/payroll';
+import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, updatePayHead } from '../../services/payroll';
 import type { CalculationBasis, PayHeadDTO, PayHeadInput } from '../../services/payroll';
 import { Card } from '../ui';
 import { IconPlus } from '../icons';
@@ -366,9 +366,9 @@ export function PayHeadMaster() {
     void loadLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The org's own components, then the built-in standard ones it hasn't
-  // added (saved as its own the first time HR saves one or a template uses it).
-  const catalog = [...heads, ...standardPayHeads(heads)];
+  // Only the components this company has: anything else is added with
+  // "+ Add Component" when it's needed.
+  const catalog = heads;
   // Basic first, then HRA, then the rest; standard ones after the org's own.
   const earnings = catalog
     .filter((h) => h.category === 'earning')

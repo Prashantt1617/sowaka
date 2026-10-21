@@ -285,7 +285,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   const oneTimeTotal = nonBalancing.filter(isOneTime).reduce((sum, head) => sum + rawValue(head.code), 0);
   const othersTotal = earningsOthers + reimbursementsTotal + benefitsTotal;
   const balancingHead = balancingCode ? byCode.get(balancingCode) : undefined;
-  const statutoryAt = (balancePaise: number) => {
+  const monthSegments = epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom);
+  const statutoryAt = (balancePaise: number, segments = monthSegments) => {
     let always = 0;
     let conditional = 0;
     const pfHeads = [...nonBalancing, ...(balancingHead ? [balancingHead] : [])];
@@ -312,7 +313,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       pfConditionalPaise: conditional,
       pfTestPaise: always,
       ceilingPaise: ceiling,
-      ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom),
+      ceilingSegments: segments,
       person: input.statutory,
       esiWagePaise,
       pfWageMode: wages?.pfWageMode,
@@ -323,16 +324,30 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   // and any employer contributions placed inside CTC. Those contributions can
   // depend on the balance (ESI on gross), so settle it in a few passes.
   if (balancingHead) {
-    let balance = Math.max(0, monthlyCtc - othersTotal);
-    for (let pass = 0; pass < 8; pass++) {
-      const next = Math.max(0, monthlyCtc - othersTotal - statutoryAt(balance).includedInCtcPaise);
-      if (Math.abs(next - balance) < 100) {
+    const solve = (segments: typeof monthSegments) => {
+      let balance = Math.max(0, monthlyCtc - othersTotal);
+      for (let pass = 0; pass < 8; pass++) {
+        const next = Math.max(0, monthlyCtc - othersTotal - statutoryAt(balance, segments).includedInCtcPaise);
+        if (Math.abs(next - balance) < 100) {
+          balance = next;
+          break;
+        }
         balance = next;
-        break;
       }
-      balance = next;
+      return balance;
+    };
+    let balance: number;
+    if (monthSegments.length > 1) {
+      // A month the PF ceiling changes in (Sep 2026), as Zoho books it: the PF
+      // placed inside CTC is worked out on the salary as it stands at the new
+      // ceiling, across this month's ceiling periods, and the balance takes the
+      // rest in one step (Fixed ₹12,796 against ₹12,387 in a normal month).
+      const days = monthSegments.reduce((t, x) => t + x.days, 0);
+      const reference = solve([{ ceilingPaise: monthSegments[monthSegments.length - 1].ceilingPaise, days }]);
+      balance = Math.max(0, monthlyCtc - othersTotal - statutoryAt(reference).includedInCtcPaise);
+    } else {
+      balance = solve(monthSegments);
     }
-    // Whole rupees, as Zoho pays it: the balance rounds to the nearest rupee.
     memo.set(balancingHead.code, roundToRupee(balance));
   }
 

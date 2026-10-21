@@ -104,8 +104,11 @@ async function collectApprovedReimbursements(
   userId: string,
   range: PeriodRange,
 ): Promise<{ paise: number; ids: string[] }> {
+  // Every approved claim not yet paid, up to the end of this month: a claim
+  // approved late for last month's expense is paid in the next run (Mark paid
+  // moves the run's claims to paid, so none is paid twice).
   const rows = await reimbursementClaims()
-    .find({ userId, status: 'approved', expenseDate: { $gte: range.start, $lte: range.end } })
+    .find({ userId, status: 'approved', expenseDate: { $lte: range.end } })
     .toArray();
   let paise = 0;
   const ids: string[] = [];

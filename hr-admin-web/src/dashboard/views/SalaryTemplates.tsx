@@ -21,7 +21,6 @@ import {
   getSalaryTemplate,
   getStatutorySettings,
   listPayHeads,
-  standardPayHeads,
   listSalaryStructures,
   listSalaryTemplates,
   previewSalaryTemplate,
@@ -291,7 +290,8 @@ export function SalaryTemplates() {
       setTemplates(ts);
       // The org's own components plus the standard ones it hasn't added: a
       // standard one used on a template is saved as the org's on Save.
-      setPayHeadsList([...phs, ...standardPayHeads(phs)]);
+      // Only the company's own components; others are added in Salary Components first.
+      setPayHeadsList(phs);
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not load templates', 'error');
     } finally {
