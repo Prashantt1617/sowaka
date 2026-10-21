@@ -37,6 +37,7 @@ export async function createRunHandler(req: Request, res: Response, next: NextFu
       lopDays: body.lopDays as Record<string, number> | undefined,
       overtimePaise: body.overtimePaise as Record<string, number> | undefined,
       incomeTaxPaise: body.incomeTaxPaise as Record<string, number> | undefined,
+      componentAmounts: body.componentAmounts as Record<string, Record<string, number>> | undefined,
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) {
@@ -51,6 +52,7 @@ export async function recomputeRunHandler(req: Request, res: Response, next: Nex
       lopDays: body.lopDays as Record<string, number | null> | undefined,
       overtimePaise: body.overtimePaise as Record<string, number | null> | undefined,
       incomeTaxPaise: body.incomeTaxPaise as Record<string, number | null> | undefined,
+      componentAmounts: body.componentAmounts as Record<string, Record<string, number | null> | null> | undefined,
     });
     res.status(200).json({ success: true, run });
   } catch (error) {

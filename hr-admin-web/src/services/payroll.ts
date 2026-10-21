@@ -518,6 +518,7 @@ export type PayslipDTO = {
     incomeTaxPaise?: number;
     incomeTaxEnteredByHr?: boolean;
     overtimeEnteredByHr?: boolean;
+    componentAmounts?: Record<string, number>;
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
     paidLeaveDaysApplied?: number;
     payableDays: number;
@@ -543,6 +544,8 @@ export type RunOverrides = {
   lopDays?: Record<string, number | null>;
   overtimePaise?: Record<string, number | null>;
   incomeTaxPaise?: Record<string, number | null>;
+  /** This month only: one-time earnings and deductions per person, paise by component code. */
+  componentAmounts?: Record<string, Record<string, number | null> | null>;
 };
 export const recomputeRun = (
   runId: string,

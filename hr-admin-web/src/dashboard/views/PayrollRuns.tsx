@@ -11,12 +11,14 @@ import {
   inr,
   listRuns,
   markRunPaid,
+  listPayHeads,
   recallRun,
   recomputeRun,
   rupeesToPaise,
   submitRun,
 } from '../../services/payroll';
-import type { PayrollRunDTO, PayslipDTO, RunStatus } from '../../services/payroll';
+import type { PayHeadDTO, PayrollRunDTO, PayslipDTO, RunStatus } from '../../services/payroll';
+import { useAuth } from '../auth/AuthContext';
 
 import { Card, EmptyRow, SummaryCard } from '../ui';
 import { printPayslip } from '../payslip';
@@ -189,7 +191,7 @@ export function PayrollRuns() {
 }
 
 type Detail = { run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } };
-type Edit = { paidDays?: string; tax?: string };
+type Edit = { paidDays?: string; tax?: string; overtime?: string; amounts?: Record<string, string> };
 
 const money2 = (paise: number) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 });
 
@@ -209,8 +211,18 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
   onReload: () => Promise<void>;
 }) {
   const { flash } = useStore();
+  const { user } = useAuth();
   const { run, payslips } = detail;
   const isDraft = run.status === 'draft';
+  const isCreator = user?.id === run.createdByUserId;
+  // One-time earnings (Bonus…) and deductions (Hold Amount, Salary Advance…)
+  // that can be entered for this month only.
+  const [oneTime, setOneTime] = useState<PayHeadDTO[]>([]);
+  useEffect(() => {
+    listPayHeads()
+      .then((heads) => setOneTime(heads.filter((h) => h.active && ((h.category === 'earning' && h.recurrence === 'one_time') || h.category === 'deduction'))))
+      .catch(() => setOneTime([]));
+  }, []);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -221,8 +233,19 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
   const recalc = async (reset?: { userId: string; what: 'lop' | 'tax' }) => {
     const lopDays: Record<string, number | null> = {};
     const incomeTaxPaise: Record<string, number | null> = {};
+    const overtimePaise: Record<string, number | null> = {};
+    const componentAmounts: Record<string, Record<string, number | null>> = {};
     for (const p of payslips) {
       const e = edits[p.userId];
+      if (e?.overtime !== undefined) {
+        if (e.overtime === '') overtimePaise[p.userId] = null;
+        else if (!(Number(e.overtime) >= 0)) return flash(`${p.employeeName}: overtime must be 0 or more`, 'error');
+        else overtimePaise[p.userId] = rupeesToPaise(e.overtime);
+      }
+      for (const [code, v] of Object.entries(e?.amounts ?? {})) {
+        if (v !== '' && !(Number(v) >= 0)) return flash(`${p.employeeName}: amounts must be 0 or more`, 'error');
+        (componentAmounts[p.userId] ??= {})[code] = v === '' ? null : rupeesToPaise(v);
+      }
       if (e?.paidDays !== undefined) {
         const paid = Number(e.paidDays);
         if (!Number.isFinite(paid) || paid < 0 || paid > p.inputs.workingDays) return flash(`${p.employeeName}: paid days must be 0 to ${p.inputs.workingDays}`, 'error');
@@ -238,7 +261,7 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
     if (reset?.what === 'tax') incomeTaxPaise[reset.userId] = null;
     setSaving(true);
     try {
-      await recomputeRun(run.id, { lopDays, incomeTaxPaise });
+      await recomputeRun(run.id, { lopDays, incomeTaxPaise, overtimePaise, componentAmounts });
       flash('Payslips recalculated');
       await onReload();
     } catch (e) {
@@ -278,9 +301,11 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
         )}
         {run.status === 'pending_approval' && !rejecting && (
           <>
-            <button onClick={() => void onAct(() => decideRun(run.id, 'approved'), 'Run approved')} disabled={busy} style={approveBtn}>Approve</button>
-            <button onClick={() => setRejecting(true)} disabled={busy} style={rejectBtn}>Reject</button>
+            {/* The person who created a run can't approve it: someone else does. */}
+            {!isCreator && <button onClick={() => void onAct(() => decideRun(run.id, 'approved'), 'Run approved')} disabled={busy} style={approveBtn}>Approve</button>}
+            {!isCreator && <button onClick={() => setRejecting(true)} disabled={busy} style={rejectBtn}>Reject</button>}
             <button onClick={() => void onAct(() => recallRun(run.id), 'Recalled to draft')} disabled={busy} style={ghostBtn}>Recall</button>
+            {isCreator && <span style={{ color: '#717171', fontSize: 14 }}>Waiting for another person with payroll access to approve.</span>}
           </>
         )}
         {run.status === 'pending_approval' && rejecting && (
@@ -365,6 +390,14 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
                   {expanded && (
                     <tr>
                       <td colSpan={8} style={{ background: '#FAFAFB', padding: '14px 18px', borderBottom: '1px solid #F0F0F2' }}>
+                        {isDraft && (
+                          <ThisMonthOnly
+                            p={p}
+                            items={oneTime}
+                            edit={e}
+                            onChange={(patch) => setEdit(p.userId, patch)}
+                          />
+                        )}
                         <SlipNumbers p={p} />
                       </td>
                     </tr>
@@ -376,6 +409,31 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
         </table>
       </Card>
       {explain && <LossOfPayExplainer userId={explain.userId} payslip={explain} onClose={() => onExplain(null)} />}
+    </div>
+  );
+}
+
+// This month only, for one person: overtime pay, and one-time earnings or
+// deductions (a bonus, a hold, an advance recovered). Kept on the run until
+// changed; blank clears one.
+function ThisMonthOnly({ p, items, edit, onChange }: { p: PayslipDTO; items: PayHeadDTO[]; edit: Edit; onChange: (patch: Edit) => void }) {
+  const saved = p.inputs.componentAmounts ?? {};
+  const value = (code: string) => edit.amounts?.[code] ?? (saved[code] !== undefined ? String(saved[code] / 100) : '');
+  const ot = edit.overtime ?? (p.inputs.overtimePaise ? String(p.inputs.overtimePaise / 100) : '');
+  const field = (label: string, v: string, set: (v: string) => void, changed: boolean, hint?: string) => (
+    <label key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#484848' }}>
+      <span>{label}{hint && <span style={{ color: '#9197A2' }}> · {hint}</span>}</span>
+      <input type="number" min={0} value={v} placeholder="0" onChange={(ev) => set(ev.target.value)} style={{ ...cellInput, width: 120, textAlign: 'left', borderColor: changed ? '#0571A6' : '#EBEBEB' }} />
+    </label>
+  );
+  return (
+    <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px dashed #E5E7EB' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', marginBottom: 8 }}>This month only</div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        {field('Overtime pay', ot, (v) => onChange({ overtime: v }), edit.overtime !== undefined, p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved` : undefined)}
+        {items.map((h) => field(h.payslipName ?? h.name, value(h.code), (v) => onChange({ amounts: { ...(edit.amounts ?? {}), [h.code]: v } }), edit.amounts?.[h.code] !== undefined, h.category === 'deduction' ? 'deduction' : 'one-time earning'))}
+      </div>
+      <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 6 }}>Then Save &amp; recalculate. One-time earnings are paid on top of the monthly CTC.</div>
     </div>
   );
 }

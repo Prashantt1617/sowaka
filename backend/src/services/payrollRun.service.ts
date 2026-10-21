@@ -50,7 +50,11 @@ export interface CreateRunInput {
   overtimePaise?: Record<string, number>;
   /** Income tax (TDS) per person for the month, in paise. */
   incomeTaxPaise?: Record<string, number>;
+  /** This month only, per person: amounts for one-time earnings and deductions (Bonus, Hold Amount…), by component code. */
+  componentAmounts?: Record<string, Record<string, number>>;
 }
+
+type Amounts = Record<string, Record<string, number>>;
 
 /**
  * Create a Draft run for a period: compute one payslip per employee with an
@@ -71,6 +75,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
     lopDays: input.lopDays ?? {},
     overtimePaise: input.overtimePaise ?? {},
     incomeTaxPaise: input.incomeTaxPaise ?? {},
+    componentAmounts: cleanAmounts(input.componentAmounts),
   });
 
   const now = new Date();
@@ -106,7 +111,12 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
 export async function recomputeRun(
   adminUserId: string,
   runIdInput: string,
-  input: { lopDays?: Record<string, number | null>; overtimePaise?: Record<string, number | null>; incomeTaxPaise?: Record<string, number | null> },
+  input: {
+    lopDays?: Record<string, number | null>;
+    overtimePaise?: Record<string, number | null>;
+    incomeTaxPaise?: Record<string, number | null>;
+    componentAmounts?: Record<string, Record<string, number | null> | null>;
+  },
 ) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
@@ -137,6 +147,7 @@ export async function recomputeRun(
     incomeTaxPaise: merge(input.incomeTaxPaise, (s) =>
       s.inputs.incomeTaxEnteredByHr ? s.inputs.incomeTaxPaise ?? s.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0 : undefined,
     ),
+    componentAmounts: mergeAmounts(previous, input.componentAmounts),
   });
   await payslips().deleteMany({ org, runId: runIdHex });
   await payslips().insertMany(slips);
@@ -154,8 +165,9 @@ async function buildRunPayslips(
   runIdHex: string,
   period: string,
   range: PeriodRange,
-  entered: { lopDays: Record<string, number>; overtimePaise: Record<string, number>; incomeTaxPaise: Record<string, number> },
+  entered: { lopDays: Record<string, number>; overtimePaise: Record<string, number>; incomeTaxPaise: Record<string, number>; componentAmounts?: Amounts },
 ): Promise<Payslip[]> {
+  const runAmounts = entered.componentAmounts ?? {};
   const lopOverrides = entered.lopDays;
   const otOverrides = entered.overtimePaise;
   const taxOverrides = entered.incomeTaxPaise;
@@ -197,12 +209,23 @@ async function buildRunPayslips(
     if (!template) continue;
     // The template plus this person's own add / remove / edit.
     const resolvedComponents = resolveTemplateComponents(applyOverrides(template.components, structure.overrides, catalogByCode), catalogByCode);
+    // This month's one-time amounts: a component not on the salary is added
+    // for this run; either way it is paid / taken at the amount HR typed.
+    const amounts = runAmounts[structure.userId] ?? {};
+    for (const code of Object.keys(amounts)) {
+      const head = catalogByCode.get(code);
+      if (!head) continue;
+      const i = resolvedComponents.findIndex((h) => h.code === code);
+      const runHead = { ...(i >= 0 ? resolvedComponents[i] : head), calculation: { mode: 'flat_amount' as const }, active: true };
+      if (i >= 0) resolvedComponents[i] = runHead;
+      else resolvedComponents.push(runHead);
+    }
 
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
     const base = calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
-      componentValues: structure.componentValues,
+      componentValues: { ...(structure.componentValues ?? {}), ...amounts },
       balancingComponentCode: template.balancingComponentCode,
       ruleSet,
       month: range.month,
@@ -282,6 +305,7 @@ async function buildRunPayslips(
         incomeTaxPaise,
         incomeTaxEnteredByHr,
         overtimeEnteredByHr: otOverrides[structure.userId] !== undefined,
+        ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         attendanceDeductions: docked.lines,
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
@@ -507,6 +531,39 @@ function sumTotals(slips: Payslip[]): PayrollRunTotals {
     }),
     { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 },
   );
+}
+
+/** Per person, per code: whole non-negative paise only. */
+function cleanAmounts(raw: unknown): Amounts {
+  const out: Amounts = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [userId, codes] of Object.entries(raw as Record<string, unknown>)) {
+    if (!codes || typeof codes !== 'object') continue;
+    for (const [code, v] of Object.entries(codes as Record<string, unknown>)) {
+      const n = Number(v);
+      if (v === null || !Number.isFinite(n) || n < 0) continue;
+      (out[userId] ??= {})[code.trim().toUpperCase()] = Math.round(n);
+    }
+  }
+  return out;
+}
+
+/** Earlier one-time amounts on the run, with this call's changes (null clears a code, or a person's all). */
+function mergeAmounts(previous: Map<string, Payslip>, given: Record<string, Record<string, number | null> | null> | undefined): Amounts {
+  const out: Amounts = {};
+  for (const [userId, slip] of previous) if (slip.inputs.componentAmounts) out[userId] = { ...slip.inputs.componentAmounts };
+  for (const [userId, codes] of Object.entries(given ?? {})) {
+    if (codes === null) { delete out[userId]; continue; }
+    const mine = { ...(out[userId] ?? {}) };
+    for (const [code, v] of Object.entries(codes)) {
+      const c = code.trim().toUpperCase();
+      if (v === null || v === undefined) delete mine[c];
+      else if (Number.isFinite(Number(v)) && Number(v) >= 0) mine[c] = Math.round(Number(v));
+    }
+    if (Object.keys(mine).length) out[userId] = mine;
+    else delete out[userId];
+  }
+  return out;
 }
 
 function clampLop(value: unknown, workingDays: number): number {

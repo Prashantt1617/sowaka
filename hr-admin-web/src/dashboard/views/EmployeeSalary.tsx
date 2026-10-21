@@ -180,7 +180,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
   if (data === undefined) return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card>;
 
   if (data === null) {
-    return <AssignCard templates={templates} saving={saving} onSave={(code, ctc) => void patch({ salaryTemplateCode: code, annualCtcPaise: ctc, status: 'active', effectiveFrom: today() }, 'Salary assigned')} />;
+    return <AssignCard templates={templates} phByCode={phByCode} saving={saving} onSave={(code, ctc, values) => void patch({ salaryTemplateCode: code, annualCtcPaise: ctc, componentValues: values, status: 'active', effectiveFrom: today() }, 'Salary assigned')} />;
   }
 
   const { structure, computed, components } = data;
@@ -377,9 +377,25 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
 }
 
 // ——————————————————————————————— ASSIGN (no salary yet) ———————————————————————————————
-function AssignCard({ templates, saving, onSave }: { templates: SalaryTemplateDTO[]; saving: boolean; onSave: (code: string, ctcPaise: number) => void }) {
+/** Components whose monthly amount is set for each person ("Set per employee"); the balancing one and one-time items are not. */
+function perPersonCodes(components: { payHeadCode: string; calculation: CalculationBasis }[], balancing: string | undefined, phByCode: Map<string, PayHeadDTO>): string[] {
+  return components
+    .filter((c) => c.calculation.mode === 'flat_amount' && c.payHeadCode !== balancing)
+    .filter((c) => phByCode.get(c.payHeadCode)?.recurrence !== 'one_time')
+    .map((c) => c.payHeadCode);
+}
+function cleanValues(values: Record<string, string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [code, v] of Object.entries(values)) if (v !== '' && Number(v) >= 0) out[code] = rupeesToPaise(v);
+  return out;
+}
+
+function AssignCard({ templates, phByCode, saving, onSave }: { templates: SalaryTemplateDTO[]; phByCode: Map<string, PayHeadDTO>; saving: boolean; onSave: (code: string, ctcPaise: number, values: Record<string, number>) => void }) {
   const [code, setCode] = useState('');
   const [ctc, setCtc] = useState('');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const tpl = templates.find((t) => t.code === code);
+  const perPerson = tpl ? perPersonCodes(tpl.components, tpl.balancingComponentCode, phByCode) : [];
   return (
     <Card style={{ padding: '22px 24px' }}>
       <div style={{ fontSize: 17, fontWeight: 800 }}>No salary yet</div>
@@ -392,8 +408,28 @@ function AssignCard({ templates, saving, onSave }: { templates: SalaryTemplateDT
           </select>
         </div>
         <div><div style={fieldLabel}>Annual CTC</div><CtcInput value={ctc} onChange={setCtc} /></div>
-        <button disabled={saving || !code || !(Number(ctc) > 0)} onClick={() => onSave(code, rupeesToPaise(ctc))} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+        <button disabled={saving || !code || !(Number(ctc) > 0)} onClick={() => onSave(code, rupeesToPaise(ctc), cleanValues(values))} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
+      {perPerson.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div style={fieldLabel}>Amounts set for this person (per month)</div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+            {perPerson.map((c) => {
+              const ph = phByCode.get(c);
+              return (
+                <label key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14 }}>
+                  <span>{ph?.name ?? c}</span>
+                  <span style={pairBox}>
+                    <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+                    <input type="number" min={0} value={values[c] ?? ''} placeholder={ph?.category === 'reimbursement' && ph.maxClaimablePaise ? String(ph.maxClaimablePaise / 100) : '0'} onChange={(e) => setValues({ ...values, [c]: e.target.value })} style={pairInput} />
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 6 }}>Blank: ₹0 (a reimbursement uses its monthly limit). One-time items such as a bonus are entered on each payroll run.</div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -406,6 +442,8 @@ type RevisionForm = {
   ctcRupees: string;
   effectiveFrom: string;
   overrides: StructureOverrides;
+  /** Per-person monthly amounts ("Set per employee" components), in rupees as typed. */
+  values: Record<string, string>;
 };
 
 function SalaryRevision({ userId, name, structure, lastRevision, templates, payHeads, phByCode, settings, onClose, onSaved }: {
@@ -428,6 +466,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
     ctcRupees: String(structure.annualCtcPaise / 100),
     effectiveFrom: today(),
     overrides: structure.overrides ?? {},
+    values: Object.fromEntries(Object.entries(structure.componentValues ?? {}).map(([k, v]) => [k, String(v / 100)])),
   });
   const [computed, setComputed] = useState<ComputedStructure | null>(null);
   const [saving, setSaving] = useState(false);
@@ -438,7 +477,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
     ? Math.round(structure.annualCtcPaise * (1 + (Number(form.percent) || 0) / 100))
     : rupeesToPaise(form.ctcRupees || '0');
   const rows = applyOverridesLocal(template, form.overrides, phByCode);
-  const previewInput = { salaryTemplateCode: form.templateCode, annualCtcPaise: revisedPaise, overrides: form.overrides };
+  const previewInput = { salaryTemplateCode: form.templateCode, annualCtcPaise: revisedPaise, overrides: form.overrides, componentValues: cleanValues(form.values) };
 
   useEffect(() => {
     if (!form.templateCode) return;
@@ -563,7 +602,13 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
                             <div style={{ fontWeight: 600 }}>{ph?.name ?? c.payHeadCode}{c.source !== 'template' && <span style={{ ...tag, marginLeft: 8 }}>{c.source === 'added' ? 'Only this person' : 'Edited'}</span>}</div>
                             {isBalancing && <div style={sub}>Monthly CTC - Sum of all other components</div>}
                           </td>
-                          <td style={td}>{isBalancing ? <span style={{ color: '#484848' }}>Fixed amount</span> : <CalcEditor calc={c.calculation} ph={ph} others={rows.filter((r) => r.payHeadCode !== c.payHeadCode)} phByCode={phByCode} onChange={(calc) => editCalc(c, calc)} />}</td>
+                          <td style={td}>{isBalancing ? <span style={{ color: '#484848' }}>Fixed amount</span> : (
+                            <CalcEditor
+                              calc={c.calculation} ph={ph} others={rows.filter((r) => r.payHeadCode !== c.payHeadCode)} phByCode={phByCode} onChange={(calc) => editCalc(c, calc)}
+                              amount={ph?.recurrence === 'one_time' ? undefined : form.values[c.payHeadCode] ?? ''}
+                              onAmount={(v) => setForm({ ...form, values: { ...form.values, [c.payHeadCode]: v } })}
+                            />
+                          )}</td>
                           <td style={num}>{g === 'onetime' ? '—' : rupees(amt.monthly)}</td>
                           <td style={num}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
@@ -623,7 +668,16 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
 }
 
 // —— Inline calculation editor for one row ——
-function CalcEditor({ calc, ph, others, phByCode, onChange }: { calc: CalculationBasis; ph?: PayHeadDTO; others: StructureComponent[]; phByCode: Map<string, PayHeadDTO>; onChange: (c: CalculationBasis) => void }) {
+function CalcEditor({ calc, ph, others, phByCode, onChange, amount, onAmount }: {
+  calc: CalculationBasis;
+  ph?: PayHeadDTO;
+  others: StructureComponent[];
+  phByCode: Map<string, PayHeadDTO>;
+  onChange: (c: CalculationBasis) => void;
+  /** This person's monthly amount for a "Fixed amount" component, in rupees; undefined: entered on each run. */
+  amount?: string;
+  onAmount?: (rupees: string) => void;
+}) {
   const fixedBase = fixedBaseOf(ph);
   const modeOf = (m: CalculationMode): CalculationBasis =>
     m === 'percentage' ? { mode: 'percentage', percent: calc.percent ?? (fixedBase === 'ctc' ? 50 : 40), base: fixedBase ?? calc.base ?? 'ctc', ...(calc.baseComponentCode ? { baseComponentCode: calc.baseComponentCode } : {}) }
@@ -658,7 +712,15 @@ function CalcEditor({ calc, ph, others, phByCode, onChange }: { calc: Calculatio
           <span style={pairSuffix}>/ month</span>
         </span>
       )}
-      {calc.mode === 'flat_amount' && <span style={{ color: '#717171' }}>Fixed amount</span>}
+      {calc.mode === 'flat_amount' && (amount === undefined || !onAmount ? (
+        <span style={{ color: '#717171' }}>{ph?.recurrence === 'one_time' ? 'Entered on each payroll run' : 'Fixed amount'}</span>
+      ) : (
+        <span style={pairBox} title="This person's monthly amount">
+          <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+          <input type="number" min={0} value={amount} placeholder={ph?.category === 'reimbursement' && ph.maxClaimablePaise ? String(ph.maxClaimablePaise / 100) : '0'} onChange={(e) => onAmount(e.target.value)} style={pairInput} />
+          <span style={pairSuffix}>/ month</span>
+        </span>
+      ))}
       <select value={calc.mode} onChange={(e) => onChange(modeOf(e.target.value as CalculationMode))} style={miniSelect}>
         <option value="percentage">Percentage</option>
         <option value="flat_per_month">Flat / month</option>

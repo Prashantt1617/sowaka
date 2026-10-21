@@ -73,6 +73,13 @@ export interface ComponentLine {
   epfConditional?: boolean;
   /** Counts toward the ESI wage, when the template names the ESI components. */
   inEsiWage?: boolean;
+  /** A one-time earning (entered on a run): on top of CTC, never prorated. */
+  oneTime?: boolean;
+}
+
+/** An earning paid once (Bonus), entered per run, not part of the monthly CTC split. */
+function isOneTime(head: PayHead): boolean {
+  return head.category === 'earning' && head.recurrence === 'one_time';
 }
 
 export interface SalaryCalcResult {
@@ -160,7 +167,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     if (computingBalance) return 0; // reentrancy guard
     computingBalance = true;
     const othersTotal = active
-      .filter((head) => head.category === 'earning' && head.code !== code)
+      .filter((head) => head.category === 'earning' && head.code !== code && !isOneTime(head))
       .reduce((sum, head) => sum + rawValue(head.code), 0);
     computingBalance = false;
     const residual = Math.max(0, monthlyCtc - othersTotal);
@@ -185,8 +192,9 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       calcLabel: calcLabel(head, head.code === balancingCode),
       monthlyPaise,
       annualPaise: monthlyPaise * 12,
-      // Earnings prorate unless explicitly turned off; deductions never prorate.
-      prorate: head.category === 'earning' && head.prorate !== false,
+      // Earnings prorate unless explicitly turned off or paid once; deductions never prorate.
+      prorate: head.category === 'earning' && head.prorate !== false && !isOneTime(head),
+      ...(isOneTime(head) ? { oneTime: true } : {}),
       considerForEpf: epfFlag?.consider === true,
       epfConditional: epfFlag?.consider === true && Boolean(epfFlag.condition) && epfFlag.condition !== 'always',
       ...(esiCodes ? { inEsiWage: head.category === 'earning' && esiCodes.has(head.code) } : {}),
@@ -253,7 +261,10 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   // the reimbursements and the employer benefits, so all of them come out
   // before the balancing component takes what is left.
   const nonBalancing = active.filter((head) => head.category === 'earning' && head.code !== balancingCode);
-  const earningsOthers = nonBalancing.reduce((sum, head) => sum + rawValue(head.code), 0) + (bonusLine?.monthlyPaise ?? 0);
+  // One-time earnings (a bonus entered on a run) are paid on top: they are in
+  // gross pay but do not come out of the CTC the balancing component shares.
+  const earningsOthers = nonBalancing.filter((head) => !isOneTime(head)).reduce((sum, head) => sum + rawValue(head.code), 0) + (bonusLine?.monthlyPaise ?? 0);
+  const oneTimeTotal = nonBalancing.filter(isOneTime).reduce((sum, head) => sum + rawValue(head.code), 0);
   const othersTotal = earningsOthers + reimbursementsTotal + benefitsTotal;
   const balancingHead = balancingCode ? byCode.get(balancingCode) : undefined;
   const statutoryAt = (balancePaise: number) => {
@@ -278,7 +289,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       settings,
       ruleSet: input.ruleSet,
       month: input.month,
-      grossPaise: earningsOthers + (balancingHead ? balancePaise : 0),
+      grossPaise: earningsOthers + oneTimeTotal + (balancingHead ? balancePaise : 0),
       pfAlwaysPaise: always,
       pfConditionalPaise: conditional,
       pfTestPaise: always,
@@ -326,7 +337,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   const employerCostMonthly = grossMonthly + reimbursementsTotal + st.employerContributionsPaise + benefitsMonthly;
 
   const nonBalancingEarnings = earnings
-    .filter((line) => line.code !== balancingCode)
+    .filter((line) => line.code !== balancingCode && !line.oneTime)
     .reduce((sum, line) => sum + line.monthlyPaise, 0);
 
   return {

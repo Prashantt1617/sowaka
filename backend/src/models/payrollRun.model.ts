@@ -75,6 +75,8 @@ export interface PayslipInputs {
   incomeTaxEnteredByHr?: boolean;
   /** HR typed the overtime pay on the run. */
   overtimeEnteredByHr?: boolean;
+  /** This month only: one-time earnings and deductions HR entered, paise by component code. */
+  componentAmounts?: Record<string, number>;
   /** What the template's attendance rules cost this month, one line per rule. */
   attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
   /** Paid leave days from the template's monthly allowance that offset the docked days. */
