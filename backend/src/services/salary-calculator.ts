@@ -75,6 +75,8 @@ export interface ComponentLine {
   inEsiWage?: boolean;
   /** A one-time earning (entered on a run): on top of CTC, never prorated. */
   oneTime?: boolean;
+  /** Counted as taxable salary for TDS (the component's "taxable", default yes for earnings). */
+  taxable?: boolean;
 }
 
 /** An earning paid once (Bonus), entered per run, not part of the monthly CTC split. */
@@ -195,6 +197,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       // Earnings prorate unless explicitly turned off or paid once; deductions never prorate.
       prorate: head.category === 'earning' && head.prorate !== false && !isOneTime(head),
       ...(isOneTime(head) ? { oneTime: true } : {}),
+      ...(head.category === 'earning' ? { taxable: head.taxable !== false } : {}),
       considerForEpf: epfFlag?.consider === true,
       epfConditional: epfFlag?.consider === true && Boolean(epfFlag.condition) && epfFlag.condition !== 'always',
       ...(esiCodes ? { inEsiWage: head.category === 'earning' && esiCodes.has(head.code) } : {}),

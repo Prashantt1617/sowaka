@@ -11,13 +11,14 @@ import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, Statutor
 import { Card } from '../ui';
 import { CloseButton } from '../drawers/shell';
 
-type StatTab = 'epf' | 'esi' | 'pt' | 'lwf' | 'bonus';
+type StatTab = 'epf' | 'esi' | 'pt' | 'lwf' | 'bonus' | 'tds';
 const TABS: { key: StatTab; label: string }[] = [
   { key: 'epf', label: 'EPF' },
   { key: 'esi', label: 'ESI' },
   { key: 'pt', label: 'Professional Tax' },
   { key: 'lwf', label: 'Labour Welfare Fund' },
   { key: 'bonus', label: 'Statutory Bonus' },
+  { key: 'tds', label: 'Income Tax (TDS)' },
 ];
 
 /** What every tab gets: the org's settings and a way to save part of them. */
@@ -72,6 +73,7 @@ export function StatutoryComponents() {
         : tab === 'esi' ? <EsiTab overview={overview} apply={apply} saving={saving} />
         : tab === 'pt' ? <PtTab overview={overview} />
         : tab === 'lwf' ? <LwfTab overview={overview} apply={apply} saving={saving} />
+        : tab === 'tds' ? <TdsTab overview={overview} apply={apply} saving={saving} />
         : <BonusTab overview={overview} apply={apply} saving={saving} />}
     </div>
   );
@@ -306,6 +308,38 @@ function fromBonusConfig(c: BonusConfig): Partial<BonusSettings> {
   }
   return { enabled: true, frequency: c.frequency, ratePercent: Number(c.percent), minWages };
 }
+// —— Income tax (TDS) ——————————————————————————————————————————————————
+// Off: income tax is only what HR types on each run. On: a run works out
+// each person's monthly TDS when HR hasn't typed one, from their regime and
+// declarations (Salary details › Income tax) and the FY's slabs.
+function TdsTab({ overview, apply, saving }: TabProps) {
+  const t = overview.settings.tds ?? { enabled: false, defaultRegime: 'new' as const };
+  return (
+    <Card style={{ padding: '22px 24px' }}>
+      <div style={{ fontSize: 17, fontWeight: 800 }}>Income tax (TDS on salary)</div>
+      <div style={{ fontSize: 14, color: '#717171', marginTop: 4, maxWidth: 720, lineHeight: 1.5 }}>
+        When on, each payroll run works out a person&rsquo;s income tax unless you type it: projected yearly taxable salary (this year&rsquo;s payslips so far plus the structure for the months left), less the standard deduction and, in the old regime, their declarations; tax by the year&rsquo;s slabs, the section 87A rebate, surcharge and 4% cess; minus the tax already withheld, spread over the months left.
+      </div>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginTop: 18, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700 }}>
+          <input type="checkbox" checked={t.enabled} disabled={saving} onChange={(e) => void apply({ tds: { enabled: e.target.checked, defaultRegime: t.defaultRegime } }, e.target.checked ? 'TDS engine on' : 'TDS engine off')} />
+          Work out TDS on each payroll run
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15 }}>
+          Regime for people without a declaration
+          <select value={t.defaultRegime} disabled={saving} onChange={(e) => void apply({ tds: { enabled: t.enabled, defaultRegime: e.target.value as 'new' | 'old' } }, 'Default regime saved')} style={{ padding: '7px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15 }}>
+            <option value="new">New regime (default by law)</option>
+            <option value="old">Old regime</option>
+          </select>
+        </label>
+      </div>
+      <div style={{ marginTop: 16, background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5 }}>
+        The FY 2026-27 slabs and limits are seeded from the FY 2025-26 law and marked <strong>to confirm</strong> until checked against the Finance Act 2026. A figure typed on a run always wins over the engine.
+      </div>
+    </Card>
+  );
+}
+
 function BonusTab({ overview, apply, saving }: TabProps) {
   const cfg = toBonusConfig(overview.settings.bonus, overview.states);
   const enabled = overview.settings.bonus.enabled;

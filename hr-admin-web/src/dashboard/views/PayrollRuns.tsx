@@ -377,6 +377,11 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
                       ) : (
                         <span>{money2(taxPaise)}</span>
                       )}
+                      <div style={{ fontSize: 12, color: '#717171', marginTop: 3 }}>
+                        {p.inputs.incomeTaxEnteredByHr ? (
+                          <>Entered{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'tax' })} style={linkBtn}>clear</button>}</>
+                        ) : p.inputs.tds ? `TDS engine · ${p.inputs.tds.regime} regime${p.inputs.tds.configStatus === 'to_confirm' ? ' · slabs to confirm' : ''}` : 'None'}
+                      </div>
                     </Td>
                     <Td right mono><span style={{ color: '#A8475F' }}>{money2(p.employeeDeductionsPaise)}</span></Td>
                     <Td right mono><strong>{money2(p.netPayablePaise)}</strong></Td>
@@ -500,6 +505,26 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
         {row('Cost to company this month', p.employerCostPaise, { strong: true })}
         {p.monthlyCtcPaise ? row('Monthly CTC', p.monthlyCtcPaise, { muted: true }) : null}
       </div>
+      {p.inputs.tds && !p.inputs.incomeTaxEnteredByHr && (
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px dashed #E5E7EB', paddingTop: 10 }}>
+          {head(`Income tax · FY ${p.inputs.tds.fy} · ${p.inputs.tds.regime} regime${p.inputs.tds.configStatus === 'to_confirm' ? ' · slabs to confirm' : ''}`)}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 28px' }}>
+            {row('Projected salary for the year', p.inputs.tds.grossSalaryPaise)}
+            {row('Standard deduction', p.inputs.tds.standardDeductionPaise)}
+            {p.inputs.tds.hraExemptPaise > 0 && row('HRA exemption', p.inputs.tds.hraExemptPaise)}
+            {p.inputs.tds.chapterVIAPaise > 0 && row('Chapter VI-A (80C, 80D…)', p.inputs.tds.chapterVIAPaise)}
+            {p.inputs.tds.homeLoanPaise > 0 && row('Home loan interest', p.inputs.tds.homeLoanPaise)}
+            {row('Taxable income', p.inputs.tds.taxableIncomePaise, { strong: true })}
+            {row('Tax on slabs', p.inputs.tds.slabTaxPaise)}
+            {p.inputs.tds.rebatePaise > 0 && row('Rebate 87A', p.inputs.tds.rebatePaise)}
+            {p.inputs.tds.surchargePaise > 0 && row('Surcharge', p.inputs.tds.surchargePaise)}
+            {row('Cess 4%', p.inputs.tds.cessPaise)}
+            {row('Tax for the year', p.inputs.tds.annualTaxPaise, { strong: true })}
+            {row('Already withheld', p.inputs.tds.alreadyDeductedPaise)}
+            {row(`This month (÷ ${p.inputs.tds.monthsLeft} months left)`, p.inputs.tds.monthlyTdsPaise, { strong: true })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

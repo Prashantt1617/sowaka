@@ -77,6 +77,8 @@ export interface PayslipInputs {
   overtimeEnteredByHr?: boolean;
   /** This month only: one-time earnings and deductions HR entered, paise by component code. */
   componentAmounts?: Record<string, number>;
+  /** How the TDS engine reached this month's income tax, when it did (HR didn't type one). */
+  tds?: import('../shared/payroll/tds').TdsResult & { proofs?: string };
   /** What the template's attendance rules cost this month, one line per rule. */
   attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
   /** Paid leave days from the template's monthly allowance that offset the docked days. */
@@ -108,6 +110,8 @@ export interface Payslip {
 
   pfWagePaise: number;
   grossPaise: number;
+  /** Taxable salary this month, for TDS year-to-date. Older slips: use grossPaise. */
+  taxablePaise?: number;
   employeeDeductionsPaise: number;
   netPaise: number; // after deductions, before reimbursements
   reimbursementsPaise: number;

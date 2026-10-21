@@ -59,6 +59,8 @@ export interface PayslipComputation {
   deductions: PayslipDeduction[];
   pfWagePaise: number;
   grossPaise: number;
+  /** Taxable salary this month (taxable earnings as paid, plus overtime), for TDS. */
+  taxablePaise: number;
   employeeDeductionsPaise: number;
   netPaise: number;
   reimbursementsPaise: number;
@@ -196,6 +198,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     deductions,
     pfWagePaise,
     grossPaise,
+    taxablePaise: base.earnings.filter((line) => line.taxable !== false).reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0) + input.overtimePaise,
     employeeDeductionsPaise,
     netPaise,
     reimbursementsPaise,

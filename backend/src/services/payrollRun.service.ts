@@ -10,6 +10,7 @@ import {
 } from '../config/db';
 import {
   Payslip,
+  PayslipInputs,
   PayrollRun,
   PayrollRunStatus,
   PayrollRunTotals,
@@ -31,6 +32,8 @@ import { attendanceCountsForPeriod, payrollDeductions } from './deduction.servic
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
+import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from './tds.service';
+import { fyOf } from '../shared/payroll/tds';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -193,6 +196,12 @@ async function buildRunPayslips(
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
     .toArray();
+  // The TDS engine, when the org has switched it on and the FY has config rows.
+  const { fy } = fyOf(period);
+  const tdsConfigs = settings.tds?.enabled ? await tdsConfigsFor(fy) : new Map();
+  const tdsOn = tdsConfigs.size > 0;
+  const userIds = structures.map((s) => s.userId);
+  const [ytd, declarations] = tdsOn ? await Promise.all([ytdFor(org, period, userIds), declarationsFor(org, fy, userIds)]) : [new Map(), new Map()];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
 
   const now = new Date();
@@ -249,9 +258,9 @@ async function buildRunPayslips(
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     const overtimePaise = nonNegInt(otOverrides[structure.userId]);
     const incomeTaxEnteredByHr = taxOverrides[structure.userId] !== undefined;
-    const incomeTaxPaise = nonNegInt(taxOverrides[structure.userId]);
+    let incomeTaxPaise = nonNegInt(taxOverrides[structure.userId]);
 
-    const slip = computePayslip(base, {
+    const slipInput = {
       workingDays,
       lopDays,
       overtimePaise,
@@ -263,7 +272,33 @@ async function buildRunPayslips(
       esiCoveredEarlier: esiCovered.has(structure.userId),
       incomeTaxPaise,
       period,
-    });
+    };
+    let slip = computePayslip(base, slipInput);
+    // Income tax from the TDS engine, when the org has it on and HR didn't type one.
+    let tds: PayslipInputs['tds'];
+    if (!incomeTaxEnteredByHr && tdsOn) {
+      const declaration = declarations.get(structure.userId);
+      const futureTaxable = base.earnings.filter((l) => l.taxable !== false && !l.oneTime).reduce((t, l) => t + l.monthlyPaise, 0);
+      const byType = (type: string) => base.earnings.filter((l) => l.componentType === type).reduce((t, l) => t + l.monthlyPaise, 0);
+      const result = runTds({
+        configs: tdsConfigs,
+        regime: declaration?.regime ?? settings.tds!.defaultRegime,
+        period,
+        ytd: ytd.get(structure.userId),
+        currentTaxablePaise: slip.taxablePaise,
+        futureMonthlyTaxablePaise: futureTaxable,
+        basicMonthlyPaise: byType('basic'),
+        hraMonthlyPaise: byType('hra'),
+        employeePfMonthlyPaise: base.statutory.epf.employeePaise,
+        ptMonthlyPaise: base.statutory.pt.amountPaise,
+        declarations: declaration?.declarations,
+      });
+      if (result) {
+        tds = { ...result, proofs: declaration?.proofs ?? 'none' };
+        incomeTaxPaise = result.monthlyTdsPaise;
+        slip = computePayslip(base, { ...slipInput, incomeTaxPaise });
+      }
+    }
 
     slips.push({
       org,
@@ -288,6 +323,7 @@ async function buildRunPayslips(
       deductions: slip.deductions,
       pfWagePaise: slip.pfWagePaise,
       grossPaise: slip.grossPaise,
+      taxablePaise: slip.taxablePaise,
       employeeDeductionsPaise: slip.employeeDeductionsPaise,
       netPaise: slip.netPaise,
       reimbursementsPaise: slip.reimbursementsPaise,
@@ -306,6 +342,7 @@ async function buildRunPayslips(
         incomeTaxEnteredByHr,
         overtimeEnteredByHr: otOverrides[structure.userId] !== undefined,
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
+        ...(tds ? { tds } : {}),
         attendanceDeductions: docked.lines,
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,

@@ -219,7 +219,8 @@ export type EpfSettings = {
 export type EsiSettings = { enabled: boolean; esiNumber?: string; includeEmployer: boolean };
 export type MinWageRow = { category: string; minWagePaise: number; effectiveFrom: string };
 export type BonusSettings = { enabled: boolean; frequency: 'monthly' | 'yearly'; ratePercent: number; minWages: Record<string, MinWageRow[]> };
-export type StatutorySettingsDTO = { epf: EpfSettings; esi: EsiSettings; bonus: BonusSettings; lwfDisabledStates: string[] };
+export type TdsSettings = { enabled: boolean; defaultRegime: 'new' | 'old' };
+export type StatutorySettingsDTO = { epf: EpfSettings; esi: EsiSettings; bonus: BonusSettings; lwfDisabledStates: string[]; tds?: TdsSettings };
 export type StatutoryOverview = {
   settings: StatutorySettingsDTO;
   ceilingPaise: number;
@@ -234,6 +235,7 @@ export type StatutorySettingsInput = {
   esi?: Partial<EsiSettings>;
   bonus?: Partial<BonusSettings>;
   lwf?: { state: string; enabled: boolean };
+  tds?: Partial<TdsSettings>;
 };
 
 export const getStatutorySettings = () =>
@@ -519,6 +521,8 @@ export type PayslipDTO = {
     incomeTaxEnteredByHr?: boolean;
     overtimeEnteredByHr?: boolean;
     componentAmounts?: Record<string, number>;
+    /** How the TDS engine reached the income tax, when HR didn't type it. */
+    tds?: TdsResultDTO & { proofs?: string };
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
     paidLeaveDaysApplied?: number;
     payableDays: number;
@@ -600,3 +604,51 @@ export const getPaymentDetails = (userId: string) =>
 
 export const savePaymentDetails = (userId: string, input: PaymentDetailsInput) =>
   api<{ details: PaymentDetailsDTO }>(`/admin/payroll/employees/${userId}/payment-details`, { method: 'PUT', body: input }).then((r) => r.details);
+
+// ————————————————————————————————————————————————————————————————
+// Income tax: the TDS engine's working, and each person's declaration.
+// ————————————————————————————————————————————————————————————————
+
+export type TdsResultDTO = {
+  regime: 'new' | 'old';
+  fy: string;
+  configStatus: 'to_confirm' | 'confirmed';
+  grossSalaryPaise: number;
+  standardDeductionPaise: number;
+  hraExemptPaise: number;
+  ptDeductionPaise: number;
+  chapterVIAPaise: number;
+  homeLoanPaise: number;
+  taxableIncomePaise: number;
+  slabTaxPaise: number;
+  rebatePaise: number;
+  surchargePaise: number;
+  cessPaise: number;
+  annualTaxPaise: number;
+  alreadyDeductedPaise: number;
+  monthsLeft: number;
+  monthlyTdsPaise: number;
+};
+export type TaxDeclarations = {
+  sec80C?: number;
+  sec80CCD1B?: number;
+  sec80DSelf?: number;
+  sec80DParents?: number;
+  selfSenior?: boolean;
+  parentsSenior?: boolean;
+  homeLoanInterest?: number;
+  sec80TTA?: number;
+  rentPaidPaise?: number;
+  metro?: boolean;
+  otherIncomePaise?: number;
+  previousEmployerSalaryPaise?: number;
+  previousEmployerTdsPaise?: number;
+};
+export type TaxDeclarationDTO = { regime: 'new' | 'old'; declarations: TaxDeclarations; proofs: 'none' | 'submitted' | 'verified'; updatedAt?: string };
+export type TaxDeclarationResponse = { fy: string; declaration: TaxDeclarationDTO | null; configs: { regime: 'new' | 'old'; status: string; source?: string }[] };
+
+export const getTaxDeclaration = (userId: string, fy?: string) =>
+  api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`);
+
+export const saveTaxDeclaration = (userId: string, input: Omit<TaxDeclarationDTO, 'updatedAt'>, fy?: string) =>
+  api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });

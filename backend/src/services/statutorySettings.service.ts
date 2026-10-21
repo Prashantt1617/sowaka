@@ -48,6 +48,7 @@ export function defaultStatutorySettings(org: string): StatutorySettings {
     esi: { enabled: true, includeEmployer: false },
     bonus: { enabled: false, frequency: 'monthly', ratePercent: 8.33, minWages: {} },
     lwfDisabledStates: [],
+    tds: { enabled: false, defaultRegime: 'new' },
   };
 }
 
@@ -62,6 +63,7 @@ export async function statutorySettingsFor(org: string): Promise<StatutorySettin
     esi: { ...base.esi, ...stored.esi },
     bonus: { ...base.bonus, ...stored.bonus, minWages: stored.bonus?.minWages ?? {} },
     lwfDisabledStates: stored.lwfDisabledStates ?? [],
+    tds: stored.tds ?? { enabled: false, defaultRegime: 'new' },
     updatedAt: stored.updatedAt,
   };
 }
@@ -200,6 +202,12 @@ export async function updateStatutorySettings(adminUserId: string, input: unknow
   if (input.epf !== undefined) next.epf = parseEpf(input.epf, current.epf);
   if (input.esi !== undefined) next.esi = parseEsi(input.esi, current.esi);
   if (input.bonus !== undefined) next.bonus = parseBonus(input.bonus, current.bonus);
+  if (input.tds !== undefined) {
+    if (!isRecord(input.tds)) throw new StatutorySettingsError(400, 'tds must be { enabled, defaultRegime }');
+    const regime = input.tds.defaultRegime ?? current.tds?.defaultRegime ?? 'new';
+    if (regime !== 'new' && regime !== 'old') throw new StatutorySettingsError(400, 'defaultRegime must be new or old');
+    next.tds = { enabled: input.tds.enabled === undefined ? current.tds?.enabled === true : Boolean(input.tds.enabled), defaultRegime: regime };
+  }
   if (input.lwf !== undefined) {
     if (!isRecord(input.lwf) || typeof input.lwf.state !== 'string' || typeof input.lwf.enabled !== 'boolean') {
       throw new StatutorySettingsError(400, 'lwf must be { state, enabled }');
@@ -212,13 +220,13 @@ export async function updateStatutorySettings(adminUserId: string, input: unknow
   }
 
   // JSON round trip drops undefined fields (an empty EPF number) instead of storing null.
-  const doc = JSON.parse(JSON.stringify({ epf: next.epf, esi: next.esi, bonus: next.bonus, lwfDisabledStates: next.lwfDisabledStates })) as Pick<StatutorySettings, 'epf' | 'esi' | 'bonus' | 'lwfDisabledStates'>;
+  const doc = JSON.parse(JSON.stringify({ epf: next.epf, esi: next.esi, bonus: next.bonus, lwfDisabledStates: next.lwfDisabledStates, ...(input.tds !== undefined ? { tds: next.tds } : {}) })) as Pick<StatutorySettings, 'epf' | 'esi' | 'bonus' | 'lwfDisabledStates' | 'tds'>;
   await statutorySettings().updateOne({ org }, { $set: { org, ...doc, updatedAt: new Date() } }, { upsert: true });
   return getStatutoryOverview(adminUserId);
 }
 
 function viewSettings(s: StatutorySettings) {
-  return { epf: s.epf, esi: s.esi, bonus: s.bonus, lwfDisabledStates: s.lwfDisabledStates };
+  return { epf: s.epf, esi: s.esi, bonus: s.bonus, lwfDisabledStates: s.lwfDisabledStates, tds: s.tds ?? { enabled: false, defaultRegime: 'new' } };
 }
 
 // ————————————————————————————————————————————————————————————————

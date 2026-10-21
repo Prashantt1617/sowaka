@@ -25,6 +25,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
+import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus } from '../../services/hrms';
@@ -346,6 +347,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {tab === 'salary' && seesSalary && (
         <div>
           <EmployeeSalary userId={emp.id} name={emp.name} />
+          <IncomeTaxCard userId={emp.id} />
           <div style={{ marginTop: 22 }}><SalarySlips userId={emp.id} /></div>
         </div>
       )}

@@ -59,5 +59,7 @@ export interface StatutorySettings {
   bonus: BonusSettings;
   /** Lower-case states where Labour Welfare Fund is switched off. */
   lwfDisabledStates: string[];
+  /** Income tax worked out by the TDS engine when HR doesn't type it. Absent / off: tax only as typed. */
+  tds?: { enabled: boolean; defaultRegime: 'new' | 'old' };
   updatedAt?: Date;
 }

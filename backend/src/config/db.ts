@@ -39,6 +39,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
+import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
@@ -257,6 +258,14 @@ export function payrollRuns(): Collection<PayrollRun> {
 
 export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
   return getDb().collection<EmployeePaymentDetails>('employee_payment_details');
+}
+
+export function tdsConfigs(): Collection<TdsConfigRow> {
+  return getDb().collection<TdsConfigRow>('tds_configs');
+}
+
+export function taxDeclarations(): Collection<TaxDeclarationRow> {
+  return getDb().collection<TaxDeclarationRow>('tax_declarations');
 }
 
 export function payslips(): Collection<Payslip> {
