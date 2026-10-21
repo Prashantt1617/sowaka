@@ -342,10 +342,15 @@ export async function employeePayslips(adminUserId: string, userId: string) {
 
 const MY_PAYSLIPS = 3;
 
+/** Runs whose payslips the employee may see: a draft or one awaiting approval is not final. */
+const RELEASED: PayrollRunStatus[] = ['approved', 'paid'];
+
 async function ownedPayslip(userId: string, payslipId: string) {
   if (!ObjectId.isValid(payslipId)) throw new PayrollRunError(404, 'Payslip not found');
   const slip = await payslips().findOne({ _id: new ObjectId(payslipId), userId });
-  if (!slip) throw new PayrollRunError(404, 'Payslip not found');
+  if (!slip || !ObjectId.isValid(slip.runId)) throw new PayrollRunError(404, 'Payslip not found');
+  const run = await payrollRuns().findOne({ _id: new ObjectId(slip.runId), status: { $in: RELEASED } }, { projection: { _id: 1 } });
+  if (!run) throw new PayrollRunError(404, 'Payslip not found');
   return slip;
 }
 
@@ -354,16 +359,21 @@ async function companyOf(org: string) {
   return { name: company?.name ?? org, address: company?.address ?? '' };
 }
 
-/** The signed-in person's last few payslips, newest period first, with the run each came from. */
+/**
+ * The signed-in person's last few payslips, newest period first, with the run
+ * each came from. Only approved or paid runs: a draft or a run awaiting
+ * approval is still being worked on and is never shown to the employee.
+ */
 export async function myPayslips(userId: string) {
-  const slips = await payslips().find({ userId }).sort({ period: -1, createdAt: -1 }).limit(MY_PAYSLIPS).toArray();
-  if (slips.length === 0) return { company: null, payslips: [] };
-  const runIds = [...new Set(slips.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
-  const runs = await payrollRuns().find({ _id: { $in: runIds } }).toArray();
+  const all = await payslips().find({ userId }).sort({ period: -1, createdAt: -1 }).limit(60).toArray();
+  const runIds = [...new Set(all.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const runs = runIds.length ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED } }).toArray() : [];
   const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
+  const slips = all.filter((s) => runById.has(s.runId)).slice(0, MY_PAYSLIPS);
+  if (slips.length === 0) return { company: null, payslips: [] };
   return {
     company: await companyOf(slips[0].org),
-    payslips: slips.filter((s) => runById.has(s.runId)).map((s) => ({ run: runView(runById.get(s.runId)!), payslip: payslipView(s) })),
+    payslips: slips.map((s) => ({ run: runView(runById.get(s.runId)!), payslip: payslipView(s) })),
   };
 }
 
