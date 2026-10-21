@@ -66,6 +66,15 @@ export interface PayslipDeductionLine {
 export interface PayslipInputs {
   workingDays: number;
   lopDays: number;
+  /** What attendance and the template's rules made the loss of pay, before any HR figure. */
+  attendanceLopDays?: number;
+  /** HR typed the loss-of-pay days on the run (kept across recomputes). */
+  lopEnteredByHr?: boolean;
+  /** Income tax withheld this month, and whether HR typed it (else the TDS engine, or none). */
+  incomeTaxPaise?: number;
+  incomeTaxEnteredByHr?: boolean;
+  /** HR typed the overtime pay on the run. */
+  overtimeEnteredByHr?: boolean;
   /** What the template's attendance rules cost this month, one line per rule. */
   attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
   /** Paid leave days from the template's monthly allowance that offset the docked days. */
@@ -107,6 +116,8 @@ export interface Payslip {
   esiApplicable?: boolean;
   /** The structure's reimbursements paid this month. */
   reimbursementLines?: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
+  /** What the employer pays on top of gross, line by line. */
+  employer?: { epfPaise: number; epsPaise: number; edliPaise: number; adminPaise: number; esiPaise: number; lwfPaise: number; benefitsPaise: number; totalPaise: number };
 
   /** EPF split retained for statutory filing downstream. */
   epf: {

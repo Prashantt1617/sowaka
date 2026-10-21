@@ -351,7 +351,8 @@ export function SalaryTemplates() {
       name: t.name,
       description: t.description ?? '',
       active: t.active,
-      rows: t.components.map((c) => ({ ...rowFromCalc(c.payHeadCode, c.calculation), payslipName: c.payslipName ?? '', showInPayslip: c.showInPayslip })),
+      // A component deleted from the catalog can't be saved back: leave it out.
+      rows: t.components.filter((c) => phByCode.has(c.payHeadCode)).map((c) => ({ ...rowFromCalc(c.payHeadCode, c.calculation), payslipName: c.payslipName ?? '', showInPayslip: c.showInPayslip })),
       balancingComponentCode: t.balancingComponentCode ?? '',
       paidDaysEnabled: t.paidDaysEnabled ?? true,
       statutoryWages: t.statutoryWages ?? null,
@@ -359,6 +360,8 @@ export function SalaryTemplates() {
       monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
       sampleCtc: SAMPLE_CTC_RUPEES,
     });
+    const orphans = t.components.filter((c) => !phByCode.has(c.payHeadCode)).map((c) => c.payHeadCode);
+    if (orphans.length) flash(`${orphans.join(', ')} ${orphans.length === 1 ? 'is' : 'are'} no longer a salary component and ${orphans.length === 1 ? 'was' : 'were'} left out`, 'error');
     setComputed(null);
     setMode('edit');
   };

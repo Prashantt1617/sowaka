@@ -65,6 +65,8 @@ export interface PayslipComputation {
   netPayablePaise: number;
   employerCostPaise: number;
   esiApplicable: boolean;
+  /** What the employer pays on top of gross this month, line by line. */
+  employer: EmployerContributions;
   /** The structure's reimbursements, paid in full this month. */
   reimbursementLines: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
   epf: {
@@ -73,6 +75,18 @@ export interface PayslipComputation {
     employerEpsPaise: number;
     employerEpfPaise: number;
   };
+}
+
+export interface EmployerContributions {
+  epfPaise: number;
+  epsPaise: number;
+  edliPaise: number;
+  adminPaise: number;
+  esiPaise: number;
+  lwfPaise: number;
+  /** Employer benefits in the structure (gratuity…). */
+  benefitsPaise: number;
+  totalPaise: number;
 }
 
 export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): PayslipComputation {
@@ -86,7 +100,9 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     ...(line.showInPayslip === false ? { hidden: true } : {}),
     calcLabel: line.calcLabel,
     fullPaise: line.monthlyPaise,
-    paidPaise: line.prorate ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise,
+    // A full month pays the structure exactly (a balancing component can carry
+    // paise when the monthly CTC does); a prorated month rounds to the rupee.
+    paidPaise: line.prorate && factor !== 1 ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise,
   }));
 
   const earningsPaid = earnings.reduce((sum, line) => sum + line.paidPaise, 0);
@@ -186,6 +202,16 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     netPayablePaise,
     employerCostPaise,
     esiApplicable: esi.applicable,
+    employer: {
+      epfPaise: epf.employerEpfPaise,
+      epsPaise: epf.employerEpsPaise,
+      edliPaise: epf.edliPaise ?? 0,
+      adminPaise: epf.adminPaise ?? 0,
+      esiPaise: esi.employerPaise,
+      lwfPaise: lwf.employerPaise,
+      benefitsPaise: base.benefitsMonthlyPaise,
+      totalPaise: st.employerContributionsPaise + base.benefitsMonthlyPaise,
+    },
     reimbursementLines,
     epf: {
       contributionWagePaise: epf.contributionWagePaise,

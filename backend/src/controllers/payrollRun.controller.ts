@@ -48,9 +48,9 @@ export async function recomputeRunHandler(req: Request, res: Response, next: Nex
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const run = await recomputeRun(requireUserId(req), String(req.params.runId ?? ''), {
-      lopDays: body.lopDays as Record<string, number> | undefined,
-      overtimePaise: body.overtimePaise as Record<string, number> | undefined,
-      incomeTaxPaise: body.incomeTaxPaise as Record<string, number> | undefined,
+      lopDays: body.lopDays as Record<string, number | null> | undefined,
+      overtimePaise: body.overtimePaise as Record<string, number | null> | undefined,
+      incomeTaxPaise: body.incomeTaxPaise as Record<string, number | null> | undefined,
     });
     res.status(200).json({ success: true, run });
   } catch (error) {

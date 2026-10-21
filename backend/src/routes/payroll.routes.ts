@@ -42,12 +42,14 @@ import {
 } from '../controllers/payrollRun.controller';
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
 import { requireAuth } from '../middleware/auth.middleware';
-import { requireDashboardAccess } from '../middleware/admin.middleware';
+import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
 // Payroll configuration surface. Like the rest of the HR dashboard, every route
 // requires an authenticated user who additionally has dashboardAccess.
 export const payrollRouter = Router();
-payrollRouter.use(requireAuth, requireDashboardAccess);
+// Tabs too: someone given only some tabs in People › Accesses can't read what
+// people earn through the payroll APIs.
+payrollRouter.use(requireAuth, requireDashboardAccess, requireDashboardTabs);
 
 // Organisation setup — Pay Schedule (ORG-3) + Statutory Registration (ORG-2).
 payrollRouter.get('/org-setup', getOrgSetupHandler);

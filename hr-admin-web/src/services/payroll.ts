@@ -488,12 +488,21 @@ export type PayslipDTO = {
   netPayablePaise: number;
   employerCostPaise: number;
   epf: EpfBreakdown;
+  annualCtcPaise?: number;
+  /** What the employer pays on top of gross, line by line. */
+  employer?: { epfPaise: number; epsPaise: number; edliPaise: number; adminPaise: number; esiPaise: number; lwfPaise: number; benefitsPaise: number; totalPaise: number };
   esiApplicable?: boolean;
   /** The structure's reimbursements paid this month. */
   reimbursementLines?: { code: string; name: string; amountPaise: number; hidden?: boolean }[];
   inputs: {
     workingDays: number;
     lopDays: number;
+    /** What attendance and the template's rules made the loss of pay. */
+    attendanceLopDays?: number;
+    lopEnteredByHr?: boolean;
+    incomeTaxPaise?: number;
+    incomeTaxEnteredByHr?: boolean;
+    overtimeEnteredByHr?: boolean;
     attendanceDeductions?: { label: string; count: number; days: number; trigger?: DeductionTrigger; every?: number; deductDays?: number }[];
     paidLeaveDaysApplied?: number;
     payableDays: number;
@@ -514,9 +523,15 @@ export const getRun = (runId: string) =>
 export const createRun = (input: { period: string; lopDays?: Record<string, number>; overtimePaise?: Record<string, number> }) =>
   api<{ run: PayrollRunDTO; payslipCount: number }>('/admin/payroll/runs', { method: 'POST', body: input });
 
+/** Per-person figures HR types on a draft run. A null clears one back to attendance / none; people left out keep what was typed before. */
+export type RunOverrides = {
+  lopDays?: Record<string, number | null>;
+  overtimePaise?: Record<string, number | null>;
+  incomeTaxPaise?: Record<string, number | null>;
+};
 export const recomputeRun = (
   runId: string,
-  overrides: { lopDays?: Record<string, number>; overtimePaise?: Record<string, number> },
+  overrides: RunOverrides,
 ) =>
   api<{ run: PayrollRunDTO }>(`/admin/payroll/runs/${runId}/recompute`, {
     method: 'POST',

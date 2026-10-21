@@ -82,6 +82,7 @@ function toInput(body: unknown): SalaryTemplateInput {
     balancingComponentCode: source.balancingComponentCode,
     epfApplyCeiling: source.epfApplyCeiling,
     paidDaysEnabled: source.paidDaysEnabled,
+    statutoryWages: source.statutoryWages,
     deductionRules: source.deductionRules,
     monthlyPaidLeaveDays: source.monthlyPaidLeaveDays,
     active: source.active,

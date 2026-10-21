@@ -67,16 +67,11 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
   }
 
   const runId = new ObjectId();
-  const slips = await buildRunPayslips(
-    adminUserId,
-    org,
-    runId.toHexString(),
-    input.period,
-    range,
-    input.lopDays ?? {},
-    input.overtimePaise ?? {},
-    input.incomeTaxPaise ?? {},
-  );
+  const slips = await buildRunPayslips(adminUserId, org, runId.toHexString(), input.period, range, {
+    lopDays: input.lopDays ?? {},
+    overtimePaise: input.overtimePaise ?? {},
+    incomeTaxPaise: input.incomeTaxPaise ?? {},
+  });
 
   const now = new Date();
   const totals = sumTotals(slips);
@@ -111,7 +106,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
 export async function recomputeRun(
   adminUserId: string,
   runIdInput: string,
-  input: { lopDays?: Record<string, number>; overtimePaise?: Record<string, number>; incomeTaxPaise?: Record<string, number> },
+  input: { lopDays?: Record<string, number | null>; overtimePaise?: Record<string, number | null>; incomeTaxPaise?: Record<string, number | null> },
 ) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
@@ -120,16 +115,29 @@ export async function recomputeRun(
   }
   const range = parsePeriod(run.period);
   const runIdHex = run._id.toHexString();
-  const slips = await buildRunPayslips(
-    adminUserId,
-    org,
-    runIdHex,
-    run.period,
-    range,
-    input.lopDays ?? {},
-    input.overtimePaise ?? {},
-    input.incomeTaxPaise ?? {},
-  );
+  // What HR typed earlier on this run stays unless this call changes it
+  // (a null clears it back to attendance / none).
+  const earlier = await payslips().find({ org, runId: runIdHex }, { projection: { userId: 1, inputs: 1, deductions: 1 } }).toArray();
+  const previous = new Map(earlier.map((slip) => [slip.userId, slip]));
+  const merge = (given: Record<string, number | null> | undefined, keep: (slip: Payslip) => number | undefined) => {
+    const out: Record<string, number> = {};
+    for (const [userId, slip] of previous) {
+      const kept = keep(slip);
+      if (kept !== undefined) out[userId] = kept;
+    }
+    for (const [userId, value] of Object.entries(given ?? {})) {
+      if (value === null || value === undefined) delete out[userId];
+      else out[userId] = value;
+    }
+    return out;
+  };
+  const slips = await buildRunPayslips(adminUserId, org, runIdHex, run.period, range, {
+    lopDays: merge(input.lopDays, (s) => (s.inputs.lopEnteredByHr ? s.inputs.lopDays : undefined)),
+    overtimePaise: merge(input.overtimePaise, (s) => (s.inputs.overtimeEnteredByHr ? s.inputs.overtimePaise : undefined)),
+    incomeTaxPaise: merge(input.incomeTaxPaise, (s) =>
+      s.inputs.incomeTaxEnteredByHr ? s.inputs.incomeTaxPaise ?? s.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0 : undefined,
+    ),
+  });
   await payslips().deleteMany({ org, runId: runIdHex });
   await payslips().insertMany(slips);
   return runView(await patchRun(run._id, { employeeCount: slips.length, totals: sumTotals(slips) }));
@@ -146,10 +154,11 @@ async function buildRunPayslips(
   runIdHex: string,
   period: string,
   range: PeriodRange,
-  lopOverrides: Record<string, number>,
-  otOverrides: Record<string, number>,
-  taxOverrides: Record<string, number> = {},
+  entered: { lopDays: Record<string, number>; overtimePaise: Record<string, number>; incomeTaxPaise: Record<string, number> },
 ): Promise<Payslip[]> {
+  const lopOverrides = entered.lopDays;
+  const otOverrides = entered.overtimePaise;
+  const taxOverrides = entered.incomeTaxPaise;
   const structures = await salaryStructures().find({ org, status: 'active' }).toArray();
   if (structures.length === 0) {
     throw new PayrollRunError(409, 'No active salary structures to run payroll for');
@@ -212,10 +221,12 @@ async function buildRunPayslips(
     const docked = paidDaysOn ? payrollDeductions(template.deductionRules, attendance.get(structure.userId)) : { days: 0, lines: [] };
     // The template's paid-leave allowance covers the first days docked.
     const allowance = paidDaysOn ? template.monthlyPaidLeaveDays ?? 0 : 0;
-    const lopDays = lopOverrides[structure.userId] !== undefined
-      ? clampLop(lopOverrides[structure.userId], workingDays)
-      : Math.min(Math.max(0, docked.days - allowance), workingDays);
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance), workingDays);
+    const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
+    const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     const overtimePaise = nonNegInt(otOverrides[structure.userId]);
+    const incomeTaxEnteredByHr = taxOverrides[structure.userId] !== undefined;
+    const incomeTaxPaise = nonNegInt(taxOverrides[structure.userId]);
 
     const slip = computePayslip(base, {
       workingDays,
@@ -227,7 +238,7 @@ async function buildRunPayslips(
       statutory: structure.statutory,
       settings,
       esiCoveredEarlier: esiCovered.has(structure.userId),
-      incomeTaxPaise: nonNegInt(taxOverrides[structure.userId]),
+      incomeTaxPaise,
       period,
     });
 
@@ -261,10 +272,16 @@ async function buildRunPayslips(
       employerCostPaise: slip.employerCostPaise,
       esiApplicable: slip.esiApplicable,
       reimbursementLines: slip.reimbursementLines,
+      employer: slip.employer,
       epf: slip.epf,
       inputs: {
         workingDays,
         lopDays,
+        attendanceLopDays,
+        lopEnteredByHr,
+        incomeTaxPaise,
+        incomeTaxEnteredByHr,
+        overtimeEnteredByHr: otOverrides[structure.userId] !== undefined,
         attendanceDeductions: docked.lines,
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
@@ -559,6 +576,8 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     employerCostPaise: slip.employerCostPaise,
     esiApplicable: slip.esiApplicable,
     reimbursementLines: slip.reimbursementLines ?? [],
+    employer: slip.employer,
+    annualCtcPaise: slip.annualCtcPaise,
     epf: slip.epf,
     inputs: slip.inputs,
   };
