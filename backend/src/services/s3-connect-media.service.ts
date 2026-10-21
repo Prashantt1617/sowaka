@@ -5,6 +5,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { env } from '../config/env';
 import { s3EncryptionParams } from '../utils/s3-encryption.util';
 import { connectMedia } from '../config/db';
@@ -131,6 +132,16 @@ function getClient() {
     region: env.s3.region,
     ...(env.s3.endpoint ? { endpoint: env.s3.endpoint } : {}),
     forcePathStyle: env.s3.forcePathStyle,
+    // Every image and video in the feed streams through this client. The
+    // defaults (50 sockets, no idle limit) let a few stuck reads hold the pool
+    // until nothing more could load: on 21 Oct every feed image and video
+    // hung until the process was restarted.
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: 5_000,
+      // A read that has gone quiet this long is dropped and its socket freed.
+      socketTimeout: 60_000,
+      httpsAgent: { keepAlive: true, maxSockets: 256 },
+    }),
     ...(env.s3.accessKeyId && env.s3.secretAccessKey
       ? {
           credentials: {
