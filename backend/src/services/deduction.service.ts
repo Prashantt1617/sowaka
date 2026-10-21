@@ -109,7 +109,10 @@ export function payrollDeductions(
   if ((counts?.missedPunchLopCount ?? 0) > 0) {
     calendar.push({ label: DEDUCTION_TRIGGER_LABELS.missed_punch, count: counts!.missedPunchLopCount, days: counts!.missedPunchLop, trigger: 'missed_punch', every: 1, deductDays: counts!.missedPunchLop / counts!.missedPunchLopCount });
   }
-  const extra = deductionsUnder((rules ?? []).filter((rule) => rule.trigger !== 'absent' && rule.trigger !== 'half_day'), counts);
+  // The calendar already docks absences, half days and (where the policy says) missed punches;
+  // a template rule on the same days would dock them twice.
+  const calendarDocksMissed = (counts?.missedPunchLopCount ?? 0) > 0;
+  const extra = deductionsUnder((rules ?? []).filter((rule) => rule.trigger !== 'absent' && rule.trigger !== 'half_day' && !(calendarDocksMissed && rule.trigger === 'missed_punch')), counts);
   const lines = [...calendar, ...extra.lines];
   return { lines, days: lines.reduce((total, line) => total + line.days, 0) };
 }

@@ -24,6 +24,7 @@ import { fyOf, periodsAfter, roundToTenRupees, taxOnIncome, TaxRegime } from '..
 import { billCategories, billsByComponent, reimbursementTax } from './reimbursementBills.service';
 import { companyOf, PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
+import { payrollAccessOf } from './payrollAccess.service';
 
 const RUN_RANK: Record<string, number> = { paid: 4, approved: 3, pending_approval: 2, draft: 1 };
 
@@ -55,6 +56,7 @@ const monthName = (period: string) =>
 
 export async function tdsWorksheet(viewerUserId: string, payslipId: string) {
   const org = await requireAdminOrg(viewerUserId);
+  if (!(await payrollAccessOf(viewerUserId))) throw new PayrollRunError(403, 'Only people with payroll access can see a TDS work sheet');
   if (!ObjectId.isValid(payslipId)) throw new PayrollRunError(404, 'Payslip not found');
   const slip = await payslips().findOne({ _id: new ObjectId(payslipId), org });
   if (!slip || !ObjectId.isValid(slip.runId)) throw new PayrollRunError(404, 'Payslip not found');

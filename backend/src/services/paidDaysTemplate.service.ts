@@ -57,21 +57,23 @@ export function planPaidDaysSeed(templates: LegacyTemplate[], peopleOn: Map<stri
 
 /** Make the company's templates from its salary templates' old settings, once. */
 export async function ensurePaidDaysTemplates(org: string): Promise<void> {
-  if (await paidDaysTemplates().countDocuments({ org }, { limit: 1 })) return;
+  // Seeded once the Default exists: it is written last, so an interrupted seed finishes next time.
+  if (await paidDaysTemplates().countDocuments({ org, isDefault: true }, { limit: 1 })) return;
   const templates = await salaryTemplates().find({ org }).toArray();
   const counts = new Map<string, number>();
   for (const t of templates) counts.set(t.code, await salaryStructures().countDocuments({ org, salaryTemplateCode: t.code }));
   const plan = planPaidDaysSeed(templates, counts);
   const now = new Date();
-  for (const t of plan.templates) {
-    await paidDaysTemplates().updateOne({ org, code: t.code }, { $setOnInsert: { ...t, org, createdAt: now, updatedAt: now } }, { upsert: true });
-  }
+  const seed = (t: PaidDaysSeedPlan['templates'][number]) =>
+    paidDaysTemplates().updateOne({ org, code: t.code }, { $setOnInsert: { ...t, org, createdAt: now, updatedAt: now } }, { upsert: true });
+  for (const t of plan.templates.filter((x) => !x.isDefault)) await seed(t);
   for (const m of plan.moves) {
     await salaryStructures().updateMany(
       { org, salaryTemplateCode: m.salaryTemplateCode, paidDaysTemplateCode: { $exists: false } },
       { $set: { paidDaysTemplateCode: m.paidDaysTemplateCode } },
     );
   }
+  for (const t of plan.templates.filter((x) => x.isDefault)) await seed(t);
 }
 
 /** For a payroll run: each template by code, and the Default. */

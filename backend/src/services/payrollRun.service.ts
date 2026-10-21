@@ -211,6 +211,14 @@ async function buildRunPayslips(
   const [ytd, declarations] = tdsOn ? await Promise.all([ytdFor(org, period, userIds), declarationsFor(org, fy, userIds)]) : [new Map(), new Map()];
   // Fuel, Internet…: paid in full, taxed until bills; claims of a linked type are those bills, not paid again.
   const billCats = await billCategories(org);
+  // Claims on another run (not rejected) are that run's: never paid twice.
+  const otherRuns = await payrollRuns().find({ org, status: { $ne: 'rejected' } } as never, { projection: { _id: 1 } }).toArray();
+  const otherRunIds = otherRuns.map((r) => r._id.toHexString()).filter((id) => id !== runIdHex);
+  const reservedClaimIds = new Set(
+    otherRunIds.length
+      ? (await payslips().find({ org, runId: { $in: otherRunIds } }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? [])
+      : [],
+  );
   const [reimbPaidBefore, bills] = tdsOn
     ? await Promise.all([reimbursementsPaidBefore(org, userIds, period), billsByComponent(billCats, userIds, period, range.end)])
     : [new Map<string, Map<string, number>>(), new Map<string, Map<string, number>>()];
@@ -265,7 +273,7 @@ async function buildRunPayslips(
     });
     const base = salaryFor(period, employedFrom);
 
-    const periodInputs = await getEmployeePeriodInputs(structure.userId, range, [...billCats.keys()]);
+    const periodInputs = await getEmployeePeriodInputs(structure.userId, range, { billCategories: [...billCats.keys()], reservedClaimIds });
     // Loss of pay: the calendar's absences and half days, plus whatever else
     // the template's rules dock, unless HR typed a figure on the run.
     // A template can switch paid-days calculation off: every day is paid.
@@ -570,9 +578,22 @@ export async function submitRun(adminUserId: string, runIdInput: string) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
   assertTransition(run.status, 'paid');
+  // A claim on this run that was paid or changed since it was calculated would be paid twice.
+  const stale = await staleClaims(org, run);
+  if (stale > 0) {
+    throw new PayrollRunError(409, `${stale} reimbursement claim${stale === 1 ? ' on this run was' : 's on this run were'} paid or changed since it was calculated. ${run.status === 'draft' ? 'Recalculate' : 'Reopen and recalculate'} the run, then submit.`);
+  }
   await settleClaims(org, run, 'paid');
   const now = new Date();
   return runView(await patchRun(run._id, { status: 'paid', submittedByUserId: adminUserId, decidedByUserId: adminUserId, decidedAt: now, paidAt: now }));
+}
+
+/** How many of a run's claims are no longer approved-and-unpaid. */
+async function staleClaims(org: string, run: StoredRun): Promise<number> {
+  const slips = await payslips().find({ org, runId: run._id.toHexString() }, { projection: { inputs: 1 } }).toArray();
+  const ids = slips.flatMap((s) => s.inputs.reimbursementClaimIds ?? []).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  if (ids.length === 0) return 0;
+  return reimbursementClaims().countDocuments({ _id: { $in: ids }, status: { $ne: 'approved' } });
 }
 
 /** The reimbursement claims paid in a run: settled when it is submitted, open again when it is reopened. */
@@ -627,6 +648,10 @@ export async function recallRun(adminUserId: string, runIdInput: string) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
   assertTransition(run.status, 'draft');
+  if (run.status === 'paid') {
+    const later = await payrollRuns().findOne({ org, period: { $gt: run.period }, status: 'paid' }, { projection: { period: 1 } });
+    if (later) throw new PayrollRunError(409, `${later.period} is already submitted and was worked out from this month: reopen that one first`);
+  }
   // Its claims are paid again by the corrected run, not lost.
   if (run.status === 'paid') await settleClaims(org, run, 'approved');
   return runView(await patchRun(run._id, { status: 'draft' }));

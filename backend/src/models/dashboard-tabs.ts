@@ -41,8 +41,11 @@ const RULES: Rule[] = [
   // What one person earns: their Salary details tab, or the template page
   // that assigns people to a template.
   { path: /^\/admin\/payroll\/salary-structures/, read: ['salarydetails', 'templates', 'payruns'], write: ['salarydetails', 'templates'] },
+  // Per-person pay, PAN and bank details: payroll access only (Payroll Runs or Salary details).
+  { path: /^\/admin\/payroll\/reports\/salary-register/, read: ['payruns', 'salarydetails'] },
+  { path: /^\/admin\/payroll\/runs\/[^/]+\/payment-details/, read: ['payruns', 'salarydetails'] },
+  { path: /^\/admin\/payroll\/payslips\//, read: ['payruns', 'salarydetails'] },
   { path: /^\/admin\/payroll\/reports/, read: ['payrolldash', 'payrollreports', 'payruns'] },
-  { path: /^\/admin\/payroll\/runs\/[^/]+\/payment-details/, read: ['payruns', 'payrollreports'] },
   { path: /^\/admin\/payroll\/runs/, read: ['payruns'], write: ['payruns'] },
   { path: /^\/admin\/payroll\/employees\/[^/]+\/tax-declaration/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // Bank, PAN, UAN: anyone who can open the profile sees them masked; payroll access sees and edits them.

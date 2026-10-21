@@ -315,7 +315,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
       <div style={{ display: 'flex', gap: 9, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         {isDraft && (
           <>
-            <button onClick={() => void recalc()} disabled={!dirty || saving} style={{ ...primaryBtn, opacity: !dirty || saving ? 0.55 : 1 }}>{saving ? 'Recalculating…' : 'Save & recalculate'}</button>
+            <button onClick={() => void recalc()} disabled={saving} title="Recalculate from the latest attendance, claims and salaries, with what you typed" style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}>{saving ? 'Recalculating…' : dirty ? 'Save & recalculate' : 'Recalculate'}</button>
             {dirty && <button onClick={() => setEdits({})} disabled={saving} style={ghostBtn}>Discard changes</button>}
           </>
         )}

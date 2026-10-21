@@ -14,6 +14,7 @@ import { Payslip, PayrollRun } from '../models/payrollRun.model';
 import { PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { workStateOf } from './statutorySettings.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
+import { payrollAccessOf } from './payrollAccess.service';
 
 type Opts = { includeDrafts?: boolean };
 type StoredRun = PayrollRun & { _id: ObjectId };
@@ -161,6 +162,8 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
   const org = await requireAdminOrg(viewer);
   if (!isPeriod(periodIn)) throw new PayrollRunError(400, 'period is a month like 2026-09');
   const period = periodIn;
+  // Full account numbers only for payroll access; anyone else sees the last four.
+  const reveal = await payrollAccessOf(viewer);
   const [run] = await runsBetween(org, period, period, opts);
   const slips = run ? await slipsOf(org, [run]) : [];
   const [people, payments] = await Promise.all([
@@ -177,7 +180,7 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
     p.deductions.filter((d) => d.key !== 'income_tax').forEach((d) => dedCols.set(d.key, d.name));
   }
   const account = (p?: { accountNumber?: string; accountLast4?: string }) => {
-    if (p?.accountNumber && fieldKeyConfigured()) { try { return decryptField(p.accountNumber); } catch { /* masked below */ } }
+    if (reveal && p?.accountNumber && fieldKeyConfigured()) { try { return decryptField(p.accountNumber); } catch { /* masked below */ } }
     return p?.accountLast4 ? `XXXX${p.accountLast4}` : '';
   };
   const rows = slips

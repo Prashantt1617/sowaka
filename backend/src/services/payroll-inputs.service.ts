@@ -61,13 +61,17 @@ export interface EmployeePeriodInputs {
 export async function getEmployeePeriodInputs(
   userId: string,
   range: PeriodRange,
-  /** Claim categories that are bills for a salary component: never paid as expenses. */
-  billCategories: string[] = [],
+  claims: {
+    /** Claim categories that are bills for a salary component: never paid as expenses. */
+    billCategories?: string[];
+    /** Claims already on another run (not rejected): never paid twice. */
+    reservedClaimIds?: Set<string>;
+  } = {},
 ): Promise<EmployeePeriodInputs> {
   const [approvedLeaveDays, approvedOtHours, reimb] = await Promise.all([
     countApprovedLeaveDays(userId, range),
     sumApprovedOtHours(userId, range),
-    collectApprovedReimbursements(userId, range, billCategories),
+    collectApprovedReimbursements(userId, range, claims.billCategories ?? [], claims.reservedClaimIds ?? new Set()),
   ]);
   return {
     approvedLeaveDays,
@@ -106,18 +110,21 @@ async function collectApprovedReimbursements(
   userId: string,
   range: PeriodRange,
   billCategories: string[],
+  reserved: Set<string>,
 ): Promise<{ paise: number; ids: string[] }> {
-  // Every approved claim not yet paid, up to the end of this month: a claim
-  // approved late for last month's expense is paid in the next run (Mark paid
-  // moves the run's claims to paid, so none is paid twice).
+  // Every approved claim not yet paid, for this month or the one before (a
+  // claim approved late for last month's expense is paid in the next run), and
+  // not already on another run. Submitting a run moves its claims to paid.
+  // Older approved claims are left for HR to settle by hand.
   const rows = await reimbursementClaims()
     // A claim that is a bill for a salary component (Fuel, Internet) is not paid
     // again: the component already was; the bill only makes it tax-free.
-    .find({ userId, status: 'approved', expenseDate: { $lte: range.end }, ...(billCategories.length ? { category: { $nin: billCategories } } : {}) })
+    .find({ userId, status: 'approved', expenseDate: { $gte: new Date(Date.UTC(range.year, range.month - 2, 1)), $lte: range.end }, ...(billCategories.length ? { category: { $nin: billCategories } } : {}) })
     .toArray();
   let paise = 0;
   const ids: string[] = [];
   for (const row of rows) {
+    if (row._id && reserved.has(row._id.toHexString())) continue;
     paise += Math.round((row.amount ?? 0) * 100); // stored in rupees -> paise
     if (row._id) ids.push(row._id.toHexString());
   }
