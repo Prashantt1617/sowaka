@@ -4,6 +4,7 @@ import {
   deletePayHeadHandler,
   getPayHeadHandler,
   listPayHeadsHandler,
+  listStandardComponentsHandler,
   updatePayHeadHandler,
 } from '../controllers/payHead.controller';
 import {
@@ -58,6 +59,8 @@ payrollRouter.put('/org-setup', updateOrgSetupHandler);
 // Pay Head Master — the org's reusable component catalog (PRD §5.3).
 payrollRouter.get('/pay-heads', listPayHeadsHandler);
 payrollRouter.post('/pay-heads', createPayHeadHandler);
+// The built-in standard components this org hasn't added yet (nothing saved).
+payrollRouter.get('/pay-heads/standard', listStandardComponentsHandler);
 payrollRouter.get('/pay-heads/:payHeadId', getPayHeadHandler);
 payrollRouter.patch('/pay-heads/:payHeadId', updatePayHeadHandler);
 payrollRouter.delete('/pay-heads/:payHeadId', deletePayHeadHandler);

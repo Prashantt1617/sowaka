@@ -1,6 +1,7 @@
 // Typed calls against the payroll admin endpoints (/admin/payroll/*).
 // All money crosses the wire as INTEGER PAISE.
 import { api } from './http';
+import { standardNotAdded } from '../../../backend/src/shared/payroll/standard-components';
 
 // ————————————————————————————————————————————————————————————————
 // Money helpers
@@ -58,6 +59,8 @@ export type PayHeadDTO = {
   partOfStructure?: boolean;
   showInPayslip?: boolean;
   active: boolean;
+  /** A built-in standard component this org hasn't added yet (not saved; id is empty). */
+  standard?: boolean;
 };
 
 export type PayHeadInput = {
@@ -82,6 +85,18 @@ export type PayHeadInput = {
 
 export const listPayHeads = () =>
   api<{ payHeads: PayHeadDTO[] }>('/admin/payroll/pay-heads').then((r) => r.payHeads);
+
+/**
+ * The built-in standard components (shared with the server), as catalog rows
+ * for the ones this org hasn't added yet. Saved as its pay head on first use.
+ */
+export function standardPayHeads(own: PayHeadDTO[]): PayHeadDTO[] {
+  return standardNotAdded(own).map((s) => {
+    const row = { ...s, id: '', active: true, standard: true } as PayHeadDTO & { uniqueType?: boolean };
+    delete row.uniqueType;
+    return row;
+  });
+}
 
 export const createPayHead = (input: PayHeadInput) =>
   api<{ payHead: PayHeadDTO }>('/admin/payroll/pay-heads', { method: 'POST', body: input }).then(

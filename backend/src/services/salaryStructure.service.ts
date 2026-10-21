@@ -8,6 +8,7 @@ import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator'
 import { applyOverrides, resolveTemplateComponents, validateCalculation } from './salaryTemplate.service';
 import { resolveRuleSet } from './statutory.service';
 import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
+import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 
 export class SalaryStructureError extends Error {
   constructor(
@@ -97,6 +98,8 @@ export async function upsertSalaryStructure(
 
   // Compute first: a template or override that doesn't resolve must not be saved.
   const { computed, components, template } = await compute(org, userId, merged, employee, catalog);
+  // A standard component added for this person becomes this org's pay head.
+  await materializeStandard(org, [...(merged.overrides?.add ?? []).map((a) => a.payHeadCode), ...Object.keys(merged.componentValues ?? {})]);
   await salaryStructures().updateOne({ org, userId }, { $set: merged }, { upsert: true });
   return { structure: viewOf(merged, template.name), computed, components };
 }
@@ -332,8 +335,9 @@ function normalizeOverrides(raw: unknown, catalog: PayHead[]): StructureOverride
 // Helpers
 // ————————————————————————————————————————————————————————————————
 
+/** The org's pay heads plus the standard components it hasn't added yet. */
 async function orgPayHeads(org: string): Promise<PayHead[]> {
-  return payHeads().find({ org }).toArray();
+  return (await catalogWithStandard(org)).all;
 }
 
 async function requireOrgEmployee(org: string, userId: string): Promise<User> {

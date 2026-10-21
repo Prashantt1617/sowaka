@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, updatePayHead } from '../../services/payroll';
+import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, standardPayHeads, updatePayHead } from '../../services/payroll';
 import type { CalculationBasis, PayHeadDTO, PayHeadInput } from '../../services/payroll';
 import { Card } from '../ui';
 import { IconPlus } from '../icons';
@@ -35,14 +35,6 @@ type DeductionRow = { name: string; type: string; frequency: string; status: Sta
 type BenefitRow = { name: string; type: string; calc: string; status: Status; live: PayHeadDTO };
 type ReimbRow = { name: string; type: string; max: string; status: Status; live: PayHeadDTO };
 
-// The four standard deductions. A saved one comes from the server (matched by
-// kind); an unsaved one shows from here and is created on its first save.
-const DEDUCTIONS: DeductionRow[] = [
-  { name: 'Food Coupon Deduction', type: 'Food Coupon Deduction', frequency: 'One Time', status: 'Active', kind: 'food_coupons' },
-  { name: 'Hold Amount', type: 'Other Deductions', frequency: 'One Time', status: 'Active', kind: 'hold_amount' },
-  { name: 'Salary Advance Deduction', type: 'Other Deductions', frequency: 'One Time', status: 'Active', kind: 'salary_advance' },
-  { name: 'Notice Pay Deduction', type: 'Notice Pay Deduction', frequency: 'One Time', status: 'Active', kind: 'notice_pay' },
-];
 const DEDUCTION_KINDS = new Set<string>(['food_coupons', 'hold_amount', 'salary_advance', 'notice_pay', 'vpf', 'other']);
 const deductionTypeLabel = (kind: string) =>
   kind === 'food_coupons' ? 'Food Coupon Deduction' : kind === 'notice_pay' ? 'Notice Pay Deduction' : kind === 'vpf' ? 'Voluntary Provident Fund' : 'Other Deductions';
@@ -374,19 +366,22 @@ export function PayHeadMaster() {
     void loadLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Basic first, then HRA, then the rest.
-  const earnings = heads
+  // The org's own components, then the built-in standard ones it hasn't
+  // added (saved as its own the first time HR saves one or a template uses it).
+  const catalog = [...heads, ...standardPayHeads(heads)];
+  // Basic first, then HRA, then the rest; standard ones after the org's own.
+  const earnings = catalog
     .filter((h) => h.category === 'earning')
-    .sort((a, b) => LIVE_ORDER.indexOf(a.componentType) - LIVE_ORDER.indexOf(b.componentType) || a.name.localeCompare(b.name))
+    .sort((a, b) => Number(a.standard === true) - Number(b.standard === true) || LIVE_ORDER.indexOf(a.componentType) - LIVE_ORDER.indexOf(b.componentType) || a.name.localeCompare(b.name))
     .map(rowFromPayHead);
   // Types an org may hold only one of, once it has one.
-  const takenTypes = new Set(earnings.filter((r) => LIVE_TYPES[r.type]?.single).map((r) => r.type));
+  const takenTypes = new Set(earnings.filter((r) => !r.live.standard && LIVE_TYPES[r.type]?.single).map((r) => r.type));
+  /** A standard row opens as a new component under its standard code. */
+  const asNew = <F extends { isNew: boolean; id?: string; code?: string }>(f: F, ph: PayHeadDTO): F => (ph.standard ? { ...f, isNew: true, id: undefined, code: ph.code } : f);
   // Saved deductions first, then any standard one this org hasn't saved yet.
-  const liveDeductions = heads.filter((h) => h.category === 'deduction');
-  const savedKinds = new Set(liveDeductions.map((h) => h.componentType));
-  const deductions = [...liveDeductions.map(rowFromDeductionHead), ...DEDUCTIONS.filter((r) => !savedKinds.has(r.kind))];
-  const benefits = heads.filter((h) => h.category === 'benefit').map(rowFromBenefitHead);
-  const reimbursements = heads.filter((h) => h.category === 'reimbursement').map(rowFromReimbHead);
+  const deductions = catalog.filter((h) => h.category === 'deduction').map(rowFromDeductionHead);
+  const benefits = catalog.filter((h) => h.category === 'benefit').map(rowFromBenefitHead);
+  const reimbursements = catalog.filter((h) => h.category === 'reimbursement').map(rowFromReimbHead);
   const COUNTS: Record<Cat, number> = { earning: earnings.length, deduction: deductions.length, benefit: benefits.length, reimbursement: reimbursements.length };
   const [tab, setTab] = useState<Cat>('earning');
   const [form, setForm] = useState<EForm | null>(null);
@@ -522,8 +517,8 @@ export function PayHeadMaster() {
           </thead>
           <tbody>
             {tab === 'earning' && earnings.map((r) => (
-              <tr key={r.live.id} className="phm-row" onClick={() => setForm(formFromPayHead(r.live, usedCodes.has(r.live.code)))} style={{ cursor: 'pointer' }}>
-                <Td><NameCell name={r.name} fbp={r.fbp} /></Td>
+              <tr key={r.live.code} className="phm-row" onClick={() => setForm(asNew(formFromPayHead(r.live, usedCodes.has(r.live.code)), r.live))} style={{ cursor: 'pointer' }}>
+                <Td><NameCell name={r.name} fbp={r.fbp} standard={r.live.standard} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td muted>{r.calc}</Td>
                 <Td><YesNo value={r.epf} /></Td>
@@ -532,24 +527,24 @@ export function PayHeadMaster() {
               </tr>
             ))}
             {tab === 'deduction' && deductions.map((r) => (
-              <tr key={r.live?.id ?? r.name} className="phm-row" onClick={() => setDForm(formFromDeduction(r, r.live ? usedCodes.has(r.live.code) : false))} style={{ cursor: 'pointer' }}>
-                <Td><NameCell name={r.name} /></Td>
+              <tr key={r.live?.code ?? r.name} className="phm-row" onClick={() => setDForm(r.live ? asNew(formFromDeduction(r, usedCodes.has(r.live.code)), r.live) : formFromDeduction(r, false))} style={{ cursor: 'pointer' }}>
+                <Td><NameCell name={r.name} standard={r.live?.standard} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td muted>{r.frequency}</Td>
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
             {tab === 'benefit' && benefits.map((r) => (
-              <tr key={r.live.id} className="phm-row" onClick={() => setBForm(formFromBenefit(r.live, usedCodes.has(r.live.code)))} style={{ cursor: 'pointer' }}>
-                <Td><NameCell name={r.name} /></Td>
+              <tr key={r.live.code} className="phm-row" onClick={() => setBForm(asNew(formFromBenefit(r.live, usedCodes.has(r.live.code)), r.live))} style={{ cursor: 'pointer' }}>
+                <Td><NameCell name={r.name} standard={r.live.standard} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td muted>{r.calc}</Td>
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
             {tab === 'reimbursement' && reimbursements.map((r) => (
-              <tr key={r.live.id} className="phm-row" onClick={() => setRForm(formFromReimbursement(r.live, usedCodes.has(r.live.code)))} style={{ cursor: 'pointer' }}>
-                <Td><NameCell name={r.name} /></Td>
+              <tr key={r.live.code} className="phm-row" onClick={() => setRForm(asNew(formFromReimbursement(r.live, usedCodes.has(r.live.code)), r.live))} style={{ cursor: 'pointer' }}>
+                <Td><NameCell name={r.name} standard={r.live.standard} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td right mono>{r.max}</Td>
                 <Td><StatusText status={r.status} /></Td>
@@ -922,10 +917,11 @@ function DeleteButton({ onDelete, busy }: { onDelete: () => void; busy: boolean 
     </button>
   );
 }
-function NameCell({ name, fbp }: { name: string; fbp?: boolean }) {
+function NameCell({ name, fbp, standard }: { name: string; fbp?: boolean; standard?: boolean }) {
   return (
     <span>
-      <span style={{ fontWeight: 700, color: '#0571A6' }}>{name}</span>
+      <span style={{ fontWeight: 700, color: standard ? '#484848' : '#0571A6' }}>{name}</span>
+      {standard && <span title="A built-in component: saved for your organisation when you save it or add it to a template" style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#F0F0F2', color: '#717171' }}>Standard · not added yet</span>}
       {fbp && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#E4EDE0', color: '#0F6E56' }}>FBP</span>}
     </span>
   );

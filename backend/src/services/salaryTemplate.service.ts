@@ -8,6 +8,7 @@ import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
 import { resolveRuleSet } from './statutory.service';
 import { statutorySettingsFor } from './statutorySettings.service';
+import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 
 export class SalaryTemplateError extends Error {
   constructor(
@@ -60,6 +61,8 @@ export async function createSalaryTemplate(adminUserId: string, input: SalaryTem
   const org = await requireAdminOrg(adminUserId);
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
+  // A standard component on the template becomes this org's pay head now.
+  await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
   const now = new Date();
   const doc: SalaryTemplate = { ...draft, org, createdAt: now, updatedAt: now };
   try {
@@ -83,6 +86,7 @@ export async function updateSalaryTemplate(
   if (!current) throw new SalaryTemplateError(404, 'Salary template not found');
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput({ code, ...input }, catalog);
+  await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
   const updated = await salaryTemplates().findOneAndUpdate(
     { _id: current._id },
     { $set: { ...draft, updatedAt: new Date() } },
@@ -315,8 +319,9 @@ export function validateCalculation(raw: unknown, selfCode: string, componentCod
 // Helpers
 // ————————————————————————————————————————————————————————————————
 
+/** The org's pay heads plus the standard components it hasn't added yet. */
 async function orgCatalog(org: string): Promise<PayHead[]> {
-  return payHeads().find({ org }).toArray();
+  return (await catalogWithStandard(org)).all;
 }
 
 function requireString(value: unknown, field: string, maxLength: number): string {

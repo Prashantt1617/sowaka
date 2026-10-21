@@ -20,6 +20,7 @@ import {
   getSalaryTemplate,
   getStatutorySettings,
   listPayHeads,
+  standardPayHeads,
   listSalaryStructures,
   listSalaryTemplates,
   previewSalaryTemplate,
@@ -284,7 +285,9 @@ export function SalaryTemplates() {
       void getStatutorySettings().then(setStatutory).catch(() => setStatutory(null));
       const [ts, phs] = await Promise.all([listSalaryTemplates(), listPayHeads()]);
       setTemplates(ts);
-      setPayHeadsList(phs);
+      // The org's own components plus the standard ones it hasn't added: a
+      // standard one used on a template is saved as the org's on Save.
+      setPayHeadsList([...phs, ...standardPayHeads(phs)]);
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not load templates', 'error');
     } finally {
@@ -815,7 +818,7 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
               <div style={{ padding: '2px 0 10px' }}>
                 {items.length === 0 && <div style={{ fontSize: 13.5, color: '#9197A2', padding: '6px 0' }}>Nothing left to add</div>}
                 {items.map((p) => (
-                  <button key={p.code} type="button" onClick={() => onPick(p.code)} style={navItemBtn}>{p.name}</button>
+                  <button key={p.code} type="button" onClick={() => onPick(p.code)} style={navItemBtn} title={p.standard ? 'Standard component: saved for your organisation when the template is saved' : undefined}>{p.name}{p.standard && <span style={{ marginLeft: 6, fontSize: 11, color: '#9197A2', fontWeight: 600 }}>Standard</span>}</button>
                 ))}
               </div>
             )}

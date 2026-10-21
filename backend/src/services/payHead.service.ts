@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
+import { standardNotAdded } from '../shared/payroll/standard-components';
 import {
   CalculationBasis,
   CalculationMode,
@@ -130,6 +131,13 @@ export async function listPayHeads(adminUserId: string) {
   const org = await requireAdminOrg(adminUserId);
   const docs = await payHeads().find({ org }).sort({ category: 1, name: 1 }).toArray();
   return docs.map(toView);
+}
+
+/** The standard components this org hasn't added: shown next to its own, saved on first use. */
+export async function listStandardComponents(adminUserId: string) {
+  const org = await requireAdminOrg(adminUserId);
+  const own = await payHeads().find({ org }, { projection: { code: 1, componentType: 1 } }).toArray();
+  return standardNotAdded(own);
 }
 
 export async function getPayHead(adminUserId: string, idInput: string) {
