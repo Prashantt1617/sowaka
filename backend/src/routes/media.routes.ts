@@ -44,7 +44,17 @@ mediaRouter.get('/:key', async (req, res, next) => {
       // A video player asks for the bytes it needs, not the whole file, and
       // AVPlayer on iOS will not scrub at all unless the answer is a 206.
       const range = typeof req.headers.range === 'string' ? req.headers.range : undefined;
+      // Listen before waiting on S3: a reader who scrolls on while S3 is still
+      // answering is gone by the time the stream arrives, and a 'close'
+      // listener added after that never fires, so the S3 socket stayed open
+      // for good. Enough of those and no image or video loaded at all.
+      let readerGone = false;
+      res.on('close', () => { readerGone = true; });
       const object = await readConnectMedia(objectKey, range).catch(() => undefined);
+      if (readerGone || res.destroyed) {
+        (object?.body as (NodeJS.ReadableStream & { destroy?: () => void }) | undefined)?.destroy?.();
+        return;
+      }
       if (!object?.body) {
         res.status(404).json({ success: false, message: 'Media not found' });
         return;
