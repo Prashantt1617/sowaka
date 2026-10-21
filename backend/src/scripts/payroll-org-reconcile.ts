@@ -76,11 +76,15 @@ async function main() {
         const slipConsistent = slip.grossPaise === base.grossMonthlyPaise && slip.netPayablePaise === slip.grossPaise - slip.employeeDeductionsPaise + slip.reimbursementsPaise;
         if (!slipConsistent) reason(`payslip totals do not add up (gross equal: ${slip.grossPaise === base.grossMonthlyPaise}; slip earnings prorate: ${base.earnings.filter((l) => l.prorate).length}/${base.earnings.length}; paid==full: ${slip.earnings.every((e) => e.paidPaise === e.fullPaise)})`);
         if (base.overBudget) { result.overBudget++; reason('components exceed CTC (over budget)'); }
+        // Payroll takes a month's CTC in whole rupees and lands the balance on whole rupees (as Zoho),
+        // so the parts may sit up to ₹1 off the rupee-rounded monthly CTC.
+        const target = base.monthlyCtcPaise;
+        const adds = Math.abs(ctcFromParts - target) <= 100;
         if (!t.balancingComponentCode) {
           result.noBalancing++;
-          if (ctcFromParts !== monthly) reason('template has no balancing component: parts differ from CTC');
-        }
-        if (ctcFromParts === monthly && slipConsistent) result.ok++;
+          if (!adds) reason('template has no balancing component: parts differ from CTC');
+        } else if (!adds) reason(`parts differ from the monthly CTC by more than ₹1 (₹${((ctcFromParts - target) / 100).toFixed(2)})`);
+        if (adds && slipConsistent) result.ok++;
         else result.mismatched++;
       } catch (e) {
         result.errored++;
