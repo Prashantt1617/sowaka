@@ -91,7 +91,26 @@ export async function cryptoStatus(viewerUserId: string) {
       wrappedDataKey: myGrant?.wrappedDataKey ?? null,
     },
     members,
+    /** Readable payroll records still waiting to be locked (right after setup, or a lock that stopped halfway). */
+    plaintextRemaining: state ? await (await import('./sealedPayroll.service')).plaintextCounts(me.org) : null,
   };
+}
+
+/**
+ * A new passphrase for the same keypair: only the wrapped private half
+ * changes, so the grants made to this key stay valid.
+ */
+export async function changeMyPassphrase(viewerUserId: string, raw: unknown) {
+  const me = await payrollUser(viewerUserId);
+  const key = requireKeyRecord(raw);
+  const current = (await payrollCrypto().findOne({ kind: 'user_key', org: me.org, userId: me.userId })) as (PayrollCryptoUserKey & { _id: ObjectId }) | null;
+  if (!current) throw new PayrollCryptoError(409, 'You have no key yet');
+  if (current.publicKey !== key.publicKey) throw new PayrollCryptoError(400, 'That is a different key: a new passphrase keeps the same key');
+  await payrollCrypto().updateOne(
+    { _id: current._id },
+    { $set: { wrappedPrivateKey: key.wrappedPrivateKey, salt: key.salt, iv: key.iv, iterations: key.iterations, updatedAt: new Date() } },
+  );
+  return cryptoStatus(viewerUserId);
 }
 
 function requireKeyRecord(raw: unknown): UserKeyRecord {

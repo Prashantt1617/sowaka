@@ -7,7 +7,7 @@
  * drives the run's lifecycle; it never sees a salary figure.
  */
 import { ObjectId } from 'mongodb';
-import { companies, payrollRuns, payslips, salaryStructures, salaryTemplates, taxDeclarations, users } from '../config/db';
+import { companies, payrollCrypto, payrollRuns, payslips, salaryStructures, salaryTemplates, taxDeclarations, users } from '../config/db';
 import { Payslip, PayrollRun, PayrollRunStatus } from '../models/payrollRun.model';
 import { ResolvedRuleSet } from '../models/statutoryRule.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
@@ -324,4 +324,134 @@ export async function mySealedPayslips(userId: string) {
       .filter((s) => byId.has(s.runId))
       .map((s) => ({ id: s._id.toHexString(), org: s.org, userId: s.userId, period: s.period, runStatus: byId.get(s.runId)!.status, sealedForEmployee: s.sealedForEmployee })),
   };
+}
+
+// —— Locking what was there before encryption was switched on ——
+
+const ZERO_TOTALS = { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 };
+
+/** Readable payroll records left in an encrypted org (right after setup, or a lock that stopped halfway). */
+async function plaintextQueries(org: string) {
+  return {
+    structures: { org, sealed: { $exists: false } },
+    runs: { org, sealedTotals: { $exists: false } },
+    payslips: { org, sealed: { $exists: false } },
+    declarations: { org, sealed: { $exists: false } },
+  } as const;
+}
+
+export async function plaintextCounts(org: string) {
+  const q = await plaintextQueries(org);
+  const [structures, runs, slips, declarations] = await Promise.all([
+    salaryStructures().countDocuments(q.structures as never),
+    payrollRuns().countDocuments(q.runs as never),
+    payslips().countDocuments(q.payslips as never),
+    taxDeclarations().countDocuments(q.declarations as never),
+  ]);
+  return { structures, runs, payslips: slips, declarations, total: structures + runs + slips + declarations };
+}
+
+/**
+ * The readable records, for the browser of someone holding the data key to
+ * seal. Only once encryption is on and only to a key holder, so this is the
+ * same exposure the plaintext screens had a moment earlier, once.
+ */
+export async function listPlaintext(viewerUserId: string) {
+  const { org } = await writableOrgOf(viewerUserId);
+  await requireGrantHolder(org, viewerUserId);
+  const q = await plaintextQueries(org);
+  const [structures, runs, slips, declarations] = await Promise.all([
+    salaryStructures().find(q.structures as never).toArray(),
+    payrollRuns().find(q.runs as never).toArray(),
+    payslips().find(q.payslips as never).toArray(),
+    taxDeclarations().find(q.declarations as never).toArray(),
+  ]);
+  return {
+    structures: structures.map((s) => ({
+      userId: s.userId,
+      secret: {
+        annualCtcPaise: s.annualCtcPaise ?? 0,
+        componentValues: s.componentValues ?? {},
+        overrides: s.overrides ?? {},
+        revisions: s.revisions ?? [],
+        ...(s.statutory?.pfRestrictedWagePaise !== undefined ? { pfRestrictedWagePaise: s.statutory.pfRestrictedWagePaise } : {}),
+      },
+    })),
+    runs: runs.map((r) => ({ id: r._id.toHexString(), period: r.period, totals: r.totals ?? ZERO_TOTALS })),
+    payslips: slips.map((p) => {
+      const { _id, org: _o, runId, sealed: _s, sealedForEmployee: _e, createdAt: _c, ...rest } = p as Payslip & { _id: ObjectId; sealed?: unknown; sealedForEmployee?: unknown };
+      return { id: _id.toHexString(), runId, ...rest };
+    }),
+    declarations: declarations.map((d) => ({ userId: d.userId, fy: d.fy, declarations: d.declarations ?? {} })),
+  };
+}
+
+async function requireGrantHolder(org: string, userId: string) {
+  const state = await orgCryptoState(org);
+  const mine = await payrollCrypto().findOne({ kind: 'grant', org, userId, keyVersion: state?.keyVersion ?? -1 });
+  if (!mine) throw new PayrollCryptoError(403, 'You do not hold the current payroll key');
+}
+
+/**
+ * Replace readable records with what the browser sealed, and clear their
+ * amounts. Each record is matched to one still readable, so a retry after a
+ * half-finished lock only touches what is left.
+ */
+export async function sealExisting(viewerUserId: string, input: Record<string, unknown>) {
+  const { org, keyVersion } = await writableOrgOf(viewerUserId);
+  await requireGrantHolder(org, viewerUserId);
+  const list = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
+  const now = new Date();
+  let done = 0;
+  for (const s of list(input.structures)) {
+    const userId = String(s.userId);
+    const current = await salaryStructures().findOne({ org, userId, sealed: { $exists: false } });
+    if (!current) continue;
+    const sealed = requireSealed(s.sealed, 'salary', keyVersion);
+    const used = [...new Set([...((current.overrides as { add?: { payHeadCode: string }[] } | undefined)?.add ?? []).map((a) => a.payHeadCode), ...Object.keys(current.componentValues ?? {})])];
+    await salaryStructures().updateOne(
+      { _id: current._id, sealed: { $exists: false } },
+      { $set: { sealed, annualCtcPaise: 0, componentValues: {}, overrides: {}, revisions: [], usedComponentCodes: used, updatedAt: now }, $unset: { 'statutory.pfRestrictedWagePaise': '' } },
+    );
+    done++;
+  }
+  for (const r of list(input.runs)) {
+    const id = String(r.id);
+    if (!ObjectId.isValid(id)) continue;
+    const sealedTotals = requireSealed(r.sealedTotals, 'run totals', keyVersion);
+    const res = await payrollRuns().updateOne({ _id: new ObjectId(id), org, sealedTotals: { $exists: false } }, { $set: { sealedTotals, totals: ZERO_TOTALS, updatedAt: now } });
+    done += res.modifiedCount;
+  }
+  for (const p of list(input.payslips)) {
+    const id = String(p.id);
+    if (!ObjectId.isValid(id)) continue;
+    const current = await payslips().findOne({ _id: new ObjectId(id), org, sealed: { $exists: false } });
+    if (!current) continue;
+    const sealed = requireSealed(p.sealed, 'payslip', keyVersion);
+    const rawInputs = (current.inputs ?? {}) as unknown as Record<string, unknown>;
+    const inputs = Object.fromEntries(NON_AMOUNT_INPUTS.filter((k) => rawInputs[k] !== undefined).map((k) => [k, rawInputs[k]]));
+    await payslips().updateOne(
+      { _id: current._id, sealed: { $exists: false } },
+      {
+        $set: {
+          sealed,
+          ...(isSealedForPerson(p.sealedForEmployee) && p.sealedForEmployee.ct.length <= 200_000 ? { sealedForEmployee: p.sealedForEmployee } : {}),
+          annualCtcPaise: 0, monthlyCtcPaise: 0, earnings: [], deductions: [], pfWagePaise: 0, ...ZERO_TOTALS, netPayablePaise: 0,
+          epf: { contributionWagePaise: 0, employeePaise: 0, employerEpsPaise: 0, employerEpfPaise: 0 },
+          inputs: { workingDays: 0, lopDays: 0, payableDays: 0, approvedLeaveDays: 0, approvedOtHours: 0, overtimePaise: 0, reimbursementsPaise: 0, reimbursementClaimIds: [], ...inputs } as Payslip['inputs'],
+        },
+        $unset: { taxablePaise: '', reimbursementLines: '', employer: '' },
+      },
+    );
+    done++;
+  }
+  for (const d of list(input.declarations)) {
+    const sealed = requireSealed(d.sealed, 'tax declaration', keyVersion);
+    const res = await taxDeclarations().updateOne(
+      { org, userId: String(d.userId), fy: String(d.fy), sealed: { $exists: false } },
+      { $set: { sealed, declarations: {}, updatedAt: now } },
+    );
+    done += res.modifiedCount;
+  }
+  return { sealed: done, remaining: await plaintextCounts(org) };
 }

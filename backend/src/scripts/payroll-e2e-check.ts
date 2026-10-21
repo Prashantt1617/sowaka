@@ -30,7 +30,7 @@ import { app } from '../app';
 import { authSessions, closeDb, connectDb, getDb, users } from '../config/db';
 import { aadFor, createRecoveryKey, open, unlockPrivateKey, unwrapWithPrivateKey, type Sealed } from '../shared/payroll/crypto';
 import { hashSessionToken } from '../services/auth.service';
-import { SealedPayroll, SealedPayslipReader, type OpenPayslip, type PayrollApi, type RunEdits } from '../shared/payroll/sealed-client';
+import { type RunTotals, SealedPayroll, SealedPayslipReader, type OpenPayslip, type PayrollApi, type RunEdits } from '../shared/payroll/sealed-client';
 
 const ORG = 'sowaka';
 const PORT = Number(process.env.PORT ?? 4097);
@@ -256,9 +256,8 @@ async function main() {
     const control = await scanForPlaintext(knownValues([...expectApril.payslips, ...expectMay.payslips]));
     assert.ok(control.hits.length > 20, 'the scan finds the plaintext baseline');
     ok(`control: the database scan finds ${control.hits.length} known paise values while the org is plaintext`);
-    // The plaintext baseline is the test's own data: it goes before the org is encrypted.
-    await getDb().collection('payslips').deleteMany({ org: ORG });
-    await getDb().collection('payroll_runs').deleteMany({ org: ORG });
+    // The plaintext salaries, runs, payslips and declaration stay: setup must lock them,
+    // as it will for a real company that already has salaries (convrse).
 
     // —— Setup ——
     console.log('\nencryption');
@@ -270,6 +269,10 @@ async function main() {
     assert.equal(status.mode, 'encrypted');
     assert.equal(status.holders, 1);
     ok(`setup: encrypted, key version ${status.keyVersion}, recovery key shown once (${recoveryKey.slice(0, 8)}-…)`);
+    assert.equal(status.plaintextRemaining?.total, 0, `nothing readable left after setup: ${JSON.stringify(status.plaintextRemaining)}`);
+    const lockedScan = await scanForPlaintext(knownValues([...expectApril.payslips, ...expectMay.payslips]));
+    assert.deepEqual(lockedScan.hits, [], 'setup cleared every readable amount');
+    ok(`setup locked what was already there (3 salaries, 2 runs, 6 payslips, 1 declaration): 0 readable records left, 0 known paise values in the database`);
     await rejects(hr.get(`/admin/payroll/salary-structures/${people.aditya}`), 409, 'plaintext salary read');
     await rejects(hr.post('/admin/payroll/runs', { period: MAY }), 409, 'plaintext run');
     await rejects(hrClient.setup(passphrase), 409, 'second setup');
@@ -281,6 +284,24 @@ async function main() {
     await fresh.unlock(passphrase);
     assert.ok(fresh.unlocked);
     ok('unlock: the wrong passphrase is refused, the right one opens the data key');
+    // What setup locked opens to exactly what the server had.
+    const lockedSalaries = await fresh.structures();
+    for (const [who, s] of Object.entries(SALARIES) as [keyof typeof SALARIES, (typeof SALARIES)[keyof typeof SALARIES]][]) {
+      const got = lockedSalaries.find((b) => b.userId === people[who])!;
+      assert.equal(got.secret.annualCtcPaise, s.annualCtcPaise);
+      assert.deepEqual(got.secret.componentValues ?? {}, s.componentValues ?? {});
+    }
+    for (const [label, runId, expected] of [['April', plainApril.run.id, expectApril], ['May', plainMay.run.id, expectMay]] as const) {
+      const d = await hr.get<{ run: { period: string; totals: RunTotals; sealedTotals?: never }; payslips: (Record<string, unknown> & { userId: string; period: string; inputs: Record<string, unknown> })[] }>(`/admin/payroll/runs/${runId}`);
+      assert.deepEqual(await fresh.openTotals(d.run), expected.run.totals, `${label} totals`);
+      for (const want of expected.payslips) {
+        const got = await fresh.openPayslip(d.payslips.find((p) => p.userId === want.userId)!);
+        for (const f of ['grossPaise', 'employeeDeductionsPaise', 'netPayablePaise', 'employerCostPaise', 'pfWagePaise']) assert.equal(got[f], want[f], `${label} ${f}`);
+        assert.deepEqual(got.earnings, want.earnings, `${label} earnings`);
+        assert.deepEqual(got.deductions, want.deductions, `${label} deductions`);
+      }
+    }
+    ok('the locked salaries, April and May runs open to exactly the server\'s figures (every total, earning and deduction)');
 
     // An employee makes their key before the run, so their payslip is sealed to them too.
     const reader = new SealedPayslipReader(aditya);
@@ -393,6 +414,23 @@ async function main() {
     await rejects(new SealedPayroll(hr).unlock(passphrase), /Wrong passphrase/, 'the old passphrase after recovery');
     await new SealedPayroll(hr).unlock(newPass);
     ok('recovered with the recovery key (the same one, after rotation): a new passphrase, everything opens; the old passphrase no longer does');
+
+    // —— Change passphrase, new recovery key ——
+    const changed = `changed-${randomBytes(12).toString('hex')}`;
+    await rejects(new SealedPayroll(hr).changePassphrase('not my passphrase', changed), /Wrong passphrase/, 'change with a wrong passphrase');
+    await new SealedPayroll(hr).changePassphrase(newPass, changed);
+    await rejects(new SealedPayroll(hr).unlock(newPass), /Wrong passphrase/, 'the old passphrase after a change');
+    const afterChange = new SealedPayroll(hr);
+    await afterChange.unlock(changed);
+    assert.equal((await afterChange.structure(people.sneha))!.secret.annualCtcPaise, SALARIES.sneha.annualCtcPaise);
+    ok('change passphrase: the new one opens everything with no new grant needed; the old one stops working');
+    const newRecovery = await afterChange.replaceRecoveryKey();
+    assert.notEqual(newRecovery, recoveryKey);
+    await rejects(new SealedPayroll(hr).recover(recoveryKey, 'another passphrase 1'), /Wrong recovery key/, 'the old recovery key after replacing it');
+    const viaNewRecovery = new SealedPayroll(hr);
+    await viaNewRecovery.recover(newRecovery, `again-${randomBytes(12).toString('hex')}`);
+    assert.equal((await viaNewRecovery.structure(people.aditya))!.secret.annualCtcPaise, SALARIES.aditya.annualCtcPaise);
+    ok('new recovery key: the old one stops working, the new one recovers access');
 
     // —— Nothing readable in the database ——
     const values = knownValues([...expectApril.payslips, ...expectMay.payslips]);

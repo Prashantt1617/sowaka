@@ -13,12 +13,13 @@ import type { StatutorySettings } from '../../models/statutorySettings.model';
 import type { StructureOverrides } from '../../models/salaryStructure.model';
 import {
   aadFor, createDataKey, createRecoveryKey, createRecoveryRecord, createUserKeys, open, openForPerson, recoveryProof, seal, sealForPerson,
-  unlockPrivateKey, unwrapWithPrivateKey, unwrapWithRecovery, wrapForPublicKey,
+  rewrapPrivateKey, unlockPrivateKey, unwrapWithPrivateKey, unwrapWithRecovery, wrapForPublicKey,
   type DeclarationSecret, type Sealed, type SealedForPerson, type StructureSecret, type UserKeyRecord,
 } from './crypto';
 import { calculateSalaryStructure, type SalaryCalcResult } from './salary-calculator';
-import { computePayslip, type PayslipComputation } from './payroll-run.calculator';
+import { computePayslip, taxableAfterMealExemption, type PayslipComputation } from './payroll-run.calculator';
 import { applyOverrides, resolveTemplateComponents } from './resolve';
+import { overtimePayFor } from './overtime';
 import { computeTds, fyOf, type TaxDeclarations, type TaxRegime, type TdsConfig, type TdsResult } from './tds';
 
 export interface PayrollApi {
@@ -45,6 +46,8 @@ export interface CryptoStatus {
   since: string | null;
   me: { userId: string; key: UserKeyRecord | null; wrappedDataKey: string | null };
   members: { userId: string; name: string; hasKey: boolean; publicKey?: string; granted: boolean }[];
+  /** Readable records still to lock: right after setup, or after a lock that stopped halfway. */
+  plaintextRemaining?: { structures: number; runs: number; payslips: number; declarations: number; total: number } | null;
 }
 
 /** A declaration row as the context carries it: plain regime and proofs, amounts sealed. */
@@ -166,7 +169,7 @@ export class SealedPayroll {
   }
 
   /** First person: make my key, a data key and the recovery key; turn encryption on. Returns the recovery key, shown once. */
-  async setup(passphrase: string): Promise<{ recoveryKey: string }> {
+  async setup(passphrase: string): Promise<{ recoveryKey: string; lockError?: string }> {
     // Registering a key drops any grant I hold: check first, so a second setup can't lock me out.
     if ((await this.status()).mode === 'encrypted') throw Object.assign(new Error('Salary encryption is already set up for this organisation'), { status: 409 });
     const { record } = await createUserKeys(passphrase);
@@ -181,7 +184,69 @@ export class SealedPayroll {
     this.dataKey = dataKey;
     this.keyVersion = status.keyVersion;
     this.ctx = null;
-    return { recoveryKey };
+    // Whatever was readable before is locked now; if this stops halfway, the
+    // panel offers to finish it (status.plaintextRemaining).
+    // The recovery key is returned whatever happens here: encryption is
+    // already on, so losing it would lose the data.
+    let lockError: string | undefined;
+    try {
+      await this.lockExisting();
+    } catch (e) {
+      lockError = e instanceof Error ? e.message : String(e);
+    }
+    return { recoveryKey, ...(lockError ? { lockError } : {}) };
+  }
+
+  /**
+   * Lock what was readable before encryption was switched on: salaries,
+   * runs, payslips and tax declarations are sealed here and their readable
+   * amounts cleared on the server. Safe to run again: it only touches what
+   * is still readable.
+   */
+  async lockExisting(): Promise<{ sealed: number; remaining: number }> {
+    const key = this.requireKey();
+    const ctx = await this.anyContext();
+    const v = this.keyVersion || ctx.keyVersion;
+    const plain = (await this.api.get<{ plaintext: {
+      structures: { userId: string; secret: StructureSecret }[];
+      runs: { id: string; period: string; totals: RunTotals }[];
+      payslips: (Record<string, unknown> & { id: string; userId: string; period: string })[];
+      declarations: { userId: string; fy: string; declarations: Record<string, number | boolean> }[];
+    } }>('/admin/payroll/crypto/plaintext')).plaintext;
+    const employeeKeys = new Map(ctx.employeeKeys.map((k) => [k.userId, k.publicKey]));
+    const structures = [];
+    for (const x of plain.structures) structures.push({ userId: x.userId, sealed: await seal(key, v, x.secret, aadFor(ctx.org, 'structure', x.userId)) });
+    const runs = [];
+    for (const r of plain.runs) runs.push({ id: r.id, sealedTotals: await seal(key, v, r.totals, aadFor(ctx.org, 'run', r.period)) });
+    const payslips = [];
+    for (const p of plain.payslips) {
+      const { id, runId: _runId, ...full } = p as Record<string, unknown> & { id: string; runId?: string; userId: string; period: string };
+      const aad = payslipAad(ctx.org, p.period, p.userId);
+      const employeeKey = employeeKeys.get(p.userId);
+      payslips.push({ id, sealed: await seal(key, v, full, aad), ...(employeeKey ? { sealedForEmployee: await sealForPerson(full, employeeKey, aad) } : {}) });
+    }
+    const declarations = [];
+    for (const d of plain.declarations) {
+      const secret: DeclarationSecret = { declarations: d.declarations };
+      declarations.push({ userId: d.userId, fy: d.fy, sealed: await seal(key, v, secret, declarationAad(ctx.org, d.userId, d.fy)) });
+    }
+    const res = await this.api.post<{ sealed: number; remaining: { total: number } }>('/admin/payroll/crypto/seal-existing', { structures, runs, payslips, declarations });
+    this.ctx = null;
+    return { sealed: res.sealed, remaining: res.remaining.total };
+  }
+
+  /** A new passphrase for my key; nothing else changes and no one needs to grant me again. */
+  async changePassphrase(oldPassphrase: string, newPassphrase: string): Promise<CryptoStatus> {
+    const s = await this.status();
+    if (!s.me.key) throw new Error('You have no key yet');
+    const record = await rewrapPrivateKey(s.me.key, oldPassphrase, newPassphrase);
+    return (await this.api.post<{ crypto: CryptoStatus }>('/admin/payroll/crypto/keys/passphrase', { key: record })).crypto;
+  }
+
+  /** A new recovery key (the old one stops working); the data key is rotated with it. Shown once. */
+  async replaceRecoveryKey(): Promise<string> {
+    const { recoveryKey } = await this.rotate({ newRecoveryKey: true });
+    return recoveryKey!;
   }
 
   /** Someone else with payroll access: make my key; a key holder then grants me the data key. */
@@ -419,7 +484,13 @@ export class SealedPayroll {
         statutoryWages: template.statutoryWages ?? undefined,
       });
       const lopDays = lopHr !== undefined ? clampLop(lopHr, inputs.workingDays) : inp.attendanceLopDays;
-      const overtimePaise = nonNeg(otHr);
+      // As the server does: what HR typed, else the template's rule on the approved hours.
+      const overtimePaise = otHr !== undefined && otHr !== null
+        ? nonNeg(otHr)
+        : overtimePayFor(template.overtimePay ?? undefined, Number(inp.approvedOtHours ?? 0), {
+          basicPaise: base.earnings.filter((l) => l.componentType === 'basic').reduce((t, l) => t + l.monthlyPaise, 0),
+          grossPaise: base.earnings.filter((l) => !l.oneTime).reduce((t, l) => t + l.monthlyPaise, 0),
+        }, inputs.workingDays);
       let incomeTaxPaise = nonNeg(taxHr);
       const statutory = { ...s.statutory, pfRestrictedWagePaise: s.secret.pfRestrictedWagePaise };
       const slipInput = { workingDays: inputs.workingDays, lopDays, overtimePaise, reimbursementsPaise: inp.reimbursementsPaise, ruleSet, month: inputs.month, statutory, settings: ctx.settings, esiCoveredEarlier: inp.esiCoveredEarlier, incomeTaxPaise, period };
@@ -433,7 +504,8 @@ export class SealedPayroll {
           const y = ytd.get(s.userId);
           const result = computeTds({
             config, ytdTaxablePaise: y?.taxable ?? 0, ytdTdsPaise: y?.tds ?? 0, currentTaxablePaise: slip.taxablePaise,
-            futureMonthlyTaxablePaise: base.earnings.filter((l) => l.taxable !== false && !l.oneTime).reduce((a, l) => a + l.monthlyPaise, 0),
+            // The same projection as the server: the Meal Card's tax-free part comes off.
+            futureMonthlyTaxablePaise: taxableAfterMealExemption(base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise }))),
             monthsAfter: fyOf(period).monthsAfter, basicYearPaise: byType('basic') * 12, hraYearPaise: byType('hra') * 12,
             employeePfYearPaise: base.statutory.epf.employeePaise * 12, ptYearPaise: base.statutory.pt.amountPaise * 12, declarations: decl?.declarations,
           });

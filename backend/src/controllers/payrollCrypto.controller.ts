@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import {
+  changeMyPassphrase,
   cryptoStatus,
   grantDataKey,
   myEmployeeKey,
@@ -12,12 +13,14 @@ import {
 } from '../services/payrollCrypto.service';
 import {
   calcContext,
+  listPlaintext,
   listSealedDeclarations,
   listSealedStructures,
   mySealedPayslips,
   runInputs,
   saveSealedRun,
   saveSealedStructure,
+  sealExisting,
 } from '../services/sealedPayroll.service';
 
 function uid(req: Request): string {
@@ -35,6 +38,9 @@ const wrap = (fn: (req: Request) => Promise<unknown>) => async (req: Request, re
 
 export const cryptoStatusHandler = wrap(async (req) => ({ crypto: await cryptoStatus(uid(req)) }));
 export const registerKeyHandler = wrap(async (req) => ({ crypto: await registerMyKey(uid(req), body(req).key) }));
+export const changePassphraseHandler = wrap(async (req) => ({ crypto: await changeMyPassphrase(uid(req), body(req).key) }));
+export const plaintextHandler = wrap(async (req) => ({ plaintext: await listPlaintext(uid(req)) }));
+export const sealExistingHandler = wrap(async (req) => sealExisting(uid(req), body(req)));
 export const setupHandler = wrap(async (req) => ({ crypto: await setupOrgCrypto(uid(req), body(req)) }));
 export const recoverHandler = wrap(async (req) => ({ crypto: await recoverAccess(uid(req), body(req)) }));
 export const grantHandler = wrap(async (req) => ({ crypto: await grantDataKey(uid(req), body(req).grants) }));

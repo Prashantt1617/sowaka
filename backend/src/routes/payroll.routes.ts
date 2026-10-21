@@ -50,6 +50,9 @@ import {
   grantHandler,
   recoverHandler,
   registerKeyHandler,
+  changePassphraseHandler,
+  plaintextHandler,
+  sealExistingHandler,
   rotateHandler,
   runInputsHandler,
   saveSealedRunHandler,
@@ -129,6 +132,10 @@ payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
 // dashboard computes in the browser. The server never holds a key that opens them.
 payrollRouter.get('/crypto', cryptoStatusHandler);
 payrollRouter.post('/crypto/keys', registerKeyHandler);
+payrollRouter.post('/crypto/keys/passphrase', changePassphraseHandler);
+// Right after setup: the records that were readable, for the browser to lock.
+payrollRouter.get('/crypto/plaintext', plaintextHandler);
+payrollRouter.post('/crypto/seal-existing', sealExistingHandler);
 payrollRouter.post('/crypto/setup', setupHandler);
 payrollRouter.post('/crypto/recover', recoverHandler);
 payrollRouter.post('/crypto/grants', grantHandler);

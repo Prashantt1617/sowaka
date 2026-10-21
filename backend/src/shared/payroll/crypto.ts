@@ -98,6 +98,23 @@ export async function unlockPrivateKey(record: UserKeyRecord, passphrase: string
   return subtle().importKey('pkcs8', pkcs8, RSA, false, ['decrypt']);
 }
 
+/** The same keypair under a new passphrase: grants made to it stay valid. Throws on a wrong old passphrase. */
+export async function rewrapPrivateKey(record: UserKeyRecord, oldPassphrase: string, newPassphrase: string, iterations = PBKDF2_ITERATIONS): Promise<UserKeyRecord> {
+  if (newPassphrase.length < 10) throw new Error('Use a passphrase of at least 10 characters');
+  const oldKek = await kekFrom(oldPassphrase, fromB64(record.salt), record.iterations);
+  let pkcs8: ArrayBuffer;
+  try {
+    pkcs8 = await subtle().decrypt({ name: 'AES-GCM', iv: buf(fromB64(record.iv)) }, oldKek, buf(fromB64(record.wrappedPrivateKey)));
+  } catch {
+    throw new Error('Wrong passphrase');
+  }
+  const salt = random(16);
+  const iv = random(12);
+  const kek = await kekFrom(newPassphrase, salt, iterations);
+  const wrapped = await subtle().encrypt({ name: 'AES-GCM', iv: buf(iv) }, kek, pkcs8);
+  return { publicKey: record.publicKey, wrappedPrivateKey: toB64(wrapped), salt: toB64(salt), iv: toB64(iv), iterations };
+}
+
 /** A fresh org payroll data key. Extractable only so it can be wrapped for others. */
 export function createDataKey(): Promise<CryptoKey> {
   return subtle().generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
