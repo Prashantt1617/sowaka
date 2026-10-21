@@ -54,6 +54,13 @@ export function taxableAfterMealExemption(
   return taxable - Math.min(meal, Math.max(0, mealCardExemptMonthlyPaise));
 }
 
+/** A month's taxable salary as the structure pays it in full (one-time items left out), for TDS projections. */
+export function projectedTaxable(base: SalaryCalcResult): number {
+  return taxableAfterMealExemption(
+    base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+  );
+}
+
 export interface PayslipEarningLine {
   code: string;
   /** The payslip label (payslip name, else the component name). */

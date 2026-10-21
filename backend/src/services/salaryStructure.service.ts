@@ -11,7 +11,6 @@ import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 import { decryptField, encryptField, fieldKeyConfigured, isEncrypted, maskTail } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
-import { isEncryptedOrg } from './payrollCrypto.service';
 
 export class SalaryStructureError extends Error {
   constructor(
@@ -46,8 +45,6 @@ export async function listSalaryStructures(adminUserId: string) {
     employeeName: byId.get(doc.userId)?.name,
     salaryTemplateCode: doc.salaryTemplateCode,
     annualCtcPaise: doc.annualCtcPaise,
-    /** Amounts are sealed (end-to-end encrypted org): open them in the browser. */
-    sealed: Boolean(doc.sealed),
     status: doc.status,
     updatedAt: doc.updatedAt.toISOString(),
   }));
@@ -56,7 +53,6 @@ export async function listSalaryStructures(adminUserId: string) {
 /** The saved structure plus its freshly computed breakup. */
 export async function getSalaryStructure(adminUserId: string, userId: string) {
   const org = await requireAdminOrg(adminUserId);
-  if (await isEncryptedOrg(org)) throw new SalaryStructureError(409, 'This organisation’s salaries are encrypted: unlock them in the dashboard');
   const doc = await salaryStructures().findOne({ org, userId });
   if (!doc) throw new SalaryStructureError(404, 'No salary structure for this employee');
   const { computed, components, template } = await compute(org, userId, doc);
@@ -69,7 +65,6 @@ export async function upsertSalaryStructure(
   input: SalaryStructureInput,
 ) {
   const org = await requireAdminOrg(adminUserId);
-  if (await isEncryptedOrg(org)) throw new SalaryStructureError(409, 'This organisation’s salaries are encrypted: unlock them in the dashboard');
   const employee = await requireOrgEmployee(org, userId);
   const catalog = await orgPayHeads(org);
   const draft = normalizeInput(input, catalog);
@@ -118,7 +113,6 @@ export async function previewSalaryStructure(
   input: SalaryStructureInput,
 ) {
   const org = await requireAdminOrg(adminUserId);
-  if (await isEncryptedOrg(org)) throw new SalaryStructureError(409, 'This organisation’s salaries are encrypted: unlock them in the dashboard');
   const employee = await requireOrgEmployee(org, userId);
   const catalog = await orgPayHeads(org);
   const draft = normalizeInput(input, catalog);
@@ -414,6 +408,7 @@ function viewOf(doc: SalaryStructure, templateName?: string, payroll = false) {
     userId: doc.userId,
     salaryTemplateCode: doc.salaryTemplateCode,
     templateName,
+    paidDaysTemplateCode: doc.paidDaysTemplateCode,
     annualCtcPaise: doc.annualCtcPaise,
     componentValues: doc.componentValues ?? {},
     overrides: doc.overrides ?? {},

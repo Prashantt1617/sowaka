@@ -1,10 +1,11 @@
 /**
  * HR marks on an employee's calendar: tap a day on the dashboard, say what it
- * was. One mark per person per day, current month only. Every place that
+ * was. One mark per person per day, in the current month or in a month whose
+ * payroll run is still open (a draft run being checked). Every place that
  * grades a day reads these first (see `overridesFor`), and the org report's
  * cache is dropped on every write so payroll and the report see it at once.
  */
-import { attendanceOverrides, users } from '../config/db';
+import { attendanceOverrides, payrollRuns, users } from '../config/db';
 import { AttendanceOverride, HR_DAY_STATUSES, HrDayStatus } from '../models/attendance.model';
 import { invalidateAttendanceReport } from './attendance-report.service';
 
@@ -45,13 +46,21 @@ async function adminAndEmployee(adminUserId: string, userId: string) {
   return { org: admin.org, adminName: admin.name };
 }
 
-function checkDate(workDate: string) {
+/**
+ * The current month, or an earlier month whose payroll run is still open (a
+ * draft, or one submitted before runs were final), so HR can settle the days a
+ * run pays from. Once that month's run is submitted, its days stay as paid.
+ */
+async function checkDate(workDate: string, org: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(workDate)) {
     throw new AttendanceOverrideError(400, 'The day must be YYYY-MM-DD');
   }
-  if (workDate.slice(0, 7) !== currentMonthIst()) {
-    throw new AttendanceOverrideError(400, 'Only days in the current month can be corrected here');
-  }
+  const month = workDate.slice(0, 7);
+  const finished = await payrollRuns().findOne({ org, period: month, status: { $in: ['approved', 'paid'] } }, { projection: { _id: 1 } });
+  if (finished) throw new AttendanceOverrideError(409, `Payroll for ${month} is submitted: its days can no longer be changed`);
+  if (month === currentMonthIst()) return;
+  const open = month < currentMonthIst() && await payrollRuns().findOne({ org, period: month, status: { $in: ['draft', 'pending_approval'] } }, { projection: { _id: 1 } });
+  if (!open) throw new AttendanceOverrideError(400, 'Only the current month, or a month whose payroll run is still open, can be corrected');
 }
 
 export async function setAttendanceOverride(
@@ -60,13 +69,13 @@ export async function setAttendanceOverride(
   workDate: string,
   input: { status?: unknown; note?: unknown },
 ) {
-  checkDate(workDate);
   const status = String(input.status ?? '') as HrDayStatus;
   if (!HR_DAY_STATUSES.includes(status)) {
     throw new AttendanceOverrideError(400, `Mark the day as one of: ${HR_DAY_STATUSES.join(', ')}`);
   }
   const note = typeof input.note === 'string' ? input.note.trim().slice(0, 200) : '';
   const { org, adminName } = await adminAndEmployee(adminUserId, userId);
+  await checkDate(workDate, org);
   const doc: AttendanceOverride = {
     org, userId, workDate, status,
     ...(note ? { note } : {}),
@@ -80,8 +89,8 @@ export async function setAttendanceOverride(
 }
 
 export async function clearAttendanceOverride(adminUserId: string, userId: string, workDate: string) {
-  checkDate(workDate);
   const { org } = await adminAndEmployee(adminUserId, userId);
+  await checkDate(workDate, org);
   const result = await attendanceOverrides().deleteOne({ org, userId, workDate });
   invalidateAttendanceReport(org);
   return { removed: result.deletedCount === 1 };

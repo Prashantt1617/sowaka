@@ -27,6 +27,9 @@ export type View =
   | 'taxdetails'
   | 'payheads'
   | 'templates'
+  | 'paiddays'
+  | 'payrolldash'
+  | 'payrollreports'
   | 'statutorycomponents'
   | 'payruns'
   | 'departments'
@@ -137,6 +140,9 @@ export const TITLES: Record<View, [string, string]> = {
   taxdetails: ['Tax Details', 'Payroll · org-level tax identity for filings'],
   payheads: ['Salary Components', 'Payroll · reusable component catalog'],
   templates: ['Salary Templates', 'Payroll · reusable pay groups'],
+  paiddays: ['Paid Days Templates', 'Payroll · how attendance becomes paid days'],
+  payrolldash: ['Payroll Dashboard', 'Payroll · the month at a glance'],
+  payrollreports: ['Payroll Reports', 'Payroll · summaries, registers and statutory reports'],
   statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
   departments: ['Departments', 'People'],

@@ -328,6 +328,8 @@ export type SalaryStructureDTO = {
   userId: string;
   salaryTemplateCode?: string;
   templateName?: string;
+  /** The person's Paid Days Template; absent = the company's Default. */
+  paidDaysTemplateCode?: string;
   annualCtcPaise: number;
   componentValues: Record<string, number>;
   overrides: StructureOverrides;
@@ -455,6 +457,36 @@ export const listSalaryStructures = () =>
 
 export type StructureResponse = { structure: SalaryStructureDTO; computed: ComputedStructure; components: StructureComponent[] };
 
+/** How attendance becomes paid days, per person; one Default per company. */
+export type PaidDaysTemplateDTO = {
+  code: string;
+  name: string;
+  description: string;
+  /** Every day of the month is paid: the attendance calendar is not read. */
+  allDaysPaid: boolean;
+  deductionRules: SalaryDeductionRule[];
+  monthlyPaidLeaveDays: number;
+  isDefault: boolean;
+  /** People it applies to (for the Default: everyone with a salary not given another). */
+  people: number;
+  updatedAt: string;
+};
+export type PaidDaysTemplateInput = Pick<PaidDaysTemplateDTO, 'name' | 'description' | 'allDaysPaid' | 'deductionRules' | 'monthlyPaidLeaveDays'>;
+
+export const listPaidDaysTemplates = () =>
+  api<{ templates: PaidDaysTemplateDTO[] }>('/admin/payroll/paid-days-templates').then((r) => r.templates);
+export const createPaidDaysTemplate = (input: PaidDaysTemplateInput) =>
+  api<{ template: PaidDaysTemplateDTO }>('/admin/payroll/paid-days-templates', { method: 'POST', body: input }).then((r) => r.template);
+export const updatePaidDaysTemplate = (code: string, input: PaidDaysTemplateInput) =>
+  api<{ template: PaidDaysTemplateDTO }>(`/admin/payroll/paid-days-templates/${encodeURIComponent(code)}`, { method: 'PUT', body: input }).then((r) => r.template);
+export const deletePaidDaysTemplate = (code: string) =>
+  api<{ deleted: boolean }>(`/admin/payroll/paid-days-templates/${encodeURIComponent(code)}`, { method: 'DELETE' });
+export const makeDefaultPaidDaysTemplate = (code: string) =>
+  api<{ templates: PaidDaysTemplateDTO[] }>(`/admin/payroll/paid-days-templates/${encodeURIComponent(code)}/default`, { method: 'POST' }).then((r) => r.templates);
+/** null puts the person back on the Default. */
+export const assignPaidDaysTemplate = (userId: string, code: string | null) =>
+  api<{ paidDaysTemplateCode: string | null }>(`/admin/payroll/salary-structures/${userId}/paid-days-template`, { method: 'PUT', body: { code } });
+
 export const getSalaryStructure = (userId: string) =>
   api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`);
 
@@ -498,6 +530,10 @@ export type PayrollRunDTO = {
 
 export type PayslipDTO = {
   id?: string;
+  /** This financial year up to and including this month, per earning code / deduction key. */
+  ytd?: { earnings: Record<string, number>; deductions: Record<string, number>; reimbursementsPaise: number };
+  /** Bank account the salary goes to (in full for payroll people). */
+  bankAccountNo?: string;
   userId: string;
   employeeName: string;
   department?: string;
@@ -551,6 +587,97 @@ export const listRuns = () =>
 
 export const getRun = (runId: string) =>
   api<{ run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } }>(`/admin/payroll/runs/${runId}`);
+
+/** A payslip's TDS work sheet, as Zoho lays it out (amounts in paise). */
+export type TdsSheetDTO = {
+  company: { name: string; address: string; org?: string };
+  period: string;
+  monthName: string;
+  year: number;
+  fy: string;
+  regime: 'new' | 'old';
+  configStatus: string;
+  employee: { name: string; employeeId?: string; designation?: string; pan?: string };
+  earnings: { name: string; actualPaise: number; projectionPaise: number; totalPaise: number }[];
+  grossPaise: number;
+  exemptions: { name: string; paise: number }[];
+  exemptPaise: number;
+  afterExemptionPaise: number;
+  previousEmployment: { incomePaise: number; professionalTaxPaise: number };
+  grossTotalPaise: number;
+  section19: { entertainmentPaise: number; taxOnEmploymentPaise: number; standardDeductionPaise: number; totalPaise: number };
+  chargeablePaise: number;
+  otherIncomePaise: number;
+  grossTotalIncomePaise: number;
+  chapterVIII: { name: string; qualifyingPaise: number; deductiblePaise: number }[];
+  chapterVIIIPaise: number;
+  totalIncomePaise: number;
+  tax: {
+    slabRows: { fromPaise: number; toPaise: number | null; ratePercent: number; onPaise: number; taxPaise: number }[];
+    slabTaxPaise: number;
+    rebatePaise: number;
+    marginalReliefPaise: number;
+    taxAfterRebatePaise: number;
+    surchargePaise: number;
+    cessPaise: number;
+    cessPercent: number;
+    cessOnPaise: number;
+    relief157Paise: number;
+    annualTaxPaise: number;
+  };
+  rebateRule: { incomeLimitPaise: number; maxRebatePaise: number };
+  tds: { tillLastMonthPaise: number; thisMonthPaise: number; previousEmployerPaise: number; totalPaise: number; payablePaise: number; monthsAfter: number; perMonthNextPaise: number };
+  /** Months this FY paid before Sowaka, filled in from the salary. */
+  estimatedPeriods: string[];
+};
+
+export const getTdsSheet = (payslipId: string) =>
+  api<{ sheet: TdsSheetDTO }>(`/admin/payroll/payslips/${payslipId}/tds-sheet`).then((r) => r.sheet);
+
+// —— Payroll reports and dashboard (finished runs; includeDrafts previews the rest) ——
+export type ReportLine = { name: string; paise: number };
+export type PayrollSummaryReport = {
+  from: string; to: string; employees: number;
+  runs: { period: string; status: RunStatus }[];
+  sections: { title: string; rows: ReportLine[]; totalLabel: string; totalPaise: number }[];
+  netPayPaise: number; costToCompanyPaise: number; balancesPaise: number;
+};
+export type SalaryRegisterRow = {
+  employeeId: string; name: string; department: string; designation: string; workLocation: string; joiningDate: string;
+  paymentMode: string; bankName: string; accountNumber: string; ifsc: string; annualCtcPaise: number;
+  baseDays: number; lopDays: number; paidDays: number;
+  earnings: Record<string, number>; grossPaise: number; reimbursements: Record<string, number>; reimbursementsPaise: number;
+  deductions: Record<string, number>; taxOnIncomePaise: number; surchargePaise: number; cessPaise: number; incomeTaxPaise: number;
+  totalDeductionsPaise: number; employer: Record<string, number>; employerTotalPaise: number; netPayPaise: number;
+};
+export type SalaryRegisterReport = {
+  period: string; run: { id: string; status: RunStatus } | null;
+  columns: { earnings: { code: string; name: string }[]; reimbursements: { code: string; name: string }[]; deductions: { key: string; name: string }[]; employer: { key: string; name: string }[] };
+  rows: SalaryRegisterRow[];
+};
+export type LiabilityReport = { from: string; to: string; runs: { period: string; status: RunStatus }[]; rows: { key: string; name: string; employeePaise: number; employerPaise: number; totalPaise: number }[]; totalPaise: number };
+export type PtSummaryReport = { period: string; run: { status: RunStatus } | null; rows: { employeeId: string; name: string; workLocation: string; status: string; employeeType: string; ptPaise: number }[]; totalPaise: number };
+export type PtAnnualReport = { fy: string; rows: { period: string; periodEnd: string; status: RunStatus; employees: number; ptPaise: number }[]; totalPaise: number };
+export type PaymentDetailsReport = { period: string; status: RunStatus; rows: { employeeId: string; name: string; paymentMode: string; bankName: string; accountNumber: string; ifsc: string; netPayPaise: number }[] };
+export type CostRange = 'this_year' | 'this_quarter' | 'previous_year' | 'previous_quarter';
+export type PayrollDashboardReport = {
+  currentRun: { id: string | null; period: string; status: RunStatus | 'not_started'; employees: number; netPayPaise: number; payDate: string };
+  dues: { period: string; status: RunStatus; epfPaise: number; esiPaise: number; tdsPaise: number; ptPaise: number; lwfPaise: number } | null;
+  people: { active: number; withSalary: number; noSalary: number; noBankAccount: number; noPan: number };
+  cost: { range: CostRange; label: string; months: { period: string; status: RunStatus | null; netPayPaise: number; taxesPaise: number; deductionsPaise: number; employerPaise: number }[] };
+  todo: { pendingClaims: number; runsAwaitingApproval: number };
+};
+const reportQs = (q: Record<string, string | boolean | undefined>) =>
+  Object.entries(q).filter(([, v]) => v !== undefined && v !== false).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
+const report = <T,>(path: string, q: Record<string, string | boolean | undefined>) =>
+  api<{ report: T }>(`/admin/payroll/${path}?${reportQs(q)}`).then((r) => r.report);
+export const getPayrollDashboard = (range: CostRange, includeDrafts: boolean) => report<PayrollDashboardReport>('reports/dashboard', { range, includeDrafts });
+export const getPayrollSummary = (from: string, to: string, includeDrafts: boolean) => report<PayrollSummaryReport>('reports/payroll-summary', { from, to, includeDrafts });
+export const getSalaryRegister = (period: string, includeDrafts: boolean) => report<SalaryRegisterReport>('reports/salary-register', { period, includeDrafts });
+export const getLiabilitySummary = (from: string, to: string, includeDrafts: boolean) => report<LiabilityReport>('reports/liability-summary', { from, to, includeDrafts });
+export const getPtSummary = (period: string, includeDrafts: boolean) => report<PtSummaryReport>('reports/pt-summary', { period, includeDrafts });
+export const getPtAnnual = (fy: string, includeDrafts: boolean) => report<PtAnnualReport>('reports/pt-annual', { fy, includeDrafts });
+export const getRunPaymentDetails = (runId: string) => report<PaymentDetailsReport>(`runs/${runId}/payment-details`, {});
 
 export const createRun = (input: { period: string; lopDays?: Record<string, number>; overtimePaise?: Record<string, number> }) =>
   api<{ run: PayrollRunDTO; payslipCount: number }>('/admin/payroll/runs', { method: 'POST', body: input });

@@ -61,11 +61,13 @@ export interface EmployeePeriodInputs {
 export async function getEmployeePeriodInputs(
   userId: string,
   range: PeriodRange,
+  /** Claim categories that are bills for a salary component: never paid as expenses. */
+  billCategories: string[] = [],
 ): Promise<EmployeePeriodInputs> {
   const [approvedLeaveDays, approvedOtHours, reimb] = await Promise.all([
     countApprovedLeaveDays(userId, range),
     sumApprovedOtHours(userId, range),
-    collectApprovedReimbursements(userId, range),
+    collectApprovedReimbursements(userId, range, billCategories),
   ]);
   return {
     approvedLeaveDays,
@@ -103,12 +105,15 @@ async function sumApprovedOtHours(userId: string, range: PeriodRange): Promise<n
 async function collectApprovedReimbursements(
   userId: string,
   range: PeriodRange,
+  billCategories: string[],
 ): Promise<{ paise: number; ids: string[] }> {
   // Every approved claim not yet paid, up to the end of this month: a claim
   // approved late for last month's expense is paid in the next run (Mark paid
   // moves the run's claims to paid, so none is paid twice).
   const rows = await reimbursementClaims()
-    .find({ userId, status: 'approved', expenseDate: { $lte: range.end } })
+    // A claim that is a bill for a salary component (Fuel, Internet) is not paid
+    // again: the component already was; the bill only makes it tax-free.
+    .find({ userId, status: 'approved', expenseDate: { $lte: range.end }, ...(billCategories.length ? { category: { $nin: billCategories } } : {}) })
     .toArray();
   let paise = 0;
   const ids: string[] = [];

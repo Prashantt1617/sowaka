@@ -78,6 +78,8 @@ export interface TdsInput {
   currentTaxablePaise: number;
   /** A normal month's taxable salary from the structure, for the months still to come. */
   futureMonthlyTaxablePaise: number;
+  /** The months still to come, worked out month by month; replaces futureMonthly × monthsAfter when given. */
+  futureTaxablePaise?: number;
   /** Months after this one left in the FY (March → 0). */
   monthsAfter: number;
   /** Old regime pieces. */
@@ -100,7 +102,12 @@ export interface TdsResult {
   homeLoanPaise: number;
   taxableIncomePaise: number;
   slabTaxPaise: number;
+  /** Each slab the income reaches: the part of the income in it and the tax on that part. */
+  slabRows: SlabRow[];
+  /** Section 87A (section 156(a) of the 2025 Act). */
   rebatePaise: number;
+  /** Marginal relief just above the rebate limit (section 156(b)). */
+  marginalReliefPaise: number;
   surchargePaise: number;
   cessPaise: number;
   annualTaxPaise: number;
@@ -109,9 +116,33 @@ export interface TdsResult {
   monthlyTdsPaise: number;
 }
 
+export interface SlabRow {
+  fromPaise: number;
+  toPaise: number | null;
+  ratePercent: number;
+  /** The part of the income in this slab. */
+  onPaise: number;
+  taxPaise: number;
+}
+
 const pct = (paise: number, rate: number) => (paise * Math.round(rate * 100)) / 10000;
-/** Tax is computed to the rupee (section 288B rounds income to ₹10; we round tax to ₹1). */
+/** Tax is computed to the rupee. */
 const rupee = (paise: number) => Math.round(paise / 100) * 100;
+/** Total income is rounded to the nearest ₹10 (section 288A), as Zoho's work sheet does. */
+export const roundToTenRupees = (paise: number) => Math.round(paise / 1000) * 1000;
+
+export function slabRows(income: number, slabs: TaxSlab[]): SlabRow[] {
+  const rows: SlabRow[] = [];
+  let lower = 0;
+  for (const slab of slabs) {
+    if (income <= lower) break;
+    const upper = slab.upToPaise ?? Number.POSITIVE_INFINITY;
+    const on = Math.min(income, upper) - lower;
+    rows.push({ fromPaise: lower, toPaise: slab.upToPaise, ratePercent: slab.ratePercent, onPaise: on, taxPaise: rupee(pct(on, slab.ratePercent)) });
+    lower = upper;
+  }
+  return rows;
+}
 
 export function slabTax(income: number, slabs: TaxSlab[]): number {
   let tax = 0;
@@ -125,20 +156,20 @@ export function slabTax(income: number, slabs: TaxSlab[]): number {
   return tax;
 }
 
-/** Tax on `income` after the 87A rebate, before surcharge and cess. */
-function afterRebate(income: number, config: TdsConfig): { tax: number; rebate: number } {
+/** Tax on `income` after the 87A rebate (or the marginal relief just above its limit), before surcharge and cess. */
+function afterRebate(income: number, config: TdsConfig): { tax: number; rebate: number; relief: number } {
   const tax = slabTax(income, config.slabs);
   const r = config.rebate;
   if (income <= r.incomeLimitPaise) {
     const rebate = Math.min(tax, r.maxRebatePaise);
-    return { tax: tax - rebate, rebate };
+    return { tax: tax - rebate, rebate, relief: 0 };
   }
   if (r.marginalRelief) {
     // Just above the limit, tax may not exceed the income above the limit.
     const excess = income - r.incomeLimitPaise;
-    if (tax > excess) return { tax: excess, rebate: tax - excess };
+    if (tax > excess) return { tax: excess, rebate: 0, relief: tax - excess };
   }
-  return { tax, rebate: 0 };
+  return { tax, rebate: 0, relief: 0 };
 }
 
 function surchargeOn(income: number, tax: number, config: TdsConfig): number {
@@ -155,13 +186,31 @@ function surchargeOn(income: number, tax: number, config: TdsConfig): number {
   return Math.max(0, Math.min(raw, cap));
 }
 
+/** Tax on a year's total income (already rounded to ₹10): slabs, rebate or relief, surcharge, cess. */
+export function taxOnIncome(taxable: number, config: TdsConfig) {
+  const slab = slabTax(taxable, config.slabs);
+  const { tax, rebate, relief } = afterRebate(taxable, config);
+  const surcharge = surchargeOn(taxable, tax, config);
+  const cess = pct(tax + surcharge, config.cessPercent);
+  return {
+    slabRows: slabRows(taxable, config.slabs),
+    slabTaxPaise: rupee(slab),
+    rebatePaise: rupee(rebate),
+    marginalReliefPaise: rupee(relief),
+    taxAfterRebatePaise: rupee(tax),
+    surchargePaise: rupee(surcharge),
+    cessPaise: rupee(cess),
+    annualTaxPaise: rupee(tax + surcharge + cess),
+  };
+}
+
 export function computeTds(input: TdsInput): TdsResult {
   const { config } = input;
   const d = input.declarations ?? {};
   const old = config.regime === 'old';
   const L = config.limits;
 
-  const projected = input.ytdTaxablePaise + input.currentTaxablePaise + input.futureMonthlyTaxablePaise * input.monthsAfter;
+  const projected = input.ytdTaxablePaise + input.currentTaxablePaise + (input.futureTaxablePaise ?? input.futureMonthlyTaxablePaise * input.monthsAfter);
   const gross = projected + (d.previousEmployerSalaryPaise ?? 0) + (d.otherIncomePaise ?? 0);
 
   let hraExempt = 0;
@@ -183,12 +232,9 @@ export function computeTds(input: TdsInput): TdsResult {
     homeLoan = Math.min(L.sec24bHomeLoan, d.homeLoanInterest ?? 0);
   }
 
-  const taxable = Math.max(0, rupee(gross - hraExempt - pt - standard - viA - homeLoan));
-  const slab = slabTax(taxable, config.slabs);
-  const { tax: afterRebateTax, rebate } = afterRebate(taxable, config);
-  const surcharge = surchargeOn(taxable, afterRebateTax, config);
-  const cess = pct(afterRebateTax + surcharge, config.cessPercent);
-  const annual = rupee(afterRebateTax + surcharge + cess);
+  const taxable = Math.max(0, roundToTenRupees(gross - hraExempt - pt - standard - viA - homeLoan));
+  const tax = taxOnIncome(taxable, config);
+  const annual = tax.annualTaxPaise;
 
   const already = input.ytdTdsPaise + (d.previousEmployerTdsPaise ?? 0);
   const monthsLeft = input.monthsAfter + 1;
@@ -206,10 +252,12 @@ export function computeTds(input: TdsInput): TdsResult {
     chapterVIAPaise: viA,
     homeLoanPaise: homeLoan,
     taxableIncomePaise: taxable,
-    slabTaxPaise: rupee(slab),
-    rebatePaise: rupee(rebate),
-    surchargePaise: rupee(surcharge),
-    cessPaise: rupee(cess),
+    slabTaxPaise: tax.slabTaxPaise,
+    slabRows: tax.slabRows,
+    rebatePaise: tax.rebatePaise,
+    marginalReliefPaise: tax.marginalReliefPaise,
+    surchargePaise: tax.surchargePaise,
+    cessPaise: tax.cessPaise,
     annualTaxPaise: annual,
     alreadyDeductedPaise: already,
     monthsLeft,
@@ -223,6 +271,18 @@ export function fyOf(period: string): { fy: string; monthsAfter: number; firstPe
   const start = m >= 4 ? y : y - 1;
   const monthsAfter = m >= 4 ? 15 - m : 3 - m;
   return { fy: `${start}-${String((start + 1) % 100).padStart(2, '0')}`, monthsAfter, firstPeriod: `${start}-04` };
+}
+
+/** The pay months after `period` left in its FY: "2026-09" → "2026-10" … "2027-03". */
+export function periodsAfter(period: string): string[] {
+  const out: string[] = [];
+  let [y, m] = period.split('-').map(Number);
+  for (let i = 0; i < fyOf(period).monthsAfter; i++) {
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+  }
+  return out;
 }
 
 const L = (rupees: number) => rupees * 100;

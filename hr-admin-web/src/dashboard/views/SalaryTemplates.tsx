@@ -119,10 +119,7 @@ function buildInput(f: Form, code: string): SalaryTemplateInput {
       ...(r.showInPayslip !== undefined ? { showInPayslip: r.showInPayslip } : {}),
     })),
     balancingComponentCode: f.balancingComponentCode || null,
-    paidDaysEnabled: f.paidDaysEnabled,
     statutoryWages: cleanWages(f.statutoryWages, f.rows.map((r) => r.payHeadCode)),
-    deductionRules: f.deductionRules,
-    monthlyPaidLeaveDays: f.monthlyPaidLeaveDays,
     overtimePay: f.overtimePay,
     active: f.active,
   };
@@ -373,6 +370,30 @@ export function SalaryTemplates() {
     setComputed(null);
     setMode('edit');
   };
+  /** A copy of the open template in the builder, unsaved, named "Copy of …" until HR renames it. */
+  const duplicateCurrent = () => {
+    const t = detailTpl;
+    if (!t) return;
+    const taken = new Set(templates.map((x) => x.name.toLowerCase()));
+    let name = `Copy of ${t.name}`;
+    for (let i = 2; taken.has(name.toLowerCase()); i++) name = `Copy of ${t.name} (${i})`;
+    setForm({
+      name,
+      description: t.description ?? '',
+      active: t.active,
+      rows: t.components.filter((c) => phByCode.has(c.payHeadCode)).map((c) => ({ ...rowFromCalc(c.payHeadCode, c.calculation), payslipName: c.payslipName ?? '', showInPayslip: c.showInPayslip })),
+      balancingComponentCode: t.balancingComponentCode ?? '',
+      paidDaysEnabled: t.paidDaysEnabled ?? true,
+      statutoryWages: t.statutoryWages ?? null,
+      deductionRules: t.deductionRules ?? [],
+      monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
+      overtimePay: t.overtimePay ?? null,
+      sampleCtc: SAMPLE_CTC_RUPEES,
+    });
+    setComputed(null);
+    setMode('edit');
+    flash(`Copied "${t.name}": rename it and save`);
+  };
   const closeBuilder = () => {
     const code = form?.editingCode;
     setForm(null);
@@ -483,7 +504,7 @@ export function SalaryTemplates() {
             </div>
             <StatusText on={t.active} />
             <button onClick={editCurrent} style={{ ...primaryBtn, padding: '7px 14px', fontSize: 14 }}>Edit</button>
-            <button onClick={() => void exportEmployees(t)} title="Export employees (Excel)" style={{ ...ghostBtn, padding: '7px 12px', fontSize: 14 }}>···</button>
+            <TemplateMenu onDuplicate={duplicateCurrent} onExport={() => void exportEmployees(t)} />
             <button onClick={() => setMode('list')} title="Close" style={{ ...ghostBtn, padding: '7px 11px', fontSize: 14, display: 'inline-flex' }}><IconClose size={14} /></button>
           </div>
 
@@ -540,7 +561,7 @@ export function SalaryTemplates() {
           <WagesSummary wages={t.statutoryWages ?? null} phByCode={phByCode} />
         </Card>
 
-        <RulesSummary enabled={t.paidDaysEnabled ?? true} rules={t.deductionRules ?? []} paidLeaveDays={t.monthlyPaidLeaveDays ?? 0} />
+        <div style={{ marginTop: 14, fontSize: 14, color: '#717171' }}>Paid days (attendance rules, paid leave, all days paid) are set in <strong>Paid Days Templates</strong>, per person.</div>
       </div>
     );
   }
@@ -680,17 +701,6 @@ export function SalaryTemplates() {
                 earnings={balancingOptions}
                 phByCode={phByCode}
                 pfWagePaise={computed?.pfWagePaise}
-              />
-            </div>
-
-            <div style={{ margin: '18px 36px 0' }}>
-              <RulesCard
-                enabled={form.paidDaysEnabled}
-                onEnabled={(v) => set('paidDaysEnabled', v)}
-                rules={form.deductionRules}
-                onChange={(rules) => set('deductionRules', rules)}
-                paidLeaveDays={form.monthlyPaidLeaveDays}
-                onPaidLeaveDays={(v) => set('monthlyPaidLeaveDays', v)}
               />
             </div>
 
@@ -868,10 +878,10 @@ function CalendarNote() {
     </div>
   );
 }
-const ruleText = (rule: SalaryDeductionRule) =>
+export const ruleText = (rule: SalaryDeductionRule) =>
   `Every ${rule.every} → ${rule.deductDays} paid ${rule.deductDays === 1 ? 'day' : 'days'}`;
 
-function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidLeaveDays }: {
+export function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidLeaveDays }: {
   enabled: boolean;
   onEnabled: (v: boolean) => void;
   rules: SalaryDeductionRule[];
@@ -888,16 +898,18 @@ function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidL
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid #EBEBEB' }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 17, fontWeight: 800 }}>Paid days calculation</div>
-          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Read from each person's attendance calendar when payroll runs</div>
-        </div>
-        <div style={toggleWrap}>
-          {[true, false].map((v) => (
-            <button key={String(v)} type="button" onClick={() => onEnabled(v)} style={toggleBtn(enabled === v, v)}>{v ? 'Enabled' : 'Disabled'}</button>
-          ))}
+          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{enabled ? "Read from each person's attendance calendar when payroll runs" : 'Every day of the month is paid; the attendance calendar is not read'}</div>
         </div>
       </div>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 22px', borderBottom: '1px solid #EBEBEB', cursor: 'pointer', fontSize: 15 }}>
+        <input type="checkbox" checked={!enabled} onChange={(e) => onEnabled(!e.target.checked)} style={{ width: 18, height: 18, marginTop: 2, accentColor: '#0571A6' }} />
+        <span>
+          <strong>All days of the month are paid days</strong>
+          <span style={{ display: 'block', color: '#717171', fontSize: 13, marginTop: 2 }}>Overrides the calendar completely: absences, half days and the rules below are not docked. Loss of pay typed on a run, and the days before someone joins, still count.</span>
+        </span>
+      </label>
       {!enabled ? (
-        <div style={{ padding: '16px 22px', color: '#717171', fontSize: 15 }}>Off for this template: every working day is paid, whatever the attendance calendar shows.</div>
+        <div style={{ padding: '16px 22px', color: '#717171', fontSize: 15 }}>Everyone on this template is paid for all the days of the month, whatever the attendance calendar shows.</div>
       ) : (
         <>
           <CalendarNote />
@@ -943,15 +955,39 @@ function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, onPaidL
   );
 }
 
-function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boolean; rules: SalaryDeductionRule[]; paidLeaveDays: number }) {
+/** The ··· menu on a template: duplicate it, or export the people on it. */
+function TemplateMenu({ onDuplicate, onExport }: { onDuplicate: () => void; onExport: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const item: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#222222', whiteSpace: 'nowrap' };
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen((v) => !v)} title="More" aria-haspopup="menu" aria-expanded={open} style={{ ...ghostBtn, padding: '7px 12px', fontSize: 14 }}>···</button>
+      {open && (
+        <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: '#fff', border: '1px solid #E3E3E3', borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.08)', padding: '4px 0', zIndex: 20, minWidth: 190 }}>
+          <button role="menuitem" style={item} onClick={() => { setOpen(false); onDuplicate(); }}>Duplicate template</button>
+          <button role="menuitem" style={item} onClick={() => { setOpen(false); onExport(); }}>Export employees (Excel)</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boolean; rules: SalaryDeductionRule[]; paidLeaveDays: number }) {
   return (
     <Card style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '16px 22px', borderBottom: '1px solid #EBEBEB' }}>
         <div style={{ fontSize: 17, fontWeight: 800, flex: 1 }}>Paid days calculation</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: enabled ? '#4F7A52' : '#9197A2' }}>{enabled ? 'Enabled · read from the attendance calendar' : 'Disabled'}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: enabled ? '#4F7A52' : '#9197A2' }}>{enabled ? 'Read from the attendance calendar' : 'All days of the month are paid days'}</span>
       </div>
       {!enabled ? (
-        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>Off for this template — every working day is paid.</div>
+        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>The attendance calendar is not read: every day of the month is paid.</div>
       ) : rules.filter((r) => !CALENDAR_TRIGGERS.has(r.trigger)).length === 0 ? (
         <>
           <CalendarNote />
@@ -1072,7 +1108,7 @@ function Suffixed({ value, onChange, suffix, step }: { value: number; onChange: 
 }
 
 const ruleTd: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
-const dangerLink: CSSProperties = { background: 'none', border: 'none', color: '#C4382E', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
+export const dangerLink: CSSProperties = { background: 'none', border: 'none', color: '#C4382E', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const toggleWrap: CSSProperties = { display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden' };
 const toggleBtn = (on: boolean, yes: boolean): CSSProperties => ({
   padding: '5px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
@@ -1234,16 +1270,16 @@ function TotalRow({ monthly, cols }: { monthly: number; cols: number }) {
   );
 }
 
-function Th({ children }: { children: ReactNode }) {
+export function Th({ children }: { children: ReactNode }) {
   return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
 }
-function Td({ children, muted }: { children: ReactNode; muted?: boolean }) {
+export function Td({ children, muted }: { children: ReactNode; muted?: boolean }) {
   return <td style={{ padding: '13px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
 }
-function StatusText({ on }: { on: boolean }) {
+export function StatusText({ on }: { on: boolean }) {
   return <span style={{ fontSize: 14, fontWeight: 700, color: on ? '#4F7A52' : '#9197A2' }}>{on ? 'Active' : 'Inactive'}</span>;
 }
-function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: ReactNode }) {
+export function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <label style={fieldLabel}>{label}{required && <span style={{ color: '#C4382E' }}> *</span>}</label>
@@ -1254,13 +1290,13 @@ function Field({ label, hint, required, children }: { label: string; hint?: stri
 }
 
 const fieldLabel: CSSProperties = { display: 'block', fontSize: 15, fontWeight: 600, marginBottom: 7, color: '#484848' };
-const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+export const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const miniInput: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const miniSelect: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
 const pairBox: CSSProperties = { display: 'inline-flex', alignItems: 'stretch', border: '1px solid #D9DCE1', borderRadius: 7, overflow: 'hidden', background: '#fff' };
 const pairInput: CSSProperties = { border: 'none', outline: 'none', padding: '8px 10px', fontSize: 15, width: 96, color: '#222222', fontFamily: 'inherit' };
 const pairSuffix: CSSProperties = { display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 14, color: '#484848', background: '#F7F7F9', borderLeft: '1px solid #D9DCE1', whiteSpace: 'nowrap' };
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
+export const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
 const detTh: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 22px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' };
 const detTd: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', color: '#222222' };
 const numTd: CSSProperties = { ...detTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
@@ -1268,8 +1304,8 @@ const bldTh: CSSProperties = { textAlign: 'left', fontSize: 12.5, textTransform:
 const bldTd: CSSProperties = { padding: '14px 20px', borderBottom: '1px solid #F4F4F6', color: '#222222', verticalAlign: 'middle' };
 const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: '#EAF2FB', borderRadius: 8, padding: '18px 22px', fontSize: 20, fontWeight: 600, color: '#222222', fontVariantNumeric: 'tabular-nums' };
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 700, color: '#484848' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+export const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+export const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.65 };
 const closeCircle: CSSProperties = { width: 40, height: 40, borderRadius: '50%', border: 'none', background: '#F1F2F5', color: '#484848', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 // The builder is its own page over the whole dashboard, left nav included.

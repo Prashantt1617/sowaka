@@ -9,6 +9,7 @@ import { resolveTemplateComponents } from '../shared/payroll/resolve';
 import { resolveRuleSet } from './statutory.service';
 import { statutorySettingsFor } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
+import { ensurePaidDaysTemplates } from './paidDaysTemplate.service';
 
 export class SalaryTemplateError extends Error {
   constructor(
@@ -62,6 +63,7 @@ export async function createSalaryTemplate(adminUserId: string, input: SalaryTem
   const org = await requireAdminOrg(adminUserId);
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
+  await ensurePaidDaysTemplates(org);
   // A standard component on the template becomes this org's pay head now.
   await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
   const now = new Date();
@@ -88,9 +90,14 @@ export async function updateSalaryTemplate(
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput({ code, ...input }, catalog);
   await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
+  // The company's Paid Days Templates are made from these fields: make them before anything changes.
+  await ensurePaidDaysTemplates(org);
+  const paidDaysKeys = ['paidDaysEnabled', 'deductionRules', 'monthlyPaidLeaveDays'] as const;
+  const set: Record<string, unknown> = { ...draft, updatedAt: new Date() };
+  for (const k of paidDaysKeys) if (set[k] === undefined) delete set[k];
   const updated = await salaryTemplates().findOneAndUpdate(
     { _id: current._id },
-    { $set: { ...draft, updatedAt: new Date() } },
+    { $set: set },
     { returnDocument: 'after' },
   );
   if (!updated) throw new SalaryTemplateError(404, 'Salary template not found');
@@ -207,11 +214,12 @@ async function normalizeInput(
     throw new SalaryTemplateError(400, 'A component is "% of Basic" but the template has no Basic component');
   }
 
-  const deductionRules = parseDeductionRules(input.deductionRules);
-  const monthlyPaidLeaveDays = input.monthlyPaidLeaveDays === undefined || input.monthlyPaidLeaveDays === null
-    ? 0
-    : Math.round(Number(input.monthlyPaidLeaveDays) * 2) / 2;
-  if (!Number.isFinite(monthlyPaidLeaveDays) || monthlyPaidLeaveDays < 0 || monthlyPaidLeaveDays > 31) {
+  // Paid days now live in Paid Days Templates; a save that leaves these out keeps what is stored.
+  const deductionRules = input.deductionRules === undefined ? undefined : parseDeductionRules(input.deductionRules);
+  const monthlyPaidLeaveDays = input.monthlyPaidLeaveDays === undefined
+    ? undefined
+    : input.monthlyPaidLeaveDays === null ? 0 : Math.round(Number(input.monthlyPaidLeaveDays) * 2) / 2;
+  if (monthlyPaidLeaveDays !== undefined && (!Number.isFinite(monthlyPaidLeaveDays) || monthlyPaidLeaveDays < 0 || monthlyPaidLeaveDays > 31)) {
     throw new SalaryTemplateError(400, 'Paid leave days a month must be 0 to 31, in halves');
   }
 
@@ -408,7 +416,7 @@ function parseStatutoryWages(
 }
 
 /** The attendance deduction rules, validated. Absent means none. */
-function parseDeductionRules(value: unknown): SalaryDeductionRule[] {
+export function parseDeductionRules(value: unknown): SalaryDeductionRule[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new SalaryTemplateError(400, 'deductionRules must be a list');
   return value.map((raw) => {

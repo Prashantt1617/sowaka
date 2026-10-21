@@ -723,6 +723,12 @@ export type ReimbursementTypeDTO = {
   maxLimit: number;
   /** How far back a claim may be dated, in days. Zero means today only. */
   backdateDays: number;
+  /**
+   * The salary reimbursement component these claims are the bills for (e.g.
+   * FUEL). Such claims are not paid again: they make that component tax-free.
+   * null: an ordinary expense claim, paid on the next run.
+   */
+  payHeadCode?: string | null;
   active: boolean;
 };
 

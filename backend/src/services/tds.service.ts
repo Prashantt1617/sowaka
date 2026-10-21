@@ -56,6 +56,7 @@ export function runTds(args: {
   ytd?: YtdFigures;
   currentTaxablePaise: number;
   futureMonthlyTaxablePaise: number;
+  futureTaxablePaise?: number;
   basicMonthlyPaise: number;
   hraMonthlyPaise: number;
   employeePfMonthlyPaise: number;
@@ -72,6 +73,7 @@ export function runTds(args: {
     ytdTdsPaise: args.ytd?.tdsPaise ?? 0,
     currentTaxablePaise: args.currentTaxablePaise,
     futureMonthlyTaxablePaise: args.futureMonthlyTaxablePaise,
+    futureTaxablePaise: args.futureTaxablePaise,
     monthsAfter,
     // Old regime pieces, a normal month's figure for the whole year.
     basicYearPaise: args.basicMonthlyPaise * months,

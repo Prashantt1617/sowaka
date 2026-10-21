@@ -32,8 +32,6 @@ export interface PayrollRun {
   totals: PayrollRunTotals;
   /** Rejection / recall note (PRD §6). */
   note?: string;
-  /** E2E-encrypted orgs: the totals, sealed; `totals` is zeros. */
-  sealedTotals?: import('../shared/payroll/crypto').Sealed;
   createdByUserId: string;
   submittedByUserId?: string;
   decidedByUserId?: string;
@@ -81,6 +79,8 @@ export interface PayslipInputs {
   componentAmounts?: Record<string, number>;
   /** How the TDS engine reached this month's income tax, when it did (HR didn't type one). */
   tds?: import('../shared/payroll/tds').TdsResult & { proofs?: string };
+  /** Salary reimbursements this FY so far (this month included): paid, covered by approved bills, taxed. */
+  reimbursementTax?: { paidPaise: number; exemptPaise: number; taxablePaise: number };
   /** What the template's attendance rules cost this month, one line per rule. */
   attendanceDeductions?: { label: string; count: number; days: number; trigger?: string; every?: number; deductDays?: number }[];
   /** Paid leave days from the template's monthly allowance that offset the docked days. */
@@ -136,9 +136,5 @@ export interface Payslip {
   };
 
   inputs: PayslipInputs;
-  /** E2E-encrypted orgs: the whole computed slip, sealed with the org's data key; amounts above are zero. */
-  sealed?: import('../shared/payroll/crypto').Sealed;
-  /** The same slip for the employee alone, wrapped to their public key (when they have one). */
-  sealedForEmployee?: import('../shared/payroll/crypto').SealedForPerson;
   createdAt: Date;
 }

@@ -14,7 +14,7 @@ export const DASHBOARD_TABS = [
   'holidaybank', 'shifttypes', 'shiftbulk', 'offices',
   'kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle',
   'attendancereport',
-  'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns',
+  'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports',
   'reimbursements', 'reimbursementtypes',
   'games', 'engagementposts', 'relaygame', 'contentreports',
 ] as const;
@@ -37,11 +37,13 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/statutory-/, read: ['statutorycomponents', 'templates', 'salarydetails', 'payruns'], write: ['statutorycomponents'] },
   { path: /^\/admin\/payroll\/salary-templates\/preview/, read: ['templates', 'salarydetails'], write: ['templates', 'salarydetails'] },
   { path: /^\/admin\/payroll\/salary-templates/, read: ['templates', 'salarydetails', 'payruns'], write: ['templates'] },
+  { path: /^\/admin\/payroll\/paid-days-templates/, read: ['paiddays', 'templates', 'salarydetails', 'payruns'], write: ['paiddays'] },
   // What one person earns: their Salary details tab, or the template page
   // that assigns people to a template.
   { path: /^\/admin\/payroll\/salary-structures/, read: ['salarydetails', 'templates', 'payruns'], write: ['salarydetails', 'templates'] },
+  { path: /^\/admin\/payroll\/reports/, read: ['payrolldash', 'payrollreports', 'payruns'] },
+  { path: /^\/admin\/payroll\/runs\/[^/]+\/payment-details/, read: ['payruns', 'payrollreports'] },
   { path: /^\/admin\/payroll\/runs/, read: ['payruns'], write: ['payruns'] },
-  { path: /^\/admin\/payroll\/(crypto|sealed)/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll\/employees\/[^/]+\/tax-declaration/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // Bank, PAN, UAN: anyone who can open the profile sees them masked; payroll access sees and edits them.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },

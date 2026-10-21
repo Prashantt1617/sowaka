@@ -9,7 +9,7 @@
  * read, so nothing that already exists in the claims collection is orphaned.
  */
 import { ObjectId } from 'mongodb';
-import { reimbursementClaims, reimbursementTypes, users } from '../config/db';
+import { payHeads, reimbursementClaims, reimbursementTypes, users } from '../config/db';
 import { ReimbursementType } from '../models/reimbursement-type.model';
 
 export class ReimbursementTypeError extends Error {
@@ -69,6 +69,18 @@ function limit(value: unknown): number {
   return Math.round(parsed * 100) / 100;
 }
 
+/** The salary reimbursement component the type's claims are bills for; '' or null clears it. */
+async function billsFor(org: string, value: unknown): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const code = String(value).trim().toUpperCase();
+  const head = await payHeads().findOne({ org, code });
+  if (!head || head.category !== 'reimbursement') {
+    throw new ReimbursementTypeError(400, 'Bills can only be linked to a reimbursement salary component');
+  }
+  return code;
+}
+
 function objectId(value: string): ObjectId {
   if (!ObjectId.isValid(value)) throw new ReimbursementTypeError(400, 'Reimbursement type ID is invalid');
   return new ObjectId(value);
@@ -81,6 +93,7 @@ function view(doc: ReimbursementType & { _id?: ObjectId }) {
     description: doc.description ?? '',
     maxLimit: doc.maxLimit,
     backdateDays: doc.backdateDays ?? DEFAULT_BACKDATE_DAYS,
+    payHeadCode: doc.payHeadCode ?? null,
     active: doc.active,
   };
 }
@@ -116,10 +129,11 @@ export async function listReimbursementTypes(callerId: string) {
 
 export async function createReimbursementType(
   callerId: string,
-  input: { name?: unknown; description?: unknown; maxLimit?: unknown; backdateDays?: unknown; active?: unknown },
+  input: { name?: unknown; description?: unknown; maxLimit?: unknown; backdateDays?: unknown; active?: unknown; payHeadCode?: unknown },
 ) {
   const org = await requireOrg(callerId);
   const name = text(input.name, 'Name', MAX_NAME);
+  const payHeadCode = await billsFor(org, input.payHeadCode);
   if (await reimbursementTypes().findOne({ org, name })) {
     throw new ReimbursementTypeError(409, 'A reimbursement type with that name already exists');
   }
@@ -130,6 +144,7 @@ export async function createReimbursementType(
     description: text(input.description, 'Description', MAX_DESCRIPTION, false),
     maxLimit: limit(input.maxLimit),
     backdateDays: windowDays(input.backdateDays),
+    ...(payHeadCode ? { payHeadCode } : {}),
     active: typeof input.active === 'boolean' ? input.active : true,
     createdByUserId: callerId,
     createdAt: now,
@@ -142,10 +157,11 @@ export async function createReimbursementType(
 export async function updateReimbursementType(
   callerId: string,
   typeId: string,
-  input: { name?: unknown; description?: unknown; maxLimit?: unknown; backdateDays?: unknown; active?: unknown },
+  input: { name?: unknown; description?: unknown; maxLimit?: unknown; backdateDays?: unknown; active?: unknown; payHeadCode?: unknown },
 ) {
   const org = await requireOrg(callerId);
   const _id = objectId(typeId);
+  const payHeadCode = await billsFor(org, input.payHeadCode);
   const current = await reimbursementTypes().findOne({ _id, org });
   if (!current) throw new ReimbursementTypeError(404, 'Reimbursement type not found');
   const name = text(input.name, 'Name', MAX_NAME);
@@ -161,8 +177,10 @@ export async function updateReimbursementType(
         maxLimit: limit(input.maxLimit),
         backdateDays: windowDays(input.backdateDays),
         active: typeof input.active === 'boolean' ? input.active : current.active,
+        ...(payHeadCode ? { payHeadCode } : {}),
         updatedAt: new Date(),
       },
+      ...(payHeadCode === null ? { $unset: { payHeadCode: '' as const } } : {}),
     },
     { returnDocument: 'after' },
   );

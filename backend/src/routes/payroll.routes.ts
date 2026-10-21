@@ -1,5 +1,22 @@
 import { Router } from 'express';
 import {
+  liabilitySummaryHandler,
+  paymentDetailsHandler,
+  payrollDashboardHandler,
+  payrollSummaryHandler,
+  ptAnnualReturnHandler,
+  ptSummaryHandler,
+  salaryRegisterHandler,
+} from '../controllers/payrollReports.controller';
+import {
+  assignPaidDaysTemplateHandler,
+  createPaidDaysTemplateHandler,
+  deletePaidDaysTemplateHandler,
+  listPaidDaysTemplatesHandler,
+  makeDefaultPaidDaysTemplateHandler,
+  updatePaidDaysTemplateHandler,
+} from '../controllers/paidDaysTemplate.controller';
+import {
   createPayHeadHandler,
   deletePayHeadHandler,
   getPayHeadHandler,
@@ -35,6 +52,7 @@ import {
   createRunHandler,
   decideRunHandler,
   getRunHandler,
+  tdsWorksheetHandler,
   listRunsHandler,
   markRunPaidHandler,
   recallRunHandler,
@@ -44,23 +62,6 @@ import {
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
-import {
-  contextHandler,
-  cryptoStatusHandler,
-  grantHandler,
-  recoverHandler,
-  registerKeyHandler,
-  changePassphraseHandler,
-  plaintextHandler,
-  sealExistingHandler,
-  rotateHandler,
-  runInputsHandler,
-  saveSealedRunHandler,
-  saveSealedStructureHandler,
-  sealedDeclarationsHandler,
-  sealedStructuresHandler,
-  setupHandler,
-} from '../controllers/payrollCrypto.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -101,6 +102,14 @@ payrollRouter.get('/salary-templates/:code', getSalaryTemplateHandler);
 payrollRouter.put('/salary-templates/:code', updateSalaryTemplateHandler);
 payrollRouter.delete('/salary-templates/:code', deleteSalaryTemplateHandler);
 
+// Paid Days Templates — how attendance becomes paid days, per person; one Default per company.
+payrollRouter.get('/paid-days-templates', listPaidDaysTemplatesHandler);
+payrollRouter.post('/paid-days-templates', createPaidDaysTemplateHandler);
+payrollRouter.put('/paid-days-templates/:code', updatePaidDaysTemplateHandler);
+payrollRouter.delete('/paid-days-templates/:code', deletePaidDaysTemplateHandler);
+payrollRouter.post('/paid-days-templates/:code/default', makeDefaultPaidDaysTemplateHandler);
+payrollRouter.put('/salary-structures/:userId/paid-days-template', assignPaidDaysTemplateHandler);
+
 // Salary Structure — per-employee assignment of a template (PRD §5.6). `preview`
 // computes without saving, powering the live editor.
 payrollRouter.get('/salary-structures', listSalaryStructuresHandler);
@@ -118,6 +127,16 @@ payrollRouter.post('/runs/:runId/submit', submitRunHandler);
 payrollRouter.post('/runs/:runId/decision', decideRunHandler);
 payrollRouter.post('/runs/:runId/recall', recallRunHandler);
 payrollRouter.post('/runs/:runId/mark-paid', markRunPaidHandler);
+// Payroll reports and the payroll dashboard (finished runs; ?includeDrafts=true previews the rest).
+payrollRouter.get('/reports/dashboard', payrollDashboardHandler);
+payrollRouter.get('/reports/payroll-summary', payrollSummaryHandler);
+payrollRouter.get('/reports/salary-register', salaryRegisterHandler);
+payrollRouter.get('/reports/liability-summary', liabilitySummaryHandler);
+payrollRouter.get('/reports/pt-summary', ptSummaryHandler);
+payrollRouter.get('/reports/pt-annual', ptAnnualReturnHandler);
+payrollRouter.get('/runs/:runId/payment-details', paymentDetailsHandler);
+// A payslip's TDS work sheet, as Zoho lays it out.
+payrollRouter.get('/payslips/:payslipId/tds-sheet', tdsWorksheetHandler);
 
 // One employee's bank account, PAN and UAN: encrypted at rest, shown in full
 // only to people with payroll access, masked to everyone else.
@@ -128,21 +147,3 @@ payrollRouter.put('/employees/:userId/payment-details', setPaymentDetailsHandler
 payrollRouter.get('/employees/:userId/tax-declaration', getDeclarationHandler);
 payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
 
-// End-to-end encrypted salaries: keys and grants, and the sealed records the
-// dashboard computes in the browser. The server never holds a key that opens them.
-payrollRouter.get('/crypto', cryptoStatusHandler);
-payrollRouter.post('/crypto/keys', registerKeyHandler);
-payrollRouter.post('/crypto/keys/passphrase', changePassphraseHandler);
-// Right after setup: the records that were readable, for the browser to lock.
-payrollRouter.get('/crypto/plaintext', plaintextHandler);
-payrollRouter.post('/crypto/seal-existing', sealExistingHandler);
-payrollRouter.post('/crypto/setup', setupHandler);
-payrollRouter.post('/crypto/recover', recoverHandler);
-payrollRouter.post('/crypto/grants', grantHandler);
-payrollRouter.post('/crypto/rotate', rotateHandler);
-payrollRouter.get('/sealed/tax-declarations', sealedDeclarationsHandler);
-payrollRouter.get('/sealed/context', contextHandler);
-payrollRouter.get('/sealed/structures', sealedStructuresHandler);
-payrollRouter.put('/sealed/structures/:userId', saveSealedStructureHandler);
-payrollRouter.get('/sealed/run-inputs', runInputsHandler);
-payrollRouter.post('/sealed/runs', saveSealedRunHandler);

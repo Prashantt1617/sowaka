@@ -1,16 +1,15 @@
-// Payroll Runs — create a monthly run, review the generated payslips, and move it
-// through its lifecycle: draft -> submit -> approve/reject -> paid (PRD §6).
+// Payroll Runs — create a monthly run, review and correct the payslips, then
+// submit it: a submitted run is final (no second approval). Loss of pay comes
+// from the attendance calendar; HR corrects the days there, not on the run.
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import {
   createRun,
-  decideRun,
   getRun,
   inr,
   listRuns,
-  markRunPaid,
   listPayHeads,
   recallRun,
   recomputeRun,
@@ -18,18 +17,21 @@ import {
   submitRun,
 } from '../../services/payroll';
 import type { PayHeadDTO, PayrollRunDTO, PayslipDTO, RunStatus } from '../../services/payroll';
-import { useAuth } from '../auth/AuthContext';
 
 import { Card, EmptyRow, SummaryCard } from '../ui';
-import { printPayslip } from '../payslip';
+import { downloadPayslipPdf } from '../payslip';
+import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
+import { EmployeeCalendar } from './EmployeeProfile';
+import { exportReport } from './PayrollReports';
+import { getSalaryRegister } from '../../services/payroll';
 
 const STATUS_TONE: Record<RunStatus, { bg: string; fg: string; label: string }> = {
   draft: { bg: '#F7F7F9', fg: '#717171', label: 'Draft' },
   pending_approval: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Pending approval' },
   approved: { bg: '#E4EDE0', fg: '#4F7A52', label: 'Approved' },
   rejected: { bg: '#F4DEE2', fg: '#A8475F', label: 'Rejected' },
-  paid: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Paid' },
+  paid: { bg: '#E4EDE0', fg: '#4F7A52', label: 'Submitted' },
 };
 
 function StatusPill({ status }: { status: RunStatus }) {
@@ -52,8 +54,6 @@ export function PayrollRuns() {
   const [explain, setExplain] = useState<PayslipDTO | null>(null);
   const [detail, setDetail] = useState<{ run: PayrollRunDTO; payslips: PayslipDTO[]; company: { name: string; address: string } } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectNote, setRejectNote] = useState('');
 
   const loadRuns = async () => {
     setLoading(true);
@@ -121,10 +121,6 @@ export function PayrollRuns() {
       <RunDetail
         detail={detail}
         busy={busy}
-        rejecting={rejecting}
-        rejectNote={rejectNote}
-        setRejecting={setRejecting}
-        setRejectNote={setRejectNote}
         onBack={() => setOpenId(null)}
         onAct={act}
         onExplain={setExplain}
@@ -196,14 +192,10 @@ type Edit = { paidDays?: string; tax?: string; overtime?: string; amounts?: Reco
 const money2 = (paise: number) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 });
 
 // One run: every person's paid days (prefilled from attendance, editable),
-// income tax, and the whole payslip, then submit → approve → paid.
-function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejectNote, onBack, onAct, onExplain, explain, onReload }: {
+// income tax, and the whole payslip, then submit (final).
+function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }: {
   detail: Detail;
   busy: boolean;
-  rejecting: boolean;
-  rejectNote: string;
-  setRejecting: (v: boolean) => void;
-  setRejectNote: (v: string) => void;
   onBack: () => void;
   onAct: (fn: () => Promise<PayrollRunDTO>, msg: string) => Promise<void>;
   onExplain: (p: PayslipDTO | null) => void;
@@ -211,11 +203,8 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
   onReload: () => Promise<void>;
 }) {
   const { flash } = useStore();
-  const { user } = useAuth();
   const { run, payslips } = detail;
   const isDraft = run.status === 'draft';
-  // The creator waits for a second person, unless there is nobody else.
-  const isCreator = user?.id === run.createdByUserId && !run.creatorMayApprove;
   // One-time earnings (Bonus…) and deductions (Hold Amount, Salary Advance…)
   // that can be entered for this month only.
   const [oneTime, setOneTime] = useState<PayHeadDTO[]>([]);
@@ -272,6 +261,38 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
     }
   };
 
+  // The whole run in Excel, every column (the month's Salary Register).
+  const [exporting, setExporting] = useState(false);
+  const exportRun = async () => {
+    setExporting(true);
+    try {
+      exportReport('register', await getSalaryRegister(run.period, true));
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not export', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+  // Whose loss-of-pay days are open in the calendar, and whether a day was changed there.
+  const [lopFor, setLopFor] = useState<PayslipDTO | null>(null);
+  const [lopChanged, setLopChanged] = useState(false);
+  const closeLop = async () => {
+    setLopFor(null);
+    if (!lopChanged) return;
+    setLopChanged(false);
+    if (!isDraft) return flash('Days saved. This run is not a draft: reopen it to apply them.');
+    setSaving(true);
+    try {
+      await recomputeRun(run.id, {});
+      flash('Days saved and payslips recalculated');
+      await onReload();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not recalculate', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const t = run.totals;
   return (
     <div>
@@ -296,34 +317,18 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
           <>
             <button onClick={() => void recalc()} disabled={!dirty || saving} style={{ ...primaryBtn, opacity: !dirty || saving ? 0.55 : 1 }}>{saving ? 'Recalculating…' : 'Save & recalculate'}</button>
             {dirty && <button onClick={() => setEdits({})} disabled={saving} style={ghostBtn}>Discard changes</button>}
-            <button onClick={() => void onAct(() => submitRun(run.id), 'Submitted for approval')} disabled={busy || dirty || saving} title={dirty ? 'Save your changes first' : undefined} style={{ ...approveBtn, opacity: busy || dirty ? 0.55 : 1 }}>Submit for approval</button>
-            <span style={{ color: '#717171', fontSize: 14 }}>Paid days come from attendance; type a figure to change it. A second person approves.</span>
           </>
         )}
-        {run.status === 'pending_approval' && !rejecting && (
-          <>
-            {/* The person who created a run can't approve it: someone else does. */}
-            {!isCreator && <button onClick={() => void onAct(() => decideRun(run.id, 'approved'), 'Run approved')} disabled={busy} style={approveBtn}>Approve</button>}
-            {!isCreator && <button onClick={() => setRejecting(true)} disabled={busy} style={rejectBtn}>Reject</button>}
-            <button onClick={() => void onAct(() => recallRun(run.id), 'Recalled to draft')} disabled={busy} style={ghostBtn}>Recall</button>
-            {isCreator && <span style={{ color: '#717171', fontSize: 14 }}>Waiting for another person with payroll access to approve.</span>}
-          </>
+        {run.status !== 'paid' && run.status !== 'rejected' && (
+          <button onClick={() => void onAct(() => submitRun(run.id), 'Run submitted: payslips are out')} disabled={busy || dirty || saving} title={dirty ? 'Save your changes first' : 'Final: payslips go to employees and the month is locked'} style={{ ...approveBtn, opacity: busy || dirty ? 0.55 : 1 }}>Submit</button>
         )}
-        {run.status === 'pending_approval' && rejecting && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
-            <input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} placeholder="Reason to recall and amend…" style={{ ...inputStyle, flex: 1, maxWidth: 380 }} />
-            <button onClick={() => { setRejecting(false); void onAct(() => decideRun(run.id, 'rejected', rejectNote.trim() || undefined), 'Run rejected'); setRejectNote(''); }} disabled={busy} style={rejectBtn}>Confirm reject</button>
-            <button onClick={() => { setRejecting(false); setRejectNote(''); }} style={ghostBtn}>Cancel</button>
-          </div>
+        <button onClick={() => void exportRun()} disabled={exporting} style={ghostBtn}>{exporting ? 'Exporting…' : 'Export (Excel)'}</button>
+        {run.status !== 'draft' && (
+          <button onClick={() => void onAct(() => recallRun(run.id), 'Reopened as a draft')} disabled={busy} style={{ ...ghostBtn, color: '#717171' }}>Reopen for changes</button>
         )}
-        {run.status === 'approved' && (
-          <>
-            <button onClick={() => void onAct(() => markRunPaid(run.id), 'Run marked paid — reimbursements settled')} disabled={busy} style={approveBtn}>Mark paid</button>
-            <button onClick={() => void onAct(() => recallRun(run.id), 'Recalled to draft')} disabled={busy} style={ghostBtn}>Recall to draft</button>
-          </>
-        )}
-        {run.status === 'rejected' && <button onClick={() => void onAct(() => recallRun(run.id), 'Recalled to draft')} disabled={busy} style={primaryBtn}>Recall to draft</button>}
-        {run.status === 'paid' && <span style={{ color: '#4F7A52', fontWeight: 700, fontSize: 16 }}>✓ Payout complete</span>}
+        <span style={{ color: '#717171', fontSize: 14 }}>
+          {run.status === 'paid' ? '✓ Submitted: payslips are with employees.' : 'LOP comes from attendance: click a person’s LOP days to see or change the days. Submit is final.'}
+        </span>
       </div>
 
       <Card>
@@ -332,7 +337,7 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
             <tr>
               <Th>Name</Th>
               <Th right>Days</Th>
-              <Th right>Paid days</Th>
+              <Th right>LOP days</Th>
               <Th right>Gross</Th>
               <Th right>Income tax</Th>
               <Th right>Deductions</Th>
@@ -344,7 +349,6 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
             {payslips.length === 0 && <tr><td colSpan={8}><EmptyRow text="No payslips in this run." /></td></tr>}
             {payslips.map((p) => {
               const e = edits[p.userId] ?? {};
-              const paidDays = e.paidDays ?? String(p.inputs.payableDays);
               const taxPaise = p.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
               const tax = e.tax ?? String(taxPaise / 100);
               const fromAttendance = p.inputs.workingDays - (p.inputs.attendanceLopDays ?? p.inputs.lopDays);
@@ -358,17 +362,11 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
                     </Td>
                     <Td right mono>{p.inputs.workingDays}</Td>
                     <Td right>
-                      {isDraft ? (
-                        <input type="number" step="0.5" min={0} max={p.inputs.workingDays} value={paidDays} onChange={(ev) => setEdit(p.userId, { paidDays: ev.target.value })} style={{ ...cellInput, borderColor: e.paidDays !== undefined ? '#0571A6' : '#EBEBEB' }} />
-                      ) : (
-                        <span style={{ fontWeight: 700 }}>{p.inputs.payableDays}</span>
-                      )}
+                      <button type="button" onClick={() => { setLopChanged(false); setLopFor(p); }} title="See the days in the calendar, and change them" style={{ ...lopLink, fontSize: 18, fontWeight: 800, color: p.inputs.lopDays > 0 ? '#A8475F' : '#4F7A52' }}>{p.inputs.lopDays}</button>
                       <div style={{ fontSize: 12, color: '#717171', marginTop: 3 }}>
                         {p.inputs.lopEnteredByHr ? (
-                          <>Entered · attendance {fromAttendance}{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'lop' })} style={linkBtn}>use</button>}</>
-                        ) : p.inputs.lopDays > 0 && (p.inputs.attendanceDeductions ?? []).some((l) => l.days > 0) ? (
-                          <button type="button" onClick={() => onExplain(p)} style={lopLink}>{p.inputs.lopDays} LOP from attendance</button>
-                        ) : 'From attendance'}
+                          <>Typed earlier · calendar {p.inputs.workingDays - fromAttendance}{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'lop' })} style={linkBtn}>use calendar</button>}</>
+                        ) : `of ${p.inputs.workingDays} · ${p.inputs.payableDays} paid`}
                       </div>
                     </Td>
                     <Td right mono>{money2(p.grossPaise)}</Td>
@@ -389,7 +387,8 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
                     <Td right>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button type="button" onClick={() => setOpen(expanded ? null : p.userId)} style={slipBtn}>{expanded ? 'Hide' : 'Details'}</button>
-                        <button type="button" onClick={() => printPayslip(p, detail.company)} style={slipBtn}>Payslip</button>
+                        <button type="button" onClick={() => void downloadPayslipPdf(p, detail.company)} style={slipBtn}>Payslip</button>
+                        {p.id && <button type="button" onClick={() => void downloadTdsSheetPdf(p.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={slipBtn}>TDS sheet</button>}
                       </div>
                     </Td>
                   </tr>
@@ -415,6 +414,57 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
         </table>
       </Card>
       {explain && <LossOfPayExplainer userId={explain.userId} payslip={explain} onClose={() => onExplain(null)} />}
+      {lopFor && (
+        <LopCalendar
+          slip={lopFor}
+          period={run.period}
+          editable={isDraft || run.status === 'pending_approval'}
+          onMarked={() => setLopChanged(true)}
+          onExplain={() => onExplain(lopFor)}
+          onClose={() => void closeLop()}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One person's loss of pay for the run's month on their attendance calendar:
+ * the days that cost pay ringed, and any day can be marked from here (while the
+ * run is open). The run recalculates from the calendar when this closes.
+ */
+function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
+  slip: PayslipDTO; period: string; editable: boolean; onMarked: () => void; onExplain: () => void; onClose: () => void;
+}) {
+  const month = new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const rules = (slip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,38,.45)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: 'min(1040px, 100%)', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 22px', borderBottom: '1px solid #EBEBEB' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 19, fontWeight: 800 }}>{slip.employeeName} · loss of pay, {month}</div>
+            <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>
+              <strong style={{ color: '#A8475F' }}>{slip.inputs.lopDays} LOP {slip.inputs.lopDays === 1 ? 'day' : 'days'}</strong> of {slip.inputs.workingDays}
+              {rules.length > 0 && <> · {rules.map((l) => `${l.label} ${l.count} → ${l.days}`).join(' · ')}</>}
+              {' · '}<button type="button" onClick={onExplain} style={{ ...linkBtn, marginLeft: 0 }}>how it adds up</button>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={ghostBtn}>Done</button>
+        </div>
+        <div style={{ padding: '18px 22px' }}>
+          <EmployeeCalendar
+            userId={slip.userId}
+            initial={null}
+            onChanged={() => undefined}
+            startMonth={period}
+            editableMonth={editable ? period : undefined}
+            highlight={(d) => (d.status === 'absent' ? 'LOP' : d.status === 'half_day' ? 'LOP ½' : null)}
+            onMarked={onMarked}
+          />
+          {!editable && <div style={{ fontSize: 13, color: '#717171', marginTop: 10 }}>This run is submitted, so its days are locked. Reopen it to change them.</div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -545,7 +595,6 @@ const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBE
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
 const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const approveBtn: CSSProperties = { background: '#4F7A52', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const rejectBtn: CSSProperties = { background: '#FBF1F3', color: '#A8475F', border: '1px solid #EBD9DE', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 
 const slipBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE3EE', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };

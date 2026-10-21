@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { tdsWorksheet } from '../services/tdsWorksheet.service';
 import {
   employeePayslips,
   createRun,
@@ -111,6 +112,15 @@ export async function employeePayslipsHandler(req: Request, res: Response, next:
   try {
     const result = await employeePayslips(requireUserId(req), String(req.params.userId ?? ''));
     res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function tdsWorksheetHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const sheet = await tdsWorksheet(requireUserId(req), String(req.params.payslipId ?? ''));
+    res.status(200).json({ success: true, sheet });
   } catch (error) {
     next(error);
   }

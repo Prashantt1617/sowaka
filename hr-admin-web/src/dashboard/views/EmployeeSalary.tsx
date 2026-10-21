@@ -18,6 +18,9 @@ import {
   getStatutorySettings,
   listPayHeads,
   listSalaryTemplates,
+  listPaidDaysTemplates,
+  assignPaidDaysTemplate,
+  type PaidDaysTemplateDTO,
   previewSalaryStructure,
   rupeesToPaise,
   saveSalaryStructure,
@@ -38,6 +41,7 @@ import type {
 } from '../../services/payroll';
 import { Card } from '../ui';
 import { IconClose } from '../icons';
+import { paidDaysSummary } from './PaidDaysTemplates';
 
 // —— Grouping, as on Salary Templates ——
 type Group = 'earning' | 'reimbursement' | 'fbp' | 'benefit' | 'deduction' | 'onetime';
@@ -221,6 +225,12 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
         </div>
       </Card>
 
+      <PaidDaysCard
+        userId={userId}
+        code={structure.paidDaysTemplateCode}
+        onChanged={(code) => setData((d) => (d ? { ...d, structure: { ...d.structure, paidDaysTemplateCode: code ?? undefined } } : d))}
+      />
+
       <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>Salary Structure</div>
       <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 22 }}>
         <table style={table}>
@@ -372,6 +382,52 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
         />
       )}
     </div>
+  );
+}
+
+// ——————————————————————————————— PAID DAYS ———————————————————————————————
+/** The Paid Days Template this person is on (the company's Default unless given another), and a way to change it. */
+function PaidDaysCard({ userId, code, onChanged }: { userId: string; code?: string; onChanged: (code: string | null) => void }) {
+  const { flash } = useStore();
+  const [templates, setTemplates] = useState<PaidDaysTemplateDTO[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void listPaidDaysTemplates().then((ts) => { if (live) setTemplates(ts); }).catch(() => { if (live) setTemplates([]); });
+    return () => { live = false; };
+  }, []);
+  const def = templates?.find((t) => t.isDefault);
+  const current = templates?.find((t) => t.code === code) ?? def;
+  const change = async (next: string) => {
+    setSaving(true);
+    try {
+      const picked = templates?.find((t) => t.code === next);
+      const r = await assignPaidDaysTemplate(userId, picked?.isDefault ? null : next);
+      onChanged(r.paidDaysTemplateCode);
+      flash(`Paid days: ${picked?.name ?? next}. Applies from the next payroll run.`);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not change paid days');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Card style={{ padding: '14px 22px', marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={labelSm}>Paid Days Template</div>
+          <div style={{ fontSize: 14, color: '#484848', marginTop: 4 }}>{templates === null ? 'Loading…' : current ? paidDaysSummary(current) : 'Attendance calendar'}</div>
+        </div>
+        <select
+          value={current?.code ?? ''}
+          disabled={saving || !templates?.length}
+          onChange={(e) => void change(e.target.value)}
+          style={{ ...input, width: 260, display: 'inline-block' }}
+        >
+          {(templates ?? []).map((t) => <option key={t.code} value={t.code}>{t.name}{t.isDefault && t.name !== 'Default' ? ' (Default)' : ''}</option>)}
+        </select>
+      </div>
+    </Card>
   );
 }
 

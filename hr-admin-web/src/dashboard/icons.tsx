@@ -229,6 +229,23 @@ export const navIcon: Record<View, ReactElement> = {
       <rect x="3" y="14" width="8" height="6.5" rx="1.5" />
     </svg>
   ),
+  payrolldash: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+    </svg>
+  ),
+  payrollreports: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h6" />
+    </svg>
+  ),
+  paiddays: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4M8.5 15l2.3 2.3 4.7-4.6" />
+    </svg>
+  ),
   statutorycomponents: (
     <svg {...base(18, 'currentColor')}>
       <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
