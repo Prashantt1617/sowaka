@@ -17,8 +17,6 @@ export interface TaxDeclarationRow {
   declarations: TaxDeclarations;
   /** Proofs of the declared investments: none yet, submitted, or checked by HR. */
   proofs: 'none' | 'submitted' | 'verified';
-  /** End-to-end encrypted orgs: the declarations, sealed; `declarations` above is empty. */
-  sealed?: import('../shared/payroll/crypto').Sealed;
   updatedAt: Date;
   updatedByUserId: string;
 }

@@ -8,7 +8,6 @@ import { DASHBOARD_TABS } from '../models/dashboard-tabs';
 import { SUPPORT_ROLES, type SupportRole } from '../models/support.model';
 import { syncSupportHeadRoom } from './connect-realtime.service';
 import { returnTicketsOf } from './support.service';
-import { onPayrollAccessChanged } from './payrollCrypto.service';
 
 export class DashboardAccessError extends Error {
   constructor(public readonly statusCode: number, message: string) {
@@ -122,8 +121,6 @@ export async function setDashboardAccess(
     // Off the desk: their open tickets go back to the heads' queue.
     if (previousRole && !nextRole) await returnTicketsOf(userId, org, adminUserId);
   }
-  // Lost payroll access while holding the salary data key: the grant goes and the key must rotate.
-  await onPayrollAccessChanged(org, userId);
   const fresh = await users().findOne({ userId, org }, { projection: PROJECTION });
   return { user: fresh && fresh.dashboardAccess ? view(fresh) : null };
 }

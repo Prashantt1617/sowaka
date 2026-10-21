@@ -203,7 +203,7 @@ export async function deletePayHead(adminUserId: string, idInput: string) {
   // A person's own added component, or a per-person amount, refers to it too.
   const people = await salaryStructures().countDocuments({
     org,
-    $or: [{ 'overrides.add.payHeadCode': current.code }, { [`componentValues.${current.code}`]: { $exists: true } }, { usedComponentCodes: current.code }],
+    $or: [{ 'overrides.add.payHeadCode': current.code }, { [`componentValues.${current.code}`]: { $exists: true } }],
   });
   if (people > 0) {
     throw new PayHeadError(409, `${label} is on ${people} ${people === 1 ? "person's" : "people's"} salary. Remove it from ${people === 1 ? 'that salary' : 'those salaries'} first.`);

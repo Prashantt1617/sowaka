@@ -53,6 +53,8 @@ export interface SalaryStructure {
 
   /** The assigned Salary Template (Pay Group). -> SalaryTemplate.code */
   salaryTemplateCode?: string;
+  /** The Paid Days Template for this person; absent = the company's Default. -> PaidDaysTemplate.code */
+  paidDaysTemplateCode?: string;
 
   annualCtcPaise: number;
 
@@ -77,10 +79,6 @@ export interface SalaryStructure {
 
   status: 'draft' | 'active';
   effectiveFrom?: Date;
-  /** E2E-encrypted orgs: the amounts (CTC, values, overrides, revisions), sealed; the plain fields above are zero / empty. */
-  sealed?: import('../shared/payroll/crypto').Sealed;
-  /** Sealed structures: the component codes the person's own lines use (codes, never amounts), so a component in use can't be deleted. */
-  usedComponentCodes?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
