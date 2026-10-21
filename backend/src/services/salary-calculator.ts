@@ -10,6 +10,7 @@
 import { PayHead } from '../models/payHead.model';
 import { epfCeilingForPeriod, ResolvedRuleSet } from '../models/statutoryRule.model';
 import { StatutorySettings } from '../models/statutorySettings.model';
+import { TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { applyStatutory, PersonStatutory } from './statutory-apply';
 import { EpfResult, roundToRupee } from './statutory-engine';
 import { defaultStatutorySettings, minimumWageFor } from './statutorySettings.service';
@@ -35,6 +36,21 @@ export interface SalaryCalcInput {
   statutory?: PersonStatutory;
   /** The org's Statutory Components settings. Defaults reproduce the old behaviour. */
   settings?: StatutorySettings;
+  /** The template's PF / ESI wage applicability. Absent reproduces the old behaviour. */
+  statutoryWages?: TemplateStatutoryWages;
+}
+
+/**
+ * A component as the template's PF wage setting sees it. Without
+ * `pfComponents` the component's own "Consider for EPF" stands. With it, a
+ * listed earning counts (keeping an "only under the ceiling" condition the
+ * component has), and an unlisted one does not.
+ */
+export function withTemplateWages(head: PayHead, wages: TemplateStatutoryWages | undefined): PayHead {
+  if (!wages?.pfComponents || head.category !== 'earning') return head;
+  if (!wages.pfComponents.includes(head.code)) return { ...head, considerForEpf: { consider: false } };
+  const cond = head.considerForEpf?.consider ? head.considerForEpf.condition : undefined;
+  return { ...head, considerForEpf: { consider: true, condition: cond && cond !== 'always' ? cond : 'always' } };
 }
 
 export interface ComponentLine {
@@ -55,6 +71,8 @@ export interface ComponentLine {
   considerForEpf: boolean;
   /** Counts toward the EPF wage only while the PF wage is under the ceiling. */
   epfConditional?: boolean;
+  /** Counts toward the ESI wage, when the template names the ESI components. */
+  inEsiWage?: boolean;
 }
 
 export interface SalaryCalcResult {
@@ -82,12 +100,16 @@ export interface SalaryCalcResult {
   employerCostMonthlyPaise: number;
   /** True when a balancing component was set but the other components already exceed CTC. */
   overBudget: boolean;
+  /** The template's PF / ESI wage applicability this was worked out under. */
+  statutoryWages?: TemplateStatutoryWages;
 }
 
 export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResult {
   const monthlyCtc = input.monthlyCtcPaise;
   const values = input.componentValues ?? {};
-  const active = input.payHeads.filter((head) => head.active);
+  const wages = input.statutoryWages;
+  const active = input.payHeads.filter((head) => head.active).map((head) => withTemplateWages(head, wages));
+  const esiCodes = wages?.esiComponents ? new Set(wages.esiComponents) : undefined;
   const byCode = new Map(active.map((head) => [head.code, head]));
   const basicCode = active.find((head) => head.componentType === 'basic')?.code;
 
@@ -167,6 +189,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       prorate: head.category === 'earning' && head.prorate !== false,
       considerForEpf: epfFlag?.consider === true,
       epfConditional: epfFlag?.consider === true && Boolean(epfFlag.condition) && epfFlag.condition !== 'always',
+      ...(esiCodes ? { inEsiWage: head.category === 'earning' && esiCodes.has(head.code) } : {}),
     };
   };
 
@@ -208,6 +231,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       annualPaise: amount * 12,
       prorate: true,
       considerForEpf: false,
+      ...(esiCodes ? { inEsiWage: esiCodes.has(STATUTORY_BONUS_CODE) } : {}),
     };
   }
 
@@ -243,6 +267,13 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       if (cond && cond !== 'always') conditional += value;
       else always += value;
     }
+    // The ESI wage, when the template names its components; else gross pay.
+    let esiWagePaise: number | undefined;
+    if (esiCodes) {
+      esiWagePaise = 0;
+      for (const head of pfHeads) if (esiCodes.has(head.code)) esiWagePaise += head.code === balancingCode ? balancePaise : rawValue(head.code);
+      if (bonusLine && esiCodes.has(STATUTORY_BONUS_CODE)) esiWagePaise += bonusLine.monthlyPaise;
+    }
     return applyStatutory({
       settings,
       ruleSet: input.ruleSet,
@@ -253,6 +284,8 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       pfTestPaise: always,
       ceilingPaise: ceiling,
       person: input.statutory,
+      esiWagePaise,
+      pfWageMode: wages?.pfWageMode,
     });
   };
 
@@ -312,6 +345,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     benefitsMonthlyPaise: benefitsMonthly,
     employerCostMonthlyPaise: employerCostMonthly,
     overBudget: Boolean(balancingCode) && nonBalancingEarnings + reimbursementsTotal + benefitsTotal + st.includedInCtcPaise > monthlyCtc,
+    ...(wages ? { statutoryWages: wages } : {}),
   };
 }
 

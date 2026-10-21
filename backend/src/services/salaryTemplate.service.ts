@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { payHeads, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
-import { SalaryTemplate, SalaryTemplateComponent } from '../models/salaryTemplate.model';
+import { SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { StructureOverrides } from '../models/salaryStructure.model';
 import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
 import { assertAcyclic } from './payHead.service';
@@ -27,6 +27,7 @@ export interface SalaryTemplateInput {
   balancingComponentCode?: unknown;
   epfApplyCeiling?: unknown;
   paidDaysEnabled?: unknown;
+  statutoryWages?: unknown;
   deductionRules?: unknown;
   monthlyPaidLeaveDays?: unknown;
   active?: unknown;
@@ -116,6 +117,7 @@ export async function previewSalaryTemplate(
     ruleSet,
     settings,
     month: new Date().getUTCMonth() + 1,
+    statutoryWages: draft.statutoryWages,
   });
 }
 
@@ -272,6 +274,7 @@ async function normalizeInput(
     epfApplyCeiling: input.epfApplyCeiling === undefined ? undefined : Boolean(input.epfApplyCeiling),
     active,
     paidDaysEnabled: input.paidDaysEnabled === undefined ? undefined : Boolean(input.paidDaysEnabled),
+    statutoryWages: parseStatutoryWages(input.statutoryWages, components, byCode),
     deductionRules,
     monthlyPaidLeaveDays,
   };
@@ -369,12 +372,49 @@ function toView(doc: StoredTemplate) {
     balancingComponentCode: doc.balancingComponentCode,
     epfApplyCeiling: doc.epfApplyCeiling ?? true,
     paidDaysEnabled: doc.paidDaysEnabled ?? true,
+    statutoryWages: doc.statutoryWages ?? null,
     deductionRules: doc.deductionRules ?? [],
     monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
+}
+
+/**
+ * The template's PF / ESI wage applicability. Absent, null or every field
+ * left out is the default (each component's own EPF flag, the org's PF
+ * setting, ESI on gross). Named components must be earnings on the template.
+ */
+function parseStatutoryWages(
+  value: unknown,
+  components: SalaryTemplateComponent[],
+  byCode: Map<string, PayHead>,
+): TemplateStatutoryWages | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) throw new SalaryTemplateError(400, 'statutoryWages must be an object');
+  const earnings = new Set(components.map((c) => c.payHeadCode).filter((code) => byCode.get(code)?.category === 'earning'));
+  const codes = (raw: unknown, what: string): string[] | undefined => {
+    if (raw === undefined || raw === null) return undefined;
+    if (!Array.isArray(raw)) throw new SalaryTemplateError(400, `${what} must be a list of component codes`);
+    const out = [...new Set(raw.map((c) => normalizeCode(c, what)))];
+    for (const code of out) {
+      // The synthetic Statutory Bonus line may be named for ESI.
+      if (!earnings.has(code) && code !== 'STATUTORY_BONUS') throw new SalaryTemplateError(400, `${what}: "${code}" is not an earning on this template`);
+    }
+    return out;
+  };
+  const out: TemplateStatutoryWages = {};
+  const pf = codes(value.pfComponents, 'PF wage components');
+  if (pf) out.pfComponents = pf;
+  const esi = codes(value.esiComponents, 'ESI wage components');
+  if (esi) out.esiComponents = esi;
+  if (value.pfWageMode !== undefined && value.pfWageMode !== null) {
+    const mode = String(value.pfWageMode);
+    if (mode !== 'org' && mode !== 'actual' && mode !== 'ceiling') throw new SalaryTemplateError(400, 'pfWageMode must be org, actual or ceiling');
+    if (mode !== 'org') out.pfWageMode = mode;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** The attendance deduction rules, validated. Absent means none. */

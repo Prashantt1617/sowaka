@@ -37,6 +37,7 @@ import type {
   SalaryTemplateDTO,
   SalaryTemplateInput,
   StatutoryOverview,
+  TemplateStatutoryWages,
 } from '../../services/payroll';
 import { getAllEmployees } from '../../services/hrms';
 import * as XLSX from 'xlsx';
@@ -68,6 +69,7 @@ type Form = {
   rows: Row[];
   balancingComponentCode: string;
   paidDaysEnabled: boolean;
+  statutoryWages: TemplateStatutoryWages | null;
   deductionRules: SalaryDeductionRule[];
   monthlyPaidLeaveDays: number;
   sampleCtc: string;
@@ -116,6 +118,7 @@ function buildInput(f: Form, code: string): SalaryTemplateInput {
     })),
     balancingComponentCode: f.balancingComponentCode || null,
     paidDaysEnabled: f.paidDaysEnabled,
+    statutoryWages: cleanWages(f.statutoryWages, f.rows.map((r) => r.payHeadCode)),
     deductionRules: f.deductionRules,
     monthlyPaidLeaveDays: f.monthlyPaidLeaveDays,
     active: f.active,
@@ -129,10 +132,21 @@ function inputFromTemplate(t: SalaryTemplateDTO): SalaryTemplateInput {
     components: t.components,
     balancingComponentCode: t.balancingComponentCode ?? null,
     paidDaysEnabled: t.paidDaysEnabled ?? true,
+    statutoryWages: t.statutoryWages ?? null,
     deductionRules: t.deductionRules ?? [],
     monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
     active: t.active,
   };
+}
+/** Drop codes no longer on the template, and an empty setting altogether (= the defaults). */
+function cleanWages(w: TemplateStatutoryWages | null, codes: string[]): TemplateStatutoryWages | null {
+  if (!w) return null;
+  const on = new Set(codes);
+  const out: TemplateStatutoryWages = {};
+  if (w.pfComponents) out.pfComponents = w.pfComponents.filter((c) => on.has(c));
+  if (w.esiComponents) out.esiComponents = w.esiComponents.filter((c) => on.has(c));
+  if (w.pfWageMode && w.pfWageMode !== 'org') out.pfWageMode = w.pfWageMode;
+  return Object.keys(out).length ? out : null;
 }
 
 // —— Grouping (mirrors Zoho's sections) ——
@@ -325,7 +339,7 @@ export function SalaryTemplates() {
   };
 
   const newTemplate = () => {
-    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, deductionRules: [], monthlyPaidLeaveDays: 0, sampleCtc: SAMPLE_CTC_RUPEES });
+    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, statutoryWages: null, deductionRules: [], monthlyPaidLeaveDays: 0, sampleCtc: SAMPLE_CTC_RUPEES });
     setComputed(null);
     setMode('edit');
   };
@@ -340,6 +354,7 @@ export function SalaryTemplates() {
       rows: t.components.map((c) => ({ ...rowFromCalc(c.payHeadCode, c.calculation), payslipName: c.payslipName ?? '', showInPayslip: c.showInPayslip })),
       balancingComponentCode: t.balancingComponentCode ?? '',
       paidDaysEnabled: t.paidDaysEnabled ?? true,
+      statutoryWages: t.statutoryWages ?? null,
       deductionRules: t.deductionRules ?? [],
       monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
       sampleCtc: SAMPLE_CTC_RUPEES,
@@ -507,6 +522,7 @@ export function SalaryTemplates() {
             </tbody>
           </table>
           <StatutoryList overview={statutory} computed={detailComputed} />
+          <WagesSummary wages={t.statutoryWages ?? null} phByCode={phByCode} />
         </Card>
 
         <RulesSummary enabled={t.paidDaysEnabled ?? true} rules={t.deductionRules ?? []} paidLeaveDays={t.monthlyPaidLeaveDays ?? 0} />
@@ -643,6 +659,16 @@ export function SalaryTemplates() {
             </div>
 
             <div style={{ margin: '18px 36px 0' }}>
+              <WagesCard
+                wages={form.statutoryWages}
+                onChange={(w) => set('statutoryWages', w)}
+                earnings={balancingOptions}
+                phByCode={phByCode}
+                pfWagePaise={computed?.pfWagePaise}
+              />
+            </div>
+
+            <div style={{ margin: '18px 36px 0' }}>
               <RulesCard
                 enabled={form.paidDaysEnabled}
                 onEnabled={(v) => set('paidDaysEnabled', v)}
@@ -661,6 +687,84 @@ export function SalaryTemplates() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// —— PF and ESI wages for this template ————————————————————————————————
+// Default (nothing chosen): each component's own "Consider for EPF", the
+// org's PF setting, and ESI on gross pay — exactly how payroll worked before.
+const defaultPfCodes = (earnings: string[], phByCode: Map<string, PayHeadDTO>) =>
+  earnings.filter((c) => phByCode.get(c)?.considerForEpf?.consider === true);
+function WagesCard({ wages, onChange, earnings, phByCode, pfWagePaise }: {
+  wages: TemplateStatutoryWages | null;
+  onChange: (w: TemplateStatutoryWages | null) => void;
+  earnings: string[];
+  phByCode: Map<string, PayHeadDTO>;
+  pfWagePaise?: number;
+}) {
+  const w = wages ?? {};
+  const pfCustom = Array.isArray(w.pfComponents);
+  const esiCustom = Array.isArray(w.esiComponents);
+  const pfCodes = pfCustom ? w.pfComponents! : defaultPfCodes(earnings, phByCode);
+  const esiCodes = esiCustom ? w.esiComponents! : earnings;
+  const patch = (p: Partial<TemplateStatutoryWages>) => {
+    const next: TemplateStatutoryWages = { ...w, ...p };
+    for (const k of Object.keys(next) as (keyof TemplateStatutoryWages)[]) if (next[k] === undefined) delete next[k];
+    onChange(Object.keys(next).length ? next : null);
+  };
+  const toggle = (list: string[], code: string) => (list.includes(code) ? list.filter((c) => c !== code) : [...list, code]);
+  const name = (code: string) => phByCode.get(code)?.name ?? code;
+  return (
+    <div style={{ border: '1px solid #EBEBEB', borderRadius: 8, padding: '16px 20px', background: '#fff' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171' }}>PF and ESI wages</div>
+      <div style={{ fontSize: 13, color: '#9197A2', marginTop: 2 }}>Which earnings on this template count toward the PF and ESI wage. Left on the defaults, payroll works exactly as before.</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28, marginTop: 14 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>PF wage</div>
+          <label style={checkRow}><input type="radio" checked={!pfCustom} onChange={() => patch({ pfComponents: undefined })} /> Each component’s own “Consider for EPF”</label>
+          <label style={checkRow}><input type="radio" checked={pfCustom} onChange={() => patch({ pfComponents: defaultPfCodes(earnings, phByCode) })} /> Choose for this template</label>
+          <div style={{ marginLeft: 22, marginTop: 4 }}>
+            {earnings.map((code) => (
+              <label key={code} style={{ ...checkRow, opacity: pfCustom ? 1 : 0.6 }}>
+                <input type="checkbox" disabled={!pfCustom} checked={pfCodes.includes(code)} onChange={() => patch({ pfComponents: toggle(pfCodes, code) })} /> {name(code)}
+              </label>
+            ))}
+          </div>
+          <div style={{ fontWeight: 600, fontSize: 15, margin: '12px 0 6px' }}>PF contribution</div>
+          <select value={w.pfWageMode ?? 'org'} onChange={(e) => patch({ pfWageMode: e.target.value === 'org' ? undefined : (e.target.value as 'actual' | 'ceiling') })} style={{ ...input, width: 340 }}>
+            <option value="org">As set in Statutory Components</option>
+            <option value="ceiling">12% of PF wage, capped at the ceiling</option>
+            <option value="actual">12% of the actual PF wage (no cap)</option>
+          </select>
+          {pfWagePaise !== undefined && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>PF wage at the preview CTC: ₹{rupees(pfWagePaise)} a month</div>}
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>ESI wage</div>
+          <label style={checkRow}><input type="radio" checked={!esiCustom} onChange={() => patch({ esiComponents: undefined })} /> Gross pay (every earning)</label>
+          <label style={checkRow}><input type="radio" checked={esiCustom} onChange={() => patch({ esiComponents: earnings })} /> Choose for this template</label>
+          <div style={{ marginLeft: 22, marginTop: 4 }}>
+            {earnings.map((code) => (
+              <label key={code} style={{ ...checkRow, opacity: esiCustom ? 1 : 0.6 }}>
+                <input type="checkbox" disabled={!esiCustom} checked={esiCodes.includes(code)} onChange={() => patch({ esiComponents: toggle(esiCodes, code) })} /> {name(code)}
+              </label>
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>ESI applies while this wage is ₹21,000 a month or less, and is taken on it.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function WagesSummary({ wages, phByCode }: { wages: TemplateStatutoryWages | null; phByCode: Map<string, PayHeadDTO> }) {
+  const names = (codes: string[]) => (codes.length ? codes.map((c) => phByCode.get(c)?.name ?? c).join(', ') : 'none');
+  const pf = wages?.pfComponents ? names(wages.pfComponents) : 'each component’s own setting';
+  const mode = wages?.pfWageMode === 'actual' ? 'on the actual wage' : wages?.pfWageMode === 'ceiling' ? 'capped at the ceiling' : 'as set in Statutory Components';
+  const esi = wages?.esiComponents ? names(wages.esiComponents) : 'gross pay';
+  return (
+    <div style={{ padding: '12px 20px', fontSize: 14, color: '#484848', borderTop: '1px solid #F0F0F2' }}>
+      <strong>PF wage:</strong> {pf} · PF {mode} · <strong>ESI wage:</strong> {esi}
     </div>
   );
 }

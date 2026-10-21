@@ -46,6 +46,10 @@ export interface StatutoryApplyInput {
   person?: PersonStatutory;
   /** ESI covered this person earlier in the same contribution period. */
   esiCoveredEarlier?: boolean;
+  /** The ESI wage, when the template names its components. Absent: gross pay. */
+  esiWagePaise?: number;
+  /** The template's PF mode. Absent or 'org': the org's restricted/actual setting. */
+  pfWageMode?: 'org' | 'actual' | 'ceiling';
 }
 
 export interface StatutoryApplied {
@@ -75,20 +79,26 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
 
   const epfOn = settings.epf.enabled && person?.epf !== false;
   const employeeActual = settings.epf.overrideAtEmployee && person?.pfActualWage === true;
+  // A template may set PF on the actual wage or capped at the ceiling for
+  // everyone on it; otherwise the org's setting (and a person's override).
+  const mode = input.pfWageMode ?? 'org';
+  const employeeRestricted = mode === 'actual' ? false : mode === 'ceiling' ? true : employeeActual ? false : settings.epf.employeeRate === 'restricted';
+  const employerRestricted = mode === 'actual' ? false : mode === 'ceiling' ? true : settings.epf.employerRate === 'restricted';
   const epf = epfOn
     ? computeEpf({
         pfWagePaise,
-        employeeRestricted: employeeActual ? false : settings.epf.employeeRate === 'restricted',
-        employerRestricted: settings.epf.employerRate === 'restricted',
+        employeeRestricted,
+        employerRestricted,
         ceilingPaise,
         eps: person?.contributeEps !== false,
       })
     : NO_EPF;
 
   const esiOn = settings.esi.enabled && person?.esi !== false;
+  const esiWage = input.esiWagePaise ?? input.grossPaise;
   const esi = computeEsi({
-    grossPaise: input.grossPaise,
-    applicable: esiOn && isEsiApplicable({ grossPaise: input.grossPaise, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
+    grossPaise: esiWage,
+    applicable: esiOn && isEsiApplicable({ grossPaise: esiWage, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
   });
 
   const pt = input.ruleSet.pt ? computePt(input.ruleSet.pt, { grossPaise: input.grossPaise, month: input.month }) : { amountPaise: 0 };

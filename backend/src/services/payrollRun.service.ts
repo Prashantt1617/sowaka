@@ -201,6 +201,7 @@ async function buildRunPayslips(
       bonusCategory: structure.bonusCategory,
       statutory: structure.statutory,
       settings,
+      statutoryWages: template.statutoryWages,
     });
 
     const periodInputs = await getEmployeePeriodInputs(structure.userId, range);

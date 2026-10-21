@@ -23,6 +23,21 @@ export interface SalaryTemplateComponent {
   showInPayslip?: boolean;
 }
 
+/**
+ * Which components make up the PF wage and the ESI wage for people on this
+ * template, and how PF is applied. Every field absent = the behaviour before
+ * this setting existed: each component's own "Consider for EPF", the org's
+ * restricted/actual PF setting, and ESI on gross pay.
+ */
+export interface TemplateStatutoryWages {
+  /** Component codes counted in the PF wage (Basic included or not). Absent: each component's own flag. */
+  pfComponents?: string[];
+  /** 'org': the org's Statutory Components setting; 'actual': 12% of the whole PF wage; 'ceiling': capped at the ceiling. */
+  pfWageMode?: 'org' | 'actual' | 'ceiling';
+  /** Earning codes counted in the ESI wage (eligibility and contribution). Absent: gross pay. */
+  esiComponents?: string[];
+}
+
 export interface SalaryTemplate {
   org: string; // -> Company.id
   name: string;
@@ -34,6 +49,8 @@ export interface SalaryTemplate {
   balancingComponentCode?: string;
   /** Default EPF ceiling behaviour for employees on this template. */
   epfApplyCeiling?: boolean;
+  /** PF and ESI wage applicability for this template. Absent = the defaults above. */
+  statutoryWages?: TemplateStatutoryWages;
   /**
    * How attendance costs paid days for the people on this template: every N
    * late arrivals / early leaves / absences cost M days. A payroll run turns

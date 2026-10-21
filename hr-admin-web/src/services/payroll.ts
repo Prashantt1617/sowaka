@@ -364,6 +364,16 @@ export type SalaryTemplateComponent = {
   /** Whether this template lists the component on the payslip; falls back to the component's. */
   showInPayslip?: boolean;
 };
+/**
+ * Which components make up the PF and ESI wage for a template, and how PF is
+ * applied. Every field absent = the defaults: each component's own "Consider
+ * for EPF", the org's PF setting, and ESI on gross pay.
+ */
+export type TemplateStatutoryWages = {
+  pfComponents?: string[];
+  pfWageMode?: 'org' | 'actual' | 'ceiling';
+  esiComponents?: string[];
+};
 export type SalaryTemplateDTO = {
   id: string;
   name: string;
@@ -374,6 +384,7 @@ export type SalaryTemplateDTO = {
   epfApplyCeiling: boolean;
   /** Whether the run reads attendance for the people on this template. */
   paidDaysEnabled?: boolean;
+  statutoryWages?: TemplateStatutoryWages | null;
   deductionRules: SalaryDeductionRule[];
   monthlyPaidLeaveDays: number;
   active: boolean;
@@ -387,6 +398,8 @@ export type SalaryTemplateInput = {
   balancingComponentCode?: string | null;
   epfApplyCeiling?: boolean;
   paidDaysEnabled?: boolean;
+  /** null clears it back to the defaults. */
+  statutoryWages?: TemplateStatutoryWages | null;
   deductionRules?: SalaryDeductionRule[];
   monthlyPaidLeaveDays?: number;
   active?: boolean;

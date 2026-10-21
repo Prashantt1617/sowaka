@@ -22,7 +22,7 @@ export class StatutoryError extends Error {
  * state. All amounts are editable by the admin; these only bootstrap the common
  * cases the PRD calls out (Haryana monthly LWF, Delhi half-yearly LWF).
  */
-const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
+export const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
   haryana: {
     lwf: {
       cycle: 'monthly',
@@ -63,7 +63,7 @@ const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
 };
 
 // A neutral bonus default applied to any state lacking its own rule.
-const DEFAULT_BONUS: BonusRule = {
+export const DEFAULT_BONUS: BonusRule = {
   ratePercent: 8.33,
   minWageByCategoryPaise: {
     unskilled: 10_000_00,

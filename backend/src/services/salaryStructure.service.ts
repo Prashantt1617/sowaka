@@ -165,6 +165,7 @@ async function compute(
     month: new Date().getUTCMonth() + 1,
     bonusCategory: structure.bonusCategory,
     statutory: structure.statutory,
+    statutoryWages: template.statutoryWages,
   });
   return { computed, components, template };
 }

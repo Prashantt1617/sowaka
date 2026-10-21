@@ -111,11 +111,17 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   }
   const monthCeiling = epfCeilingForPeriod(input.period ?? new Date().toISOString().slice(0, 7));
   const ceiling = settings.epf.proRateRestricted ? roundToRupee(monthCeiling * factor) : monthCeiling;
+  // The ESI wage when the template names its components (overtime counts), else gross.
+  const esiWagePaise = base.statutoryWages?.esiComponents
+    ? base.earnings.filter((line) => line.inEsiWage).reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0) + input.overtimePaise
+    : undefined;
   const st = applyStatutory({
     settings,
     ruleSet: input.ruleSet,
     month: input.month,
     grossPaise,
+    esiWagePaise,
+    pfWageMode: base.statutoryWages?.pfWageMode,
     pfAlwaysPaise: alwaysPaid,
     pfConditionalPaise: conditionalPaid,
     pfTestPaise: settings.epf.considerLOP ? alwaysPaid : alwaysFull,

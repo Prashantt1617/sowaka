@@ -30,7 +30,7 @@ flowchart LR
 
 A component is defined once per org in `pay_heads`. It owns:
 
-- **Identity.** Name, name in payslip, code (org-unique, e.g. `BASIC`), category (earning, deduction, benefit, reimbursement) and earning type (`componentType`).
+- **Identity.** Name, name in payslip (the label every payslip prints; a template can give its own), code (org-unique, e.g. `BASIC`), category (earning, deduction, benefit, reimbursement) and earning type (`componentType`).
 - **Treatment.** Part of salary structure, taxable, pro-rata, FBP, considered for EPF (always, or only while PF wage is under ₹25,000), considered for ESI, shown on payslip, active.
 - **A default calculation.** Flat per month, a percentage of CTC, Basic or another component, or a per-person amount. Templates override the calculation; the treatment always comes from the component.
 
@@ -61,7 +61,17 @@ Statutory items are never added to a template. One set of org-wide settings in `
 
 Work state comes from the person's `state`, or from their work city when no state is recorded (`workStateOf`). A person can be exempted from PF, ESI or LWF on their own salary (`salary_structures.statutory`), and may be switched to PF on actual wage when the org allows employee-level overrides.
 
-Why statutory is not editable per template: the law decides who PF, ESI, PT and LWF apply to by the person's wage and state, not by pay group. A template that dropped one would silently stop compliance for anyone moved onto it. Templates therefore list the statutory components read-only; exceptions are made per person, and switching an item off for everyone is done once in Statutory Components.
+Why statutory is not switched on or off per template: the law decides who PF, ESI, PT and LWF apply to by the person's wage and state, not by pay group. A template that dropped one would silently stop compliance for anyone moved onto it. Templates therefore list the statutory components read-only; exceptions are made per person, and switching an item off for everyone is done once in Statutory Components.
+
+What a template may set is **which of its earnings make up the PF and ESI wage** (`salary_templates.statutoryWages`, the "PF and ESI wages" card on the template builder):
+
+| Field | Absent (default) | Set |
+|---|---|---|
+| `pfComponents` | each component's own "Consider for EPF" | the listed earnings count (Basic included or not); a listed component marked "only under the ceiling" keeps that condition |
+| `pfWageMode` | the org's restricted / actual setting (and a person's override) | `ceiling`: 12% capped at the ceiling; `actual`: 12% of the whole PF wage. EPS stays capped either way |
+| `esiComponents` | ESI on gross pay | ESI eligibility (≤ ₹21,000) and contribution on the listed earnings (+ overtime) |
+
+All three absent reproduces payroll exactly as before. Checked by recomputing every ACMT structure (53, three months, with and without loss of pay: 318 structure + payslip computations) with the calculator before and after the change: no field differs. Convrse's 4 structures: no field differs.
 
 ## 2. Templates ("baskets")
 
@@ -143,8 +153,8 @@ Run states: `draft`, `pending_approval`, `approved` or `rejected`, then `paid`. 
 |---|---|
 | Salary Components › Earnings › Basic, House Rent Allowance, Food Coupon | Live: list, add, edit and delete through `/admin/payroll/pay-heads`, with fixed settings enforced on both ends. Delete is refused while a template uses the component |
 | Salary Components › Deductions | Live: the four standard deductions save to `pay_heads` on first save |
-| Salary Components › other earnings, deductions, benefits, reimbursements | Still the local capture; saving only shows a message |
-| Salary Components › inactive capture rows | Removed from Earnings |
+| Salary Components › every other earning, benefit and reimbursement | Live: Special, Fixed, Conveyance, LTA, Medical, Telephone, Children Education, Statutory Bonus, custom allowances and one-time Bonus; employer benefits (Gratuity, employer NPS, other); reimbursements with their monthly limit. A component's code never changes once created; delete is refused while a template or a person's salary uses it |
+| Payslip names and visibility | Live: a line prints under the template component's payslip name, else the component's, else its name. A component with "Show in payslip" off (on the component or the template) is not listed on the server slip, the dashboard slip or the app, but stays in every total |
 | Salary Templates | Live. "Create New" and "Edit" open a standalone builder page laid out like Zoho's: "Build your Template" on the left lists the active components by group (click to add), the form on the right has name, description, Annual CTC (preview only), the grouped component table with live amounts and Cost to Company, the read-only statutory list and the paid-days rules with their on/off switch. The detail page lists the components with Monthly and Annual columns. The template code is generated from the name; the per-template EPF ceiling switch is gone (org-level now) |
 | Statutory Components | Live through `/admin/payroll/statutory-settings`; PT and LWF cards come from the roster's work states; every save changes the next payroll run |
 | Salary structures, runs, payslips | Live |
@@ -152,9 +162,7 @@ Run states: `draft`, `pending_approval`, `approved` or `rejected`, then `paid`. 
 
 ## 6. Next steps
 
-1. Wire the remaining earning types one at a time, starting with the ones in templates already: Special Allowance, Conveyance, LTA.
-2. Have payslips honour `showInPayslip` and use `payslipName`.
-3. Feed `taxable` into the TDS projection when tax is added to runs.
+1. Feed `taxable` into the TDS projection when tax is added to runs.
 
 ## Watch-outs
 
