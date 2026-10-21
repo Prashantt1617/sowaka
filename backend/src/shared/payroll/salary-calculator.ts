@@ -38,6 +38,8 @@ export interface SalaryCalcInput {
   settings?: StatutorySettings;
   /** The template's PF / ESI wage applicability. Absent reproduces the old behaviour. */
   statutoryWages?: TemplateStatutoryWages;
+  /** "YYYY-MM-DD": joined during this month; PF ceilings count from this day. */
+  employedFrom?: string;
 }
 
 /**
@@ -77,6 +79,8 @@ export interface ComponentLine {
   oneTime?: boolean;
   /** Counted as taxable salary for TDS (the component's "taxable", default yes for earnings). */
   taxable?: boolean;
+  /** A share of Basic (percent), for lines worked out again on a month's paid Basic. */
+  percentOfBasic?: number;
 }
 
 /** An earning paid once (Bonus), entered per run, not part of the monthly CTC split. */
@@ -308,7 +312,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       pfConditionalPaise: conditional,
       pfTestPaise: always,
       ceilingPaise: ceiling,
-      ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7)),
+      ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom),
       person: input.statutory,
       esiWagePaise,
       pfWageMode: wages?.pfWageMode,
@@ -338,7 +342,11 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     return { ...lineFor(head), monthlyPaise, annualPaise: monthlyPaise * 12, prorate: false, considerForEpf: false };
   });
   // A benefit accrues on paid days unless its component says not to prorate.
-  const benefits = benefitHeads.map((head) => ({ ...lineFor(head), prorate: head.prorate !== false }));
+  const benefits = benefitHeads.map((head) => ({
+    ...lineFor(head),
+    prorate: head.prorate !== false,
+    ...(head.calculation.mode === 'percentage' && head.calculation.base === 'basic' ? { percentOfBasic: head.calculation.percent ?? 0 } : {}),
+  }));
   const deductions = active.filter((head) => head.category === 'deduction').map(lineFor);
 
   const grossMonthly = earnings.reduce((sum, line) => sum + line.monthlyPaise, 0);

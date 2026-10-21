@@ -235,6 +235,10 @@ async function buildRunPayslips(
     }
 
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
+    // Joined during this month: paid from the joining day, PF ceilings counted from it.
+    const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
+    const employedFrom = joined && joined.slice(0, 7) === period && joined > `${period}-01` ? joined : undefined;
+    const notYetEmployedDays = employedFrom ? Number(employedFrom.slice(8, 10)) - 1 : 0;
     const base = calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -247,6 +251,7 @@ async function buildRunPayslips(
       statutory: structure.statutory,
       settings,
       statutoryWages: template.statutoryWages,
+      employedFrom,
     });
 
     const periodInputs = await getEmployeePeriodInputs(structure.userId, range);
@@ -257,7 +262,8 @@ async function buildRunPayslips(
     const docked = paidDaysOn ? payrollDeductions(template.deductionRules, attendance.get(structure.userId)) : { days: 0, lines: [] };
     // The template's paid-leave allowance covers the first days docked.
     const allowance = paidDaysOn ? template.monthlyPaidLeaveDays ?? 0 : 0;
-    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance), workingDays);
+    // Days before joining are not loss of pay but not paid either (attendance has no punches for them).
+    const attendanceLopDays = Math.min(Math.max(Math.max(0, docked.days - allowance), notYetEmployedDays), workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -284,6 +290,7 @@ async function buildRunPayslips(
       esiCoveredEarlier: esiCovered.has(structure.userId),
       incomeTaxPaise,
       period,
+      employedFrom,
     };
     let slip = computePayslip(base, slipInput);
     // Income tax from the TDS engine, when the org has it on and HR didn't type one.

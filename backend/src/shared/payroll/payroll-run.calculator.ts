@@ -31,6 +31,8 @@ export interface PayslipInputSet {
   incomeTaxPaise?: number;
   /** "YYYY-MM": picks the PF ceiling in force that month. */
   period?: string;
+  /** "YYYY-MM-DD": joined during this month; PF ceilings count from this day. */
+  employedFrom?: string;
   /** Tax-free part of a Meal Card each month; defaults to MEAL_CARD_EXEMPT_MONTHLY_PAISE. */
   mealCardExemptMonthlyPaise?: number;
 }
@@ -171,7 +173,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     pfConditionalPaise: conditionalPaid,
     pfTestPaise: settings.epf.considerLOP ? alwaysPaid : alwaysFull,
     ceilingPaise: ceiling,
-    ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7)).map((s) => ({ days: s.days, ceilingPaise: settings.epf.proRateRestricted ? roundToRupee(s.ceilingPaise * factor) : s.ceilingPaise })),
+    ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom).map((s) => ({ days: s.days, ceilingPaise: settings.epf.proRateRestricted ? roundToRupee(s.ceilingPaise * factor) : s.ceilingPaise })),
     person: input.statutory,
     esiCoveredEarlier: input.esiCoveredEarlier,
   });
@@ -219,7 +221,13 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
 
   // Employer benefits (gratuity…) accrue on the days paid, as Zoho books them,
   // unless the component is set not to prorate.
-  const benefitsPaid = base.benefits.reduce((sum, line) => sum + (line.prorate !== false && factor !== 1 ? roundToRupee(line.monthlyPaise * factor) : line.monthlyPaise), 0);
+  // A share of Basic (gratuity) is worked out again on the Basic actually paid: 4.81% × ₹4,583 = ₹220.
+  const paidBasic = base.earnings.filter((line) => line.componentType === 'basic').reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0);
+  const benefitsPaid = base.benefits.reduce((sum, line) => {
+    if (line.prorate === false || factor === 1) return sum + line.monthlyPaise;
+    if (line.percentOfBasic !== undefined) return sum + roundToRupee((paidBasic * Math.round(line.percentOfBasic * 100)) / 10000);
+    return sum + roundToRupee(line.monthlyPaise * factor);
+  }, 0);
   const employerCostPaise = grossPaise + structureReimbursements + st.employerContributionsPaise + benefitsPaid;
 
   return {

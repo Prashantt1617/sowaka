@@ -91,7 +91,7 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
   // A month the ceiling changes in: each part's wage capped at its own ceiling, weighted by days.
   let effectiveCeilingPaise = ceilingPaise;
   const segments = input.ceilingSegments;
-  if (segments && segments.length > 1 && !(person?.pfRestrictedWagePaise && person.pfRestrictedWagePaise > 0)) {
+  if (segments && segments.length > 0 && !(person?.pfRestrictedWagePaise && person.pfRestrictedWagePaise > 0)) {
     const total = segments.reduce((t, s) => t + s.days, 0);
     let actual = 0;
     let capped = 0;

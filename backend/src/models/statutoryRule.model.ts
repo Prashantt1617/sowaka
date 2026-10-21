@@ -35,12 +35,15 @@ export const EPF_CEILING_SCHEDULE: { from: string; ceilingPaise: number }[] = [
  * order: one entry normally, two in a month the ceiling changes (Sep 2026:
  * ₹15,000 for 16 days, ₹25,000 for 14).
  */
-export function epfCeilingSegments(period: string): { ceilingPaise: number; days: number }[] {
+export function epfCeilingSegments(period: string, employedFrom?: string): { ceilingPaise: number; days: number }[] {
   const [year, month] = period.split('-').map(Number);
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const out: { ceilingPaise: number; days: number }[] = [];
   for (let d = 1; d <= days; d++) {
     const day = `${period}-${String(d).padStart(2, '0')}`;
+    // Days before someone joined don't count: a September joiner after the
+    // 17th is on the ₹25,000 ceiling only (as Zoho books it).
+    if (employedFrom && day < employedFrom) continue;
     let ceiling = EPF_CEILING_SCHEDULE[0].ceilingPaise;
     for (const step of EPF_CEILING_SCHEDULE) if (step.from <= day) ceiling = step.ceilingPaise;
     const last = out[out.length - 1];

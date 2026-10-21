@@ -215,7 +215,11 @@ export function computeLwf(rule: LwfRule, input: { grossPaise: number; month: nu
   if (rule.employer.mode === 'flat') {
     employerPaise = rule.employer.amountPaise;
   } else if (rule.employer.mode === 'multiple_of_employee') {
-    employerPaise = employeePaise * rule.employer.factor;
+    // A multiple of the employee's share before it is rounded (Zoho: 2 × ₹17.29 = ₹35, not 2 × ₹17),
+    // within the employee cap times the factor.
+    const rawEmployee = rule.employee.mode === 'flat' ? rule.employee.amountPaise : (input.grossPaise * rule.employee.percent) / 100;
+    const cap = rule.employee.mode === 'flat' ? undefined : rule.employee.capPaise;
+    employerPaise = capped(roundToRupee(rawEmployee * rule.employer.factor), cap === undefined ? undefined : cap * rule.employer.factor);
   } else {
     employerPaise = capped(
       roundToRupee((input.grossPaise * rule.employer.percent) / 100),
