@@ -31,7 +31,7 @@ assert.deepEqual(fyOf('2026-09'), { fy: '2026-27', monthsAfter: 6, firstPeriod: 
 assert.deepEqual(fyOf('2027-03'), { fy: '2026-27', monthsAfter: 0, firstPeriod: '2026-04' });
 console.log('TDS textbook cases: ok (new regime rebate, marginal relief, slabs; old regime with 80C)');
 
-// Employee A: taxable salary = gross pay (every earning on A's structure is taxable; reimbursements are not).
+// Employee A: taxable salary = gross pay less the Meal Card's tax-free ₹8,800 (reimbursements are not taxable).
 const a = ZOHO_CASES[0];
 const sept = computeZohoCase(a, { incomeTaxPaise: 0 }).slip.taxablePaise;
 // Months before September at the old ₹15,000 ceiling: employer PF ₹1,800 inside CTC, so ₹560 more Fixed Allowance a month.

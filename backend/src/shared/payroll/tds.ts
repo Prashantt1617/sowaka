@@ -237,8 +237,8 @@ export const TDS_SEED: TdsConfig[] = [
   {
     fy: '2026-27',
     regime: 'new',
-    status: 'to_confirm',
-    source: 'Section 115BAC as amended by the Finance Act 2025 (FY 2025-26 values), assumed unchanged for FY 2026-27',
+    status: 'confirmed',
+    source: 'New regime as set by the Finance Act 2025; Budget 2026 left slabs, the ₹75,000 standard deduction and the ₹12 lakh rebate unchanged for FY 2026-27 (checked 21 Oct 2026)',
     standardDeductionPaise: L(75_000),
     slabs: [
       { upToPaise: L(4_00_000), ratePercent: 0 },
@@ -263,8 +263,8 @@ export const TDS_SEED: TdsConfig[] = [
   {
     fy: '2026-27',
     regime: 'old',
-    status: 'to_confirm',
-    source: 'Old regime (individual below 60) as in FY 2025-26, assumed unchanged for FY 2026-27',
+    status: 'confirmed',
+    source: 'Old regime (individual below 60); unchanged by Budget 2026 for FY 2026-27 (checked 21 Oct 2026)',
     standardDeductionPaise: L(50_000),
     slabs: [
       { upToPaise: L(2_50_000), ratePercent: 0 },

@@ -20,7 +20,8 @@ import { User } from '../models/user.model';
 import { calculateSalaryStructure } from './salary-calculator';
 import { applyOverrides, resolveTemplateComponents } from './salaryTemplate.service';
 import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statutorySettings.service';
-import { computePayslip } from './payroll-run.calculator';
+import { computePayslip, taxableAfterMealExemption } from './payroll-run.calculator';
+import { overtimePayFor } from '../shared/payroll/overtime';
 import {
   computeWorkingDays,
   getEmployeePeriodInputs,
@@ -259,7 +260,15 @@ async function buildRunPayslips(
     const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance), workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
-    const overtimePaise = nonNegInt(otOverrides[structure.userId]);
+    // Overtime: what HR typed on the run, else the template's rule applied to
+    // the month's approved overtime hours.
+    const overtimeEnteredByHr = otOverrides[structure.userId] !== undefined && otOverrides[structure.userId] !== null;
+    const overtimePaise = overtimeEnteredByHr
+      ? nonNegInt(otOverrides[structure.userId])
+      : overtimePayFor(template.overtimePay ?? undefined, periodInputs.approvedOtHours, {
+        basicPaise: base.earnings.filter((l) => l.componentType === 'basic').reduce((t, l) => t + l.monthlyPaise, 0),
+        grossPaise: base.earnings.filter((l) => !l.oneTime).reduce((t, l) => t + l.monthlyPaise, 0),
+      }, workingDays);
     const incomeTaxEnteredByHr = taxOverrides[structure.userId] !== undefined;
     let incomeTaxPaise = nonNegInt(taxOverrides[structure.userId]);
 
@@ -281,7 +290,9 @@ async function buildRunPayslips(
     let tds: PayslipInputs['tds'];
     if (!incomeTaxEnteredByHr && tdsOn) {
       const declaration = declarations.get(structure.userId);
-      const futureTaxable = base.earnings.filter((l) => l.taxable !== false && !l.oneTime).reduce((t, l) => t + l.monthlyPaise, 0);
+      const futureTaxable = taxableAfterMealExemption(
+        base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+      );
       const byType = (type: string) => base.earnings.filter((l) => l.componentType === type).reduce((t, l) => t + l.monthlyPaise, 0);
       const result = runTds({
         configs: tdsConfigs,
@@ -343,7 +354,7 @@ async function buildRunPayslips(
         lopEnteredByHr,
         incomeTaxPaise,
         incomeTaxEnteredByHr,
-        overtimeEnteredByHr: otOverrides[structure.userId] !== undefined,
+        overtimeEnteredByHr,
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         ...(tds ? { tds } : {}),
         attendanceDeductions: docked.lines,
@@ -380,7 +391,23 @@ export async function getRun(adminUserId: string, runIdInput: string) {
     // The slip is printed under the company's name and address.
     companies().findOne({ id: org }, { projection: { name: 1, address: 1 } }),
   ]);
-  return { run: runView(run), payslips: slips.map(payslipView), company: { name: company?.name ?? org, address: company?.address ?? '' } };
+  const creatorMayApprove = run.createdByUserId === adminUserId && (await otherRunApprovers(org, adminUserId)) === 0;
+  return { run: { ...runView(run), creatorMayApprove }, payslips: slips.map(payslipView), company: { name: company?.name ?? org, address: company?.address ?? '' } };
+}
+
+/**
+ * How many other people in the company could approve a run: dashboard users
+ * who still work there and can open Payroll Runs (an admin, a full-access
+ * user, or one given that tab).
+ */
+async function otherRunApprovers(org: string, userId: string): Promise<number> {
+  return users().countDocuments({
+    org,
+    userId: { $ne: userId },
+    dashboardAccess: true,
+    lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }, { dashboardTabs: 'payruns' }],
+  } as never);
 }
 
 /**
@@ -472,7 +499,9 @@ export async function decideRun(
   if (decision !== 'approved' && decision !== 'rejected') {
     throw new PayrollRunError(400, 'decision must be "approved" or "rejected"');
   }
-  if (run.createdByUserId === adminUserId) {
+  // A second person approves, unless the company has nobody else who could:
+  // a one-person payroll team must still be able to finish a month.
+  if (run.createdByUserId === adminUserId && (await otherRunApprovers(org, adminUserId)) > 0) {
     throw new PayrollRunError(403, 'You cannot approve a payroll run you created');
   }
   assertTransition(run.status, decision as PayrollRunStatus);

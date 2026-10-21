@@ -15,6 +15,7 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import {
   DEDUCTION_TRIGGER_LABELS,
+  type OvertimePayRule,
   createSalaryTemplate,
   deleteSalaryTemplate,
   getSalaryTemplate,
@@ -73,6 +74,7 @@ type Form = {
   statutoryWages: TemplateStatutoryWages | null;
   deductionRules: SalaryDeductionRule[];
   monthlyPaidLeaveDays: number;
+  overtimePay: OvertimePayRule | null;
   sampleCtc: string;
 };
 
@@ -122,6 +124,7 @@ function buildInput(f: Form, code: string): SalaryTemplateInput {
     statutoryWages: cleanWages(f.statutoryWages, f.rows.map((r) => r.payHeadCode)),
     deductionRules: f.deductionRules,
     monthlyPaidLeaveDays: f.monthlyPaidLeaveDays,
+    overtimePay: f.overtimePay,
     active: f.active,
   };
 }
@@ -136,6 +139,7 @@ function inputFromTemplate(t: SalaryTemplateDTO): SalaryTemplateInput {
     statutoryWages: t.statutoryWages ?? null,
     deductionRules: t.deductionRules ?? [],
     monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
+    overtimePay: t.overtimePay ?? null,
     active: t.active,
   };
 }
@@ -342,7 +346,7 @@ export function SalaryTemplates() {
   };
 
   const newTemplate = () => {
-    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, statutoryWages: null, deductionRules: [], monthlyPaidLeaveDays: 0, sampleCtc: SAMPLE_CTC_RUPEES });
+    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, statutoryWages: null, deductionRules: [], monthlyPaidLeaveDays: 0, overtimePay: null, sampleCtc: SAMPLE_CTC_RUPEES });
     setComputed(null);
     setMode('edit');
   };
@@ -361,6 +365,7 @@ export function SalaryTemplates() {
       statutoryWages: t.statutoryWages ?? null,
       deductionRules: t.deductionRules ?? [],
       monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
+      overtimePay: t.overtimePay ?? null,
       sampleCtc: SAMPLE_CTC_RUPEES,
     });
     const orphans = t.components.filter((c) => !phByCode.has(c.payHeadCode)).map((c) => c.payHeadCode);
@@ -689,6 +694,10 @@ export function SalaryTemplates() {
               />
             </div>
 
+            <div style={{ margin: '18px 36px 0' }}>
+              <OvertimeCard rule={form.overtimePay} onChange={(v) => set('overtimePay', v)} />
+            </div>
+
             <div style={{ display: 'flex', gap: 10, padding: '26px 36px 30px' }}>
               <button onClick={save} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
               <button onClick={closeBuilder} style={ghostBtn}>Cancel</button>
@@ -1005,6 +1014,52 @@ async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string
     XLSX.utils.book_append_sheet(wb, ws, 'Employees');
     XLSX.writeFile(wb, `${t.code.toLowerCase()}-employees.xlsx`);
   } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not export', 'error'); }
+}
+
+/** How approved overtime hours become pay for the people on this template. */
+function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChange: (v: OvertimePayRule | null) => void }) {
+  const mode = rule?.mode ?? 'off';
+  const pick = (m: 'off' | 'hourly_multiple' | 'flat_per_hour') =>
+    onChange(m === 'off' ? null : m === 'hourly_multiple' ? { mode: m, base: 'basic', multiplier: 2, hoursPerDay: 8 } : { mode: m, flatPerHourPaise: 20000 });
+  const row = (label: string, control: ReactNode) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 22px', borderTop: '1px solid #EBEBEB' }}>
+      <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#222222' }}>{label}</div>
+      <div style={{ width: 220 }}>{control}</div>
+    </div>
+  );
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 17, fontWeight: 800 }}>Overtime pay</div>
+          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Turns each person's approved overtime hours into pay when payroll runs. HR can still change the amount on the run.</div>
+        </div>
+        <select value={mode} onChange={(e) => pick(e.target.value as 'off' | 'hourly_multiple' | 'flat_per_hour')} style={{ ...input, width: 230, cursor: 'pointer' }}>
+          <option value="off">Typed on the run</option>
+          <option value="hourly_multiple">From the hourly rate</option>
+          <option value="flat_per_hour">Fixed amount per hour</option>
+        </select>
+      </div>
+      {rule?.mode === 'hourly_multiple' && (
+        <>
+          {row('Hourly rate from', (
+            <select value={rule.base ?? 'basic'} onChange={(e) => onChange({ ...rule, base: e.target.value as 'basic' | 'gross' })} style={{ ...input, cursor: 'pointer' }}>
+              <option value="basic">Monthly Basic</option>
+              <option value="gross">Monthly Gross</option>
+            </select>
+          ))}
+          {row('Working hours a day', <Suffixed value={rule.hoursPerDay ?? 8} onChange={(v) => onChange({ ...rule, hoursPerDay: v })} suffix="hours" step="0.5" />)}
+          {row('Pay per overtime hour', <Suffixed value={rule.multiplier ?? 2} onChange={(v) => onChange({ ...rule, multiplier: v })} suffix="× hourly rate" step="0.25" />)}
+          <div style={{ padding: '10px 22px 16px', fontSize: 13, color: '#717171' }}>
+            Hourly rate = monthly {rule.base === 'gross' ? 'Gross' : 'Basic'} ÷ (working days × {rule.hoursPerDay ?? 8} hours). The Factories Act sets overtime at twice the ordinary rate.
+          </div>
+        </>
+      )}
+      {rule?.mode === 'flat_per_hour' && row('Amount per hour', (
+        <Suffixed value={(rule.flatPerHourPaise ?? 0) / 100} onChange={(v) => onChange({ ...rule, flatPerHourPaise: Math.round(v * 100) })} suffix="₹ / hour" step="1" />
+      ))}
+    </Card>
+  );
 }
 
 function Suffixed({ value, onChange, suffix, step }: { value: number; onChange: (v: number) => void; suffix: string; step: string }) {

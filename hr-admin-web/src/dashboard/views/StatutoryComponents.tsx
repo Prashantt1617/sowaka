@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { getStatutorySettings, updateStatutorySettings } from '../../services/payroll';
-import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
+import { getStatutorySettings, updateStatutorySettings, upsertStatutoryRule } from '../../services/payroll';
+import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, PtSlab, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
 import { Card } from '../ui';
 import { CloseButton } from '../drawers/shell';
 
@@ -71,7 +71,7 @@ export function StatutoryComponents() {
         <Card style={{ padding: '40px 22px', textAlign: 'center', color: '#717171', fontSize: 15 }}>{failed ? 'Statutory settings could not be loaded.' : 'Loading…'}</Card>
       ) : tab === 'epf' ? <EpfTab overview={overview} apply={apply} saving={saving} />
         : tab === 'esi' ? <EsiTab overview={overview} apply={apply} saving={saving} />
-        : tab === 'pt' ? <PtTab overview={overview} />
+        : tab === 'pt' ? <PtTab overview={overview} onSaved={() => getStatutorySettings().then(setOverview)} />
         : tab === 'lwf' ? <LwfTab overview={overview} apply={apply} saving={saving} />
         : tab === 'tds' ? <TdsTab overview={overview} apply={apply} saving={saving} />
         : <BonusTab overview={overview} apply={apply} saving={saving} />}
@@ -184,7 +184,8 @@ function ptSlabText(rule: PtRule): string[] {
     return `${range}: ₹${rupees(slab.amountPaise)} / month${extra}`;
   });
 }
-function PtTab({ overview }: { overview: StatutoryOverview }) {
+function PtTab({ overview, onSaved }: { overview: StatutoryOverview; onSaved: () => Promise<unknown> }) {
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <div>
       <SectionHead title="Professional Tax" sub="This tax is levied on an employee’s income by the State Government. Tax slabs differ in each state." />
@@ -192,8 +193,15 @@ function PtTab({ overview }: { overview: StatutoryOverview }) {
       <div style={cardGrid}>
         {overview.pt.map((l) => (
           <div key={l.location} style={stateCard}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#222222', marginBottom: 16 }}>{l.location}</div>
-            {l.pt ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <div style={{ flex: 1, fontSize: 18, fontWeight: 700, color: '#222222' }}>{l.location}</div>
+              {editing !== l.location && (
+                <button type="button" onClick={() => setEditing(l.location)} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 14 }}>✎ Edit slabs</button>
+              )}
+            </div>
+            {editing === l.location ? (
+              <PtSlabEditor state={l.state} rule={l.pt} onDone={async (saved) => { if (saved) await onSaved(); setEditing(null); }} />
+            ) : l.pt ? (
               <div>
                 <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{l.state}</strong></div>
                 {ptSlabText(l.pt).map((line) => (
@@ -214,6 +222,68 @@ function PtTab({ overview }: { overview: StatutoryOverview }) {
     </div>
   );
 }
+/** Edit one state's Professional Tax slabs; saved for this company only. */
+function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | null | undefined; onDone: (saved: boolean) => void }) {
+  const { flash } = useStore();
+  type Draft = { upTo: string; amount: string; febAmount: string };
+  const toDraft = (s: PtSlab): Draft => ({
+    upTo: s.upToPaise === null ? '' : String(s.upToPaise / 100),
+    amount: String(s.amountPaise / 100),
+    febAmount: s.monthOverride ? String(s.monthOverride.amountPaise / 100) : '',
+  });
+  const sorted = [...(rule?.slabs ?? [])].sort((a, b) => (a.upToPaise ?? Infinity) - (b.upToPaise ?? Infinity));
+  const [rows, setRows] = useState<Draft[]>(sorted.length ? sorted.map(toDraft) : [{ upTo: '', amount: '0', febAmount: '' }]);
+  const [saving, setSaving] = useState(false);
+  const patch = (i: number, p: Partial<Draft>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const save = async () => {
+    const slabs: PtSlab[] = [];
+    for (const [i, r] of rows.entries()) {
+      const last = i === rows.length - 1;
+      const upTo = r.upTo.trim() === '' ? null : Number(r.upTo);
+      if (!last && (upTo === null || !(upTo > 0))) return flash(`Slab ${i + 1}: enter the monthly gross it goes up to`);
+      if (upTo !== null && !(upTo > 0)) return flash(`Slab ${i + 1}: the limit must be more than 0`);
+      if (i > 0 && upTo !== null && slabs[i - 1].upToPaise !== null && upTo * 100 <= slabs[i - 1].upToPaise!) return flash(`Slab ${i + 1} must go higher than the one above it`);
+      const amount = Number(r.amount);
+      if (!(amount >= 0)) return flash(`Slab ${i + 1}: enter the tax a month (0 for none)`);
+      const feb = r.febAmount.trim() === '' ? undefined : Number(r.febAmount);
+      if (feb !== undefined && !(feb >= 0)) return flash(`Slab ${i + 1}: the February amount must be 0 or more`);
+      slabs.push({ upToPaise: last ? (upTo === null ? null : Math.round(upTo * 100)) : Math.round(upTo! * 100), amountPaise: Math.round(amount * 100), ...(feb !== undefined ? { monthOverride: { month: 2, amountPaise: Math.round(feb * 100) } } : {}) });
+    }
+    setSaving(true);
+    try {
+      await upsertStatutoryRule(state, { pt: { slabs } });
+      flash(`Professional Tax saved for ${state}`);
+      onDone(true);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the slabs');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const cell: CSSProperties = { width: '100%', padding: '7px 9px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit' };
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{state}</strong>. Leave the last slab’s limit empty for “and above”.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 28px', gap: 8, fontSize: 12, fontWeight: 700, color: '#717171', marginBottom: 6 }}>
+        <span>Gross up to ₹</span><span>Tax ₹ / month</span><span>February ₹ (if different)</span><span />
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 28px', gap: 8, marginBottom: 8 }}>
+          <input type="number" min="0" placeholder={i === rows.length - 1 ? 'and above' : ''} value={r.upTo} onChange={(e) => patch(i, { upTo: e.target.value })} style={cell} aria-label={`Slab ${i + 1} gross up to`} />
+          <input type="number" min="0" value={r.amount} onChange={(e) => patch(i, { amount: e.target.value })} style={cell} aria-label={`Slab ${i + 1} tax a month`} />
+          <input type="number" min="0" value={r.febAmount} onChange={(e) => patch(i, { febAmount: e.target.value })} style={cell} aria-label={`Slab ${i + 1} February tax`} />
+          <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} disabled={rows.length === 1} title="Remove slab" style={{ border: 'none', background: 'none', color: '#A8475F', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+      ))}
+      <button type="button" onClick={() => setRows([...rows, { upTo: '', amount: '0', febAmount: '' }])} style={{ border: 'none', background: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '4px 0' }}>+ Add slab</button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button type="button" onClick={() => void save()} disabled={saving} style={{ ...primaryBtn, padding: '7px 16px', fontSize: 15 }}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" onClick={() => onDone(false)} disabled={saving} style={{ ...ghostBtn, padding: '7px 16px', fontSize: 15 }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function EmptyStates() {
   return (
     <Card style={{ padding: '26px 22px', color: '#717171', fontSize: 15, marginBottom: 18 }}>
@@ -334,7 +404,7 @@ function TdsTab({ overview, apply, saving }: TabProps) {
         </label>
       </div>
       <div style={{ marginTop: 16, background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5 }}>
-        The FY 2026-27 slabs and limits are seeded from the FY 2025-26 law and marked <strong>to confirm</strong> until checked against the Finance Act 2026. A figure typed on a run always wins over the engine.
+        FY 2026-27 slabs and limits are confirmed: Budget 2026 left them as they were in FY 2025-26. Meal cards are tax-free up to ₹200 a meal (₹8,800 a month). The rules are re-checked on the 1st of every month. A figure typed on a run always wins over the engine.
       </div>
     </Card>
   );

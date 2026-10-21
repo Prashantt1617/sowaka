@@ -31,6 +31,25 @@ export interface PayslipInputSet {
   incomeTaxPaise?: number;
   /** "YYYY-MM": picks the PF ceiling in force that month. */
   period?: string;
+  /** Tax-free part of a Meal Card each month; defaults to MEAL_CARD_EXEMPT_MONTHLY_PAISE. */
+  mealCardExemptMonthlyPaise?: number;
+}
+
+/**
+ * Meal vouchers are tax-free up to ₹200 a meal from FY 2026-27, under both
+ * regimes (Income-tax Rules 2026): two meals on 22 working days is ₹8,800 a
+ * month. Zoho exempts the Meal Card the same way.
+ */
+export const MEAL_CARD_EXEMPT_MONTHLY_PAISE = 8_800_00;
+
+/** The taxable part of a set of earnings, with the Meal Card's tax-free part taken out. */
+export function taxableAfterMealExemption(
+  lines: { taxable?: boolean; componentType?: string; amountPaise: number }[],
+  mealCardExemptMonthlyPaise = MEAL_CARD_EXEMPT_MONTHLY_PAISE,
+): number {
+  const taxable = lines.filter((l) => l.taxable !== false).reduce((t, l) => t + l.amountPaise, 0);
+  const meal = lines.filter((l) => l.taxable !== false && l.componentType === 'meal_card').reduce((t, l) => t + l.amountPaise, 0);
+  return taxable - Math.min(meal, Math.max(0, mealCardExemptMonthlyPaise));
 }
 
 export interface PayslipEarningLine {
@@ -198,7 +217,10 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     deductions,
     pfWagePaise,
     grossPaise,
-    taxablePaise: base.earnings.filter((line) => line.taxable !== false).reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0) + input.overtimePaise,
+    taxablePaise: taxableAfterMealExemption(
+      base.earnings.map((line) => ({ taxable: line.taxable, componentType: line.componentType, amountPaise: paidByCode.get(line.code) ?? 0 })),
+      input.mealCardExemptMonthlyPaise,
+    ) + input.overtimePaise,
     employeeDeductionsPaise,
     netPaise,
     reimbursementsPaise,

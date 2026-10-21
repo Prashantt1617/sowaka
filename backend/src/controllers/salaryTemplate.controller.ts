@@ -85,6 +85,7 @@ function toInput(body: unknown): SalaryTemplateInput {
     statutoryWages: source.statutoryWages,
     deductionRules: source.deductionRules,
     monthlyPaidLeaveDays: source.monthlyPaidLeaveDays,
+    overtimePay: source.overtimePay,
     active: source.active,
   };
 }

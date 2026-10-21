@@ -404,8 +404,17 @@ export type SalaryTemplateDTO = {
   statutoryWages?: TemplateStatutoryWages | null;
   deductionRules: SalaryDeductionRule[];
   monthlyPaidLeaveDays: number;
+  overtimePay?: OvertimePayRule | null;
   active: boolean;
   updatedAt: string;
+};
+/** How approved overtime hours become pay; null = HR types it on the run. */
+export type OvertimePayRule = {
+  mode: 'hourly_multiple' | 'flat_per_hour';
+  base?: 'basic' | 'gross';
+  multiplier?: number;
+  hoursPerDay?: number;
+  flatPerHourPaise?: number;
 };
 export type SalaryTemplateInput = {
   name: string;
@@ -419,6 +428,7 @@ export type SalaryTemplateInput = {
   statutoryWages?: TemplateStatutoryWages | null;
   deductionRules?: SalaryDeductionRule[];
   monthlyPaidLeaveDays?: number;
+  overtimePay?: OvertimePayRule | null;
   active?: boolean;
 };
 
@@ -480,6 +490,8 @@ export type PayrollRunDTO = {
   totals: RunTotals;
   note?: string;
   createdByUserId: string;
+  /** The run's creator may approve it: nobody else in the company can. */
+  creatorMayApprove?: boolean;
   createdAt: string;
   updatedAt: string;
 };

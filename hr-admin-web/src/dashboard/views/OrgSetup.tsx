@@ -1,14 +1,14 @@
 // Payroll › Pay Schedule (ORG-3) and Tax Details / statutory registration (ORG-2).
 // Two standalone Payroll screens (each its own sidebar item). Organisation
 // identity/address/contact live on the top-level Organisation screen.
-//
-// NOTE: frontend-capture phase — renders from local mock data, no API calls.
-// Reconnect getOrgSetup/updateOrgSetup when finalising.
-import { useState } from 'react';
+// Both read and save the company's own settings (GET/PUT /admin/payroll/org-setup).
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { useAuth } from '../auth/AuthContext';
 import { Card } from '../ui';
+import { ApiError } from '../../services/http';
+import { getOrgSetup, listRuns, updateOrgSetup } from '../../services/payroll';
+import type { OrgSetupDTO, PayrollRunDTO } from '../../services/payroll';
 
 type ScheduleForm = {
   payDay: string; // 'last_day' | '1'..'28'
@@ -25,109 +25,100 @@ type RegForm = {
   deductorDesignation: string;
 };
 
-// —— Mock data for capture ——————————————————————————————————————————
-const MOCK_SCHEDULE: ScheduleForm = {
-  payDay: 'last_day',
-  firstPayPeriod: '2026-04',
-};
-
-// Upcoming payroll runs — the schedule is locked while any run is Approved.
-type RunStatus = 'Draft' | 'Approved' | 'Paid' | 'Rejected';
-type PayRun = { id: string; period: string; payDate: string; net: string; status: RunStatus };
-const MOCK_RUNS: PayRun[] = [
-  { id: 'r-apr', period: 'April 2026', payDate: '30 Apr 2026', net: '₹8,42,500', status: 'Approved' },
-  { id: 'r-may', period: 'May 2026', payDate: '31 May 2026', net: '₹8,42,500', status: 'Draft' },
-];
-
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const fmtPeriod = (p: string) => {
+  if (!p) return 'Not set';
   const [y, m] = p.split('-');
   return `${MONTHS[Number(m) - 1] ?? ''} ${y}`.trim();
 };
 const fmtPayDay = (d: string) => (d === 'last_day' ? 'Last day of the month' : `Day ${d}`);
+const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 
-const RUN_TONE: Record<RunStatus, { bg: string; fg: string }> = {
-  Approved: { bg: '#E4EDE0', fg: '#4F7A52' },
-  Draft: { bg: '#F7F7F9', fg: '#717171' },
-  Paid: { bg: '#E7ECF4', fg: '#4A6FA5' },
-  Rejected: { bg: '#F4DEE2', fg: '#A8475F' },
+const RUN_TONE: Record<PayrollRunDTO['status'], { bg: string; fg: string; label: string }> = {
+  draft: { bg: '#F7F7F9', fg: '#717171', label: 'Draft' },
+  pending_approval: { bg: '#F6E9D5', fg: '#9A6B25', label: 'Pending approval' },
+  approved: { bg: '#E4EDE0', fg: '#4F7A52', label: 'Approved' },
+  rejected: { bg: '#F4DEE2', fg: '#A8475F', label: 'Rejected' },
+  paid: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Paid' },
 };
-const MOCK_REG: RegForm = {
-  pan: 'AACCS1234K',
-  tan: 'BLRC12345E',
-  tdsCircle: 'TDS Ward 3(2), Bengaluru',
-  aoCode: 'BLR-W-32-1',
-  taxPaymentFrequency: 'monthly',
-  deductorType: 'Company',
-  deductorName: 'Convrse Spaces Pvt. Ltd.',
-  deductorDesignation: 'Director',
+
+const scheduleFrom = (s: OrgSetupDTO): ScheduleForm => ({
+  payDay: String(s.paySchedule?.payDay ?? 'last_day'),
+  firstPayPeriod: s.paySchedule?.firstPayPeriod ?? '',
+});
+const regFrom = (s: OrgSetupDTO): RegForm => {
+  const r = s.statutoryRegistration ?? {};
+  return {
+    pan: r.pan ?? '',
+    tan: r.tan ?? '',
+    tdsCircle: r.tdsCircle ?? '',
+    aoCode: r.aoCode ?? '',
+    taxPaymentFrequency: r.taxPaymentFrequency ?? '',
+    deductorType: r.deductor?.type ?? '',
+    deductorName: r.deductor?.name ?? '',
+    deductorDesignation: r.deductor?.designation ?? '',
+  };
 };
-// Which set shows is decided by the signed-in org; nothing here is fetched.
-const MOCK_REGS: Record<string, RegForm> = {
-  acmt: {
-    pan: 'AAATA2345K',
-    tan: 'DELA12345F',
-    tdsCircle: 'TDS Ward 74(1), New Delhi',
-    aoCode: 'DEL-W-74-1',
-    taxPaymentFrequency: 'monthly',
-    deductorType: 'Trust',
-    deductorName: 'ACMT Group of Colleges',
-    deductorDesignation: 'Director',
-  },
-  // Blank until CDE fill in their own registration; never another company's.
-  cde: {
-    pan: '',
-    tan: '',
-    tdsCircle: '',
-    aoCode: '',
-    taxPaymentFrequency: '',
-    deductorType: 'LLP',
-    deductorName: 'CDE Enterprises LLP',
-    deductorDesignation: 'Founder',
-  },
-};
+
+/** The company's saved setup, loaded once per screen. */
+function useOrgSetup() {
+  const { flash } = useStore();
+  const [setup, setSetup] = useState<OrgSetupDTO | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    getOrgSetup().then(setSetup).catch((e) => {
+      setFailed(true);
+      flash(e instanceof ApiError ? e.message : 'Could not load the payroll setup');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return { setup, setSetup, failed };
+}
+
+function Loading({ failed }: { failed: boolean }) {
+  return <Card style={{ padding: '40px 22px', textAlign: 'center', color: '#717171', fontSize: 15 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
+}
 
 // —— Pay Schedule ——————————————————————————————————————————————————
 export function PaySchedule() {
   const { flash } = useStore();
-  const [sched, setSched] = useState<ScheduleForm>(MOCK_SCHEDULE);
-  const [runs, setRuns] = useState<PayRun[]>(MOCK_RUNS);
+  const { setup, setSetup, failed } = useOrgSetup();
+  const [sched, setSched] = useState<ScheduleForm>({ payDay: 'last_day', firstPayPeriod: '' });
+  const [runs, setRuns] = useState<PayrollRunDTO[]>([]);
   const [editing, setEditing] = useState(false);
-  const [blocked, setBlocked] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const approvedRuns = runs.filter((r) => r.status === 'Approved');
-  const hasApproved = approvedRuns.length > 0;
+  useEffect(() => { if (setup) setSched(scheduleFrom(setup)); }, [setup]);
+  // The runs list is a convenience: without Payroll Runs access it stays empty.
+  useEffect(() => { listRuns().then(setRuns).catch(() => setRuns([])); }, []);
 
+  if (!setup) return <Loading failed={failed} />;
+  const locked = setup.payScheduleLocked;
   const setS = <K extends keyof ScheduleForm>(k: K, v: ScheduleForm[K]) => setSched({ ...sched, [k]: v });
 
-  const onEdit = () => {
-    if (hasApproved) {
-      setBlocked(true);
-      return;
-    }
-    setBlocked(false);
-    setEditing(true);
-  };
-  const cancel = () => setEditing(false);
-  const save = () => {
+  const cancel = () => { setSched(scheduleFrom(setup)); setEditing(false); };
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const next = await updateOrgSetup({
+        paySchedule: {
+          frequency: 'monthly',
+          payDay: sched.payDay === 'last_day' ? 'last_day' : Number(sched.payDay),
+          ...(sched.firstPayPeriod ? { firstPayPeriod: sched.firstPayPeriod } : {}),
+          // The cadence is fixed once the first payroll has run.
+          lockedAfterFirstRun: true,
+        },
+      });
+      setSetup(next);
       setEditing(false);
       flash('Pay schedule saved');
-    }, 400);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the pay schedule');
+    } finally {
+      setSaving(false);
+    }
   };
-
-  // Act on a run; when no approved run remains the schedule unlocks and the block clears.
-  const applyRuns = (next: PayRun[], msg: string) => {
-    setRuns(next);
-    flash(msg);
-    if (!next.some((r) => r.status === 'Approved')) setBlocked(false);
-  };
-  const payRun = (id: string, period: string) => applyRuns(runs.map((r) => (r.id === id ? { ...r, status: 'Paid' } : r)), `${period} pay run marked paid`);
-  const rejectRun = (id: string, period: string) => applyRuns(runs.map((r) => (r.id === id ? { ...r, status: 'Rejected' } : r)), `${period} pay run rejected`);
-  const deleteRun = (id: string, period: string) => applyRuns(runs.filter((r) => r.id !== id), `${period} pay run deleted`);
+  const recent = [...runs].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6);
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -135,37 +126,21 @@ export function PaySchedule() {
         {editing ? (
           <>
             <button onClick={cancel} style={ghostBtn}>Cancel</button>
-            <button onClick={save} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
           </>
         ) : (
-          <button onClick={onEdit} style={ghostBtn}>Edit</button>
+          !locked && <button onClick={() => setEditing(true)} style={ghostBtn}>Edit</button>
         )}
       </div>
 
-      {/* Edit guard — an approved run locks the schedule. */}
-      {blocked && hasApproved && (
-        <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <span style={{ fontSize: 16 }}>🔒</span>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#9A6B25' }}>You have an approved pay run</div>
-              <div style={{ fontSize: 14, color: '#8A6A20', marginTop: 3, lineHeight: 1.5 }}>
-                The pay schedule can’t be changed while a run is approved. To make any changes, first <strong>pay</strong>, <strong>reject</strong> or <strong>delete</strong> the run{approvedRuns.length > 1 ? 's' : ''} below.
-              </div>
+      {locked && (
+        <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 12, padding: '14px 16px', marginBottom: 16, display: 'flex', gap: 10 }}>
+          <span style={{ fontSize: 16 }}>🔒</span>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#9A6B25' }}>Locked after the first payroll run</div>
+            <div style={{ fontSize: 14, color: '#8A6A20', marginTop: 3, lineHeight: 1.5 }}>
+              Payroll has already run on this schedule, so its pay day and first period can no longer change.
             </div>
-          </div>
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {approvedRuns.map((r) => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 10, padding: '10px 12px' }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{r.period}</div>
-                  <div style={{ fontSize: 13, color: '#717171' }}>Pay date {r.payDate} · Net {r.net}</div>
-                </div>
-                <button onClick={() => payRun(r.id, r.period)} style={{ ...miniBtn, background: '#0571A6', color: '#fff', border: 'none' }}>Pay</button>
-                <button onClick={() => rejectRun(r.id, r.period)} style={miniBtn}>Reject</button>
-                <button onClick={() => deleteRun(r.id, r.period)} style={{ ...miniBtn, color: '#A8475F', borderColor: '#EBD9DE' }}>Delete</button>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -198,22 +173,21 @@ export function PaySchedule() {
         </div>
       </Card>
 
-      {/* Upcoming payrolls */}
       <Card style={{ padding: '18px 20px' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#222222' }}>Upcoming payrolls</div>
-        <div style={{ fontSize: 14, color: '#717171', marginTop: 2, marginBottom: 14 }}>Scheduled runs and their approval status.</div>
-        {runs.length === 0 ? (
-          <div style={{ fontSize: 14, color: '#717171', padding: '10px 0' }}>No upcoming payroll runs.</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#222222' }}>Recent payrolls</div>
+        <div style={{ fontSize: 14, color: '#717171', marginTop: 2, marginBottom: 14 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
+        {recent.length === 0 ? (
+          <div style={{ fontSize: 14, color: '#717171', padding: '10px 0' }}>No payroll runs yet.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {runs.map((r) => (
+            {recent.map((r) => (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #EBEBEB', borderRadius: 10, padding: '11px 13px' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{r.period}</div>
-                  <div style={{ fontSize: 13, color: '#717171' }}>Pay date {r.payDate} · Net {r.net}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>{fmtPeriod(r.period)}</div>
+                  <div style={{ fontSize: 13, color: '#717171' }}>{r.employeeCount} people{r.totals ? ` · Net ${rupees(r.totals.netPaise)}` : ''}</div>
                 </div>
                 <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: RUN_TONE[r.status].fg, background: RUN_TONE[r.status].bg, borderRadius: 20, padding: '4px 11px' }}>
-                  {r.status}
+                  {RUN_TONE[r.status].label}
                 </span>
               </div>
             ))}
@@ -231,23 +205,39 @@ function ReadValue({ text }: { text: string }) {
 // —— Tax Details (statutory registration) ————————————————————————————
 export function TaxDetails() {
   const { flash } = useStore();
-  const { user } = useAuth();
-  const [reg, setReg] = useState<RegForm>(MOCK_REGS[user?.org ?? ''] ?? MOCK_REG);
+  const { setup, setSetup, failed } = useOrgSetup();
+  const [reg, setReg] = useState<RegForm>(regFrom({ paySchedule: { frequency: 'monthly', payDay: 'last_day' }, statutoryRegistration: {}, payScheduleLocked: false, hasRuns: false }));
   const [saving, setSaving] = useState(false);
+  useEffect(() => { if (setup) setReg(regFrom(setup)); }, [setup]);
 
-  const save = () => {
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const next = await updateOrgSetup({
+        statutoryRegistration: {
+          ...(reg.pan.trim() ? { pan: reg.pan.trim() } : {}),
+          ...(reg.tan.trim() ? { tan: reg.tan.trim() } : {}),
+          ...(reg.tdsCircle.trim() ? { tdsCircle: reg.tdsCircle.trim() } : {}),
+          ...(reg.aoCode.trim() ? { aoCode: reg.aoCode.trim() } : {}),
+          ...(reg.taxPaymentFrequency ? { taxPaymentFrequency: reg.taxPaymentFrequency } : {}),
+          deductor: { type: reg.deductorType.trim(), name: reg.deductorName.trim(), designation: reg.deductorDesignation.trim() },
+        },
+      });
+      setSetup(next);
       flash('Tax details saved');
-    }, 400);
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the tax details');
+    } finally {
+      setSaving(false);
+    }
   };
+  if (!setup) return <Loading failed={failed} />;
   const setR = <K extends keyof RegForm>(k: K, v: RegForm[K]) => setReg({ ...reg, [k]: v });
 
   return (
     <div style={{ maxWidth: 820 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-        <button onClick={save} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+        <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
       <Card style={{ padding: '18px 20px' }}>
         <SectionTitle title="Tax details" sub="Org-level tax identity, required before any statutory filing output can be generated." />
@@ -311,4 +301,3 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const miniBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '7px 14px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

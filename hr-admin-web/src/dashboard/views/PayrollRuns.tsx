@@ -214,7 +214,8 @@ function RunDetail({ detail, busy, rejecting, rejectNote, setRejecting, setRejec
   const { user } = useAuth();
   const { run, payslips } = detail;
   const isDraft = run.status === 'draft';
-  const isCreator = user?.id === run.createdByUserId;
+  // The creator waits for a second person, unless there is nobody else.
+  const isCreator = user?.id === run.createdByUserId && !run.creatorMayApprove;
   // One-time earnings (Bonus…) and deductions (Hold Amount, Salary Advance…)
   // that can be entered for this month only.
   const [oneTime, setOneTime] = useState<PayHeadDTO[]>([]);
@@ -435,7 +436,7 @@ function ThisMonthOnly({ p, items, edit, onChange }: { p: PayslipDTO; items: Pay
     <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px dashed #E5E7EB' }}>
       <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', marginBottom: 8 }}>This month only</div>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {field('Overtime pay', ot, (v) => onChange({ overtime: v }), edit.overtime !== undefined, p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved` : undefined)}
+        {field('Overtime pay', ot, (v) => onChange({ overtime: v }), edit.overtime !== undefined, p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved${!p.inputs.overtimeEnteredByHr && p.inputs.overtimePaise > 0 ? ' · paid by the template’s rule' : ''}` : undefined)}
         {items.map((h) => field(h.payslipName ?? h.name, value(h.code), (v) => onChange({ amounts: { ...(edit.amounts ?? {}), [h.code]: v } }), edit.amounts?.[h.code] !== undefined, h.category === 'deduction' ? 'deduction' : 'one-time earning'))}
       </div>
       <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 6 }}>Then Save &amp; recalculate. One-time earnings are paid on top of the monthly CTC.</div>

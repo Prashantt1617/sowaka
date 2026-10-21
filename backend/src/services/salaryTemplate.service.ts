@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { salaryStructures, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
-import { SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
+import { OvertimePayRule, SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
 import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
@@ -31,6 +31,7 @@ export interface SalaryTemplateInput {
   statutoryWages?: unknown;
   deductionRules?: unknown;
   monthlyPaidLeaveDays?: unknown;
+  overtimePay?: unknown;
   active?: unknown;
 }
 
@@ -245,7 +246,25 @@ async function normalizeInput(
     statutoryWages: parseStatutoryWages(input.statutoryWages, components, byCode),
     deductionRules,
     monthlyPaidLeaveDays,
+    overtimePay: parseOvertimePay(input.overtimePay),
   };
+}
+
+function parseOvertimePay(raw: unknown): OvertimePayRule | undefined {
+  if (raw === undefined || raw === null || raw === '' || (isRecord(raw) && raw.mode === 'off')) return undefined;
+  if (!isRecord(raw)) throw new SalaryTemplateError(400, 'Overtime pay is invalid');
+  if (raw.mode === 'flat_per_hour') {
+    const flat = Number(raw.flatPerHourPaise);
+    if (!Number.isInteger(flat) || flat <= 0) throw new SalaryTemplateError(400, 'Enter the overtime amount per hour');
+    return { mode: 'flat_per_hour', flatPerHourPaise: flat };
+  }
+  if (raw.mode !== 'hourly_multiple') throw new SalaryTemplateError(400, 'Overtime pay is invalid');
+  const base = raw.base === 'gross' ? 'gross' : 'basic';
+  const multiplier = raw.multiplier === undefined ? 2 : Number(raw.multiplier);
+  const hoursPerDay = raw.hoursPerDay === undefined ? 8 : Number(raw.hoursPerDay);
+  if (!(multiplier > 0 && multiplier <= 5)) throw new SalaryTemplateError(400, 'Overtime multiplier must be more than 0 and at most 5');
+  if (!(hoursPerDay >= 1 && hoursPerDay <= 24)) throw new SalaryTemplateError(400, 'Hours a day must be 1 to 24');
+  return { mode: 'hourly_multiple', base, multiplier: Math.round(multiplier * 100) / 100, hoursPerDay: Math.round(hoursPerDay * 2) / 2 };
 }
 
 export function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set<string>): CalculationBasis {
@@ -344,6 +363,7 @@ function toView(doc: StoredTemplate) {
     statutoryWages: doc.statutoryWages ?? null,
     deductionRules: doc.deductionRules ?? [],
     monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
+    overtimePay: doc.overtimePay ?? null,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),

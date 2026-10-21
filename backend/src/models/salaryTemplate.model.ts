@@ -38,6 +38,20 @@ export interface TemplateStatutoryWages {
   esiComponents?: string[];
 }
 
+/**
+ * Overtime pay from approved overtime hours.
+ * - hourly_multiple: (monthly Basic or Gross ÷ (working days × hours a day)) × multiplier per hour
+ *   (the Factories Act pays twice the ordinary rate: multiplier 2).
+ * - flat_per_hour: a fixed amount per hour.
+ */
+export interface OvertimePayRule {
+  mode: 'hourly_multiple' | 'flat_per_hour';
+  base?: 'basic' | 'gross';
+  multiplier?: number;
+  hoursPerDay?: number;
+  flatPerHourPaise?: number;
+}
+
 export interface SalaryTemplate {
   org: string; // -> Company.id
   name: string;
@@ -61,6 +75,8 @@ export interface SalaryTemplate {
   deductionRules?: SalaryDeductionRule[];
   /** Paid leave days a month that offset what the rules deduct (0 = none). */
   monthlyPaidLeaveDays?: number;
+  /** How approved overtime hours turn into pay. Absent = HR types the amount on the run. */
+  overtimePay?: OvertimePayRule;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
