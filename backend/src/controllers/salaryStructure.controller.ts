@@ -57,6 +57,8 @@ function toInput(body: unknown): SalaryStructureInput {
     salaryTemplateCode: source.salaryTemplateCode,
     annualCtcPaise: source.annualCtcPaise,
     componentValues: source.componentValues,
+    overrides: source.overrides,
+    effectiveFrom: source.effectiveFrom,
     statutory: source.statutory,
     bonusCategory: source.bonusCategory,
     status: source.status,

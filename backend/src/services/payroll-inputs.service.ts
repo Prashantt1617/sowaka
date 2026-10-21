@@ -41,10 +41,10 @@ export function parsePeriod(period: string): PeriodRange {
 }
 
 /**
- * Paid days in the period: every calendar day. Weekly offs and company
- * holidays are paid — nobody works them, nobody loses pay for them — so the
- * month's salary is spread over all its days and only loss of pay comes off.
- * (ACMT's own payroll sheet divides by the days in the month, 31 for August.)
+ * Base days for the period: the days in that month (28 to 31). Week offs,
+ * holidays and approved leave are paid, so the month's salary is spread over
+ * all its days and only loss of pay comes off: paid days = days in the month −
+ * loss-of-pay days.
  */
 export async function computeWorkingDays(_org: string | undefined, range: PeriodRange): Promise<number> {
   return range.daysInMonth;

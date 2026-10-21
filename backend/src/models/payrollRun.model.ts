@@ -98,6 +98,11 @@ export interface Payslip {
   netPayablePaise: number; // net + reimbursements
   employerCostPaise: number;
 
+  /** Whether ESI covered this person this month; carries coverage through the contribution period. */
+  esiApplicable?: boolean;
+  /** The structure's reimbursements paid this month. */
+  reimbursementLines?: { code: string; name: string; amountPaise: number }[];
+
   /** EPF split retained for statutory filing downstream. */
   epf: {
     contributionWagePaise: number;

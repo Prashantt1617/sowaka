@@ -2,11 +2,15 @@
 // four category tabs (Earnings / Deductions / Benefits / Reimbursements). Columns
 // mirror the Zoho Payroll salary-components screens.
 //
-// NOTE: frontend-capture phase — renders from local mock data, no API calls.
-// Reconnect listPayHeads/createPayHead/updatePayHead/deletePayHead when finalising.
-import { useState } from 'react';
+// Live through /admin/payroll/pay-heads: Basic, House Rent Allowance and Food
+// Coupon among earnings, and every deduction. Bonus, benefits and
+// reimbursements still render from the local capture below.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { ApiError } from '../../services/http';
+import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, updatePayHead } from '../../services/payroll';
+import type { CalculationBasis, PayHeadDTO, PayHeadInput } from '../../services/payroll';
 import { useAuth } from '../auth/AuthContext';
 import { Card } from '../ui';
 import { IconPlus } from '../icons';
@@ -23,32 +27,43 @@ const CATEGORIES: { key: Cat; label: string }[] = [
 ];
 
 // —— Mock catalog (from the Zoho salary-components capture) ——————————————
-type EarningRow = { name: string; type: string; calc: string; epf: string; esi: string; fbp?: boolean; status: Status };
-type DeductionRow = { name: string; type: string; frequency: string; status: Status };
+type EarningRow = { name: string; type: string; calc: string; epf: string; esi: string; fbp?: boolean; status: Status; live?: PayHeadDTO };
+type DeductionKind = 'food_coupons' | 'hold_amount' | 'salary_advance' | 'notice_pay' | 'other';
+type DeductionRow = { name: string; type: string; frequency: string; status: Status; kind: DeductionKind; live?: PayHeadDTO };
 type BenefitRow = { name: string; type: string; frequency: string; status: Status };
 type ReimbRow = { name: string; type: string; max: string; status: Status };
 
-const EARNINGS: EarningRow[] = [
-  { name: 'Basic', type: 'Basic', calc: 'Fixed; 50% of CTC', epf: 'Yes', esi: 'Yes', status: 'Active' },
-  { name: 'Basic Pay', type: 'Basic', calc: 'Fixed; Flat Amount', epf: 'Yes', esi: 'Yes', status: 'Active' },
-  { name: 'House Rent Allowance', type: 'House Rent Allowance', calc: 'Fixed; 50% of Basic', epf: 'No', esi: 'Yes', status: 'Active' },
-  { name: 'Conveyance Allowance', type: 'Conveyance Allowance', calc: 'Fixed; 10000 per month', epf: 'No', esi: 'No', fbp: true, status: 'Inactive' },
-  { name: 'Children Education Allowance', type: 'Children Education Allowance', calc: 'Fixed; Flat Amount', epf: 'Yes (If PF Wage < 15k)', esi: 'Yes', status: 'Inactive' },
-  { name: 'Transport Allowance', type: 'Transport Allowance', calc: 'Fixed; Flat amount of 1600', epf: 'Yes (If PF Wage < 15k)', esi: 'Yes', status: 'Inactive' },
-  { name: 'Travelling Allowance', type: 'Travelling Allowance', calc: 'Fixed; 10000 per month', epf: 'No', esi: 'No', fbp: true, status: 'Inactive' },
-  { name: 'Meal Card', type: 'Food Coupon', calc: 'Fixed; 8800 per month', epf: 'No', esi: 'No', fbp: true, status: 'Active' },
-  { name: 'Books and periodicals allowance', type: 'Books and Periodicals Allowance', calc: 'Fixed; 3000 per month', epf: 'No', esi: 'No', fbp: true, status: 'Active' },
-  { name: 'Communication Allowance', type: 'Telephone And Internet Allowance', calc: 'Fixed; 1800 per month', epf: 'No', esi: 'No', fbp: true, status: 'Active' },
-  { name: 'LTA', type: 'Leave Travel Allowance', calc: 'Fixed; 8329 per month', epf: 'No', esi: 'No', fbp: true, status: 'Inactive' },
-  { name: 'Fixed Allowance', type: 'Fixed Allowance', calc: 'Fixed; Flat Amount', epf: 'Yes (If PF Wage < 15k)', esi: 'Yes', status: 'Active' },
-  { name: 'Statutory Bonus', type: 'Statutory Bonus', calc: 'Fixed; 8.33% of Basic', epf: 'No', esi: 'No', status: 'Active' },
-];
+// Earnings are limited to the four agreed types. Basic, House Rent Allowance
+// and Food Coupon come from the server (see LIVE_TYPES); Bonus is form-only
+// until it is wired. Nothing is captured locally any more.
+const EARNINGS: EarningRow[] = [];
+// The four standard deductions. Each is live: a saved one comes from the
+// server (matched by kind), an unsaved one shows from here and is created on
+// its first save.
 const DEDUCTIONS: DeductionRow[] = [
-  { name: 'Food Coupon Deduction', type: 'Food Coupon Deduction', frequency: 'One Time', status: 'Active' },
-  { name: 'Hold Amount', type: 'Other Deductions', frequency: 'One Time', status: 'Active' },
-  { name: 'Salary Advance Deduction', type: 'Other Deductions', frequency: 'One Time', status: 'Active' },
-  { name: 'Notice Pay Deduction', type: 'Notice Pay Deduction', frequency: 'One Time', status: 'Active' },
+  { name: 'Food Coupon Deduction', type: 'Food Coupon Deduction', frequency: 'One Time', status: 'Active', kind: 'food_coupons' },
+  { name: 'Hold Amount', type: 'Other Deductions', frequency: 'One Time', status: 'Active', kind: 'hold_amount' },
+  { name: 'Salary Advance Deduction', type: 'Other Deductions', frequency: 'One Time', status: 'Active', kind: 'salary_advance' },
+  { name: 'Notice Pay Deduction', type: 'Notice Pay Deduction', frequency: 'One Time', status: 'Active', kind: 'notice_pay' },
 ];
+const DEDUCTION_KINDS = new Set<string>(['food_coupons', 'hold_amount', 'salary_advance', 'notice_pay', 'other']);
+const deductionTypeLabel = (kind: string) =>
+  kind === 'food_coupons' ? 'Food Coupon Deduction' : kind === 'notice_pay' ? 'Notice Pay Deduction' : 'Other Deductions';
+function rowFromDeductionHead(ph: PayHeadDTO): DeductionRow {
+  const kind = (DEDUCTION_KINDS.has(ph.componentType) ? ph.componentType : 'other') as DeductionKind;
+  return {
+    name: ph.payslipName ?? ph.name, type: deductionTypeLabel(kind),
+    frequency: ph.recurrence === 'recurring' ? 'Recurring' : 'One Time',
+    status: ph.active ? 'Active' : 'Inactive', kind, live: ph,
+  };
+}
+/** A pay-head code from a name, unique among the org's codes: "Hold Amount" -> HOLD_AMOUNT. */
+function codeFor(name: string, taken: Set<string>): string {
+  const base = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 34) || 'DEDUCTION';
+  let code = base;
+  for (let i = 2; taken.has(code); i++) code = `${base}_${i}`;
+  return code;
+}
 const BENEFITS: BenefitRow[] = [
   { name: 'Voluntary Provident Fund', type: 'Voluntary Provident Fund', frequency: 'Recurring', status: 'Active' },
   { name: 'Gratuity -Deduction', type: 'Other Non-Taxable Deduction', frequency: 'Recurring', status: 'Active' },
@@ -56,9 +71,9 @@ const BENEFITS: BenefitRow[] = [
 ];
 const REIMBURSEMENTS: ReimbRow[] = [
   { name: 'Fuel Reimbursement', type: 'Fuel Reimbursement', max: '₹15,000', status: 'Active' },
-  { name: 'Driver Reimbursement', type: 'Driver Reimbursement', max: '₹0', status: 'Inactive' },
-  { name: 'Vehicle Maintenance Reimbursement', type: 'Vehicle Maintenance Reimbursement', max: '₹0', status: 'Inactive' },
-  { name: 'Telephone Reimbursement', type: 'Telephone Reimbursement', max: '₹0', status: 'Inactive' },
+  { name: 'Driver Reimbursement', type: 'Driver Reimbursement', max: '₹0', status: 'Active' },
+  { name: 'Vehicle Maintenance Reimbursement', type: 'Vehicle Maintenance Reimbursement', max: '₹0', status: 'Active' },
+  { name: 'Telephone Reimbursement', type: 'Telephone Reimbursement', max: '₹0', status: 'Active' },
   { name: 'Leave Travel Allowance', type: 'Leave Travel Allowance', max: '₹8,333', status: 'Active' },
   { name: 'Books and Periodicals Reimbursement', type: 'Books and Periodicals Reimbursement', max: '₹3,000', status: 'Active' },
   { name: 'Internet Reimbursement', type: 'Internet Reimbursement', max: '₹1,800', status: 'Active' },
@@ -66,25 +81,27 @@ const REIMBURSEMENTS: ReimbRow[] = [
 
 type Catalog = { earnings: EarningRow[]; deductions: DeductionRow[]; benefits: BenefitRow[]; reimbursements: ReimbRow[] };
 // Which catalog shows is decided by the signed-in org. ACMT and CDE run on a
-// single Basic component; everyone else still sees the capture above.
+// single Basic component, which now comes from the server; everyone else still
+// sees the capture above alongside their live Basic and HRA.
 const CATALOGS: Record<string, Catalog> = {
   acmt: {
-    earnings: [{ name: 'Basic', type: 'Basic', calc: 'Fixed; 50% of CTC', epf: 'Yes', esi: 'Yes', status: 'Active' }],
+    earnings: [],
     deductions: [],
     benefits: [],
     reimbursements: [],
   },
-  // As set up in their pay head master: Basic is the whole CTC, no EPF or ESI.
+  // As set up in their pay head master: Basic (live, from the server) is the
+  // whole CTC, no EPF or ESI.
   cde: {
-    earnings: [{ name: 'Basic', type: 'Basic', calc: 'Fixed; 100% of CTC', epf: 'No', esi: 'No', status: 'Active' }],
+    earnings: [],
     deductions: [],
     benefits: [],
     reimbursements: [],
   },
 };
 const DEFAULT_CATALOG: Catalog = { earnings: EARNINGS, deductions: DEDUCTIONS, benefits: BENEFITS, reimbursements: REIMBURSEMENTS };
-const countsFor = (c: Catalog): Record<Cat, number> => ({
-  earning: c.earnings.length,
+const countsFor = (c: Catalog, earnings: EarningRow[]): Record<Cat, number> => ({
+  earning: earnings.length,
   deduction: c.deductions.length,
   benefit: c.benefits.length,
   reimbursement: c.reimbursements.length,
@@ -92,38 +109,64 @@ const countsFor = (c: Catalog): Record<Cat, number> => ({
 
 // —— Per-earning-type spec ————————————————————————————————————————————
 // Every earning renders from one form; only these knobs differ by type.
-const FIXED_NOTE = 'Fixed amount paid at the end of every month.';
-const VARIABLE_NOTE = 'Variable amount paid during any payroll.';
 type Fbp = 'none' | 'optional' | 'forced';
+/** A setting an earning type pins: shown ticked, can't be unticked. */
+type FixedKey = 'partOfStructure' | 'taxable' | 'proRata' | 'epf' | 'esi' | 'showInPayslip';
 type Spec = {
   nature: 'fixed' | 'variable';
-  note: string;
   calcBase: 'ctc' | 'basic' | null; // null → no Calculation Type (FBP or variable)
   fbp: Fbp;
-  epfSubChoice: boolean; // reveal Always / PF<15k when EPF is on
+  epfSubChoice: boolean; // reveal Always / PF<25k when EPF is on
   taxDeductionPref: boolean; // variable bonus only
+  fixed?: FixedKey[]; // ticked and locked; the server pins the same (FIXED_EARNING_SETTINGS)
+  hideFbp?: boolean; // no "Include this as a Flexible Benefit Plan component" on the form
 };
+// Only these earning types exist on the screen and in Add Component.
 const SPECS: Record<string, Spec> = {
-  Basic: { nature: 'fixed', note: FIXED_NOTE, calcBase: 'ctc', fbp: 'none', epfSubChoice: true, taxDeductionPref: false },
-  'House Rent Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false },
-  'Children Education Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false },
-  'Transport Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false },
-  'Fixed Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false },
-  'Statutory Bonus': { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'none', epfSubChoice: false, taxDeductionPref: false },
-  'Conveyance Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Travelling Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Food Coupon': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Books and Periodicals Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Telephone And Internet Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Leave Travel Allowance': { nature: 'fixed', note: FIXED_NOTE, calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false },
-  'Overtime Allowance': { nature: 'variable', note: VARIABLE_NOTE, calcBase: null, fbp: 'none', epfSubChoice: false, taxDeductionPref: false },
-  Bonus: { nature: 'variable', note: VARIABLE_NOTE, calcBase: null, fbp: 'none', epfSubChoice: false, taxDeductionPref: true },
+  // Basic: everything ticked is fixed, PF counted always (no ₹25,000 condition).
+  Basic: { nature: 'fixed', calcBase: 'ctc', fbp: 'none', epfSubChoice: true, taxDeductionPref: false, fixed: ['partOfStructure', 'taxable', 'proRata', 'epf', 'esi', 'showInPayslip'] },
+  'House Rent Allowance': { nature: 'fixed', calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false, fixed: ['partOfStructure', 'taxable', 'showInPayslip'] },
+  'Food Coupon': { nature: 'fixed', calcBase: null, fbp: 'forced', epfSubChoice: false, taxDeductionPref: false, fixed: ['partOfStructure', 'taxable', 'showInPayslip'], hideFbp: true },
+  Bonus: { nature: 'variable', calcBase: null, fbp: 'none', epfSubChoice: false, taxDeductionPref: true, fixed: ['taxable', 'showInPayslip'] },
 };
-const DEFAULT_SPEC: Spec = { nature: 'fixed', note: FIXED_NOTE, calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false };
+const DEFAULT_SPEC: Spec = { nature: 'fixed', calcBase: 'basic', fbp: 'optional', epfSubChoice: true, taxDeductionPref: false };
 const specFor = (type: string): Spec => SPECS[type] ?? DEFAULT_SPEC;
 const ADD_TYPES = Object.keys(SPECS);
+const isFixed = (type: string, key: FixedKey) => specFor(type).fixed?.includes(key) ?? false;
 
+// —— Live earning types: saved to and read from the pay-heads API ——————————
+// `single`: an org holds one of these, under a fixed code. Others get a code from their name.
+const LIVE_TYPES: Record<string, { componentType: 'basic' | 'hra' | 'meal_card'; code: string; single: boolean }> = {
+  Basic: { componentType: 'basic', code: 'BASIC', single: true },
+  'House Rent Allowance': { componentType: 'hra', code: 'HRA', single: true },
+  'Food Coupon': { componentType: 'meal_card', code: 'MEAL_CARD', single: false },
+};
+const LIVE_COMPONENT_TYPES = new Set<string>(Object.values(LIVE_TYPES).map((t) => t.componentType));
+const LIVE_ORDER = ['basic', 'hra', 'meal_card'];
+const typeOfLive = (ph: PayHeadDTO) =>
+  Object.entries(LIVE_TYPES).find(([, t]) => t.componentType === ph.componentType)?.[0] ?? 'Food Coupon';
+
+function rupeesText(paise: number | undefined): string {
+  return Math.round((paise ?? 0) / 100).toLocaleString('en-IN');
+}
+function calcText(c: CalculationBasis): string {
+  if (c.mode === 'percentage') return `Fixed; ${c.percent ?? 0}% of ${c.base === 'ctc' ? 'CTC' : 'Basic'}`;
+  if (c.mode === 'flat_per_month') return `Fixed; ${rupeesText(c.amountPaise)} per month`;
+  return 'Fixed; Flat Amount';
+}
+function rowFromPayHead(ph: PayHeadDTO): EarningRow {
+  const epf = ph.considerForEpf?.consider
+    ? ph.considerForEpf.condition && ph.considerForEpf.condition !== 'always' ? 'Yes (If PF Wage < 25k)' : 'Yes'
+    : 'No';
+  return {
+    name: ph.name, type: typeOfLive(ph), calc: calcText(ph.calculation), epf,
+    esi: ph.considerForEsi?.consider ? 'Yes' : 'No', fbp: ph.fbp === true,
+    status: ph.active ? 'Active' : 'Inactive', live: ph,
+  };
+}
 type EForm = {
+  id?: string; // the saved pay head, for live types
+  code?: string;
   isNew: boolean;
   associated: boolean; // already used by employees → only Name + Amount/% editable
   type: string;
@@ -140,7 +183,7 @@ type EForm = {
   fbpRestrict: boolean;
   taxPref: 'subsequent' | 'same';
   epf: boolean;
-  epfWhen: 'always' | 'pf15k';
+  epfWhen: 'always' | 'pfCeiling';
   esi: boolean;
   showInPayslip: boolean;
 };
@@ -162,7 +205,7 @@ function formFromEarning(r: EarningRow): EForm {
     calcMode: spec.calcBase ? p.mode : 'flat', amount: p.amount, percent: p.percent,
     active: r.status === 'Active', partOfStructure: spec.nature === 'fixed', taxable: true,
     proRata: spec.nature === 'fixed', fbp: r.fbp === true || spec.fbp === 'forced', fbpRestrict: spec.fbp === 'forced',
-    taxPref: 'subsequent', epf: r.epf.startsWith('Yes'), epfWhen: r.epf.includes('PF Wage') ? 'pf15k' : 'always',
+    taxPref: 'subsequent', epf: r.epf.startsWith('Yes'), epfWhen: r.epf.includes('PF Wage') ? 'pfCeiling' : 'always',
     esi: r.esi === 'Yes', showInPayslip: true,
   };
 }
@@ -173,12 +216,59 @@ function blankEarning(type: string): EForm {
     calcMode: 'flat', amount: '0', percent: '50', active: true,
     partOfStructure: spec.nature === 'fixed', taxable: true, proRata: spec.nature === 'fixed',
     fbp: spec.fbp === 'forced', fbpRestrict: spec.fbp === 'forced', taxPref: 'subsequent',
-    epf: false, epfWhen: 'always', esi: false, showInPayslip: true,
+    epf: isFixed(type, 'epf'), epfWhen: 'always', esi: isFixed(type, 'esi'), showInPayslip: true,
+  };
+}
+function formFromPayHead(ph: PayHeadDTO, associated: boolean): EForm {
+  const type = typeOfLive(ph);
+  const c = ph.calculation;
+  const pick = (key: FixedKey, stored: boolean | undefined, fallback: boolean) => (isFixed(type, key) ? true : stored ?? fallback);
+  return {
+    id: ph.id, code: ph.code, isNew: false, associated, type, name: ph.name, payslipName: ph.payslipName ?? ph.name,
+    calcMode: c.mode === 'percentage' ? 'percentage' : 'flat',
+    amount: c.mode === 'percentage' ? '0' : String((c.amountPaise ?? 0) / 100),
+    percent: c.mode === 'percentage' ? String(c.percent ?? 50) : '50',
+    active: ph.active,
+    partOfStructure: pick('partOfStructure', ph.partOfStructure, true),
+    taxable: pick('taxable', ph.taxable, true),
+    proRata: pick('proRata', ph.prorate, true),
+    fbp: ph.fbp === true || specFor(type).fbp === 'forced', fbpRestrict: false, taxPref: 'subsequent',
+    epf: pick('epf', ph.considerForEpf?.consider, false),
+    epfWhen: isFixed(type, 'epf') ? 'always' : ph.considerForEpf?.condition && ph.considerForEpf.condition !== 'always' ? 'pfCeiling' : 'always',
+    esi: pick('esi', ph.considerForEsi?.consider, false),
+    showInPayslip: pick('showInPayslip', ph.showInPayslip, true),
+  };
+}
+function inputFromForm(f: EForm, code: string): PayHeadInput {
+  const live = LIVE_TYPES[f.type];
+  const base = specFor(f.type).calcBase === 'ctc' ? 'ctc' : 'basic';
+  const calculation: CalculationBasis = f.calcMode === 'percentage' && specFor(f.type).calcBase
+    ? { mode: 'percentage', percent: Number(f.percent) || 0, base }
+    : { mode: 'flat_per_month', amountPaise: rupeesToPaise(f.amount || '0') };
+  return {
+    name: f.name.trim(),
+    code,
+    category: 'earning',
+    componentType: live.componentType,
+    calculation,
+    payslipName: f.payslipName.trim(),
+    partOfStructure: f.partOfStructure,
+    taxable: f.taxable,
+    prorate: f.proRata,
+    fbp: f.fbp,
+    considerForEpf: { consider: f.epf, ...(f.epf ? { condition: f.epfWhen === 'pfCeiling' ? 'if_pf_wage_below_ceiling' : 'always' } : {}) },
+    considerForEsi: { consider: f.esi },
+    showInPayslip: f.showInPayslip,
+    recurrence: 'recurring',
+    active: f.active,
   };
 }
 
 // —— Deduction form ————————————————————————————————————————————————————
 type DForm = {
+  id?: string; // the saved pay head, once it exists
+  code?: string;
+  kind: DeductionKind;
   isNew: boolean;
   associated: boolean; // once associated, only Name in Payslip is editable
   type: string;
@@ -186,11 +276,22 @@ type DForm = {
   frequency: 'one_time' | 'recurring';
   active: boolean;
 };
-function formFromDeduction(r: DeductionRow): DForm {
-  return { isNew: false, associated: true, type: r.type, payslipName: r.name, frequency: r.frequency === 'Recurring' ? 'recurring' : 'one_time', active: r.status === 'Active' };
+function formFromDeduction(r: DeductionRow, associated: boolean): DForm {
+  return {
+    id: r.live?.id, code: r.live?.code, kind: r.kind, isNew: false, associated, type: r.type, payslipName: r.name,
+    frequency: r.frequency === 'Recurring' ? 'recurring' : 'one_time', active: r.status === 'Active',
+  };
 }
 function blankDeduction(): DForm {
-  return { isNew: true, associated: false, type: 'Other Deductions', payslipName: '', frequency: 'one_time', active: true };
+  return { kind: 'other', isNew: true, associated: false, type: 'Other Deductions', payslipName: '', frequency: 'one_time', active: true };
+}
+function deductionInput(f: DForm, code: string): PayHeadInput {
+  const name = f.payslipName.trim();
+  return {
+    name, payslipName: name, code, category: 'deduction', componentType: f.kind,
+    calculation: { mode: 'flat_amount' }, // the amount is set per person
+    recurrence: f.frequency, active: f.active,
+  };
 }
 
 // —— Benefit form ——————————————————————————————————————————————————————
@@ -241,6 +342,8 @@ type RForm = {
   amount: string;
   active: boolean;
 };
+// Reimbursement types that start with the Flexible Benefit Plan box unticked.
+const NO_PRETICK_REIMB = new Set(['Fuel Reimbursement', 'Internet Reimbursement']);
 function formFromReimbursement(r: ReimbRow): RForm {
   return {
     isNew: false, associated: true, type: r.type, payslipName: r.name, fbp: false, fbpRestrict: false,
@@ -255,7 +358,37 @@ export function PayHeadMaster() {
   const { flash } = useStore();
   const { user } = useAuth();
   const catalog = CATALOGS[user?.org ?? ''] ?? DEFAULT_CATALOG;
-  const COUNTS = countsFor(catalog);
+  const [live, setLive] = useState<PayHeadDTO[]>([]);
+  const [liveDeductions, setLiveDeductions] = useState<PayHeadDTO[]>([]);
+  const [allCodes, setAllCodes] = useState<Set<string>>(new Set());
+  const [usedCodes, setUsedCodes] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const loadLive = async () => {
+    try {
+      const [heads, templates] = await Promise.all([listPayHeads(), listSalaryTemplates()]);
+      setLive(heads.filter((h) => h.category === 'earning' && LIVE_COMPONENT_TYPES.has(h.componentType)));
+      setLiveDeductions(heads.filter((h) => h.category === 'deduction'));
+      setAllCodes(new Set(heads.map((h) => h.code)));
+      setUsedCodes(new Set(templates.flatMap((t) => t.components.map((c) => c.payHeadCode))));
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not load salary components');
+    }
+  };
+  useEffect(() => {
+    void loadLive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Basic first, then HRA, then the rest.
+  const liveRows = [...live]
+    .sort((a, b) => LIVE_ORDER.indexOf(a.componentType) - LIVE_ORDER.indexOf(b.componentType) || a.name.localeCompare(b.name))
+    .map(rowFromPayHead);
+  const earnings = [...liveRows, ...catalog.earnings];
+  // Types an org may hold only one of, once it has one.
+  const takenTypes = new Set(liveRows.filter((r) => LIVE_TYPES[r.type]?.single).map((r) => r.type));
+  // Saved deductions first, then any standard one this org hasn't saved yet.
+  const savedKinds = new Set(liveDeductions.map((h) => h.componentType));
+  const deductions = [...liveDeductions.map(rowFromDeductionHead), ...catalog.deductions.filter((r) => !savedKinds.has(r.kind))];
+  const COUNTS = { ...countsFor(catalog, earnings), deduction: deductions.length };
   const [tab, setTab] = useState<Cat>('earning');
   const [form, setForm] = useState<EForm | null>(null);
   const [dForm, setDForm] = useState<DForm | null>(null);
@@ -263,22 +396,75 @@ export function PayHeadMaster() {
   const [rForm, setRForm] = useState<RForm | null>(null);
 
   const onAdd = () => {
-    if (tab === 'earning') setForm(blankEarning('Fixed Allowance'));
+    if (tab === 'earning') setForm(blankEarning(ADD_TYPES.find((t) => !takenTypes.has(t)) ?? 'Food Coupon'));
     else if (tab === 'deduction') setDForm(blankDeduction());
     else if (tab === 'benefit') setBForm(blankBenefit());
     else setRForm(blankReimbursement());
   };
-  const saveForm = () => {
-    if (!form) return;
+  const saveForm = async () => {
+    if (!form || saving) return;
     if (!form.name.trim()) return flash('Please enter an earning name');
-    flash(form.isNew ? `${form.name} added` : `${form.name} updated`);
-    setForm(null);
+    if (!LIVE_TYPES[form.type]) {
+      // Not wired yet: the capture rows stay as they are.
+      flash(form.isNew ? `${form.name} added` : `${form.name} updated`);
+      setForm(null);
+      return;
+    }
+    if (!form.payslipName.trim()) return flash('Please enter the name in payslip');
+    if (form.calcMode === 'percentage') {
+      const pct = Number(form.percent);
+      if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return flash('Enter a percentage between 0 and 100');
+    } else if (!(Number(form.amount) >= 0)) {
+      return flash('Enter an amount');
+    }
+    setSaving(true);
+    try {
+      const live = LIVE_TYPES[form.type];
+      const code = form.code ?? (live.single ? live.code : codeFor(form.name, allCodes));
+      const input = inputFromForm(form, code);
+      if (form.id) await updatePayHead(form.id, input);
+      else await createPayHead(input);
+      flash(form.isNew ? `${input.name} added` : `${input.name} updated`);
+      setForm(null);
+      await loadLive();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the earning');
+    } finally {
+      setSaving(false);
+    }
   };
-  const saveDeduction = () => {
-    if (!dForm) return;
+  const saveDeduction = async () => {
+    if (!dForm || saving) return;
     if (!dForm.payslipName.trim()) return flash('Please enter the name in payslip');
-    flash(dForm.isNew ? `${dForm.payslipName} added` : `${dForm.payslipName} updated`);
-    setDForm(null);
+    setSaving(true);
+    try {
+      if (dForm.id) await updatePayHead(dForm.id, deductionInput(dForm, dForm.code ?? codeFor(dForm.payslipName, allCodes)));
+      else await createPayHead(deductionInput(dForm, codeFor(dForm.payslipName, allCodes)));
+      flash(dForm.isNew ? `${dForm.payslipName.trim()} added` : `${dForm.payslipName.trim()} updated`);
+      setDForm(null);
+      await loadLive();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the deduction');
+    } finally {
+      setSaving(false);
+    }
+  };
+  // Only saved components can be deleted. The server refuses while a salary
+  // template uses the component or another component is worked out from it.
+  const removeComponent = async (id: string, label: string) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await deletePayHead(id);
+      flash(`${label} deleted`);
+      setForm(null);
+      setDForm(null);
+      await loadLive();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : `Could not delete ${label}`);
+    } finally {
+      setSaving(false);
+    }
   };
   const saveBenefit = () => {
     if (!bForm) return;
@@ -342,8 +528,8 @@ export function PayHeadMaster() {
             </tr>
           </thead>
           <tbody>
-            {tab === 'earning' && catalog.earnings.map((r) => (
-              <tr key={r.name} className="phm-row" onClick={() => setForm(formFromEarning(r))} style={{ cursor: 'pointer' }}>
+            {tab === 'earning' && earnings.map((r) => (
+              <tr key={r.live?.id ?? r.name} className="phm-row" onClick={() => setForm(r.live ? formFromPayHead(r.live, usedCodes.has(r.live.code)) : formFromEarning(r))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} fbp={r.fbp} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td muted>{r.calc}</Td>
@@ -352,8 +538,8 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
-            {tab === 'deduction' && catalog.deductions.map((r) => (
-              <tr key={r.name} className="phm-row" onClick={() => setDForm(formFromDeduction(r))} style={{ cursor: 'pointer' }}>
+            {tab === 'deduction' && deductions.map((r) => (
+              <tr key={r.live?.id ?? r.name} className="phm-row" onClick={() => setDForm(formFromDeduction(r, r.live ? usedCodes.has(r.live.code) : false))} style={{ cursor: 'pointer' }}>
                 <Td><NameCell name={r.name} /></Td>
                 <Td muted>{r.type}</Td>
                 <Td muted>{r.frequency}</Td>
@@ -383,8 +569,10 @@ export function PayHeadMaster() {
         </table>
       </Card>
 
-      {form && <EarningModal form={form} setForm={setForm} onClose={() => setForm(null)} onSave={saveForm} />}
-      {dForm && <DeductionModal form={dForm} setForm={setDForm} onClose={() => setDForm(null)} onSave={saveDeduction} />}
+      {form && <EarningModal form={form} setForm={setForm} onClose={() => setForm(null)} onSave={() => void saveForm()} saving={saving} takenTypes={takenTypes}
+        onDelete={form.id ? () => void removeComponent(form.id!, form.name) : undefined} />}
+      {dForm && <DeductionModal form={dForm} setForm={setDForm} onClose={() => setDForm(null)} onSave={() => void saveDeduction()} saving={saving}
+        onDelete={dForm.id ? () => void removeComponent(dForm.id!, dForm.payslipName) : undefined} />}
       {bForm && <BenefitModal form={bForm} setForm={setBForm} onClose={() => setBForm(null)} onSave={saveBenefit} />}
       {rForm && <ReimbursementModal form={rForm} setForm={setRForm} onClose={() => setRForm(null)} onSave={saveReimbursement} />}
     </div>
@@ -403,7 +591,6 @@ function ReimbursementModal({ form, setForm, onClose, onSave }: { form: RForm; s
         <div style={modalHead}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{form.isNew ? 'New Reimbursement' : 'Edit Reimbursement'}</div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>A payroll component employees can claim against, up to a monthly cap.</div>
           </div>
           <CloseButton onClose={onClose} />
         </div>
@@ -412,7 +599,7 @@ function ReimbursementModal({ form, setForm, onClose, onSave }: { form: RForm; s
           <div style={{ ...panelCard, maxWidth: 640 }}>
             <Field label="Reimbursement Type" req>
               {form.isNew ? (
-                <select value={form.type} onChange={(e) => set('type', e.target.value)} style={inputStyle}>
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, ...(NO_PRETICK_REIMB.has(e.target.value) ? { fbp: false, fbpRestrict: false } : {}) })} style={inputStyle}>
                   <option value="">Select</option>
                   {REIMB_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -421,32 +608,27 @@ function ReimbursementModal({ form, setForm, onClose, onSave }: { form: RForm; s
               )}
             </Field>
 
-            <Field label="Name in Payslip" req hint="How this reimbursement appears to the employee on their payslip.">
+            <Field label="Name in Payslip" req>
               <input value={form.payslipName} onChange={(e) => set('payslipName', e.target.value)} placeholder="e.g. Fuel Reimbursement" style={inputStyle} />
             </Field>
 
-            <Checkbox checked={form.fbp} disabled={locked} onChange={(v) => set('fbp', v)} label="Include this as a Flexible Benefit Plan component"
-              sub="FBP lets employees personalise their salary structure by choosing how much they want to receive under each FBP component." />
+            <Checkbox checked={form.fbp} disabled={locked} onChange={(v) => set('fbp', v)} label="Include this as a Flexible Benefit Plan component" />
             {form.fbp && (
               <div style={{ marginLeft: 26 }}>
-                <Checkbox checked={form.fbpRestrict} disabled={locked} onChange={(v) => set('fbpRestrict', v)} label="Restrict employee from overriding the FBP amount"
-                  sub="Employees will be given the exact amount set below and cannot re-allocate it." />
+                <Checkbox checked={form.fbpRestrict} disabled={locked} onChange={(v) => set('fbpRestrict', v)} label="Restrict employee from overriding the FBP amount" />
               </div>
             )}
 
             <Field label="How do you want to handle unclaimed reimbursement?" style={{ marginTop: 14 }}>
-              <Radio checked={form.unclaimed === 'carry_forward'} disabled={locked} onChange={() => set('unclaimed', 'carry_forward')} label="Carry forward and encash at the end of the fiscal year"
-                sub="Unclaimed amounts accumulate and are paid out at year-end." />
-              <Radio checked={form.unclaimed === 'encash_monthly'} disabled={locked} onChange={() => set('unclaimed', 'encash_monthly')} label="Do not carry forward and encash monthly"
-                sub="Any unclaimed amount is paid out with that month’s payroll." />
+              <Radio checked={form.unclaimed === 'carry_forward'} disabled={locked} onChange={() => set('unclaimed', 'carry_forward')} label="Carry forward and encash at the end of the fiscal year" />
+              <Radio checked={form.unclaimed === 'encash_monthly'} disabled={locked} onChange={() => set('unclaimed', 'encash_monthly')} label="Do not carry forward and encash monthly" />
             </Field>
 
-            <Field label={form.fbp ? 'Enter Maximum Amount' : 'Enter Amount'} req hint="The most an employee can claim under this component each month.">
+            <Field label={form.fbp ? 'Enter Maximum Amount' : 'Enter Amount'} req>
               <AmountInput suffix="per month" value={form.amount} onChange={(v) => set('amount', v)} disabled={false} />
             </Field>
 
-            <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active"
-              sub="Only active components can be added to new salary structures." />
+            <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
 
             <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
               <strong>Note:</strong> Once you associate this component with an employee, you’ll only be able to edit the <strong>Name in Payslip</strong> and <strong>Amount</strong>. Changes to the amount apply only to new employees.
@@ -477,7 +659,6 @@ function BenefitModal({ form, setForm, onClose, onSave }: { form: BForm; setForm
         <div style={modalHead}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{form.isNew ? 'New Benefit' : 'Edit Benefit'}</div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>An employer-funded benefit plan added to the employee’s CTC.</div>
           </div>
           <CloseButton onClose={onClose} />
         </div>
@@ -495,7 +676,7 @@ function BenefitModal({ form, setForm, onClose, onSave }: { form: BForm; setForm
               )}
             </Field>
 
-            <Field label="Associate this benefit with" hint="Link this benefit to the investment declaration it counts against.">
+            <Field label="Associate this benefit with">
               {form.isNew ? (
                 <select value={form.investment} onChange={(e) => set('investment', e.target.value)} style={inputStyle}>
                   <option value="">Select an Investment</option>
@@ -510,23 +691,20 @@ function BenefitModal({ form, setForm, onClose, onSave }: { form: BForm; setForm
               )}
             </Field>
 
-            <Field label="Name in Payslip" req hint="How this benefit appears to the employee on their payslip.">
+            <Field label="Name in Payslip" req>
               <input value={form.payslipName} onChange={(e) => set('payslipName', e.target.value)} placeholder="e.g. Voluntary Provident Fund" style={inputStyle} />
             </Field>
 
             {showEmployerSuper && (
               <>
                 <Checkbox checked={form.employerContribution} disabled={locked} onChange={(v) => set('employerContribution', v)} label="Include employer's contribution in employee's salary structure." />
-                <Checkbox checked={form.superannuation} disabled={locked} onChange={(v) => set('superannuation', v)} label="Consider this a superannuation fund"
-                  sub="If the employer’s total contribution towards EPF, EPS, NPS and superannuation fund exceeds ₹7.5 lakh in a financial year, the excess amount will be treated as a taxable perquisite for the employee." />
+                <Checkbox checked={form.superannuation} disabled={locked} onChange={(v) => set('superannuation', v)} label="Consider this a superannuation fund" />
               </>
             )}
-            <Checkbox checked={form.proRata} disabled={locked} onChange={(v) => set('proRata', v)} label="Calculate on pro-rata basis"
-              sub="Pay will be adjusted based on the employee’s working days." />
+            <Checkbox checked={form.proRata} disabled={locked} onChange={(v) => set('proRata', v)} label="Calculate on pro-rata basis" />
 
             <div style={{ marginTop: 8 }}>
-              <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active"
-                sub="Only active components can be added to new salary structures." />
+              <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
             </div>
 
             <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
@@ -546,7 +724,7 @@ function BenefitModal({ form, setForm, onClose, onSave }: { form: BForm; setForm
 }
 
 // —— Add / Edit Deduction modal ————————————————————————————————————————
-function DeductionModal({ form, setForm, onClose, onSave }: { form: DForm; setForm: (f: DForm) => void; onClose: () => void; onSave: () => void }) {
+function DeductionModal({ form, setForm, onClose, onSave, saving, onDelete }: { form: DForm; setForm: (f: DForm) => void; onClose: () => void; onSave: () => void; saving: boolean; onDelete?: () => void }) {
   const set = <K extends keyof DForm>(k: K, v: DForm[K]) => setForm({ ...form, [k]: v });
   const locked = form.associated; // only Name in Payslip editable once associated
 
@@ -557,7 +735,6 @@ function DeductionModal({ form, setForm, onClose, onSave }: { form: DForm; setFo
         <div style={modalHead}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{form.isNew ? 'New Deduction' : 'Edit Deduction'}</div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>How this amount is withheld from the employee’s pay.</div>
           </div>
           <CloseButton onClose={onClose} />
         </div>
@@ -567,20 +744,16 @@ function DeductionModal({ form, setForm, onClose, onSave }: { form: DForm; setFo
             {!form.isNew && (
               <Field label="Deduction Type" req>
                 <input value={form.type} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
-                <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>The deduction type is set when the component is created and can’t be changed.</div>
               </Field>
             )}
-            <Field label="Name in Payslip" req hint="How this deduction appears to the employee on their payslip.">
+            <Field label="Name in Payslip" req>
               <input value={form.payslipName} onChange={(e) => set('payslipName', e.target.value)} placeholder="e.g. Food Coupon Deduction" style={inputStyle} />
             </Field>
             <Field label="Select the deduction frequency" req>
-              <Radio checked={form.frequency === 'one_time'} disabled={locked} onChange={() => set('frequency', 'one_time')} label="One-time deduction"
-                sub="Withheld once, from a single payroll." />
-              <Radio checked={form.frequency === 'recurring'} disabled={locked} onChange={() => set('frequency', 'recurring')} label="Recurring deduction for subsequent Payrolls"
-                sub="Withheld every payroll until it is stopped." />
+              <Radio checked={form.frequency === 'one_time'} disabled={locked} onChange={() => set('frequency', 'one_time')} label="One-time deduction" />
+              <Radio checked={form.frequency === 'recurring'} disabled={locked} onChange={() => set('frequency', 'recurring')} label="Recurring deduction for subsequent Payrolls" />
             </Field>
-            <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active"
-              sub="Only active components can be added to new salary structures." />
+            <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
 
             <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
               <strong>Note:</strong> Once you associate this deduction with an employee, you’ll only be able to edit the <strong>Name in Payslip</strong>. The change will be reflected in both new and existing employees.
@@ -590,8 +763,9 @@ function DeductionModal({ form, setForm, onClose, onSave }: { form: DForm; setFo
 
         <div style={modalFoot}>
           <span style={{ marginRight: 'auto', fontSize: 13, color: '#A8475F' }}>* indicates mandatory fields</span>
+          {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
-          <button onClick={onSave} style={primaryBtn}>Save</button>
+          <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -599,10 +773,11 @@ function DeductionModal({ form, setForm, onClose, onSave }: { form: DForm; setFo
 }
 
 // —— Add / Edit Earning modal ————————————————————————————————————————
-// Centered, near-full-screen modal (same shell as Add-a-user) — the extra room
-// lets us keep every one of Zoho's inline helper texts alongside the fields.
-function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm: (f: EForm) => void; onClose: () => void; onSave: () => void }) {
+// Centered, near-full-screen modal (same shell as Add-a-user). Labels and
+// headings only: no helper text under fields or options.
+function EarningModal({ form, setForm, onClose, onSave, saving, takenTypes, onDelete }: { form: EForm; setForm: (f: EForm) => void; onClose: () => void; onSave: () => void; saving: boolean; takenTypes: Set<string>; onDelete?: () => void }) {
   const spec = specFor(form.type);
+  const fx = (key: FixedKey) => spec.fixed?.includes(key) ?? false;
   const set = <K extends keyof EForm>(k: K, v: EForm[K]) => setForm({ ...form, [k]: v });
   const locked = form.associated; // only Name + Amount/% editable once associated
   const baseWord = spec.calcBase === 'ctc' ? 'CTC' : 'Basic';
@@ -615,9 +790,6 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
         <div style={modalHead}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{form.isNew ? 'Add Earning' : 'Edit Earning'}</div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>
-              Define how this earning is calculated, taxed and shown on the payslip.
-            </div>
           </div>
           <CloseButton onClose={onClose} />
         </div>
@@ -630,14 +802,12 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
               <Field label="Earning Type" req>
                 {form.isNew ? (
                   <select value={form.type} onChange={(e) => setForm({ ...blankEarning(e.target.value), name: form.name, payslipName: form.payslipName })} style={inputStyle}>
-                    {ADD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {ADD_TYPES.map((t) => <option key={t} value={t} disabled={takenTypes.has(t)}>{takenTypes.has(t) ? `${t} (already added)` : t}</option>)}
                   </select>
                 ) : (
                   <input value={form.type} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
                 )}
-                {!form.isNew && <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>The earning type is set when the component is created and can’t be changed.</div>}
               </Field>
-              <div style={noteTag}>ⓘ&nbsp; {spec.note}</div>
             </div>
           </div>
 
@@ -646,20 +816,20 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
             {/* Left — details */}
             <div style={panelCard}>
               <div style={panelTitle}>Details</div>
-              <Field label="Earning Name" req hint="The name used internally when building salary structures.">
+              <Field label="Earning Name" req>
                 <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Special Allowance" style={inputStyle} />
               </Field>
-              <Field label="Name in Payslip" req hint="How this component appears to the employee on their payslip.">
+              <Field label="Name in Payslip" req>
                 <input value={form.payslipName} onChange={(e) => set('payslipName', e.target.value)} placeholder="Shown on the payslip" style={inputStyle} />
               </Field>
 
               {spec.fbp === 'forced' ? (
-                <Field label="Enter Maximum Amount" req hint="The FBP cap for this component. Employees can’t exceed this amount in their FBP declarations, and once selected the amount can’t be edited by them.">
+                <Field label="Enter Maximum Amount" req>
                   <AmountInput suffix="per month" value={form.amount} onChange={(v) => set('amount', v)} disabled={false} />
                 </Field>
               ) : spec.calcBase ? (
                 <>
-                  <Field label="Calculation Type" req hint={spec.calcBase === 'ctc' ? 'A flat monthly figure, or a percentage of the total CTC.' : 'A flat monthly figure, or a percentage of the Basic component.'}>
+                  <Field label="Calculation Type" req>
                     <Radio checked={form.calcMode === 'flat'} disabled={locked} onChange={() => set('calcMode', 'flat')} label="Flat Amount" />
                     <Radio checked={form.calcMode === 'percentage'} disabled={locked} onChange={() => set('calcMode', 'percentage')} label={`Percentage of ${baseWord}`} />
                   </Field>
@@ -673,39 +843,29 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
                     </Field>
                   )}
                 </>
-              ) : (
-                <div style={{ fontSize: 13.5, color: '#717171', background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 10, padding: '11px 13px', lineHeight: 1.5 }}>
-                  This is a variable earning — no fixed amount is set here. The amount is entered for each employee while running that month’s payroll.
-                </div>
-              )}
+              ) : null}
 
               <div style={{ marginTop: 8 }}>
-                <Checkbox checked={form.active} onChange={(v) => set('active', v)} label="Mark this as Active"
-                  sub="Only active components can be added to new salary structures." />
+                <Checkbox checked={form.active} onChange={(v) => set('active', v)} label="Mark this as Active" />
               </div>
             </div>
 
             {/* Right — other configurations */}
             <div style={panelCard}>
               <div style={panelTitle}>Other Configurations</div>
-              <Checkbox checked={form.partOfStructure} onChange={(v) => set('partOfStructure', v)} label="Make this earning a part of the employee’s salary structure"
-                sub="When on, the component is part of the fixed monthly salary structure rather than a one-off payout." />
-              <Checkbox checked={form.taxable} disabled={locked} onChange={(v) => set('taxable', v)} label="This is a taxable earning"
-                sub="The income tax amount will be divided equally and deducted every month across the financial year." />
+              <Checkbox checked={form.partOfStructure} fixed={fx('partOfStructure')} onChange={(v) => set('partOfStructure', v)} label="Make this earning a part of the employee’s salary structure" />
+              <Checkbox checked={form.taxable} disabled={locked} fixed={fx('taxable')} onChange={(v) => set('taxable', v)} label="This is a taxable earning" />
 
               {spec.nature === 'fixed' && (
-                <Checkbox checked={form.proRata} disabled={locked} onChange={(v) => set('proRata', v)} label="Calculate on pro-rata basis"
-                  sub="Pay will be adjusted based on the employee’s working days in the month." />
+                <Checkbox checked={form.proRata} disabled={locked} fixed={fx('proRata')} onChange={(v) => set('proRata', v)} label="Calculate on pro-rata basis" />
               )}
 
-              {spec.fbp !== 'none' && (
+              {spec.fbp !== 'none' && !spec.hideFbp && (
                 <>
-                  <Checkbox checked={form.fbp} disabled={spec.fbp === 'forced'} onChange={(v) => set('fbp', v)} label="Include this as a Flexible Benefit Plan component"
-                    sub="FBP lets employees personalise their salary structure by choosing how much they want to receive under each FBP component." />
+                  <Checkbox checked={form.fbp} disabled={spec.fbp === 'forced'} onChange={(v) => set('fbp', v)} label="Include this as a Flexible Benefit Plan component" />
                   {form.fbp && (
                     <div style={{ marginLeft: 26 }}>
-                      <Checkbox checked={form.fbpRestrict} onChange={(v) => set('fbpRestrict', v)} label="Restrict employee from overriding the FBP amount"
-                        sub="Employees will be given the exact amount set above and cannot re-allocate it." />
+                      <Checkbox checked={form.fbpRestrict} onChange={(v) => set('fbpRestrict', v)} label="Restrict employee from overriding the FBP amount" />
                     </div>
                   )}
                 </>
@@ -713,25 +873,20 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
 
               {spec.taxDeductionPref && form.taxable && (
                 <Field label="Tax Deduction Preference" req style={{ marginTop: 12 }}>
-                  <Radio checked={form.taxPref === 'subsequent'} disabled={locked} onChange={() => set('taxPref', 'subsequent')} label="Deduct tax in subsequent payrolls of the financial year"
-                    sub="The income tax amount will be divided equally and deducted every month across the financial year." />
-                  <Radio checked={form.taxPref === 'same'} disabled={locked} onChange={() => set('taxPref', 'same')} label="Deduct tax in same payroll"
-                    sub="The entire income tax amount will be deducted when it is paid to the employee." />
+                  <Radio checked={form.taxPref === 'subsequent'} disabled={locked} onChange={() => set('taxPref', 'subsequent')} label="Deduct tax in subsequent payrolls of the financial year" />
+                  <Radio checked={form.taxPref === 'same'} disabled={locked} onChange={() => set('taxPref', 'same')} label="Deduct tax in same payroll" />
                 </Field>
               )}
 
-              <Checkbox checked={form.epf} onChange={(v) => set('epf', v)} label="Consider for EPF Contribution"
-                sub="Include this component in the wage on which the 12% Provident Fund contribution is calculated." />
+              <Checkbox checked={form.epf} fixed={fx('epf')} onChange={(v) => set('epf', v)} label="Consider for EPF Contribution" />
               {form.epf && spec.epfSubChoice && (
                 <div style={{ marginLeft: 26 }}>
-                  <Radio checked={form.epfWhen === 'always'} onChange={() => set('epfWhen', 'always')} label="Always" />
-                  <Radio checked={form.epfWhen === 'pf15k'} onChange={() => set('epfWhen', 'pf15k')} label="Only when PF Wage is less than ₹ 15,000"
-                    sub="ⓘ Counted towards PF wage only until the ₹15,000 statutory ceiling is reached." />
+                  <Radio checked={form.epfWhen === 'always'} fixed={fx('epf')} onChange={() => set('epfWhen', 'always')} label="Always" />
+                  <Radio checked={form.epfWhen === 'pfCeiling'} fixed={fx('epf')} onChange={() => set('epfWhen', 'pfCeiling')} label="Only when PF Wage is less than ₹ 25,000" />
                 </div>
               )}
-              <Checkbox checked={form.esi} disabled={locked} onChange={(v) => set('esi', v)} label="Consider for ESI Contribution"
-                sub="Include this component when computing ESI eligibility and contribution." />
-              <Checkbox checked={form.showInPayslip} disabled={locked} onChange={(v) => set('showInPayslip', v)} label="Show this component in payslip" />
+              <Checkbox checked={form.esi} disabled={locked} fixed={fx('esi')} onChange={(v) => set('esi', v)} label="Consider for ESI Contribution" />
+              <Checkbox checked={form.showInPayslip} disabled={locked} fixed={fx('showInPayslip')} onChange={(v) => set('showInPayslip', v)} label="Show this component in payslip" />
             </div>
           </div>
 
@@ -745,8 +900,9 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
         {/* Footer */}
         <div style={modalFoot}>
           <span style={{ marginRight: 'auto', fontSize: 13, color: '#A8475F' }}>* indicates mandatory fields</span>
+          {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
-          <button onClick={onSave} style={primaryBtn}>Save</button>
+          <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -754,6 +910,20 @@ function EarningModal({ form, setForm, onClose, onSave }: { form: EForm; setForm
 }
 
 // ——— presentational helpers ———
+/** Delete with a second click to confirm; resets if the pointer leaves. */
+function DeleteButton({ onDelete, busy }: { onDelete: () => void; busy: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <button
+      onClick={() => (confirming ? onDelete() : setConfirming(true))}
+      onMouseLeave={() => setConfirming(false)}
+      disabled={busy}
+      style={{ ...ghostBtn, color: '#A8475F', borderColor: confirming ? '#A8475F' : '#EBD9DE', background: confirming ? '#FBEFF2' : '#fff' }}
+    >
+      {confirming ? 'Click again to delete' : 'Delete'}
+    </button>
+  );
+}
 function NameCell({ name, fbp }: { name: string; fbp?: boolean }) {
   return (
     <span>
@@ -789,14 +959,13 @@ function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boo
   );
 }
 
-function Field({ label, req, hint, children, style }: { label: string; req?: boolean; hint?: string; children: ReactNode; style?: CSSProperties }) {
+function Field({ label, req, children, style }: { label: string; req?: boolean; children: ReactNode; style?: CSSProperties }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
       <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#484848' }}>
         {label}{req && <span style={{ color: '#C4382E', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 12, color: '#717171', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -811,29 +980,30 @@ function AmountInput({ value, onChange, suffix, prefix = '₹', disabled }: { va
     </div>
   );
 }
-function Checkbox({ checked, onChange, label, sub, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; sub?: string; disabled?: boolean }) {
+// `fixed`: set by the earning type — looks like any ticked box, can't be changed.
+function Checkbox({ checked, onChange, label, disabled, fixed }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; fixed?: boolean }) {
+  const off = disabled || fixed;
   return (
-    <div style={{ display: 'flex', gap: 10, padding: '7px 0', opacity: disabled ? 0.55 : 1 }}>
-      <button type="button" disabled={disabled} onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}>
+    <div style={{ display: 'flex', gap: 10, padding: '7px 0', opacity: disabled && !fixed ? 0.55 : 1 }} title={fixed ? 'Fixed for this earning type' : undefined}>
+      <button type="button" disabled={off} aria-disabled={off} onClick={() => !off && onChange(!checked)}
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: off ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}>
         {checked ? '✓' : ''}
       </button>
       <div>
         <div style={{ fontSize: 15, color: '#222222' }}>{label}</div>
-        {sub && <div style={{ fontSize: 13, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
     </div>
   );
 }
-function Radio({ checked, onChange, label, sub, disabled }: { checked: boolean; onChange: () => void; label: string; sub?: string; disabled?: boolean }) {
+function Radio({ checked, onChange, label, disabled, fixed }: { checked: boolean; onChange: () => void; label: string; disabled?: boolean; fixed?: boolean }) {
+  const off = disabled || fixed;
   return (
-    <div style={{ display: 'flex', gap: 10, padding: '6px 0', opacity: disabled ? 0.55 : 1, cursor: disabled ? 'default' : 'pointer' }} onClick={() => !disabled && onChange()}>
+    <div style={{ display: 'flex', gap: 10, padding: '6px 0', opacity: disabled && !fixed ? 0.55 : 1, cursor: off ? 'default' : 'pointer' }} title={fixed ? 'Fixed for this earning type' : undefined} onClick={() => !off && onChange()}>
       <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: '50%', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {checked && <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#0571A6' }} />}
       </span>
       <div>
         <div style={{ fontSize: 15, color: '#222222' }}>{label}</div>
-        {sub && <div style={{ fontSize: 13, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
     </div>
   );
@@ -842,7 +1012,6 @@ function Radio({ checked, onChange, label, sub, disabled }: { checked: boolean; 
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '11px 20px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const noteTag: CSSProperties = { background: '#EAF2FB', color: '#3C6E9E', fontSize: 13.5, borderRadius: 10, padding: '11px 13px', lineHeight: 1.5 };
 const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: '#F7F7F9', borderRadius: 20, boxShadow: '0 30px 70px rgba(60,40,24,.3)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
 const modalHead: CSSProperties = { padding: '20px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 };
 const modalFoot: CSSProperties = { padding: '14px 26px', borderTop: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };

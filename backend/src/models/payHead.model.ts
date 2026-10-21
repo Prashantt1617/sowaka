@@ -55,12 +55,13 @@ export interface CalculationBasis {
 
 /**
  * A statutory applicability flag that can be conditional, not just yes/no
- * (PRD §5.3 — e.g. "Consider for EPF: Yes, if PF wage < ₹15,000").
+ * (PRD §5.3 — e.g. "Consider for EPF: Yes, if PF wage < ₹25,000", the EPF ceiling).
  */
 export interface StatutoryConsideration {
   consider: boolean;
   /** Meaningful only when `consider` is true; defaults to `always`. */
-  condition?: 'always' | 'if_pf_wage_below_15000';
+  /** `if_pf_wage_below_15000` is the old name, read as `if_pf_wage_below_ceiling`. */
+  condition?: 'always' | 'if_pf_wage_below_ceiling' | 'if_pf_wage_below_15000';
 }
 
 export interface PayHead {
@@ -77,6 +78,15 @@ export interface PayHead {
   considerForEsi?: StatutoryConsideration;
   considerForPt?: boolean;
   considerForLwf?: boolean;
+
+  /** How the component reads on the payslip; falls back to `name`. */
+  payslipName?: string;
+  /** Counted as taxable income when TDS is projected. */
+  taxable?: boolean;
+  /** Part of the fixed monthly salary structure rather than a one-off payout. */
+  partOfStructure?: boolean;
+  /** Printed on the payslip. */
+  showInPayslip?: boolean;
 
   /** Part of the employee-allocated Flexible Benefit Plan pool (PHM-4). */
   fbp?: boolean;

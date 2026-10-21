@@ -7,27 +7,30 @@
  * and adds approved reimbursements on top. No I/O; money in INTEGER PAISE.
  */
 
-import { ResolvedRuleSet } from '../models/statutoryRule.model';
+import { epfCeilingForPeriod, ResolvedRuleSet } from '../models/statutoryRule.model';
+import { StatutorySettings } from '../models/statutorySettings.model';
 import { SalaryCalcResult } from './salary-calculator';
-import {
-  computeEpf,
-  computeEsi,
-  computeLwf,
-  computePt,
-  isEsiApplicable,
-  roundToRupee,
-} from './statutory-engine';
+import { applyStatutory, PersonStatutory } from './statutory-apply';
+import { roundToRupee } from './statutory-engine';
+import { defaultStatutorySettings } from './statutorySettings.service';
 
 export interface PayslipInputSet {
   workingDays: number;
   lopDays: number;
   overtimePaise: number;
   reimbursementsPaise: number;
-  epfApplyCeiling?: boolean;
   ruleSet: ResolvedRuleSet;
   month: number;
   /** Per-employee statutory applicability (EPF/ESI/LWF). Absent flag = applicable. */
-  statutory?: { epf?: boolean; esi?: boolean; lwf?: boolean };
+  statutory?: PersonStatutory;
+  /** The org's Statutory Components settings. Defaults reproduce the old behaviour. */
+  settings?: StatutorySettings;
+  /** ESI covered this person earlier in the same contribution period. */
+  esiCoveredEarlier?: boolean;
+  /** Income tax (TDS) to withhold this month. */
+  incomeTaxPaise?: number;
+  /** "YYYY-MM": picks the PF ceiling in force that month. */
+  period?: string;
 }
 
 export interface PayslipEarningLine {
@@ -56,6 +59,9 @@ export interface PayslipComputation {
   reimbursementsPaise: number;
   netPayablePaise: number;
   employerCostPaise: number;
+  esiApplicable: boolean;
+  /** The structure's reimbursements, paid in full this month. */
+  reimbursementLines: { code: string; name: string; amountPaise: number }[];
   epf: {
     contributionWagePaise: number;
     employeePaise: number;
@@ -81,25 +87,37 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   const grossPaise = earningsPaid + input.overtimePaise;
 
   // PF wage from the earnings flagged for EPF, at their PAID (prorated) value.
+  // Components that count only under the ceiling are tested after loss of pay
+  // or as in the structure, per the org's setting.
+  const settings = input.settings ?? defaultStatutorySettings('');
   const paidByCode = new Map(earnings.map((line) => [line.code, line.paidPaise]));
-  const pfWagePaise = base.earnings
-    .filter((line) => line.considerForEpf)
-    .reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0);
-
-  const epfOn = input.statutory?.epf !== false;
-  const esiOn = input.statutory?.esi !== false;
-  const lwfOn = input.statutory?.lwf !== false;
-
-  const epf = epfOn
-    ? computeEpf({ pfWagePaise, applyCeiling: input.epfApplyCeiling ?? true })
-    : { contributionWagePaise: 0, employeePaise: 0, employerTotalPaise: 0, employerEpsPaise: 0, employerEpfPaise: 0 };
-  const esi = computeEsi({ grossPaise, applicable: esiOn && isEsiApplicable({ grossPaise }) });
-  const pt = input.ruleSet.pt
-    ? computePt(input.ruleSet.pt, { grossPaise, month: input.month })
-    : { amountPaise: 0 };
-  const lwf = lwfOn && input.ruleSet.lwf
-    ? computeLwf(input.ruleSet.lwf, { grossPaise, month: input.month })
-    : { applicable: false, employeePaise: 0, employerPaise: 0 };
+  let alwaysPaid = 0;
+  let alwaysFull = 0;
+  let conditionalPaid = 0;
+  for (const line of base.earnings) {
+    if (!line.considerForEpf) continue;
+    const paid = paidByCode.get(line.code) ?? 0;
+    if (line.epfConditional) conditionalPaid += paid;
+    else {
+      alwaysPaid += paid;
+      alwaysFull += line.monthlyPaise;
+    }
+  }
+  const monthCeiling = epfCeilingForPeriod(input.period ?? new Date().toISOString().slice(0, 7));
+  const ceiling = settings.epf.proRateRestricted ? roundToRupee(monthCeiling * factor) : monthCeiling;
+  const st = applyStatutory({
+    settings,
+    ruleSet: input.ruleSet,
+    month: input.month,
+    grossPaise,
+    pfAlwaysPaise: alwaysPaid,
+    pfConditionalPaise: conditionalPaid,
+    pfTestPaise: settings.epf.considerLOP ? alwaysPaid : alwaysFull,
+    ceilingPaise: ceiling,
+    person: input.statutory,
+    esiCoveredEarlier: input.esiCoveredEarlier,
+  });
+  const { epf, esi, pt, lwf, pfWagePaise } = st;
 
   // Non-statutory deduction components are taken at full value (not prorated).
   const nonStatutoryDeductions: PayslipDeduction[] = base.deductions.map((line) => ({
@@ -117,18 +135,25 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     deductions.push({ key: 'pt', name: 'Professional Tax', amountPaise: pt.amountPaise });
   if (lwf.applicable && lwf.employeePaise > 0)
     deductions.push({ key: 'lwf', name: 'Labour Welfare Fund', amountPaise: lwf.employeePaise });
+  // Meal Card is loaded onto a food card, not paid in cash: the same amount
+  // comes back off the payslip as Food Coupon Deduction.
+  const mealCard = base.earnings
+    .filter((line) => line.componentType === 'meal_card')
+    .reduce((sum, line) => sum + (paidByCode.get(line.code) ?? 0), 0);
+  if (mealCard > 0) deductions.push({ key: 'food_coupon', name: 'Food Coupon Deduction', amountPaise: mealCard });
+  if ((input.incomeTaxPaise ?? 0) > 0) deductions.push({ key: 'income_tax', name: 'Income Tax', amountPaise: input.incomeTaxPaise! });
   deductions.push(...nonStatutoryDeductions);
 
   const employeeDeductionsPaise = deductions.reduce((sum, d) => sum + d.amountPaise, 0);
   const netPaise = grossPaise - employeeDeductionsPaise;
-  const netPayablePaise = netPaise + input.reimbursementsPaise;
+  // The structure's reimbursements are paid in full every month; approved
+  // business-expense claims come on top.
+  const reimbursementLines = (base.reimbursements ?? []).map((line) => ({ code: line.code, name: line.name, amountPaise: line.monthlyPaise }));
+  const structureReimbursements = reimbursementLines.reduce((sum, line) => sum + line.amountPaise, 0);
+  const reimbursementsPaise = structureReimbursements + input.reimbursementsPaise;
+  const netPayablePaise = netPaise + reimbursementsPaise;
 
-  const employerCostPaise =
-    grossPaise +
-    epf.employerTotalPaise +
-    esi.employerPaise +
-    lwf.employerPaise +
-    base.benefitsMonthlyPaise;
+  const employerCostPaise = grossPaise + structureReimbursements + st.employerContributionsPaise + base.benefitsMonthlyPaise;
 
   return {
     payableDays,
@@ -139,9 +164,11 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     grossPaise,
     employeeDeductionsPaise,
     netPaise,
-    reimbursementsPaise: input.reimbursementsPaise,
+    reimbursementsPaise,
     netPayablePaise,
     employerCostPaise,
+    esiApplicable: esi.applicable,
+    reimbursementLines,
     epf: {
       contributionWagePaise: epf.contributionWagePaise,
       employeePaise: epf.employeePaise,

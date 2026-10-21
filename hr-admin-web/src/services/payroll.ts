@@ -33,7 +33,8 @@ export type CalculationBasis = {
   baseComponentCode?: string;
 };
 
-export type StatutoryConsideration = { consider: boolean; condition?: 'always' | 'if_pf_wage_below_15000' };
+// `if_pf_wage_below_15000` is the old name for the ceiling condition (now ₹25,000).
+export type StatutoryConsideration = { consider: boolean; condition?: 'always' | 'if_pf_wage_below_ceiling' | 'if_pf_wage_below_15000' };
 
 export type PayHeadDTO = {
   id: string;
@@ -51,6 +52,10 @@ export type PayHeadDTO = {
   prorate?: boolean;
   arrears?: boolean;
   maxClaimablePaise?: number;
+  payslipName?: string;
+  taxable?: boolean;
+  partOfStructure?: boolean;
+  showInPayslip?: boolean;
   active: boolean;
 };
 
@@ -63,7 +68,13 @@ export type PayHeadInput = {
   considerForEpf?: StatutoryConsideration | boolean;
   considerForEsi?: StatutoryConsideration | boolean;
   fbp?: boolean;
+  prorate?: boolean;
+  recurrence?: 'recurring' | 'one_time';
   maxClaimablePaise?: number;
+  payslipName?: string;
+  taxable?: boolean;
+  partOfStructure?: boolean;
+  showInPayslip?: boolean;
   active?: boolean;
 };
 
@@ -172,6 +183,49 @@ export const deleteStatutoryRule = (state: string) =>
   api(`/admin/payroll/statutory-rules/${encodeURIComponent(state)}`, { method: 'DELETE' });
 
 // ————————————————————————————————————————————————————————————————
+// Statutory settings — org-wide, what Payroll › Statutory Components edits.
+// ————————————————————————————————————————————————————————————————
+
+export type PfRateMode = 'restricted' | 'actual';
+export type EpfSettings = {
+  enabled: boolean;
+  epfNumber?: string;
+  employeeRate: PfRateMode;
+  employerRate: PfRateMode;
+  includeEmployer: boolean;
+  includeEDLI: boolean;
+  includeAdmin: boolean;
+  overrideAtEmployee: boolean;
+  proRateRestricted: boolean;
+  considerLOP: boolean;
+};
+export type EsiSettings = { enabled: boolean; esiNumber?: string; includeEmployer: boolean };
+export type MinWageRow = { category: string; minWagePaise: number; effectiveFrom: string };
+export type BonusSettings = { enabled: boolean; frequency: 'monthly' | 'yearly'; ratePercent: number; minWages: Record<string, MinWageRow[]> };
+export type StatutorySettingsDTO = { epf: EpfSettings; esi: EsiSettings; bonus: BonusSettings; lwfDisabledStates: string[] };
+export type StatutoryOverview = {
+  settings: StatutorySettingsDTO;
+  ceilingPaise: number;
+  /** Work locations on the roster, with the Professional Tax rule of their state. */
+  pt: { location: string; state: string; pt: PtRule | null }[];
+  /** Work states on the roster, with their Labour Welfare Fund rule and whether it is switched on. */
+  lwf: { state: string; rule: LwfRule | null; enabled: boolean }[];
+  states: string[];
+};
+export type StatutorySettingsInput = {
+  epf?: Partial<EpfSettings>;
+  esi?: Partial<EsiSettings>;
+  bonus?: Partial<BonusSettings>;
+  lwf?: { state: string; enabled: boolean };
+};
+
+export const getStatutorySettings = () =>
+  api<StatutoryOverview>('/admin/payroll/statutory-settings');
+
+export const updateStatutorySettings = (input: StatutorySettingsInput) =>
+  api<StatutoryOverview>('/admin/payroll/statutory-settings', { method: 'PUT', body: input });
+
+// ————————————————————————————————————————————————————————————————
 // Salary Structure
 // ————————————————————————————————————————————————————————————————
 
@@ -193,14 +247,22 @@ export type EpfBreakdown = {
   employerTotalPaise: number;
   employerEpsPaise: number;
   employerEpfPaise: number;
+  edliPaise?: number;
+  adminPaise?: number;
 };
 
 export type ComputedStructure = {
   monthlyCtcPaise: number;
   annualCtcPaise: number;
   earnings: ComponentLine[];
+  /** Paid every month at their amount, inside CTC, outside gross pay. */
+  reimbursements?: ComponentLine[];
+  /** Employer-paid benefits (gratuity…), inside CTC. */
+  benefits?: ComponentLine[];
   deductions: ComponentLine[];
   pfWagePaise: number;
+  /** Employer contributions the org's statutory settings place inside CTC. */
+  includedInCtcPaise?: number;
   statutory: {
     epf: EpfBreakdown;
     esi: { applicable: boolean; employeePaise: number; employerPaise: number };
@@ -215,13 +277,38 @@ export type ComputedStructure = {
   overBudget: boolean;
 };
 
-export type EmployeeStatutory = { epf?: boolean; esi?: boolean; lwf?: boolean };
+export type EmployeeStatutory = {
+  epf?: boolean;
+  esi?: boolean;
+  lwf?: boolean;
+  pfActualWage?: boolean;
+  /** false: the employer's 12% all goes to PF, nothing to the pension scheme. */
+  contributeEps?: boolean;
+  pfAccountNumber?: string;
+  uan?: string;
+  esiNumber?: string;
+  /** This person's restricted PF wage in paise, when it differs from the ceiling. */
+  pfRestrictedWagePaise?: number;
+};
+
+/** A person's own changes on top of the assigned template. */
+export type StructureOverrides = {
+  add?: { payHeadCode: string; calculation: CalculationBasis }[];
+  remove?: string[];
+  edit?: Record<string, CalculationBasis>;
+};
+export type SalaryRevision = { previousCtcPaise: number; annualCtcPaise: number; effectiveFrom: string; at: string };
+/** One line of a person's resolved structure, with where it came from. */
+export type StructureComponent = { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' };
 
 export type SalaryStructureDTO = {
   userId: string;
   salaryTemplateCode?: string;
+  templateName?: string;
   annualCtcPaise: number;
   componentValues: Record<string, number>;
+  overrides: StructureOverrides;
+  revisions: SalaryRevision[];
   statutory: EmployeeStatutory;
   bonusCategory?: string;
   status: 'draft' | 'active';
@@ -232,6 +319,9 @@ export type SalaryStructureInput = {
   salaryTemplateCode?: string;
   annualCtcPaise?: number;
   componentValues?: Record<string, number>;
+  overrides?: StructureOverrides;
+  /** "YYYY-MM-DD": when a CTC change applies from. */
+  effectiveFrom?: string;
   statutory?: EmployeeStatutory;
   bonusCategory?: string;
   status?: 'draft' | 'active';
@@ -269,6 +359,8 @@ export type SalaryTemplateDTO = {
   components: SalaryTemplateComponent[];
   balancingComponentCode?: string;
   epfApplyCeiling: boolean;
+  /** Whether the run reads attendance for the people on this template. */
+  paidDaysEnabled?: boolean;
   deductionRules: SalaryDeductionRule[];
   monthlyPaidLeaveDays: number;
   active: boolean;
@@ -281,6 +373,7 @@ export type SalaryTemplateInput = {
   components: SalaryTemplateComponent[];
   balancingComponentCode?: string | null;
   epfApplyCeiling?: boolean;
+  paidDaysEnabled?: boolean;
   deductionRules?: SalaryDeductionRule[];
   monthlyPaidLeaveDays?: number;
   active?: boolean;
@@ -307,22 +400,19 @@ export const previewSalaryTemplate = (input: SalaryTemplateInput & { sampleAnnua
 export const listSalaryStructures = () =>
   api<{ structures: StructureListRow[] }>('/admin/payroll/salary-structures').then((r) => r.structures);
 
+export type StructureResponse = { structure: SalaryStructureDTO; computed: ComputedStructure; components: StructureComponent[] };
+
 export const getSalaryStructure = (userId: string) =>
-  api<{ structure: SalaryStructureDTO; computed: ComputedStructure }>(
-    `/admin/payroll/salary-structures/${userId}`,
-  );
+  api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`);
 
 export const previewSalaryStructure = (userId: string, input: SalaryStructureInput) =>
-  api<{ computed: ComputedStructure }>(`/admin/payroll/salary-structures/${userId}/preview`, {
+  api<{ computed: ComputedStructure; components: StructureComponent[] }>(`/admin/payroll/salary-structures/${userId}/preview`, {
     method: 'POST',
     body: input,
-  }).then((r) => r.computed);
+  });
 
 export const saveSalaryStructure = (userId: string, input: SalaryStructureInput) =>
-  api<{ structure: SalaryStructureDTO; computed: ComputedStructure }>(
-    `/admin/payroll/salary-structures/${userId}`,
-    { method: 'PUT', body: input },
-  );
+  api<StructureResponse>(`/admin/payroll/salary-structures/${userId}`, { method: 'PUT', body: input });
 
 // ————————————————————————————————————————————————————————————————
 // Payroll Runs
@@ -371,6 +461,9 @@ export type PayslipDTO = {
   netPayablePaise: number;
   employerCostPaise: number;
   epf: EpfBreakdown;
+  esiApplicable?: boolean;
+  /** The structure's reimbursements paid this month. */
+  reimbursementLines?: { code: string; name: string; amountPaise: number }[];
   inputs: {
     workingDays: number;
     lopDays: number;

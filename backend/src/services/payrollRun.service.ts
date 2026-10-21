@@ -17,7 +17,8 @@ import {
 import { ResolvedRuleSet } from '../models/statutoryRule.model';
 import { User } from '../models/user.model';
 import { calculateSalaryStructure } from './salary-calculator';
-import { resolveTemplateComponents } from './salaryTemplate.service';
+import { applyOverrides, resolveTemplateComponents } from './salaryTemplate.service';
+import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { computePayslip } from './payroll-run.calculator';
 import {
   computeWorkingDays,
@@ -26,7 +27,7 @@ import {
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
-import { attendanceCountsForPeriod, deductionsUnder } from './deduction.service';
+import { attendanceCountsForPeriod, payrollDeductions } from './deduction.service';
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
@@ -47,6 +48,8 @@ export interface CreateRunInput {
   lopDays?: Record<string, number>;
   /** Per-employee overtime pay in paise (Overtime module stores hours, not amount — INT-2). */
   overtimePaise?: Record<string, number>;
+  /** Income tax (TDS) per person for the month, in paise. */
+  incomeTaxPaise?: Record<string, number>;
 }
 
 /**
@@ -72,6 +75,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
     range,
     input.lopDays ?? {},
     input.overtimePaise ?? {},
+    input.incomeTaxPaise ?? {},
   );
 
   const now = new Date();
@@ -107,7 +111,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
 export async function recomputeRun(
   adminUserId: string,
   runIdInput: string,
-  input: { lopDays?: Record<string, number>; overtimePaise?: Record<string, number> },
+  input: { lopDays?: Record<string, number>; overtimePaise?: Record<string, number>; incomeTaxPaise?: Record<string, number> },
 ) {
   const org = await requireAdminOrg(adminUserId);
   const run = await findOwnedRun(org, runIdInput);
@@ -124,6 +128,7 @@ export async function recomputeRun(
     range,
     input.lopDays ?? {},
     input.overtimePaise ?? {},
+    input.incomeTaxPaise ?? {},
   );
   await payslips().deleteMany({ org, runId: runIdHex });
   await payslips().insertMany(slips);
@@ -143,6 +148,7 @@ async function buildRunPayslips(
   range: PeriodRange,
   lopOverrides: Record<string, number>,
   otOverrides: Record<string, number>,
+  taxOverrides: Record<string, number> = {},
 ): Promise<Payslip[]> {
   const structures = await salaryStructures().find({ org, status: 'active' }).toArray();
   if (structures.length === 0) {
@@ -154,9 +160,13 @@ async function buildRunPayslips(
   const templatesByCode = new Map(templates.map((t) => [t.code, t]));
   const workingDays = await computeWorkingDays(org, range);
   const ruleSetCache = new Map<string, ResolvedRuleSet>();
-  // The month's attendance, only when some template docks pay for it — the
-  // report is the slow part of a run.
-  const docksForAttendance = templates.some((t) => (t.deductionRules ?? []).some((rule) => rule.active));
+  // One set of statutory settings for everyone, and who ESI already covers
+  // this contribution period.
+  const settings = await statutorySettingsFor(org);
+  const esiCovered = await esiCoveredThisPeriod(org, period, structures.map((s) => s.userId));
+  // The month's calendar, whenever a template pays by it — the report is the
+  // slow part of a run.
+  const docksForAttendance = templates.some((t) => t.paidDaysEnabled ?? true);
   const attendance = docksForAttendance ? await attendanceCountsForPeriod(adminUserId, period) : new Map();
 
   const employees = await users()
@@ -176,27 +186,31 @@ async function buildRunPayslips(
       ? templatesByCode.get(structure.salaryTemplateCode)
       : undefined;
     if (!template) continue;
-    const resolvedComponents = resolveTemplateComponents(template.components, catalogByCode);
+    // The template plus this person's own add / remove / edit.
+    const resolvedComponents = resolveTemplateComponents(applyOverrides(template.components, structure.overrides, catalogByCode), catalogByCode);
 
-    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, employee.state);
+    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
     const base = calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
       componentValues: structure.componentValues,
       balancingComponentCode: template.balancingComponentCode,
-      epfApplyCeiling: template.epfApplyCeiling,
       ruleSet,
       month: range.month,
+      period,
       bonusCategory: structure.bonusCategory,
       statutory: structure.statutory,
+      settings,
     });
 
     const periodInputs = await getEmployeePeriodInputs(structure.userId, range);
-    // Loss of pay: what the template's rules make of the month's attendance,
-    // unless HR typed a figure for this person on the run.
-    const docked = deductionsUnder(template.deductionRules, attendance.get(structure.userId));
+    // Loss of pay: the calendar's absences and half days, plus whatever else
+    // the template's rules dock, unless HR typed a figure on the run.
+    // A template can switch paid-days calculation off: every day is paid.
+    const paidDaysOn = template.paidDaysEnabled ?? true;
+    const docked = paidDaysOn ? payrollDeductions(template.deductionRules, attendance.get(structure.userId)) : { days: 0, lines: [] };
     // The template's paid-leave allowance covers the first days docked.
-    const allowance = template.monthlyPaidLeaveDays ?? 0;
+    const allowance = paidDaysOn ? template.monthlyPaidLeaveDays ?? 0 : 0;
     const lopDays = lopOverrides[structure.userId] !== undefined
       ? clampLop(lopOverrides[structure.userId], workingDays)
       : Math.min(Math.max(0, docked.days - allowance), workingDays);
@@ -207,10 +221,13 @@ async function buildRunPayslips(
       lopDays,
       overtimePaise,
       reimbursementsPaise: periodInputs.reimbursementsPaise,
-      epfApplyCeiling: template.epfApplyCeiling,
       ruleSet,
       month: range.month,
       statutory: structure.statutory,
+      settings,
+      esiCoveredEarlier: esiCovered.has(structure.userId),
+      incomeTaxPaise: nonNegInt(taxOverrides[structure.userId]),
+      period,
     });
 
     slips.push({
@@ -240,6 +257,8 @@ async function buildRunPayslips(
       reimbursementsPaise: slip.reimbursementsPaise,
       netPayablePaise: slip.netPayablePaise,
       employerCostPaise: slip.employerCostPaise,
+      esiApplicable: slip.esiApplicable,
+      reimbursementLines: slip.reimbursementLines,
       epf: slip.epf,
       inputs: {
         workingDays,
@@ -464,7 +483,8 @@ function sumTotals(slips: Payslip[]): PayrollRunTotals {
 function clampLop(value: unknown, workingDays: number): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.min(Math.floor(n), workingDays);
+  // Half days are real: a half day costs half a day's pay.
+  return Math.min(Math.floor(n * 2) / 2, workingDays);
 }
 
 function nonNegInt(value: unknown): number {

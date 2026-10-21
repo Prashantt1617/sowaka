@@ -74,6 +74,10 @@ function toInput(body: unknown): PayHeadInput {
     prorate: source.prorate,
     arrears: source.arrears,
     maxClaimablePaise: source.maxClaimablePaise,
+    payslipName: source.payslipName,
+    taxable: source.taxable,
+    partOfStructure: source.partOfStructure,
+    showInPayslip: source.showInPayslip,
     active: source.active,
   };
 }

@@ -15,9 +15,34 @@ export const EPF_CONSTANTS = {
   employerRate: 0.12,
   /** Employees' Pension Scheme share of the employer 12%. */
   epsRate: 0.0833,
-  /** Wage ceiling for the contribution base — ₹15,000. EPS is always capped here. */
-  wageCeilingPaise: 15_000_00,
+  /** Wage ceiling for the contribution base — ₹25,000. EPS is always capped here. */
+  wageCeilingPaise: 25_000_00,
 } as const;
+
+/**
+ * The PF wage ceiling over time, by the date each value starts. A month that
+ * straddles a change uses the day-weighted average: September 2026 had 16
+ * days at ₹15,000 and 14 at ₹25,000, so ₹19,666.67, which is what Zoho
+ * applied to every Convrse employee that month.
+ */
+export const EPF_CEILING_SCHEDULE: { from: string; ceilingPaise: number }[] = [
+  { from: '0000-01-01', ceilingPaise: 15_000_00 },
+  { from: '2026-09-17', ceilingPaise: 25_000_00 },
+];
+
+/** The PF wage ceiling for a pay month ("YYYY-MM"), day-weighted across any change in it. */
+export function epfCeilingForPeriod(period: string): number {
+  const [year, month] = period.split('-').map(Number);
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let total = 0;
+  for (let d = 1; d <= days; d++) {
+    const day = `${period}-${String(d).padStart(2, '0')}`;
+    let ceiling = EPF_CEILING_SCHEDULE[0].ceilingPaise;
+    for (const step of EPF_CEILING_SCHEDULE) if (step.from <= day) ceiling = step.ceilingPaise;
+    total += ceiling;
+  }
+  return Math.round(total / days);
+}
 
 /** Employees' State Insurance. Applies while monthly gross ≤ the ceiling. */
 export const ESI_CONSTANTS = {

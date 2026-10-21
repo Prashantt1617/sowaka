@@ -13,6 +13,10 @@ import {
   upsertStateRuleHandler,
 } from '../controllers/statutory.controller';
 import {
+  getStatutorySettingsHandler,
+  updateStatutorySettingsHandler,
+} from '../controllers/statutorySettings.controller';
+import {
   getSalaryStructureHandler,
   listSalaryStructuresHandler,
   previewSalaryStructureHandler,
@@ -58,6 +62,8 @@ payrollRouter.delete('/pay-heads/:payHeadId', deletePayHeadHandler);
 
 // Statutory Calculation Engine — per-state rule sets (PRD §5.5, PT/LWF/Bonus).
 // EPF/ESI are national constants in the engine and need no configuration here.
+payrollRouter.get('/statutory-settings', getStatutorySettingsHandler);
+payrollRouter.put('/statutory-settings', updateStatutorySettingsHandler);
 payrollRouter.get('/statutory-rules', listStateRulesHandler);
 payrollRouter.get('/statutory-rules/:state', getStateRuleHandler);
 payrollRouter.put('/statutory-rules/:state', upsertStateRuleHandler);

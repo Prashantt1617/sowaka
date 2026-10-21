@@ -34,6 +34,7 @@ import { AppNotification, DeviceToken } from '../models/notification.model';
 import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
+import { StatutorySettings } from '../models/statutorySettings.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
@@ -235,6 +236,10 @@ export function attendanceOverrides(): Collection<AttendanceOverride> {
 
 export function statutoryRules(): Collection<StateStatutoryRule> {
   return getDb().collection<StateStatutoryRule>('statutory_rules');
+}
+
+export function statutorySettings(): Collection<StatutorySettings> {
+  return getDb().collection<StatutorySettings>('statutory_settings');
 }
 
 export function salaryStructures(): Collection<SalaryStructure> {

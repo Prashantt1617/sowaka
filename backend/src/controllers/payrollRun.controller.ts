@@ -36,6 +36,7 @@ export async function createRunHandler(req: Request, res: Response, next: NextFu
       period: String(body.period ?? ''),
       lopDays: body.lopDays as Record<string, number> | undefined,
       overtimePaise: body.overtimePaise as Record<string, number> | undefined,
+      incomeTaxPaise: body.incomeTaxPaise as Record<string, number> | undefined,
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) {
@@ -49,6 +50,7 @@ export async function recomputeRunHandler(req: Request, res: Response, next: Nex
     const run = await recomputeRun(requireUserId(req), String(req.params.runId ?? ''), {
       lopDays: body.lopDays as Record<string, number> | undefined,
       overtimePaise: body.overtimePaise as Record<string, number> | undefined,
+      incomeTaxPaise: body.incomeTaxPaise as Record<string, number> | undefined,
     });
     res.status(200).json({ success: true, run });
   } catch (error) {

@@ -33,41 +33,92 @@ export function ceilToRupee(paise: number): number {
 // ————————————————————————————————————————————————————————————————
 
 export interface EpfResult {
-  /** The wage the employee/employer 12% was actually applied to. */
+  /** The wage the employee 12% was actually applied to. */
   contributionWagePaise: number;
   employeePaise: number;
   employerTotalPaise: number;
   employerEpsPaise: number;
   employerEpfPaise: number;
+  /** Employer EDLI, 0.50% of the PF wage up to the ceiling. Employer cost only. */
+  edliPaise?: number;
+  /** EPF admin charges, 0.50% of the employer's contribution wage. Employer cost only. */
+  adminPaise?: number;
 }
 
-/**
- * EPF split. Employee and employer each contribute 12% of the PF wage, capped at
- * ₹15,000 unless `applyCeiling` is false (an employee-level override to
- * contribute on full wage). The employer 12% is split into EPS (8.33%, ALWAYS
- * capped at ₹15,000) and the EPF residual.
- *
- * Worked example (PRD): PF wage ₹20,000, ceiling applied → employee ₹1,800,
- * employer EPS ₹1,250 + EPF ₹550.
- */
-export function computeEpf(input: { pfWagePaise: number; applyCeiling?: boolean }): EpfResult {
-  const applyCeiling = input.applyCeiling ?? true;
-  const ceiling = EPF_CONSTANTS.wageCeilingPaise;
-  const contributionWage = applyCeiling ? Math.min(input.pfWagePaise, ceiling) : input.pfWagePaise;
-  const epsWage = Math.min(input.pfWagePaise, ceiling); // EPS ceiling is statutory, always applied
+const EDLI_RATE = 0.005;
+const ADMIN_RATE = 0.005;
 
-  const employeePaise = roundToRupee(contributionWage * EPF_CONSTANTS.employeeRate);
-  const employerTotalPaise = roundToRupee(contributionWage * EPF_CONSTANTS.employerRate);
-  const employerEpsPaise = roundToRupee(epsWage * EPF_CONSTANTS.epsRate);
+/**
+ * EPF split. Each side contributes 12% of the PF wage, capped at the ceiling
+ * (₹25,000) when that side is "restricted", or on the full PF wage when it is
+ * "actual". The employer 12% is split into EPS (8.33%, ALWAYS capped at the
+ * ceiling) and the EPF residual. `ceilingPaise` lets a caller pro-rate the
+ * ceiling for loss-of-pay days.
+ *
+ * Worked example: PF wage ₹30,000, both restricted → employee ₹3,000,
+ * employer EPS ₹2,083 + EPF ₹917.
+ */
+export function computeEpf(input: {
+  pfWagePaise: number;
+  /** Shorthand for both sides restricted (true, the default) or actual (false). */
+  applyCeiling?: boolean;
+  employeeRestricted?: boolean;
+  employerRestricted?: boolean;
+  ceilingPaise?: number;
+  /** false: no pension-scheme split; the employer's whole 12% is PF. */
+  eps?: boolean;
+}): EpfResult {
+  const restrictedDefault = input.applyCeiling ?? true;
+  const employeeRestricted = input.employeeRestricted ?? restrictedDefault;
+  const employerRestricted = input.employerRestricted ?? restrictedDefault;
+  const ceiling = input.ceilingPaise ?? EPF_CONSTANTS.wageCeilingPaise;
+  const capped = Math.min(input.pfWagePaise, ceiling);
+  const employeeWage = employeeRestricted ? capped : input.pfWagePaise;
+  const employerWage = employerRestricted ? capped : input.pfWagePaise;
+
+  const employeePaise = roundToRupee(employeeWage * EPF_CONSTANTS.employeeRate);
+  const employerTotalPaise = roundToRupee(employerWage * EPF_CONSTANTS.employerRate);
+  const employerEpsPaise = input.eps === false ? 0 : roundToRupee(capped * EPF_CONSTANTS.epsRate); // EPS ceiling is statutory, always applied
   const employerEpfPaise = employerTotalPaise - employerEpsPaise;
 
   return {
-    contributionWagePaise: contributionWage,
+    contributionWagePaise: employeeWage,
     employeePaise,
     employerTotalPaise,
     employerEpsPaise,
     employerEpfPaise,
+    edliPaise: roundToRupee(capped * EDLI_RATE),
+    // EPFO bills admin charges to the paisa (Zoho: ₹98.34 on ₹19,666.67).
+    adminPaise: Math.ceil(employerWage * ADMIN_RATE),
   };
+}
+
+/** A zero EPF result, for people or orgs without PF. */
+export const NO_EPF: EpfResult = {
+  contributionWagePaise: 0,
+  employeePaise: 0,
+  employerTotalPaise: 0,
+  employerEpsPaise: 0,
+  employerEpfPaise: 0,
+  edliPaise: 0,
+  adminPaise: 0,
+};
+
+/**
+ * PF wage from components that always count, plus components that count only
+ * while the PF wage is under the ceiling. Those top the wage up to the ceiling
+ * and no further. `testPaise` is the always-counted wage the condition is
+ * checked against (after loss of pay, or as in the structure).
+ */
+export function pfWageWithConditional(input: {
+  alwaysPaise: number;
+  conditionalPaise: number;
+  testPaise: number;
+  ceilingPaise?: number;
+}): number {
+  const ceiling = input.ceilingPaise ?? EPF_CONSTANTS.wageCeilingPaise;
+  if (input.conditionalPaise <= 0 || input.testPaise >= ceiling) return input.alwaysPaise;
+  return input.alwaysPaise + Math.min(input.conditionalPaise, Math.max(0, ceiling - input.alwaysPaise));
 }
 
 // ————————————————————————————————————————————————————————————————

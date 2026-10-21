@@ -2,10 +2,12 @@ import { ObjectId } from 'mongodb';
 import { payHeads, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
 import { SalaryTemplate, SalaryTemplateComponent } from '../models/salaryTemplate.model';
+import { StructureOverrides } from '../models/salaryStructure.model';
 import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
 import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
 import { resolveRuleSet } from './statutory.service';
+import { statutorySettingsFor } from './statutorySettings.service';
 
 export class SalaryTemplateError extends Error {
   constructor(
@@ -24,6 +26,7 @@ export interface SalaryTemplateInput {
   components?: unknown;
   balancingComponentCode?: unknown;
   epfApplyCeiling?: unknown;
+  paidDaysEnabled?: unknown;
   deductionRules?: unknown;
   monthlyPaidLeaveDays?: unknown;
   active?: unknown;
@@ -105,13 +108,13 @@ export async function previewSalaryTemplate(
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
   const resolved = resolveTemplateComponents(draft.components, new Map(catalog.map((h) => [h.code, h])));
-  const ruleSet = await resolveRuleSet(org, undefined);
+  const [ruleSet, settings] = await Promise.all([resolveRuleSet(org, undefined), statutorySettingsFor(org)]);
   return calculateSalaryStructure({
     monthlyCtcPaise: Math.round((Number(sampleAnnualCtcPaise) || 0) / 12),
     payHeads: resolved,
     balancingComponentCode: draft.balancingComponentCode,
-    epfApplyCeiling: draft.epfApplyCeiling,
     ruleSet,
+    settings,
     month: new Date().getUTCMonth() + 1,
   });
 }
@@ -121,6 +124,33 @@ export async function previewSalaryTemplate(
 // The pay head supplies identity + statutory treatment; the template supplies the
 // calculation. Components no longer in the catalog are skipped.
 // ————————————————————————————————————————————————————————————————
+
+/**
+ * A person's component list: the template's, minus what they don't get, with
+ * their own calculations where edited, plus what only they get. Basic is never
+ * removed. Codes not in the catalog are dropped.
+ */
+export function applyOverrides(
+  components: SalaryTemplateComponent[],
+  overrides: StructureOverrides | undefined,
+  catalogByCode: Map<string, PayHead>,
+): { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' }[] {
+  const removed = new Set((overrides?.remove ?? []).filter((code) => catalogByCode.get(code)?.componentType !== 'basic'));
+  const edits = overrides?.edit ?? {};
+  const out: { payHeadCode: string; calculation: CalculationBasis; source: 'template' | 'edited' | 'added' }[] = [];
+  for (const c of components) {
+    if (removed.has(c.payHeadCode) || !catalogByCode.has(c.payHeadCode)) continue;
+    const edited = edits[c.payHeadCode];
+    out.push(edited ? { payHeadCode: c.payHeadCode, calculation: edited, source: 'edited' } : { ...c, source: 'template' });
+  }
+  const present = new Set(out.map((c) => c.payHeadCode));
+  for (const a of overrides?.add ?? []) {
+    if (present.has(a.payHeadCode) || !catalogByCode.has(a.payHeadCode)) continue;
+    present.add(a.payHeadCode);
+    out.push({ payHeadCode: a.payHeadCode, calculation: a.calculation, source: 'added' });
+  }
+  return out;
+}
 
 export function resolveTemplateComponents(
   components: SalaryTemplateComponent[],
@@ -173,6 +203,22 @@ async function normalizeInput(
     return { payHeadCode, calculation: validateCalculation(r.calculation, payHeadCode, componentCodes) };
   });
 
+  // Basic is a flat monthly amount or a % of CTC, HRA a flat monthly amount or
+  // a % of Basic, the same two choices their Salary Components form offers.
+  for (const c of components) {
+    const type = byCode.get(c.payHeadCode)?.componentType;
+    const base = type === 'basic' ? 'ctc' : type === 'hra' ? 'basic' : undefined;
+    if (!base) continue;
+    const ok = c.calculation.mode === 'flat_per_month' || (c.calculation.mode === 'percentage' && c.calculation.base === base);
+    if (!ok) {
+      const label = type === 'basic' ? 'Basic' : 'House Rent Allowance';
+      throw new SalaryTemplateError(
+        400,
+        `${label} is a flat monthly amount or a percentage of ${base === 'ctc' ? 'CTC' : 'Basic'}`,
+      );
+    }
+  }
+
   // '% of Basic' requires a Basic component in the template.
   const hasBasic = components.some((c) => byCode.get(c.payHeadCode)?.componentType === 'basic');
   if (!hasBasic && components.some((c) => c.calculation.mode === 'percentage' && c.calculation.base === 'basic')) {
@@ -215,12 +261,13 @@ async function normalizeInput(
     balancingComponentCode,
     epfApplyCeiling: input.epfApplyCeiling === undefined ? undefined : Boolean(input.epfApplyCeiling),
     active,
+    paidDaysEnabled: input.paidDaysEnabled === undefined ? undefined : Boolean(input.paidDaysEnabled),
     deductionRules,
     monthlyPaidLeaveDays,
   };
 }
 
-function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set<string>): CalculationBasis {
+export function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set<string>): CalculationBasis {
   if (!isRecord(raw)) throw new SalaryTemplateError(400, `calculation for "${selfCode}" is required`);
   const mode = String(raw.mode);
   if (!MODES.has(mode)) throw new SalaryTemplateError(400, `calculation.mode for "${selfCode}" is invalid`);
@@ -311,6 +358,7 @@ function toView(doc: StoredTemplate) {
     components: doc.components,
     balancingComponentCode: doc.balancingComponentCode,
     epfApplyCeiling: doc.epfApplyCeiling ?? true,
+    paidDaysEnabled: doc.paidDaysEnabled ?? true,
     deductionRules: doc.deductionRules ?? [],
     monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
     active: doc.active,

@@ -23,7 +23,8 @@ import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, inf
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
-import { getEmployeePayslips, getSalaryStructure, inr as inrPaise, type PayrollRunDTO, type PayslipDTO, type SalaryStructureDTO } from '../../services/payroll';
+import { getEmployeePayslips, inr as inrPaise, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { EmployeeSalary } from './EmployeeSalary';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus } from '../../services/hrms';
@@ -341,7 +342,12 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       )}
 
       {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} onChanged={setCurrentMonth} />}
-      {tab === 'salary' && seesSalary && <SalarySlips userId={emp.id} />}
+      {tab === 'salary' && seesSalary && (
+        <div>
+          <EmployeeSalary userId={emp.id} name={emp.name} />
+          <div style={{ marginTop: 22 }}><SalarySlips userId={emp.id} /></div>
+        </div>
+      )}
 
       {tab === 'requests' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 18, alignItems: 'start' }}>
@@ -473,29 +479,16 @@ function SalarySlips({ userId }: { userId: string }) {
   const [company, setCompany] = useState<{ name: string; address: string }>({ name: '', address: '' });
   const [error, setError] = useState<string | null>(null);
   const [explain, setExplain] = useState<PayslipDTO | null>(null);
-  const [structure, setStructure] = useState<SalaryStructureDTO | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
     setRows(null);
-    setStructure(undefined);
-    getSalaryStructure(userId)
-      .then((r) => { if (live) setStructure(r.structure); })
-      .catch(() => { if (live) setStructure(null); });
     getEmployeePayslips(userId)
       .then((r) => { if (live) { setRows(r.payslips); setCompany(r.company); } })
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
   }, [userId]);
 
-  const salaryCard = structure === undefined ? null : (
-    <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 18 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <Fact label="Monthly salary" value={structure && structure.annualCtcPaise > 0 ? inrPaise(Math.round(structure.annualCtcPaise / 12)) : '—'} />
-        <Fact label="Annual CTC" value={structure && structure.annualCtcPaise > 0 ? inrPaise(structure.annualCtcPaise) : '—'} />
-        <Fact label="Salary template" value={structure?.salaryTemplateCode ? `${structure.salaryTemplateCode.charAt(0)}${structure.salaryTemplateCode.slice(1).toLowerCase()}${structure.status === 'active' ? '' : ' · not on payroll'}` : '—'} />
-      </div>
-    </Card>
-  );
+  const salaryCard = <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 10 }}>Payslips</div>;
   if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 600 }}>{error}</div></Card></div>;
   if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card></div>;
   if (rows.length === 0) {

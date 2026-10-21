@@ -8,16 +8,16 @@
  */
 
 import { PayHead } from '../models/payHead.model';
-import { ResolvedRuleSet } from '../models/statutoryRule.model';
-import {
-  computeEpf,
-  computeEsi,
-  computeLwf,
-  computePt,
-  EpfResult,
-  isEsiApplicable,
-  roundToRupee,
-} from './statutory-engine';
+import { epfCeilingForPeriod, ResolvedRuleSet } from '../models/statutoryRule.model';
+import { StatutorySettings } from '../models/statutorySettings.model';
+import { applyStatutory, PersonStatutory } from './statutory-apply';
+import { EpfResult, roundToRupee } from './statutory-engine';
+import { defaultStatutorySettings, minimumWageFor } from './statutorySettings.service';
+
+/** The synthetic earning line the org's Statutory Bonus setting adds. */
+export const STATUTORY_BONUS_CODE = 'STATUTORY_BONUS';
+/** Payment of Bonus Act: people whose Basic is above this are not covered. */
+const BONUS_ELIGIBILITY_PAISE = 21_000_00;
 
 export interface SalaryCalcInput {
   monthlyCtcPaise: number;
@@ -25,13 +25,16 @@ export interface SalaryCalcInput {
   /** Per-employee monthly values keyed by pay head code (for flat_amount / overrides). */
   componentValues?: Record<string, number>;
   balancingComponentCode?: string;
-  epfApplyCeiling?: boolean;
   ruleSet: ResolvedRuleSet;
   /** 1-based calendar month, for PT/LWF month gating. */
   month: number;
+  /** "YYYY-MM", for minimum wages that change over time. Defaults to this month. */
+  period?: string;
   bonusCategory?: string;
   /** Per-employee statutory applicability (EPF/ESI/LWF). Absent flag = applicable. */
-  statutory?: { epf?: boolean; esi?: boolean; lwf?: boolean };
+  statutory?: PersonStatutory;
+  /** The org's Statutory Components settings. Defaults reproduce the old behaviour. */
+  settings?: StatutorySettings;
 }
 
 export interface ComponentLine {
@@ -46,14 +49,22 @@ export interface ComponentLine {
   prorate: boolean;
   /** Whether this earning counts toward the EPF wage base. */
   considerForEpf: boolean;
+  /** Counts toward the EPF wage only while the PF wage is under the ceiling. */
+  epfConditional?: boolean;
 }
 
 export interface SalaryCalcResult {
   monthlyCtcPaise: number;
   annualCtcPaise: number;
   earnings: ComponentLine[];
+  /** Paid every month at their amount, inside CTC, outside gross pay. */
+  reimbursements: ComponentLine[];
+  /** Employer-paid benefits (gratuity…), inside CTC. */
+  benefits: ComponentLine[];
   deductions: ComponentLine[]; // non-statutory deduction components
   pfWagePaise: number;
+  /** Employer contributions the org's settings place inside CTC. */
+  includedInCtcPaise: number;
   statutory: {
     epf: EpfResult;
     esi: { applicable: boolean; employeePaise: number; employerPaise: number };
@@ -106,7 +117,9 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       else if (calc.base === 'basic') base = basicCode ? evalComponent(basicCode) : 0;
       else if (calc.base === 'component' && calc.baseComponentCode)
         base = evalComponent(calc.baseComponentCode);
-      result = roundToRupee((base * percent) / 100);
+      // Percent is kept to 2 decimals; multiply in hundredths so 4.81% of
+      // ₹1,25,000 is exactly ₹6,012.50 (→ ₹6,013), not ₹6,012.4999…
+      result = roundToRupee((base * Math.round(percent * 100)) / 10000);
     }
     inProgress.delete(code);
     memo.set(code, result);
@@ -129,82 +142,168 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     return residual;
   };
 
+  const settings = input.settings ?? defaultStatutorySettings('');
+  const ceiling = epfCeilingForPeriod(input.period ?? new Date().toISOString().slice(0, 7));
+  const balancingCode = input.balancingComponentCode;
+
   const lineFor = (head: PayHead): ComponentLine => {
     const monthlyPaise = evalComponent(head.code);
+    const epfFlag = head.considerForEpf;
     return {
       code: head.code,
       name: head.name,
       category: head.category,
       componentType: head.componentType,
-      calcLabel: calcLabel(head, head.code === input.balancingComponentCode),
+      calcLabel: calcLabel(head, head.code === balancingCode),
       monthlyPaise,
       annualPaise: monthlyPaise * 12,
       // Earnings prorate unless explicitly turned off; deductions never prorate.
       prorate: head.category === 'earning' && head.prorate !== false,
-      considerForEpf: head.considerForEpf?.consider === true,
+      considerForEpf: epfFlag?.consider === true,
+      epfConditional: epfFlag?.consider === true && Boolean(epfFlag.condition) && epfFlag.condition !== 'always',
     };
   };
 
-  const earnings = active.filter((head) => head.category === 'earning').map(lineFor);
+  // A Statutory Bonus component in the template follows the Payment of Bonus
+  // Act: its percent of Basic or the state minimum wage, whichever is higher,
+  // and nothing for people whose Basic is above ₹21,000.
+  const bonusPeriod = input.period ?? new Date().toISOString().slice(0, 7);
+  for (const head of active) {
+    if (head.category !== 'earning' || head.componentType !== 'statutory_bonus') continue;
+    const basic = basicCode ? rawValue(basicCode) : 0;
+    let amount = 0;
+    if (basic > 0 && basic <= BONUS_ELIGIBILITY_PAISE) {
+      const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, bonusPeriod);
+      const pct = head.calculation.mode === 'percentage' ? head.calculation.percent ?? 8.33 : settings.bonus.ratePercent;
+      amount = roundToRupee((Math.max(basic, floor) * Math.round(pct * 100)) / 10000);
+    }
+    memo.set(head.code, amount);
+  }
+
+  // Statutory Bonus, when the org pays it monthly and no template component
+  // already carries it: a share of Basic or the state minimum wage, whichever
+  // is higher, for people whose Basic is within the Act's limit.
+  const basicPaise = basicCode ? evalComponent(basicCode) : 0;
+  const templateHasBonus = active.some((head) => head.componentType === 'statutory_bonus');
+  let bonusLine: ComponentLine | undefined;
+  if (settings.bonus.enabled && settings.bonus.frequency === 'monthly' && !templateHasBonus && basicPaise > 0 && basicPaise <= BONUS_ELIGIBILITY_PAISE) {
+    const period = input.period ?? new Date().toISOString().slice(0, 7);
+    const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, period);
+    const amount = roundToRupee((Math.max(basicPaise, floor) * settings.bonus.ratePercent) / 100);
+    bonusLine = {
+      code: STATUTORY_BONUS_CODE,
+      name: 'Statutory Bonus',
+      category: 'earning',
+      componentType: 'statutory_bonus',
+      calcLabel: `${settings.bonus.ratePercent}% of ${floor > basicPaise ? 'minimum wage' : 'Basic'}`,
+      monthlyPaise: amount,
+      annualPaise: amount * 12,
+      prorate: true,
+      considerForEpf: false,
+    };
+  }
+
+  // Reimbursements: their monthly amount (a flat amount on the template, a
+  // per-person value, or the component's monthly limit). Paid every month.
+  const reimbursementValue = (head: PayHead): number => {
+    const calc = head.calculation;
+    if (calc.mode === 'flat_per_month') return calc.amountPaise ?? 0;
+    if (values[head.code] !== undefined) return values[head.code];
+    if (calc.mode === 'flat_amount' && calc.amountPaise) return calc.amountPaise;
+    return head.maxClaimablePaise ?? 0;
+  };
+  const reimbursementHeads = active.filter((head) => head.category === 'reimbursement');
+  const benefitHeads = active.filter((head) => head.category === 'benefit');
+  const reimbursementsTotal = reimbursementHeads.reduce((sum, head) => sum + reimbursementValue(head), 0);
+  const benefitsTotal = benefitHeads.reduce((sum, head) => sum + rawValue(head.code), 0);
+
+  // The statutory month for a given balancing amount. CTC holds the earnings,
+  // the reimbursements and the employer benefits, so all of them come out
+  // before the balancing component takes what is left.
+  const nonBalancing = active.filter((head) => head.category === 'earning' && head.code !== balancingCode);
+  const earningsOthers = nonBalancing.reduce((sum, head) => sum + rawValue(head.code), 0) + (bonusLine?.monthlyPaise ?? 0);
+  const othersTotal = earningsOthers + reimbursementsTotal + benefitsTotal;
+  const balancingHead = balancingCode ? byCode.get(balancingCode) : undefined;
+  const statutoryAt = (balancePaise: number) => {
+    let always = 0;
+    let conditional = 0;
+    const pfHeads = [...nonBalancing, ...(balancingHead ? [balancingHead] : [])];
+    for (const head of pfHeads) {
+      if (head.considerForEpf?.consider !== true) continue;
+      const value = head.code === balancingCode ? balancePaise : rawValue(head.code);
+      const cond = head.considerForEpf.condition;
+      if (cond && cond !== 'always') conditional += value;
+      else always += value;
+    }
+    return applyStatutory({
+      settings,
+      ruleSet: input.ruleSet,
+      month: input.month,
+      grossPaise: earningsOthers + (balancingHead ? balancePaise : 0),
+      pfAlwaysPaise: always,
+      pfConditionalPaise: conditional,
+      pfTestPaise: always,
+      ceilingPaise: ceiling,
+      person: input.statutory,
+    });
+  };
+
+  // The balancing component takes what CTC has left after the other earnings
+  // and any employer contributions placed inside CTC. Those contributions can
+  // depend on the balance (ESI on gross), so settle it in a few passes.
+  if (balancingHead) {
+    let balance = Math.max(0, monthlyCtc - othersTotal);
+    for (let pass = 0; pass < 8; pass++) {
+      const next = Math.max(0, monthlyCtc - othersTotal - statutoryAt(balance).includedInCtcPaise);
+      if (Math.abs(next - balance) < 100) {
+        balance = next;
+        break;
+      }
+      balance = next;
+    }
+    memo.set(balancingHead.code, balance);
+  }
+
+  const earnings = [...active.filter((head) => head.category === 'earning').map(lineFor), ...(bonusLine ? [bonusLine] : [])];
+  const reimbursements: ComponentLine[] = reimbursementHeads.map((head) => {
+    const monthlyPaise = reimbursementValue(head);
+    return { ...lineFor(head), monthlyPaise, annualPaise: monthlyPaise * 12, prorate: false, considerForEpf: false };
+  });
+  const benefits = benefitHeads.map(lineFor);
   const deductions = active.filter((head) => head.category === 'deduction').map(lineFor);
 
   const grossMonthly = earnings.reduce((sum, line) => sum + line.monthlyPaise, 0);
   const nonStatutoryDeductions = deductions.reduce((sum, line) => sum + line.monthlyPaise, 0);
-
-  // PF wage: the earnings flagged "consider for EPF". The conditional variant
-  // (only if PF wage < ₹15,000 after LOP) is a payroll-run concern; at structure
-  // level we include any component whose flag is on.
-  const pfWagePaise = active
-    .filter((head) => head.category === 'earning' && head.considerForEpf?.consider === true)
-    .reduce((sum, head) => sum + evalComponent(head.code), 0);
-
-  // Per-employee statutory applicability (default: applicable).
-  const epfOn = input.statutory?.epf !== false;
-  const esiOn = input.statutory?.esi !== false;
-  const lwfOn = input.statutory?.lwf !== false;
-
-  const epf = epfOn
-    ? computeEpf({ pfWagePaise, applyCeiling: input.epfApplyCeiling ?? true })
-    : { contributionWagePaise: 0, employeePaise: 0, employerTotalPaise: 0, employerEpsPaise: 0, employerEpfPaise: 0 };
-
-  const esiApplicable = esiOn && isEsiApplicable({ grossPaise: grossMonthly });
-  const esi = computeEsi({ grossPaise: grossMonthly, applicable: esiApplicable });
-
-  const pt = input.ruleSet.pt
-    ? computePt(input.ruleSet.pt, { grossPaise: grossMonthly, month: input.month })
-    : { amountPaise: 0 };
-
-  const lwf = lwfOn && input.ruleSet.lwf
-    ? computeLwf(input.ruleSet.lwf, { grossPaise: grossMonthly, month: input.month })
-    : { applicable: false, employeePaise: 0, employerPaise: 0 };
+  const st = statutoryAt(balancingHead ? memo.get(balancingHead.code) ?? 0 : 0);
+  const { epf, esi, pt, lwf } = st;
 
   const employeeDeductionsMonthly =
     epf.employeePaise + esi.employeePaise + pt.amountPaise + lwf.employeePaise + nonStatutoryDeductions;
   const netMonthly = grossMonthly - employeeDeductionsMonthly;
 
-  const benefitsMonthly = active
-    .filter((head) => head.category === 'benefit')
-    .reduce((sum, head) => sum + evalComponent(head.code), 0);
-  const employerCostMonthly =
-    grossMonthly + epf.employerTotalPaise + esi.employerPaise + lwf.employerPaise + benefitsMonthly;
+  const benefitsMonthly = benefitsTotal;
+  const employerCostMonthly = grossMonthly + reimbursementsTotal + st.employerContributionsPaise + benefitsMonthly;
 
   const nonBalancingEarnings = earnings
-    .filter((line) => line.code !== input.balancingComponentCode)
+    .filter((line) => line.code !== balancingCode)
     .reduce((sum, line) => sum + line.monthlyPaise, 0);
 
   return {
     monthlyCtcPaise: monthlyCtc,
     annualCtcPaise: monthlyCtc * 12,
     earnings,
+    reimbursements,
+    benefits,
     deductions,
-    pfWagePaise,
+    pfWagePaise: st.pfWagePaise,
+    includedInCtcPaise: st.includedInCtcPaise,
     statutory: { epf, esi, pt, lwf },
     grossMonthlyPaise: grossMonthly,
     employeeDeductionsMonthlyPaise: employeeDeductionsMonthly,
     netMonthlyPaise: netMonthly,
     benefitsMonthlyPaise: benefitsMonthly,
     employerCostMonthlyPaise: employerCostMonthly,
-    overBudget: Boolean(input.balancingComponentCode) && nonBalancingEarnings > monthlyCtc,
+    overBudget: Boolean(balancingCode) && nonBalancingEarnings + reimbursementsTotal + benefitsTotal + st.includedInCtcPaise > monthlyCtc,
   };
 }
 

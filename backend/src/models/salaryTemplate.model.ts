@@ -35,6 +35,8 @@ export interface SalaryTemplate {
    * late arrivals / early leaves / absences cost M days. A payroll run turns
    * the month's counts into loss-of-pay days with these.
    */
+  /** Whether the run reads attendance for the people on this template at all. Absent = on. */
+  paidDaysEnabled?: boolean;
   deductionRules?: SalaryDeductionRule[];
   /** Paid leave days a month that offset what the rules deduct (0 = none). */
   monthlyPaidLeaveDays?: number;
