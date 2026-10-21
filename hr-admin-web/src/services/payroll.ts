@@ -574,3 +574,29 @@ export const markRunPaid = (runId: string) =>
 /** One employee's payslips across runs, newest first, with the company for the printed slip. */
 export const getEmployeePayslips = (userId: string) =>
   api<{ company: { name: string; address: string }; payslips: { run: PayrollRunDTO; payslip: PayslipDTO }[] }>(`/admin/employees/${userId}/payslips`);
+
+// ————————————————————————————————————————————————————————————————
+// Bank account, PAN and UAN — encrypted at rest; in full only with payroll access.
+// ————————————————————————————————————————————————————————————————
+
+export type PaymentDetailsDTO = {
+  payMode?: 'bank_transfer' | 'cheque' | 'cash';
+  bankName?: string;
+  accountHolder?: string;
+  accountType?: 'savings' | 'current';
+  ifsc?: string;
+  /** In full with payroll access, else "•••• 1234". */
+  accountNumber?: string;
+  pan?: string;
+  uan?: string;
+  unmasked: boolean;
+  canEdit: boolean;
+  updatedAt?: string;
+};
+export type PaymentDetailsInput = Partial<Omit<PaymentDetailsDTO, 'unmasked' | 'canEdit' | 'updatedAt'>>;
+
+export const getPaymentDetails = (userId: string) =>
+  api<{ details: PaymentDetailsDTO }>(`/admin/payroll/employees/${userId}/payment-details`).then((r) => r.details);
+
+export const savePaymentDetails = (userId: string, input: PaymentDetailsInput) =>
+  api<{ details: PaymentDetailsDTO }>(`/admin/payroll/employees/${userId}/payment-details`, { method: 'PUT', body: input }).then((r) => r.details);

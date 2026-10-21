@@ -9,6 +9,8 @@ import { applyOverrides, resolveTemplateComponents, validateCalculation } from '
 import { resolveRuleSet } from './statutory.service';
 import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
+import { decryptField, encryptField, fieldKeyConfigured, isEncrypted, maskTail } from './fieldCrypto';
+import { payrollAccessOf } from './payrollAccess.service';
 
 export class SalaryStructureError extends Error {
   constructor(
@@ -54,7 +56,7 @@ export async function getSalaryStructure(adminUserId: string, userId: string) {
   const doc = await salaryStructures().findOne({ org, userId });
   if (!doc) throw new SalaryStructureError(404, 'No salary structure for this employee');
   const { computed, components, template } = await compute(org, userId, doc);
-  return { structure: viewOf(doc, template.name), computed, components };
+  return { structure: viewOf(doc, template.name, await payrollAccessOf(adminUserId)), computed, components };
 }
 
 export async function upsertSalaryStructure(
@@ -88,7 +90,7 @@ export async function upsertSalaryStructure(
     componentValues: draft.componentValues ?? existing?.componentValues,
     overrides: draft.overrides ?? existing?.overrides,
     revisions,
-    statutory: draft.statutory ?? existing?.statutory,
+    statutory: draft.statutory ? sealIds(draft.statutory, existing?.statutory) : existing?.statutory,
     bonusCategory: draft.bonusCategory ?? existing?.bonusCategory,
     status: draft.status ?? existing?.status ?? 'draft',
     effectiveFrom: existing?.effectiveFrom,
@@ -101,7 +103,7 @@ export async function upsertSalaryStructure(
   // A standard component added for this person becomes this org's pay head.
   await materializeStandard(org, [...(merged.overrides?.add ?? []).map((a) => a.payHeadCode), ...Object.keys(merged.componentValues ?? {})]);
   await salaryStructures().updateOne({ org, userId }, { $set: merged }, { upsert: true });
-  return { structure: viewOf(merged, template.name), computed, components };
+  return { structure: viewOf(merged, template.name, await payrollAccessOf(adminUserId)), computed, components };
 }
 
 /** Compute a breakup WITHOUT saving — powers the live assignment editor. */
@@ -259,11 +261,11 @@ function normalizeInput(input: SalaryStructureInput, catalog: PayHead[]): Normal
     if (input.statutory.pfAccountNumber !== undefined) s.pfAccountNumber = text(input.statutory.pfAccountNumber, 'PF account number', 40);
     if (input.statutory.uan !== undefined) {
       s.uan = text(input.statutory.uan, 'UAN', 12);
-      if (s.uan && !/^\d{12}$/.test(s.uan)) throw new SalaryStructureError(400, 'UAN is 12 digits');
+      if (s.uan && !s.uan.includes('•') && !/^\d{12}$/.test(s.uan)) throw new SalaryStructureError(400, 'UAN is 12 digits');
     }
     if (input.statutory.esiNumber !== undefined) {
       s.esiNumber = text(input.statutory.esiNumber, 'ESI number', 17);
-      if (s.esiNumber && !/^\d{10,17}$/.test(s.esiNumber)) throw new SalaryStructureError(400, 'ESI insurance number is 10 to 17 digits');
+      if (s.esiNumber && !s.esiNumber.includes('•') && !/^\d{10,17}$/.test(s.esiNumber)) throw new SalaryStructureError(400, 'ESI insurance number is 10 to 17 digits');
     }
     if (input.statutory.pfRestrictedWagePaise !== undefined) {
       const raw = input.statutory.pfRestrictedWagePaise;
@@ -360,7 +362,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function viewOf(doc: SalaryStructure, templateName?: string) {
+const ID_FIELDS = ['uan', 'pfAccountNumber', 'esiNumber'] as const;
+
+/**
+ * The person's UAN, PF account and ESI numbers are kept encrypted at rest
+ * (interim server key, see fieldCrypto). A masked value sent back unchanged
+ * keeps the stored one.
+ */
+function sealIds(next: EmployeeStatutory, previous: EmployeeStatutory | undefined): EmployeeStatutory {
+  const out: EmployeeStatutory = { ...next };
+  for (const field of ID_FIELDS) {
+    const v = next[field];
+    if (v === undefined) {
+      if (previous?.[field] !== undefined && !(field in next)) out[field] = previous[field];
+      continue;
+    }
+    if (v.includes('•')) out[field] = previous?.[field];
+    else if (!isEncrypted(v)) {
+      if (!fieldKeyConfigured()) throw new SalaryStructureError(503, 'PAYROLL_FIELD_KEY is not set: UAN, PF and ESI numbers cannot be saved');
+      out[field] = encryptField(v);
+    }
+  }
+  return out;
+}
+
+/** The IDs in full for payroll access, else masked; never the ciphertext. */
+function openIds(statutory: EmployeeStatutory | undefined, payroll: boolean): EmployeeStatutory {
+  const out: EmployeeStatutory = { ...(statutory ?? {}) };
+  for (const field of ID_FIELDS) {
+    const v = out[field];
+    if (!v) continue;
+    let plain: string | undefined;
+    try {
+      plain = isEncrypted(v) ? (fieldKeyConfigured() ? decryptField(v) : undefined) : v;
+    } catch {
+      plain = undefined;
+    }
+    out[field] = payroll && plain ? plain : plain ? maskTail(plain) : '••••';
+  }
+  return out;
+}
+
+function viewOf(doc: SalaryStructure, templateName?: string, payroll = false) {
   return {
     userId: doc.userId,
     salaryTemplateCode: doc.salaryTemplateCode,
@@ -369,7 +412,7 @@ function viewOf(doc: SalaryStructure, templateName?: string) {
     componentValues: doc.componentValues ?? {},
     overrides: doc.overrides ?? {},
     revisions: (doc.revisions ?? []).map((r) => ({ ...r, at: r.at instanceof Date ? r.at.toISOString() : String(r.at) })),
-    statutory: doc.statutory ?? {},
+    statutory: openIds(doc.statutory, payroll),
     bonusCategory: doc.bonusCategory,
     status: doc.status,
     updatedAt: doc.updatedAt.toISOString(),

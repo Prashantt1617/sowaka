@@ -23,7 +23,7 @@ import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, inf
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
-import { getEmployeePayslips, inr as inrPaise, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { printPayslip } from '../payslip';
@@ -242,6 +242,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               </div>
           </Section>
             )}
+            <PaymentDetails userId={emp.id} />
           </div>
         </div>
       )}
@@ -776,6 +777,74 @@ function Fact({ label, value, border }: { label: string; value: string; border?:
       <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 600, color: '#222222', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
+  );
+}
+
+// Bank account, PAN and UAN. Encrypted on the server; people with payroll
+// access see them in full and can change them, everyone else sees the last
+// four characters only.
+function PaymentDetails({ userId }: { userId: string }) {
+  const { flash } = useStore();
+  const [d, setD] = useState<PaymentDetailsDTO | null>(null);
+  const [form, setForm] = useState<PaymentDetailsInput | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getPaymentDetails(userId).then((x) => live && setD(x)).catch(() => live && setD(null));
+    return () => { live = false; };
+  }, [userId]);
+  if (!d) return null;
+  const save = async () => {
+    if (!form) return;
+    setSaving(true);
+    try {
+      setD(await savePaymentDetails(userId, form));
+      setForm(null);
+      flash('Payment details saved');
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save payment details', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const field = (label: string, key: keyof PaymentDetailsInput, placeholder?: string) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 700, color: '#717171' }}>
+      {label}
+      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15, fontFamily: 'inherit' }} />
+    </label>
+  );
+  return (
+    <Section
+      title="Payment and tax IDs"
+      action={d.canEdit && !form ? <button type="button" onClick={() => setForm({ bankName: d.bankName, accountHolder: d.accountHolder, ifsc: d.ifsc, accountNumber: d.accountNumber, pan: d.pan, uan: d.uan, accountType: d.accountType ?? 'savings', payMode: d.payMode ?? 'bank_transfer' })} style={editBtn}>Edit</button> : undefined}
+    >
+      {form ? (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {field('Bank name', 'bankName', 'e.g. HDFC Bank')}
+            {field('Account holder', 'accountHolder')}
+            {field('Account number', 'accountNumber', '9 to 18 digits')}
+            {field('IFSC', 'ifsc', 'e.g. HDFC0001234')}
+            {field('PAN', 'pan', 'ABCDE1234F')}
+            {field('UAN', 'uan', '12 digits')}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: '#0571A6', color: '#fff', borderColor: '#0571A6' }}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => setForm(null)} style={editBtn}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <Grid>
+          <Row label="Bank" value={d.bankName ?? '—'} />
+          <Row label="Account number" value={d.accountNumber ?? '—'} />
+          <Row label="IFSC" value={d.ifsc ?? '—'} />
+          <Row label="Account holder" value={d.accountHolder ?? '—'} />
+          <Row label="PAN" value={d.pan ?? '—'} />
+          <Row label="UAN" value={d.uan ?? '—'} />
+        </Grid>
+      )}
+      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10 }}>Shown masked: full numbers are visible only with payroll access.</div>}
+    </Section>
   );
 }
 

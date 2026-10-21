@@ -38,6 +38,7 @@ import { StatutorySettings } from '../models/statutorySettings.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
@@ -252,6 +253,10 @@ export function salaryTemplates(): Collection<SalaryTemplate> {
 
 export function payrollRuns(): Collection<PayrollRun> {
   return getDb().collection<PayrollRun>('payroll_runs');
+}
+
+export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
+  return getDb().collection<EmployeePaymentDetails>('employee_payment_details');
 }
 
 export function payslips(): Collection<Payslip> {

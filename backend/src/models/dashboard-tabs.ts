@@ -41,6 +41,8 @@ const RULES: Rule[] = [
   // that assigns people to a template.
   { path: /^\/admin\/payroll\/salary-structures/, read: ['salarydetails', 'templates', 'payruns'], write: ['salarydetails', 'templates'] },
   { path: /^\/admin\/payroll\/runs/, read: ['payruns'], write: ['payruns'] },
+  // Bank, PAN, UAN: anyone who can open the profile sees them masked; payroll access sees and edits them.
+  { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },
   // An employee's pay and calendar
   { path: /^\/admin\/employees\/[^/]+\/payslips/, read: ['salarydetails', 'payruns'] },

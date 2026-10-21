@@ -42,6 +42,7 @@ import {
   submitRunHandler,
 } from '../controllers/payrollRun.controller';
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
+import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -99,3 +100,8 @@ payrollRouter.post('/runs/:runId/submit', submitRunHandler);
 payrollRouter.post('/runs/:runId/decision', decideRunHandler);
 payrollRouter.post('/runs/:runId/recall', recallRunHandler);
 payrollRouter.post('/runs/:runId/mark-paid', markRunPaidHandler);
+
+// One employee's bank account, PAN and UAN: encrypted at rest, shown in full
+// only to people with payroll access, masked to everyone else.
+payrollRouter.get('/employees/:userId/payment-details', getPaymentDetailsHandler);
+payrollRouter.put('/employees/:userId/payment-details', setPaymentDetailsHandler);

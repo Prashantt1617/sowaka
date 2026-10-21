@@ -26,6 +26,7 @@ import { StatutorySettingsError } from '../services/statutorySettings.service';
 import { SalaryStructureError } from '../services/salaryStructure.service';
 import { SalaryTemplateError } from '../services/salaryTemplate.service';
 import { PayrollRunError } from '../services/payrollRun.service';
+import { EmployeePaymentError } from '../services/employeePayment.service';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { OrgSetupError } from '../services/orgSetup.service';
 import { KpiError } from '../services/kpi.service';
@@ -115,6 +116,7 @@ function getStatusCode(error: unknown): number {
     || error instanceof SalaryStructureError
     || error instanceof SalaryTemplateError
     || error instanceof PayrollRunError
+    || error instanceof EmployeePaymentError
     || error instanceof PayrollInputsError
     || error instanceof OrgSetupError
     || error instanceof KpiError
