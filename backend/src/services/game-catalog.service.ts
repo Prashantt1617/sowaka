@@ -50,7 +50,12 @@ export interface PublicGame {
 
 /** A score is never larger than this, whatever the game says. */
 const SCORE_CEILING = 1_000_000_000;
-const LEADERBOARD_SIZE = 10;
+/**
+ * How many rows a game's leaderboard sends: everyone with a score at the
+ * company (hundreds at most), with a ceiling so one board stays a small reply.
+ * Was 10; the pages show the whole list in a scroll.
+ */
+const LEADERBOARD_SIZE = 500;
 
 /**
  * The games a company has: none without the Games tab, whatever its list
@@ -257,7 +262,7 @@ async function boardFor(key: string, org: string, viewerId: string, scoring: Gam
   const higherIsBetter = scoring.higherIsBetter !== false;
   const [rows, mine] = await Promise.all([
     gameScores()
-      .find({ gameId, org })
+      .find({ gameId, org }, { projection: { _id: 0, userId: 1, playerName: 1, score: 1, achievedAt: 1 } })
       .sort({ score: higherIsBetter ? -1 : 1, achievedAt: 1 })
       .limit(LEADERBOARD_SIZE)
       .toArray(),
@@ -337,7 +342,7 @@ export async function recordServerScore(org: string, key: string, player: GameVi
   await keepBest(key, org, { ...player, org }, capped, entry.scoring.higherIsBetter !== false);
 }
 
-/** The company's top ten, and the viewer's own best. */
+/** The company's board (everyone with a score, up to LEADERBOARD_SIZE), and the viewer's own best. */
 export async function leaderboardFor(viewer: GameViewer, key: string): Promise<Leaderboard> {
   const entry = await requireGame(viewer, key);
   return boardFor(key, entry.org, viewer.userId, requireScoring(entry));

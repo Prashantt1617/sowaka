@@ -51,12 +51,15 @@ const REPORTS: NavItem[] = [
   { key: 'attendancereport', label: 'Attendance' },
 ];
 const PAYROLL: NavItem[] = [
+  { key: 'payrolldash', label: 'Payroll Dashboard' },
   { key: 'payschedule', label: 'Pay schedule' },
   { key: 'taxdetails', label: 'Tax details' },
   { key: 'payheads', label: 'Salary Components' },
   { key: 'statutorycomponents', label: 'Statutory Components' },
   { key: 'templates', label: 'Salary Templates' },
+  { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
+  { key: 'payrollreports', label: 'Payroll Reports' },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,

@@ -4,15 +4,14 @@
 // Earnings are shown at the full monthly rate and loss of pay is a deduction
 // line, so what the attendance rules cost is on the slip rather than folded
 // silently into a smaller earned figure.
-import { DEDUCTION_TRIGGER_LABELS, inr, type PayslipDTO } from '../services/payroll';
+import { type PayslipDTO } from '../services/payroll';
+import { brandOf } from './brand';
+import { downloadHtmlAsPdf } from './pdf';
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] ?? ch));
 
 const monthLabel = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-
-const dateLabel = (iso?: string) =>
-  iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
 
 const lastDayOf = (period: string) => {
   const [y, m] = period.split('-').map(Number);
@@ -46,101 +45,106 @@ export function rupeesInWords(paise: number): string {
   return `Indian Rupees ${parts.join(' ')} Only`;
 }
 
-export function payslipHtml(slip: PayslipDTO, company: { name: string; address: string }): string {
-  const fullEarnings = slip.earnings.reduce((t, e) => t + e.fullPaise, 0);
-  const paidEarnings = slip.earnings.reduce((t, e) => t + e.paidPaise, 0);
-  const lopPaise = fullEarnings - paidEarnings;
-  const lines = slip.inputs.attendanceDeductions ?? [];
-  const nameOf = (l: (typeof lines)[number]) => (l.trigger ? DEDUCTION_TRIGGER_LABELS[l.trigger] : l.label);
-  const lopDetail = lines.filter((l) => l.days > 0).map((l) => `${nameOf(l)} ${l.count} → ${l.days}d`).join(' · ');
-  const deductions: { name: string; sub?: string; paise: number }[] = [];
-  const covered = slip.inputs.paidLeaveDaysApplied ?? 0;
-  if (slip.inputs.lopDays > 0) {
-    const sub = [lopDetail, covered > 0 ? `${covered} day${covered === 1 ? '' : 's'} covered by paid leave` : ''].filter(Boolean).join(' · ');
-    deductions.push({ name: `Loss of pay · ${slip.inputs.lopDays} day${slip.inputs.lopDays === 1 ? '' : 's'}`, sub: sub || undefined, paise: lopPaise });
-  }
-  for (const d of slip.deductions) deductions.push({ name: d.name, paise: d.amountPaise });
-  const totalDeductions = deductions.reduce((t, d) => t + d.paise, 0);
-  const grossFull = fullEarnings + slip.inputs.overtimePaise;
+type PayslipCompany = { name: string; address: string; org?: string };
+
+/** ₹62,053.00, as Zoho prints amounts. */
+const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** 30/09/2026 */
+const dmy = (iso?: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+/** Zoho's names for the statutory lines. */
+const DEDUCTION_NAMES: Record<string, string> = { epf: 'EPF Contribution', esi: 'Employee State Insurance', pt: 'Professional Tax', lwf: 'Labour Welfare Fund', income_tax: 'Income Tax', food_coupon: 'Food Coupon Deduction' };
+
+/** The payslip, laid out as Zoho Payroll's: summary, net pay box, earnings and deductions with YTD. */
+export function payslipHtml(slip: PayslipDTO, company: PayslipCompany): string {
+  const ytd = slip.ytd;
+  const logo = brandOf(company.org)?.icon;
+  const logoSrc = logo ? new URL(logo, window.location.origin).href : '';
+  const earnings = slip.earnings.filter((e) => !e.hidden && e.paidPaise !== 0).map((e) => ({ name: e.name, amount: e.paidPaise, ytd: ytd?.earnings[e.code] }));
+  if (slip.inputs.overtimePaise > 0) earnings.push({ name: 'Overtime', amount: slip.inputs.overtimePaise, ytd: undefined });
+  const deductions = slip.deductions.filter((d) => !d.hidden && d.amountPaise !== 0).map((d) => ({ name: DEDUCTION_NAMES[d.key] ?? d.name, amount: d.amountPaise, ytd: ytd?.deductions[d.key] }));
+  const gross = slip.grossPaise;
+  const totalDeductions = slip.employeeDeductionsPaise;
+  const reimbLines = [
+    ...(slip.reimbursementLines ?? []).filter((r) => !r.hidden && r.amountPaise > 0).map((r) => ({ name: r.name, amount: r.amountPaise })),
+  ];
+  const structureReimb = reimbLines.reduce((t, r) => t + r.amount, 0);
+  if (slip.reimbursementsPaise - structureReimb > 0) reimbLines.push({ name: 'Business Expense Reimbursements', amount: slip.reimbursementsPaise - structureReimb });
   const net = slip.netPayablePaise;
+  const rows = Math.max(earnings.length, deductions.length);
+  const cell = (x?: { name: string; amount: number; ytd?: number }) =>
+    x ? `<td class="nm">${esc(x.name)}</td><td class="r b">${money(x.amount)}</td><td class="r y">${x.ytd !== undefined ? money(x.ytd) : ''}</td>` : '<td></td><td></td><td></td>';
+  const body = Array.from({ length: rows }, (_, i) => `<tr>${cell(earnings[i])}<td class="gap"></td>${cell(deductions[i])}</tr>`).join('');
 
-  const earningRows = slip.earnings.map((e) => `
-    <tr><td><div class="n">${esc(e.name)}</div>${e.fullPaise !== e.paidPaise ? `<div class="s">Monthly rate: ${inr(e.fullPaise)}</div>` : ''}</td><td class="r">${inr(e.fullPaise)}</td></tr>`).join('');
-  const otRow = slip.inputs.overtimePaise > 0 ? `<tr><td><div class="n">Overtime</div></td><td class="r">${inr(slip.inputs.overtimePaise)}</td></tr>` : '';
-  const deductionRows = deductions.length === 0
-    ? '<tr><td><div class="n">No deductions</div></td><td class="r">—</td></tr>'
-    : deductions.map((d) => `<tr><td><div class="n">${esc(d.name)}</div>${d.sub ? `<div class="s">${esc(d.sub)}</div>` : ''}</td><td class="r">${inr(d.paise)}</td></tr>`).join('');
-  const reimb = slip.reimbursementsPaise > 0 ? `<tr><td><div class="n">Reimbursements</div></td><td class="r">${inr(slip.reimbursementsPaise)}</td></tr>` : '';
-
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Payslip · ${esc(slip.employeeName)} · ${esc(monthLabel(slip.period))}</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Payslip_${esc(slip.employeeId ?? slip.employeeName)}_${esc(monthLabel(slip.period))}</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 32px; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #222; background: #fff; }
-  .slip { max-width: 880px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 14px; padding: 36px 40px; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 22px; border-bottom: 1px solid #E5E7EB; }
-  .co { font-size: 26px; font-weight: 600; }
-  .addr { color: #6B7280; margin-top: 4px; font-size: 15px; }
-  .for { text-align: right; color: #6B7280; font-size: 15px; }
-  .for b { display: block; color: #222; font-size: 22px; font-weight: 500; margin-top: 4px; }
-  .summary { display: grid; grid-template-columns: 1fr 380px; gap: 32px; padding: 26px 0; }
-  .label { font-size: 12px; letter-spacing: .08em; color: #6B7280; text-transform: uppercase; margin-bottom: 10px; }
-  .kv { display: flex; justify-content: space-between; padding: 7px 0; font-size: 15px; }
-  .kv span:first-child { color: #6B7280; }
-  .net { border: 1px solid #D1FAE5; border-radius: 12px; overflow: hidden; }
-  .net .top { background: #ECFDF5; padding: 22px 24px; }
-  .net .amt { font-size: 32px; font-weight: 600; }
-  .net .cap { color: #047857; margin-top: 4px; font-size: 15px; }
-  .net .days { padding: 12px 24px; }
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding-top: 18px; border-top: 1px dashed #E5E7EB; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 12px; letter-spacing: .08em; color: #6B7280; text-transform: uppercase; font-weight: 500; padding: 8px 0 10px; border-bottom: 1px dashed #E5E7EB; }
-  td { padding: 12px 0; vertical-align: top; font-size: 15px; }
-  td.r, th.r { text-align: right; white-space: nowrap; }
-  .n { font-weight: 500; } .s { color: #6B7280; font-size: 13px; margin-top: 2px; }
-  .tot { background: #F5F5F7; font-weight: 500; } .tot td { padding: 12px 14px; }
-  .payable { margin-top: 24px; background: #ECFDF5; border: 1px solid #D1FAE5; border-radius: 12px; padding: 20px 26px; display: flex; justify-content: space-between; align-items: center; }
-  .payable .t { font-size: 17px; font-weight: 500; } .payable .sub { color: #6B7280; font-size: 14px; margin-top: 4px; } .payable .amt { font-size: 28px; font-weight: 600; }
-  .words { text-align: right; color: #6B7280; margin-top: 18px; font-size: 14px; } .words b { color: #222; font-weight: 500; }
-  .foot { text-align: center; color: #9CA3AF; font-size: 13px; margin-top: 26px; padding-top: 18px; border-top: 1px solid #E5E7EB; }
-  @media print { body { padding: 0; } .slip { border: none; border-radius: 0; padding: 24px; } @page { margin: 12mm; } }
-</style></head><body><div class="slip">
+  body { margin: 0; padding: 28px; font-family: "Noto Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #222; background: #fff; font-size: 13px; }
+  .page { max-width: 800px; margin: 0 auto; }
+  .head { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 2px dotted #D9D9D9; }
+  .logo { width: 78px; height: 78px; object-fit: contain; border-radius: 4px; }
+  .co { flex: 1; } .co b { display: block; font-size: 20px; } .co span { color: #555; font-size: 12.5px; }
+  .for { text-align: right; color: #555; font-size: 12.5px; } .for b { display: block; color: #222; font-size: 15px; margin-top: 4px; }
+  .sum { display: flex; justify-content: space-between; gap: 24px; padding: 18px 0 14px; border-bottom: 2px dotted #D9D9D9; }
+  .label { font-size: 11.5px; font-weight: 700; color: #444; letter-spacing: .02em; margin-bottom: 10px; }
+  .kv { display: grid; grid-template-columns: 150px 14px 1fr; padding: 4px 0; } .kv span:first-child { color: #555; }
+  .netbox { width: 280px; border: 1px solid #E3E3E3; border-radius: 8px; overflow: hidden; }
+  .netbox .top { background: #F2FBF4; padding: 16px 18px 12px; border-left: 4px solid #3BA55C; margin: 10px 0 0 10px; }
+  .netbox .amt { font-size: 22px; font-weight: 700; } .netbox .cap { color: #555; margin-top: 2px; }
+  .netbox .days { padding: 10px 18px 14px; border-top: 1px dashed #E3E3E3; margin-top: 8px; }
+  .netbox .kv { grid-template-columns: 90px 14px 1fr; }
+  .bank { padding: 14px 4px; display: grid; grid-template-columns: 150px 14px 1fr; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #E3E3E3; border-radius: 8px; }
+  th { text-align: left; font-size: 11.5px; font-weight: 700; color: #444; padding: 10px 12px 8px; border-bottom: 1px dashed #D9D9D9; }
+  td { padding: 9px 12px; vertical-align: top; } td.r, th.r { text-align: right; white-space: nowrap; }
+  td.b { font-weight: 600; } td.y { color: #444; } td.gap, th.gap { width: 10px; padding: 0; }
+  tr.tot td { background: #F7F7F7; font-weight: 700; }
+  .rtab { margin-top: 12px; }
+  .payable { margin-top: 16px; display: flex; border: 1px solid #E3E3E3; border-radius: 8px; overflow: hidden; }
+  .payable .l { flex: 1; padding: 12px 14px; } .payable .l b { display: block; font-size: 12.5px; } .payable .l span { color: #555; font-size: 12px; }
+  .payable .amt { background: #F2FBF4; padding: 0 18px; display: flex; align-items: center; font-size: 15px; font-weight: 700; }
+  .words { text-align: right; color: #555; margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid #D9D9D9; } .words b { color: #222; font-weight: 500; }
+  .foot { text-align: center; color: #888; font-size: 11.5px; margin-top: 14px; }
+  @media print { body { padding: 0; } @page { margin: 12mm; } }
+</style></head><body><div class="page">
   <div class="head">
-    <div><div class="co">${esc(company.name)}</div>${company.address ? `<div class="addr">${esc(company.address)}</div>` : ''}</div>
-    <div class="for">Payslip for the month<b>${esc(monthLabel(slip.period))}</b></div>
+    ${logoSrc ? `<img class="logo" src="${esc(logoSrc)}" alt="">` : ''}
+    <div class="co"><b>${esc(company.name)}</b>${company.address ? `<span>${esc(company.address)}</span>` : ''}</div>
+    <div class="for">Payslip For the Month<b>${esc(monthLabel(slip.period))}</b></div>
   </div>
-  <div class="summary">
+  <div class="sum">
     <div>
-      <div class="label">Employee summary</div>
-      <div class="kv"><span>Employee name</span><span>${esc(slip.employeeName)}</span></div>
-      <div class="kv"><span>Employee ID</span><span>${esc(slip.employeeId ?? '—')}</span></div>
-      <div class="kv"><span>Designation</span><span>${esc(slip.designation ?? '—')}</span></div>
-      ${slip.department ? `<div class="kv"><span>Department</span><span>${esc(slip.department)}</span></div>` : ''}
-      <div class="kv"><span>Date of joining</span><span>${esc(dateLabel(slip.joiningDate))}</span></div>
-      <div class="kv"><span>Pay date</span><span>${esc(dateLabel(lastDayOf(slip.period)))}</span></div>
+      <div class="label">EMPLOYEE SUMMARY</div>
+      <div class="kv"><span>Employee Name</span><span>:</span><span>${esc(slip.employeeName)}</span></div>
+      <div class="kv"><span>Designation</span><span>:</span><span>${esc(slip.designation ?? '—')}</span></div>
+      <div class="kv"><span>Employee ID</span><span>:</span><span>${esc(slip.employeeId ?? '—')}</span></div>
+      <div class="kv"><span>Date of Joining</span><span>:</span><span>${esc(dmy(slip.joiningDate))}</span></div>
+      <div class="kv"><span>Pay Period</span><span>:</span><span>${esc(monthLabel(slip.period))}</span></div>
+      <div class="kv"><span>Pay Date</span><span>:</span><span>${esc(dmy(lastDayOf(slip.period)))}</span></div>
     </div>
-    <div class="net">
-      <div class="top"><div class="amt">${inr(net)}</div><div class="cap">Total net pay</div></div>
+    <div class="netbox">
+      <div class="top"><div class="amt">${money(net)}</div><div class="cap">Total Net Pay</div></div>
       <div class="days">
-        <div class="kv"><span>Paid days</span><span>${slip.inputs.payableDays}</span></div>
-        <div class="kv"><span>Loss of pay days</span><span>${slip.inputs.lopDays}</span></div>
-        ${covered > 0 ? `<div class="kv"><span>Covered by paid leave</span><span>${covered}</span></div>` : ''}
+        <div class="kv"><span>Paid Days</span><span>:</span><span>${slip.inputs.payableDays}</span></div>
+        <div class="kv"><span>LOP Days</span><span>:</span><span>${slip.inputs.lopDays}</span></div>
       </div>
     </div>
   </div>
-  <div class="cols">
-    <table><thead><tr><th>Earnings</th><th class="r">Amount</th></tr></thead><tbody>${earningRows}${otRow}${reimb}
-      <tr class="tot"><td>Gross earnings</td><td class="r">${inr(grossFull + slip.reimbursementsPaise)}</td></tr></tbody></table>
-    <table><thead><tr><th>Deductions</th><th class="r">Amount</th></tr></thead><tbody>${deductionRows}
-      <tr class="tot"><td>Total deductions</td><td class="r">${inr(totalDeductions)}</td></tr></tbody></table>
-  </div>
-  <div class="payable"><div><div class="t">Total net payable</div><div class="sub">Gross ${inr(grossFull + slip.reimbursementsPaise)} − deductions ${inr(totalDeductions)}</div></div><div class="amt">${inr(net)}</div></div>
-  <div class="words">Amount in words: <b>${esc(rupeesInWords(net))}</b></div>
-  <div class="foot">This is a system generated document and does not require a signature.</div>
+  ${slip.bankAccountNo ? `<div class="bank"><span style="color:#555">Bank Account No</span><span>:</span><span>${esc(slip.bankAccountNo)}</span></div>` : '<div style="height:14px"></div>'}
+  <table>
+    <thead><tr><th>EARNINGS</th><th class="r">AMOUNT</th><th class="r">YTD</th><th class="gap"></th><th>DEDUCTIONS</th><th class="r">AMOUNT</th><th class="r">YTD</th></tr></thead>
+    <tbody>${body}
+      <tr class="tot"><td>Gross Earnings</td><td class="r">${money(gross)}</td><td></td><td class="gap"></td><td>Total Deductions</td><td class="r">${money(totalDeductions)}</td><td></td></tr>
+    </tbody>
+  </table>
+  ${reimbLines.length ? `<table class="rtab"><thead><tr><th>REIMBURSEMENTS</th><th class="r">AMOUNT</th></tr></thead><tbody>${reimbLines.map((r) => `<tr><td class="nm">${esc(r.name)}</td><td class="r b">${money(r.amount)}</td></tr>`).join('')}<tr class="tot"><td>Total Reimbursements</td><td class="r">${money(slip.reimbursementsPaise)}</td></tr></tbody></table>` : ''}
+  <div class="payable"><div class="l"><b>TOTAL NET PAYABLE</b><span>Gross Earnings - Total Deductions${slip.reimbursementsPaise > 0 ? ' + Total Reimbursements' : ''}</span></div><div class="amt">${money(net)}</div></div>
+  <div class="words">Amount In Words : <b>${esc(rupeesInWords(net).replace('Indian Rupees', 'Indian Rupee'))}</b></div>
+  <div class="foot">-- This is a system-generated document. --</div>
 </div></body></html>`;
 }
 
 /** Opens the slip in a new tab ready to print or save as PDF. */
-export function printPayslip(slip: PayslipDTO, company: { name: string; address: string }): void {
+export function printPayslip(slip: PayslipDTO, company: PayslipCompany): void {
   const win = window.open('', '_blank');
   if (!win) return;
   win.document.open();
@@ -148,4 +152,11 @@ export function printPayslip(slip: PayslipDTO, company: { name: string; address:
   win.document.close();
   win.focus();
   setTimeout(() => win.print(), 300);
+}
+
+/** Payslip_CS4_Sep_2026.pdf, as Zoho names it. */
+export function downloadPayslipPdf(slip: PayslipDTO, company: PayslipCompany): Promise<void> {
+  const [y, m] = slip.period.split('-').map(Number);
+  const mon = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+  return downloadHtmlAsPdf(payslipHtml(slip, company), `Payslip_${slip.employeeId ?? slip.employeeName.replace(/\s+/g, '_')}_${mon}_${y}.pdf`);
 }

@@ -21,6 +21,9 @@ import { ContentReports } from './views/ContentReports';
 import { EngagementPosts } from './views/EngagementPosts';
 import { PayHeadMaster } from './views/PayHeadMaster';
 import { SalaryTemplates } from './views/SalaryTemplates';
+import { PaidDaysTemplates } from './views/PaidDaysTemplates';
+import { PayrollDashboard } from './views/PayrollDashboard';
+import { PayrollReports } from './views/PayrollReports';
 import { StatutoryComponents } from './views/StatutoryComponents';
 import { PayrollRuns } from './views/PayrollRuns';
 import { PaySchedule, TaxDetails } from './views/OrgSetup';
@@ -93,6 +96,12 @@ function CurrentView() {
       return <PayHeadMaster />;
     case 'templates':
       return <SalaryTemplates />;
+    case 'paiddays':
+      return <PaidDaysTemplates />;
+    case 'payrolldash':
+      return <PayrollDashboard />;
+    case 'payrollreports':
+      return <PayrollReports />;
     case 'statutorycomponents':
       return <StatutoryComponents />;
     case 'payruns':

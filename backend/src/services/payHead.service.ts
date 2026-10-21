@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
-import { payHeads, users } from '../config/db';
+import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
+import { standardNotAdded } from '../shared/payroll/standard-components';
 import {
   CalculationBasis,
   CalculationMode,
@@ -19,6 +20,9 @@ const COMPONENT_TYPES = new Set<PayHeadComponentType>([
   'lta',
   'fixed_allowance',
   'special_allowance',
+  'medical',
+  'telephone',
+  'child_education',
   'statutory_bonus',
   'salary_advance',
   'notice_pay',
@@ -30,7 +34,8 @@ const COMPONENT_TYPES = new Set<PayHeadComponentType>([
 ]);
 const MODES = new Set<CalculationMode>(['flat_amount', 'percentage', 'flat_per_month']);
 const PERCENT_BASES = new Set<PercentageBase>(['ctc', 'basic', 'component']);
-const CONDITIONS = new Set(['always', 'if_pf_wage_below_15000']);
+// The ceiling is ₹25,000; the old value name is still accepted and renamed.
+const CONDITIONS = new Set(['always', 'if_pf_wage_below_ceiling', 'if_pf_wage_below_15000']);
 
 // ₹1,000,000,000 expressed in paise — a generous ceiling that still catches
 // obviously-wrong inputs (e.g. rupees entered where paise were expected).
@@ -61,13 +66,78 @@ export interface PayHeadInput {
   prorate?: unknown;
   arrears?: unknown;
   maxClaimablePaise?: unknown;
+  unclaimedHandling?: unknown;
+  payslipName?: unknown;
+  taxable?: unknown;
+  partOfStructure?: unknown;
+  showInPayslip?: unknown;
   active?: unknown;
 }
+
+/**
+ * Settings an earning type pins regardless of what the form sends. The
+ * dashboard shows these ticked and locked; the server applies them too so a
+ * stray client can't store a Basic that skips PF or an HRA kept off the payslip.
+ *
+ * - Basic: always in the structure, taxable, pro-rated, in the PF wage
+ *   (always, no ₹25,000 condition), in the ESI wage and on the payslip.
+ * - HRA and Food Coupon (meal card): always in the structure, taxable and on
+ *   the payslip; the rest stays the admin's choice.
+ */
+export const FIXED_EARNING_SETTINGS: Partial<
+  Record<
+    PayHeadComponentType,
+    Partial<Pick<PayHead, 'partOfStructure' | 'taxable' | 'prorate' | 'considerForEpf' | 'considerForEsi' | 'showInPayslip' | 'fbp' | 'recurrence'>>
+  >
+> = {
+  basic: {
+    partOfStructure: true,
+    taxable: true,
+    prorate: true,
+    considerForEpf: { consider: true, condition: 'always' },
+    considerForEsi: { consider: true },
+    showInPayslip: true,
+    fbp: false,
+    recurrence: 'recurring',
+  },
+  hra: {
+    partOfStructure: true,
+    taxable: true,
+    showInPayslip: true,
+    recurrence: 'recurring',
+  },
+  // Food Coupon (meal card): the same three; FBP stays forced by the form.
+  meal_card: {
+    partOfStructure: true,
+    taxable: true,
+    showInPayslip: true,
+    recurrence: 'recurring',
+  },
+};
+
+/**
+ * How each fixed earning may be calculated, mirroring the form's two radio
+ * options: a flat monthly amount, or a percentage of one base.
+ */
+const ALLOWED_PERCENT_BASE: Partial<Record<PayHeadComponentType, PercentageBase>> = {
+  basic: 'ctc',
+  hra: 'basic',
+};
+
+/** Earning types an org may hold only one of. */
+const SINGLETON_TYPES = new Set<PayHeadComponentType>(['basic', 'hra']);
 
 export async function listPayHeads(adminUserId: string) {
   const org = await requireAdminOrg(adminUserId);
   const docs = await payHeads().find({ org }).sort({ category: 1, name: 1 }).toArray();
   return docs.map(toView);
+}
+
+/** The standard components this org hasn't added: shown next to its own, saved on first use. */
+export async function listStandardComponents(adminUserId: string) {
+  const org = await requireAdminOrg(adminUserId);
+  const own = await payHeads().find({ org }, { projection: { code: 1, componentType: 1 } }).toArray();
+  return standardNotAdded(own);
 }
 
 export async function getPayHead(adminUserId: string, idInput: string) {
@@ -100,7 +170,8 @@ export async function updatePayHead(adminUserId: string, idInput: string, input:
   const others = (await payHeads().find({ org }).toArray()).filter(
     (head) => !head._id.equals(current._id),
   );
-  const draft = normalizeInput(input, others, current);
+  // The code is how templates and salaries refer to the component: it never changes.
+  const draft = normalizeInput({ ...input, code: current.code }, others, current);
 
   const updated = await payHeads().findOneAndUpdate(
     { _id: current._id },
@@ -114,21 +185,45 @@ export async function updatePayHead(adminUserId: string, idInput: string, input:
 export async function deletePayHead(adminUserId: string, idInput: string) {
   const org = await requireAdminOrg(adminUserId);
   const current = await findOwned(org, idInput);
+  const label = current.payslipName ?? current.name;
+  // A template that lists this component would quietly lose it on the next
+  // run (resolution skips codes no longer in the catalog), so block instead.
+  const usedBy = await salaryTemplates()
+    .find({ org, 'components.payHeadCode': current.code })
+    .project<{ name: string }>({ _id: 0, name: 1 })
+    .toArray();
+  if (usedBy.length > 0) {
+    throw new PayHeadError(
+      409,
+      `${label} is used in ${usedBy.length === 1 ? 'the salary template' : 'the salary templates'} ${usedBy
+        .map((t) => `"${t.name}"`)
+        .join(', ')}. Remove it from ${usedBy.length === 1 ? 'that template' : 'those templates'} first.`,
+    );
+  }
+  // A person's own added component, or a per-person amount, refers to it too.
+  const people = await salaryStructures().countDocuments({
+    org,
+    $or: [{ 'overrides.add.payHeadCode': current.code }, { [`componentValues.${current.code}`]: { $exists: true } }],
+  });
+  if (people > 0) {
+    throw new PayHeadError(409, `${label} is on ${people} ${people === 1 ? "person's" : "people's"} salary. Remove it from ${people === 1 ? 'that salary' : 'those salaries'} first.`);
+  }
   // Any other component whose percentage references this one would be left
   // dangling — block the delete rather than silently break a calculation.
+  // "% of Basic" components depend on Basic the same way.
   const dependents = (await payHeads().find({ org }).toArray()).filter(
     (head) =>
       !head._id.equals(current._id) &&
       head.calculation.mode === 'percentage' &&
-      head.calculation.base === 'component' &&
-      head.calculation.baseComponentCode === current.code,
+      ((head.calculation.base === 'component' && head.calculation.baseComponentCode === current.code) ||
+        (head.calculation.base === 'basic' && current.componentType === 'basic')),
   );
   if (dependents.length > 0) {
     throw new PayHeadError(
       409,
-      `Cannot delete "${current.code}": it is used as the base of ${dependents
-        .map((head) => head.code)
-        .join(', ')}`,
+      `${label} can't be deleted: ${dependents
+        .map((head) => head.payslipName ?? head.name)
+        .join(', ')} ${dependents.length === 1 ? 'is' : 'are'} worked out from it.`,
     );
   }
   await payHeads().deleteOne({ _id: current._id });
@@ -162,15 +257,30 @@ function normalizeInput(
   ) as PayHeadComponentType;
   const active = input.active === undefined ? true : Boolean(input.active);
 
-  // At most one Basic component per org, so `% of Basic` resolves unambiguously.
-  if (componentType === 'basic') {
-    const otherBasic = siblings.find((head) => head.componentType === 'basic');
-    if (otherBasic) {
-      throw new PayHeadError(409, `A Basic component already exists (${otherBasic.code})`);
+  // At most one Basic per org, so `% of Basic` resolves unambiguously; likewise
+  // one HRA, so the HRA exemption has a single component to look at.
+  if (SINGLETON_TYPES.has(componentType)) {
+    const other = siblings.find((head) => head.componentType === componentType);
+    if (other) {
+      const label = componentType === 'basic' ? 'A Basic' : 'A House Rent Allowance';
+      throw new PayHeadError(409, `${label} component already exists (${other.code})`);
     }
   }
 
   const calculation = normalizeCalculation(input.calculation, code, siblings);
+  const allowedBase = category === 'earning' ? ALLOWED_PERCENT_BASE[componentType] : undefined;
+  if (allowedBase) {
+    const ok =
+      calculation.mode === 'flat_per_month' ||
+      (calculation.mode === 'percentage' && calculation.base === allowedBase);
+    if (!ok) {
+      throw new PayHeadError(
+        400,
+        `This earning is a flat monthly amount or a percentage of ${allowedBase === 'ctc' ? 'CTC' : 'Basic'}`,
+      );
+    }
+  }
+  const fixed = category === 'earning' ? FIXED_EARNING_SETTINGS[componentType] ?? {} : {};
 
   const draft: Omit<PayHead, 'org' | 'createdAt' | 'updatedAt'> = {
     name,
@@ -187,7 +297,16 @@ function normalizeInput(
     prorate: input.prorate === undefined ? undefined : Boolean(input.prorate),
     arrears: input.arrears === undefined ? undefined : Boolean(input.arrears),
     maxClaimablePaise: normalizeMaxClaimable(input.maxClaimablePaise, category),
+    unclaimedHandling:
+      category === 'reimbursement' && (input.unclaimedHandling === 'carry_forward' || input.unclaimedHandling === 'encash_monthly')
+        ? input.unclaimedHandling
+        : undefined,
+    payslipName: optionalString(input.payslipName, 'payslipName', 100),
+    taxable: input.taxable === undefined ? undefined : Boolean(input.taxable),
+    partOfStructure: input.partOfStructure === undefined ? undefined : Boolean(input.partOfStructure),
+    showInPayslip: input.showInPayslip === undefined ? undefined : Boolean(input.showInPayslip),
     active,
+    ...fixed,
   };
 
   // Build the post-write graph and reject circular percentage references.
@@ -333,7 +452,11 @@ function normalizeConsideration(raw: unknown, field: string): StatutoryConsidera
   return {
     consider,
     ...(consider && condition !== undefined
-      ? { condition: condition as StatutoryConsideration['condition'] }
+      ? {
+          condition: (condition === 'if_pf_wage_below_15000'
+            ? 'if_pf_wage_below_ceiling'
+            : condition) as StatutoryConsideration['condition'],
+        }
       : {}),
   };
 }
@@ -365,6 +488,14 @@ function requireString(value: unknown, field: string, maxLength: number): string
   const trimmed = value.trim();
   if (trimmed.length > maxLength) throw new PayHeadError(400, `${field} is too long`);
   return trimmed;
+}
+
+function optionalString(value: unknown, field: string, maxLength: number): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') throw new PayHeadError(400, `${field} must be text`);
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) throw new PayHeadError(400, `${field} is too long`);
+  return trimmed || undefined;
 }
 
 function normalizeCode(value: unknown, field = 'code'): string {
@@ -441,6 +572,11 @@ function toView(doc: StoredPayHead) {
     prorate: doc.prorate,
     arrears: doc.arrears,
     maxClaimablePaise: doc.maxClaimablePaise,
+    unclaimedHandling: doc.unclaimedHandling,
+    payslipName: doc.payslipName,
+    taxable: doc.taxable,
+    partOfStructure: doc.partOfStructure,
+    showInPayslip: doc.showInPayslip,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),

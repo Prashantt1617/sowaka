@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { tdsWorksheet } from '../services/tdsWorksheet.service';
 import {
   employeePayslips,
   createRun,
@@ -36,6 +37,8 @@ export async function createRunHandler(req: Request, res: Response, next: NextFu
       period: String(body.period ?? ''),
       lopDays: body.lopDays as Record<string, number> | undefined,
       overtimePaise: body.overtimePaise as Record<string, number> | undefined,
+      incomeTaxPaise: body.incomeTaxPaise as Record<string, number> | undefined,
+      componentAmounts: body.componentAmounts as Record<string, Record<string, number>> | undefined,
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) {
@@ -47,8 +50,10 @@ export async function recomputeRunHandler(req: Request, res: Response, next: Nex
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const run = await recomputeRun(requireUserId(req), String(req.params.runId ?? ''), {
-      lopDays: body.lopDays as Record<string, number> | undefined,
-      overtimePaise: body.overtimePaise as Record<string, number> | undefined,
+      lopDays: body.lopDays as Record<string, number | null> | undefined,
+      overtimePaise: body.overtimePaise as Record<string, number | null> | undefined,
+      incomeTaxPaise: body.incomeTaxPaise as Record<string, number | null> | undefined,
+      componentAmounts: body.componentAmounts as Record<string, Record<string, number | null> | null> | undefined,
     });
     res.status(200).json({ success: true, run });
   } catch (error) {
@@ -107,6 +112,15 @@ export async function employeePayslipsHandler(req: Request, res: Response, next:
   try {
     const result = await employeePayslips(requireUserId(req), String(req.params.userId ?? ''));
     res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function tdsWorksheetHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const sheet = await tdsWorksheet(requireUserId(req), String(req.params.payslipId ?? ''));
+    res.status(200).json({ success: true, sheet });
   } catch (error) {
     next(error);
   }

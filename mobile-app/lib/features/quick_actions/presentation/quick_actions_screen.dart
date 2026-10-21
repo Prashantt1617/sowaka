@@ -2202,7 +2202,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              for (final e in slip.earnings)
+              for (final e in slip.earnings.where((e) => !e.hidden))
                 _payslipRow(
                   e.name,
                   _inr(e.fullPaise),
@@ -2235,7 +2235,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   ].join(' · '),
                   strong: true,
                 ),
-              for (final d in slip.deductions)
+              for (final d in slip.deductions.where((d) => !d.hidden))
                 _payslipRow(d.name, '−${_inr(d.fullPaise)}'),
               if (slip.lopDays == 0 && slip.deductions.isEmpty)
                 _payslipRow('No deductions', '—'),

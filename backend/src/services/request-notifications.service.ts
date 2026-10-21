@@ -24,7 +24,7 @@ import { notifyUsers } from './notification.service';
 import { claimOnce } from './scribble-store';
 import { emitRequestsChanged } from './connect-realtime.service';
 import { leaveTypeLabel } from '../models/shift.model';
-import { approvalRulesFor, managerMayDecide } from './shift.service';
+import { approvalRulesFor, managerMayDecide, policiesForUsers, policyForUser, ResolvedShiftPolicy } from './shift.service';
 import { dateRange, dayLabel, days, istParts, shortDate, tueThuDueFor } from './notification-time';
 
 /** "10 September 2026", for email copy. */
@@ -476,48 +476,80 @@ export async function notifyPunchedOut(
 /** Requests this person may act on: pending, not past-dated beyond use, not HR-only for a manager. */
 export async function pendingFor(approver: User, now: Date): Promise<{ leave: number; overtime: number; attendance: number; oldest: Date | null }> {
   const todayKey = istParts(now).dateKey;
-  const team = await users()
-    .find({ org: approver.org, managerUserId: approver.userId, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } })
+  // The pending requests in the company first (usually a handful), then the
+  // approval policy of only the people who raised them: checking every
+  // person's policy for an HR user took most of a minute and the inbox, which
+  // calls this, never opened.
+  const people = await users()
+    .find({ org: approver.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { _id: 0, userId: 1, managerUserId: 1 } })
     .toArray();
-  const hrNamed = new Map<string, { leave: boolean; correction: boolean }>();
-  for (const member of team) {
-    const named = async (kind: 'leave' | 'correction') => {
-      try { return !managerMayDecide((await approvalRulesFor(member.userId, kind)).approver); } catch { return false; }
-    };
-    hrNamed.set(member.userId, { leave: await named('leave'), correction: await named('correction') });
-  }
-  const leaveFor = team.filter((m) => !hrNamed.get(m.userId)?.leave).map((m) => m.userId);
-  const correctionFor = team.filter((m) => !hrNamed.get(m.userId)?.correction).map((m) => m.userId);
-
-  // HR acts on the requests of people with no manager, and on those their policy sends to HR.
-  const hrLeaveFor: string[] = [];
-  const hrCorrectionFor: string[] = [];
-  const hrOvertimeFor: string[] = [];
-  if (approver.dashboardAccess && approver.org) {
-    const roster = await users()
-      .find({ org: approver.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, userId: { $ne: approver.userId } })
-      .toArray();
-    for (const person of roster) {
-      const noManager = !person.managerUserId;
-      const viaPolicy = async (kind: 'leave' | 'correction') => {
-        try { return !managerMayDecide((await approvalRulesFor(person.userId, kind)).approver); } catch { return false; }
-      };
-      if (noManager || await viaPolicy('leave')) hrLeaveFor.push(person.userId);
-      if (noManager || await viaPolicy('correction')) hrCorrectionFor.push(person.userId);
-      if (noManager) hrOvertimeFor.push(person.userId);
-    }
-  }
-  const leaveIds = [...new Set([...leaveFor, ...hrLeaveFor])];
-  const correctionIds = [...new Set([...correctionFor, ...hrCorrectionFor])];
-  const overtimeIds = [...new Set([...team.map((m) => m.userId), ...hrOvertimeFor])];
-
-  const [leaveRows, overtimeRows, correctionRows] = await Promise.all([
-    leaveIds.length ? leaves().find({ userId: { $in: leaveIds }, status: 'pending' }).toArray() : [],
-    overtimeIds.length ? overtimeRequests().find({ userId: { $in: overtimeIds }, status: 'pending' }).toArray() : [],
-    correctionIds.length ? attendanceRegularizations().find({ userId: { $in: correctionIds }, status: 'pending' }).toArray() : [],
+  const ids = people.map((p) => p.userId);
+  const [pendingLeave, pendingOvertime, pendingCorrections] = await Promise.all([
+    leaves().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
+    overtimeRequests().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
+    attendanceRegularizations().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
   ]);
-  // A leave that ended before today can no longer be acted on in any useful way.
-  const usefulLeave = leaveRows.filter((row) => row.endDate.toISOString().slice(0, 10) >= todayKey);
+  const byId = new Map(people.map((p) => [p.userId, p]));
+  // HR acts across the company, so only within one (as `org: undefined` would
+  // match everyone without a company).
+  const hr = Boolean(approver.dashboardAccess && approver.org);
+  const onTeam = (person: { managerUserId?: string }) => person.managerUserId === approver.userId;
+  const forHr = (person: { userId: string }) => hr && person.userId !== approver.userId;
+  // A leave that ended before today can no longer be acted on in any useful
+  // way, so its owner's policy need not be looked up.
+  const usefulPending = pendingLeave.filter((row) => row.endDate.toISOString().slice(0, 10) >= todayKey);
+
+  // The policies that decide it, all in one lookup: on the team, a manager
+  // acts unless the policy names HR; for HR it matters only when the person
+  // has a manager. Whatever the batch misses, or if it fails, is looked up
+  // one person at a time as `approvalRulesFor` does.
+  const owners = [...new Set([...usefulPending, ...pendingCorrections].map((row) => row.userId))].filter((userId) => {
+    const person = byId.get(userId);
+    return Boolean(person && (onTeam(person) || (forHr(person) && person.managerUserId)));
+  });
+  const batch = owners.length
+    ? await policiesForUsers(owners).catch(() => new Map<string, ResolvedShiftPolicy>())
+    : new Map<string, ResolvedShiftPolicy>();
+  const single = new Map<string, Promise<ResolvedShiftPolicy>>();
+  const policyOf = (userId: string): ResolvedShiftPolicy | Promise<ResolvedShiftPolicy> => {
+    const known = batch.get(userId);
+    if (known) return known;
+    if (!single.has(userId)) single.set(userId, policyForUser(userId));
+    return single.get(userId)!;
+  };
+  // Whether the person's policy names HR (not their manager) for this kind of
+  // request; a failed lookup counts as "not HR".
+  const hrNamed = async (userId: string, kind: 'leave' | 'correction') => {
+    try {
+      const policy = await policyOf(userId);
+      return !managerMayDecide((kind === 'leave' ? policy.leave : policy.correction).approver);
+    } catch {
+      return false;
+    }
+  };
+  // A manager acts on their team's requests unless the policy sends them to HR;
+  // HR acts on those of people with no manager and those the policy sends to HR.
+  const mayAct = async (userId: string, kind: 'leave' | 'correction' | 'overtime') => {
+    const person = byId.get(userId);
+    if (!person) return false;
+    const team = onTeam(person);
+    const noManager = !person.managerUserId;
+    const asHr = forHr(person);
+    if (kind === 'overtime') return team || (asHr && noManager);
+    if (!team && !asHr) return false;
+    if (!team && noManager) return true;
+    const named = await hrNamed(userId, kind);
+    return (team && !named) || (asHr && (noManager || named));
+  };
+  const keep = async <T extends { userId: string }>(rows: T[], kind: 'leave' | 'correction' | 'overtime') => {
+    const ok = await Promise.all(rows.map((row) => mayAct(row.userId, kind)));
+    return rows.filter((_, i) => ok[i]);
+  };
+  const [usefulLeave, overtimeRows, correctionRows] = await Promise.all([
+    keep(usefulPending, 'leave'),
+    keep(pendingOvertime, 'overtime'),
+    keep(pendingCorrections, 'correction'),
+  ]);
   const created = [
     ...usefulLeave.map((row) => new Date(row.createdAt ?? 0)),
     ...overtimeRows.map((row) => new Date(row.createdAt ?? 0)),

@@ -22,7 +22,7 @@ export class StatutoryError extends Error {
  * state. All amounts are editable by the admin; these only bootstrap the common
  * cases the PRD calls out (Haryana monthly LWF, Delhi half-yearly LWF).
  */
-const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
+export const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
   haryana: {
     lwf: {
       cycle: 'monthly',
@@ -39,6 +39,18 @@ const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
       employer: { mode: 'flat', amountPaise: 225 }, // ₹2.25
     },
   },
+  'west bengal': {
+    // Monthly gross: ₹0 up to ₹10,000, then ₹110 / ₹130 / ₹150, and ₹200 above ₹40,000.
+    pt: {
+      slabs: [
+        { upToPaise: 10_000_00, amountPaise: 0 },
+        { upToPaise: 15_000_00, amountPaise: 110_00 },
+        { upToPaise: 25_000_00, amountPaise: 130_00 },
+        { upToPaise: 40_000_00, amountPaise: 150_00 },
+        { upToPaise: null, amountPaise: 200_00 },
+      ],
+    },
+  },
   karnataka: {
     // ₹0 below ₹25,000 monthly gross, ₹200 at/above.
     pt: {
@@ -51,7 +63,7 @@ const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
 };
 
 // A neutral bonus default applied to any state lacking its own rule.
-const DEFAULT_BONUS: BonusRule = {
+export const DEFAULT_BONUS: BonusRule = {
   ratePercent: 8.33,
   minWageByCategoryPaise: {
     unskilled: 10_000_00,

@@ -34,9 +34,13 @@ import { AppNotification, DeviceToken } from '../models/notification.model';
 import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
+import { StatutorySettings } from '../models/statutorySettings.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
+import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { EmployeePaymentDetails } from '../models/employeePayment.model';
+import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
@@ -237,6 +241,10 @@ export function statutoryRules(): Collection<StateStatutoryRule> {
   return getDb().collection<StateStatutoryRule>('statutory_rules');
 }
 
+export function statutorySettings(): Collection<StatutorySettings> {
+  return getDb().collection<StatutorySettings>('statutory_settings');
+}
+
 export function salaryStructures(): Collection<SalaryStructure> {
   return getDb().collection<SalaryStructure>('salary_structures');
 }
@@ -245,8 +253,24 @@ export function salaryTemplates(): Collection<SalaryTemplate> {
   return getDb().collection<SalaryTemplate>('salary_templates');
 }
 
+export function paidDaysTemplates(): Collection<PaidDaysTemplate> {
+  return getDb().collection<PaidDaysTemplate>('paid_days_templates');
+}
+
 export function payrollRuns(): Collection<PayrollRun> {
   return getDb().collection<PayrollRun>('payroll_runs');
+}
+
+export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
+  return getDb().collection<EmployeePaymentDetails>('employee_payment_details');
+}
+
+export function tdsConfigs(): Collection<TdsConfigRow> {
+  return getDb().collection<TdsConfigRow>('tds_configs');
+}
+
+export function taxDeclarations(): Collection<TaxDeclarationRow> {
+  return getDb().collection<TaxDeclarationRow>('tax_declarations');
 }
 
 export function payslips(): Collection<Payslip> {
@@ -326,6 +350,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection('secret_squad_offices').createIndex({ org: 1, userId: 1 });
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
   // The reads name people and days but not the org, which the unique key leads with.
   await database.collection('attendance_overrides').createIndex({ userId: 1, workDate: 1 });
   await database

@@ -196,9 +196,15 @@ Future<Uint8List> buildPayslipPdf({
         ].join(' · '),
         lopPaise,
       ),
-    for (final d in slip.deductions) (d.name, null, d.fullPaise),
+    for (final d in slip.deductions.where((d) => !d.hidden))
+      (d.name, null, d.fullPaise),
   ];
-  final totalDeductions = deductions.fold<int>(0, (t, d) => t + d.$3);
+  // Hidden lines are not listed but still count in the total.
+  final totalDeductions =
+      deductions.fold<int>(0, (t, d) => t + d.$3) +
+      slip.deductions
+          .where((d) => d.hidden)
+          .fold<int>(0, (t, d) => t + d.fullPaise);
   final gross =
       slip.monthlyPaise + slip.overtimePaise + slip.reimbursementsPaise;
 
@@ -420,7 +426,7 @@ Future<Uint8List> buildPayslipPdf({
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 column('EARNINGS', [
-                  for (final e in slip.earnings)
+                  for (final e in slip.earnings.where((e) => !e.hidden))
                     amountRow(
                       e.name,
                       e.fullPaise != e.paidPaise

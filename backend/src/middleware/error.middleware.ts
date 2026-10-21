@@ -22,9 +22,13 @@ import { PolicyDocumentError } from '../services/policy-document.service';
 import { NotificationError } from '../services/notification.service';
 import { PayHeadError } from '../services/payHead.service';
 import { StatutoryError } from '../services/statutory.service';
+import { StatutorySettingsError } from '../services/statutorySettings.service';
 import { SalaryStructureError } from '../services/salaryStructure.service';
 import { SalaryTemplateError } from '../services/salaryTemplate.service';
 import { PayrollRunError } from '../services/payrollRun.service';
+import { EmployeePaymentError } from '../services/employeePayment.service';
+import { TdsError } from '../services/tds.service';
+import { PaidDaysTemplateError } from '../services/paidDaysTemplate.service';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { OrgSetupError } from '../services/orgSetup.service';
 import { KpiError } from '../services/kpi.service';
@@ -110,9 +114,13 @@ function getStatusCode(error: unknown): number {
     || error instanceof NotificationError
     || error instanceof PayHeadError
     || error instanceof StatutoryError
+    || error instanceof StatutorySettingsError
     || error instanceof SalaryStructureError
     || error instanceof SalaryTemplateError
     || error instanceof PayrollRunError
+    || error instanceof EmployeePaymentError
+    || error instanceof TdsError
+    || error instanceof PaidDaysTemplateError
     || error instanceof PayrollInputsError
     || error instanceof OrgSetupError
     || error instanceof KpiError

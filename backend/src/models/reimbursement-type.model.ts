@@ -25,6 +25,14 @@ export interface ReimbursementType {
    * that exists to stop stale expenses arriving months later.
    */
   backdateDays: number;
+  /**
+   * The salary reimbursement component (pay head code) these claims are the
+   * bills for, e.g. Fuel → FUEL. The component is paid in full every month
+   * and taxed until bills come in; an approved claim of this type makes that
+   * much of it tax-free instead of being paid again. Absent: an ordinary
+   * expense claim, paid on the next run.
+   */
+  payHeadCode?: string;
   active: boolean;
   createdByUserId?: string;
   createdAt: Date;

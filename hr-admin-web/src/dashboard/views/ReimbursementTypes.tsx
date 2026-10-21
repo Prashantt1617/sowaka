@@ -14,6 +14,7 @@ import {
   createReimbursementType, deleteReimbursementType, getReimbursementTypes, updateReimbursementType,
   type ReimbursementTypeDTO,
 } from '../../services/hrms';
+import { listPayHeads, type PayHeadDTO } from '../../services/payroll';
 
 const rupees = (value: number) =>
   value > 0 ? `₹${value.toLocaleString('en-IN')}` : 'No cap';
@@ -100,7 +101,10 @@ export function ReimbursementTypes() {
           <tbody>
             {types.map((t) => (
               <tr key={t.id}>
-                <Td><strong style={{ color: '#0571A6' }}>{t.name}</strong></Td>
+                <Td>
+                  <strong style={{ color: '#0571A6' }}>{t.name}</strong>
+                  {t.payHeadCode && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
+                </Td>
                 <Td muted>{t.description || '—'}</Td>
                 <Td right mono>{rupees(t.maxLimit)}</Td>
                 <Td right mono>{t.backdateDays === 0 ? 'Today only' : `${t.backdateDays} days`}</Td>
@@ -139,6 +143,12 @@ function TypeModal({ initial, onClose, onSaved }: {
   const [maxLimit, setMaxLimit] = useState(String(initial?.maxLimit ?? 0));
   const [backdateDays, setBackdateDays] = useState(String(initial?.backdateDays ?? 30));
   const [active, setActive] = useState(initial?.active ?? true);
+  const [billsFor, setBillsFor] = useState(initial?.payHeadCode ?? '');
+  // Salary reimbursement components (Fuel, Internet…) a type's claims can be the bills for.
+  const [components, setComponents] = useState<PayHeadDTO[] | null>(null);
+  useEffect(() => {
+    void listPayHeads().then((heads) => setComponents(heads.filter((h) => h.category === 'reimbursement'))).catch(() => setComponents([]));
+  }, []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -151,6 +161,7 @@ function TypeModal({ initial, onClose, onSaved }: {
         description: description.trim(),
         maxLimit: Number(maxLimit) || 0,
         backdateDays: Number(backdateDays) || 0,
+        payHeadCode: billsFor || null,
         active,
       };
       if (initial) await updateReimbursementType(initial.id, input);
@@ -214,6 +225,19 @@ function TypeModal({ initial, onClose, onSaved }: {
                 : 'Zero means today only — no past dates can be claimed.'}
             </div>
           </Field>
+          {(components?.length ?? 0) > 0 && (
+            <Field label="Bills for a salary component">
+              <select value={billsFor} onChange={(e) => setBillsFor(e.target.value)} style={{ ...inputStyle, maxWidth: 360 }}>
+                <option value="">None: an expense claim, paid on the next run</option>
+                {components!.map((h) => <option key={h.code} value={h.code}>{h.name}</option>)}
+              </select>
+              <div style={{ fontSize: 13, color: '#717171', marginTop: 6 }}>
+                {billsFor
+                  ? 'This component is already paid with salary every month and taxed until bills come in. An approved claim of this type is not paid again: it makes that much of the component tax-free, and the income tax drops from the next payroll run.'
+                  : 'The approved amount is paid on the next payroll run.'}
+              </div>
+            </Field>
+          )}
           <label style={checkRow}>
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
             Available in the app

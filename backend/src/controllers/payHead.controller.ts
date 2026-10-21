@@ -4,6 +4,7 @@ import {
   deletePayHead,
   getPayHead,
   listPayHeads,
+  listStandardComponents,
   PayHeadError,
   PayHeadInput,
   updatePayHead,
@@ -12,6 +13,14 @@ import {
 export async function listPayHeadsHandler(req: Request, res: Response, next: NextFunction) {
   try {
     res.status(200).json({ success: true, payHeads: await listPayHeads(requireUserId(req)) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listStandardComponentsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, components: await listStandardComponents(requireUserId(req)) });
   } catch (error) {
     next(error);
   }
@@ -74,6 +83,11 @@ function toInput(body: unknown): PayHeadInput {
     prorate: source.prorate,
     arrears: source.arrears,
     maxClaimablePaise: source.maxClaimablePaise,
+    unclaimedHandling: source.unclaimedHandling,
+    payslipName: source.payslipName,
+    taxable: source.taxable,
+    partOfStructure: source.partOfStructure,
+    showInPayslip: source.showInPayslip,
     active: source.active,
   };
 }

@@ -41,10 +41,10 @@ export function parsePeriod(period: string): PeriodRange {
 }
 
 /**
- * Paid days in the period: every calendar day. Weekly offs and company
- * holidays are paid — nobody works them, nobody loses pay for them — so the
- * month's salary is spread over all its days and only loss of pay comes off.
- * (ACMT's own payroll sheet divides by the days in the month, 31 for August.)
+ * Base days for the period: the days in that month (28 to 31). Week offs,
+ * holidays and approved leave are paid, so the month's salary is spread over
+ * all its days and only loss of pay comes off: paid days = days in the month −
+ * loss-of-pay days.
  */
 export async function computeWorkingDays(_org: string | undefined, range: PeriodRange): Promise<number> {
   return range.daysInMonth;
@@ -61,11 +61,17 @@ export interface EmployeePeriodInputs {
 export async function getEmployeePeriodInputs(
   userId: string,
   range: PeriodRange,
+  claims: {
+    /** Claim categories that are bills for a salary component: never paid as expenses. */
+    billCategories?: string[];
+    /** Claims already on another run (not rejected): never paid twice. */
+    reservedClaimIds?: Set<string>;
+  } = {},
 ): Promise<EmployeePeriodInputs> {
   const [approvedLeaveDays, approvedOtHours, reimb] = await Promise.all([
     countApprovedLeaveDays(userId, range),
     sumApprovedOtHours(userId, range),
-    collectApprovedReimbursements(userId, range),
+    collectApprovedReimbursements(userId, range, claims.billCategories ?? [], claims.reservedClaimIds ?? new Set()),
   ]);
   return {
     approvedLeaveDays,
@@ -103,13 +109,22 @@ async function sumApprovedOtHours(userId: string, range: PeriodRange): Promise<n
 async function collectApprovedReimbursements(
   userId: string,
   range: PeriodRange,
+  billCategories: string[],
+  reserved: Set<string>,
 ): Promise<{ paise: number; ids: string[] }> {
+  // Every approved claim not yet paid, for this month or the one before (a
+  // claim approved late for last month's expense is paid in the next run), and
+  // not already on another run. Submitting a run moves its claims to paid.
+  // Older approved claims are left for HR to settle by hand.
   const rows = await reimbursementClaims()
-    .find({ userId, status: 'approved', expenseDate: { $gte: range.start, $lte: range.end } })
+    // A claim that is a bill for a salary component (Fuel, Internet) is not paid
+    // again: the component already was; the bill only makes it tax-free.
+    .find({ userId, status: 'approved', expenseDate: { $gte: new Date(Date.UTC(range.year, range.month - 2, 1)), $lte: range.end }, ...(billCategories.length ? { category: { $nin: billCategories } } : {}) })
     .toArray();
   let paise = 0;
   const ids: string[] = [];
   for (const row of rows) {
+    if (row._id && reserved.has(row._id.toHexString())) continue;
     paise += Math.round((row.amount ?? 0) * 100); // stored in rupees -> paise
     if (row._id) ids.push(row._id.toHexString());
   }

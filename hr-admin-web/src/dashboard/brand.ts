@@ -50,6 +50,11 @@ const BRANDS: Record<string, Brand> = {
   },
 };
 
+/** A company's brand by org id (payslips print their logo). */
+export function brandOf(org: string | undefined): Brand | undefined {
+  return org ? BRANDS[org.toLowerCase()] : undefined;
+}
+
 const LAST_ORG_KEY = 'sowaka.brandOrg';
 
 /** Noted at sign-in, read at the next sign-in screen. */

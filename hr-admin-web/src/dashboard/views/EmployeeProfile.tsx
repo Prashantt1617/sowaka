@@ -23,9 +23,12 @@ import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, inf
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
-import { getEmployeePayslips, getSalaryStructure, inr as inrPaise, type PayrollRunDTO, type PayslipDTO, type SalaryStructureDTO } from '../../services/payroll';
+import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { EmployeeSalary } from './EmployeeSalary';
+import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
-import { printPayslip } from '../payslip';
+import { downloadPayslipPdf } from '../payslip';
+import { downloadTdsSheetPdf } from '../tdsSheet';
 import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus } from '../../services/hrms';
 
 // —— Deterministic per-person derivations ————————————————————————————————
@@ -241,6 +244,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               </div>
           </Section>
             )}
+            <PaymentDetails userId={emp.id} />
           </div>
         </div>
       )}
@@ -341,7 +345,13 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       )}
 
       {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} onChanged={setCurrentMonth} />}
-      {tab === 'salary' && seesSalary && <SalarySlips userId={emp.id} />}
+      {tab === 'salary' && seesSalary && (
+        <div>
+          <EmployeeSalary userId={emp.id} name={emp.name} />
+          <IncomeTaxCard userId={emp.id} />
+          <div style={{ marginTop: 22 }}><SalarySlips userId={emp.id} /></div>
+        </div>
+      )}
 
       {tab === 'requests' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 18, alignItems: 'start' }}>
@@ -473,29 +483,16 @@ function SalarySlips({ userId }: { userId: string }) {
   const [company, setCompany] = useState<{ name: string; address: string }>({ name: '', address: '' });
   const [error, setError] = useState<string | null>(null);
   const [explain, setExplain] = useState<PayslipDTO | null>(null);
-  const [structure, setStructure] = useState<SalaryStructureDTO | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
     setRows(null);
-    setStructure(undefined);
-    getSalaryStructure(userId)
-      .then((r) => { if (live) setStructure(r.structure); })
-      .catch(() => { if (live) setStructure(null); });
     getEmployeePayslips(userId)
       .then((r) => { if (live) { setRows(r.payslips); setCompany(r.company); } })
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
   }, [userId]);
 
-  const salaryCard = structure === undefined ? null : (
-    <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 18 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <Fact label="Monthly salary" value={structure && structure.annualCtcPaise > 0 ? inrPaise(Math.round(structure.annualCtcPaise / 12)) : '—'} />
-        <Fact label="Annual CTC" value={structure && structure.annualCtcPaise > 0 ? inrPaise(structure.annualCtcPaise) : '—'} />
-        <Fact label="Salary template" value={structure?.salaryTemplateCode ? `${structure.salaryTemplateCode.charAt(0)}${structure.salaryTemplateCode.slice(1).toLowerCase()}${structure.status === 'active' ? '' : ' · not on payroll'}` : '—'} />
-      </div>
-    </Card>
-  );
+  const salaryCard = <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 10 }}>Payslips</div>;
   if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 600 }}>{error}</div></Card></div>;
   if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 600 }}>Loading…</div></Card></div>;
   if (rows.length === 0) {
@@ -537,7 +534,10 @@ function SalarySlips({ userId }: { userId: string }) {
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#A8475F' }}>−{inrPaise(lopPaise + payslip.employeeDeductionsPaise)}</td>
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
-                  <button type="button" onClick={() => printPayslip(payslip, company)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
+                    {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={{ background: '#fff', color: '#0571A6', border: '1px solid #0571A6', padding: '8px 14px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>TDS sheet</button>}
+                  </div>
                 </td>
               </tr>
             );
@@ -552,16 +552,29 @@ function SalarySlips({ userId }: { userId: string }) {
 
 const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
 
-function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; initial: EmployeeCalendarDTO | null; onChanged: (c: EmployeeCalendarDTO) => void }) {
+/**
+ * One person's month, day by day; HR clicks a day to mark it. Also opened from
+ * a payroll run on the run's month (`startMonth`), with the days that cost pay
+ * ringed (`highlight`) and editable while that month's run is open (`editableMonth`).
+ */
+export function EmployeeCalendar({ userId, initial, onChanged, startMonth, editableMonth, highlight, onMarked }: {
+  userId: string;
+  initial: EmployeeCalendarDTO | null;
+  onChanged: (c: EmployeeCalendarDTO) => void;
+  startMonth?: string;
+  editableMonth?: string;
+  highlight?: (day: CalendarDayDTO) => string | null;
+  onMarked?: () => void;
+}) {
   const { flash } = useStore();
-  const [month, setMonth] = useState(thisMonth());
+  const [month, setMonth] = useState(startMonth ?? thisMonth());
   const [cal, setCal] = useState<EmployeeCalendarDTO | null>(initial);
   const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState('');
   // The day HR is marking, if any. Only the current month can be marked.
   const [editing, setEditing] = useState<CalendarDayDTO | null>(null);
   const [saving, setSaving] = useState(false);
-  const editable = month === thisMonth();
+  const editable = month === thisMonth() || (editableMonth !== undefined && month === editableMonth);
   const reload = async () => {
     const fresh = await getEmployeeCalendar(userId, month);
     setCal(fresh);
@@ -574,6 +587,7 @@ function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; init
       else await clearCalendarDay(userId, day.date);
       await reload();
       setEditing(null);
+      onMarked?.();
       flash(status ? `${day.date} marked ${CAL_TONE[status].label.toLowerCase()}` : `${day.date} back to the recorded state`);
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Could not save', 'error');
@@ -638,16 +652,18 @@ function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; init
                 : day.status === 'upcoming' ? ''
                   : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');
             const prev = day.hr ? CAL_TONE[day.hr.previousStatus] : null;
+            const ring = highlight?.(day) ?? null;
             return (
               <div
                 key={day.date}
                 title={`${day.date}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
                 onClick={editable ? () => setEditing(day) : undefined}
-                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: day.hr ? 'inset 0 0 0 2px #0571A6' : undefined }}
+                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 3px #C4382E' : day.hr ? 'inset 0 0 0 2px #0571A6' : undefined }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <span style={{ fontSize: 15, fontWeight: 800, color: day.status === 'upcoming' ? '#C7CBD3' : '#222222' }}>{Number(day.date.slice(8))}</span>
-                  {day.hr ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: '#0571A6', borderRadius: 5, padding: '1px 5px' }}>HR</span>
+                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: '#C4382E', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
+                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: '#0571A6', borderRadius: 5, padding: '1px 5px' }}>HR</span>
                     : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#7E5FB0' }}>late {day.lateByMinutes}m</span>}
                 </div>
                 {day.hr && prev && (
@@ -660,7 +676,7 @@ function EmployeeCalendar({ userId, initial, onChanged }: { userId: string; init
           })}
         </div>
       </Card>
-      {editable && <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10 }}>Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {editable && <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
     </div>
   );
@@ -783,6 +799,74 @@ function Fact({ label, value, border }: { label: string; value: string; border?:
       <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 600, color: '#222222', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
+  );
+}
+
+// Bank account, PAN and UAN. Encrypted on the server; people with payroll
+// access see them in full and can change them, everyone else sees the last
+// four characters only.
+function PaymentDetails({ userId }: { userId: string }) {
+  const { flash } = useStore();
+  const [d, setD] = useState<PaymentDetailsDTO | null>(null);
+  const [form, setForm] = useState<PaymentDetailsInput | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getPaymentDetails(userId).then((x) => live && setD(x)).catch(() => live && setD(null));
+    return () => { live = false; };
+  }, [userId]);
+  if (!d) return null;
+  const save = async () => {
+    if (!form) return;
+    setSaving(true);
+    try {
+      setD(await savePaymentDetails(userId, form));
+      setForm(null);
+      flash('Payment details saved');
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save payment details', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const field = (label: string, key: keyof PaymentDetailsInput, placeholder?: string) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 700, color: '#717171' }}>
+      {label}
+      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15, fontFamily: 'inherit' }} />
+    </label>
+  );
+  return (
+    <Section
+      title="Payment and tax IDs"
+      action={d.canEdit && !form ? <button type="button" onClick={() => setForm({ bankName: d.bankName, accountHolder: d.accountHolder, ifsc: d.ifsc, accountNumber: d.accountNumber, pan: d.pan, uan: d.uan, accountType: d.accountType ?? 'savings', payMode: d.payMode ?? 'bank_transfer' })} style={editBtn}>Edit</button> : undefined}
+    >
+      {form ? (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {field('Bank name', 'bankName', 'e.g. HDFC Bank')}
+            {field('Account holder', 'accountHolder')}
+            {field('Account number', 'accountNumber', '9 to 18 digits')}
+            {field('IFSC', 'ifsc', 'e.g. HDFC0001234')}
+            {field('PAN', 'pan', 'ABCDE1234F')}
+            {field('UAN', 'uan', '12 digits')}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: '#0571A6', color: '#fff', borderColor: '#0571A6' }}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => setForm(null)} style={editBtn}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <Grid>
+          <Row label="Bank" value={d.bankName ?? '—'} />
+          <Row label="Account number" value={d.accountNumber ?? '—'} />
+          <Row label="IFSC" value={d.ifsc ?? '—'} />
+          <Row label="Account holder" value={d.accountHolder ?? '—'} />
+          <Row label="PAN" value={d.pan ?? '—'} />
+          <Row label="UAN" value={d.uan ?? '—'} />
+        </Grid>
+      )}
+      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10 }}>Shown masked: full numbers are visible only with payroll access.</div>}
+    </Section>
   );
 }
 

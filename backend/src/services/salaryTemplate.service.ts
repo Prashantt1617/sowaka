@@ -1,11 +1,15 @@
 import { ObjectId } from 'mongodb';
-import { payHeads, salaryTemplates, users } from '../config/db';
+import { salaryStructures, salaryTemplates, users } from '../config/db';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
-import { SalaryTemplate, SalaryTemplateComponent } from '../models/salaryTemplate.model';
+import { OvertimePayRule, SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
 import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
+import { resolveTemplateComponents } from '../shared/payroll/resolve';
 import { resolveRuleSet } from './statutory.service';
+import { statutorySettingsFor } from './statutorySettings.service';
+import { catalogWithStandard, materializeStandard } from './standardComponents.service';
+import { ensurePaidDaysTemplates } from './paidDaysTemplate.service';
 
 export class SalaryTemplateError extends Error {
   constructor(
@@ -24,8 +28,11 @@ export interface SalaryTemplateInput {
   components?: unknown;
   balancingComponentCode?: unknown;
   epfApplyCeiling?: unknown;
+  paidDaysEnabled?: unknown;
+  statutoryWages?: unknown;
   deductionRules?: unknown;
   monthlyPaidLeaveDays?: unknown;
+  overtimePay?: unknown;
   active?: unknown;
 }
 
@@ -56,6 +63,9 @@ export async function createSalaryTemplate(adminUserId: string, input: SalaryTem
   const org = await requireAdminOrg(adminUserId);
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
+  await ensurePaidDaysTemplates(org);
+  // A standard component on the template becomes this org's pay head now.
+  await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
   const now = new Date();
   const doc: SalaryTemplate = { ...draft, org, createdAt: now, updatedAt: now };
   try {
@@ -79,9 +89,15 @@ export async function updateSalaryTemplate(
   if (!current) throw new SalaryTemplateError(404, 'Salary template not found');
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput({ code, ...input }, catalog);
+  await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
+  // The company's Paid Days Templates are made from these fields: make them before anything changes.
+  await ensurePaidDaysTemplates(org);
+  const paidDaysKeys = ['paidDaysEnabled', 'deductionRules', 'monthlyPaidLeaveDays'] as const;
+  const set: Record<string, unknown> = { ...draft, updatedAt: new Date() };
+  for (const k of paidDaysKeys) if (set[k] === undefined) delete set[k];
   const updated = await salaryTemplates().findOneAndUpdate(
     { _id: current._id },
-    { $set: { ...draft, updatedAt: new Date() } },
+    { $set: set },
     { returnDocument: 'after' },
   );
   if (!updated) throw new SalaryTemplateError(404, 'Salary template not found');
@@ -90,6 +106,14 @@ export async function updateSalaryTemplate(
 
 export async function deleteSalaryTemplate(adminUserId: string, code: string) {
   const org = await requireAdminOrg(adminUserId);
+  // People on the template would silently drop out of every run.
+  const people = await salaryStructures().countDocuments({ org, salaryTemplateCode: normalizeCode(code) });
+  if (people > 0) {
+    throw new SalaryTemplateError(
+      409,
+      `${people} ${people === 1 ? 'person is' : 'people are'} on this template. Move them to another template on their Salary details first.`,
+    );
+  }
   const result = await salaryTemplates().deleteOne({ org, code: normalizeCode(code) });
   if (result.deletedCount === 0) throw new SalaryTemplateError(404, 'Salary template not found');
   return { code: normalizeCode(code), deleted: true };
@@ -105,14 +129,15 @@ export async function previewSalaryTemplate(
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
   const resolved = resolveTemplateComponents(draft.components, new Map(catalog.map((h) => [h.code, h])));
-  const ruleSet = await resolveRuleSet(org, undefined);
+  const [ruleSet, settings] = await Promise.all([resolveRuleSet(org, undefined), statutorySettingsFor(org)]);
   return calculateSalaryStructure({
     monthlyCtcPaise: Math.round((Number(sampleAnnualCtcPaise) || 0) / 12),
     payHeads: resolved,
     balancingComponentCode: draft.balancingComponentCode,
-    epfApplyCeiling: draft.epfApplyCeiling,
     ruleSet,
+    settings,
     month: new Date().getUTCMonth() + 1,
+    statutoryWages: draft.statutoryWages,
   });
 }
 
@@ -122,18 +147,8 @@ export async function previewSalaryTemplate(
 // calculation. Components no longer in the catalog are skipped.
 // ————————————————————————————————————————————————————————————————
 
-export function resolveTemplateComponents(
-  components: SalaryTemplateComponent[],
-  catalogByCode: Map<string, PayHead>,
-): PayHead[] {
-  const resolved: PayHead[] = [];
-  for (const c of components) {
-    const head = catalogByCode.get(c.payHeadCode);
-    if (!head) continue;
-    resolved.push({ ...head, calculation: c.calculation, active: true });
-  }
-  return resolved;
-}
+// applyOverrides and resolveTemplateComponents are pure and shared with the dashboard.
+export { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 
 // ————————————————————————————————————————————————————————————————
 // Validation
@@ -146,7 +161,8 @@ async function normalizeInput(
   const byCode = new Map(catalog.map((h) => [h.code, h]));
   const name = requireString(input.name, 'name', 100);
   const code = normalizeCode(input.code);
-  const description = input.description === undefined ? undefined : String(input.description).trim().slice(0, 300);
+  // null clears it; never store the word "null".
+  const description = input.description === undefined ? undefined : input.description === null ? '' : String(input.description).trim().slice(0, 300);
   const active = input.active === undefined ? true : Boolean(input.active);
 
   if (!Array.isArray(input.components) || input.components.length === 0) {
@@ -170,8 +186,27 @@ async function normalizeInput(
   const components: SalaryTemplateComponent[] = input.components.map((raw) => {
     const r = raw as Record<string, unknown>;
     const payHeadCode = normalizeCode(r.payHeadCode, 'component.payHeadCode');
-    return { payHeadCode, calculation: validateCalculation(r.calculation, payHeadCode, componentCodes) };
+    const out: SalaryTemplateComponent = { payHeadCode, calculation: validateCalculation(r.calculation, payHeadCode, componentCodes) };
+    if (typeof r.payslipName === 'string' && r.payslipName.trim()) out.payslipName = r.payslipName.trim().slice(0, 100);
+    if (typeof r.showInPayslip === 'boolean') out.showInPayslip = r.showInPayslip;
+    return out;
   });
+
+  // Basic is a flat monthly amount or a % of CTC, HRA a flat monthly amount or
+  // a % of Basic, the same two choices their Salary Components form offers.
+  for (const c of components) {
+    const type = byCode.get(c.payHeadCode)?.componentType;
+    const base = type === 'basic' ? 'ctc' : type === 'hra' ? 'basic' : undefined;
+    if (!base) continue;
+    const ok = c.calculation.mode === 'flat_per_month' || (c.calculation.mode === 'percentage' && c.calculation.base === base);
+    if (!ok) {
+      const label = type === 'basic' ? 'Basic' : 'House Rent Allowance';
+      throw new SalaryTemplateError(
+        400,
+        `${label} is a flat monthly amount or a percentage of ${base === 'ctc' ? 'CTC' : 'Basic'}`,
+      );
+    }
+  }
 
   // '% of Basic' requires a Basic component in the template.
   const hasBasic = components.some((c) => byCode.get(c.payHeadCode)?.componentType === 'basic');
@@ -179,11 +214,12 @@ async function normalizeInput(
     throw new SalaryTemplateError(400, 'A component is "% of Basic" but the template has no Basic component');
   }
 
-  const deductionRules = parseDeductionRules(input.deductionRules);
-  const monthlyPaidLeaveDays = input.monthlyPaidLeaveDays === undefined || input.monthlyPaidLeaveDays === null
-    ? 0
-    : Math.round(Number(input.monthlyPaidLeaveDays) * 2) / 2;
-  if (!Number.isFinite(monthlyPaidLeaveDays) || monthlyPaidLeaveDays < 0 || monthlyPaidLeaveDays > 31) {
+  // Paid days now live in Paid Days Templates; a save that leaves these out keeps what is stored.
+  const deductionRules = input.deductionRules === undefined ? undefined : parseDeductionRules(input.deductionRules);
+  const monthlyPaidLeaveDays = input.monthlyPaidLeaveDays === undefined
+    ? undefined
+    : input.monthlyPaidLeaveDays === null ? 0 : Math.round(Number(input.monthlyPaidLeaveDays) * 2) / 2;
+  if (monthlyPaidLeaveDays !== undefined && (!Number.isFinite(monthlyPaidLeaveDays) || monthlyPaidLeaveDays < 0 || monthlyPaidLeaveDays > 31)) {
     throw new SalaryTemplateError(400, 'Paid leave days a month must be 0 to 31, in halves');
   }
 
@@ -215,12 +251,32 @@ async function normalizeInput(
     balancingComponentCode,
     epfApplyCeiling: input.epfApplyCeiling === undefined ? undefined : Boolean(input.epfApplyCeiling),
     active,
+    paidDaysEnabled: input.paidDaysEnabled === undefined ? undefined : Boolean(input.paidDaysEnabled),
+    statutoryWages: parseStatutoryWages(input.statutoryWages, components, byCode),
     deductionRules,
     monthlyPaidLeaveDays,
+    overtimePay: parseOvertimePay(input.overtimePay),
   };
 }
 
-function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set<string>): CalculationBasis {
+function parseOvertimePay(raw: unknown): OvertimePayRule | undefined {
+  if (raw === undefined || raw === null || raw === '' || (isRecord(raw) && raw.mode === 'off')) return undefined;
+  if (!isRecord(raw)) throw new SalaryTemplateError(400, 'Overtime pay is invalid');
+  if (raw.mode === 'flat_per_hour') {
+    const flat = Number(raw.flatPerHourPaise);
+    if (!Number.isInteger(flat) || flat <= 0) throw new SalaryTemplateError(400, 'Enter the overtime amount per hour');
+    return { mode: 'flat_per_hour', flatPerHourPaise: flat };
+  }
+  if (raw.mode !== 'hourly_multiple') throw new SalaryTemplateError(400, 'Overtime pay is invalid');
+  const base = raw.base === 'gross' ? 'gross' : 'basic';
+  const multiplier = raw.multiplier === undefined ? 2 : Number(raw.multiplier);
+  const hoursPerDay = raw.hoursPerDay === undefined ? 8 : Number(raw.hoursPerDay);
+  if (!(multiplier > 0 && multiplier <= 5)) throw new SalaryTemplateError(400, 'Overtime multiplier must be more than 0 and at most 5');
+  if (!(hoursPerDay >= 1 && hoursPerDay <= 24)) throw new SalaryTemplateError(400, 'Hours a day must be 1 to 24');
+  return { mode: 'hourly_multiple', base, multiplier: Math.round(multiplier * 100) / 100, hoursPerDay: Math.round(hoursPerDay * 2) / 2 };
+}
+
+export function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set<string>): CalculationBasis {
   if (!isRecord(raw)) throw new SalaryTemplateError(400, `calculation for "${selfCode}" is required`);
   const mode = String(raw.mode);
   if (!MODES.has(mode)) throw new SalaryTemplateError(400, `calculation.mode for "${selfCode}" is invalid`);
@@ -255,8 +311,9 @@ function validateCalculation(raw: unknown, selfCode: string, componentCodes: Set
 // Helpers
 // ————————————————————————————————————————————————————————————————
 
+/** The org's pay heads plus the standard components it hasn't added yet. */
 async function orgCatalog(org: string): Promise<PayHead[]> {
-  return payHeads().find({ org }).toArray();
+  return (await catalogWithStandard(org)).all;
 }
 
 function requireString(value: unknown, field: string, maxLength: number): string {
@@ -311,16 +368,55 @@ function toView(doc: StoredTemplate) {
     components: doc.components,
     balancingComponentCode: doc.balancingComponentCode,
     epfApplyCeiling: doc.epfApplyCeiling ?? true,
+    paidDaysEnabled: doc.paidDaysEnabled ?? true,
+    statutoryWages: doc.statutoryWages ?? null,
     deductionRules: doc.deductionRules ?? [],
     monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
+    overtimePay: doc.overtimePay ?? null,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
 
+/**
+ * The template's PF / ESI wage applicability. Absent, null or every field
+ * left out is the default (each component's own EPF flag, the org's PF
+ * setting, ESI on gross). Named components must be earnings on the template.
+ */
+function parseStatutoryWages(
+  value: unknown,
+  components: SalaryTemplateComponent[],
+  byCode: Map<string, PayHead>,
+): TemplateStatutoryWages | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) throw new SalaryTemplateError(400, 'statutoryWages must be an object');
+  const earnings = new Set(components.map((c) => c.payHeadCode).filter((code) => byCode.get(code)?.category === 'earning'));
+  const codes = (raw: unknown, what: string): string[] | undefined => {
+    if (raw === undefined || raw === null) return undefined;
+    if (!Array.isArray(raw)) throw new SalaryTemplateError(400, `${what} must be a list of component codes`);
+    const out = [...new Set(raw.map((c) => normalizeCode(c, what)))];
+    for (const code of out) {
+      // The synthetic Statutory Bonus line may be named for ESI.
+      if (!earnings.has(code) && code !== 'STATUTORY_BONUS') throw new SalaryTemplateError(400, `${what}: "${code}" is not an earning on this template`);
+    }
+    return out;
+  };
+  const out: TemplateStatutoryWages = {};
+  const pf = codes(value.pfComponents, 'PF wage components');
+  if (pf) out.pfComponents = pf;
+  const esi = codes(value.esiComponents, 'ESI wage components');
+  if (esi) out.esiComponents = esi;
+  if (value.pfWageMode !== undefined && value.pfWageMode !== null) {
+    const mode = String(value.pfWageMode);
+    if (mode !== 'org' && mode !== 'actual' && mode !== 'ceiling') throw new SalaryTemplateError(400, 'pfWageMode must be org, actual or ceiling');
+    if (mode !== 'org') out.pfWageMode = mode;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** The attendance deduction rules, validated. Absent means none. */
-function parseDeductionRules(value: unknown): SalaryDeductionRule[] {
+export function parseDeductionRules(value: unknown): SalaryDeductionRule[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new SalaryTemplateError(400, 'deductionRules must be a list');
   return value.map((raw) => {

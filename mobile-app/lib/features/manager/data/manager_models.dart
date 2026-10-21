@@ -2127,10 +2127,15 @@ class PayslipAmount {
     required this.name,
     required this.fullPaise,
     required this.paidPaise,
+    this.hidden = false,
   });
   final String name;
   final int fullPaise;
   final int paidPaise;
+
+  /// Not listed on the payslip (the component's "show in payslip" is off);
+  /// still counted in every total.
+  final bool hidden;
 
   factory PayslipAmount.fromJson(Map<String, dynamic> json) => PayslipAmount(
     name: json['name'] as String? ?? '',
@@ -2142,6 +2147,7 @@ class PayslipAmount {
         (json['paidPaise'] as num?)?.toInt() ??
         (json['amountPaise'] as num?)?.toInt() ??
         0,
+    hidden: json['hidden'] == true,
   );
 }
 
