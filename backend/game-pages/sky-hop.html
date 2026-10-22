@@ -1246,8 +1246,8 @@ html.app .howto{padding-top:20px}
        x, y: where on the screen, for the ring. False when the flight takes no taps now. */
     function press(t, x, y) {
       const now = performance.now();
-      /* Taps that keep landing far behind while the frames run on time mean the browser's stamps are not on the page's clock: from then on, now. */
-      if (now - t > 60 && frameGap < 25) { if (++odd >= 3) trust = false; } else if (now - t < 30) odd = 0;
+      /* Five taps in a row landing far behind while the frames run on time mean the browser's stamps are not on the page's clock: from then on, now. */
+      if (now - t > 60 && frameGap < 25) { if (++odd >= 5) trust = false; } else odd = 0;
       if (!trust) t = now;
       lag += (now - t - lag) * .25;
       if (!(state === 'ready' || state === 'play' || (state === 'over' && !shown && t < deadAt))) return false;
