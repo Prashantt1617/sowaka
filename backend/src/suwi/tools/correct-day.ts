@@ -21,6 +21,8 @@ function lopOf(day: Pick<CalendarDay, 'status' | 'countsAs'>): number {
   if (day.status === 'missed_punch') return day.countsAs === 'Absent' ? 1 : day.countsAs === 'Half Day' ? 0.5 : 0;
   return 0;
 }
+/** An ISO instant as India wall-clock HH:MM. */
+const ist = (iso: string) => new Date(Date.parse(iso) + 5.5 * 3_600_000).toISOString().slice(11, 16);
 const lopOfMark = (s: HrDayStatus) => (s === 'absent' ? 1 : s === 'half_day' ? 0.5 : 0);
 const describe = (day: CalendarDay) => `${LABEL[day.status] ?? day.status}${day.label ? ` (${day.label}${day.status === 'missed_punch' && day.countsAs ? `, counts as ${day.countsAs}` : ''})` : ''}${day.hr ? ', marked by HR' : ''}`;
 
@@ -77,7 +79,7 @@ defineTools(
         kind: 'correct_day', area: 'attendance', title,
         summary: `${niceDate(date)} is ${describe(day)}; it becomes ${LABEL[status]}${str(i.note) ? ` ("${str(i.note)}")` : ''}. ${payLine}`,
         lines: [
-          { text: `Now: ${describe(day)}${day.punchIn ? `, in ${day.punchIn.slice(11, 16)} UTC` : ''}${day.punchOut ? `, out ${day.punchOut.slice(11, 16)} UTC` : ''}${day.lateByMinutes ? `, late by ${day.lateByMinutes} min` : ''}.`, why: `Graded by ${cal.shift} (${cal.window}, ${cal.punchFormat}). HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
+          { text: `Now: ${describe(day)}${day.punchIn ? `, in ${ist(day.punchIn)}` : ''}${day.punchOut ? `, out ${ist(day.punchOut)}` : ''}${day.lateByMinutes ? `, late by ${day.lateByMinutes} min` : ''}.`, why: `Graded by ${cal.shift} (${cal.window}, ${cal.punchFormat}). HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
           { text: `New: ${LABEL[status]}, marked by ${ctx.user.name}${str(i.note) ? ` with the note "${str(i.note)}"` : ''}.` },
           { text: payLine, why: 'Loss of pay = calendar absences + ½ per half day (+ missed punches as the shift counts them), on top of the rules in their paid-days template; the base is the days in the month.', tone: allPaid || delta >= 0 ? 'info' : 'warn' },
           { text: openRun ? `${month} is an earlier month, allowed because its payroll run is still open; the run picks up the change when it is recalculated.` : `Only the current month can be marked (${thisMonth}); once ${month}'s payroll is submitted the day stays as paid.`, why: 'A mark moves pay, so it can only land where pay has not been settled.' },

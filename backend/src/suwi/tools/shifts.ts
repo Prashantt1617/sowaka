@@ -89,6 +89,7 @@ export async function prepareMove(ctx: SuwiContext, tpl: ShiftTemplate, people: 
       { text: `Late marks, half days and absences are graded on ${after.startTime}–${after.endTime} from then on; ${weeklyOffWords(after.weeklyOff)}.`, why: 'Each day is graded by the template that covered it on that date, so days already worked keep their marks.' },
       ...(opts.extraLines ?? []),
       { text: `${moving.length === 1 ? 'Their' : 'Each person\'s'} app shows ${after.name} (${after.startTime}–${after.endTime}, punches by ${after.correction.punchFormat}, ${after.leaveTypes.map((t) => t.name).join(', ') || 'no leave types'}) from ${niceDate(from)}, and they get a notification.` },
+      ...(moving.length > 1 ? [{ text: `Now on: ${[...moving.reduce((m, p) => m.set(before[p.userId]?.name ?? 'the Default', (m.get(before[p.userId]?.name ?? 'the Default') ?? 0) + 1), new Map<string, number>())].map(([k, c]) => `${k} (${c})`).join(', ')}.` }] : []),
       ...(already.length ? [{ text: `${already.length} already on ${tpl.name}; left as they are.`, tone: 'info' as const }] : []),
       ...(moving.length > 1 ? [{ text: `People: ${moving.slice(0, 8).map((p) => p.name).join(', ')}${moving.length > 8 ? ` and ${moving.length - 8} more` : ''}.` }] : []),
     ],
@@ -168,7 +169,7 @@ defineTools(
       if (!tpl) throw new Error(`No shift template called "${str(i.template)}"`);
       if (!tpl.active) throw new Error(`${tpl.name} is inactive; make it active on Shift Templates first`);
       const { people, how } = await resolveTeam(ctx, i);
-      return prepareMove(ctx, tpl, people.slice(0, 500), { summaryPrefix: people.length > 1 ? `${how}: ` : '' });
+      return prepareMove(ctx, tpl, people.slice(0, 500), { summaryPrefix: people.length > 1 ? `${how[0].toUpperCase()}${how.slice(1)}: ` : '' });
     },
   },
 );

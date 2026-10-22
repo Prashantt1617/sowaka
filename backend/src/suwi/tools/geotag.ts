@@ -47,7 +47,7 @@ defineTools(
       const siteWords = sites.length ? sites.map((o) => `${o.name}${o.city ? ` (${o.city})` : ''} within ${o.radiusMeters} m`).join('; ') : 'no office has been set up under Offices yet, so every punch would be out of location';
       const askedRadius = num(i.radiusMeters, 0, 0, 100_000);
       const lines = [
-        { text: `Punches need a phone location inside an office radius: ${siteWords}.`, why: 'Geotag punching matches each punch to the nearest office. The radius belongs to the office (Offices page) and applies to everyone who punches there; it cannot be set per person.', tone: sites.length ? undefined : ('warn' as const) },
+        { text: `Punches need a phone location inside an office radius: ${siteWords}.`, why: 'Geotag punching matches each punch to the nearest office. The radius belongs to the office (Offices page) and applies to everyone who punches there; it cannot be set per person.', ...(sites.length ? {} : { tone: 'warn' as const }) },
         ...(askedRadius ? [{ text: `A ${askedRadius} m radius cannot be set for one person; change the office's radius under Offices, which changes it for everyone punching there.`, tone: 'warn' as const }] : []),
         {
           text: ool.outcome === 'request'
@@ -57,7 +57,7 @@ defineTools(
         },
         { text: `Days without a punch inside the radius can become absent or a missed punch (punch-in missing counts as ${policy.missingPunchIn}, punch-out missing ${policy.missingPunchOut}), so loss of pay can rise.`, why: 'Payroll pays by the calendar: each absence costs a paid day and each half day half a day, on top of any rules in their paid-days template.', tone: 'warn' as const },
       ];
-      return prepareMove(ctx, tpl, people.slice(0, 500), { title: `Move ${people.length === 1 ? people[0].name : `${people.length} people`} to geotag punching (${tpl.name})`, summaryPrefix: `${people.length > 1 ? `${how}: ` : ''}Geotag punching is a template setting, so this moves them to the ${tpl.name} template. `, extraLines: lines });
+      return prepareMove(ctx, tpl, people.slice(0, 500), { title: `Move ${people.length === 1 ? people[0].name : `${people.length} people`} to geotag punching (${tpl.name})`, summaryPrefix: `${people.length > 1 ? `${how[0].toUpperCase()}${how.slice(1)}: ` : ''}Geotag punching is a template setting, so this moves them to the ${tpl.name} template. `, extraLines: lines });
     },
   },
 );
