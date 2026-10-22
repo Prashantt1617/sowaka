@@ -143,7 +143,7 @@ defineTools(
     name: 'claims_to_check',
     area: 'claims',
     label: (i) => (i.bills === 'read' ? 'Pending claims, bills read' : 'Pending claims and their checks'),
-    description: 'Pending reimbursement claims split into clean ones and ones that need a closer look, with the reason for each: no bill attached, over the type\'s per-claim limit, dated beyond the type\'s backdating window, past the linked salary component\'s monthly cap, same amount and date as another claim, the same file attached to another claim, or the bill not matching the claim. yourOwn marks claims the asker filed (someone else must decide them). bills="hash" fetches each receipt to catch duplicate files (no model cost); bills="read" also reads each bill (amount, date, vendor) and compares, at most maxReads new reads. Use for "which claims need a closer look", "anything odd in the pending claims", "are any bills reused".',
+    description: 'Pending reimbursement claims split into clean ones and ones that need a closer look, with the reason for each: no bill attached, over the type\'s per-claim limit, dated beyond the type\'s backdating window, past the linked salary component\'s monthly cap, same amount and date as another claim, the same file attached to another claim, or the bill not matching the claim. yourOwn marks claims the asker filed (someone else must decide them). daysWaiting counts from the day the claim was filed (filed), not the expense date; show Filed beside it. bills="hash" fetches each receipt to catch duplicate files (no model cost); bills="read" also reads each bill (amount, date, vendor) and compares, at most maxReads new reads. Use for "which claims need a closer look", "anything odd in the pending claims", "are any bills reused".',
     input_schema: { type: 'object', properties: { bills: { type: 'string', enum: ['none', 'hash', 'read'], description: 'Default hash' }, maxReads: { type: 'number', description: 'Default 10' }, limit: { type: 'number' } } },
     api: { method: 'GET', path: '/admin/reimbursements' },
     async run(ctx, i) {
@@ -225,7 +225,7 @@ defineTools(
       const missing = wanted ? wanted.filter((id) => !all.some((c) => c.id === id)) : [];
       const own = chosen.filter((c) => c.userId === ctx.userId);
       const claims = chosen.filter((c) => c.userId !== ctx.userId);
-      if (!claims.length) return { data: { nothingToDo: true, message: wanted ? `None of those claims is pending${own.length ? ' (your own claims can\'t be decided by you)' : ''}.` : 'No pending claim passed every check; nothing to approve as a batch. Ask for the ones that need a look.' } };
+      if (!claims.length) return { data: { nothingToDo: true, message: wanted ? `None of those claims is pending${own.length ? ' (your own claims can\'t be decided by you)' : ''}.` : own.length ? `The only clean pending claims (${own.length}) are your own; someone else must decide them.` : 'No pending claim passed every check; nothing to approve as a batch. Ask for the ones that need a look.' } };
       const total = claims.reduce((s, c) => s + c.amount, 0);
       const people = [...new Set(claims.map((c) => c.name))];
       const flagged = claims.filter((c) => c.checks.length);

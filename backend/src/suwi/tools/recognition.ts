@@ -22,6 +22,10 @@ function mayRead(ctx: SuwiContext, path: string) {
   return needed.some((t) => mine.has(t));
 }
 
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "11-03" → "3 Nov"; "2024-11-03" → "3 Nov 2024". */
+const dayMonth = (v: string) => { const [y, m, d] = v.length === 5 ? ['', ...v.split('-')] : v.split('-'); return `${Number(d)} ${MON[Number(m) - 1]}${y ? ` ${y}` : ''}`; };
+
 interface Reason { kind: string; evidence: string; link?: { label: string; view?: string; userId?: string; tab?: string } }
 
 defineTools({
@@ -96,9 +100,9 @@ defineTools({
     for (const p of roster) {
       if (p.joiningDate && inWindow(p.joiningDate)) {
         const years = thisYear - Number(istDate(p.joiningDate).slice(0, 4)) + (mmdd(p.joiningDate) < from.slice(5) ? 1 : 0);
-        if (years >= 1) add(p.userId, { kind: 'anniversary', evidence: `${years} year${years === 1 ? '' : 's'} at the company on ${mmdd(p.joiningDate)} (joined ${istDate(p.joiningDate)}).`, link: { label: `Open ${p.name.split(' ')[0]}'s profile`, userId: p.userId } });
+        if (years >= 1) add(p.userId, { kind: 'anniversary', evidence: `${years} year${years === 1 ? '' : 's'} at the company on ${dayMonth(mmdd(p.joiningDate))} (joined ${dayMonth(istDate(p.joiningDate))}).`, link: { label: `Open ${p.name.split(' ')[0]}'s profile`, userId: p.userId } });
       }
-      if (inWindow(p.birthday)) add(p.userId, { kind: 'birthday', evidence: `Birthday on ${mmdd(p.birthday!)} (day-month).`, link: { label: `Open ${p.name.split(' ')[0]}'s profile`, userId: p.userId } });
+      if (inWindow(p.birthday)) add(p.userId, { kind: 'birthday', evidence: `Birthday on ${dayMonth(mmdd(p.birthday!))}.`, link: { label: `Open ${p.name.split(' ')[0]}'s profile`, userId: p.userId } });
     }
 
     // 5. Claims: a run of approved or paid claims this quarter with none declined.
@@ -118,7 +122,11 @@ defineTools({
     const limit = num(i.limit, 25, 1, 100);
     return {
       data: {
-        window: { from, to }, candidates: people.length, people: people.slice(0, limit),
+        window: {
+          lookedBack: { reviews: `latest sent review, from ${quarterFrom.slice(0, 7)} on`, games: `leaderboard bests set from ${since}`, pointsSince: weekStart, attendance: `${quarterFrom} to ${ctx.today}`, claims: `filed from ${quarterFrom}`, to: ctx.today },
+          upcoming: { from, to, covers: 'work anniversaries and birthdays' },
+        },
+        candidates: people.length, people: people.slice(0, limit),
         ...(skipped.length ? { skipped } : {}),
         note: 'Facts only, in no particular order of merit. Post one shout-out per person (prepare_connect_post, kind shoutout); never publish a ranking or compare people.',
       },

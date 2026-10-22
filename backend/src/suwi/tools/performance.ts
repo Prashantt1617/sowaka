@@ -182,7 +182,7 @@ defineTools(
           thisCycle: thisCycle ? { status: 'sent', ...view(thisCycle) } : draft ? { status: 'draft (saved, not sent)', ...view(draft) } : null,
           earlierReviews: records.filter((r) => r.status === 'sent' && earlier.includes(r.period)).sort((a, b) => b.period.localeCompare(a.period)).map(view),
           scale: '0–5 per parameter; the overall score is the weighted mean',
-          note: 'A draft written from this is for the manager to edit and send in the app; Suwi does not save reviews.',
+          note: 'Sowaka has no record of what they did this cycle: only the parameters and guidance, any saved draft, and earlier reviews. Draft only from those: earlier notes and scores, and the guidance. Wherever this cycle\'s work belongs, write [example from this cycle]; leave every score as [score]. Never make up work, results or scores. The draft is for the manager to edit and send in the app; Suwi does not save reviews.',
         },
         links: [{ label: 'Open feedback', view: 'feedback' }, { label: `Open ${person.name.split(' ')[0]}'s profile`, view: 'employees', userId: person.userId }],
       };

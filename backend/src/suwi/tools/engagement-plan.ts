@@ -8,6 +8,7 @@
 // those stay in the plan for HR to schedule by hand, and the card says so.
 import { connectPosts, gameScores } from '../../config/db';
 import { listCompanyHolidays } from '../../services/holiday.service';
+import { defaultTemplateFor, getOrgShiftPolicy, isWeekOffDay, mergeTemplatePolicy } from '../../services/shift.service';
 import { pointEvents } from '../../services/points-ledger.service';
 import { defineTools, monthOf, str, SuwiContext } from '../tools';
 import { activeRoster, addDays, DraftPost, draftPost, istDate, istWeekday, lastDates, MIN_GROUP, monthName, nextMonth, officeOf, proposePosts, RosterPerson } from './connect';
@@ -65,7 +66,9 @@ interface Suggestion { office: string; date: string; what: string; kind: 'game_s
 
 async function buildPlan(ctx: SuwiContext, month: string, officeFilter: string) {
   const roster = await activeRoster(ctx.org);
-  const [weekdays, dates, holidays] = await Promise.all([weekdayActivity(ctx, roster), lastDates(ctx), listCompanyHolidays(ctx.userId, { state: '*' })]);
+  const [weekdays, dates, holidays, orgPolicy, def] = await Promise.all([weekdayActivity(ctx, roster), lastDates(ctx), listCompanyHolidays(ctx.userId, { state: '*' }), getOrgShiftPolicy(ctx.org), defaultTemplateFor(ctx.org)]);
+  // Weekly offs as the Default template has them (most people follow it), for "the working day before" a holiday.
+  const weeklyOff = (def ? mergeTemplatePolicy(orgPolicy, def) : orgPolicy).weeklyOff;
   const end = `${nextMonth(month)}-01`;
   const offices = new Map<string, RosterPerson[]>();
   for (const p of roster) { const o = officeOf(p); offices.set(o, [...(offices.get(o) ?? []), p]); }
@@ -86,8 +89,10 @@ async function buildPlan(ctx: SuwiContext, month: string, officeFilter: string) 
       if (h.date < ctx.today) continue;
       s.push({ office, date: h.date, what: `${h.name} (${h.type} holiday)`, kind: 'holiday', reason: `In the Holiday Bank for ${h.state === '*' ? 'all locations' : h.state}`, howToSchedule: 'Nothing to schedule; a greeting or announcement the working day before, if wanted.' });
       if (h.type === 'Public') {
-        const eve = addDays(h.date, -1);
-        if (eve >= ctx.today && !skip.has(eve)) s.push({ office, date: eve, what: `${h.name} celebration before the break`, kind: 'celebration', reason: `${h.name} is on ${h.date}; the working day before is when people are around to celebrate`, howToSchedule: 'Suwi can publish an event post for it.', draft: { kind: 'event', title: `${h.name} celebration${remote ? '' : ` at ${office}`}`, date: eve, time: '16:30', location: remote ? 'Online' : office, category: 'social', subtitle: `Celebrate ${h.name} together before the holiday` } });
+        // The working day before: step back past weekly offs and other holidays.
+        let eve = addDays(h.date, -1);
+        for (let n = 0; n < 7 && (skip.has(eve) || isWeekOffDay(new Date(`${eve}T00:00:00Z`), weeklyOff)); n++) eve = addDays(eve, -1);
+        if (eve >= ctx.today && !skip.has(eve)) s.push({ office, date: eve, what: `${h.name} celebration before the break`, kind: 'celebration', reason: `${h.name} is on ${h.date}; ${eve} is the working day before (on the Default template's weekly offs), when people are around to celebrate`, howToSchedule: 'Suwi can publish an event post for it.', draft: { kind: 'event', title: `${h.name} celebration${remote ? '' : ` at ${office}`}`, date: eve, time: '16:30', location: remote ? 'Online' : office, category: 'social', subtitle: `Celebrate ${h.name} together before the holiday` } });
       }
     }
     // At least a week after the last game session, so sessions don't crowd each other.

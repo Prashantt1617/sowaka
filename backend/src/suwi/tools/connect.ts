@@ -90,7 +90,7 @@ export async function activityByPerson(org: string, month: string, roster: Roste
   return { per, polls: polls.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)), postsByType: byType };
 }
 
-interface GroupRow { name: string; people: number; active: number; activeLastMonth: number | null; change: number | null; interactions: number; quiet: boolean; signal: { activeShare: number; interactionsPerPerson: number } | null; signalWithheld?: string }
+interface GroupRow { name: string; people: number; active: number; activeLastMonth: number | null; change: number | null; interactions: number; quiet?: boolean; signal: { activeShare: number; interactionsPerPerson: number } | null; signalWithheld?: string }
 function groupRows(roster: RosterPerson[], now: Map<string, Activity>, before: Map<string, Activity> | null, key: (p: RosterPerson) => string): GroupRow[] {
   const groups = new Map<string, RosterPerson[]>();
   for (const p of roster) { const k = key(p); groups.set(k, [...(groups.get(k) ?? []), p]); }
@@ -101,7 +101,8 @@ function groupRows(roster: RosterPerson[], now: Map<string, Activity>, before: M
     const big = people.length >= MIN_GROUP;
     return {
       name, people: people.length, active, activeLastMonth, change: activeLastMonth === null ? null : active - activeLastMonth, interactions,
-      quiet: active === 0 || active / people.length < 0.25,
+      // Only a group big enough to judge is called quiet; a small one would point at individuals.
+      ...(big ? { quiet: active === 0 || active / people.length < 0.25 } : {}),
       signal: big ? { activeShare: Math.round((100 * active) / people.length), interactionsPerPerson: Math.round((10 * interactions) / people.length) / 10 } : null,
       ...(big ? {} : { signalWithheld: `Only ${people.length} ${people.length === 1 ? "person" : "people"}: engagement rates are shown for groups of ${MIN_GROUP} or more, to keep individuals' wellbeing private.` }),
     };
@@ -289,7 +290,8 @@ defineTools(
       return {
         data: {
           today: ctx.today, company,
-          holidays: holidays.filter((h) => h.date >= ctx.today && h.date <= until).map((h) => ({ date: h.date, name: h.name, type: h.type, where: h.state === '*' ? 'all locations' : h.state })),
+          holidays: holidays.filter((h) => h.date >= ctx.today && h.date <= until).map((h) => ({ date: h.date, weekday: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(`${h.date}T00:00:00Z`).getUTCDay()], name: h.name, type: h.type, where: h.state === '*' ? 'all locations' : h.state })),
+          holidayNote: 'If a holiday falls on a weekly off (a Sunday, or a Saturday off), say so; don\'t call it an extra day off.',
           upcomingEvents: events.slice(0, 12), upcomingGameSessions: sessions,
           recentAnnouncements: posts.filter((p) => p.type === 'hr_announcement').slice(0, 5).map((p) => ({ date: istDate(p.publishedAt), title: str(p.body.title, 100), text: str(p.body.text, 200), by: p.author?.name })),
           recentPolls: posts.filter((p) => p.type === 'survey').slice(0, 5).map((p) => ({ date: istDate(p.publishedAt), question: str(p.body.title, 120), votes: Object.keys(p.pollVotes ?? {}).length })),
