@@ -588,6 +588,14 @@ input[type='number']::-webkit-outer-spin-button {
 .ds-inp::placeholder {
   color: var(--ink-3);
 }
+/* Native <table>s: give <thead className="ds-thead"> the prototype's grey
+   strip with rounded ends (cells carry the surface-2 background). */
+.ds-thead th:first-child {
+  border-radius: 12px 0 0 12px;
+}
+.ds-thead th:last-child {
+  border-radius: 0 12px 12px 0;
+}
 /* Linked KPI tiles lift a little on hover. */
 .ds-tile {
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
