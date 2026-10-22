@@ -29,7 +29,8 @@ function callerId(req: Request): string {
 /** The org's live review cycle, so clients never derive it themselves. */
 export async function kpiCycleHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const caller = await users().findOne({ userId: callerId(req) });
+    // The auth check has already read the caller.
+    const caller = req.auth?.user ?? (await users().findOne({ userId: callerId(req) }));
     res.json({ success: true, cycle: await cycleInfoFor(caller?.org ?? '') });
   } catch (error) { next(error); }
 }
