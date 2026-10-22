@@ -139,7 +139,7 @@ function EpfTab({ overview, apply, saving }: TabProps) {
   const active = editing ? draft : cfg;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 372px', gap: 20, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
       <div style={tabCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <div style={L.cardTitle}>Employees' Provident Fund</div>
@@ -657,7 +657,7 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
 
 function Row({ label, value, last }: { label: ReactNode; value: ReactNode; last?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, padding: '6px 0', borderBottom: last ? 'none' : 'none', alignItems: 'baseline' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '136px 1fr', gap: 16, padding: '6px 0', borderBottom: last ? 'none' : 'none', alignItems: 'baseline' }}>
       <div style={{ ...L.kvDt, lineHeight: 1.5 }}>{label}</div>
       <div style={{ ...L.kvDd, lineHeight: 1.5 }}>{value}</div>
     </div>

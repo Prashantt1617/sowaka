@@ -833,7 +833,7 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
   const [open, setOpen] = useState<Set<Group>>(() => new Set<Group>(['earning']));
   const toggle = (g: Group) => setOpen((s) => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   return (
-    <div style={{ borderRight: '1px solid var(--line)', padding: '26px 26px 30px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ borderRight: '1px solid var(--line)', background: 'var(--surface)', padding: '24px 24px 28px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 19, fontWeight: 500, color: 'var(--ink)' }}>Build your Template</div>
       <div style={{ fontSize: 14, color: 'var(--ink-2)', marginTop: 4, marginBottom: 22 }}>Include active salary components</div>
       {GROUP_ORDER.map((g) => {
@@ -1311,7 +1311,7 @@ export const ghostBtn: CSSProperties = { ...L.btn };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.65 };
 const closeCircle: CSSProperties = { width: 40, height: 40, borderRadius: '50%', border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 // The builder is its own page over the whole dashboard, left nav included.
-const builderPage: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'var(--surface)', display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', fontFamily: 'inherit' };
+const builderPage: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'var(--canvas)', display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', fontFamily: 'inherit' };
 const builderCard: CSSProperties = { border: '1px solid transparent', borderRadius: 'var(--r-lg)', background: 'var(--surface)', boxShadow: 'var(--shadow)' };
 const navGroupBtn: CSSProperties = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', padding: '12px 0', fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', color: 'var(--hi)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
 const navItemBtn: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 0', fontSize: 13.5, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.3 };

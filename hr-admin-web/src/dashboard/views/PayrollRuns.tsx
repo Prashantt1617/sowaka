@@ -137,7 +137,7 @@ export function PayrollRuns() {
   if (openId) {
     return (
       <div>
-        <button onClick={() => setOpenId(null)} className="lk-btn" style={{ ...ghostBtn, marginBottom: 20 }}>← All runs</button>
+        <button onClick={() => setOpenId(null)} className="lk-ghost" style={{ ...L.btnGhost, fontSize: 13, marginBottom: 12, marginLeft: -12 }}>← All runs</button>
         <Card style={L.cardPad}><EmptyRow text={`Opening ${runs.find((r) => r.id === openId)?.period ?? 'run'}…`} /></Card>
       </div>
     );
@@ -298,7 +298,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
   const t = run.totals;
   return (
     <div>
-      <button onClick={onBack} className="lk-btn" style={{ ...ghostBtn, marginBottom: 20 }}>← All runs</button>
+      <button onClick={onBack} className="lk-ghost" style={{ ...L.btnGhost, fontSize: 13, marginBottom: 12, marginLeft: -12 }}>← All runs</button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
         <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: 0 }}>{run.period}</h2>
