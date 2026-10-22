@@ -160,9 +160,9 @@ function Shell() {
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100%', padding: 16, gap: 20, overflow: 'hidden' }}>
       <Sidebar />
-      <main className="scry" style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 6px', margin: '0 -6px' }}>
+      <main className="scry" style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '16px 6px', margin: '-16px -6px' }}>
         <Topbar />
-        <div style={{ padding: '20px 4px 40px', flex: 1 }}>
+        <div style={{ padding: '20px 0 32px', flex: 1 }}>
           {loading && !loaded ? <LoadingBar /> : <CurrentView />}
         </div>
       </main>

@@ -14,6 +14,7 @@ import type { ThemeMode } from './themeMode';
 import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
+import { PAGE_ACTIONS_ID } from './ds';
 
 export type NavItem = { key: View; label: string };
 
@@ -102,13 +103,14 @@ function CountBadge({ value, danger }: { value: number; danger?: boolean }) {
         marginLeft: 'auto',
         fontSize: 11,
         fontWeight: 700,
-        lineHeight: '18px',
+        lineHeight: '16.5px',
         minWidth: 20,
         textAlign: 'center',
+        fontVariantNumeric: 'tabular-nums',
         background: danger ? 'var(--bad-solid)' : 'var(--hi)',
-        color: danger ? 'var(--on-accent)' : 'var(--on-hi)',
-        borderRadius: 999,
-        padding: '0 7px',
+        color: '#fff',
+        borderRadius: 99,
+        padding: '1px 7px',
       }}
     >
       {value}
@@ -135,7 +137,7 @@ function SoonBadge() {
   );
 }
 
-function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
+function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
   const active = view === item.key;
   const soon = SOON[item.key];
@@ -148,13 +150,13 @@ function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
         alignItems: 'center',
         gap: 12,
         width: '100%',
-        minHeight: 40,
+        minHeight: sub ? 38 : 40,
         padding: '9px 12px',
         border: 'none',
         borderRadius: 12,
         cursor: 'pointer',
         fontSize: 13.5,
-        lineHeight: 1.3,
+        lineHeight: 1.5,
         textAlign: 'left',
         transition: 'background .15s, color .15s',
         background: active ? 'var(--sel)' : 'transparent',
@@ -162,7 +164,7 @@ function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
         fontWeight: active ? 500 : 400,
       }}
     >
-      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{navIcon[item.key]}</span>
+      <span style={{ display: 'inline-flex', flexShrink: 0, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>{navIcon[item.key]}</span>
       <span style={{ minWidth: 0, flex: 1 }}>{item.label}</span>
       {badge}
     </button>
@@ -172,12 +174,12 @@ function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
-      width="13"
-      height="13"
+      width="15"
+      height="15"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2.5}
+      strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
       style={{
@@ -195,16 +197,14 @@ function NavSection({
   title,
   items,
   badgeFor,
-  first,
 }: {
   title: string;
   items: NavItem[];
   badgeFor: (key: View) => ReactNode;
-  first?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: first ? 4 : 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', marginTop: 8 }}>
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
@@ -220,8 +220,10 @@ function NavSection({
           cursor: 'pointer',
           fontSize: 12,
           fontWeight: 500,
+          lineHeight: 1.5,
           color: 'var(--ink-3)',
           padding: open ? '10px 12px 6px' : '10px 12px 8px',
+          justifyContent: 'space-between',
           textAlign: 'left',
         }}
       >
@@ -229,7 +231,7 @@ function NavSection({
         <span style={{ textTransform: 'capitalize' }}>{title.toLowerCase()}</span>
         <Chevron open={open} />
       </button>
-      {open && items.map((item) => <NavButton key={item.key} item={item} badge={badgeFor(item.key)} />)}
+      {open && items.map((item) => <NavButton key={item.key} item={item} badge={badgeFor(item.key)} sub />)}
     </div>
   );
 }
@@ -277,11 +279,11 @@ export function Sidebar() {
     <aside
       className="ds-glass"
       style={{
-        width: 264,
+        width: 268,
         flexShrink: 0,
         height: '100%',
         borderRadius: 'var(--r-lg)',
-        boxShadow: 'var(--shadow)',
+        boxShadow: 'var(--shadow-bar)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -327,9 +329,9 @@ export function Sidebar() {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
-              fontSize: 16, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              fontSize: 17, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               // Their own weight, case and colour when they have one.
-              fontWeight: brand.wordmark?.weight ?? 600,
+              fontWeight: brand.wordmark?.weight ?? 700,
               letterSpacing: brand.wordmark?.letterSpacing ?? '-.01em',
               textTransform: brand.wordmark?.lowercase ? 'lowercase' : undefined,
               color: orgActive ? 'var(--accent-ink)' : (brand.wordmark?.color ? `color-mix(in srgb, ${brand.wordmark.color} var(--av-fg), var(--ink))` : 'var(--ink)'),
@@ -338,18 +340,21 @@ export function Sidebar() {
             {brand.wordmark?.text ?? companyName}
           </div>
         </div>
-        {orgOpen && <span style={{ color: orgActive ? 'var(--accent-ink)' : 'var(--ink-3)', fontSize: 18, fontWeight: 500 }}>›</span>}
+        {orgOpen && (
+          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={orgActive ? 'var(--accent-ink)' : 'var(--ink-3)'} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        )}
       </button>
 
-      <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 12px 16px' }}>
+      <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
         {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
-        {sections.map((section, i) => (
+        {sections.map((section) => (
           <NavSection
             key={section.title}
             title={section.title}
             items={section.items}
             badgeFor={badgeFor}
-            first={i === 0}
           />
         ))}
       </div>
@@ -361,18 +366,18 @@ export function Sidebar() {
             width: 32,
             height: 32,
             borderRadius: 10,
-            background: 'var(--brand)',
+            background: 'var(--t-lilac)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
           }}
         >
-          <Logo />
+          <Logo stroke="var(--t-lilac-i)" size={15} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{PLATFORM_NAME}</div>
-          <div style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)', marginTop: 2 }}>HRMS platform</div>
+          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{PLATFORM_NAME}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)' }}>HRMS platform</div>
         </div>
       </div>
     </aside>
@@ -416,7 +421,7 @@ const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
 function ThemeSwitch() {
   const [mode, setMode] = useState<ThemeMode>(readThemeMode);
   return (
-    <div role="radiogroup" aria-label="Theme" style={{ display: 'flex', alignItems: 'center', gap: 2, height: 40, padding: 3, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', flexShrink: 0 }}>
+    <div role="radiogroup" aria-label="Theme" style={{ display: 'flex', alignItems: 'center', gap: 2, height: 42, padding: 4, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', flexShrink: 0 }}>
       {THEME_OPTIONS.map((o) => {
         const on = mode === o.mode;
         return (
@@ -464,11 +469,12 @@ export function Topbar() {
     .toUpperCase();
   const iconBtn = {
     position: 'relative' as const,
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 999,
     border: '1px solid var(--line)',
     background: 'var(--surface)',
+    color: 'var(--ink-2)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -484,30 +490,30 @@ export function Topbar() {
           top: 0,
           zIndex: 30,
           borderRadius: 999,
-          boxShadow: 'var(--shadow)',
+          boxShadow: 'var(--shadow-bar)',
           padding: '8px 10px 8px 14px',
           display: 'flex',
           alignItems: 'center',
           gap: 12,
         }}
       >
-        <div className="ds-field" style={{ display: 'flex', alignItems: 'center', flex: 1, maxWidth: 460, minWidth: 0, height: 40, background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, padding: '0 14px', gap: 8 }}>
-          <IconSearch />
-          <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: 'var(--ink)' }} />
+        <div className="ds-field" style={{ display: 'flex', alignItems: 'center', flex: 1, maxWidth: 460, minWidth: 0, height: 40, background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, padding: '0 12px', gap: 6, color: 'var(--ink-3)' }}>
+          <IconSearch size={15} stroke="var(--ink-3)" />
+          <input placeholder="Search people, requests…" className="ds-top-search" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', height: '100%', padding: '1px 2px', color: 'var(--ink)' }} />
         </div>
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-icon-btn"
-          style={{ ...iconBtn, width: 'auto', padding: '0 14px 0 8px', gap: 8, border: '1px solid var(--accent-line)', background: suwiOpen ? 'var(--accent)' : 'var(--accent-soft)', color: suwiOpen ? 'var(--on-accent)' : 'var(--accent-ink)', fontWeight: 500, fontSize: 13, font: 'inherit' }}>
+        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--hi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--sky-soft))', color: 'var(--hi)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
           <SuwiOrb size={22} />Ask Suwi
         </button>
         <ThemeSwitch />
         <button className="ds-icon-btn" style={iconBtn}>
-          <IconBell />
+          <IconBell stroke="currentColor" />
           <span style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, background: '#E5533D', borderRadius: '50%', border: '2px solid var(--surface)' }} />
         </button>
 
         {/* Logged-in HR — top-right. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 16px 0 4px', borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)' }}>
+        <div className="ds-me" style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 14px 0 4px', borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0 }}>
           <div
             style={{
               width: 32,
@@ -525,9 +531,9 @@ export function Topbar() {
           >
             {userInitials}
           </div>
-          <div style={{ minWidth: 0, lineHeight: 1.15 }}>
+          <div style={{ minWidth: 0, lineHeight: 1.15, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{displayName}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>HR</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>HR</div>
           </div>
         </div>
         <button
@@ -536,17 +542,21 @@ export function Topbar() {
           className="ds-icon-btn"
           style={iconBtn}
         >
-          <IconLogout />
+          <IconLogout size={18} stroke="currentColor" />
         </button>
       </header>
 
       {/* Page head: the section line above the page's title. */}
-      <div style={{ padding: '22px 4px 0' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, color: 'var(--hi)', letterSpacing: '.02em' }}>
-          <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />
-          {meta}
+      <div style={{ padding: '28px 4px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, lineHeight: '18px', color: 'var(--hi)', letterSpacing: '.02em' }}>
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />
+            {meta}
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '6px 0 0' }}>{title}</h1>
+        {/* A view's own buttons land here (ui.tsx PageActions). */}
+        <div id={PAGE_ACTIONS_ID} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} />
       </div>
     </>
   );
@@ -560,7 +570,7 @@ export function Toast() {
     <div
       style={{
         position: 'fixed',
-        bottom: 26,
+        bottom: 24,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 90,
@@ -569,7 +579,8 @@ export function Toast() {
         borderRadius: 14,
         padding: '12px 18px',
         fontSize: 13.5,
-        fontWeight: 500,
+        fontWeight: 600,
+        lineHeight: 1.5,
         boxShadow: 'var(--shadow-lg)',
         maxWidth: 'calc(100% - 32px)',
         display: 'flex',
