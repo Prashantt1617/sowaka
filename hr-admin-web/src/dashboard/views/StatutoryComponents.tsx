@@ -61,7 +61,7 @@ export function StatutoryComponents() {
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ ...tabBtn, color: active ? 'var(--accent-ink)' : 'var(--ink-3)', borderBottomColor: active ? 'var(--accent)' : 'transparent', fontWeight: active ? 800 : 600 }}>
+              style={{ ...tabBtn, color: active ? 'var(--on-sel)' : 'var(--ink-2)', background: active ? 'var(--sel)' : 'none', fontWeight: active ? 500 : 400 }}>
               {t.label}
             </button>
           );
@@ -916,8 +916,8 @@ function Check({ checked, onChange, label, sub, info }: { checked: boolean; onCh
   );
 }
 
-const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid var(--line)', marginBottom: 24 };
-const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
+const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 24 };
+const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 14px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
 const fieldLabel: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' };
 const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', fontSize: 12, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: 'var(--shadow)', fontWeight: 400, textAlign: 'left', whiteSpace: 'normal' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };

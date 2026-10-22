@@ -67,7 +67,7 @@ export function Accesses() {
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ ...tabBtn, color: active ? 'var(--accent-ink)' : 'var(--ink-3)', borderBottomColor: active ? 'var(--accent)' : 'transparent', fontWeight: active ? 800 : 600 }}>
+              style={{ ...tabBtn, color: active ? 'var(--on-sel)' : 'var(--ink-2)', background: active ? 'var(--sel)' : 'none', fontWeight: active ? 500 : 400 }}>
               {t.label}
             </button>
           );
@@ -163,7 +163,7 @@ function UsersTab() {
       </div>
 
       <Card>
-        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 12, fontWeight: 500, letterSpacing: 0, color: 'var(--ink-3)', textTransform: 'none' }}>
           <div>User details</div>
           <div>Tabs</div>
           <div>Support desk</div>
@@ -324,7 +324,7 @@ function RolesTab() {
     <div>
       <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>Starting points for a person's tabs. Pick one in the access editor, then add or remove tabs for that person.</div>
       <Card>
-        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 12, fontWeight: 500, letterSpacing: 0, color: 'var(--ink-3)', textTransform: 'none' }}>
           <div>Role name</div>
           <div>Tabs</div>
         </div>
@@ -342,8 +342,8 @@ function RolesTab() {
   );
 }
 
-const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid var(--line)', marginBottom: 20 };
-const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
+const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 20 };
+const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 14px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const chip: CSSProperties = { background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: '1px solid var(--accent-line)', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };

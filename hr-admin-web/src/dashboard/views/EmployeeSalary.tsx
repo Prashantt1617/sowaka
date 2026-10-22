@@ -805,7 +805,7 @@ function CtcInput({ value, onChange }: { value: string; onChange: (v: string) =>
 function GroupRows({ label, cols, big, children }: { label: string; cols: number; big?: boolean; children: ReactNode }) {
   return (
     <>
-      <tr><td colSpan={cols} style={{ padding: big ? '16px 20px 6px' : '14px 22px 4px', fontSize: big ? 17 : 14.5, fontWeight: big ? 600 : 800, color: 'var(--ink)' }}>{label}</td></tr>
+      <tr><td colSpan={cols} style={{ padding: big ? '16px 20px 6px' : '14px 22px 4px', fontSize: big ? 15 : 13, fontWeight: big ? 400 : 600, color: 'var(--ink)' }}>{label}</td></tr>
       {children}
     </>
   );

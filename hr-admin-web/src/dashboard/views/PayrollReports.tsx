@@ -112,7 +112,7 @@ export function PayrollReports() {
           <div key={g.title} style={{ padding: '6px 0' }}>
             <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--ink-4)', padding: '6px 18px' }}>{g.title}</div>
             {g.items.map((i) => (
-              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: active === i.key ? 'var(--accent-soft)' : 'none', color: active === i.key ? 'var(--accent-ink)' : 'var(--ink)', fontWeight: active === i.key ? 700 : 500, fontSize: 13.5, padding: '9px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
+              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: active === i.key ? 'var(--accent-soft)' : 'none', color: active === i.key ? 'var(--accent-ink)' : 'var(--ink)', fontWeight: active === i.key ? 500 : 400, fontSize: 13.5, padding: '9px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
             ))}
           </div>
         ))}

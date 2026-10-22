@@ -429,7 +429,7 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
               </span>
               <span style={{
                 fontSize: 13.5,
-                fontWeight: state === 'now' ? 800 : 600,
+                fontWeight: state === 'now' ? 600 : 400,
                 color: state === 'now' ? 'var(--ink)' : state === 'todo' ? 'var(--ink-4)' : 'var(--accent-ink)',
                 textDecoration: disabled ? 'none' : 'underline',
                 textUnderlineOffset: 3,

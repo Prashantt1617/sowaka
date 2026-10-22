@@ -107,7 +107,7 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 function TotalRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: strong ? 16 : 15, fontWeight: strong ? 800 : 600, color: strong ? 'var(--bad)' : 'var(--ink-2)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: strong ? 14 : 13.5, fontWeight: strong ? 600 : 400, color: strong ? 'var(--bad)' : 'var(--ink-2)' }}>
       <span>{label}</span>
       <span>{value}</span>
     </div>

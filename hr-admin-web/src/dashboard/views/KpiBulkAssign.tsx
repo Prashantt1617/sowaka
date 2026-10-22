@@ -703,7 +703,7 @@ function Steps({
               <span
                 style={{
                   fontSize: 13.5,
-                  fontWeight: state === 'now' ? 800 : 600,
+                  fontWeight: state === 'now' ? 600 : 400,
                   color: state === 'now' ? 'var(--ink)' : state === 'todo' ? 'var(--ink-4)' : 'var(--accent-ink)',
                   // `disabled` already covers the current step, so anything
                   // still clickable here is a step you can navigate to.

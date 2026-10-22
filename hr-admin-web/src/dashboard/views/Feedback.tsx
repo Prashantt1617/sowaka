@@ -531,7 +531,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                     transition: 'background .12s',
                   }}
                 />
-                <span style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, color: on ? 'var(--ink)' : 'var(--ink-4)' }}>
+                <span style={{ fontSize: 11.5, fontWeight: on ? 600 : 400, color: on ? 'var(--ink)' : 'var(--ink-4)' }}>
                   {monthLabel(c.period)}
                   {c.period === livePeriod && (
                     <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-4)', fontWeight: 500 }}>NOW</span>

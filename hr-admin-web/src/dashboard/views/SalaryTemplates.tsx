@@ -1251,7 +1251,7 @@ function GroupRows({ label, cols, big, children }: { label: string; cols: number
   return (
     <>
       <tr>
-        <td colSpan={cols} style={{ padding: big ? '18px 20px 8px' : '14px 22px 6px', fontSize: big ? 18 : 15, fontWeight: big ? 600 : 800, color: 'var(--ink)' }}>{label}</td>
+        <td colSpan={cols} style={{ padding: big ? '18px 20px 8px' : '14px 22px 6px', fontSize: big ? 16 : 13.5, fontWeight: big ? 400 : 600, color: 'var(--ink)' }}>{label}</td>
       </tr>
       {children}
     </>

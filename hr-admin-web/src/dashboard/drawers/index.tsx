@@ -20,7 +20,7 @@ function DecisionFooter({
   approveLabel: string;
 }) {
   return (
-    <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface-2)', borderTop: '1px solid var(--line)', padding: '16px 24px', display: 'flex', gap: 11 }}>
+    <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '16px 24px', display: 'flex', gap: 11 }}>
       <button onClick={onDecline} style={{ flex: 1, border: '1px solid var(--bad-line)', background: 'var(--bad-bg)', color: 'var(--bad)', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Decline</button>
       <button onClick={onApprove} style={{ flex: 1.4, border: 'none', background: 'var(--ok)', color: '#fff', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{approveLabel}</button>
     </div>

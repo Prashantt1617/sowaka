@@ -505,7 +505,7 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
   const claims = p.reimbursementsPaise - reimbLines.reduce((t, r) => t + r.amountPaise, 0);
   const e = p.employer;
   const row = (label: string, value: number, opts: { strong?: boolean; muted?: boolean; sub?: string } = {}) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13, fontWeight: opts.strong ? 700 : 500, color: opts.muted ? 'var(--ink-4)' : 'var(--ink)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13, fontWeight: opts.strong ? 500 : 400, color: opts.muted ? 'var(--ink-4)' : 'var(--ink)' }}>
       <span>{label}{opts.sub && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · {opts.sub}</span>}</span>
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{money2(value)}</span>
     </div>

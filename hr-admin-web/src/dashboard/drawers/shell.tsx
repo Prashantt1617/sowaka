@@ -83,7 +83,7 @@ export function HrOverrideFooter({
   onApprove: () => void;
 }) {
   return (
-    <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface-2)', borderTop: '1px solid var(--line)', padding: '14px 24px 16px' }}>
+    <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '14px 24px 16px' }}>
       {declineOpen ? (
         <div style={{ animation: 'fade .16s ease both' }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', letterSpacing: '.3px', marginBottom: 8 }}>HR OVERRIDE · DECLINE</div>

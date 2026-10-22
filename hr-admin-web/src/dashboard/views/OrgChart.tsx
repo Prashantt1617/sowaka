@@ -652,7 +652,7 @@ function HeadCard({ node, root, open, dimmed, highlighted, onOpen, onToggle, onF
     >
       <AvatarWithOpen node={node} size={root ? 52 : 44} font={root ? 18 : 15} onOpen={onOpen} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ ...nameStyle, fontSize: root ? 18 : 16.5 }}>{node.name}</div>
+        <div style={{ ...nameStyle, fontSize: root ? 16 : 14.5 }}>{node.name}</div>
         <div style={{ ...titleStyle, whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{node.title}</div>
       </div>
       {under > 0 && onFocus && <FocusButton onFocus={onFocus} active={focusActive} />}

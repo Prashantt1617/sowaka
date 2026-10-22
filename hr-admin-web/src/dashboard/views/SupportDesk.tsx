@@ -522,7 +522,7 @@ function TicketRow({ ticket: t, role, meId, active, onOpen }: { ticket: SupportT
           </span>
           {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: 'var(--accent-grad)', color: '#fff', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
         </span>
-        <span style={{ display: 'block', fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--ink-3)', fontWeight: unread ? 600 : 500, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span style={{ display: 'block', fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--ink-3)', fontWeight: unread ? 500 : 400, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t.lastMessagePreview || '—'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>

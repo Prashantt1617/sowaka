@@ -572,7 +572,7 @@ function Progress({ step, onJump }: { step: number; onJump: (i: number) => void 
               }}>
                 {done ? '✓' : i + 1}
               </span>
-              <span style={{ fontSize: 14, fontWeight: active ? 800 : 600, color: active ? 'var(--accent-ink)' : done ? 'var(--ink-2)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{label}</span>
+              <span style={{ fontSize: 14, fontWeight: active ? 600 : 400, color: active ? 'var(--accent-ink)' : done ? 'var(--ink-2)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{label}</span>
             </button>
             {i < STEPS.length - 1 && (
               <span style={{ width: 52, height: 2, background: done ? 'var(--accent-grad)' : 'var(--surface-2)', margin: '0 16px', flexShrink: 0 }} />
@@ -983,7 +983,7 @@ function SalaryStructureGroup({ sal, set }: { sal: SalaryData; set: <K extends k
 
       <div style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
         {/* Column header */}
-        <div style={{ display: 'grid', gridTemplateColumns: SR_COLS, gap: 12, padding: '11px 16px', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: SR_COLS, gap: 12, padding: '11px 16px', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', fontSize: 12, fontWeight: 500, letterSpacing: 0, color: 'var(--ink-3)', textTransform: 'none' }}>
           <div>Salary Components</div>
           <div>Calculation Type</div>
           <div style={{ textAlign: 'right' }}>Monthly Amount</div>

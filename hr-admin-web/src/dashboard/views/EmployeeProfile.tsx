@@ -991,7 +991,7 @@ function Row({ label, value, wide, strong }: { label: string; value: string; wid
   return (
     <div style={{ gridColumn: wide ? '1 / -1' : undefined, minWidth: 0 }}>
       <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: strong ? 800 : 600, color: 'var(--ink)', marginTop: 3, wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ fontSize: 13.5, fontWeight: strong ? 600 : 400, color: 'var(--ink)', marginTop: 3, wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }
