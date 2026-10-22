@@ -65,7 +65,8 @@ async function post(url: string, headers: Record<string, string>, body: unknown)
     if (res.status !== 429 && res.status !== 529 && res.status !== 503 && res.status < 500) break;
     await new Promise((r) => setTimeout(r, 800 * (attempt + 1) + Math.random() * 400));
   }
-  throw new SuwiLlmError(502, `Suwi couldn't reach the AI service (${lastError || 'no response'})`);
+  if (lastError.startsWith('429')) throw new SuwiLlmError(429, "The AI service has run out of quota for now (its plan or billing needs a look). Try again in a few minutes.");
+  throw new SuwiLlmError(502, `Suwi couldn't reach the AI service (${lastError.slice(0, 120) || 'no response'})`);
 }
 
 // —— Anthropic Claude ——
