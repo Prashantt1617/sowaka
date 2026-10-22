@@ -5,7 +5,7 @@ import { User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { getCompanyConfig } from './company-settings.service';
 import type { OvertimeDuration } from '../models/shift.model';
-import { fullDayHoursFor, policyForUser } from './shift.service';
+import { fullDayHoursFor, policiesForPeople, policyForUser } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 
@@ -203,15 +203,20 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
   const employees = await orgUsers(adminUserId);
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
-  const requests = await overtimeRequests()
-    .find({ userId: { $in: employees.map((e) => e.userId) } })
-    .sort({ status: -1, createdAt: -1 })
-    .toArray();
-  const hoursByUser = await fullDayHoursByUser(requests.map((request) => request.userId));
+  // The requests and everyone's full-day threshold side by side: the
+  // policies are batched over the roster already in hand (a handful of
+  // queries in all) rather than five in a row for each person who asked.
+  const [requests, policies] = await Promise.all([
+    overtimeRequests()
+      .find({ userId: { $in: employees.map((e) => e.userId) } })
+      .sort({ status: -1, createdAt: -1 })
+      .toArray(),
+    policiesForPeople(employees),
+  ]);
   return await Promise.all(
     requests.flatMap((request) => {
       const employee = employeeById.get(request.userId);
-      return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
+      return employee ? [toView(request, employee, policies.get(request.userId)?.minFullDayHours ?? 8)] : [];
     }),
   );
 }
