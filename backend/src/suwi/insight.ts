@@ -65,14 +65,19 @@ export function mayRead(user: Pick<User, 'dashboardAdmin' | 'dashboardTabs'>, pa
 
 // —— Shared checks ——
 
-/** How long it has waited, against the overdue limit. */
+/**
+ * How long it has waited, against the overdue limit. Never a reason to hold
+ * back (waiting longer is a reason to decide), so it never turns the verdict.
+ */
 export function waitingCheck(createdAt: Date | number | string | undefined, today: string, limit = OVERDUE_DAYS): Check {
   const waiting = daysWaiting(createdAt, today);
   const since = isoDay(createdAt);
-  return waiting >= limit
-    ? { ok: false, text: `Waiting ${plural(waiting, 'day')}${since ? ` (since ${fmt(since)})` : ''}: past the ${limit}-day limit.` }
-    : { ok: true, text: `Waiting ${plural(waiting, 'day')}${since ? ` (since ${fmt(since)})` : ''}, within the ${limit}-day limit.` };
+  const how = waiting === 0 ? 'Submitted today' : `Waiting ${plural(waiting, 'day')}${since ? ` (since ${fmt(since)})` : ''}`;
+  return { ok: true, text: waiting >= limit ? `${how}: past the ${limit}-day limit, so worth deciding soon.` : `${how}, within the ${limit}-day limit.` };
 }
+
+/** HR can't approve their own request: the dashboard refuses it. */
+export const ownRequestCheck: Check = { ok: false, text: 'This is your own request: someone else in HR has to decide it.' };
 
 /**
  * Whose call it is. HR's own when there is no manager or the policy names HR;
@@ -80,12 +85,16 @@ export function waitingCheck(createdAt: Date | number | string | undefined, toda
  */
 export async function managerStepCheck(employee: User, kind: 'leave' | 'overtime' | 'correction', createdAt: Date | number | string | undefined, today: string): Promise<Check & { managerUserId?: string; managerName?: string }> {
   const approvers = await approversFor(employee, kind);
-  const manager = employee.managerUserId ? approvers.find((a) => a.userId === employee.managerUserId) : undefined;
+  const named = employee.managerUserId ? approvers.find((a) => a.userId === employee.managerUserId) : undefined;
+  // A manager recorded from another company is never named or reminded from here.
+  const manager = named && named.org === employee.org ? named : undefined;
   const label = kind === 'correction' ? 'attendance corrections' : kind;
   if (!manager) {
-    return employee.managerUserId
-      ? { ok: true, text: `The policy names HR as the approver for ${label}, so this is HR's call.` }
-      : { ok: true, text: 'No reporting manager is set, so this is HR\'s call.' };
+    return named
+      ? { ok: true, text: 'Their reporting manager is not on this company\'s roster, so this is HR\'s call.' }
+      : employee.managerUserId
+        ? { ok: true, text: `The policy names HR as the approver for ${label}, so this is HR's call.` }
+        : { ok: true, text: 'No reporting manager is set, so this is HR\'s call.' };
   }
   const waiting = daysWaiting(createdAt, today);
   const rules = kind === 'overtime' ? { approver: 'Reporting manager', hrOverride: true } : await approvalRulesFor(employee.userId, kind);
@@ -145,7 +154,8 @@ export async function leaveChecks(leave: Leave & { _id?: ObjectId }, employee: U
     else checks.push({ ok: true, text: `No one else in ${teamLabel} is on approved leave ${span(start, end)}.${pending.length ? ` Pending for the same dates: ${who(pending)}.` : ''}` });
   }
 
-  checks.push(await managerStepCheck(employee, 'leave', leave.createdAt, today));
+  const step = await managerStepCheck(employee, 'leave', leave.createdAt, today);
+  checks.push({ ok: step.ok, text: step.text });
   checks.push(waitingCheck(leave.createdAt, today, limit));
   return checks;
 }
@@ -159,10 +169,11 @@ async function overtimeChecks(ot: OvertimeRequest & { _id: ObjectId }, employee:
   const hours = Math.round(approved.reduce((n, r) => n + (r.hours ?? 0), 0) * 10) / 10;
   const declined = thisYear.filter((r) => r.status === 'declined').length;
   const pending = thisYear.filter((r) => r.status === 'pending').length;
+  const step = await managerStepCheck(employee, 'overtime', ot.createdAt, today);
   return [
-    await managerStepCheck(employee, 'overtime', ot.createdAt, today),
+    { ok: step.ok, text: step.text },
     waitingCheck(ot.createdAt, today, limit),
-    { ok: true, text: `This year: ${plural(approved.length, 'overtime request')} approved (${hours} h)${declined ? `, ${declined} declined` : ''}${pending ? `, ${pending} more pending` : ''}.` },
+    { ok: true, text: thisYear.length ? `This year: ${plural(approved.length, 'other overtime request')} approved (${hours} h)${declined ? `, ${declined} declined` : ''}${pending ? `, ${pending} more pending` : ''}.` : 'Their first overtime request this year.' },
   ];
 }
 
@@ -173,10 +184,11 @@ async function regularizationChecks(row: AttendanceRegularization & { _id: Objec
   const n = (s: string) => thisYear.filter((r) => r.status === s).length;
   const what = kind === 'out_of_location' ? 'out-of-location request' : 'correction';
   const filed = daysBetween(row.workDate, isoDay(row.createdAt) || today);
+  const step = await managerStepCheck(employee, 'correction', row.createdAt, today);
   return [
-    await managerStepCheck(employee, 'correction', row.createdAt, today),
+    { ok: step.ok, text: step.text },
     waitingCheck(row.createdAt, today, limit),
-    { ok: true, text: `Filed ${plural(filed, 'day')} after the day (${fmt(row.workDate)}). This year: ${plural(n('approved'), what)} approved${n('declined') ? `, ${n('declined')} declined` : ''}${n('pending') ? `, ${n('pending')} more pending` : ''}.` },
+    { ok: true, text: `${filed === 0 ? `Filed the same day (${fmt(row.workDate)})` : `Filed ${plural(filed, 'day')} after the day (${fmt(row.workDate)})`}. ${thisYear.length ? `This year: ${plural(n('approved'), `other ${what}`)} approved${n('declined') ? `, ${n('declined')} declined` : ''}${n('pending') ? `, ${n('pending')} more pending` : ''}.` : `Their first ${what} this year.`}` },
   ];
 }
 
@@ -218,12 +230,15 @@ export const INSIGHT_ROUTE: Record<InsightKind, string> = {
   leave: '/admin/leaves', overtime: '/admin/overtime', correction: '/admin/regularizations', ool: '/admin/out-of-location', claim: '/admin/reimbursements',
 };
 
-export async function insightFor(org: string, today: string, kind: InsightKind, idInput: string, limit = OVERDUE_DAYS): Promise<Insight | null> {
+export async function insightFor(org: string, today: string, kind: InsightKind, idInput: string, viewerUserId?: string, limit = OVERDUE_DAYS): Promise<Insight | null> {
   const id = idInput.replace(/^request:/, '');
   if (!ObjectId.isValid(id)) return null;
   const _id = new ObjectId(id);
   const inOrg = async (userId: string) => users().findOne({ userId, org });
-  const verdict = (employee: User, status: string, checks: Check[]): Insight => ({ ok: checks.every((c) => c.ok), checks, pending: status === 'pending', userId: employee.userId, name: employee.name });
+  const verdict = (employee: User, status: string, found: Check[]): Insight => {
+    const checks = status === 'pending' && viewerUserId === employee.userId ? [ownRequestCheck, ...found] : found;
+    return { ok: checks.every((c) => c.ok), checks, pending: status === 'pending', userId: employee.userId, name: employee.name };
+  };
   if (kind === 'leave') {
     const leave = await leaves().findOne({ _id });
     const employee = leave && (await inOrg(leave.userId));

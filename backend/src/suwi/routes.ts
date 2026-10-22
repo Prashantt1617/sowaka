@@ -52,7 +52,7 @@ suwiRouter.get('/insight/:kind/:id', async (req, res, next) => {
     const level = s.levels[kind === 'claim' ? 'claims' : 'requests'];
     if (!s.enabled || level === 'answer' || !mayRead(u, INSIGHT_ROUTE[kind])) { res.json({ success: true, insight: null }); return; }
     const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
-    res.json({ success: true, insight: await insightFor(u.org!, today, kind, String(req.params.id)) });
+    res.json({ success: true, insight: await insightFor(u.org!, today, kind, String(req.params.id), u.userId) });
   } catch (e) { fail(res, e, next); }
 });
 

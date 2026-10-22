@@ -9,7 +9,7 @@ import { leaves, users } from '../../config/db';
 import { notifyUsers } from '../../services/notification.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
-import { Check, leaveChecks, managerStepCheck, OVERDUE_DAYS } from '../insight';
+import { Check, leaveChecks, managerStepCheck, OVERDUE_DAYS, ownRequestCheck } from '../insight';
 import { pendingRows, PendingRow, REQUEST_LINKS } from './requests';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -48,7 +48,7 @@ defineTools(
     name: 'review_requests',
     area: 'requests',
     label: (i) => `Requests overdue, waiting on managers and safe to approve${i.overdueDays ? ` (${i.overdueDays}-day limit)` : ''}`,
-    description: `Review the pending pile: what is past the overdue limit (${OVERDUE_DAYS} days unless given; Sowaka has no escalation setting, managers are only reminded on Tuesdays and Thursdays), which managers have requests waiting on them, and which pending leave requests look safe to approve: enough balance this year, nobody in the same department off on overlapping dates, and HR's turn to decide (no manager who still hasn't acted). Each leave not on the safe list comes with what to check first. Optionally one type.`,
+    description: `Review the pending pile: what is past the overdue limit (${OVERDUE_DAYS} days unless given; Sowaka has no escalation setting, managers are only reminded on Tuesdays and Thursdays), which managers have requests waiting on them, and which pending leave requests look safe to approve: enough balance this year, nobody in the same department off on overlapping dates, HR's turn to decide (no manager who still hasn't acted), and not the asker's own request. Each leave not on the safe list comes with what to check first. Optionally one type.`,
     input_schema: { type: 'object', properties: { overdueDays: { type: 'number', description: `Days after which a request counts as overdue; default ${OVERDUE_DAYS}` }, type: { type: 'string', enum: ['leave', 'overtime', 'corrections', 'checkins', 'claims'] }, limit: { type: 'number' } } },
     api: { method: 'GET', path: '/admin/leaves' },
     async run(ctx, i) {
@@ -72,7 +72,7 @@ defineTools(
           const doc = docs.find((d) => d._id.toHexString() === r.id);
           const employee = people.get(r.userId);
           if (!doc || !employee) continue;
-          const checks = await leaveChecks(doc, employee, ctx.today, limit);
+          const checks = [...(r.userId === ctx.userId ? [ownRequestCheck] : []), ...(await leaveChecks(doc, employee, ctx.today, limit))];
           if (checks.every((c) => c.ok)) safe.push({ ...brief(r), checks: checks.map((c) => c.text) });
           else checkFirst.push({ ...brief(r), issues: checks.filter((c) => !c.ok).map((c) => c.text) });
         }
@@ -103,7 +103,8 @@ defineTools(
       const minDays = num(i.minDaysWaiting, OVERDUE_DAYS, 0, 365);
       const wanted = str(i.managerName).toLowerCase();
       const rows = await withApprover(ctx, await pendingRows(ctx, ''));
-      const groups = byManager(rows).filter((g) => g.oldestDays >= minDays && (!wanted || g.manager.toLowerCase().includes(wanted)));
+      // Not the person asking: they can open their own inbox.
+      const groups = byManager(rows).filter((g) => g.managerUserId !== ctx.userId && g.oldestDays >= minDays && (!wanted || g.manager.toLowerCase().includes(wanted)));
       if (!groups.length) return { data: { nothingToDo: true, message: wanted ? `No pending request is waiting on a manager called "${str(i.managerName)}"${minDays ? ` for ${minDays} days or more` : ''}.` : `No manager has a request waiting ${minDays ? `${minDays} days or more` : 'on them'}.` } };
       const parts = (g: (typeof groups)[number]) => [g.leave ? `${g.leave} leave` : '', g.overtime ? `${g.overtime} overtime` : '', g.attendance ? `${g.attendance} attendance` : ''].filter(Boolean).join(', ');
       const who = groups.length === 1 ? groups[0].manager : `${groups.length} managers`;
