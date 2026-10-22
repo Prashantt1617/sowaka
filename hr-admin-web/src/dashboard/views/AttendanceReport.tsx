@@ -10,7 +10,7 @@
 // already graded, so a filter changes the page instantly and never re-runs a
 // month of grading. The export carries exactly what the filters show.
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import type { WorkSheet } from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
 import type { AttendanceReportDTO, ReportRow } from '../../services/hrms';
 import { Avatar, Card, DateRange, EmptyRow, Pill, SelectBox } from '../ui';
@@ -234,7 +234,7 @@ export function AttendanceReport() {
   // ── export ─────────────────────────────────────────────────────────────
   const widths = (rows: Record<string, unknown>[]) =>
     Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length)) + 2 }));
-  const sheet = (rows: Record<string, unknown>[]) => {
+  const sheet = (XLSX: typeof import('xlsx'), rows: Record<string, unknown>[]): WorkSheet => {
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = widths(rows);
     return ws;
@@ -283,11 +283,13 @@ export function AttendanceReport() {
     'Source': r.source ?? '',
   }));
   const suffix = `${from}-to-${to}${filter === 'all' ? '' : `-${filter}`}${gap === 'all' ? '' : `-${gap}`}`;
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    // The spreadsheet library is large; it is fetched the first time someone exports.
+    const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
     // The punches are the sheet the file opens on; the totals sit behind them.
-    XLSX.utils.book_append_sheet(wb, sheet(dayRows()), 'Attendance');
-    XLSX.utils.book_append_sheet(wb, sheet(summaryRows()), 'Summary');
+    XLSX.utils.book_append_sheet(wb, sheet(XLSX, dayRows()), 'Attendance');
+    XLSX.utils.book_append_sheet(wb, sheet(XLSX, summaryRows()), 'Summary');
     XLSX.writeFile(wb, `attendance-${suffix}.xlsx`);
   };
   const canExport = listed.length > 0;
@@ -311,7 +313,7 @@ export function AttendanceReport() {
         </SelectBox>
         {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
         {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 400 }}>Refreshing…</span>}
-        <ExportButton label="Export Excel" disabled={!canExport} onClick={exportExcel} />
+        <ExportButton label="Export Excel" disabled={!canExport} onClick={() => void exportExcel()} />
       </div>
 
       {error && (

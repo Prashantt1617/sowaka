@@ -5,7 +5,6 @@
 // to Excel.
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import * as XLSX from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { Card, EmptyRow } from '../ui';
@@ -41,7 +40,9 @@ const fyOf = (p: string) => { const [y, m] = p.split('-').map(Number); const s =
 const fyStart = (fy: string) => `${fy.slice(0, 4)}-04`;
 const prevMonth = (p: string) => { const [y, m] = p.split('-').map(Number); const d = new Date(Date.UTC(y, m - 2, 1)); return d.toISOString().slice(0, 7); };
 
-function exportXlsx(filename: string, title: string[], header: string[], rows: (string | number)[][], footer?: (string | number)[]) {
+async function exportXlsx(filename: string, title: string[], header: string[], rows: (string | number)[][], footer?: (string | number)[]) {
+  // The spreadsheet library is large; it is fetched the first time someone exports.
+  const XLSX = await import('xlsx');
   const aoa: (string | number)[][] = [...title.map((t) => [t]), [], header, ...rows, ...(footer ? [footer] : [])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = header.map((h) => ({ wch: Math.max(12, Math.min(32, h.length + 2)) }));
@@ -130,7 +131,7 @@ export function PayrollReports() {
                 <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} /> Include draft runs
               </label>
             )}
-            <button disabled={!data || loading} onClick={() => exportReport(active, data)} style={exportBtn}>Export (Excel)</button>
+            <button disabled={!data || loading} onClick={() => void exportReport(active, data)} style={exportBtn}>Export (Excel)</button>
           </div>
         </Card>
         <Card>
@@ -274,7 +275,7 @@ function SectionRows({ title, rows, totalLabel, totalPaise }: { title: string; r
   );
 }
 
-export function exportReport(kind: ReportKey, data: unknown) {
+export function exportReport(kind: ReportKey, data: unknown): Promise<void> {
   if (kind === 'summary') {
     const d = data as PayrollSummaryReport;
     const rows: (string | number)[][] = [];
@@ -284,7 +285,7 @@ export function exportReport(kind: ReportKey, data: unknown) {
       rows.push(['', s.totalLabel, rupees(s.totalPaise)]);
     }
     rows.push(['', 'Net Pay', rupees(d.netPayPaise)]);
-    exportXlsx('Payroll Summary', ['Payroll Summary', `From ${d.from} to ${d.to}`], ['Pay Components', '', 'Amount'], rows);
+    return exportXlsx('Payroll Summary', ['Payroll Summary', `From ${d.from} to ${d.to}`], ['Pay Components', '', 'Amount'], rows);
   } else if (kind === 'register') {
     const d = data as SalaryRegisterReport;
     const c = d.columns;
@@ -296,21 +297,21 @@ export function exportReport(kind: ReportKey, data: unknown) {
       ...c.earnings.map((x) => rupees(r.earnings[x.code] ?? 0)), rupees(r.grossPaise), ...c.reimbursements.map((x) => rupees(r.reimbursements[x.code] ?? 0)), rupees(r.reimbursementsPaise),
       ...c.deductions.map((x) => rupees(r.deductions[x.key] ?? 0)), rupees(r.taxOnIncomePaise), rupees(r.surchargePaise), rupees(r.cessPaise), rupees(r.incomeTaxPaise), rupees(r.totalDeductionsPaise),
       ...c.employer.map((x) => rupees(r.employer[x.key] ?? 0)), rupees(r.employerTotalPaise), rupees(r.netPayPaise)]);
-    exportXlsx(`Salary Register - ${d.period}`, ['Salary Register - Monthly', monthLabel(d.period)], header, rows);
+    return exportXlsx(`Salary Register - ${d.period}`, ['Salary Register - Monthly', monthLabel(d.period)], header, rows);
   } else if (kind === 'liability') {
     const d = data as LiabilityReport;
-    exportXlsx('Payroll Liability Summary', ['Payroll Liability Summary', `From ${d.from} to ${d.to}`], ['Liability Name', 'Employee Contribution', 'Employer Contribution', 'Total Contribution'],
+    return exportXlsx('Payroll Liability Summary', ['Payroll Liability Summary', `From ${d.from} to ${d.to}`], ['Liability Name', 'Employee Contribution', 'Employer Contribution', 'Total Contribution'],
       d.rows.map((r) => [r.name, rupees(r.employeePaise), rupees(r.employerPaise), rupees(r.totalPaise)]));
   } else if (kind === 'pt') {
     const d = data as PtSummaryReport;
-    exportXlsx(`Professional Tax Summary - ${d.period}`, ['Professional Tax Summary', monthLabel(d.period)], ['Employee Number', 'Employee Name', 'Work Location', 'Employee Status', 'Employee Type', 'PT Amount'],
+    return exportXlsx(`Professional Tax Summary - ${d.period}`, ['Professional Tax Summary', monthLabel(d.period)], ['Employee Number', 'Employee Name', 'Work Location', 'Employee Status', 'Employee Type', 'PT Amount'],
       d.rows.map((r) => [r.employeeId, r.name, r.workLocation, r.status, r.employeeType, rupees(r.ptPaise)]));
   } else if (kind === 'ptannual') {
     const d = data as PtAnnualReport;
-    exportXlsx(`PT Annual Return ${d.fy}`, ['PT Annual Return Statement', `FY ${d.fy}`], ['Period End', 'No. of Employees', 'PT Amount'], d.rows.map((r) => [r.periodEnd, r.employees, rupees(r.ptPaise)]));
+    return exportXlsx(`PT Annual Return ${d.fy}`, ['PT Annual Return Statement', `FY ${d.fy}`], ['Period End', 'No. of Employees', 'PT Amount'], d.rows.map((r) => [r.periodEnd, r.employees, rupees(r.ptPaise)]));
   } else {
     const d = data as PaymentDetailsReport;
-    exportXlsx(`Payrun_Employee_Payment_Details ${d.period}`, ['Employee Payment Details', monthLabel(d.period)], ['Employee No', 'Employee Name', 'Payment Mode', 'Bank Name', 'Account Number', 'IFSC', 'Net Pay'],
+    return exportXlsx(`Payrun_Employee_Payment_Details ${d.period}`, ['Employee Payment Details', monthLabel(d.period)], ['Employee No', 'Employee Name', 'Payment Mode', 'Bank Name', 'Account Number', 'IFSC', 'Net Pay'],
       d.rows.map((r) => [r.employeeId, r.name, r.paymentMode, r.bankName, r.accountNumber, r.ifsc, rupees(r.netPayPaise)]));
   }
 }

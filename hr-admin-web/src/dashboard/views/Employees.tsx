@@ -11,7 +11,6 @@ import { getAccountLimit } from '../../services/hrms';
 import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
 import { NameCell, Td, Th } from './kpiUi';
 import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
-import * as XLSX from 'xlsx';
 
 export function Employees() {
   const s = useStore();
@@ -76,7 +75,7 @@ export function Employees() {
           ))}
         </SelectBox>
         <div style={{ marginLeft: 'auto', fontSize: 14, color: 'var(--ink-3)', fontWeight: 400 }}>{rows.length} of {s.emps.length} people</div>
-        <button onClick={() => exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
+        <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
         <button onClick={openAdd} disabled={checkingLimit} style={primaryBtn}>
           <IconPlus size={15} /> Add user
         </button>
@@ -170,7 +169,9 @@ const pageNum: CSSProperties = { minWidth: 32, height: 32, background: 'var(--su
 const pageNumActive: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', borderColor: 'var(--accent)' };
 
 /** The list as filtered on screen, as an Excel sheet. */
-function exportEmployees(rows: Emp[]) {
+async function exportEmployees(rows: Emp[]) {
+  // The spreadsheet library is large; it is fetched the first time someone exports.
+  const XLSX = await import('xlsx');
   const ws = XLSX.utils.json_to_sheet(rows.map((e) => ({
     'Employee ID': e.employeeId,
     Name: e.name,
