@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
-import { Avatar, Pill } from '../ui';
+import { Pill } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconChevronRight } from '../icons';
 import { SuwiOverviewCards } from '../suwi/SuwiNoticed';
 
@@ -92,7 +93,7 @@ export function Overview() {
           </div>
           {weekRows.map((w) => (
             <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
-              <Avatar name={w.name} size={34} font={12} />
+              <PersonAvatar name={w.name} userId={w.submitterId} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{w.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 1 }}>
@@ -112,7 +113,7 @@ export function Overview() {
           </div>
           {ovOvertime.map((o) => (
             <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
-              <Avatar name={o.name} size={34} font={12} />
+              <PersonAvatar name={o.name} userId={o.submitterId} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{o.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 1 }}>

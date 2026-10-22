@@ -13,7 +13,8 @@ import { ApiError } from '../../services/http';
 import { getAllEmployees, listDashboardAccesses, setDashboardAccess } from '../../services/hrms';
 import type { DashboardAccessDTO, EmployeeDTO } from '../../services/hrms';
 import type { SupportRole } from '../../services/support';
-import { Avatar, Card } from '../ui';
+import { Card } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
 import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
 import { SALARY_DETAILS } from '../access';
@@ -173,7 +174,7 @@ function UsersTab() {
         {(rows ?? []).map((u) => (
           <div key={u.userId} onClick={() => open(u)} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <Avatar name={u.name} size={38} font={14} />
+              <PersonAvatar name={u.name} userId={u.userId} size={38} font={14} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent-ink)' }}>{u.name}{u.userId === me?.id && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · you</span>}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{u.email}</div>
@@ -213,7 +214,7 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
       <div onClick={() => setEditing(null)} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
       <div className="scry" style={{ position: 'relative', width: 'min(560px, 100%)', height: '100%', background: 'var(--surface)', overflowY: 'auto', padding: '22px 24px 28px', boxShadow: '-12px 0 40px rgba(34,34,34,.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar name={editing.person.name} size={42} font={15} />
+          <PersonAvatar name={editing.person.name} userId={editing.person.userId} size={42} font={15} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 16.5, fontWeight: 600 }}>{editing.person.name}</div>
             <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{editing.person.email}</div>
@@ -303,7 +304,7 @@ function PickPerson({ exclude, onClose, onPick }: { exclude: Set<string>; onClos
           {people !== null && shown.length === 0 && <div style={{ padding: 18, color: 'var(--ink-3)' }}>Nobody matches.</div>}
           {shown.map((p) => (
             <button key={p.userId} type="button" onClick={() => onPick(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 18px', border: 'none', borderBottom: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-              <Avatar name={p.name} size={32} font={12} />
+              <PersonAvatar name={p.name} userId={p.userId} size={32} font={12} />
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
                 <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)' }}>{[p.employeeId, p.designation, p.email].filter(Boolean).join(' · ')}</span>

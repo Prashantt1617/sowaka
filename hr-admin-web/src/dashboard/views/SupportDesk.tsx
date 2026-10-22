@@ -38,7 +38,8 @@ import type {
   SupportView,
 } from '../../services/support';
 import type { Pill as PillTone } from '../theme';
-import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
+import { Card, Pill, SearchInput, SelectBox } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconChevronDown, IconClose, IconFile } from '../icons';
 import { ConfirmResolveDialog, SendBackDialog, TicketTypesDialog } from './SupportDialogs';
 
@@ -93,7 +94,7 @@ const IconHistory = ({ size = 16, stroke = 'currentColor' }: { size?: number; st
 
 /** The requester's face: their photo, or their initials. */
 function RequesterAvatar({ ticket, size = 38 }: { ticket: SupportTicket; size?: number }) {
-  return <Avatar name={ticket.requester.name || '?'} src={ticket.requester.photoUrl} size={size} font={Math.round(size * 0.37)} />;
+  return <PersonAvatar name={ticket.requester.name || '?'} userId={ticket.requester.userId} src={ticket.requester.photoUrl} size={size} font={Math.round(size * 0.37)} />;
 }
 
 // —— The tab ————————————————————————————————————————————————————————————————
@@ -731,7 +732,7 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
               return (
                 <button key={p.userId} type="button" disabled={current} onClick={() => { setOpen(false); onPick(p); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', borderBottom: '1px solid var(--line)', background: 'var(--surface)', cursor: current ? 'default' : 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: current ? 0.55 : 1 }}>
-                  <Avatar name={p.name} size={30} font={11} />
+                  <PersonAvatar name={p.name} userId={p.userId} size={30} font={11} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}{p.userId === meId && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · you</span>}</span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>{p.role === 'head' ? 'Support head' : 'Support staff'}{current ? ' · has it now' : ''}</span>
