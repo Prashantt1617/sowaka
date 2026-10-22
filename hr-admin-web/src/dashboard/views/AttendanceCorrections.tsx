@@ -10,7 +10,8 @@ import type { ReqStatus } from '../theme';
 import type { Correction } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
+import { Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
 
@@ -104,7 +105,7 @@ export function AttendanceCorrections() {
             style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-              <Avatar name={r.name} />
+              <PersonAvatar name={r.name} userId={r.submitterId} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

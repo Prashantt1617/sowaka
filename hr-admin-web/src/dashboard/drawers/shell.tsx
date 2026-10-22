@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Avatar } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconClose, IconInfo, IconOverride } from '../icons';
 
 export function DrawerShell({
@@ -31,16 +31,19 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
 
 export function DrawerHeader({
   name,
+  userId,
   subtitle,
   onClose,
 }: {
   name: string;
+  /** Whose photo to show; the name is looked up when this is missing. */
+  userId?: string;
   subtitle: ReactNode;
   onClose: () => void;
 }) {
   return (
     <div style={{ padding: '22px 24px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-      <Avatar name={name} size={48} font={16} />
+      <PersonAvatar name={name} userId={userId} size={48} font={16} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>{name}</div>
         <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>{subtitle}</div>

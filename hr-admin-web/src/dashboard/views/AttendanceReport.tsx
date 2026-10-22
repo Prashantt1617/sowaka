@@ -13,7 +13,8 @@ import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
 import type { AttendanceReportDTO, ReportRow } from '../../services/hrms';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SelectBox } from '../ui';
+import { Card, DateRange, EmptyRow, Pill, SelectBox } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from './peopleTable';
 import { useAuth } from '../auth/AuthContext';
 
@@ -377,7 +378,7 @@ export function AttendanceReport() {
           return (
             <div key={`${r.userId}-${r.date}`} style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                <Avatar name={r.name} />
+                <PersonAvatar name={r.name} userId={r.userId} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

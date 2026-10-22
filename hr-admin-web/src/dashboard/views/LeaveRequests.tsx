@@ -4,7 +4,8 @@ import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { Card, DateRange, EmptyRow, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload, IconEye } from '../icons';
 
 const COLS = '1.7fr 1fr 1.3fr .6fr 1.7fr 1.3fr 1.1fr .7fr';
@@ -112,7 +113,7 @@ export function LeaveRequests() {
             style={{ position: 'relative', display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-              <Avatar name={r.name} />
+              <PersonAvatar name={r.name} userId={r.submitterId} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>{r.team}</div>
