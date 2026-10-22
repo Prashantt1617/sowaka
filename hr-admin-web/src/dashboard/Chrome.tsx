@@ -334,14 +334,14 @@ export function Sidebar() {
               fontWeight: brand.wordmark?.weight ?? 700,
               letterSpacing: brand.wordmark?.letterSpacing ?? '-.01em',
               textTransform: brand.wordmark?.lowercase ? 'lowercase' : undefined,
-              color: orgActive ? 'var(--accent-ink)' : (brand.wordmark?.color ? `color-mix(in srgb, ${brand.wordmark.color} var(--av-fg), var(--ink))` : 'var(--ink)'),
+              color: brand.wordmark?.color ? `color-mix(in srgb, ${brand.wordmark.color} var(--av-fg), var(--ink))` : 'var(--ink)',
             }}
           >
             {brand.wordmark?.text ?? companyName}
           </div>
         </div>
         {orgOpen && (
-          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={orgActive ? 'var(--accent-ink)' : 'var(--ink-3)'} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="m9 6 6 6-6 6" />
           </svg>
         )}
