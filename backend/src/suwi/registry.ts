@@ -23,3 +23,8 @@ import './tools/bills';
 import './tools/help';
 import './tools/statutory';
 import './tools/policy';
+import './tools/payroll-explain';
+import './tools/payroll-check';
+import './tools/payroll-tax';
+import './tools/payroll-terms';
+import './tools/reports';
