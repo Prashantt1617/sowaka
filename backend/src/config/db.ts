@@ -607,6 +607,33 @@ async function ensureIndexes(database: Db): Promise<void> {
   await relayPresenceCollection.createIndex({ eventId: 1, teamId: 1 });
 }
 
+/**
+ * Indexes proposed for the heavy dashboard pages (leave balances behind Suwi's
+ * notices, the Salary tab, the TDS sheet, the morning digest). NOT CALLED
+ * anywhere: the cluster is shared with production and `ensureIndexes` runs on
+ * every start, so these wait for someone to approve them and add them there
+ * (or run this once by hand). Each one replaces a collection scan seen in
+ * explain("executionStats") on 23 Oct 2026:
+ *
+ * - leave_year_ends {userId, type, year}: `carriedFromRun` asks by person,
+ *   type and year with no org, so the {org, userId, year, type} index cannot
+ *   serve it; every lookup scanned all 583 rows, three per leave balance and
+ *   about thirty per notices check. It grows with people x types x years.
+ * - employee_payment_details {org, userId}: read per person (payslips, Salary
+ *   tab, TDS sheet) and per org (dashboard, People › Tasks, registers), with
+ *   no index but _id. Not unique here, so it cannot fail on existing rows.
+ * - tax_declarations {org, fy, userId}: the TDS sheet and payroll runs read
+ *   declarations by org, year and people; no index but _id.
+ * - suwi_digests {org, userId, date}: read on every Overview load; a row is
+ *   added per HR person per day, so the scan grows daily.
+ */
+export async function proposedHeavyPageIndexes(database: Db): Promise<void> {
+  await database.collection('leave_year_ends').createIndex({ userId: 1, type: 1, year: 1 });
+  await database.collection('employee_payment_details').createIndex({ org: 1, userId: 1 });
+  await database.collection('tax_declarations').createIndex({ org: 1, fy: 1, userId: 1 });
+  await database.collection('suwi_digests').createIndex({ org: 1, userId: 1, date: 1 });
+}
+
 export async function closeDb(): Promise<void> {
   if (client) {
     await client.close();
