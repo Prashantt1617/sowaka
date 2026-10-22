@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, PageActions, Pill, SearchInput, SummaryCard, Th } from '../ui';
+import { btn, btnClass, cellName, cellSub, SEG, segBtn, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
 import { getOutOfLocation, type OutOfLocationDTO } from '../../services/hrms';
 
@@ -102,77 +103,80 @@ export function OutOfLocation() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
         <SummaryCard label="Out-of-location punches" value={summary.total} />
         <SummaryCard label="Marked present" value={summary.present} color="var(--ok)" />
         <SummaryCard label="Awaiting a manager" value={summary.pending} color="var(--warn)" />
         <SummaryCard label="Rejected" value={summary.declined} color="var(--bad)" />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search employee or manager…" />
-        <div style={{ display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
+      <PageActions>
+        <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
+          <IconDownload stroke="currentColor" /> Export
+        </button>
+      </PageActions>
+
+      <Card padded>
+      <div style={toolbar}>
+        <div style={SEG}>
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setFilter(t.key)}
-              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, border: 'none', borderLeft: t.key === 'all' ? 'none' : '1px solid var(--line)', background: filter === t.key ? 'var(--accent-grad)' : 'var(--surface)', color: filter === t.key ? 'var(--on-accent)' : 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={segBtn(filter === t.key)}
             >
               {t.label}
             </button>
           ))}
         </div>
+      </div>
+      <div style={toolbar}>
+        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search employee or manager…" width="100%" />
+        </div>
         <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <button
-          onClick={exportRows}
-          disabled={shown.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: 'var(--on-sel)', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: shown.length ? 'pointer' : 'not-allowed', opacity: shown.length ? 1 : 0.5 }}
-        >
-          <IconDownload /> Export
-        </button>
       </div>
 
-      <Card>
-        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>
-          <div>EMPLOYEE</div>
-          <div>DATE &amp; TIME</div>
-          <div>PUNCH</div>
-          <div>REASON</div>
-          <div>LOCATION</div>
-          <div>MANAGER</div>
-          <div>STATUS</div>
+        <div style={TH(COLS)}>
+          <Th>EMPLOYEE</Th>
+          <Th>DATE &amp; TIME</Th>
+          <Th>PUNCH</Th>
+          <Th>REASON</Th>
+          <Th>LOCATION</Th>
+          <Th>MANAGER</Th>
+          <Th>STATUS</Th>
         </div>
-        {shown.map((r) => {
+        {shown.map((r, i) => {
           const status = statusOf(r);
           return (
-            <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+            <div key={r.id} style={{ ...TR(COLS, i === shown.length - 1) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <Avatar name={r.name} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                  <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.employeeCode}{r.department ? ` · ${r.department}` : ''}
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
+              <div style={{ fontWeight: 400 }}>
                 {fmtDay(r.workDate)}
-                <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{clock(r.at)}</div>
+                <div style={cellSub}>{clock(r.at)}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-2)' }}>{r.punchType === 'in' ? 'In' : 'Out'}</div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-2)' }}>{r.reason}</div>
+              <div style={{ fontWeight: 400 }}>{r.punchType === 'in' ? 'In' : 'Out'}</div>
+              <div style={{ fontWeight: 400 }}>{r.reason}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.place}</div>
+                <div style={{ fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.place}</div>
                 <a
                   href={`https://maps.google.com/?q=${r.latitude},${r.longitude}`}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ fontSize: 12, color: 'var(--accent-ink)', textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}
+                  style={{ fontSize: 11.5, color: 'var(--accent-ink)', textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}
                 >
                   {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)} ↗
                 </a>
               </div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
+              <div style={{ fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
                 {r.manager || '—'}
               </div>
               <div title={r.managerNote || ''}>
